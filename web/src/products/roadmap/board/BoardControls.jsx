@@ -80,6 +80,8 @@ export function KindChoice({ kinds, value, onChoose, label, follow = true, onPre
 
 export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete, onDone }) {
   const [open, setOpen] = useState(false);
+  const reasonId = useId();
+  const reason = useRef(null);
   const openRef = useRef(open);
   openRef.current = open;
   const bar = useRef(null);
@@ -130,8 +132,11 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
   };
 
   return (
-    <div ref={bar} role="region" aria-label={BULK.region} className={`st-board-bulk${open ? ' is-open' : ''}`}>
-      <h2 className="st-board-bulk-heading">{selectedCount({ count })}</h2>
+    <div ref={bar} role="region" aria-label={BULK.region} className={`st-board-bulk${open ? ' is-open' : ''}${!onDelete ? ' is-delete-refused' : ''}`}>
+      <div className="st-board-bulk-summary">
+        <h2 className="st-board-bulk-heading">{selectedCount({ count })}</h2>
+        {!onDelete && <p ref={reason} id={reasonId} className="st-board-bulk-reason">{BULK.keepRoot}</p>}
+      </div>
       <button className="st-board-bulk-done" type="button" onClick={onDone}>{BULK.done}</button>
       <div className="st-board-bulk-kinds" inert={!open ? '' : undefined} aria-hidden={!open}>
         <KindChoice kinds={kinds} value={sharedKind} label={COMPOSER.kind} follow={false} onChoose={choose} />
@@ -141,12 +146,24 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
           <span>{BULK.recolor}</span>
           {open && <ChevronDown size={16} aria-hidden />}
         </button>
-        {onDelete && (
-          <button type="button" className="st-board-bulk-delete" onClick={onDelete}>
-            <Trash2 size={16} aria-hidden />
-            <span>{deleteStepsAction({ count })}</span>
-          </button>
-        )}
+        <button type="button" className="st-board-bulk-delete"
+          aria-disabled={!onDelete || undefined} aria-describedby={!onDelete ? reasonId : undefined}
+          onClick={() => {
+            if (onDelete) {
+              onDelete();
+              return;
+            }
+            track('roadmap_board_bulk', { step: 'delete_refused', reason: 'last_root' });
+            const reduced = prefersReducedMotion();
+            reason.current.getAnimations().forEach((animation) => animation.cancel());
+            reason.current.animate(reduced
+              ? [{ opacity: 1 }, { opacity: 0.6 }, { opacity: 1 }]
+              : [{ transform: 'translateX(0)' }, { transform: 'translateX(3px)' }, { transform: 'translateX(0)' }],
+            { duration: reduced ? 150 : 280 });
+          }}>
+          <Trash2 size={16} aria-hidden />
+          <span>{deleteStepsAction({ count })}</span>
+        </button>
       </div>
     </div>
   );
