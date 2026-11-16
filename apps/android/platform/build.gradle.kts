@@ -63,4 +63,8 @@ tasks.withType<Test>().configureEach {
     val failureKinds = rootProject.file("sync-engine/src/test/resources/failure-kinds.tsv")
     systemProperty("windmill.failureKinds", failureKinds.absolutePath)
     inputs.file(failureKinds)
+    val contract = rootProject.file("../../packages/api-contract")
+    systemProperty("windmill.contract", contract.absolutePath)
+    inputs.dir(contract.resolve("agent/turns"))
+    inputs.file(contract.resolve("ai/wire/fixtures.json"))
 }
