@@ -68,7 +68,7 @@ public final class AiURLSessionTransport: AiTransport {
     var request = URLRequest(url: url)
     request.httpMethod = input.method
     request.httpShouldHandleCookies = false
-    request.httpBody = input.body.map(Data.init)
+    request.httpBody = input.body.map { Data($0) }
     for (name, value) in input.headers { request.setValue(value, forHTTPHeaderField: name) }
     do {
       let (bytes, response) = try await session.bytes(for: request)
