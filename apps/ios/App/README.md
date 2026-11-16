@@ -164,10 +164,15 @@ created. Existing routine changes are decided on their proposal card.
 
 Allowance refusals keep the draft, with no balance indicator: a refusal before the stream withdraws the
 turn's records so the refused question stays in the field, and the refusal is drawn once, centred in
-the conversation — the sentence for its code, *You have used all of your AI allowance.* — with *Sign in
-to continue.* and Sign in only signed out, where the phone's own AI access is used up or belongs to an
-account; shared free-pool, concurrency and rate refusals offer nothing to do. A turn the allowance
-refuses mid-way ends failed with its partial text and the same sentence. The reset line of an
+the conversation — the sentence for its code — with *Sign in to continue.* and Sign in only signed out,
+where the phone's own AI allowance refused the send or its AI access belongs to an account; shared
+free-pool, concurrency and rate refusals offer nothing to do. A `subject_exhausted` refusal says what the
+allowance its body or `error` frame carries shows holds the request: *You have used all of your AI
+allowance.* with nothing left or reserved, *Your earlier AI requests hold the rest of your AI allowance
+until their cost is confirmed, at most 10 minutes after each began.* with nothing left but something
+reserved, *This request needs more AI capacity than your remaining allowance.* with something left, and
+*Your AI allowance has no room for this request.* where no allowance came. A turn the allowance refuses
+mid-way ends failed with its partial text and the sentence its frame's allowance gives. The reset line of an
 archived signed-out answer stands where its allowance named a reset. Signed in there is no upgrade
 while paid plans are closed (01.12 is not built). `coach-rate-limited` reads *You can ask again later.*,
 since the turn wire names no moment, with *Use your own AI agent*. A capped or refused question is never

@@ -96,7 +96,7 @@ nonisolated enum TurnEvent: Equatable, Sendable {
   case text(String)
   case calls(TurnBatch)
   case done(state: MessageState, truncated: Bool)
-  case error(code: String)
+  case error(code: String, allowance: AiAllowance?)
 
   init(event: String, data: JSON) throws {
     switch event {
@@ -106,7 +106,7 @@ nonisolated enum TurnEvent: Equatable, Sendable {
     case "text": self = .text(try data.member("delta").asString())
     case "calls": self = .calls(try TurnBatch(data))
     case "done": self = .done(state: try Self.state(of: data), truncated: (try? data.member("truncated").asBool()) ?? false)
-    case "error": self = .error(code: try data.member("code").asString())
+    case "error": self = .error(code: try data.member("code").asString(), allowance: (try? data.member("allowance")).flatMap { try? AiAllowance($0) })
     default: throw TurnWireFault.unknownEvent
     }
   }
@@ -117,12 +117,13 @@ nonisolated enum TurnEvent: Equatable, Sendable {
   }
 }
 
-// A refusal the server answered a turn request with before its stream, by §6.5 code, and the moment a shared free pool
-// refills when its body carries the allowance (`budgetResetsAtMs`).
+// A refusal the server answered a turn request with before its stream, by §6.5 code, and the allowance its body carries
+// beside an allowance code: what holds the request, and the moment a shared free pool refills (`budgetResetsAtMs`).
 nonisolated struct TurnRefusal: Error, Equatable, Sendable {
   let status: Int
   let code: String
-  var budgetResetsAtMs: Int64? = nil
+  var allowance: AiAllowance? = nil
+  var budgetResetsAtMs: Int64? { allowance?.budgetResetsAtMs }
 
   static let turnUnknown = "coach-turn-unknown"
   // The closing error of a stream another stream of the same turn took over (§6.5): the turn runs on, this stream is done.
@@ -133,6 +134,13 @@ nonisolated struct TurnRefusal: Error, Equatable, Sendable {
   static let codes: Set<String> = allowanceCodes.union(["coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown,
                                                         "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-replica-syncing",
                                                         "coach-busy", "coach-vendor-error", streamReplaced])
+}
+
+// The allowance object a refusal body and an `error` frame carry, as the allowance read writes it.
+nonisolated extension AiAllowance {
+  init(_ json: JSON) throws {
+    self = try JSONDecoder().decode(AiAllowance.self, from: Data(json.jcs))
+  }
 }
 
 // The wire's own faults: a frame or an answer the stream cannot be read as.
@@ -230,8 +238,8 @@ nonisolated struct TurnSSE {
   nonisolated static func refusal(_ status: Int, _ body: Data) -> TurnRefusal {
     let json = try? JSON(parsing: Array(body))
     let code = (try? json?.member("code").asString()) ?? ""
-    let reset = try? json?.member("allowance").member("budgetResetsAtMs").asInteger()
-    return TurnRefusal(status: status, code: code.isEmpty ? "coach-vendor-error" : code, budgetResetsAtMs: reset)
+    let allowance = (try? json?.member("allowance")).flatMap { try? AiAllowance($0) }
+    return TurnRefusal(status: status, code: code.isEmpty ? "coach-vendor-error" : code, allowance: allowance)
   }
 
   // The frames of one stream, parsed off the main actor, until its terminal frame; a stream that ends before one is a lost

@@ -32,7 +32,6 @@ delete from journal_echo_dismissal where user_id='$U';
 delete from journal_echo_offer_dismissal where user_id='$U';
 delete from journal_span where user_id='$U';
 delete from journal_page where user_id='$U';
-delete from paddle_subscriptions where user_id='$U';
 insert into journal_page (user_id,day,body,stamp_ms) values
   ('$U','$TODAY',\$\$$TRIGGER\$\$,10), ('$U','$OLD',\$\$$MATCH\$\$,10);
 insert into journal_span (user_id,span_id,day,ord,lo,hi,text,text_sha256,vector,embed_version,body_stamp_ms)
@@ -57,16 +56,8 @@ check "$(echo "$R" | field "['pagesWritten']")" "2" "pagesWritten is served — 
 check "$(echo "$R" | python3 -c "import sys,json;print('cosine' in json.dumps(json.load(sys.stdin)))")" "False" \
   "no score on the wire — presence, never a number"
 
-# ── the honest cut: no subscription means the opening words and the count withheld ───────────────
-check "$(echo "$R" | field "['pages'][0]['entitled']")" "False" "an unsubscribed reader is not entitled"
-check "$(echo "$R" | field "['pages'][0]['matches'][0]['text']")" "i want to learn c++ properly one of" \
-  "the cut is the real opening words, not a blur"
-check "$(echo "$R" | field "['pages'][0]['matches'][0]['withheldWords']")" "8" "and it says how many it kept back"
-
-# ── entitled: the passage whole, and the anchoring hint with it ──────────────────────────────────
-psql "$DB" -q -c "insert into paddle_subscriptions (subscription_id,customer_id,user_id,status) values ('sub_e2e_echo','ctm_e2e_echo','$U','active') on conflict (subscription_id) do update set status='active', user_id='$U'"
-R="$(j "$BASE/v1/journal/echoes")"
-check "$(echo "$R" | field "['pages'][0]['entitled']")" "True" "a live subscription is entitled"
+# ── every signed-in writer: the passage whole, and the anchoring hint with it ───────────────────
+check "$(echo "$R" | field "['pages'][0]['entitled']")" "True" "every signed-in writer is entitled"
 check "$(echo "$R" | field "['pages'][0]['matches'][0]['text']")" "$MATCH" "and is served the passage whole"
 check "$(echo "$R" | field "['pages'][0]['matches'][0]['withheldWords']")" "0" "nothing withheld"
 check "$(echo "$R" | field "['pages'][0]['matches'][0]['occurrenceHint']")" "0" "which occurrence of that text the passage is"
@@ -104,5 +95,4 @@ check "$(echo "$R" | field "['pagesFailed']")" "0" "and a no-op is not a failure
 # ── owner only ───────────────────────────────────────────────────────────────────────────────────
 check "$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $ORIGIN" "$BASE/v1/journal/echoes")" "401" "no session → 401"
 
-psql "$DB" -q -c "delete from paddle_subscriptions where user_id='$U'"
 echo; echo "$pass passed, $fail failed"; rm -f "$JAR"; [ "$fail" = 0 ]

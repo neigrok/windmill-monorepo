@@ -49,8 +49,8 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
     const next = draft.saved;
     const length = guideLengthBucket(next ? draft.length : 0);
     if (!owner) {
-      track('roadmap_guide', { step: 'save', outcome: 'failed', length, reason: 'refused' });
-      return 'refused';
+      track('roadmap_guide', { step: 'save', outcome: 'failed', length, reason: 'not-owner' });
+      return 'not-owner';
     }
     if (next === text) {
       track('roadmap_guide', { step: 'save', outcome: 'unchanged', length });

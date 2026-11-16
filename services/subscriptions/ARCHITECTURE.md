@@ -66,7 +66,7 @@ clock, no randomness. Its files, by kind:
 | `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period` and whom its events are told under once its binding moved on (`LeftWith`), and access (`access_until`, `grants_access`) |
 | `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
 | `erasure.rs` | `erase`, the domain's step for an account's erasure (§6.4), for one lineage, returning a `Change` as `observe` does |
-| `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
+| `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone, and the subscriptions it carries: each environment's governing one and its others, which fold into the same entitlement again |
 
 The action that applies an observation, `storage`'s apply ([Writing](#writing)), calls `observe` once:
 
@@ -116,7 +116,9 @@ Known limits:
 
 `tests/vectors/` holds the lifecycle stories every implementation of the domain passes, observations and
 erasures, and `crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests
-of INV-4, INV-5 and INV-6 and one that replays the feed through §6.3's funding in any order.
+of INV-4, INV-5 and INV-6 and one that replays the feed through §6.3's funding in any order;
+`crates/domain/tests/entitlement.rs` those of the fold: an entitlement folded again over the subscriptions it
+carries is the same, and it carries every subscription in force and one governing one for each environment.
 
 ## App Store signature verification
 
@@ -571,7 +573,7 @@ redacted (spec §10).
 | `subscriptions` | One row per lineage, unique by `(store, environment, store_subscription_id)`: every field of the domain's `Subscription`, and `verified_at` |
 | `periods` | One row per store transaction of a lineage. Only `refunded_at`, `observed_at` and whom it is left with change after it is written (INV-7): `left_with`, the account that paid for it once a new purchase moved its subscription (R-11), or `left_with_no_one` once the account that held or paid for it was erased (§6.4), never both |
 | `events` | Append-only, keyed by `seq`. Each row keeps its subscription's store, environment and offer kind as the transaction that recorded it left them, and a period event its period as the event states it, so the feed reads no other table's current state |
-| `entitlement_subscriptions` | For each event that names an account, that account's subscriptions as the transaction left them: what the event's entitlement folds over |
+| `entitlement_subscriptions` | For each event that names an account, the subscriptions that account's entitlement carries as the transaction left them, each environment's governing one and every other in force: what the event's entitlement folds over. An event keeps at most one ended subscription for each environment, however many its account held, and every one in force, as the feed serves them with it. A copy holding more of the account's subscriptions folds into the same entitlement |
 | `erased_accounts` | The accounts the backend erased (§6.4), each with `erased_at`, when the ledger first recorded it |
 | `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it, dropped once the subscription is bound to another account, and dropped in the transaction that erases its account (§4, §6.4). `attempts` counts the store's refusals of it, `next_attempt_at` is when it may be written again, and `abandoned_at` is set at the fifth, after which it is never written |
 
@@ -617,7 +619,8 @@ transaction, the action of [Domain](#domain):
    claim. A change that moves the binding, as a new purchase does (R-11), drops each hint owed for the
    subscription to another account. A replay writes no row (INV-4).
 5. Take the events' seqs under the seq lock ([below](#the-seq-lock)), read the subscriptions of each
-   account the events name, and append each event with its account's.
+   account the events name and fold its entitlement, append the events, then copy beside them the
+   subscriptions each account's entitlement carries, in one statement for each account.
 6. For a notification, settle its inbox row. Commit.
 
 `Applied::Recorded` holds the `Change`, the seq of each of its events, and `newest_seq`, the seq of the
@@ -638,7 +641,7 @@ An erasure is one transaction too:
    restated with no one.
 4. Drop every hint owed to a store for the account.
 5. Take the seqs of every change's events under the seq lock and append them, each `unbound` with the
-   account's subscriptions as the transaction leaves them, none. Commit.
+   subscriptions the account's entitlement carries as the transaction leaves it, none. Commit.
 
 Only a move away from the account changes what a lineage holds of it between steps 2 and 3, and a lineage
 moved away still holds the periods the account paid for, so the read of step 2 finds every lineage the
@@ -647,7 +650,7 @@ erasure changes. Two erasures lock the lineages they share in the same order.
 Locks are taken in one order, accounts, then lineage, then seq, and an erasure holds its account's lock
 alone, so no binding to an account commits beside its erasure. The row lock is
 `for no key update` because a transaction holding the seq lock inserts entitlement rows whose foreign
-key takes a key-share lock on each subscription of the account, which `for update` refuses: the two
+key takes a key-share lock on each subscription the account's entitlement carries, which `for update` refuses: the two
 transactions would deadlock.
 
 ### The seq lock
@@ -660,7 +663,9 @@ take a seq without the lock, as one could beside an advisory lock around a seque
 transaction rolls the counter back with it, so the ledger leaves no gap of its own; readers still allow
 one (§5.2). `recordedAt` is the database's clock read in the same statement, one instant for the
 transaction's events, rising with seq as long as the clock does. Each account's subscriptions are read
-after the lock is taken, so they include every transaction committed before.
+after the lock is taken, so they include every transaction committed before. The copy beside the events is taken
+from the rows as they stand once the events are in: while the lock is held only a write that records no event
+commits, and such a write changes nothing an entitlement carries (INV-14), so the copy carries what the fold read.
 
 ### Reading
 

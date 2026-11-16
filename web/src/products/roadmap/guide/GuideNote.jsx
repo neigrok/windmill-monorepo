@@ -7,22 +7,22 @@ import { track } from '../../../telemetry/beacon.js';
 import { DISCARD_DRAFT, GUIDE, LABELS, guideCounter } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
+import { reportRoadmapFailure } from '../reportFailure.js';
 import { TreeDoor } from '../room/useTreeVisit.js';
 import { coverBeneath, useComposerViewport, useCoveredLayer } from '../step/composerFocus.js';
 import { GuideDraft, hasGuide, withLineFeeds } from './GuideDraft.js';
 import { useArrivalFade } from './useGuide.js';
 import './guide.css';
 
-// The line that stands in the footer once a save found no door, by the reason the save answered, and after its draft was
-// copied: the fact, the way out and the one act that helps. This device's store fails in the server's words, and Done
-// returns a copied draft's line to the refusal it answered.
 const COULD_NOT_SAVE = { fact: t('roadmap.guide.saveFailed'), wayOut: t('roadmap.guide.saveFailedWayOut'), act: 'retry', label: t('roadmap.common.tryAgain') };
 const RECOVERY_LINES = {
   offline: { fact: t('roadmap.guide.saveOffline'), wayOut: t('roadmap.guide.saveOfflineWayOut'), act: 'retry', label: t('roadmap.common.tryAgain') },
   refused: { fact: t('roadmap.guide.saveRefused'), wayOut: t('roadmap.guide.saveRefusedWayOut'), act: 'copy', label: t('roadmap.guide.copyDraft') },
+  'not-owner': { fact: t('roadmap.guide.saveNotOwner'), wayOut: t('roadmap.guide.saveRefusedWayOut'), act: 'copy', label: t('roadmap.guide.copyDraft'), tone: 'neutral' },
   server: COULD_NOT_SAVE,
   device: COULD_NOT_SAVE,
-  copied: { fact: t('roadmap.guide.draftCopied'), wayOut: t('roadmap.guide.draftCopiedNote'), act: 'done', label: t('roadmap.guide.done') },
+  'copy-failed': { fact: t('roadmap.guide.copyFailed'), wayOut: t('roadmap.guide.copyFailedWayOut'), act: 'copy', label: t('roadmap.guide.copyDraft') },
+  copied: { fact: t('roadmap.guide.draftCopied'), wayOut: t('roadmap.guide.draftCopiedNote'), act: 'done', label: t('roadmap.guide.done'), tone: 'copied' },
 };
 
 // What the guides from above need to be read while the guide is written: the stack's 4px edges round one name and one
@@ -82,6 +82,7 @@ export function GuideNote({ guide, band }) {
   const lastPress = useRef(guide.opened.keyboard ? 'key' : 'pointer');
   const enterDown = useRef(false);
   const settled = useRef(false);
+  const copyAttempt = useRef(0);
   const held = useRef(null);
   const keys = useRef(null);
   const titleId = useId();
@@ -111,6 +112,7 @@ export function GuideNote({ guide, band }) {
 
   // Leaving returns to reading, or to the entry for a draft begun from confirmed-empty Add guide.
   const leave = () => {
+    copyAttempt.current += 1;
     setDiscarding(false);
     setLine(null);
     if (!writing || opening) {
@@ -173,22 +175,27 @@ export function GuideNote({ guide, band }) {
     setLine((before) => ({ says: reason, nth: (before?.nth ?? 0) + 1 }));
   };
 
-  // The whole draft goes to the clipboard. A clipboard that refuses leaves the line as it stood, and a draft edited
-  // meanwhile has no line left to change.
   const copy = async () => {
+    const attempt = ++copyAttempt.current;
+    const refusal = line.refusal ?? line.says;
+    let outcome = 'failed';
     try {
-      await navigator.clipboard.writeText(draft.text);
-    } catch {
-      track('roadmap_guide', { step: 'copy', outcome: 'failed' });
-      return;
+      if (typeof navigator.clipboard?.writeText === 'function') {
+        await navigator.clipboard.writeText(draft.text);
+        outcome = 'copied';
+      }
+    } catch (error) {
+      if (error?.name !== 'NotAllowedError' && error?.name !== 'SecurityError') reportRoadmapFailure('roadmap-guide-copy', error);
     }
-    track('roadmap_guide', { step: 'copy', outcome: 'copied' });
-    setLine((before) => before && { says: 'copied', nth: before.nth + 1 });
+    track('roadmap_guide', { step: 'copy', outcome });
+    if (attempt !== copyAttempt.current) return;
+    setLine((before) => before && { says: outcome === 'copied' ? 'copied' : 'copy-failed', refusal, nth: before.nth + 1 });
   };
 
   // A save in flight holds the draft it is sending, as it holds the frame.
   const loadLatest = () => {
     if (saving) return;
+    copyAttempt.current += 1;
     track('roadmap_guide', { step: 'loadLatest' });
     setLine(null);
     setCaret({ offset: text.length, scroll: 0 });
@@ -391,6 +398,7 @@ export function GuideNote({ guide, band }) {
 
   // A room change discards a changed draft; closing restores the connected entry or roadmap title.
   useEffect(() => () => {
+    copyAttempt.current += 1;
     if (!settled.current && held.current?.changed) track('roadmap_guide', { step: 'discard' });
     requestAnimationFrame(() => {
       if (document.activeElement !== document.body && document.activeElement?.isConnected && !document.activeElement.closest('[inert]')) return;
@@ -417,7 +425,7 @@ export function GuideNote({ guide, band }) {
   if (writing) paperClasses.push('st-guide-paper--writing');
   // The footer's last button: the standing line's act, else Save, which waits for a change that fits. Done keeps the
   // draft and returns to the refusal it was copied under; leaving it is Cancel's to ask.
-  const acts = { retry: save, copy, done: () => setLine((before) => before && { says: 'refused', nth: before.nth + 1 }) };
+  const acts = { retry: save, copy, done: () => setLine((before) => before && { says: before.refusal, nth: before.nth + 1 }) };
   const act = standing
     ? { label: standing.label, run: acts[standing.act], waits: false }
     : { label: t('roadmap.common.save'), run: save, waits: !savable };
@@ -579,6 +587,7 @@ export function GuideNote({ guide, band }) {
               placeholder={t('roadmap.guide.placeholder')}
               onChange={(event) => {
                 const { value } = event.target;
+                copyAttempt.current += 1;
                 setLine(null);
                 setDraft((current) => current.writing(value));
               }}
@@ -603,7 +612,7 @@ export function GuideNote({ guide, band }) {
         {writing && <>
           {/* The phone's changed-elsewhere line stands first. Then who reads the guide and the count, or a failed
               save's line, followed by Cancel and the available act. */}
-          <footer className={`st-guide-footer${standing ? ` st-guide-footer--${copied ? 'copied' : 'failed'}` : ''}`}>
+          <footer className={`st-guide-footer${standing ? ` st-guide-footer--${standing.tone ?? 'failed'}` : ''}`}>
             {phone && elsewhere}
             <div className="st-guide-closing">
               {standing ? (

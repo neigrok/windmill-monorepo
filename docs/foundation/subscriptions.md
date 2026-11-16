@@ -602,7 +602,9 @@ the store's API are constructor arguments, so tests sign their own payloads unde
 run the whole pipeline with no network.
 
 Storage is a database of its own, `windmill_subscriptions`, in the host's Postgres with its own role.
-The backend's role cannot read it.
+The backend's role cannot read it. Each event keeps the subscriptions its feed entry's entitlement carries
+(§5.2) and no other, so what the ledger holds for an event grows with the subscriptions its account has in
+force, never with every one it has held.
 
 ## §10 Observability
 

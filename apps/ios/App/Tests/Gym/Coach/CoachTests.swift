@@ -157,8 +157,10 @@ import SyncTesting
       #expect(CoachTurnRefusal(code: code) == .installation(code))
       #expect(CoachTurnRefusal(code: code).recovery(anonymous: true) == .signIn && CoachTurnRefusal(code: code).recovery(anonymous: false) == nil)
     }
-    #expect(CoachTurnRefusal.allowance("subject_exhausted").recovery(anonymous: true) == .signIn)
-    #expect(CoachTurnRefusal.allowance("subject_exhausted").recovery(anonymous: false) == nil, "Signed in, a spent allowance offers nothing while paid plans are closed")
+    for shortfall in [AiAllowance.Shortfall.spent, .held, .tooLarge, nil] {
+      #expect(CoachTurnRefusal.shortfall(shortfall).recovery(anonymous: true) == .signIn)
+      #expect(CoachTurnRefusal.shortfall(shortfall).recovery(anonymous: false) == nil, "Signed in, an allowance that refused the send offers nothing while paid plans are closed")
+    }
     for code in ["free_day_exhausted", "concurrency_exhausted", "unconfigured"] {
       #expect(CoachTurnRefusal(code: code).recovery(anonymous: true) == nil && CoachTurnRefusal(code: code).recovery(anonymous: false) == nil)
     }
@@ -168,10 +170,11 @@ import SyncTesting
     #expect([CoachTurnRefusal(code: "subject_exhausted"), CoachTurnRefusal(code: "coach-rate-limited"), CoachTurnRefusal(code: "coach-update-required"),
              CoachTurnRefusal(code: "invalid_installation"), CoachTurnRefusal(code: "coach-busy", status: 503), CoachTurnRefusal(code: "", status: 404),
              CoachTurnRefusal(code: "funding_required", status: 503)]
-      == [.allowance("subject_exhausted"), .rateLimited, .updateRequired, .installation("invalid_installation"), .said("coach-busy"), .absent,
+      == [.shortfall(nil), .rateLimited, .updateRequired, .installation("invalid_installation"), .said("coach-busy"), .absent,
           .said("funding_required")], "funding_required is Talk's refusal, never Coach's")
     #expect(TurnInterrupted("funding_required").code == "other")
-    #expect([CoachTurnRefusal.allowance("subject_exhausted"), .freeMonthExhausted(resetsAtMs: nil), .rateLimited, .absent].map { $0.capped } == [true, true, true, true])
+    #expect([CoachTurnRefusal.shortfall(.held), .allowance("concurrency_exhausted"), .freeMonthExhausted(resetsAtMs: nil), .rateLimited, .absent].map { $0.capped }
+      == [true, true, true, true, true])
     #expect([CoachTurnRefusal.offline, .logArriving, .updateRequired, .installation("device_bound"), .said("coach-busy")].map { $0.capped }
       == [false, false, false, false, false])
     #expect([CoachTurnRefusal.offline, .logArriving, .installation("invalid_installation"), .installation("device_bound"), .updateRequired,
@@ -183,18 +186,30 @@ import SyncTesting
     ])
   }
 
-  // Each refusal says only what is true of it: the reset line where a reset brings Coach back, *used all* only when nothing
-  // is left or held.
-  @Test func anAllowanceSaysWhenCoachAnswersAgainOnlyWhereAResetBringsItBack() throws {
+  // Each refusal says only what is true of it: a `subject_exhausted` request what its allowance shows holds it, whatever the
+  // allowance's own read code, and only what is always true without one; the reset line where a reset brings Coach back.
+  @Test func anAllowanceSaysWhatHoldsARequestAndWhenCoachAnswersAgainOnlyWhereAResetBringsItBack() throws {
     let dates = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 0)), locale: Locale(identifier: "en_US"))
+    func allowance(_ code: String, remaining: String, reserved: String) throws -> AiAllowance {
+      try JSONDecoder().decode(AiAllowance.self, from: Data(#"{"code":"\#(code)","currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.50","used":"0.45","reserved":"\#(reserved)","remaining":"\#(remaining)","resetsAtMs":1793491200000,"budgetResetsAtMs":1792540800000}"#.utf8))
+    }
+    func refused(_ code: String, remaining: String, reserved: String) throws -> [String?] {
+      let allowance = try allowance(code, remaining: remaining, reserved: reserved)
+      return [CoachTurnRefusal(code: "subject_exhausted", allowance: allowance).sentence, allowance.detail(dates)]
+    }
     func said(_ code: String, remaining: String, reserved: String) throws -> [String?] {
-      let allowance = try JSONDecoder().decode(AiAllowance.self, from: Data(#"{"code":"\#(code)","currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.50","used":"0.45","reserved":"\#(reserved)","remaining":"\#(remaining)","resetsAtMs":1793491200000,"budgetResetsAtMs":1792540800000}"#.utf8))
-      return [allowance.message, allowance.detail(dates)]
+      let allowance = try allowance(code, remaining: remaining, reserved: reserved)
+      return [AiAllowance.sentence(code), allowance.detail(dates)]
     }
     let reset = "You can use Coach again on Nov 1 at 12:00\u{202F}AM.", pool = "You can use Coach again on Oct 21 at 12:00\u{202F}AM."
-    #expect(try said("subject_exhausted", remaining: "0.000000000", reserved: "0") == ["You have used all of your AI allowance.", reset])
-    #expect(try said("subject_exhausted", remaining: "0", reserved: "0.05") == ["Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.", nil])
-    #expect(try said("subject_exhausted", remaining: "0.01", reserved: "0") == ["This request needs more AI capacity than your remaining allowance.", nil])
+    let held = "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began."
+    let tooLarge = "This request needs more AI capacity than your remaining allowance."
+    #expect(try refused("subject_exhausted", remaining: "0.000000000", reserved: "0") == ["You have used all of your AI allowance.", reset])
+    #expect(try refused("subject_exhausted", remaining: "0", reserved: "0.05") == [held, nil])
+    #expect(try refused("subject_exhausted", remaining: "0.01", reserved: "0") == [tooLarge, nil])
+    #expect(try refused("subject_exhausted", remaining: "0.01", reserved: "0.04") == [tooLarge, nil])
+    #expect(try refused("ok", remaining: "0.05", reserved: "0") == [tooLarge, nil], "A round too large for a positive balance, as an error frame's allowance reads it")
+    #expect(CoachTurnRefusal(code: "subject_exhausted").sentence == "Your AI allowance has no room for this request.")
     #expect(try said("free_day_exhausted", remaining: "0.05", reserved: "0") == ["Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", pool])
     #expect(try said("free_month_exhausted", remaining: "0.05", reserved: "0") == ["Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit.", pool])
     #expect(try said("concurrency_exhausted", remaining: "0.04", reserved: "0.01") == ["Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", nil])

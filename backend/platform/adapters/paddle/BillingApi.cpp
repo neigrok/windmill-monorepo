@@ -113,8 +113,8 @@ PaddleSubscription subscriptionFrom(const Json::Value& data, const std::string& 
   subscription.customerId = asStr(data["customer_id"]);
   subscription.status = asStr(data["status"]);
 
-  // Our checkout stamps the Windmill account on the transaction. Absent for a subscription created
-  // outside that flow, which the read resolves by email instead.
+  // A checkout stamps the Windmill account on the transaction; a subscription created outside one
+  // carries none.
   const Json::Value& custom = data["custom_data"];
   if (custom.isObject()) {
     // custom_data rides in from a checkout anyone can open: a value that isn't a UUID would reach a ::uuid bind and

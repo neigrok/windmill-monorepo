@@ -24,9 +24,9 @@ The go-to-market plan, its funnels, benchmarks and per-action reports live in
 
 Windmill One cannot be bought yet. It goes on sale first as a monthly App Store subscription inside the
 iOS app ([subscription service](foundation/subscriptions.md)); a web checkout and Google Play come later,
-with no date. On the web, `paidPlansOpen()` returns false, and the server refuses checkout without a
-configured Paddle price. [AI usage and billing](AI_USAGE_REVIEW.md) records the implemented limits
-and the gaps a shared usage screen must resolve.
+with no date. On the web, `paidPlansOpen()` returns false, and the server refuses every checkout.
+[AI usage and billing](AI_USAGE_REVIEW.md) records the implemented limits and the gaps a shared usage
+screen must resolve.
 
 ## Roadmap
 

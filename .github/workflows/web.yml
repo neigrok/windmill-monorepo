@@ -70,7 +70,8 @@ jobs:
           # Stamps the build so Sentry groups errors by release.
           VITE_RELEASE: ${{ github.sha }}
           # Paddle's client-side token is public (it only opens checkouts); the API key stays on the
-          # server. Unset ⇒ empty token ⇒ paddleReady() is false and no surface offers a checkout.
+          # server. Unset ⇒ empty token ⇒ billingConfigured() is false. No surface offers a checkout
+          # while paidPlansOpen() is false, whatever the token.
           VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
           VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
         run: npm run build

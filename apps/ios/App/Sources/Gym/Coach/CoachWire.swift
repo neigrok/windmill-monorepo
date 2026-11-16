@@ -111,20 +111,30 @@ nonisolated enum CoachCopy {
 }
 
 nonisolated extension AiAllowance {
-  // Nothing remains, and no earlier request whose cost is unconfirmed holds any of it.
-  var spent: Bool { amount(remaining) == 0 && amount(reserved) == 0 }
-  func amount(_ value: String) -> Decimal { Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
-  var message: String {
-    if code == "subject_exhausted" {
-      if amount(remaining) > 0 { return String(localized: "This request needs more AI capacity than your remaining allowance.") }
-      if !spent { return String(localized: "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.") }
-    }
-    return Self.sentence(code)
+  // What holds back a request the allowance refused `subject_exhausted`, as its amounts show: nothing is left, earlier
+  // requests whose cost is not yet confirmed hold the rest, or the request needs more than is left.
+  enum Shortfall: Equatable, Sendable {
+    case spent, held, tooLarge
   }
-  // What a refusal code says when the allowance's amounts are not known, as a turn's refusal names only its code.
+
+  var shortfall: Shortfall {
+    if amount(remaining) > 0 { return .tooLarge }
+    return amount(reserved) > 0 ? .held : .spent
+  }
+  func amount(_ value: String) -> Decimal { Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
+  // What a `subject_exhausted` refusal says: what holds the request where the refusal carried the allowance, and only what
+  // is always true where it did not.
+  static func sentence(_ shortfall: Shortfall?) -> String {
+    switch shortfall {
+    case .spent: String(localized: "You have used all of your AI allowance.")
+    case .held: String(localized: "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.")
+    case .tooLarge: String(localized: "This request needs more AI capacity than your remaining allowance.")
+    case nil: String(localized: "Your AI allowance has no room for this request.")
+    }
+  }
+  // What every other allowance code says.
   static func sentence(_ code: String) -> String {
     switch code {
-    case "subject_exhausted": String(localized: "You have used all of your AI allowance.")
     case "free_month_exhausted": String(localized: "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit.")
     case "free_day_exhausted": String(localized: "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.")
     case "concurrency_exhausted": String(localized: "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.")
@@ -138,7 +148,7 @@ nonisolated extension AiAllowance {
   func detail(_ dates: GymDate) -> String? {
     let reset: Int64?
     switch code {
-    case "subject_exhausted": reset = spent ? resetsAtMs : nil
+    case "subject_exhausted": reset = shortfall == .spent ? resetsAtMs : nil
     case "free_day_exhausted", "free_month_exhausted": reset = budgetResetsAtMs
     default: reset = nil
     }
