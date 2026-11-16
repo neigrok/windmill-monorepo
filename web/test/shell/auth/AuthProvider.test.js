@@ -494,9 +494,11 @@ test('voluntary sign-out waits for admission before engine cleanup and cancellat
   state.engine.online = false;
   const begin = t.mock.method(state.engine, 'beginSignOut');
   let notice;
-  const release = registerNavigationGuard({ blocked: () => true, onBlocked: (value) => { notice = value; }, onUnrestorableNavigation() {} });
+  const release = registerNavigationGuard({ blocked: ({ kind }) => kind === 'sign-out', onBlocked: (value) => { notice = value; }, onUnrestorableNavigation() {} });
   t.after(release);
   const cancelled = state.auth().signOut();
+  assert.deepEqual(notice.context, { kind: 'sign-out' });
+  assert.equal(Object.isFrozen(notice.context), true);
   assert.equal(state.auth().signOut(), cancelled);
   assert.equal(begin.mock.callCount(), 0);
   assert.equal(state.auth().roomChanging, false);

@@ -68,8 +68,10 @@ route `/app`, and only `navigation-commit`, `navigation-guard`, `navigation-rest
 `navigation-traverse`, `navigation-retain`, `navigation-observer` or `navigation-reconcile`. No URL, history state, key, token, exception text or draft
 is included. Admission creates no product events: existing room and sign-out events occur inside the
 admitted action. A late asynchronous action failure still reports `navigation-commit` after native
-fallback has revoked its navigation capability; it cannot revive parked writes. No product currently
-registers a navigation blocker.
+fallback or disposal has revoked its navigation capability; each action reports that failure once and
+cannot revive parked writes. Applied history remains owned until reconciliation or a handoff to newer
+navigation; an error does not drop that responsibility. Admission context carries only the frozen `navigation` or
+`sign-out` kind and is not a telemetry payload. No product currently registers a navigation blocker.
 
 The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
 rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste

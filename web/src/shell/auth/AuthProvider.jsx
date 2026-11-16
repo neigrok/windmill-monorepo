@@ -238,7 +238,7 @@ export default function AuthProvider({ children }) {
   }, [enqueue, bind, finishClosure, seat, cleanupDevice, confirmRoom]);
   const signOut = useCallback(() => {
     if (signOutRequest.current) return signOutRequest.current;
-    const admitted = requestNavigation({ key: 'auth:sign-out', run: (navigation) => {
+    const admitted = requestNavigation({ key: 'auth:sign-out', context: { kind: 'sign-out' }, run: (navigation) => {
       let resolve;
       const promise = new Promise((done) => { resolve = done; });
       signOutResult.current = { resolve, navigation, account: syncSession.engine.device.activeReplica.meta.account };

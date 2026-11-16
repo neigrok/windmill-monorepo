@@ -596,3 +596,274 @@ test('a failed buffered history mutation reports once and does not retry the rej
   assert.deepEqual({ attempts, reports, actual: browser.location.href, accepted: nav.read().href },
     { attempts: 1, reports: [['navigation-commit']], actual: origin.href, accepted: origin.href });
 });
+
+test('a zero-effect result settles before another action finishes traversing', async (t) => {
+  const { browser, flush } = navigationBrowser(t, { deferred: true });
+  const nav = createNavigationCoordinator(browser);
+  t.after(() => nav.dispose());
+  await nav.request({ key: 'origin', run: (tx) => tx.navigate('#/origin') });
+  let finish;
+  let completion;
+  const result = nav.request({ key: 'async', run: async () => {
+    await new Promise((resolve) => { finish = resolve; });
+    return 7;
+  } });
+  result.then((value) => { completion = value; });
+  const back = nav.request({ key: 'back', run: (tx) => tx.traverse(-1) });
+  finish(); await tick();
+  assert.deepEqual(completion, { status: 'completed', value: 7 });
+  assert.equal(browser.location.hash, '#/origin');
+  flush(); await tick();
+  assert.deepEqual(await back, { status: 'completed', value: true });
+  assert.equal(nav.read().href, browser.location.href);
+});
+
+test('an old action cannot claim history while another action owns a traversal', async (t) => {
+  const { browser, flush, entries } = navigationBrowser(t, { deferred: true });
+  const nav = createNavigationCoordinator(browser);
+  t.after(() => nav.dispose());
+  const origin = nav.read();
+  await nav.request({ key: 'next', run: (tx) => tx.navigate('#/next') });
+  const seen = [];
+  nav.subscribe((entry) => seen.push(entry));
+  let finish;
+  const old = nav.request({ key: 'async', run: async (tx) => {
+    await new Promise((resolve) => { finish = resolve; });
+    tx.navigate('#/obsolete');
+    return 7;
+  } });
+  const back = nav.request({ key: 'back', run: (tx) => tx.traverse(-1) });
+  finish(); await tick();
+  assert.deepEqual(await old, { status: 'cancelled' });
+  assert.equal(seen.length, 0);
+  flush(); await tick();
+  assert.deepEqual(await back, { status: 'completed', value: true });
+  assert.deepEqual({ accepted: nav.read().href, actual: browser.location.href, publications: seen.length, entries: entries.length },
+    { accepted: origin.href, actual: origin.href, publications: 1, entries: 2 });
+});
+
+test('failure keeps admission until already-applied history is restored and published', async (t) => {
+  const { browser, flush, entries } = navigationBrowser(t, { deferred: true });
+  const reports = [];
+  const order = [];
+  const nav = createNavigationCoordinator(browser, { report: (...args) => reports.push(args) });
+  t.after(() => nav.dispose());
+  const prior = nav.read();
+  let reject;
+  let tx;
+  nav.register({ blocked: () => false, onBlocked() {}, onUnrestorableNavigation() {} });
+  nav.subscribe((entry) => order.push(['publish', entry.hash]));
+  const result = nav.request({ key: 'async', run: (transaction) => {
+    tx = transaction;
+    tx.navigate('#/working');
+    return new Promise((resolve, fail) => { reject = fail; });
+  } });
+  const working = structuredClone(browser.history.state);
+  result.then((value) => order.push(['settle', value]));
+  browser.history.back(); flush();
+  tx.navigate('#/unapplied');
+  reject(new Error('private failure')); await tick();
+  assert.deepEqual(order, []);
+  assert.deepEqual(reports, [['navigation-commit']]);
+  assert.deepEqual(await nav.request({ key: 'competing', run: () => assert.fail('failed work still owns its applied history') }), { status: 'cancelled' });
+  tx.navigate('#/after-failure');
+  flush(); await tick();
+  assert.deepEqual(await result, { status: 'cancelled' });
+  assert.deepEqual(order, [['publish', '#/working'], ['settle', { status: 'cancelled' }]]);
+  assert.deepEqual({ href: nav.read().href, state: nav.read().state }, { href: browser.location.href, state: working });
+  assert.equal(entries.length, 2);
+  assert.deepEqual(entries[0].state, prior.state);
+});
+
+test('newer navigation owns publication when an older applied action succeeds or fails', async (t) => {
+  for (const outcome of ['success', 'failure']) {
+    const { browser, entries } = navigationBrowser(t, { install: false });
+    const reports = [];
+    const nav = createNavigationCoordinator(browser, { report: (operation) => reports.push(operation) });
+    t.after(() => nav.dispose());
+    let resolve;
+    let reject;
+    const old = nav.request({ key: 'old', run: (tx) => {
+      tx.navigate('#/old');
+      return new Promise((done, fail) => { resolve = done; reject = fail; });
+    } });
+    const seen = [];
+    nav.subscribe((entry) => seen.push(entry));
+    await nav.request({ key: 'new', run: (tx) => {
+      tx.navigate('#/new');
+      tx.updateState((state) => ({ ...state, current: true }));
+    } });
+    const current = nav.read();
+    if (outcome === 'success') resolve(7);
+    else reject(new Error('private failure'));
+    assert.deepEqual(await old, { status: 'cancelled' });
+    assert.equal(nav.read(), current);
+    assert.deepEqual({ href: browser.location.href, publications: seen.length, entries: entries.length, previous: current.state.windmillNavigation.previous },
+      { href: current.href, publications: 1, entries: 3, previous: '/app/roadmap#/old' });
+    assert.deepEqual(reports, outcome === 'failure' ? ['navigation-commit'] : []);
+  }
+});
+
+test('fallback and disposal settle every action and late rejection cannot revive history', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const fallback of ['unknown', 'timeout', 'dispose']) {
+    const { browser, flush, nativeHash } = navigationBrowser(t, { deferred: true, install: false });
+    const reports = [];
+    const nav = createNavigationCoordinator(browser, { timeout: 100, report: (...args) => reports.push(args) });
+    t.after(() => nav.dispose());
+    await nav.request({ key: 'origin', run: (tx) => tx.navigate('#/origin') });
+    let reject;
+    let tx;
+    const old = nav.request({ key: 'old', run: (transaction) => {
+      tx = transaction;
+      return new Promise((resolve, fail) => { reject = fail; });
+    } });
+    const back = nav.request({ key: 'back', run: (transaction) => transaction.traverse(-1) });
+    if (fallback === 'unknown') nativeHash('#/unknown');
+    if (fallback === 'timeout') t.mock.timers.tick(100);
+    if (fallback === 'dispose') nav.dispose();
+    assert.deepEqual(await Promise.all([old, back]), [{ status: 'cancelled' }, { status: 'cancelled' }]);
+    const current = nav.read();
+    tx.navigate('#/revoked');
+    reject(new Error('private failure')); await tick();
+    assert.equal(nav.read(), current);
+    assert.equal(nav.read().href, browser.location.href);
+    assert.deepEqual(reports, fallback === 'timeout' ? [['navigation-traverse'], ['navigation-commit']] : [['navigation-commit']]);
+    if (fallback !== 'dispose') { flush(); await tick(); assert.notEqual(nav.read().hash, '#/revoked'); }
+  }
+});
+
+test('failure during restoration settles on unknown, timeout or disposal without replaying unapplied work', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const fallback of ['unknown', 'timeout', 'dispose']) {
+    const { browser, entries, flush, nativeHash } = navigationBrowser(t, { deferred: true, install: false });
+    const order = [];
+    const reports = [];
+    const nav = createNavigationCoordinator(browser, { timeout: 100, report: (operation) => reports.push(operation) });
+    t.after(() => nav.dispose());
+    let reject;
+    let tx;
+    nav.register({ blocked: () => true, onBlocked: ({ proceed }) => proceed(), onUnrestorableNavigation: () => order.push('retain') });
+    nav.subscribe(() => order.push('publish'));
+    const result = nav.request({ key: 'failed', run: (transaction) => {
+      tx = transaction;
+      tx.navigate('#/working');
+      return new Promise((resolve, fail) => { reject = fail; });
+    } });
+    result.then(() => order.push('settle'));
+    browser.history.back(); flush(); tx.navigate('#/unapplied'); reject(new Error('private failure')); await tick();
+    assert.deepEqual(order, []);
+    if (fallback === 'unknown') nativeHash('#/unknown');
+    if (fallback === 'timeout') t.mock.timers.tick(100);
+    if (fallback === 'dispose') nav.dispose();
+    assert.deepEqual(await result, { status: 'cancelled' });
+    await tick();
+    assert.deepEqual(order, fallback === 'dispose' ? ['settle'] : ['retain', 'publish', 'settle']);
+    assert.deepEqual(reports, fallback === 'timeout' ? ['navigation-commit', 'navigation-restore'] : ['navigation-commit']);
+    assert.equal(entries.some((entry) => entry.url.hash === '#/unapplied'), false);
+    if (fallback !== 'dispose') assert.equal(nav.read().href, browser.location.href);
+  }
+});
+
+test('a guard callback failure after Proceed cannot revoke its admitted action', async (t) => {
+  const { browser } = navigationBrowser(t);
+  const reports = [];
+  const nav = createNavigationCoordinator(browser, { report: (operation) => reports.push(operation) });
+  t.after(() => nav.dispose());
+  let finish;
+  nav.register({ blocked: () => true, onBlocked({ proceed }) { proceed(); throw new Error('private guard failure'); }, onUnrestorableNavigation() {} });
+  const result = nav.request({ key: 'async', run: async (tx) => {
+    tx.navigate('#/working');
+    await new Promise((resolve) => { finish = resolve; });
+    return 7;
+  } });
+  finish();
+  assert.deepEqual(await result, { status: 'completed', value: 7 });
+  assert.deepEqual({ actual: browser.location.hash, accepted: nav.read().hash, reports },
+    { actual: '#/working', accepted: '#/working', reports: ['navigation-guard'] });
+});
+
+test('a newer failed action inherits responsibility for earlier applied but unpublished history', async (t) => {
+  const { browser } = navigationBrowser(t);
+  const reports = [];
+  const nav = createNavigationCoordinator(browser, { report: (operation) => reports.push(operation) });
+  t.after(() => nav.dispose());
+  let finish;
+  const old = nav.request({ key: 'old', run: async (tx) => {
+    tx.navigate('#/working');
+    await new Promise((resolve) => { finish = resolve; });
+  } });
+  const working = browser.location.href;
+  const seen = [];
+  nav.subscribe((entry) => seen.push(entry.href));
+  browser.history.replaceState = () => { throw new Error('private failure'); };
+  const newer = nav.request({ key: 'failed', run: (tx) => tx.updateState((state) => ({ ...state, rejected: true })) });
+  assert.deepEqual(await newer, { status: 'cancelled' });
+  assert.deepEqual({ actual: browser.location.href, accepted: nav.read().href, seen, reports },
+    { actual: working, accepted: working, seen: [working], reports: ['navigation-commit'] });
+  finish();
+  assert.deepEqual(await old, { status: 'cancelled' });
+  assert.deepEqual(seen, [working]);
+});
+
+test('admission captures a frozen context once and repeated keys retain it', async (t) => {
+  const { browser } = navigationBrowser(t);
+  const nav = createNavigationCoordinator(browser);
+  t.after(() => nav.dispose());
+  const checks = [];
+  let notice;
+  let calls = 0;
+  nav.register({ blocked: (context) => { checks.push(context); return true; }, onBlocked: (value) => { notice = value; }, onUnrestorableNavigation() {} });
+  const context = { kind: 'sign-out', private: 'not forwarded' };
+  const result = nav.request({ key: 'same', context, run: () => { calls += 1; return 7; } });
+  context.kind = 'navigation';
+  assert.equal(nav.request({ key: 'same', context, run: () => assert.fail('same key retains its original action') }), result);
+  assert.deepEqual(notice.context, { kind: 'sign-out' });
+  assert.equal(Object.isFrozen(notice.context), true);
+  assert.equal(checks[0], notice.context);
+  assert.deepEqual(checks, [{ kind: 'sign-out' }]);
+  notice.proceed(); notice.proceed(); notice.cancel();
+  assert.deepEqual(await result, { status: 'completed', value: 7 });
+  assert.equal(calls, 1);
+  for (const context of [null, {}, { kind: 'force' }]) {
+    assert.throws(() => nav.request({ key: 'invalid', context, run: () => assert.fail() }), { name: 'TypeError', message: 'navigation-context-kind' });
+  }
+});
+
+test('a retained-style guard admits ordinary and native navigation while guarding sign-out', async (t) => {
+  const { browser } = navigationBrowser(t);
+  const nav = createNavigationCoordinator(browser);
+  t.after(() => nav.dispose());
+  const contexts = [];
+  const notices = [];
+  nav.register({ blocked: (context) => { contexts.push(context); return context.kind === 'sign-out'; }, onBlocked: (notice) => notices.push(notice), onUnrestorableNavigation() { assert.fail('ordinary navigation is allowed'); } });
+  await nav.request({ key: 'normal', run: (tx) => tx.navigate('#/normal') });
+  browser.history.back(); await tick();
+  assert.deepEqual(contexts, [{ kind: 'navigation' }, { kind: 'navigation' }]);
+  assert.equal(notices.length, 0);
+  let cleanups = 0;
+  const cancelled = nav.request({ key: 'sign-out', context: { kind: 'sign-out' }, run: () => { cleanups += 1; } });
+  assert.equal(cleanups, 0);
+  notices[0].cancel();
+  assert.deepEqual(await cancelled, { status: 'cancelled' });
+  const allowed = nav.request({ key: 'sign-out', context: { kind: 'sign-out' }, run: () => { cleanups += 1; } });
+  notices[1].proceed(); notices[1].proceed();
+  assert.deepEqual(await allowed, { status: 'completed', value: undefined });
+  assert.equal(cleanups, 1);
+  assert.deepEqual(contexts, [{ kind: 'navigation' }, { kind: 'navigation' }, { kind: 'sign-out' }, { kind: 'sign-out' }]);
+});
+
+test('a blocked native history intent exposes the default navigation context', async (t) => {
+  const { browser } = navigationBrowser(t);
+  const nav = createNavigationCoordinator(browser);
+  t.after(() => nav.dispose());
+  await nav.request({ key: 'origin', run: (tx) => tx.navigate('#/origin') });
+  let notice;
+  let context;
+  nav.register({ blocked: (value) => { context = value; return true; }, onBlocked: (value) => { notice = value; }, onUnrestorableNavigation() {} });
+  browser.history.back(); await tick();
+  assert.deepEqual(notice.context, { kind: 'navigation' });
+  assert.equal(context, notice.context);
+  assert.equal(Object.isFrozen(context), true);
+  notice.cancel();
+});

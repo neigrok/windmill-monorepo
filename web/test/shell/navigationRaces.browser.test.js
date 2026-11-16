@@ -115,6 +115,90 @@ for (const [engine, launcher] of [['Chromium', chromium], ['WebKit', webkit]]) {
         assert.notEqual(actual.accepted.state.windmillHistory.chain, origin.state.windmillHistory.chain);
       }
     });
+    await t.test("a zero-effect completion settles during another action's traversal", async () => {
+      await page.goto(fixture); await page.waitForFunction(() => window.ready);
+      const actual = await page.evaluate(async () => {
+        await nav.request({ key: 'origin', run: (tx) => tx.navigate('#/origin') });
+        window.completion = null;
+        nav.request({ key: 'async', run: async () => {
+          await new Promise((resolve) => { window.finish = resolve; });
+          return 7;
+        } }).then((value) => { window.completion = value; });
+        const back = nav.request({ key: 'back', run: (tx) => tx.traverse(-1) });
+        finish(); await back;
+        return { completion, actual: location.pathname + location.hash, accepted: nav.read().pathname + nav.read().hash, reports };
+      });
+      assert.deepEqual(actual, { completion: { status: 'completed', value: 7 }, actual: '/fixture', accepted: '/fixture', reports: [] });
+    });
+
+    await t.test('rejection during restoration publishes applied history before cancellation', async () => {
+      await page.goto(fixture); await page.waitForFunction(() => window.ready);
+      const actual = await page.evaluate(async () => {
+        window.order = [];
+        nav.subscribe((entry) => order.push(['publish', entry.hash]));
+        nav.register({ blocked: () => false, onBlocked() {}, onUnrestorableNavigation() {} });
+        const result = nav.request({ key: 'async', run: (tx) => {
+          window.transaction = tx;
+          tx.navigate('#/working');
+          return new Promise((resolve, reject) => { window.fail = reject; });
+        } });
+        result.then((value) => order.push(['settle', value]));
+        addEventListener('popstate', () => {
+          transaction.navigate('#/unapplied');
+          fail(new Error('private failure'));
+        }, { once: true });
+        history.back();
+        const completion = await result;
+        return { completion, actual: location.hash, accepted: nav.read().hash, reports, order };
+      });
+      assert.deepEqual(actual, { completion: { status: 'cancelled' }, actual: '#/working', accepted: '#/working',
+        reports: ['navigation-commit'], order: [['publish', '#/working'], ['settle', { status: 'cancelled' }]] });
+    });
+
+    for (const outcome of ['success', 'failure']) {
+      await t.test(`an older applied ${outcome} cannot publish over newer navigation`, async () => {
+        await page.goto(fixture); await page.waitForFunction(() => window.ready);
+        const actual = await page.evaluate(async (outcome) => {
+          const old = nav.request({ key: 'old', run: (tx) => {
+            tx.navigate('#/old');
+            return new Promise((resolve, reject) => { window.finish = resolve; window.fail = reject; });
+          } });
+          await nav.request({ key: 'new', run: (tx) => tx.navigate('#/new') });
+          const count = publications.length;
+          if (outcome === 'success') finish(7);
+          else fail(new Error('private failure'));
+          const completion = await old;
+          return { completion, actual: location.hash, accepted: nav.read().hash, extraPublications: publications.length - count, reports };
+        }, outcome);
+        assert.deepEqual(actual, { completion: { status: 'cancelled' }, actual: '#/new', accepted: '#/new', extraPublications: 0,
+          reports: outcome === 'failure' ? ['navigation-commit'] : [] });
+      });
+    }
+
+    await t.test('unknown fallback settles all active actions and late rejection remains static', async () => {
+      await page.goto(fixture); await page.waitForFunction(() => window.ready);
+      const actual = await page.evaluate(async () => {
+        await nav.request({ key: 'origin', run: (tx) => tx.navigate('#/origin') });
+        const old = nav.request({ key: 'old', run: (tx) => {
+          window.transaction = tx;
+          return new Promise((resolve, reject) => { window.fail = reject; });
+        } });
+        const back = nav.request({ key: 'back', run: (tx) => tx.traverse(-1) });
+        history.pushState(null, '', '#/unknown');
+        dispatchEvent(new PopStateEvent('popstate'));
+        const completions = await Promise.all([old, back]);
+        transaction.navigate('#/revoked');
+        fail(new Error('private failure'));
+        await Promise.resolve();
+        return { completions, reports };
+      });
+      assert.deepEqual(actual, { completions: [{ status: 'cancelled' }, { status: 'cancelled' }], reports: ['navigation-commit'] });
+      await page.waitForTimeout(400);
+      const current = await page.evaluate(() => ({ actual: location.href, accepted: nav.read().href }));
+      assert.equal(current.actual, current.accepted);
+      assert.equal(current.actual.includes('#/revoked'), false);
+    });
+
     assert.deepEqual(errors, []);
   });
 }

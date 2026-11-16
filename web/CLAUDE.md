@@ -22,24 +22,40 @@ events. Indexed entries carry additive `windmillHistory: { chain, position, entr
 retain identity and pushes allocate it. `windmillNavigation` retains the account-page predecessor
 separately.
 
-A voluntary action uses `requestNavigation({ key, run })`. An unblocked action runs synchronously;
-its promise resolves to `{ status: 'completed', value }` or `{ status: 'cancelled' }`. The first
-pending key wins while a guard is registered; the same key shares its promise and other requests are
-cancelled. With no registered guard, an asynchronous action does not lock later navigation: each
-caller retains its existing stale-completion checks. Before its first history write, an unguarded
-transaction reads the latest accepted entry, including its predecessor and state. `run` receives the
-explicit transaction for its entire compound action, including history metadata, selection, view
-changes and tracking. Its writes publish together when the action completes. Nested work receives
-that transaction; there is no ambient bypass. Each transaction owns its working snapshot. During
-native restoration, its writes and completion wait behind the physical restoration barrier; exact
-entry identity is checked before each write and publication. Once the origin returns, queued
-mutations replay in order and publish once. Unknown or failed restoration revokes those mutations
-without delaying separate data or security cleanup. System reconciliation uses `replaceLocation`,
-`replaceEntry` or `updateNavigationState`; intentional raw state resets remain resets apart from the
-history index. A system rewrite requested during a transient native traversal is bound to the
-accepted entry and consumed only when that entry is restored. Unknown acceptance, failed restoration
-or an approved departure discards that stale rewrite; the data or security cleanup itself remains
-immediate.
+A voluntary action uses `requestNavigation({ key, context?, run })`. The coordinator captures a
+frozen `context: { kind: 'navigation' | 'sign-out' }`; omission and native history mean
+`navigation`. Unknown explicit kinds throw a static TypeError. Voluntary sign-out supplies
+`sign-out` before any cleanup. Guards receive that same context through `blocked(context)` and
+`onBlocked({ token, context, proceed, cancel })`; existing zero-argument guards remain compatible.
+Context is never inferred from a request key or mutable account state. Repeated keys keep the first
+intent's context. An unblocked action runs synchronously; its promise resolves to `{ status:
+'completed', value }` or `{ status: 'cancelled' }`. The first pending key wins while a guard is
+registered; the same key shares its promise and other requests are cancelled. With no registered
+guard, an asynchronous action does not lock later navigation: each caller retains its existing
+stale-completion checks. Before its first history write, an unguarded transaction takes the current
+owned history entry, including its predecessor and state. A later transaction or native acceptance
+takes a new history generation; an older action cannot publish over it. The new owner also takes
+responsibility for history already applied but not yet published.
+
+`run` receives the explicit transaction for its entire compound action, including history metadata,
+selection, view changes and tracking. Its writes publish together when the action completes. Nested
+work receives that transaction; there is no ambient bypass. Each transaction owns its working and
+applied snapshots. Exact physical entry identity is checked before each write and publication.
+During restoration, queued mutations replay only when the exact origin returns.
+
+Every active action is registered with the coordinator before execution. Success and failure use one
+completion path, independent of guard ownership. A result with no navigation effects settles without
+waiting for another action's traversal. Failure closes writes and drops only unapplied mutations;
+already-applied history is reconciled and published after exact restoration before the result
+settles. Restoration retains its own target and deadline even when the action fails. Successful
+restoration wakes all active actions. Unknown fallback and disposal revoke their capabilities and
+settle them; a late rejection still reports once and cannot resume navigation.
+
+System reconciliation uses `replaceLocation`, `replaceEntry` or `updateNavigationState`; intentional
+raw state resets remain resets apart from the history index. A system rewrite requested during a
+transient native traversal is bound to the accepted entry and consumed only when that entry is
+restored. Unknown acceptance, failed restoration or an approved departure discards that stale
+rewrite; the data or security cleanup itself remains immediate.
 
 A product can register one identity-bound guard with `blocked`, `onBlocked` and synchronous
 `onUnrestorableNavigation`. Releasing that registration cancels its unanswered decision; an admitted
