@@ -10,6 +10,7 @@ import { OpenedTrees } from '../model/OpenedTrees.js';
 import { SyncSession } from './SyncSession.js';
 import { mintTreeId, moveLocalTree, deleteLocalTree, readDeviceTrees, repointDeviceSteps } from './localTrees.js';
 import { countBucket } from '../board/acts.js';
+import { readNavigation, replaceLocation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const DRAIN_TIMEOUT_MS = 30_000;
@@ -115,8 +116,8 @@ async function ensureServerTree(entry) {
   const freshId = mintTreeId();
   await moveLocalTree(entry.id, freshId);
   window.dispatchEvent(new CustomEvent('wm-claim-conflict', { detail: { treeId: entry.id, remappedTo: freshId } }));
-  const [route, query] = window.location.hash.split('?');
-  if (route === `#/app/${entry.id}`) window.location.hash = `#/app/${freshId}${query === undefined ? '' : `?${query}`}`;
+  const [route, query] = readNavigation().hash.split('?');
+  if (route === `#/app/${entry.id}`) replaceLocation(`#/app/${freshId}${query === undefined ? '' : `?${query}`}`);
   const { treeId } = await createTree(claimBody(freshId, entry.title));
   return treeId;
 }

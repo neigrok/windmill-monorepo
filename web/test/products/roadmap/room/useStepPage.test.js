@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
+import { navigationBrowser } from '../../../shell/navigationBrowser.mjs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { useStepPage } from '../../../../src/products/roadmap/room/useStepPage.js';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 
-test('Select closes the page, selects, reveals through the held tree and issues keys that survive a cleared request', () => {
+test('Select closes the page, selects, reveals through the held tree and issues keys that survive a cleared request', async (t) => {
+  navigationBrowser(t);
   const tree = new SkillTree({ id: 'sail', title: 'Sailing', nodes: [
     { id: 'course', label: 'Course', color: 'terracotta', prerequisites: [] },
     { id: 'wind', label: 'Wind', color: 'olive', prerequisites: ['course'] },
@@ -29,11 +31,11 @@ test('Select closes the page, selects, reveals through the held tree and issues 
     return null;
   }
   renderToStaticMarkup(React.createElement(Capture));
-  page.select('wind');
+  await page.select('wind');
   assert.deepEqual(calls, ['close', ['selected', 'wind'], 'query', ['request', { id: 'wind', key: 1 }]]);
   assert.deepEqual(query, new BoardQuery({ search: '', kinds: ['olive'], sort: 'newest', branch: 'course' }));
   assert.deepEqual(request, { id: 'wind', key: 1 });
   request = null;
-  page.select('wind');
+  await page.select('wind');
   assert.deepEqual(request, { id: 'wind', key: 2 });
 });

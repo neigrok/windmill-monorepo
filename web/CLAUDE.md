@@ -14,6 +14,36 @@ One Vite/React superapp for roadmap, journal and gym. Brand rules are in [AGENTS
 `test/shell-boundaries.test.mjs` checks imports, product landing registrations and public entry
 points. Tests mirror `src/` under `test/`.
 
+## Navigation
+
+`shell/navigation.js` owns the accepted location and history state. It initializes before React mounts;
+route consumers subscribe with `readNavigation`/`subscribeNavigation`, never native URL events.
+Indexed entries carry additive `windmillHistory: { chain, position, entryId }`; replacements retain
+identity and pushes allocate it. `windmillNavigation` retains the account-page predecessor separately.
+
+A voluntary action uses `requestNavigation({ key, run })`. An unblocked action runs synchronously;
+its promise resolves to `{ status: 'completed', value }` or `{ status: 'cancelled' }`. The first pending
+key wins while a guard is registered; the same key shares its promise and other requests are cancelled.
+With no registered guard, an asynchronous action does not lock later navigation: each caller retains
+its existing stale-completion checks. `run` receives the explicit
+transaction for its entire compound action, including history metadata, selection, view changes and
+tracking. Its writes publish together when the action completes. Nested work receives that transaction;
+there is no ambient bypass. System reconciliation uses `replaceLocation`, `replaceEntry` or
+`updateNavigationState`; intentional raw state resets remain resets apart from the history index.
+A system rewrite requested during a transient native traversal is bound to the accepted entry and
+consumed only when that entry is restored. Unknown acceptance, failed restoration or an approved
+departure discards that stale rewrite; the data or security cleanup itself remains immediate.
+
+A product can register one identity-bound guard with `blocked`, `onBlocked` and synchronous
+`onUnrestorableNavigation`. Releasing that registration cancels its unanswered decision; an admitted
+action can finish after its original view unmounts. No product currently registers one. Indexed native Back/Forward restores
+the accepted entry before asking, retains the first destination, and uses positional traversal without
+replacing Forward history. An unknown native entry invalidates the pending decision, retains the
+product's draft through its callback before publication, and starts a fresh chain. A failed retention
+callback withholds publication; restoration timeouts use the same retention boundary. The classic
+History API cannot preserve the original position for an unindexed entry. Voluntary sign-out enters
+through admission before any sync cleanup; forced account replacement remains outside it.
+
 ## Localization
 
 Copy is read through a translator from catalogs; English is the only locale.

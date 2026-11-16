@@ -63,6 +63,12 @@ expected unavailable tree or offline transport failure is not a Sentry Issue.
 Offline copy identifies the REST features that need a connection.
 No account identifier or decision content is included.
 
+The accepted-navigation coordinator reports technical failures to Sentry with kind `navigation`,
+route `/app`, and only `navigation-commit`, `navigation-guard`, `navigation-restore`,
+`navigation-traverse`, `navigation-retain`, `navigation-observer` or `navigation-reconcile`. No URL, history state, key, token, exception text or draft
+is included. Admission creates no product events: existing room and sign-out events occur inside the
+admitted action. No product currently registers a navigation blocker.
+
 The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
 rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste
 shapes. Each emits one `client_error` with only `kind` (`window`, `promise`, `render` or `shape`),

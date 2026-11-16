@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { registerNavigationGuard } from '../../../src/shell/navigation.js';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
 import { environment, until } from '../../platform/sync/fakes.js';
@@ -15,7 +16,8 @@ async function account(t) {
   const listeners = new Map();
   const broadcasts = [];
   const globals = {
-    window: { location: { hash: '#/app/t_pending' }, setTimeout: () => 0,
+    window: { location: new URL('https://windmill.works/app/roadmap#/app/t_pending'), setTimeout: () => 0,
+      history: { state: null, replaceState(state) { this.state = state; } },
       addEventListener: (event, listener) => listeners.set(event, listener),
       removeEventListener: (event) => listeners.delete(event) },
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
@@ -444,7 +446,8 @@ test('a failed explicit sign-out wipe retries in the same document after the rep
   await decision().props.onDecision('keep');
   assert.equal(await finished, true);
   assert.equal(state.engine.device.meta.deviceCleanup, undefined);
-  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.deepEqual(state.forgotten.map(({ navigation, ...change }) => change), [{ previous: 'A', next: null }]);
+  assert.equal(typeof state.forgotten[0].navigation.navigate, 'function');
   assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed }, { status: 'ghost', lapsed: false });
 });
 
@@ -484,4 +487,47 @@ test('finishing an old cleanup cannot acknowledge a newer departure by the same 
   release();
   await refresh;
   assert.deepEqual(state.engine.device.meta.deviceCleanup, newer);
+});
+
+test('voluntary sign-out waits for admission before engine cleanup and cancellation leaves the account intact', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const begin = t.mock.method(state.engine, 'beginSignOut');
+  let notice;
+  const release = registerNavigationGuard({ blocked: () => true, onBlocked: (value) => { notice = value; }, onUnrestorableNavigation() {} });
+  t.after(release);
+  const cancelled = state.auth().signOut();
+  assert.equal(state.auth().signOut(), cancelled);
+  assert.equal(begin.mock.callCount(), 0);
+  assert.equal(state.auth().roomChanging, false);
+  assert.equal(state.auth().status, 'signed-in');
+  assert.deepEqual(state.forgotten, []);
+  notice.cancel();
+  notice.proceed();
+  assert.equal(await cancelled, false);
+  assert.equal(begin.mock.callCount(), 0);
+
+  const allowed = state.auth().signOut();
+  assert.equal(state.auth().signOut(), allowed);
+  notice.proceed();
+  notice.proceed();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+  assert.equal(begin.mock.callCount(), 1);
+  const decision = elementsOf(state.view.tree).find((node) => node.props.onCancel && node.props.onDecision);
+  await decision.props.onCancel();
+  assert.equal(await allowed, false);
+  assert.equal(state.auth().status, 'signed-in');
+  assert.deepEqual(state.forgotten, []);
+});
+
+test('an observed replacement account completes security cleanup without asking the voluntary guard', async (t) => {
+  const state = await account(t);
+  const release = registerNavigationGuard({ blocked: () => true,
+    onBlocked() { assert.fail('account replacement is forced cleanup'); }, onUnrestorableNavigation() {} });
+  t.after(release);
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.auth().refresh();
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: 'B' }]);
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.auth().roomChanging, false);
 });

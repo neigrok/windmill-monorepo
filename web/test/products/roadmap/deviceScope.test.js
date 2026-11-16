@@ -36,7 +36,9 @@ function browser({ index = {}, keys = {}, blobs = {}, hash = '' } = {}) {
     get: (target, prop) => (typeof prop === 'string' && disk.has(prop) && !(prop in target) ? disk.get(prop) : target[prop]),
   });
   const records = new Map(Object.entries(blobs));
-  globalThis.window = { localStorage: storageView, location: { hash }, dispatchEvent: () => true, setTimeout: () => 0 };
+  globalThis.window = { localStorage: storageView, location: new URL(hash, 'https://windmill.test/'),
+    history: { state: null, replaceState(state, unused, href) { this.state = state; window.location = new URL(href, window.location); } },
+    addEventListener() {}, removeEventListener() {}, dispatchEvent: () => true, setTimeout: () => 0 };
   globalThis.localStorage = storageView;
   globalThis.indexedDB = fakeIndexedDB(records);
   return {
