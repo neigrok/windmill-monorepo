@@ -214,7 +214,8 @@ extension AiClock {
         admission = max(admission, .possible)
       } catch let failure as AiDeliveryFailure { throw failure.error }
       catch let failure as AiFailure {
-        throw AiFailure(source: failure.source, code: failure.code, admission: max(admission, failure.admission), allowance: failure.allowance)
+        admission = max(admission, failure.admission)
+        throw AiFailure(source: failure.source, code: failure.code, admission: admission, allowance: failure.allowance)
       } catch let failure as HostFailure { throw failure }
       catch {
         if attemptSent { admission = max(admission, .possible) }
