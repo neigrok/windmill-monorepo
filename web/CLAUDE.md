@@ -73,6 +73,27 @@ retention callback withholds publication; restoration timeouts use the same rete
 classic History API cannot preserve the original position for an unindexed entry. Voluntary sign-out
 enters through admission before any sync cleanup; forced account replacement remains outside it.
 
+The navigation contract gate includes direct adapters and the feature wrappers that execute them.
+Run it from `web/` before the full build, with a 180-second process limit and the 120-second file limit:
+
+```sh
+node --test --test-concurrency=1 --test-timeout=120000 \
+  test/shell/navigationCoordinator.test.js \
+  test/shell/navigation.test.js \
+  test/shell/navigation.browser.test.js \
+  test/shell/navigationRaces.browser.test.js \
+  test/shell/auth/AuthProvider.test.js \
+  test/products/journal/echoes/useEchoes.test.js \
+  test/products/roadmap/paste/NewTreeBirth.test.js \
+  test/products/roadmap/SkillTreeView.stepRead.browser.test.js
+```
+
+Keep this consumer list current when another hook, rendered door or browser host starts executing the
+navigation contract; a search for direct imports alone misses those wrappers. The shared
+`test/shell/navigationBrowser.mjs` fixture supplies complete URL and history behavior for hook tests.
+History-state assertions include the complete expected shell metadata and preserved entry identity
+alongside product fields.
+
 ## Localization
 
 Copy is read through a translator from catalogs; English is the only locale.
