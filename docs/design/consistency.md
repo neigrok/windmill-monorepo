@@ -617,11 +617,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
   was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
   conversations.
-- **Guide · clipboard refusal and ownership-loss wording.** Clipboard refusal leaves *Copy draft* and the
-  draft unchanged without a message. Loss of ownership shows the refused line before sending a request, although
-  its copy says the server refused the save. A new clipboard recovery UI or changed ownership-loss wording needs
-  an owner-approved drawing. [44 · Guide recovery](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026)
-  documents the approved current recovery states.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a

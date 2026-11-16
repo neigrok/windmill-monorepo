@@ -100,6 +100,9 @@ Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `pu
 The test runner caps ordinary file concurrency at four, using one fewer than the available CPUs
 with a minimum of one. This bounds concurrent browser and Vite hosts. Runtime fuzz and performance
 files run separately, one at a time.
+Set `WM_TEST_CONCURRENCY=1 npm test` (or `npm run build`) to lower the ordinary-worker cap locally.
+The setting accepts exactly `1`, `2`, `3` or `4`; empty or invalid values fail before any tests run.
+The CPU limit still applies. Omitting it preserves the default; test coverage and timeouts do not change.
 
 `vite.config.js` checks that roadmap's `DEFAULT_KINDS` and `GENESIS_STAMP` match
 `packages/api-contract/genesis.js`, preserving agreement between device and server trees.

@@ -103,7 +103,7 @@ export function start() {
         load(id) {
           if (id === '\0guide-entry') return entry;
           if (id === '\0guide-beacon') return beacon;
-          if (id === '\0guide-issues') return 'export function captureError(product, operation, stack, route, tags) { (window.issues ??= []).push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
+          if (id === '\0guide-issues') return 'export function captureError(product, operation, stack, route, tags) { (window.issueDetails ??= []).push({ product, operation, stack, route, tags }); (window.issues ??= []).push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
         },
         configureServer(vite) {
           vite.middlewares.use('/guide-test', (_request, response) => {
@@ -114,7 +114,7 @@ export function start() {
       }], optimizeDeps: { include: ['react', 'react-dom/client', 'lucide-react'] },
       server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
     const serverReady = once(server.httpServer, 'listening');
-    server.httpServer.listen(0, '127.0.0.1');
+    server.httpServer.listen(Number(process.env.WM_GUIDE_TEST_PORT ?? 0), '127.0.0.1');
     await serverReady;
     origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   })();

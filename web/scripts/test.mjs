@@ -8,6 +8,12 @@ import { spec } from 'node:test/reporters';
 // `npm run build` holds production's DSN for its bundle. Tests that report inject their own, so a failure a test provokes never reaches production's Sentry project.
 delete process.env.VITE_SENTRY_DSN;
 
+const requestedConcurrency = process.env.WM_TEST_CONCURRENCY;
+if (requestedConcurrency !== undefined && !['1', '2', '3', '4'].includes(requestedConcurrency)) {
+  console.error('WM_TEST_CONCURRENCY must be exactly 1, 2, 3, or 4');
+  process.exit(1);
+}
+
 const files = [];
 function discover(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -21,7 +27,7 @@ const performanceFiles = files.filter((file) => /\.perf\.test\.(js|mjs)$/.test(f
 const runtimeFuzzFiles = files.filter((file) => file.endsWith('platform/sync/fuzz/runtime.test.js'));
 const ordinaryFiles = files.filter((file) => !performanceFiles.includes(file) && !runtimeFuzzFiles.includes(file)).sort();
 if (ordinaryFiles.length) {
-  const concurrency = Math.min(4, Math.max(1, availableParallelism() - 1));
+  const concurrency = Math.min(Number(requestedConcurrency ?? 4), Math.max(1, availableParallelism() - 1));
   const runner = run({ files: ordinaryFiles, concurrency, timeout: 120000 });
   runner.on('test:fail', () => { process.exitCode = 1; });
   for await (const chunk of runner.compose(spec())) process.stdout.write(chunk);
