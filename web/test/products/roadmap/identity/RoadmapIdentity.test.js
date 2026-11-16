@@ -605,3 +605,21 @@ for (const view of ['board', 'tree']) {
     } finally { await page.close(); }
   });
 }
+
+test('Chromium: More Settings retains its menu and event until navigation admission', async () => {
+  const page = await openRow(1440);
+  try {
+    await page.evaluate(async () => {
+      const { registerNavigationGuard } = await import('/src/shell/navigation.js');
+      registerNavigationGuard({ blocked: () => true, onBlocked: (notice) => { window.navigationNotice = notice; }, onUnrestorableNavigation() {} });
+    });
+    await page.getByRole('button', { name: 'More', exact: true }).click();
+    const before = await page.evaluate(() => ({ calls: window.calls, events: window.events }));
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    assert.equal(await page.getByRole('menu').count(), 1);
+    assert.deepEqual(await page.evaluate(() => ({ calls: window.calls, events: window.events })), before);
+    await page.evaluate(() => { window.navigationNotice.proceed(); window.navigationNotice.proceed(); });
+    assert.equal(await page.getByRole('menu').count(), 0);
+    assert.equal(await page.evaluate(() => window.calls.filter((call) => call.verb === 'Settings').length), 1);
+  } finally { await page.close(); }
+});

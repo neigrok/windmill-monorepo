@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 
 import { claimLocalTrees, onTreeClaimed } from '../../../../src/products/roadmap/sync/claimLocalTrees.js';
@@ -28,14 +29,16 @@ function browserWith(entries, { hash = '', blobs = {} } = {}) {
   };
   globalThis.window = {
     localStorage: storage,
-    location: { hash },
+    location: new URL(hash, 'https://windmill.test/'),
+    history: { state: null, replaceState(state, unused, href) { this.state = state; window.location = new URL(href, window.location); } },
+    addEventListener() {}, removeEventListener() {},
     dispatchEvent: (event) => { events.push({ type: event.type, detail: event.detail }); return true; },
     // track()'s debounce would otherwise hold the runner open and post to a restored fetch.
     setTimeout: () => 0,
   };
   globalThis.localStorage = storage;
   Object.defineProperty(globalThis, 'crypto', {
-    value: { getRandomValues: (array) => { array.set(FRESH_BYTES); return array; } },
+    value: { randomUUID, getRandomValues: (array) => { array.set(FRESH_BYTES); return array; } },
     configurable: true,
   });
   return {

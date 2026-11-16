@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { SignInDialog } from './SignInDialog.jsx';
 import { requestMagicLink } from './AuthClient.js';
 import { useAuth } from './AuthProvider.jsx';
-import { replaceLocation } from '../navigation.js';
+import { readNavigation, subscribeNavigation, replaceLocation } from '../navigation.js';
 
 const SIGN_IN_PARAM = 'signin';
 
@@ -46,19 +46,14 @@ export function SignInDoorProvider({ children }) {
   // `?signin` is stripped from the URL the moment it is read, so a refresh does not reopen the door.
   useEffect(() => {
     const claim = () => {
-      const url = new URL(window.location.href);
+      const url = new URL(readNavigation().href);
       if (!url.searchParams.has(SIGN_IN_PARAM)) return;
       url.searchParams.delete(SIGN_IN_PARAM);
       replaceLocation(url.toString());
       setUrlAsked(true);
     };
     claim();
-    window.addEventListener('hashchange', claim);
-    window.addEventListener('popstate', claim);
-    return () => {
-      window.removeEventListener('hashchange', claim);
-      window.removeEventListener('popstate', claim);
-    };
+    return subscribeNavigation(claim);
   }, []);
 
   useEffect(() => {

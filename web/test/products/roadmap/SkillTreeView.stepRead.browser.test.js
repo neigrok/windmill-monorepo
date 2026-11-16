@@ -104,10 +104,20 @@ for (const surface of ['tree', 'board']) {
       await page.reload();
       const step = page.getByRole('article', { name: 'Read the wind', exact: true });
       await step.waitFor();
+      const entry = await page.evaluate(() => ({ state: history.state, length: history.length }));
+      assert.match(entry.state.windmillHistory.chain, /^[0-9a-f-]{36}$/);
+      assert.match(entry.state.windmillHistory.entryId, /^[0-9a-f-]{36}$/);
+      const expectedState = {
+        retained: true,
+        windmillNavigation: { href: `/roadmap-host-test?role=owner&surface=${surface}#/app/t_sail?inspect=1&step=wind`, previous: null },
+        windmillHistory: { chain: entry.state.windmillHistory.chain, position: 0, entryId: entry.state.windmillHistory.entryId },
+      };
+      assert.deepEqual(entry.state, expectedState);
       await step.getByRole('button', { name: STEP_DETAIL.close, exact: true }).click();
       await step.waitFor({ state: 'detached' });
       await page.waitForFunction(() => document.activeElement?.matches('.st-roadmap-identity'));
-      assert.deepEqual(await page.evaluate(() => [location.hash, history.state]), ['#/app/t_sail?inspect=1', { retained: true }]);
+      assert.deepEqual(await page.evaluate(() => [location.hash, history.state, history.length]),
+        ['#/app/t_sail?inspect=1', expectedState, entry.length]);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });

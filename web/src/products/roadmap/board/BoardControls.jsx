@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState
 import { createPortal, flushSync } from 'react-dom';
 import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import './controls.css';
+import { readNavigation, subscribeNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { KIND_CSS, hueOf, prefersReducedMotion } from '../theme.js';
@@ -99,14 +100,13 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
 
   useEffect(() => {
     const back = () => {
-      const expanded = Boolean(window.history.state?.boardSelection?.kinds);
+      const expanded = Boolean(readNavigation().state?.boardSelection?.kinds);
       clearTimeout(applying.current);
       applying.current = null;
       setOpen(expanded);
       if (openRef.current && !expanded) recolor.current?.focus();
     };
-    window.addEventListener('popstate', back);
-    return () => window.removeEventListener('popstate', back);
+    return subscribeNavigation(back);
   }, []);
 
   const toggle = () => {

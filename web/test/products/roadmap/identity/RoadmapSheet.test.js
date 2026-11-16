@@ -15,6 +15,8 @@ import { flushSync } from 'react-dom';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import { RoadmapSheet } from '/src/products/roadmap/identity/RoadmapSheet.jsx';
+import { registerNavigationGuard } from '/src/shell/navigation.js';
+window.guardNavigation = () => registerNavigationGuard({ blocked: () => true, onBlocked: (notice) => { window.navigationNotice = notice; }, onUnrestorableNavigation() {} });
 const root = createRoot(document.getElementById('root'));
 window.mount = (options = {}) => {
   if (options.keyboardHeight) {
@@ -467,6 +469,25 @@ test('Chromium: pinch zoom does not use the keyboard footer and trimmed Unicode 
       assert.equal(await page.locator('.st-roadmap-sheet-tree').count(), 10);
       assert.equal(await page.locator('.st-roadmap-sheet-label').textContent(), roadmapsHeading({ count: 10 }));
       assert.equal(await page.locator('.st-roadmap-sheet-name').count(), 1);
+    });
+  } finally { await page.close(); }
+});
+
+
+test('Chromium: a sheet destination keeps its sheet and event until admission, then acts once', async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => window.guardNavigation());
+    await page.getByRole('button', { name: 'Planted in public' }).click();
+    assert.equal(await page.getByRole('dialog').count(), 1);
+    assert.deepEqual(await page.evaluate(() => ({ actions: window.actions ?? [], events: window.events ?? [] })), { actions: [], events: [] });
+    await page.evaluate(() => window.navigationNotice.cancel());
+    await page.getByRole('button', { name: 'Planted in public' }).click();
+    await page.evaluate(() => { window.navigationNotice.proceed(); window.navigationNotice.proceed(); });
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    assert.deepEqual(await page.evaluate(() => ({ actions: window.actions, events: window.events })), {
+      actions: [{ name: 'browse', closed: true, focused: 'title' }],
+      events: [{ name: 'roadmap_sheet', props: { step: 'browse' } }],
     });
   } finally { await page.close(); }
 });

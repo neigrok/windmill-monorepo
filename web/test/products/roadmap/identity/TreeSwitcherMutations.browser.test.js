@@ -270,3 +270,25 @@ for (const engine of ['Chromium', 'WebKit']) {
     });
   }
 }
+
+for (const engine of ['Chromium', 'WebKit']) {
+  test(`${engine}: current-tree deletion waits for navigation admission before deleting or closing`, async () => {
+    await withSwitcher([{ id: 'sail', title: 'Learn to sail', origin: 'server' }], async (page) => {
+      await page.evaluate(async () => {
+        const { registerNavigationGuard } = await import('/src/shell/navigation.js');
+        registerNavigationGuard({ blocked: () => true, onBlocked: (notice) => { window.navigationNotice = notice; }, onUnrestorableNavigation() {} });
+      });
+      await openMenu(page);
+      await page.getByRole('button', { name: 'Delete Learn to sail' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      assert.deepEqual(await page.evaluate(() => ({ deletes: window.deletes ?? [], events: window.events, hash: location.hash })), {
+        deletes: [], events: [{ name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } }], hash: '',
+      });
+      await page.evaluate(() => window.navigationNotice.cancel());
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.evaluate(() => { window.navigationNotice.proceed(); window.navigationNotice.proceed(); });
+      await page.getByRole('menu').waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => ({ deletes: window.deletes, hash: location.hash })), { deletes: [['sail', { local: false }]], hash: '#/app' });
+    }, { engine, width: 744, touch: true });
+  });
+}
