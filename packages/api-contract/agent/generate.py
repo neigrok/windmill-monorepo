@@ -227,6 +227,11 @@ def stories():
     s['service']['exchanges']=s['service']['exchanges'][:1]; s['expected']['requests']=s['expected']['requests'][:1]
     s['expected']['hostCalls']=s['expected']['hostCalls'][:-3]; s['expected']['marks']=s['expected']['marks'][:2]; s['expected']['telemetry'].pop()
     finish(s,'stopped','First',refusals=1); out.append(s)
+    s=tool_story('seat-during-gate',[{}]); s['controls']=[{'at':'check:tool-0:product','action':'seat'}]
+    s['service']['exchanges']=s['service']['exchanges'][:1]; s['expected']['requests']=s['expected']['requests'][:1]
+    s['expected']['hostCalls']=s['expected']['hostCalls'][:6]; s['expected']['marks']=s['expected']['marks'][:2]
+    s['expected']['telemetry']=[]
+    finish(s,'interrupted','First'); out.append(s)
     s=story('seat-pending-open'); s['controls']=[{'at':'open:beforeCommit','action':'seat'}]
     opened(s); finish(s,'interrupted','',rounds=0); out.append(s)
     for action, state in [('seat', 'interrupted'), ('stop', 'stopped')]:
