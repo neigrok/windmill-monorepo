@@ -1,0 +1,110 @@
+name: AI CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/ai/**'
+      - 'packages/api-contract/ai/**'
+      - 'backend/deploy/ai-db/**'
+      - 'backend/test/deploy/ai_*'
+      - '.github/workflows/ai.yml'
+      - '!services/ai/**/*.md'
+      - '!packages/api-contract/ai/**/*.md'
+  pull_request:
+    paths:
+      - 'services/ai/**'
+      - 'packages/api-contract/ai/**'
+      - 'backend/deploy/ai-db/**'
+      - 'backend/test/deploy/ai_*'
+      - '.github/workflows/ai.yml'
+      - '!services/ai/**/*.md'
+      - '!packages/api-contract/ai/**/*.md'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-ai-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: services/ai
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      AI_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install PostgreSQL command-line tools
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/ai
+      - name: Dependency boundaries and shutdown envelope
+        run: |
+          ./check-dependencies.sh
+          python3 ../../backend/test/deploy/ai_infrastructure_test.py -v
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests including isolated Postgres databases
+        run: cargo test --locked
+      - name: Process recovery, shutdown and reporting
+        run: |
+          cargo build --locked --bin windmill-ai
+          timeout 600s python3 tests/operations/process_review.py --binary target/debug/windmill-ai -v
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the image
+        uses: docker/build-push-action@v7
+        with:
+          context: services/ai
+          load: true
+          tags: windmill-ai:ci
+          build-args: SENTRY_RELEASE=${{ github.sha }}
+          cache-from: type=gha,scope=ai
+          cache-to: type=gha,scope=ai,mode=max
+      - name: Verify the image in an isolated ledger
+        run: bash tests/operations/image_smoke.sh windmill-ai:ci
+
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Pass and wire fixtures match their generators
+        run: |
+          python3 ../../packages/api-contract/ai/passes/generate.py --check
+          python3 ../../packages/api-contract/ai/wire/generate.py --check
+          python3 ../../packages/api-contract/ai/check.py
+
+  database-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: HBA writes preserve backend and subscription access
+        run: python3 ../../backend/test/deploy/ai_db_test.py -v

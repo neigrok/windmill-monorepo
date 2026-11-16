@@ -977,6 +977,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the 4.5:1 floor for 11 px text. The web draws the three in the journal's dim ink (`.journal-talk-kept` in
   `journal.css`): at night the secondary text `#B6B5B0`, 8.56:1; by day the tertiary `#74654F` the board draws. Redraw the
   night lines on `text/secondary`, or rule the board's value back in.
+- **Talk refused sheet · held sentence.** The approved board draws the held face as *The rest of your AI
+  allowance is held by a request still in progress.* A hold may belong to a call whose cost is unconfirmed, not
+  one still running, so the web says *The rest of your AI allowance is held by an earlier request whose cost is
+  not yet confirmed.* (`journal.talk.refused.held`). Update the board's line to the web's.
 - **F34 · Type roles.** Reconcile the journal's unassigned first-run, talk, verdict, nudge,
   week-count and narrow scale styles with the named type ramp.
 - **F36 · Phone tools.** Check the fixed `.journal-tools` rail against the writing measure at
@@ -1637,8 +1641,12 @@ Android. It and the product differ in these places.
   *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
   specimens *I made 3 routines.* and *I made Incline Dumbbell Press, then*. 08.45 says Android's *Get the update*, not iOS's
   *Update*. 08.68 offers *Use your own AI agent* on a shared free day, which iOS code does not (`CoachTurnRefusal.recovery`).
-  A spent signed-out allowance says *You have used all of your AI allowance.* over *Sign in to continue.* on both phones; on
-  Android one with too little left for a round says *Coach’s AI allowance is unavailable right now.* over the same line. That
+  A spent signed-out allowance says *You have used all of your AI allowance.* over *Sign in to continue.* on both phones; one
+  with too little left for a round says *Coach’s AI allowance is unavailable right now.* on Android and *This request needs
+  more AI capacity than your remaining allowance.* on iOS over the same line, and one whose rest earlier requests hold says
+  Android's same unavailable line and iOS's *Your earlier AI requests hold the rest of your AI allowance until their cost is
+  confirmed, at most 10 minutes after each began.* No board draws iOS's two lines or its *Your AI allowance has no room for
+  this request.*, said where a refusal carries no allowance. That
   allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about $0.25 is left
   after signing in and the line holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
   08.44's words, on Android; iOS's signed-in notice names no date.

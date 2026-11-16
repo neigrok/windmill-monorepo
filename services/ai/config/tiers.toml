@@ -1,0 +1,72 @@
+owner_grants_max = 25
+hourly_fuse = "20"
+labels = ["coach", "talk", "echoes", "tending", "other"]
+
+[transcription]
+provider = "openai"
+model = "gpt-live-transcribe"
+delay = "low"
+
+[[models]]
+class = "large"
+provider = "anthropic"
+model = "claude-opus-5"
+image_token_ceiling = 4784
+tool_overhead_tokens = 286
+count_source = ["https://platform.claude.com/docs/en/build-with-claude/vision", "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"]
+count_checked_at = "2026-11-15"
+reasoning = "adaptive"
+efforts = ["low", "medium", "high", "xhigh", "max"]
+
+[[models]]
+class = "medium"
+provider = "anthropic"
+model = "claude-sonnet-5"
+image_token_ceiling = 4784
+tool_overhead_tokens = 354
+count_source = ["https://platform.claude.com/docs/en/build-with-claude/vision", "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"]
+count_checked_at = "2026-11-15"
+reasoning = "adaptive"
+efforts = ["low", "medium", "high", "xhigh", "max"]
+
+[[models]]
+class = "small"
+provider = "anthropic"
+model = "claude-haiku-4-5"
+image_token_ceiling = 1568
+tool_overhead_tokens = 496
+count_source = ["https://platform.claude.com/docs/en/build-with-claude/vision", "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"]
+count_checked_at = "2026-11-15"
+reasoning = "budget"
+efforts = ["low", "medium", "high"]
+
+[[rows]]
+tier = "anonymous"
+amount = "0.25"
+month_pool = { name = "free", limit = "100" }
+day_pool = { name = "free", limit = "5" }
+in_flight = 1
+calls_per_minute = 30
+output_ceiling = 2000
+text = ["medium", "medium", "small"]
+transcription = false
+
+[[rows]]
+tier = "free"
+amount = "0.50"
+month_pool = { name = "free", limit = "100" }
+day_pool = { name = "free", limit = "5" }
+in_flight = 1
+calls_per_minute = 30
+output_ceiling = 16000
+text = ["large", "medium", "small"]
+transcription = false
+
+[[rows]]
+tier = "one"
+amount = "7"
+in_flight = 2
+calls_per_minute = 60
+output_ceiling = 16000
+text = ["large", "medium", "small"]
+transcription = true

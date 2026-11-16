@@ -9,8 +9,7 @@ use uuid::Uuid;
 
 use crate::ledger::{Ledger, StorageError};
 use crate::subscriptions::{
-    self, PeriodRow, SubscriptionRow, bind_period, bind_subscription, named, subscription_columns,
-    subscription_values,
+    self, PeriodRow, SubscriptionRow, bind_period, named, subscription_columns,
 };
 
 // INV-8: the seq lock. Updating the ledger's one row takes its lock, which the transaction holds until it ends,
@@ -24,12 +23,16 @@ const INSERT_EVENT: &str = "insert into events (seq, type, occurred_at, recorded
      period_refunded_at, period_observed_at, period_left_with, period_left_with_no_one) \
      values ($1, $2, $3, $4, $5::uuid, $6::uuid, $7, $8, $9, $10::uuid, $11, $12, $13, $14, $15, $16, $17, $18, \
      $19::uuid, $20)";
-const INSERT_ENTITLEMENT_SUBSCRIPTION: &str = concat!(
-    "insert into entitlement_subscriptions (",
+// The subscriptions an account's entitlement carries, copied beside each event told under it in one statement however
+// many there are. The rows are copied as they stand and differ from the ones the entitlement was folded from in nothing
+// it carries: under the seq lock only a write that records no event commits beside this one, and such a write changes
+// nothing an entitlement carries (INV-14).
+const COPY_ENTITLEMENT: &str = concat!(
+    "insert into entitlement_subscriptions (seq, ",
     subscription_columns!(),
-    ", seq) values (",
-    subscription_values!(),
-    ", $35)"
+    ") select seq, ",
+    subscription_columns!(),
+    " from unnest($1::bigint[]) as seq, subscriptions where id = any($2::text[]::uuid[])"
 );
 
 const NEWEST_SEQ: &str =
@@ -136,8 +139,9 @@ impl Ledger {
     }
 }
 
-// Appends a change's events, all of one subscription, under the seq lock, each with its account's subscriptions
-// as this transaction leaves them. Returns each event's seq, in order; a change without events takes no seq.
+// Appends a change's events, all of one subscription, under the seq lock, each with the subscriptions its account's
+// entitlement carries as this transaction leaves them. Returns each event's seq, in order; a change without events
+// takes no seq.
 pub(crate) async fn append(
     connection: &mut PgConnection,
     change: &Change,
@@ -152,7 +156,7 @@ pub(crate) async fn append(
         .await?;
     let seqs: Vec<i64> = (latest_seq - count + 1..=latest_seq).collect();
 
-    let mut entitlements: BTreeMap<&AccountId, Vec<Subscription>> = BTreeMap::new();
+    let mut entitlements: BTreeMap<&AccountId, AccountEntitlement> = BTreeMap::new();
     for account_id in change
         .events
         .iter()
@@ -160,7 +164,7 @@ pub(crate) async fn append(
     {
         if !entitlements.contains_key(account_id) {
             let held = subscriptions::bound_to(connection, account_id).await?;
-            entitlements.insert(account_id, held);
+            entitlements.insert(account_id, AccountEntitlement::of(account_id.clone(), held));
         }
     }
 
@@ -185,16 +189,23 @@ pub(crate) async fn append(
         bind_period(event_row, event.kind.period())
             .execute(&mut *connection)
             .await?;
-        let entitlement = event
-            .account_id
-            .as_ref()
-            .map_or(&[][..], |account_id| &entitlements[account_id]);
-        for held in entitlement {
-            bind_subscription(sqlx::query(INSERT_ENTITLEMENT_SUBSCRIPTION), held)
-                .bind(seq)
-                .execute(&mut *connection)
-                .await?;
-        }
+    }
+    for (account_id, entitlement) in &entitlements {
+        let told: Vec<i64> = seqs
+            .iter()
+            .zip(&change.events)
+            .filter(|(_, event)| event.account_id.as_ref() == Some(*account_id))
+            .map(|(seq, _)| *seq)
+            .collect();
+        let carried: Vec<&str> = entitlement
+            .subscriptions()
+            .map(|held| held.id.as_str())
+            .collect();
+        sqlx::query(COPY_ENTITLEMENT)
+            .bind(told)
+            .bind(carried)
+            .execute(&mut *connection)
+            .await?;
     }
     Ok(seqs)
 }

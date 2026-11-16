@@ -47,11 +47,6 @@ struct RecordingSubscriptions : SubscriptionRepository {
     for (const auto& row : subscriptions) if (row.subscriptionId == id) return row;
     return std::nullopt;
   }
-  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
-    for (const PaddleSubscription& row : subscriptions)
-      if (row.userId == user.str()) return row;
-    return std::nullopt;
-  }
 };
 
 std::string sign(const std::string& body, const std::string& timestamp) {

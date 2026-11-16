@@ -1,9 +1,8 @@
 # Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema, another
-# provisions the subscription service's database, the server, its embedder and the subscription
-# service run from the images Backend CI publishes for one commit, and Caddy terminates TLS and
-# reverse-proxies the server and the subscription service's public port. Only Caddy is exposed to the
-# internet; everything else talks over the private compose network by service name, but for the
-# subscription service's internal doors, which the server alone reaches on internal-doors.
+# provisions each service ledger, and the server, embedder, subscriptions and AI services run from
+# the images Backend CI publishes for one commit. Caddy terminates TLS and routes public doors.
+# Only Caddy is exposed to the internet; other services use the private compose network, except
+# subscription internal doors, which the server alone reaches on internal-doors.
 #
 # Values come from ./.env (rendered by the deploy workflow from GitHub secrets/vars).
 
@@ -63,6 +62,26 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./subscriptions-db:/subscriptions-db:ro
     command: ["bash", "/subscriptions-db/provision.sh"]
+
+  # HBA has one writer at a time; subscriptions-db finishes before this one starts.
+  ai-db:
+    image: postgres:16
+    restart: "no"
+    user: postgres
+    depends_on:
+      subscriptions-db:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: db
+      PGUSER: windmill
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: windmill
+      PGCONNECT_TIMEOUT: "10"
+      AI_DB_PASSWORD: ${AI_DB_PASSWORD:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./ai-db:/ai-db:ro
+    command: ["bash", "/ai-db/provision.sh"]
 
   server:
     image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}}
@@ -265,6 +284,10 @@ services:
       SUBSCRIPTIONS_PUBLIC_ADDRESS: 0.0.0.0:8082
       SUBSCRIPTIONS_INTERNAL_ADDRESS: subscriptions-internal:8083
       SUBSCRIPTIONS_INTERNAL_TOKEN: ${SUBSCRIPTIONS_INTERNAL_TOKEN:-}
+      # The App Store Server API key; any of the three empty ⇒ a claim and a refresh answer 503 and owed hints wait.
+      SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID: ${SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID:-}
+      SUBSCRIPTIONS_APP_STORE_API_KEY_ID: ${SUBSCRIPTIONS_APP_STORE_API_KEY_ID:-}
+      SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY: ${SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY:-}
       # SUBSCRIPTIONS_DB_PASSWORD is hex, so it sits in the URL unescaped.
       SUBSCRIPTIONS_DATABASE_URL: postgresql://windmill_subscriptions:${SUBSCRIPTIONS_DB_PASSWORD:-}@db:5432/windmill_subscriptions
       SENTRY_DSN: ${SENTRY_DSN:-}
@@ -274,6 +297,39 @@ services:
       default: {}
       internal-doors:
         aliases: [subscriptions-internal]
+
+  ai:
+    image: ${AI_IMAGE:-ghcr.io/neigrok/windmill-monorepo:ai-${IMAGE_TAG:-latest}}
+    restart: unless-stopped
+    stop_grace_period: 720s
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m,mode=1777
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      ai-db:
+        condition: service_completed_successfully
+    environment:
+      AI_PUBLIC_ADDRESS: 0.0.0.0:8084
+      AI_INTERNAL_ADDRESS: 0.0.0.0:8085
+      AI_ENVIRONMENT: production
+      AI_DATABASE_URL: postgresql://windmill_ai:${AI_DB_PASSWORD:-}@db:5432/windmill_ai
+      AI_PASS_KEYS: ${AI_PASS_KEYS:-}
+      AI_CARRY_KEY: ${AI_CARRY_KEY:-}
+      AI_FUNDING_SECRET: ${AI_FUNDING_SECRET:-}
+      AI_OPERATOR_SECRET: ${AI_OPERATOR_SECRET:-}
+      AI_ANTHROPIC_KEY: ${AI_ANTHROPIC_KEY:-}
+      AI_OPENAI_KEY: ${AI_OPENAI_KEY:-}
+      AI_AZURE_KEY: ${AI_AZURE_KEY:-}
+      AI_AZURE_URL: ${AI_AZURE_URL:-}
+      AI_AZURE_DEPLOYMENT: ${AI_AZURE_DEPLOYMENT:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
 
   caddy:
     image: caddy:2

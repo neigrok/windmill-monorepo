@@ -39,6 +39,20 @@ Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscri
 [§4](#the-subscription-service) runs the service. The production rules that keep the backend's role out
 of this database are not part of the local cluster.
 
+The AI service (`services/ai`) uses a third database, `windmill_ai`, owned by its own role:
+
+```sh
+createuser -h /tmp windmill_ai
+createdb -h /tmp -O windmill_ai windmill_ai
+```
+
+Run it from `services/ai` with the pinned Rust toolchain and `AI_DATABASE_URL` set to
+`postgresql:///windmill_ai?host=/tmp&user=windmill_ai`; its [architecture](../services/ai/ARCHITECTURE.md)
+names the remaining required configuration. It listens on 8084/8085. Keep `AI_PASS_KEYS={}` and
+provider keys absent for a dark local process. `AI_TEST_DATABASE_URL` names a disposable maintenance
+database for the Rust tests, which create isolated databases. Production HBA isolation is exercised
+with `python3 backend/test/deploy/ai_db_test.py -v` from the repository root, using Docker Postgres 16.
+
 ## 3. Build
 
 ```sh

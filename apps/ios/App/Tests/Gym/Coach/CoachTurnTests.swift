@@ -131,9 +131,11 @@ import SyncTesting
       let callIds = try request.body?.member("results").asArray().map { try $0.member("callId").asString() }
       #expect(callIds == batch.calls.map(\.callId))
     }
-    // A failed turn's code becomes the refusal said at the conversation's end only where it names a cap or a door; a
-    // code that names neither is said by the message's own ending line alone (08.48).
-    if let code = try? end.member("code").asString(), case let expected = CoachTurnRefusal(code: code), expected != .said(code) {
+    // A failed turn's code, read with the allowance its error frame carried, becomes the refusal said at the conversation's
+    // end only where it names a cap or a door; a code that names neither is said by the message's own ending line alone (08.48).
+    let ended = script.events.last { (try? $0.member("event").asString()) == "error" }
+    let allowance = (try? ended?.member("data").member("allowance")).flatMap { try? AiAllowance($0) }
+    if let code = try? end.member("code").asString(), case let expected = CoachTurnRefusal(code: code, allowance: allowance), expected != .said(code) {
       #expect(phone.driver.refusal == expected, Comment(rawValue: file))
     } else {
       #expect(phone.driver.refusal == nil, Comment(rawValue: file))
@@ -162,7 +164,7 @@ import SyncTesting
   @Test(arguments: ["bound", "anon"]) func schemaRefusalWithdrawsTheLocalTurnAndKeepsTheDraft(seat: String) async throws {
     let phone = try await phone(seat: seat)
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
-    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (426, "client-update-required") }
+    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (426, ["error": "refused", "code": "client-update-required"]) }
     try await send(phone, "Private question")
     #expect(try messages(phone).isEmpty)
     try await settle { phone.coach.saved.text == "Private question" }
@@ -292,14 +294,55 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
     try phone.coach.addPhoto(UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { _ in }.jpegData(compressionQuality: 0.9)!)
     let photo = try #require(phone.coach.saved.photo)
-    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (429, "subject_exhausted") }
+    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (429, ["error": "refused", "code": "subject_exhausted"]) }
     try await send(phone, "Private question")
     #expect(try messages(phone).isEmpty)
     #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(photo.id)) } == nil)
     try await settle { phone.coach.saved.text == "Private question" }
     #expect(phone.coach.thread == nil && phone.coach.saved.conversation == nil)
-    #expect(phone.driver.refusal == .allowance("subject_exhausted") && !phone.coach.canCompose)
+    #expect(phone.driver.refusal == .shortfall(nil) && !phone.coach.canCompose)
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map(\.properties) }.last == ["screen": "coach", "outcome": "capped", "cap": "allowance"])
+    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
+  }
+
+  // A `subject_exhausted` refusal says what holds the request, as the allowance beside it shows, whether it refused the open
+  // or ended the turn: nothing left, earlier requests whose cost is not yet confirmed, a request larger than what is left, and
+  // only what is always true where it carries none. The notice and the closed composer's hint say the same sentence.
+  @Test func anAllowanceRefusalSaysWhatHoldsTheRequest() async throws {
+    let phone = try await phone(seat: "anon")
+    defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
+    func allowance(_ code: String, used: String, reserved: String, remaining: String) -> JSON {
+      ["code": .string(code), "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true, "limit": "0.250000000",
+       "used": .string(used), "reserved": .string(reserved), "remaining": .string(remaining), "resetsAtMs": .null, "budgetResetsAtMs": .null]
+    }
+    let cases: [(allowance: JSON?, shortfall: AiAllowance.Shortfall?, sentence: String)] = [
+      (allowance("subject_exhausted", used: "0.250000000", reserved: "0.000000000", remaining: "0.000000000"), .spent,
+       "You have used all of your AI allowance."),
+      (allowance("subject_exhausted", used: "0.200000000", reserved: "0.050000000", remaining: "0.000000000"), .held,
+       "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began."),
+      (allowance("ok", used: "0.240000000", reserved: "0.000000000", remaining: "0.010000000"), .tooLarge,
+       "This request needs more AI capacity than your remaining allowance."),
+      (nil, nil, "Your AI allowance has no room for this request."),
+    ]
+    for refused in cases {
+      let data: JSON = refused.allowance.map { ["error": "refused", "code": "subject_exhausted", "allowance": $0] } ?? ["error": "refused", "code": "subject_exhausted"]
+      for midTurn in [false, true] {
+        TurnFixtureProtocol.state.withLock { script in
+          script = TurnScript(events: midTurn ? [["event": "error", "data": data]] : [], lostOnResume: false)
+          script.refuseOpen = midTurn ? nil : (429, data)
+        }
+        phone.driver.refusal = nil
+        try await send(phone, "How heavy should I squat?")
+        let said = Comment(rawValue: "\(refused.sentence) midTurn=\(midTurn)")
+        #expect(phone.driver.refusal == .shortfall(refused.shortfall), said)
+        let refusal = try #require(phone.driver.refusal)
+        #expect(CoachNotice(refusal, anonymous: phone.coach.anonymous, dates: phone.gym.dates).lines == [refused.sentence, "Sign in to continue."], said)
+        #expect(phone.coach.sendHint == refused.sentence && !phone.coach.canCompose, said)
+      }
+    }
+    let outcomes = phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map(\.properties) }
+    #expect(outcomes == Array(repeating: ["screen": "coach", "outcome": "capped", "cap": "allowance"], count: 8))
+    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "coach_turn" }.map { $0.properties["code"] } } == Array(repeating: "subject_exhausted", count: 4))
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
   }
 
@@ -400,7 +443,7 @@ nonisolated struct TurnScript: Sendable {
   var pending: String?
   var requests: [Request] = []
   var answered: Set<Int64> = []
-  var refuseOpen: (Int, String)?
+  var refuseOpen: (Int, JSON)?
   var stream: TurnFixtureProtocol?
 
   // The answer the phone should hold once the script ran: deltas appended, a snapshot replacing what came before.
@@ -435,7 +478,7 @@ nonisolated final class TurnFixtureProtocol: URLProtocol, @unchecked Sendable {
     let headers = request.allHTTPHeaderFields ?? [:]
     Self.state.withLock { $0.requests.append(TurnScript.Request(path: path, method: method, body: body, headers: headers)) }
     if path == "/v1/gym/coach/turns" {
-      if let (status, code) = Self.state.withLock({ $0.refuseOpen }) { respond(status, ["error": "refused", "code": .string(code)]); return }
+      if let (status, body) = Self.state.withLock({ $0.refuseOpen }) { respond(status, body); return }
       Self.state.withLock { $0.stream = self }
       open(); advance(); return
     }
