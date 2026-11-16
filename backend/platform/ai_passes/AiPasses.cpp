@@ -12,6 +12,15 @@ namespace {
 
 std::optional<Json::Value> strictObject(std::string_view text) {
   if (text.empty() || text.size() > 4096) return std::nullopt;
+  // JsonCpp 1.9.5 consumes comments after object values even when allowComments is false.
+  bool quoted = false;
+  bool escaped = false;
+  for (const char c : text) {
+    if (escaped) { escaped = false; continue; }
+    if (quoted && c == '\\') { escaped = true; continue; }
+    if (c == '"') quoted = !quoted;
+    if (!quoted && c == '/') return std::nullopt;
+  }
   Json::CharReaderBuilder builder;
   Json::CharReaderBuilder::strictMode(&builder.settings_);
   builder["rejectDupKeys"] = true;

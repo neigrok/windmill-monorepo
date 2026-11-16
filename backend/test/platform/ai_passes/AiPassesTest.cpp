@@ -7,6 +7,7 @@ using namespace wm;
 
 TEST(ai_pass_signer_matches_every_raw_signed_vector) {
   std::ifstream file(std::string(WM_API_CONTRACT_DIR) + "/ai/passes/vectors.json");
+  REQUIRE(file.is_open());
   Json::Value vectors;
   file >> vectors;
   REQUIRE(vectors.isObject());
@@ -42,17 +43,25 @@ TEST(ai_pass_claims_are_generated_from_one_principal_without_profile_or_account_
 TEST(ai_pass_request_and_signer_configuration_are_strict) {
   REQUIRE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":1})"));
   REQUIRE(AiPassRequest::parse(R"({"client":"web","use":"vector.coach","version":1})"));
-  for (const std::string text : {
-      R"({"client":"web","client":"ios","use":"gym.coach","version":1})", R"({"client":"web","use":"gym.coach","version":1.0})",
-      R"({"client":"web","use":"gym.coach","version":true})", R"({"client":"server","use":"gym.coach","version":1})",
-      R"({"client":"web","use":"gym.coach","version":0})", R"({"client":"web","use":"gym.coach","version":1,"extra":0})",
-      R"({"client":"web","use":"gym.coach","version":1} {})", R"({"client":"web","use":"gym.coach","version":1,})",
-      R"({"client":"web","use":"gym.coach","version":1/*comment*/})"}) CHECK_FALSE(AiPassRequest::parse(text));
-  for (const std::string versions : {"{}", R"({"gym.coach":0})", R"({"gym.coach":1.0})", R"({"gym.coach":1,"gym.coach":2})"}) {
+  REQUIRE(AiPassRequest::parse(R"({"client":"w\u0065b","use":"gym.\u0063oach","version":1})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","client":"ios","use":"gym.coach","version":1})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":1.0})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":true})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"server","use":"gym.coach","version":1})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":0})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":1,"extra":0})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":1} {})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":1,})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web","use":"gym.coach","version":1/*comment*/})"));
+  CHECK_FALSE(AiPassRequest::parse("{\"client\":\"web\",\"use\":\"gym.coach\",\"version\":1//comment\n}"));
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"web"/*comment*/,"use":"gym.coach","version":1})"));
+  CHECK_FALSE(AiPassRequest::parse(R"({/*comment*/"client":"web","use":"gym.coach","version":1})"));
+  for (const std::string versions : {"{}", R"({"gym.coach":0})", R"({"gym.coach":1.0})", R"({"gym.coach":1,"gym.coach":2})",
+      R"({"gym.coach":1/*comment*/})", "{\"gym.coach\":1//comment\n}"}) {
     bool refused = false;
     try { AiPasses signer("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A", "test-rfc8032", "development", versions); }
     catch (const std::invalid_argument&) { refused = true; }
-    CHECK(refused);
+    if (!refused) testing::fail(versions.c_str(), __FILE__, __LINE__);
   }
   for (const std::string kid : {"test-rfc8032", "renamed-key"}) {
     bool refused = false;
