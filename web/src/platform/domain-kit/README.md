@@ -12,9 +12,9 @@ path, the web's `sync/core/encoding.js` and `content.js`, and kit files; a produ
 (`src/products/<p>/domain/`) imports the same core modules, the kit, `platform/sync/schema.js` and
 itself. No clock, randomness, platform global, console, locale, rounding (the quantum's is
 `core/values.js`) or concurrency; `runner.js`, the one impure file, alone awaits the engine. Every
-file opts into `tsc --checkJs` with `// @ts-check` and `npm run check:domain` type-checks them
-(`tsconfig.domain.json`). `test/domain-layering.test.js` parses every file with acorn and enforces
-all of it, with a fixture per rule.
+file opts into `tsc --checkJs` with `// @ts-check`. `npm run check:domain` first runs
+`test/domain-layering.test.js`, which parses every file with acorn and enforces these rules with a
+fixture per rule, then type-checks the files using `tsconfig.domain.json`.
 
 ## Files
 
