@@ -50,9 +50,10 @@ class SyncRuntimeTests {
     }
     private class Clock : EngineClock {
         @Volatile var wall = 5_000L
+        @Volatile var fixedMono: Long? = null
         @Volatile var beforeReading: () -> Unit = {}
         override fun now() = wall
-        override fun reading(): ClockReading { beforeReading(); return ClockReading(wall, wall, "boot-1") }
+        override fun reading(): ClockReading { beforeReading(); return ClockReading(wall, fixedMono ?: wall, "boot-1") }
     }
     // Time the test moves: an engine sleep ends once the clock has passed its end. The clock moves only to the end of a sleep
     // the test names, once that sleep is pending, so each step lands exactly where the engine scheduled it.
@@ -187,6 +188,53 @@ class SyncRuntimeTests {
     private suspend fun until(body: () -> Boolean) = withTimeout(2_000) { while (!body()) delay(5) }
     private suspend fun <T> settles(expected: T, actual: () -> T) { withTimeoutOrNull(2_000) { while (actual() != expected) delay(5) }; assertEquals(expected, actual()) }
     private val upgradeRequired = SyncResponse(426, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "error" to Json.of("upgrade-required")))
+
+    @Test fun freshnessRequiresClockSampleCompletedPullAndActualLiveScope() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.clock.wall = 9_000
+            fixture.transport.controlPulls = true
+            val handshake = CompletableDeferred<Reply<LiveConnection>>()
+            fixture.transport.liveAnswer = handshake
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            until { fixture.transport.opening.get() == 1 }
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            pull.answer.complete(pages(pull.request, more = false))
+            until { fixture.runtime.pulls.value.caughtUp == 1L }
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            handshake.complete(Reply.Answer(fixture.transport.socket))
+            until { fixture.runtime.freshness(product).syncLive }
+            assertEquals(SyncFreshness(true, 5_000), fixture.runtime.freshness(product))
+            fixture.clock.wall += 100
+            assertEquals(SyncFreshness(true, 5_100), fixture.runtime.freshness(product))
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(ScopeRef.tree("unfollowed")))
+            fixture.runtime.connectivity(false)
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+        }
+    }
+
+    @Test fun freshnessRejectsClockJumpsAuthPauseAndTheSeatFence() = runBlocking {
+        val permitted = AtomicBoolean(true)
+        Fixture(activityAllowed = permitted::get).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            pull.answer.complete(pages(pull.request, more = false))
+            until { fixture.runtime.freshness(product).syncLive }
+            permitted.set(false)
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            permitted.set(true)
+            fixture.engine.write(EngineOperation.lifecycle) { it.meta = it.meta.with("authPaused" to Json.of(true)) }
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            fixture.engine.write(EngineOperation.lifecycle) { it.meta = it.meta.with("authPaused" to Json.of(false)) }
+            fixture.clock.fixedMono = fixture.clock.wall
+            fixture.clock.wall += 600_000
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            fixture.runtime.close()
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+        }
+    }
 
     @Test fun pendingDiscardDoesNotLaunchPruneReleaseOrSendBeforeExactRecovery() = runBlocking {
         val permitted = AtomicBoolean(false)

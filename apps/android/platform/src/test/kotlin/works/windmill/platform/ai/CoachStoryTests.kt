@@ -60,12 +60,13 @@ class CoachStoryTests(private val file: File) {
                 return Recovery(writer!!, data.member("state").str(), data.member("text").str(), Mark(data.member("mark")))
             }
             override suspend fun beginRound(lease: HostLease, text: String, mark: Mark) {
-                guard(lease); hostCalls += Json.objectOf("op" to Json.of("beginRound"), "text" to Json.of(text), "mark" to mark.json); marks += mark.json
+                control("beginRound:beforeCommit"); guard(lease); hostCalls += Json.objectOf("op" to Json.of("beginRound"), "text" to Json.of(text), "mark" to mark.json); marks += mark.json
             }
             override suspend fun text(lease: HostLease, text: String) { control("text:beforeCommit"); guard(lease); hostCalls += Json.objectOf("op" to Json.of("text"), "text" to Json.of(text)) }
             override suspend fun check(lease: HostLease, rule: String, call: ToolCall): String? {
-                control("check:${call.id}:$rule"); guard(lease)
+                guard(lease)
                 hostCalls += Json.objectOf("op" to Json.of("check"), "rule" to Json.of(rule), "call" to call.json)
+                control("check:${call.id}:$rule")
                 return story.member("host").member("checks")[call.id]?.get(rule)?.orNull()?.str()
             }
             override suspend fun execute(lease: HostLease, identity: CallIdentity, call: ToolCall): ToolOutcome {

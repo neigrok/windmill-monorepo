@@ -7,7 +7,7 @@ account and backend. There is no subscription surface.
 
 | Module | Responsibility |
 |---|---|
-| `:platform` | Bearer HTTP transport, the agent turn's transport (`platform/agent/TurnHttp.kt`), account/session storage, sign-in, tokens and product-neutral shell. |
+| `:platform` | Bearer HTTP transport, the released turn transport (`platform/agent/TurnHttp.kt`), the device Coach AI client (`platform/ai`), account/session storage, sign-in, tokens and product-neutral shell. |
 | `:gym` | Android training runtime, device storage, presentation models (`works.windmill.gym.presentation`, the screens' projection of `:gym:domain`), network/notification adapters and Compose UI. |
 | `:app` | Composition root; one auth store, gym runtime, training store and notification adapters shared by activity, receivers and the Quick Settings service. |
 | `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
@@ -18,13 +18,13 @@ account and backend. There is no subscription surface.
 | `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
 | `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering, refusal subjects, and what an ability is: catalog, seats and schema check. |
 | `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
-| `:agent` | JVM product-neutral agent turn: the driver, its host and transport ports, and the turn wire (frames, event stream, refusals). `:gym` hosts its Coach turn on it. |
+| `:agent` | JVM product-neutral turn libraries: the released server-hosted driver/wire and the device-hosted Coach runner (`agent/coach`). `:gym` still uses the released driver. See [Agent turns](agent/README.md). |
 | `:gym:domain` | JVM gym actions (`works.windmill.gym.domain.sync`), training reads, progress, units and rules, including signed-out workout recovery (saved-copy checks, stranded-set placement, separate-restore steps); every shared gym domain vector. `gym/store/WorkoutImports.kt` keeps the saved-workout journal's I/O and state machine. |
 
 The JVM sync and kit modules and the Android engine library contain the SyncAPI, client runtime, model
 server and kit. The full build enforces corpus coverage, properties, replay fuzz, schema freshness and
 strict layering; see [coverage, gates and remaining work](SYNC_FOUNDATION.md). The app composes
-that runtime for gym, with signed-out workout imports and account decisions.
+that runtime for gym, with signed-out workout imports and account decisions. `SyncRuntime.freshness(scope)` exposes corrected server time only after a completed first pull and an actual live subscription, with a clock sample and no seat/auth transition or clock jump.
 
 Products depend on `:platform`, never on each other. See [repository structure](../../STRUCTURE.md).
 Screens read colour from `MaterialTheme.colorScheme` and the room's own `MaterialTheme.gymColors`, and type from

@@ -36,6 +36,8 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                 if (!turn.done && turn.lease != null) finishInside(turn, EndState.interrupted)
             }
         } catch (_: HostUnavailable) { abandon(turn) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { observe { failure(FailureOperation.host) }; throw failure }
         finally { synchronized(admission) { if (active === turn) active = null } }
     }
 
@@ -67,6 +69,7 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                         host.beginRound(turn.lease!!, turn.text, Mark(input.turnId, callId, turn.text.encodeToByteArray().size))
                     }
                     if (turn.done || turn.seatChanged) return@withLease finish(turn, EndState.interrupted)
+                    if (turn.wait.stopped) return@withLease finish(turn, EndState.stopped)
                     turn.rounds++
                     val request = Json.objectOf("model" to Json.of(profile.model), "system" to Json.Arr(profile.system.map(Json::of)),
                         "tools" to Json.Arr(profile.tools.map { it.wire }), "messages" to Json.Arr(messages),
@@ -107,6 +110,7 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                         if (code == null) code = profile.groups.find { call.name in it.tools && (turn.groups[it.name] ?: 0) >= it.maxSuccesses }?.code
                         if (code == null && (turn.abilities >= profile.abilityCalls || tool!!.countsAsWrite && turn.writes >= profile.writes)) code = "coach-turn-volume"
                         if (code == null) code = host.check(turn.lease!!, "product", call)
+                        if (turn.done || turn.seatChanged) return@withLease finish(turn, EndState.interrupted)
                         if (code == null && turn.wait.stopped) code = "stopped"
                         val outcome = if (code != null) {
                             turn.refusals++
@@ -129,7 +133,7 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                 }
                 finish(turn, if (turn.wait.stopped) EndState.stopped else EndState.failed, code = if (turn.wait.stopped) null else "model-call-limit")
             }
-        } catch (_: HostUnavailable) { abandon(turn); return null }
+        } catch (_: HostUnavailable) { abandon(turn); return turn.end }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             observe { failure(FailureOperation.host) }
@@ -138,24 +142,28 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
         } finally { synchronized(admission) { if (active === turn) active = null } }
     }
 
-    private suspend fun append(turn: Turn, delta: String) = mutations.withLock {
+    private suspend fun append(turn: Turn, delta: String, prefix: String? = null) = mutations.withLock {
         if (turn.done || turn.seatChanged) return@withLock
+        if (prefix != null) turn.text = prefix
         turn.text += delta
         host.text(turn.lease!!, turn.text)
     }
 
     private suspend fun recover(turn: Turn): TurnEnd? {
-        val record = mutations.withLock { host.recover(turn.input.turnId, turn.input.seat).also { turn.lease = it?.lease } } ?: return null
+        val record = mutations.withLock {
+            host.recover(turn.input.turnId, turn.input.seat).also {
+                if (it?.state == "running") { turn.lease = it.lease; turn.text = it.text }
+            }
+        } ?: return null
         if (record.state != "running") return null
-        turn.text = record.text
         if (record.mark.callId == null || turn.seatChanged) return finish(turn, EndState.interrupted)
         val data = record.text.encodeToByteArray()
         require(record.mark.textBytesBeforeRound <= data.size)
         val prefix = data.copyOfRange(0, record.mark.textBytesBeforeRound).decodeToString(throwOnInvalidSequence = true)
         var first = true
         val answer = ai.result(record.mark.callId, turn.profile.name, turn.profile.version, turn.wait) {
-            if (first) { turn.text = prefix; first = false }
-            append(turn, it)
+            append(turn, it, if (first) prefix else null)
+            first = false
         }
         if (turn.done) return turn.end
         if (turn.seatChanged || answer is AiAnswer.Failure) return finish(turn, EndState.interrupted)

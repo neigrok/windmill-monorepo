@@ -12,12 +12,12 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
     private val now: () -> Long = { System.nanoTime() / 1_000_000 },
     private val wait: suspend (Long, StopSignal) -> Boolean = { ms, stop -> stop.wait(ms) }) : AiClient {
     private class Pass(val value: String, val until: Long, val use: String, val version: Long)
-    private val passLock = Mutex()
+    @Volatile private var passLock = Mutex()
     private val state = Any()
     @Volatile private var generation = 0L
     private var pass: Pass? = null
     private val uploads = mutableSetOf<String>()
-    override fun clearPass() = synchronized(state) { generation++; pass = null; uploads.clear() }
+    override fun clearPass() = synchronized(state) { generation++; pass = null; passLock = Mutex(); uploads.clear() }
     private fun report(operation: FailureOperation) { try { telemetry.failure(operation) } catch (_: Exception) {} }
 
     private suspend fun credential(use: String, version: Long, expectedGeneration: Long, force: Boolean): Pair<String?, AiAnswer.Failure?> = passLock.withLock {
@@ -27,7 +27,9 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         }
         val response = try { transport.pass(Json.objectOf("client" to Json.of("android"), "use" to Json.of(use), "version" to Json.of(version))) }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { report(FailureOperation.aiPass); return@withLock null to AiAnswer.Failure(AiFailure("pass", null, Admission.none)) }
+        catch (error: Exception) {
+            if (error !is AiTransportFailure || error.code !in setOf("offline", "lost")) report(FailureOperation.aiPass)
+            return@withLock null to AiAnswer.Failure(AiFailure("pass", null, Admission.none)) }
         response.use {
             synchronized(state) {
                 if (expectedGeneration != generation) throw AiTransportFailure("seat-changed")
@@ -38,7 +40,8 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                     return@withLock null to AiAnswer.Failure(AiFailure("pass", code, Admission.none))
                 }
                 try {
-                    val value = response.body!!.member("pass").str()
+                    response.body!!.expectKeys(listOf("pass", "expiresIn"))
+                    val value = response.body.member("pass").str()
                     val expires = response.body.member("expiresIn").long(1)
                     require(value.isNotEmpty())
                     pass = Pass(value, now() + expires, use, version)
@@ -118,9 +121,10 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                 val path = if (read) "/v1/calls/$callId/result" + if (cursor > 0) "?after=$cursor" else "" else "/v1/calls/$callId/text?label=" + URLEncoder.encode(label, "UTF-8").replace("+", "%20")
                 if (start == null) start = now()
                 val response = try { transport.request(AiRequest(if (read) "GET" else "PUT", path, pass!!, if (read) null else body, timeoutMs = maxOf(1, start!! + 1_200_000 - now()))) }
-                catch (error: AiTransportFailure) {
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
                     promote(Admission.possible); lost = true
-                    if (error.code !in setOf("offline", "lost")) return failure("transport", "invalid-answer", admission)
+                    if (error !is AiTransportFailure || error.code !in setOf("offline", "lost")) return failure("transport", "invalid-answer", admission)
                     null
                 }
                 var repaired = false
@@ -175,6 +179,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
             catch (error: Exception) {
                 if (callbackFailure === error || error is HostUnavailable) throw error
                 if (error is AiTransportFailure && error.code == "seat-changed") return seatChanged()
+                if (error is AiTransportFailure && error.code in setOf("offline", "lost")) return failure("transport", null, admission)
                 return failure("wire", "invalid-answer", admission)
             }
             val deadline = start!! + if (lost) 1_200_000 else 30_000

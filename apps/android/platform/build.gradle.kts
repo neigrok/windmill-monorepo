@@ -68,3 +68,15 @@ tasks.withType<Test>().configureEach {
     inputs.dir(contract.resolve("agent/turns"))
     inputs.file(contract.resolve("ai/wire/fixtures.json"))
 }
+
+// The opt-in local service probe runs in a separate JVM so process death is real.
+tasks.register("coachProbeClasspath") {
+    dependsOn("compileDebugUnitTestKotlin")
+    val destination = layout.buildDirectory.file("coach-probe/classpath.txt")
+    val probeClasspath = tasks.named<Test>("testDebugUnitTest").map { it.classpath }
+    inputs.files(probeClasspath)
+    outputs.file(destination)
+    doLast {
+        destination.get().asFile.apply { parentFile.mkdirs(); writeText(probeClasspath.get().asPath) }
+    }
+}

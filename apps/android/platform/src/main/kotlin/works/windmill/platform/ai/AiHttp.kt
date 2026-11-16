@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.CookieJar
@@ -25,7 +26,7 @@ class AiCredentials(val session: String?, val installation: String?) {
 }
 
 class AiHttp(private val origin: HttpUrl, private val credentials: suspend () -> AiCredentials,
-    allowLocalHttp: Boolean = false, private val requestObserved: (String, String) -> Unit = { _, _ -> }) : AiTransport {
+    allowLocalHttp: Boolean = false, private val requestObserved: (String, String) -> Unit = { _, _ -> }) : AiTransport, AutoCloseable {
     init {
         require(origin.username.isEmpty() && origin.password.isEmpty() && origin.encodedPath == "/" && origin.query == null && origin.fragment == null)
         require(origin.isHttps || allowLocalHttp && origin.scheme == "http" && origin.host in setOf("127.0.0.1", "::1"))
@@ -86,20 +87,23 @@ class AiHttp(private val origin: HttpUrl, private val credentials: suspend () ->
                             while (true) {
                                 val count = body.source().read(bytes)
                                 if (count == -1) { parser.finish(); break }
-                                for (event in parser.consume(bytes, count)) emit(event)
+                                for (event in parser.consume(bytes, count)) {
+                                    emit(event)
+                                    if (event.member("event").str() in setOf("ended", "failed")) return@flow
+                                }
                             }
                         }
                     } catch (error: IOException) { throw connectionFailure(error) }
                 }.flowOn(Dispatchers.IO)
                 return AiResponse(response.code, events = events) { call.cancel(); response.close() }
             }
-            return response.use {
+            return withContext(Dispatchers.IO) { response.use {
                 val source = it.body?.source() ?: return@use AiResponse(it.code)
                 source.request(1_048_577)
                 if (source.buffer.size > 1_048_576) throw AiTransportFailure("invalid-answer")
                 val bytes = source.readByteArray()
                 if (bytes.isEmpty() && it.code == 404) AiResponse(404) else AiResponse(it.code, Json.parse(bytes))
-            }
+            } }
         } catch (failure: Exception) {
             response.close()
             if (failure is IOException) throw connectionFailure(failure)
@@ -107,5 +111,6 @@ class AiHttp(private val origin: HttpUrl, private val credentials: suspend () ->
             throw AiTransportFailure("invalid-answer")
         }
     }
+    override fun close() { client.dispatcher.cancelAll(); client.dispatcher.executorService.shutdown(); client.connectionPool.evictAll() }
     private fun connectionFailure(failure: IOException) = AiTransportFailure(if (TelemetryPolicy.networkLoss(failure)) "lost" else "transport")
 }

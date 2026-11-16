@@ -76,8 +76,7 @@ object AiWire {
 class AiSse {
     private val frame = ByteArrayOutputStream()
     private val line = ByteArrayOutputStream()
-    fun consume(bytes: ByteArray, count: Int = bytes.size): List<Json> {
-        val events = mutableListOf<Json>()
+    fun consume(bytes: ByteArray, count: Int = bytes.size): Sequence<Json> = sequence {
         for (index in 0 until count) {
             val byte = bytes[index].toInt() and 255
             if (frame.size() + line.size() >= 1_048_576) throw AiTransportFailure("invalid-answer")
@@ -102,11 +101,10 @@ class AiSse {
             if (id == null || !Regex("[1-9][0-9]*").matches(id)) throw AiTransportFailure("invalid-answer")
             try {
                 val parsed = Json.objectOf("id" to Json.of(id.toLong()), "event" to Json.of(event ?: ""), "data" to Json.parse(values.joinToString("\n")))
-                AiWire.event(parsed); events += parsed
+                AiWire.event(parsed); yield(parsed)
             } catch (failure: AiTransportFailure) { throw failure }
             catch (_: Exception) { throw AiTransportFailure("invalid-answer") }
         }
-        return events
     }
     fun finish() {
         val tail = frame.toByteArray() + line.toByteArray()

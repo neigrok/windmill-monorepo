@@ -25,6 +25,7 @@ class Profile(val json: Json) {
         require(Regex("[a-z][a-z0-9.-]{0,63}").matches(name))
         require(model in setOf("large", "medium", "small"))
         require(effort in setOf("low", "medium", "high", "xhigh", "max"))
+        output.expectKeys(listOf("maxTokens", "minTokens"))
         val maxTokens = output.member("maxTokens").long(1)
         output.member("minTokens").orNull()?.let { require(it.long(1) <= maxTokens) }
         listOf("historyPrefix", "contextPrefix", "questionPrefix", "emptyQuestion").forEach { firstContent.member(it).str() }
