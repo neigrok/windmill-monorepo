@@ -201,6 +201,6 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         val transient = setOf("busy", "paused", "rate_limited", "concurrency_exhausted", "accounting_unavailable", "provider_unavailable")
         val defects = setOf("invalid_request", "too_large", "provider_rejected", "funding_required", "conflict", "call_unknown", "invalid-answer", "untrusted-origin", "unsupported-media-type")
         val codes = transient + defects + setOf("subject_exhausted", "free_day_exhausted", "free_month_exhausted", "device_bound", "result_gone", "pass_missing", "pass_signature", "pass_audience", "pass_malformed", "pass_expired", "picture_gone", "provider_failed")
-        val passCodes = setOf("invalid_request", "unauthenticated", "invalid_installation", "device_bound", "client-update-required", "rate_limited", "anonymous_ai_unavailable", "untrusted-origin", "unsupported-media-type")
+        val passCodes = setOf("invalid_request", "unauthenticated", "invalid_installation", "device_bound", "client-update-required", "rate_limited", "anonymous_ai_unavailable", "unavailable", "untrusted-origin", "unsupported-media-type")
     }
 }

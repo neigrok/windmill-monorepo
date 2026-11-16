@@ -8,7 +8,7 @@ const uncertain = new Set(['busy', 'accounting_unavailable']);
 const CODES = new Set([...TRANSIENT, ...DEFECTS, 'subject_exhausted', 'free_day_exhausted', 'free_month_exhausted', 'device_bound',
   'result_gone', 'pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired', 'picture_gone', 'provider_failed']);
 const PASS_CODES = new Set(['invalid_request', 'unauthenticated', 'invalid_installation', 'device_bound', 'client-update-required',
-  'rate_limited', 'anonymous_ai_unavailable', 'untrusted-origin', 'unsupported-media-type']);
+  'rate_limited', 'anonymous_ai_unavailable', 'unavailable', 'untrusted-origin', 'unsupported-media-type']);
 
 export class AiClient {
   constructor({ transport, telemetry, now = () => performance.now(), wait = waitFor, client = 'web' }) {
