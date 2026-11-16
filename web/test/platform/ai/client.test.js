@@ -10,19 +10,19 @@ test('every AI terminal and allowance fixture is accepted without projecting awa
   for (const value of Object.values(fixtures.allowances)) assert.doesNotThrow(() => validateAllowance(value));
 });
 
-test('offline pass and picture fetches remain offline without reporting a defect', async () => {
+test('lost pass, picture and allowance fetches remain offline without reporting a defect', async () => {
   const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
   try {
-    for (const boundary of ['pass', 'picture']) {
+    for (const onLine of [false, true]) for (const boundary of ['pass', 'picture', 'allowance']) {
+      Object.defineProperty(globalThis, 'navigator', { value: { onLine }, configurable: true });
       const reports = [];
       const transport = new HttpAiTransport({ fetch: async (url) => {
-        if (boundary === 'picture' && url.endsWith('/v1/ai/passes'))
+        if (boundary !== 'pass' && url.endsWith('/v1/ai/passes'))
           return { status: 200, json: async () => ({ pass: 'private', expiresIn: 600000 }) };
         throw new TypeError('offline');
       } });
       const client = new AiClient({ transport, telemetry: { failure: (operation) => reports.push(operation) } });
-      const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1,
+      const result = boundary === 'allowance' ? await client.allowance({ use: 'vector.coach', version: 1 }) : await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1,
         pictures: boundary === 'picture' ? [{ pictureId: 'PPPPPPPPPPPPPPPPPPPPPP', mediaType: 'image/png', bytes: [137, 80, 78, 71, 13, 10, 26, 10] }] : [], onText() {} });
       assert.deepEqual(result, { failure: { source: 'transport', code: null, admission: 'none', allowance: null } });
       assert.deepEqual(reports, []);

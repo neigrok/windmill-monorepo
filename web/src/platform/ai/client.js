@@ -37,7 +37,7 @@ export class AiClient {
       try { response = await this.transport.pass({ client: this.client, use, version }); }
       catch (error) {
         if (generation !== this.generation) throw new TransportFailure('seat-changed');
-        if (error instanceof TransportFailure && error.code === 'offline')
+        if (error instanceof TransportFailure && ['offline', 'lost'].includes(error.code))
           return { failure: { source: 'transport', code: null, admission: 'none', allowance: null } };
         this.telemetry.failure('ai-pass');
         return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } };
@@ -81,7 +81,7 @@ export class AiClient {
     } catch (error) {
       if (error instanceof TransportFailure && error.code === 'seat-changed')
         return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } };
-      return this.failure(error instanceof TransportFailure && error.code !== 'invalid-answer' ? 'transport' : 'wire', error instanceof TransportFailure && error.code === 'offline' ? null : 'invalid-answer', 'none');
+      return this.failure(error instanceof TransportFailure && error.code !== 'invalid-answer' ? 'transport' : 'wire', error instanceof TransportFailure && ['offline', 'lost'].includes(error.code) ? null : 'invalid-answer', 'none');
     }
   }
 
@@ -173,7 +173,7 @@ export class AiClient {
       } catch (error) {
         if (callbackFailure === error) throw error;
         if (error instanceof TransportFailure && error.code === 'seat-changed') return { failure: { source: 'pass', code: null, admission, allowance: null } };
-        if (error instanceof TransportFailure && error.code === 'offline') return failed('transport', null);
+        if (error instanceof TransportFailure && ['offline', 'lost'].includes(error.code)) return failed('transport', null);
         if (error?.name === 'HostUnavailable' || error?.reason === 'gone') throw error;
         return failed('wire', 'invalid-answer');
       }
