@@ -22,6 +22,21 @@ import SyncCore
     }
   }
 
+  @Test func corruptRecoveryOffsetsReportHostFailureBeforeReadingAnAnswer() async throws {
+    let profile = try AiPolicyTests.profile()
+    let input = TurnInput(turnId: "turn", seat: Seat(kind: .bound, key: "seat"), question: "")
+    for offset in [-1, 1, 3] {
+      let host = FaultHost(operation: "none", error: StorageFault.disk)
+      host.recoveryOffset = offset
+      let client = HostTestClient()
+      let turn = Turn(host: host, client: client, telemetry: host, runtime: host)
+      #expect(await turn.recover(input: input, profile: profile) == TurnEnd(state: .interrupted, text: "é"))
+      #expect(host.failures == ["agent-host"])
+      #expect(client.recoveries == 0)
+      #expect(client.defects == 0)
+    }
+  }
+
   @Test func expectedRecordAndSeatRefusalsRemainQuiet() async throws {
     let profile = try AiPolicyTests.profile()
     let input = TurnInput(turnId: "turn", seat: Seat(kind: .bound, key: "seat"), question: "private question")
@@ -45,6 +60,7 @@ private enum StorageFault: Error { case disk }
   let error: any Error
   var failures: [String] = []
   var releases = 0
+  var recoveryOffset: Int?
   var nowMs: Int64 { 0 }
   init(operation: String, error: any Error) { self.operation = operation; self.error = error }
   func fail(_ operation: String) throws { if self.operation == operation { throw error } }
@@ -55,7 +71,12 @@ private enum StorageFault: Error { case disk }
     try fail("open")
     return OpenTurn(lease: HostLease(turnId: input.turnId, seat: input.seat, generation: 0))
   }
-  func recover(_ input: TurnInput) async throws -> Recovery? { try fail("recover"); return nil }
+  func recover(_ input: TurnInput) async throws -> Recovery? {
+    try fail("recover")
+    guard let recoveryOffset else { return nil }
+    return Recovery(lease: HostLease(turnId: input.turnId, seat: input.seat, generation: 0),
+      mark: Mark(turnId: input.turnId, callId: String(repeating: "A", count: 22), textBytesBeforeRound: recoveryOffset), text: "é")
+  }
   func text(_ text: String, lease: HostLease) async throws { try fail("text") }
   func beginRound(_ mark: Mark, text: String, lease: HostLease) async throws { try fail("beginRound") }
   func end(_ end: TurnEnd, lease: HostLease) async throws { try fail("end") }
@@ -70,6 +91,7 @@ private enum StorageFault: Error { case disk }
 @MainActor final class HostTestClient: AiClient {
   var defects = 0
   var tools = false
+  var recoveries = 0
   func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture], receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
     try await receive(AiEvent(id: 1, name: "text", data: ["delta": "Answer"]))
     if tools {
@@ -78,7 +100,7 @@ private enum StorageFault: Error { case disk }
     }
     try await receive(AiEvent(id: 2, name: "ended", data: ["stop": "completed", "message": ["role": "assistant", "parts": [["text": "Answer"]], "carry": ""], "charged": "0", "allowance": .null]))
   }
-  func recover(id: String, profile: Profile, seat: Seat, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {}
+  func recover(id: String, profile: Profile, seat: Seat, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws { recoveries += 1 }
   func allowance(profile: Profile, seat: Seat) async throws -> JSON { .null }
   func upload(_ pictures: [Picture], profile: Profile, seat: Seat) async throws {}
   func stopAskingAgain() {}

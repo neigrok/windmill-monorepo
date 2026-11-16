@@ -215,9 +215,13 @@ public struct Recovery: Sendable {
       text = recovery.text
       try checkSeat()
       guard let callId = recovery.mark.callId else { return await finish(.interrupted) }
+      guard (0...text.utf8.count).contains(recovery.mark.textBytesBeforeRound) else {
+        telemetry.hostFailure()
+        return await finish(.interrupted)
+      }
       let prefixBytes = Array(text.utf8.prefix(recovery.mark.textBytesBeforeRound))
       let prefix = String(decoding: prefixBytes, as: UTF8.self)
-      guard Array(prefix.utf8) == prefixBytes, recovery.mark.textBytesBeforeRound <= text.utf8.count else {
+      guard Array(prefix.utf8) == prefixBytes else {
         telemetry.hostFailure()
         return await finish(.interrupted)
       }
