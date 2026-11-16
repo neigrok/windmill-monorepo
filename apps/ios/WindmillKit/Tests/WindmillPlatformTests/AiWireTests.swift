@@ -5,6 +5,13 @@ import SyncCore
 @testable import WindmillPlatform
 
 @Suite @MainActor struct AiWireTests {
+  @Test func callAndPictureIdentifiersUseTheServicesFullWidth() {
+    for count in [22, 24, 64] { #expect(ServiceAiClient.validID(String(repeating: "A", count: count))) }
+    for value in [String(repeating: "A", count: 21), String(repeating: "A", count: 65), String(repeating: "A", count: 21) + "/", String(repeating: "A", count: 21) + "é"] {
+      #expect(!ServiceAiClient.validID(value))
+    }
+  }
+
   @Test func allSharedTextEventsParseAcrossEveryUTF8ByteBoundary() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

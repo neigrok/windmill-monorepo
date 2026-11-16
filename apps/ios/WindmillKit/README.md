@@ -32,7 +32,7 @@ Product integration supplies the Sentry and first-party event sinks described in
 [iOS observability](../../../docs/IOS_OBSERVABILITY.md). No SDK key, request, pass, call ID, raw error
 or user content enters either port.
 
-Run `swift test --package-path apps/ios/WindmillKit`. Tests replay every shared story, parse the AI
+Run `swift test --package-path apps/ios/WindmillKit --explicit-target-dependency-import-check error`. Tests replay every shared story, parse the AI
 wire fixtures across byte boundaries, exercise URLSession credential isolation, race pass and
 allowance replies against seat changes, and verify real sync commit guards. No provider runs.
 `CoachLocalProbeTests/run` is opt-in: `WM_COACH_PROBE_CONFIG` supplies a protected synthetic config,

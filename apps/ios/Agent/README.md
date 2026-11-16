@@ -12,7 +12,8 @@ ability execution. Its prefix uses UTF-8 bytes. Duplicate call IDs fail before a
 
 Stop lets an in-flight completed round finish, discards tool calls after Stop, and cancels only
 retry waits. Await `seatWillChange()` before changing credentials, the host generation or active
-replica: it waits for pending host mutations, writes interruption and drops the pass. A host must
+replica: it waits for pending host mutations, writes interruption and drops the pass. Each invocation
+holds its own state and work lease; after the barrier, a new seat can run while an old response drains. A host must
 check its lease and record existence inside every commit; `WindmillPlatform.CoachCommitGuard`
 provides that boundary for sync records. Record deletion ends silently. `TurnFreshness` requires a
 live sync connection and corrected server time; it never consults a wall clock itself.
@@ -23,6 +24,8 @@ volume; successful executions consume group slots. Product refusal sentences are
 error content. Telemetry contains bounded ability names, refusal labels and turn counts, never
 questions, results, credentials, seat keys or call identifiers.
 
-Run `swift test --package-path apps/ios/Agent`. The complete shared story replay belongs to
+The package boundary test rejects product nouns and every import except SyncCore.
+
+Run `swift test --package-path apps/ios/Agent --explicit-target-dependency-import-check error`. The complete shared story replay belongs to
 `WindmillKit/Tests/WindmillPlatformTests`: it runs this engine and the actual AI retry policy over
 scripted transport and guarded storage, comparing every expected trace field.

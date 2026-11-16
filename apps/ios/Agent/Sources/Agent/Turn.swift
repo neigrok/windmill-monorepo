@@ -12,12 +12,49 @@ public struct Recovery: Sendable {
   let client: any AiClient
   let telemetry: any Telemetry
   let runtime: any TurnRuntime
+  var active: TurnExecution?
+
+  public init(host: any ToolHost, client: any AiClient, telemetry: any Telemetry, runtime: any TurnRuntime) {
+    self.host = host; self.client = client; self.telemetry = telemetry; self.runtime = runtime
+  }
+
+  public func stop() { active?.stop() }
+
+  public func seatWillChange() async {
+    guard let execution = active else { client.seatWillChange(); return }
+    await execution.seatWillChange()
+    if active === execution { active = nil }
+  }
+
+  public func run(input: TurnInput, profile: Profile) async -> TurnEnd? {
+    guard active == nil else { return nil }
+    let execution = TurnExecution(host: host, client: client, telemetry: telemetry, runtime: runtime)
+    active = execution
+    defer { if active === execution { active = nil } }
+    return await execution.run(input: input, profile: profile)
+  }
+
+  public func recover(input: TurnInput, profile: Profile) async -> TurnEnd? {
+    guard active == nil else { return nil }
+    let execution = TurnExecution(host: host, client: client, telemetry: telemetry, runtime: runtime)
+    active = execution
+    defer { if active === execution { active = nil } }
+    return await execution.recover(input: input, profile: profile)
+  }
+}
+
+@MainActor final class TurnExecution {
+  let host: any ToolHost
+  let client: any AiClient
+  let telemetry: any Telemetry
+  let runtime: any TurnRuntime
   var lease: HostLease?
   var input: TurnInput?
   var text = ""
   var stopRequested = false
   var seatChange = false
   var active = false
+  var workLease = false
   var rounds = 0
   var abilityCalls = 0
   var refusals = 0
@@ -41,14 +78,15 @@ public struct Recovery: Sendable {
     await mutation?.value
     guard active else { return }
     _ = await finish(.interrupted)
+    releaseWork()
   }
 
   public func run(input: TurnInput, profile: Profile) async -> TurnEnd? {
     guard !active else { return nil }
     reset(input, profile: profile)
-    defer { active = false; runtime.release() }
+    defer { active = false; releaseWork() }
     do {
-      try await runtime.acquire()
+      try await mutate { [self] in try await runtime.acquire(); workLease = true }
       try checkSeat()
       let open = try await mutate { [self] in
         let open = try await host.open(input)
@@ -151,9 +189,9 @@ public struct Recovery: Sendable {
   public func recover(input: TurnInput, profile: Profile) async -> TurnEnd? {
     guard !active else { return nil }
     reset(input, profile: profile)
-    defer { active = false; runtime.release() }
+    defer { active = false; releaseWork() }
     do {
-      try await runtime.acquire()
+      try await mutate { [self] in try await runtime.acquire(); workLease = true }
       let recovery = try await mutate { [self] in
         let recovery = try await host.recover(input)
         lease = recovery?.lease
@@ -192,6 +230,12 @@ public struct Recovery: Sendable {
       }
     } catch HostFailure.recordGone { return await finish(.interrupted, gone: true) }
     catch { return await finish(.interrupted) }
+  }
+
+  func releaseWork() {
+    guard workLease else { return }
+    workLease = false
+    runtime.release()
   }
 
   func reset(_ input: TurnInput, profile: Profile) {
