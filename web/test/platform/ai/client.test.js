@@ -10,6 +10,29 @@ test('every AI terminal and allowance fixture is accepted without projecting awa
   for (const value of Object.values(fixtures.allowances)) assert.doesNotThrow(() => validateAllowance(value));
 });
 
+test('offline pass and picture fetches remain offline without reporting a defect', async () => {
+  const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+  try {
+    for (const boundary of ['pass', 'picture']) {
+      const reports = [];
+      const transport = new HttpAiTransport({ fetch: async (url) => {
+        if (boundary === 'picture' && url.endsWith('/v1/ai/passes'))
+          return { status: 200, json: async () => ({ pass: 'private', expiresIn: 600000 }) };
+        throw new TypeError('offline');
+      } });
+      const client = new AiClient({ transport, telemetry: { failure: (operation) => reports.push(operation) } });
+      const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1,
+        pictures: boundary === 'picture' ? [{ pictureId: 'PPPPPPPPPPPPPPPPPPPPPP', mediaType: 'image/png', bytes: [137, 80, 78, 71, 13, 10, 26, 10] }] : [], onText() {} });
+      assert.deepEqual(result, { failure: { source: 'transport', code: null, admission: 'none', allowance: null } });
+      assert.deepEqual(reports, []);
+    }
+  } finally {
+    if (navigator) Object.defineProperty(globalThis, 'navigator', navigator);
+    else delete globalThis.navigator;
+  }
+});
+
 test('the actual client returns every terminal fixture intact and bounds unexpected service codes', async () => {
   const fixtures = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/ai/wire/fixtures.json', import.meta.url)));
   for (const terminal of Object.values(fixtures.textTerminals)) {
@@ -103,5 +126,18 @@ test('allowance uses its complete wire shape and repairs one expired pass', asyn
     } });
     assert.deepEqual(await client.allowance({ use: 'vector.coach', version: 1 }), allowance);
     assert.equal(passes, 2);
+  }
+});
+
+test('allowance refusals reject unknown codes and malformed allowance data', async () => {
+  for (const body of [{ code: 'private-user-content', allowance: null }, { code: 'subject_exhausted', allowance: { bogus: true } }]) {
+    const reports = [];
+    const client = new AiClient({ telemetry: { failure: (operation) => reports.push(operation) }, transport: {
+      pass: async () => ({ status: 200, body: { pass: 'private', expiresIn: 600000 } }),
+      request: async () => ({ status: 429, body }),
+    } });
+    assert.deepEqual(await client.allowance({ use: 'vector.coach', version: 1 }),
+      { failure: { source: 'wire', code: 'invalid-answer', admission: 'none', allowance: null } });
+    assert.deepEqual(reports, ['ai-call']);
   }
 });

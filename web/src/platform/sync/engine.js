@@ -349,7 +349,7 @@ export class BrowserSyncEngine {
     const reading = this.reading();
     const sample = replica.meta.clockReading;
     const syncLive = Boolean(replica.id === this.device.activeReplica.id && this.canSync()
-      && !this.signOutOpening && !this.device.meta.signOut && !this.device.meta.pendingSignIn
+      && !this.authenticating && !this.signOutOpening && !this.device.meta.signOut && !this.device.meta.pendingSignIn
       && this.live.socket?.readyState === 1 && this.live.following.has(scope)
       && firstPullComplete(replica, scope, this.scopes(replica))
       && replica.meta.offsetSamples.length > 0 && sample !== undefined
@@ -852,16 +852,17 @@ export class BrowserSyncEngine {
     let generation;
     const current = this.device.activeReplica.meta;
     if (current.state === 'bound' && current.account !== account) throw new CommitError('finish sign-out before changing accounts');
-    await this.write(null, (device, ctx) => {
-      if (device.meta.signOut) throw new CommitError('finish or cancel sign-out before signing in');
-      if (device.activeReplica.meta.state === 'bound' && device.activeReplica.meta.account !== account)
-        throw new CommitError('finish sign-out before changing accounts');
-      generation = device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
-      if (device.activeReplica.meta.state !== 'bound') device.meta.pendingSignIn = { account };
-      if (device.activeReplica.meta.state !== 'bound')
-        for (const replica of device.replicas) releaseAll(replica, this.registry, ctx.ended);
-    });
+    this.authenticating = (this.authenticating ?? 0) + 1;
     try {
+      await this.write(null, (device, ctx) => {
+        if (device.meta.signOut) throw new CommitError('finish or cancel sign-out before signing in');
+        if (device.activeReplica.meta.state === 'bound' && device.activeReplica.meta.account !== account)
+          throw new CommitError('finish sign-out before changing accounts');
+        generation = device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
+        if (device.activeReplica.meta.state !== 'bound') device.meta.pendingSignIn = { account };
+        if (device.activeReplica.meta.state !== 'bound')
+          for (const replica of device.replicas) releaseAll(replica, this.registry, ctx.ended);
+      });
       const { response, timing } = await this.request('hello');
       if (response.status === 426) return { complete: false, upgradeRequired: true };
       this.validateResponse('hello', response);
@@ -890,6 +891,8 @@ export class BrowserSyncEngine {
     } catch (error) {
       this.telemetry.failure('auth');
       throw error;
+    } finally {
+      this.authenticating--;
     }
   }
 

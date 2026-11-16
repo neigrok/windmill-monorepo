@@ -122,6 +122,7 @@ extension JSON {
     hostCalls.append(["op": "text", "text": .string(text)])
   }
   func beginRound(_ mark: Mark, text: String, lease: HostLease) async throws {
+    try await control("beginRound:beforeCommit")
     try guardLease(lease)
     hostCalls.append(["op": "beginRound", "text": .string(text), "mark": Self.json(mark)])
     marks.append(Self.json(mark))

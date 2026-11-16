@@ -44,3 +44,26 @@ test('staleness never uses a local clock, missing server time, or a non-running 
   assert.equal(isStaleTurn({ state: 'completed', serverUpdatedAt: 0 }, { syncLive: true, serverNow: 9e12 }), false);
   assert.equal(isStaleTurn({ state: 'running', serverUpdatedAt: null }, { syncLive: true, serverNow: 9e12 }), false);
 });
+
+test('reauthenticating the bound account fences freshness until its live scope reconnects', async () => {
+  const env = environment();
+  const engine = await BrowserSyncEngine.open(env.options);
+  try {
+    engine.boot = 'test'; engine.observe('self/probe'); await engine.start(); await until(() => engine.leader);
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader); await engine.pull(); engine.follow();
+    const socket = env.sockets.at(-1); socket.readyState = 1; socket.onopen();
+    assert.equal(engine.freshness('self/probe').syncLive, true);
+    let release, reached;
+    const entered = new Promise((resolve) => { reached = resolve; });
+    const request = env.transport.request.bind(env.transport);
+    env.transport.request = async (...args) => {
+      if (args[0] === 'hello') { reached(); await new Promise((resolve) => { release = resolve; }); }
+      return request(...args);
+    };
+    const reauthentication = engine.signIn('A');
+    await entered;
+    assert.deepEqual(engine.freshness('self/probe'), { syncLive: false, serverNow: null });
+    release(); await reauthentication;
+    assert.deepEqual(engine.freshness('self/probe'), { syncLive: false, serverNow: null });
+  } finally { engine.close(); }
+});

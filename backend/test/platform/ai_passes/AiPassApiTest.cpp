@@ -160,9 +160,12 @@ TEST(ai_pass_authentication_transport_and_json_refusals_never_fall_back) {
       {"Cookie: wm_session=session; wm_session=session\r\nOrigin: https://windmill.works\r\n", "unauthenticated"},
       {"Authorization: Bearer session\r\nCookie: wm_session=invalid\r\nOrigin: https://windmill.works\r\n", "unauthenticated"}})
     CHECK_EQ((*fixture.call(headers)->getJsonObject())["code"].asString(), code);
-  for (const auto& body : {R"({"client":"web","use":"gym.coach","version":2,"version":2})", R"({"client":"web","use":"unknown","version":2})"})
+  for (const auto& body : {R"({"client":"web","use":"gym.coach","version":2,"version":2})", R"({"client":"web","use":"unknown","version":2})"}) {
     CHECK_EQ((*fixture.call("Authorization: Bearer session\r\n", body)->getJsonObject())["code"].asString(), "invalid_request");
+    CHECK(fixture.completions.back().metadata.empty());
+  }
   CHECK_EQ((*fixture.call("Authorization: Bearer session\r\n", R"({"client":"web","use":"gym.coach","version":1})")->getJsonObject())["code"].asString(), "client-update-required");
+  CHECK(fixture.completions.back().metadata == (std::map<std::string, std::string>{{"client", "web"}, {"use", "gym.coach"}, {"version", "1"}}));
   CHECK_EQ((*fixture.call("Authorization: Bearer session\r\n", "{}", "Content-Type: text/plain\r\n")->getJsonObject())["code"].asString(), "unsupported-media-type");
   CHECK_EQ(fixture.call("Cookie: wm_session=session\r\nOrigin: https://windmill.works\r\n")->statusCode(), drogon::k200OK);
   CHECK(fixture.rows.admissions.empty());

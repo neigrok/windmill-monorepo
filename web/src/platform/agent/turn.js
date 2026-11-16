@@ -109,6 +109,9 @@ export class TurnRunner {
           const callId = this.runtime.newId();
           const mark = { turnId: input.turnId, callId, textBytesBeforeRound: bytes(turn.text) };
           await this.mutate(() => this.host.beginRound(turn.lease, turn.text, mark));
+          if (turn.done) return turn.end;
+          if (turn.seatChanged) return await this.finish(turn, 'interrupted');
+          if (turn.stop) return await this.finish(turn, 'stopped');
           turn.rounds++;
           const answer = await this.ai.text({ callId, request: { model: profile.model, system: profile.system,
             tools: profile.tools.map(({ name, description, input }) => ({ name, description, input })), messages,
@@ -147,6 +150,8 @@ export class TurnRunner {
             if (!code) code = profile.groups.find((group) => group.tools.includes(call.name) && (turn.groups.get(group.name) ?? 0) >= group.maxSuccesses)?.code ?? null;
             if (!code && (turn.abilities >= profile.limits.abilityCalls || (tool.countsAsWrite && turn.writes >= profile.limits.writes))) code = 'coach-turn-volume';
             if (!code) code = await this.host.check(turn.lease, 'product', call);
+            if (turn.done) return turn.end;
+            if (turn.seatChanged) return await this.finish(turn, 'interrupted');
             if (!code && turn.stop) code = 'stopped';
             let outcome;
             if (code) {
@@ -154,9 +159,13 @@ export class TurnRunner {
               this.host.refused?.({ id: call.id, code });
               outcome = { ok: false, code };
             } else {
-              turn.abilities++;
-              if (tool.countsAsWrite) turn.writes++;
-              outcome = await this.mutate(() => this.host.execute(turn.lease, { turnId: input.turnId, callId, toolCallId: call.id }, call));
+              outcome = await this.mutate(() => {
+                if (turn.done || turn.seatChanged || turn.stop) return null;
+                turn.abilities++;
+                if (tool.countsAsWrite) turn.writes++;
+                return this.host.execute(turn.lease, { turnId: input.turnId, callId, toolCallId: call.id }, call);
+              });
+              if (outcome === null) return await this.finish(turn, turn.seatChanged ? 'interrupted' : 'stopped');
               if (outcome.ok) for (const group of profile.groups) if (group.tools.includes(call.name)) turn.groups.set(group.name, (turn.groups.get(group.name) ?? 0) + 1);
             }
             const boundedCode = outcome.ok ? null : Object.hasOwn(profile.refusals, outcome.code) ? outcome.code : 'product-refused';

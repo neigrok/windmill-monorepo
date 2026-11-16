@@ -35,7 +35,13 @@ export class AiClient {
     const promise = (async () => {
       let response;
       try { response = await this.transport.pass({ client: this.client, use, version }); }
-      catch { this.telemetry.failure('ai-pass'); return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } }; }
+      catch (error) {
+        if (generation !== this.generation) throw new TransportFailure('seat-changed');
+        if (error instanceof TransportFailure && error.code === 'offline')
+          return { failure: { source: 'transport', code: null, admission: 'none', allowance: null } };
+        this.telemetry.failure('ai-pass');
+        return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } };
+      }
       if (generation !== this.generation) throw new TransportFailure('seat-changed');
       if (response.status !== 200) {
         const code = PASS_CODES.has(response.body?.code) ? response.body.code : response.status === 404 ? 'anonymous_ai_unavailable' : 'invalid-answer';
@@ -67,11 +73,15 @@ export class AiClient {
         const response = await this.transport.request({ method: 'GET', path: '/v1/allowance', pass });
         if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } };
         if (response.status === 200) { validateAllowance(response.body); return response.body; }
+        if (!CODES.has(response.body?.code)) return this.failure('wire', 'invalid-answer', 'none');
+        if (response.body.allowance !== null && response.body.allowance !== undefined) validateAllowance(response.body.allowance);
         if (response.body?.code === 'pass_expired' && !refreshed) { refreshed = true; continue; }
         return this.failure('text', response.body?.code ?? 'invalid-answer', 'none', response.body?.allowance ?? null);
       }
     } catch (error) {
-      return this.failure(error instanceof TransportFailure ? 'transport' : 'wire', error instanceof TransportFailure && error.code === 'offline' ? null : 'invalid-answer', 'none');
+      if (error instanceof TransportFailure && error.code === 'seat-changed')
+        return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } };
+      return this.failure(error instanceof TransportFailure && error.code !== 'invalid-answer' ? 'transport' : 'wire', error instanceof TransportFailure && error.code === 'offline' ? null : 'invalid-answer', 'none');
     }
   }
 
@@ -163,6 +173,7 @@ export class AiClient {
       } catch (error) {
         if (callbackFailure === error) throw error;
         if (error instanceof TransportFailure && error.code === 'seat-changed') return { failure: { source: 'pass', code: null, admission, allowance: null } };
+        if (error instanceof TransportFailure && error.code === 'offline') return failed('transport', null);
         if (error?.name === 'HostUnavailable' || error?.reason === 'gone') throw error;
         return failed('wire', 'invalid-answer');
       }

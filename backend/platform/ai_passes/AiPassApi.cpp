@@ -49,10 +49,11 @@ void AiPassApi::sign(const drogon::HttpRequestPtr& request, std::function<void(c
     const auto input = AiPassRequest::parse(request->getBody());
     if (!input) { refuse(drogon::k400BadRequest, "invalid_request"); return; }
     const auto versionRefusal = passes_->refusal(*input);
+    if (observation && (versionRefusal.empty() || versionRefusal == "client-update-required"))
+      observation->metadata({{"client", input->client}, {"use", input->use}, {"version", std::to_string(input->version)}});
     if (!versionRefusal.empty()) {
       refuse(versionRefusal == "client-update-required" ? drogon::k426UpgradeRequired : drogon::k400BadRequest, versionRefusal.c_str()); return;
     }
-    if (observation) observation->metadata({{"client", input->client}, {"use", input->use}, {"version", std::to_string(input->version)}});
     std::optional<User> account;
     const auto credentials = sent.resolve([&](const std::string& token) -> std::optional<UserId> {
       const auto user = auth_->authenticate(token);

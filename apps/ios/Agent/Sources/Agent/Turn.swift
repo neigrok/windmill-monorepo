@@ -105,6 +105,7 @@ public struct Recovery: Sendable {
         let mark = Mark(turnId: input.turnId, callId: callId, textBytesBeforeRound: text.utf8.count)
         try await mutate { [self] in try await host.beginRound(mark, text: text, lease: open.lease) }
         try checkSeat()
+        if stopRequested { return await finish(.stopped) }
         rounds += 1
         var terminal: AiEvent?
         try await client.call(id: callId, request: profile.request(messages: messages), profile: profile,

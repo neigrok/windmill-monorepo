@@ -84,7 +84,7 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
         writer = { generation }; trace.hostCalls.push({ op: 'recover', turnId });
         return { ...story.host.recovery, lease: writer };
       },
-      async beginRound(lease, text, mark) { guard(lease); trace.hostCalls.push({ op: 'beginRound', text, mark }); trace.marks.push(mark); },
+      async beginRound(lease, text, mark) { control('beginRound:beforeCommit'); guard(lease); trace.hostCalls.push({ op: 'beginRound', text, mark }); trace.marks.push(mark); },
       async text(lease, text) { control('text:beforeCommit'); guard(lease); trace.hostCalls.push({ op: 'text', text }); },
       async check(lease, rule, call) { control(`check:${call.id}:${rule}`); guard(lease); trace.hostCalls.push({ op: 'check', rule, call }); return story.host.checks[call.id]?.[rule] ?? null; },
       async execute(lease, identity, call) {

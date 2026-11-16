@@ -98,8 +98,11 @@ export class HttpAiTransport {
     const controller = new AbortController();
     const timer = this.timers.setTimeout(() => controller.abort(), 30_000);
     try {
-      const response = await this.fetch(`${this.base}/v1/ai/passes`, { method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'manual', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', ...(installation ? { 'X-Windmill-Installation': installation } : {}) }, body: JSON.stringify(body) });
+      let response;
+      try {
+        response = await this.fetch(`${this.base}/v1/ai/passes`, { method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'manual', signal: controller.signal,
+          headers: { 'Content-Type': 'application/json', ...(installation ? { 'X-Windmill-Installation': installation } : {}) }, body: JSON.stringify(body) });
+      } catch { throw new TransportFailure(globalThis.navigator?.onLine === false ? 'offline' : 'lost'); }
       if (response.status === 404) return { status: 404, body: null };
       return { status: response.status, body: await response.json() };
     } finally { this.timers.clearTimeout(timer); }

@@ -6,8 +6,10 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. The only Coach loop that exists runs on the server, for gym
-([phone-hosted Coach abilities](mobile/gym_coach.md) §4.2). The build order lives in the Coach engine
+**Status:** Approved by the owner on 2026-11-15. Product-neutral turn libraries and AI clients are
+implemented for web, iOS and Android, together with the optional backend pass issuer and shared
+turn stories. Product screens do not use these libraries yet; their integrations and production
+acceptance remain separate work. The build order lives in the Coach engine
 roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `coach-engine`.
 
 **Scope:** What every Coach shares once its turn runs on the device (AI service I-3): the engine
@@ -395,6 +397,8 @@ order, the mark at each step, and the end.
 - The AI client reports to Sentry under the static name `ai-call`: a transport failure that is not
   a lost connection, an answer it cannot read, and every code §7 calls a defect. The pass door's
   failures report under `ai-pass`. A refusal a person can act on is an event and never an Issue.
+  Unexpected host or runtime failures report under `agent-host`; a removed record or stale seat is
+  an expected interruption and files no Issue.
 - The backend logs one line for each pass it signs or refuses: operation `ai.pass.sign`, the kind
   of principal, the plan, the client, the use and its version, the outcome or code and the
   duration. It logs nothing else of a turn.
