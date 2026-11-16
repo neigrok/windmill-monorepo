@@ -861,6 +861,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   Activating the unavailable button nudges the reason without attempting deletion. Desktop and tablet Graph selection bars still
   omit Delete; their corresponding explanations in 15.23–15.24 await owner approval. The shared step document also omits
   *Delete step* for a sole root.
+- **Phone Board · dark bark token.** Approved dark [25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19715)
+  resolves the refused Delete background to `#6e5d49`; web's shared dark `--color-bark` is `#C07C43`. Both use 45% opacity.
+  The shared token and drawing need reconciliation; the phone refusal uses the current web token without a local override.
 - **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph where its destination is available.
   The Board shortcuts dialog and approved 12.12 both omit A. An *Activity* row after *Board / Graph*, owner only (15.17), is a proposed
   addition to canon and awaits owner approval before entering `BOARD_SHORTCUT_GROUPS`. A does nothing on phones.
