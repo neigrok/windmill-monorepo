@@ -13,7 +13,8 @@ to the pass door. Text, result, allowance and picture requests carry only the pa
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
-only. Refusal retries stop at thirty seconds. Each round has one twenty-minute deadline spanning
+only. Before an answer is lost, transient refusal retries stop at thirty seconds. Each round has
+one twenty-minute deadline spanning
 pass acquisition, requests, streamed reads and recovery waits; expiry cancels its suspended task.
 After a lost answer, only rate-limited, busy and accounting-unavailable refusals retry.
 Every event, terminal, allowance and refusal is validated before delivery, including exact fields,
