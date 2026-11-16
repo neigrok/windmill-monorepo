@@ -224,6 +224,10 @@ def stories():
     finish(s,'stopped','First',refusals=1); out.append(s)
     s=story('seat-pending-open'); s['controls']=[{'at':'open:beforeCommit','action':'seat'}]
     opened(s); finish(s,'interrupted','',rounds=0); out.append(s)
+    for action, state in [('seat', 'interrupted'), ('stop', 'stopped')]:
+        s=story(action + '-pending-round'); s['controls']=[{'at':'beginRound:beforeCommit','action':action}]
+        opened(s); begin(s,0,'',[first(s)]); s['expected']['requests']=[]
+        finish(s,state,'',rounds=0); out.append(s)
     s=story('pass-door-refused'); opened(s); begin(s,0,'',[first(s)]); s['expected']['requests']=[]
     s['service']['passes']=[{'status':401,'code':'unauthenticated'}]; finish(s,'failed','','unauthenticated',withdraw=True); out.append(s)
     encoded = json.dumps(tool_story('call-id-widths', [{}]))
