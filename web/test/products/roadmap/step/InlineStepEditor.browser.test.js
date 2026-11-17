@@ -315,3 +315,35 @@ hostTest('nested link recovery and private note Escape leave the dirty shared fi
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+hostTest('an active draft blocks a stale Save while authority is unready and still responds to permission loss', async () => {
+  const { page, errors } = await openHost({ width: 390, shell: true });
+  try {
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Description', exact: true }).fill('Keep my pending words');
+    await page.evaluate(() => {
+      window.writeAttempts = [];
+      const dispatch = window.session.dispatch.bind(window.session);
+      window.session.dispatch = (gesture) => { window.writeAttempts.push(gesture); return dispatch(gesture); };
+      window.session.ready = false;
+      const save = [...document.querySelectorAll('button')].find((node) => node.textContent === 'Save' && node.getClientRects().length);
+      save.click();
+      window.session.phase = 'syncing';
+      window.session.emitStatus();
+    });
+    const save = page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true });
+    assert.equal(await save.isDisabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.writeAttempts), []);
+    assert.equal(await page.evaluate(() => Boolean(window.draftStore.getSnapshot().unavailable)), false);
+    assert.equal(await page.getByRole('textbox', { name: 'Description', exact: true }).inputValue(), 'Keep my pending words');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } })));
+    await page.getByText('Editing is unavailable. Copy your draft or discard it.', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).count(), 0);
+    await page.getByRole('button', { name: 'Copy draft', exact: true }).click();
+    await page.waitForFunction(() => window.copied.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.copied), ['Keep my pending words']);
+    assert.deepEqual(await page.evaluate(() => window.writeAttempts), []);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

@@ -87,7 +87,8 @@ node --test --test-concurrency=1 --test-timeout=120000 \
   test/products/journal/echoes/useEchoes.test.js \
   test/products/roadmap/paste/NewTreeBirth.test.js \
   test/products/roadmap/SkillTreeView.stepInput.browser.test.js \
-  test/products/roadmap/SkillTreeView.stepRead.browser.test.js
+  test/products/roadmap/SkillTreeView.stepRead.browser.test.js \
+  test/products/roadmap/step/StepDraftRecovery.browser.test.js
 ```
 
 Keep this consumer list current when another hook, rendered door or browser host starts executing the

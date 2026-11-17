@@ -370,3 +370,89 @@ for (const focus of ['shell control', 'draft decision']) {
     } finally { await page.close(); }
   });
 }
+
+for (const [source, result] of [['cache', 'writer'], ['baseline', 'writer'], ['baseline', 'missing'], ['baseline', 'reader']]) {
+  hostTest(`retained return waits for actual ${source} authority before ${result} adoption`, async () => {
+    const { page, errors } = await openHost({ width: 320, shell: true, draftNavigation: true });
+    try {
+      let socket;
+      await page.routeWebSocket('**/*', (opened) => {
+        socket = opened;
+        opened.onMessage(() => {});
+      });
+      await page.reload();
+      await page.waitForFunction(() => window.session?.ready);
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Description', exact: true }).fill('Keep this delayed return');
+      await page.evaluate((source) => {
+        window.retainedToken = window.draftStore.getSnapshot().token;
+        window.returnWrites = [];
+        window.session.constructor.prototype.start = function () {
+          window.session = this;
+          window.returnSession = this;
+          const load = this.store.load.bind(this.store);
+          this.store.load = async (...args) => {
+            this.store.load = load;
+            const saved = await load(...args);
+            await new Promise((resolve) => { window.releaseReturnRestore = resolve; });
+            return source === 'cache' ? saved : null;
+          };
+          const dispatch = this.dispatch.bind(this);
+          this.dispatch = (gesture) => { window.returnWrites.push(gesture); return dispatch(gesture); };
+          return window.startActualSyncSession.call(this);
+        };
+        history.pushState({}, '', '/draft-destination');
+        history.pushState({}, '', '/transient');
+        history.back();
+      }, source);
+      await page.getByRole('heading', { name: 'Destination' }).waitFor();
+      await page.getByRole('button', { name: 'View draft', exact: true }).click();
+      await page.getByRole('button', { name: 'Return to step', exact: true }).click();
+      await page.waitForFunction(() => window.releaseReturnRestore && document.querySelector('article'));
+      assert.deepEqual(await page.evaluate(() => {
+        const slot = window.draftStore.getSnapshot();
+        return { ready: window.returnSession.ready, nodes: window.returnSession.lattice.toTreeData().nodes.length,
+          retained: slot.mode, sameToken: slot.token === window.retainedToken, pending: Boolean(slot.returnToken), unavailable: Boolean(slot.unavailable), writes: window.returnWrites };
+      }), { ready: false, nodes: 0, retained: 'retained', sameToken: true, pending: true, unavailable: false, writes: [] });
+      assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).count(), 0);
+      await page.evaluate(() => window.releaseReturnRestore());
+      if (source === 'baseline') {
+        await page.waitForFunction(() => window.returnSession.ws?.readyState === WebSocket.OPEN);
+        assert.equal(await page.evaluate(() => window.returnSession.ready), false);
+        assert.equal(await page.evaluate(() => Boolean(window.draftStore.getSnapshot().returnToken)), true);
+        const frame = await page.evaluate((result) => {
+          const frame = structuredClone(window.serverTree);
+          if (result === 'missing') {
+            frame.nodes = frame.nodes.filter((node) => node.id !== 'wind');
+            frame.edges = frame.edges.filter((edge) => edge.from !== 'wind' && edge.to !== 'wind');
+          }
+          return { ...frame, t: 'subgraph', intent: 'delta', treeId: 't_sail', seq: 1, reach: result === 'reader' ? 'reader' : 'writer' };
+        }, result);
+        socket.send(JSON.stringify(frame));
+      }
+      if (result === 'writer') {
+        await page.waitForFunction(() => window.draftStore.getSnapshot()?.mode === 'active');
+        assert.equal(await page.evaluate(() => window.draftStore.getSnapshot().token === window.retainedToken), true);
+        const input = page.getByRole('textbox', { name: 'Description', exact: true });
+        assert.equal(await input.inputValue(), 'Keep this delayed return');
+        assert.equal(await input.evaluate((node) => node === document.activeElement), true);
+        assert.deepEqual(await page.evaluate(() => window.returnWrites), []);
+        await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
+        assert.equal(await page.evaluate(() => window.session.lattice.toTreeData().nodes.find((node) => node.id === 'wind').description), 'Keep this delayed return');
+        assert.equal(await page.evaluate(() => window.returnWrites.length), 1);
+        assert.equal(await page.evaluate(() => window.draftStore.getSnapshot()), null);
+      } else {
+        await page.getByText('Editing is unavailable. Copy your draft or discard it.', { exact: true }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).count(), 0);
+        assert.equal(await page.evaluate(() => window.draftStore.getSnapshot().mode), 'retained');
+        await page.getByRole('button', { name: 'Copy draft', exact: true }).last().click();
+        await page.waitForFunction(() => window.copied.length === 1);
+        assert.deepEqual(await page.evaluate(() => window.copied), ['Keep this delayed return']);
+        assert.deepEqual(await page.evaluate(() => window.returnWrites), []);
+      }
+      assert.deepEqual(await page.evaluate(() => window.issues), []);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

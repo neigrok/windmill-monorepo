@@ -71,7 +71,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     const mark = (id, target) => setProgress((current) => advanceProgress(current, [id], target, Date.now()));
     window.restoreSteps = () => setSteps(trees[treeId]);
     const inlineEditor = useInlineStepEditor({ treeId, tree, owner: editable, loading: tree === null,
-      readAuthority: () => ({ tree, editable }), legend: [], completed: progress.completed, stepId: address.id,
+      readAuthority: () => ({ tree, ready: tree !== null, editable }), legend: [], completed: progress.completed, stepId: address.id,
       acts: { edit: (request) => {
         (window.editRequests ??= []).push(request.sparse);
         setQuiet((current) => current + 1);

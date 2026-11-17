@@ -233,9 +233,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [setSelectedId]);
   const readEditAuthority = () => {
     const session = sessionRef.current;
-    const currentTree = session?.lattice ? new SkillTree(makeRenderable(session.lattice.toTreeData()).tree) : room.treeRef.current;
+    const ready = Boolean(!loading && session?.treeId === treeId && session.ready && !session.closed);
+    const currentTree = ready ? new SkillTree(makeRenderable(session.lattice.toTreeData()).tree) : null;
     const editable = owner && sharedWritesAllowed() && session?.reach !== 'reader' && !session?.closed;
-    return { tree: currentTree, editable, session, savingBlocked: Boolean(session?.rebaselining || session?.discardPending) };
+    return { tree: currentTree, ready, editable, session, savingBlocked: !ready || Boolean(session?.rebaselining || session?.discardPending) };
   };
   const { held: boardHeld, acts: boardActs } = useBoardActs({
     readEditAuthority, readInlineDraft: () => draftHost?.store.getSnapshot()?.draft,

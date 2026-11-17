@@ -19,6 +19,7 @@ export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthorit
   const slot = host?.slot;
   const active = slot?.mode === 'active' && slot.treeId === treeId ? slot : null;
   const draft = active?.draft;
+  const authority = readAuthority();
   const display = (field, value) => {
     if (field === 'color') return kindChoices(legend).find((kind) => kind.hue === value)?.label ?? value;
     if (field === 'prerequisites') return value.map((id) => tree?.nodesById.get(id)?.label ?? t('roadmap.inline.unnamed')).join('\n');
@@ -31,28 +32,28 @@ export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthorit
     const authority = readAuthority();
     const step = authority.tree?.nodesById.get(slot.draft.stepId);
     if (slot.mode === 'retained') {
-      if (!slot.returnToken) return;
+      if (!slot.returnToken || !authority.ready) return;
       if (!authority.editable || !step) { host.refuseReturn(slot.token); return; }
       if (slot.draft.stepId !== stepId) return;
       host.adopt(slot.token, slot.returnToken);
       return;
     }
-    if (!authority.editable || !step) {
+    if (!authority.editable || (authority.ready && !step)) {
       if (!slot.unavailable) { host.store.update(slot.token, { unavailable: true }); host.event('unavailable'); }
       return;
     }
-    if (slot.unavailable) return;
+    if (!authority.ready || slot.unavailable) return;
     const next = slot.draft.reconcile(authority.tree);
     if (next !== slot.draft) {
       host.change(slot.token, next, display(next.field, next.draftValue));
       host.event('selection_updated');
     }
-  }, [host?.store, slot, tree, owner, loading, stepId]);
+  }, [host?.store, slot, tree, owner, loading, stepId, authority.ready, authority.editable]);
   if (!host) return null;
-  const step = draft && readAuthority().tree?.nodesById.get(draft.stepId);
-  const unavailable = Boolean(active && (active.unavailable || !owner || !step));
+  const step = draft && authority.tree?.nodesById.get(draft.stepId);
+  const unavailable = Boolean(active && (active.unavailable || !authority.editable || (authority.ready && !step)));
   const currentValue = step && draft ? fieldValue(step, draft.field) : null;
-  const conflict = draft && !unavailable && !sameFieldValue(draft.field, currentValue, draft.baselineValue);
+  const conflict = draft && authority.ready && !unavailable && !sameFieldValue(draft.field, currentValue, draft.baselineValue);
   const problem = failure && active && failure.token === active.token && failure.revision === draft.draftRevision ? failure : null;
   const change = (value) => {
     if (!active || unavailable || host.store.getSnapshot()?.token !== active.token) return;
@@ -64,12 +65,12 @@ export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthorit
     const held = host.store.getSnapshot();
     if (!held || held.token !== active?.token || held.draft !== draft) return;
     const authority = readAuthority();
-    if (!authority.editable || !authority.tree?.nodesById.has(draft.stepId) || held.unavailable) {
+    if (!authority.editable || held.unavailable || (authority.ready && !authority.tree?.nodesById.has(draft.stepId))) {
       host.store.update(held.token, { unavailable: true });
       host.event('unavailable');
       return;
     }
-    if (authority.savingBlocked) return;
+    if (!authority.ready || authority.savingBlocked) return;
     let request;
     try { request = draft.request(conflict || problem?.kind === 'conflict' ? currentValue : draft.baselineValue); }
     catch { setFailure({ token: held.token, revision: draft.draftRevision, kind: 'name' }); host.event('invalid'); host.input.current?.focus(); return; }
@@ -89,14 +90,14 @@ export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthorit
   const loadLatest = () => {
     const authority = readAuthority();
     const latestStep = authority.tree?.nodesById.get(draft.stepId);
-    if (!authority.editable || !latestStep || host.store.getSnapshot()?.token !== active.token) return;
+    if (!authority.ready || !authority.editable || !latestStep || host.store.getSnapshot()?.token !== active.token) return;
     const next = draft.loadLatest(latestStep);
     host.change(active.token, next, display(next.field, next.draftValue));
     host.event('load_latest'); host.input.current?.focus();
   };
-  return { host, active, draft, fieldFocus, unavailable, conflict: conflict || problem?.kind === 'conflict',
+  return { host, active, draft, fieldFocus, unavailable, conflict: authority.ready && (conflict || problem?.kind === 'conflict'),
     currentValue,
-    problem, display, change, save, loadLatest, legend, tree, completed, savingBlocked: readAuthority().savingBlocked,
+    problem, display, change, save, loadLatest, legend, tree, completed, savingBlocked: !authority.ready || authority.savingBlocked,
     start: (step, field, element) => host.start(step, field, treeId, element),
   };
 }

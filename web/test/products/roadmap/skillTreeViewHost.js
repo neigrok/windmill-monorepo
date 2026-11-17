@@ -67,6 +67,7 @@ if (params.has('crashBoard') || params.has('runtimeBoardCrash')) {
     return among.apply(this, args);
   };
 }
+window.startActualSyncSession = SyncSession.prototype.start;
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
   this.scheduleReconnect = () => {};
