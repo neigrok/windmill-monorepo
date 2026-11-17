@@ -225,6 +225,23 @@ public struct LoadedReplica: Sendable {
     if entry != before { apply(.putEntry(entry)) }
   }
 
+  // One pass over a whole outbox, retaining each entry's identity, scope and position.
+  public mutating func updateEntries(_ update: (inout OutboxEntry) throws -> Void) rethrows {
+    precondition(entrySelection.all, "bulk entry updates require the whole outbox")
+    for index in loadedEntries.indices {
+      let before = loadedEntries[index]
+      var entry = before
+      try update(&entry)
+      precondition(entry.localId.utf8.elementsEqual(before.localId.utf8) && entry.commitOrder == before.commitOrder && entry.scope == before.scope,
+                   "bulk entry updates preserve identity, order and scope")
+      guard entry != before else { continue }
+      let write = ReplicaWrite.putEntry(entry)
+      writes.append(.replica(meta.replica, write))
+      note(write, previousEntry: before)
+      loadedEntries[index] = entry
+    }
+  }
+
   // D-17: the product dismisses a notice, which hides it until content folds into it. False when the replica holds no
   // notice `id`.
   public mutating func dismiss(notice id: String) -> Bool {
@@ -263,7 +280,7 @@ public struct LoadedReplica: Sendable {
   }
 
   // What a write changes for the views, read before it applies: an entry's records before and after it.
-  mutating func note(_ write: ReplicaWrite) {
+  mutating func note(_ write: ReplicaWrite, previousEntry: OutboxEntry? = nil) {
     switch write {
     case .meta(let meta):
       change.status = true
@@ -282,7 +299,8 @@ public struct LoadedReplica: Sendable {
       change.released = true
     case .putEntry(let entry):
       change.outbox = true
-      change.touch(entry.scope, entry.drawnDeltas.map(\.key) + (self.entry(entry.localId)?.drawnDeltas.map(\.key) ?? []))
+      let previous = previousEntry ?? self.entry(entry.localId)
+      change.touch(entry.scope, entry.drawnDeltas.map(\.key) + (previous?.drawnDeltas.map(\.key) ?? []))
     case .deleteEntry(let localId):
       change.outbox = true
       if let entry = entry(localId) { change.touch(entry.scope, entry.drawnDeltas.map(\.key)) }
