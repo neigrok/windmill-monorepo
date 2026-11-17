@@ -6,7 +6,7 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified; not approved, and nothing is built. On the web, journal already reads and
+**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. On the web, journal already reads and
 writes the browser's replica, signed in and signed out. Gym does so for everything but a workout:
 it is a sign-in door when signed out, a live mirror of a phone's workout, and it waits for the
 account before it draws. Gym's Coach runs on the server. The build order lives in the Web as a
