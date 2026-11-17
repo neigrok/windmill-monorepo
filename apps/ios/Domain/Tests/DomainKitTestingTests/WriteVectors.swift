@@ -14,7 +14,18 @@ enum Plans {
   static func translate(_ vector: Vector) throws -> JSON {
     do {
       let plan = try build(vector, at: vector.moment)
-      return ["gesture": try plan.gesture(in: vector.scope, registry: vector.registry).form]
+      var registry = try vector.registry
+      if let field = vector.input["tagField"] {
+        var document = try registry.json.asObject()
+        document["types"] = .array(try document["types"]!.asArray().map { type in
+          guard type["type"] == "tag" else { return type }
+          var tag = try type.asObject()
+          tag["fields"] = ["label": field]
+          return .object(tag)
+        })
+        registry = try Registry(json: .object(document))
+      }
+      return ["gesture": try plan.gesture(in: vector.scope, registry: registry).form]
     } catch let violation as Violation {
       return ["violation": violation.form]
     } catch is PlanError {
@@ -58,8 +69,10 @@ enum Plans {
     }
     let result = try runner.runAct(VectorAct(vector: vector))
     let outcome: JSON
+    var stamps: [Stamp?] = []
     switch result {
     case .committed(_, let receipt):
+      stamps = receipt.segments.map(\.stamp)
       outcome = ["kind": "committed", "scopes": .array(receipt.segments.map { $0.scope.json }),
                  "counts": .array(receipt.segments.map { JSON($0.localIds.count) }), "held": .bool(receipt.releaseAt != nil)]
       if vector.input["undo"] == true { _ = try runner.undo(receipt.gestureId) }
@@ -68,8 +81,14 @@ enum Plans {
     }
     let records = try vector.input.member("inspect").asArray().map { item in
       let scope = try ScopeRef(json: item.member("scope"))
-      return JSON.array(try engine.drawn(scope, item.member("t").asString()).filter(\.isVisible).map {
-        ["id": $0.id.json, "title": $0.values["title"] ?? .null]
+      return JSON.array(try engine.drawn(scope, item.member("t").asString()).filter(\.isVisible).map { record in
+        var result: JSON.Object = ["id": record.id.json, "title": record.values["title"] ?? .null]
+        if item["detail"] == true {
+          result["fields"] = .object(fields: record.values)
+          result["life"] = record.life.map { .string($0.isAlive ? "alive" : "dead") } ?? .null
+          result["bornSegment"] = JSON(stamps.firstIndex(of: record.born) ?? -1)
+        }
+        return .object(result)
       })
     }
     return ["outcome": outcome, "records": .array(records)]
@@ -169,6 +188,10 @@ enum Plans {
     case "update":
       let base = try operation["base"].map { try E.decoding(id, fields($0)) }
       plan.update(try valid(E.self, id, operation, at: moment), fields: try operation["fields"].map(names), from: base,
+                  guarded: operation["guarded"] == true)
+    case "revive":
+      let base = try operation["base"].map { try E.decoding(id, fields($0)) }
+      plan.revive(try valid(E.self, id, operation, at: moment), fields: try names(operation.member("fields")), from: base,
                   guarded: operation["guarded"] == true)
     case "remove":
       guard let removable = E.self as? any (ProbeEntity & Removable).Type else { throw unexpressible(op, E.type) }

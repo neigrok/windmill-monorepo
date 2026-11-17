@@ -126,6 +126,9 @@ export function firstGone(plan, views, scope, registry) {
     const type = operation.entity.type;
     const definition = registry.type(type);
     if (!definition || definition.scope !== registry.scopeKindOf(scope)) continue;
+    if (operation.kind.op === 'revive' && definition.hasBorn && definition.revivable === true && !views.record('drawn', type, operation.id)?.born) {
+      return new Refused('unknown-record', operation.ref, null, 'predicted');
+    }
     const needsLife = operation.kind.op === 'update' || operation.kind.op === 'remove' || operation.kind.op === 'move';
     if (needsLife && definition.life && views.record('drawn', type, operation.id)?.life?.[0] !== 'alive') {
       return new Refused('unknown-record', operation.ref, null, 'predicted');

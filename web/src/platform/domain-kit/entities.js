@@ -24,7 +24,7 @@ import { Fault, precondition } from './values.js';
 /**
  * A registry type as the kit reads it (ER-16): the engine's TypeDef with the members `Object.assign` gives it.
  * @typedef {import('../../../../packages/api-contract/sync/reference/core/registry.js').TypeDef & { identity: string, scope: string, life?: boolean, cap?: number,
- *   wholePut?: boolean, singletonId?: RecordID, mint?: { prefix: string, alphabet: string, length: number },
+ *   wholePut?: boolean, revivable?: boolean, singletonId?: RecordID, mint?: { prefix: string, alphabet: string, length: number },
  *   fields: Record<string, { kind: string, writer: string }> }} Definition
  */
 

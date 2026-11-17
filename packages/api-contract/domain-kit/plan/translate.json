@@ -431,9 +431,9 @@
     "expect": {"error": true}
   },
   {
-    "name": "a derived tag is not written by translation",
-    "input": {"scope": "tree/b_00000001", "plan": [{"op": "create", "t": "tag", "id": "oak", "f": {"label": "Oak"}}]},
-    "expect": {"error": true}
+    "name": "a derived tag create preserves the explicit ID",
+    "input": {"scope": "tree/b_00000001", "plan": [{"op": "create", "t": "tag", "id": "oak-fixed", "f": {"label": "Oak"}}]},
+    "expect": {"gesture": {"changes": [{"op": "create", "t": "tag", "id": "oak-fixed", "f": {"label": "Oak"}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}
   },
   {
     "name": "a guarded update guards every named field, sorted by field bytes",
@@ -1343,5 +1343,370 @@
   {"name": "mark refuses binding to tree/b_00000002", "input": {"scope": "tree/b_00000002", "plan": [{"op": "guardRead", "t": "mark", "id": "c_00000001", "fields": ["done"]}]}, "expect": {"error": true}},
   {"name": "mark refuses binding to self/probe", "input": {"scope": "self/probe", "plan": [{"op": "guardRead", "t": "mark", "id": "c_00000001", "fields": ["done"]}]}, "expect": {"error": true}},
   {"name": "card refuses binding to tree/b_00000002", "input": {"scope": "tree/b_00000002", "plan": [{"op": "guardRead", "t": "card", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
-  {"name": "card refuses binding to self/other", "input": {"scope": "self/other", "plan": [{"op": "guardRead", "t": "card", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}}
+  {"name": "card refuses binding to self/other", "input": {"scope": "self/other", "plan": [{"op": "guardRead", "t": "card", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {
+    "name": "a derived tag update writes its explicit ID",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "update",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "update",
+            "t": "tag",
+            "id": "oak",
+            "f": {
+              "label": "Next"
+            }
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a derived tag removal deletes its life",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "remove",
+          "t": "tag",
+          "id": "oak"
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "delete",
+            "t": "tag",
+            "id": "oak"
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "revive writes alive and validated named edits with ordinary guards",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "guarded": true
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "revive",
+            "t": "tag",
+            "id": "oak",
+            "f": {
+              "label": "Next"
+            }
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [
+          {
+            "t": "tag",
+            "id": "oak",
+            "field": "label"
+          }
+        ],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "revive can write only alive",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "fields": []
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "revive",
+            "t": "tag",
+            "id": "oak"
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "revive refuses a terminal minted type",
+    "input": {
+      "scope": "self/probe",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "card",
+          "id": "card0001",
+          "f": {
+            "title": "Next"
+          },
+          "fields": [
+            "title"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive requires checked edits",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "checked": []
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive cannot name an undeclared field",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "fields": [
+            "absent"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive keeps one operation per record",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "fields": []
+        },
+        {
+          "op": "update",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive validates the named edit before translation",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "xxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "violation": {
+        "rule": "tag.label",
+        "path": "label",
+        "reason": "tooLong",
+        "max": 24,
+        "unit": "chars",
+        "measured": 25
+      }
+    }
+  },
+  {
+    "name": "revive cannot edit a const field even on a revivable type",
+    "input": {
+      "scope": "tree/b_00000001",
+      "tagField": {
+        "kind": "const",
+        "writer": "client",
+        "unit": "chars",
+        "max": 24,
+        "domain": {
+          "type": "string"
+        }
+      },
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "base": {
+            "label": "Before"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive cannot edit a time field even on a revivable type",
+    "input": {
+      "scope": "tree/b_00000001",
+      "tagField": {
+        "kind": "time",
+        "writer": "client"
+      },
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "base": {
+            "label": "Before"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive cannot edit a text field even on a revivable type",
+    "input": {
+      "scope": "tree/b_00000001",
+      "tagField": {
+        "kind": "text",
+        "writer": "client",
+        "unit": "bytes",
+        "max": 24
+      },
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "base": {
+            "label": "Before"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  }
 ]

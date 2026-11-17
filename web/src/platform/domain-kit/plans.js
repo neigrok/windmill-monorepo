@@ -23,7 +23,7 @@ import { ChoiceSpec, Path, TextSpec, Violation, firstNul, precondition } from '.
 /**
  * @typedef {{ op: 'create', named: readonly string[] | null, base: Record<string, Json> | null }
  *   | { op: 'insert', below: RecordID | null }
- *   | { op: 'update', named: readonly string[], base: Record<string, Json> | null, guarded: boolean }
+ *   | { op: 'update' | 'revive', named: readonly string[], base: Record<string, Json> | null, guarded: boolean }
  *   | { op: 'remove' } | { op: 'move', below: RecordID | null } | { op: 'guardRead', fields: readonly string[] }} OperationKind
  */
 
@@ -211,6 +211,14 @@ export class Plan {
    */
   update(valid, { fields, from, guarded = false } = {}) {
     this.append({ op: 'update', named: uniqueInByteOrder(fields ?? valid.checked), base: from ? from.fields() : null, guarded }, valid);
+  }
+
+  /**
+   * @param {AnyValid} valid
+   * @param {{ fields: readonly string[], from?: import('./entities.js').Writable<any>, guarded?: boolean }} options
+   */
+  revive(valid, { fields, from, guarded = false }) {
+    this.append({ op: 'revive', named: uniqueInByteOrder(fields), base: from ? from.fields() : null, guarded }, valid);
   }
 
   /** @param {AnyId} id */

@@ -44,7 +44,7 @@ internal object Probe {
     val lap: ProbeType = object : ProbeType("lap", scope, mapOf("runId" to Json.of(""), "at" to Json.Null, "weight" to Json.Null), listOf(NumberSpec("lap.weight", -500.0, 500.0, quantum = .01))), RemovableType<ProbeEntity> { override val heldRemoval = false }
     val run: ProbeType = object : ProbeType("run", scope, mapOf("startedAt" to Json.Null, "label" to Json.Null), listOf(TextSpec("run.label", MeasureUnit.chars, 0, 12, true, true))), RemovableType<ProbeEntity> { override val heldRemoval = false }
     val link: ProbeType = object : ProbeType("link", null, mapOf("strength" to Json.Null), listOf(NumberSpec("link.strength", 0.0, 9.0, integer = true))), RemovableType<ProbeEntity> { override val heldRemoval = true }
-    val tag = ProbeType("tag", null, mapOf("label" to Json.of("")), emptyList())
+    val tag: ProbeType = object : ProbeType("tag", null, mapOf("label" to Json.of("")), listOf(TextSpec("tag.label", MeasureUnit.chars, 0, 24, false, false))), RemovableType<ProbeEntity> { override val heldRemoval = false }
     fun entity(type: String): ProbeType = if (type == "guardedMeta") guardedMeta else listOf(card, day, fact, mark, meta, lap, run, link, tag).firstOrNull { it.type == type } ?: throw ContractError("no probe entity $type")
 }
 internal sealed interface ProbeRefusal {

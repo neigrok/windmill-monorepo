@@ -195,6 +195,9 @@ extension Plan {
 
   func isGone(_ operation: Operation, in context: any CommitContext, registry: Registry) throws -> Bool {
     switch operation.kind {
+    case .revive:
+      guard let definition = registry.type(operation.entity.type), definition.hasBorn, definition.revivable == true else { return false }
+      return try context.drawn(operation.entity.type, operation.id)?.born == nil
     case .update, .remove, .move: break
     default: return false
     }

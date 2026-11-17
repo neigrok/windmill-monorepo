@@ -958,6 +958,8 @@ public struct Plan: Sendable {
   public mutating func insert<E: Writable & Ordered>(_ value: Valid<E>, below anchor: RecordID?)
   public mutating func update<E: Writable>(_ value: Valid<E>, fields: [String]? = nil,
                                            from base: E? = nil, guarded: Bool = false)
+  public mutating func revive<E: Writable>(_ value: Valid<E>, fields: [String],
+                                           from base: E? = nil, guarded: Bool = false)
   public mutating func remove<E: Removable>(_ id: ID<E>)
   public mutating func move<E: Ordered>(_ id: ID<E>, below anchor: ID<E>?)
   public mutating func guardRead<E: Entity>(_ id: ID<E>, fields: [String])
@@ -970,7 +972,10 @@ public struct Plan: Sendable {
 - `update` names fields, by default `value.checked`, which pairs with `Valid(_:fields:at:)`: a value
   validated for every field names every field. The engine writes each named field whose value
   differs from `drawn` (engine §7.1 step 4).
-- `guarded` guards every lattice field the update names; `guardRead` guards registers the decision
+- `revive` names explicit checked fields and writes alive with their edits in one change. The registry
+  must give the type a birth identity and declare `revivable: true`; a terminal minted type cannot be
+  revived. It retains the record's original born. An empty field list revives without edits; const, time and text edits are forbidden.
+- `guarded` guards every lattice field the update or revival names; `guardRead` guards registers the decision
   read without writing, as a device-minted Coach proposal guards its routine's `name` and `entries`
   (engine A.2). Text fields are never guarded (engine §7.1 step 6).
 - A plan is **held** iff it removes a type whose `heldRemoval` is true. Holds cover removals only; a
@@ -983,14 +988,16 @@ public struct Plan: Sendable {
 
 `translate(plan, registry) → Gesture` is pure. Operations map by identity class (engine §4.1):
 
-| Plan operation | `minted` | `keyed` with life | `keyed` without life | `singleton` |
+| Plan operation | `minted` or `derived` | `keyed` with life | `keyed` without life | `singleton` |
 |---|---|---|---|---|
 | `create`, `insert` | `.create(t, id: .given(id), f, anchor:)` | `.put(t, id, present: true, f)`, and `retire` names the record | `.write(t, id, f)` | `.write(t, singletonId, f)` |
 | `update` | `.update(t, id, f)` | `.put(t, id, present: nil, f)` | `.write(t, id, f)` | `.write(t, singletonId, f)` |
+| `revive` | `.revive(t, id, f)` when `revivable: true` | — | — | — |
 | `remove` | `.delete(t, id)` | `.put(t, id, present: false)` | — | — |
 | `move` | `.move(t, id, to: OrderAnchor(field: orderField, below:))` | same | same | — |
 
-- `f` holds the named fields' values, less a nil `time` field of a minted create (§5.3). A text field,
+- A derived type takes the explicit ID in the value. The kit does not derive an ID from a label.
+- `f` holds the named fields' values, less a nil `time` field of a minted or derived create (§5.3). A text field,
   by the registry's field kinds, goes in `texts` as a `TextEdit`, edited from its value in the
   operation's base: an update's `base`, or the draft's base in a present-again save's create (§10.2
   step 5). A create with no base edits from `""`.
@@ -1005,7 +1012,7 @@ public struct Plan: Sendable {
 | `changes` | the operations, in the order the plan made them |
 | `atomic` | true iff the plan's ordinary operations write more than one record; a command already groups its deltas into one atomic intent (engine §7.1 step 7) |
 | `hold` | true iff the plan is held |
-| `guards` | every lattice field a guarded update names, and every `guardRead` register |
+| `guards` | every lattice field a guarded update or revival names, and every `guardRead` register |
 | `retire` | every keyed-with-life record the plan creates |
 | `command`, `predict` | the plan's command and predictions (§8.4) |
 | `local` | the plan's device writes, in order |
@@ -1029,16 +1036,19 @@ when:
 2. two writing operations name one record; read guards may name that same record;
 3. a held plan contains any operation other than removals of held types and device writes, or runs a
    command;
-4. `create` names an `Ordered` type (use `insert`), or `create(_:fields:)` a minted type;
+4. `create` names an `Ordered` type (use `insert`), or `create(_:fields:)` a minted or derived type;
 5. a prediction's type is not in the command's registry `predicts`;
 6. a named field is not client-written, is `serial` or the order field, is absent from
    `value.fields`, or is not among `value.checked`;
-7. an update names a `const` or `time` field (engine §4.4), or a text field without a `base`;
+7. an update names a `const` or `time` field (engine §4.4), or a text field without a `base`; a revival
+   names a const, time or text field;
 8. an update names no field, or a keyed create writes no field;
 9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4).
 
+A revival of a type without `revivable: true` is also a `PlanError`.
+
 A held ordinary plan carries removals only. When an act contains a held plan, its shared hold also
-covers the other segments; `stored` excludes every held segment until release (§9.5).
+covers the other segments; `stored` excludes their held changes until release (§9.5).
 
 ### §8.4 Server commands and predictions
 
@@ -1138,7 +1148,8 @@ public final class ActionRunner: Sendable {
 4. **Decide** by `decision` (§9.1). `refuse` and `unchanged` return no gesture: the engine writes
    nothing and ticks no clock (engine §7.1).
 5. **Gone.** For every update, remove or move of a type with life, `ctx.drawn(t, id)` must hold the
-   record alive, and every insert or move that names an anchor needs that anchor visible, with its
+   record alive. A revival instead needs a known born in that drawn record; missing born refuses
+   the same way. Every insert or move that names an anchor needs that anchor visible, with its
    order key, in `drawn` or in `stored` (engine D-25). Otherwise the body returns no gesture and the
    outcome is `refused(R(Refused(unknown-record, subject, path: .predicted)))`, whose subject is the
    first gone record or absent anchor in the plan's order. The engine throws on either write (engine

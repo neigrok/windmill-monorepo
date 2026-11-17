@@ -47,6 +47,11 @@ public struct Plan: Sendable {
     append(.update(named: (fields ?? value.checked).uniqueInByteOrder, base: base?.fields, guarded: guarded), value)
   }
 
+  public mutating func revive<E: Writable>(_ value: Valid<E>, fields: [String], from base: E? = nil,
+                                           guarded: Bool = false) {
+    append(.revive(named: fields.uniqueInByteOrder, base: base?.fields, guarded: guarded), value)
+  }
+
   public mutating func remove<E: Removable>(_ id: ID<E>) {
     operations.append(Operation(.remove, of: E.self, id: id.record))
   }
@@ -111,6 +116,7 @@ struct Operation: Sendable {
     case create(named: [String]?, base: [String: JSON]?)
     case insert(below: RecordID?)
     case update(named: [String], base: [String: JSON]?, guarded: Bool)
+    case revive(named: [String], base: [String: JSON]?, guarded: Bool)
     case remove
     case move(below: RecordID?)
     case guardRead([String])
