@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "probe",
-  "version": 2,
+  "version": 3,
   "minVersion": 2,
   "products": {
     "probe": {
@@ -194,6 +194,30 @@
     }
   ],
   "commands": [
+    {
+      "name": "probe.capture", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {},
+      "predicts": ["board", "card", "run", "lap", "day"]
+    },
+    {
+      "name": "probe.captureTree", "scope": "tree", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {},
+      "predicts": ["meta", "tag", "link"]
+    },
+    {
+      "name": "probe.captureOverlay", "scope": "overlay", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {}, "predicts": ["mark"]
+    },
+    {
+      "name": "probe.branch", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true,
+      "args": {
+        "parent": { "type": "ref<board>" },
+        "child": { "type": "ref<board>" },
+        "title": { "type": "json", "domain": { "type": "string", "unit": "chars", "max": 12 } }
+      },
+      "predicts": ["board", "meta"]
+    },
     {
       "name": "probe.start",
       "scope": "product:probe",

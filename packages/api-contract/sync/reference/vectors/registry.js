@@ -167,6 +167,25 @@ function unicodeIds() {
   });
 }
 
+function scopedCommands() {
+  return [
+    ['engine capture is a scoped command with no arguments', {}, true],
+    ['a scoped product command can predict a registered type in another scope', { engine: undefined, predicts: ['meta'] }, true],
+    ['engine capture requires the scoped-effects opt-in', { scopedEffects: undefined }, false],
+    ['scoped effects is true or absent', { scopedEffects: false }, false],
+    ['engine capture accepts no arguments', { args: { id: { type: 'ref<item>' } } }, false],
+    ['the engine command tag names only capture', { engine: 'restore' }, false],
+    ['scoped commands predict only registered types', { predicts: ['missing'] }, false],
+  ].map(([name, change, expected]) => {
+    const document = documentOf(ITEM, BOARD, META);
+    Object.assign(document.commands[0], { scopedEffects: true, engine: 'capture', predicts: ['item'] }, change);
+    for (const key of Object.keys(document.commands[0])) if (document.commands[0][key] === undefined) delete document.commands[0][key];
+    const sample = loaded(name, document);
+    assert.equal(sample.expect.admitted, expected, name);
+    return sample;
+  });
+}
+
 export function files() {
-  return { 'registry/refusals.json': [...headlines(), ...idDomains()], 'registry/ids.json': unicodeIds() };
+  return { 'registry/refusals.json': [...headlines(), ...idDomains(), ...scopedCommands()], 'registry/ids.json': unicodeIds() };
 }

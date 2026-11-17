@@ -4,13 +4,13 @@
 
 import { joinRecord } from '../core/merge.js';
 import { isVisible, latticeOf, recordKey } from '../core/rows.js';
-import { deltasOf } from './dependents.js';
+import { effectsOf } from './projections.js';
 
 const PENDING = new Set(['ready', 'sent', 'acked']);
 const NOTHING = new Set();
 
 function pendingEntries(replica, scope, withHeld) {
-  return replica.entries(scope).filter((entry) => PENDING.has(entry.state) || (withHeld && entry.state === 'held'));
+  return replica.entries().filter((entry) => PENDING.has(entry.state) || (withHeld && entry.state === 'held'));
 }
 
 // A confirmed row as a view record: texts as plain strings, serials copied.
@@ -38,7 +38,10 @@ export function view(replica, registry, scope, { withHeld, except = NOTHING }) {
   const records = new Map();
   for (const row of replica.confirmedRows(scope)) records.set(recordKey(row.t, row.id), viewRecord(row));
   for (const entry of pendingEntries(replica, scope, withHeld)) {
-    for (const delta of deltasOf(entry)) if (!except.has(delta)) foldDelta(records, registry, delta);
+    for (const effect of effectsOf(entry, { active: true })) {
+      if (effect.scope !== scope) continue;
+      for (const delta of effect.d) if (!except.has(delta)) foldDelta(records, registry, delta);
+    }
   }
   return records;
 }

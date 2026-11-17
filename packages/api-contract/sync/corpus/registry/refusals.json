@@ -4062,5 +4062,679 @@
     "expect": {
       "admitted": false
     }
+  },
+  {
+    "name": "engine capture is a scoped command with no arguments",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {},
+            "scopedEffects": true,
+            "engine": "capture",
+            "predicts": [
+              "item"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a scoped product command can predict a registered type in another scope",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {},
+            "scopedEffects": true,
+            "predicts": [
+              "meta"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "engine capture requires the scoped-effects opt-in",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {},
+            "engine": "capture",
+            "predicts": [
+              "item"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "scoped effects is true or absent",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {},
+            "scopedEffects": false,
+            "engine": "capture",
+            "predicts": [
+              "item"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "engine capture accepts no arguments",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {
+              "id": {
+                "type": "ref<item>"
+              }
+            },
+            "scopedEffects": true,
+            "engine": "capture",
+            "predicts": [
+              "item"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "the engine command tag names only capture",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {},
+            "scopedEffects": true,
+            "engine": "restore",
+            "predicts": [
+              "item"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "scoped commands predict only registered types",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {},
+            "scopedEffects": true,
+            "engine": "capture",
+            "predicts": [
+              "missing"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
   }
 ]

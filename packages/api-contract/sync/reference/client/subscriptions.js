@@ -7,6 +7,7 @@
 import { moveEntry } from '../core/machines.js';
 import { isAlive } from '../core/rows.js';
 import { drawn, stored } from './views.js';
+import { endScopeProjections } from './puller.js';
 
 export function subscriptionsOf(replica, registry, products, opened = []) {
   const bound = replica.meta.state === 'bound';
@@ -28,6 +29,9 @@ export function subscriptionsOf(replica, registry, products, opened = []) {
     scopes.push(scope);
     if (bound && tree) scopes.push(`self/overlay/${scope.slice('tree/'.length)}`);
   }
+  if (bound) for (const entry of replica.entries()) {
+    for (const projection of entry.predictions ?? []) if (!projection.covered) scopes.push(projection.scope);
+  }
   return [...new Set(scopes.filter((scope) => !replica.known[scope]))];
 }
 
@@ -43,7 +47,7 @@ export function subscribe(replica, scope) {
 
 export function unsubscribe(replica, ctx, scope) {
   replica.forgetScope(scope);
-  for (const entry of replica.entries(scope)) if (entry.state === 'acked') moveEntry(replica, ctx.ended, entry, 'resolve');
+  endScopeProjections(replica, ctx, scope);
 }
 
 // Unsubscribes every held scope no longer in `scopes`; an acked entry of a scope outside the set
@@ -51,7 +55,10 @@ export function unsubscribe(replica, ctx, scope) {
 export function reconcile(replica, ctx, scopes) {
   for (const scope of Object.keys(replica.cursors)) if (!scopes.includes(scope)) unsubscribe(replica, ctx, scope);
   for (const entry of replica.entries()) {
-    if (entry.state === 'acked' && !scopes.includes(entry.scope)) moveEntry(replica, ctx.ended, entry, 'resolve');
+    if (entry.state !== 'acked') continue;
+    if (entry.predictions) {
+      for (const projection of entry.predictions) if (!scopes.includes(projection.scope)) endScopeProjections(replica, ctx, projection.scope);
+    } else if (!scopes.includes(entry.scope)) moveEntry(replica, ctx.ended, entry, 'resolve');
   }
 }
 

@@ -24,6 +24,7 @@ export class ProbeProduct {
   }
 
   discoverEffectScopes(ctx, cmd) {
+    if (cmd?.name === 'probe.branch') return [`tree:${cmd.args.parent}`, `tree:${cmd.args.child}`];
     if (cmd?.name !== 'probe.copy' || ownValue(ctx.productState.copies?.[ctx.scopeKey], cmd.args.dst) === cmd.args.src) return [];
     if (ctx.idState('board', cmd.args.dst).state !== 'none') return [];
     return [`tree:${cmd.args.dst}`];
@@ -43,11 +44,23 @@ export class ProbeProduct {
         return this.end(ctx, cmd.args);
       case 'probe.copy':
         return this.copy(ctx, cmd.args);
+      case 'probe.branch':
+        return this.branch(ctx, cmd.args);
       case 'probe.tick':
         return this.tick(ctx);
       default:
         throw new Refusal('invalid');
     }
+  }
+
+  branch(ctx, { parent, child, title }) {
+    if (parent === child) throw new Refusal('invalid');
+    const existing = ctx.stored('board', child);
+    if (existing) throw new Refusal('id-taken');
+    const board = { t: 'board', id: child, life: ['alive', null], born: null };
+    const meta = { t: 'meta', id: 'meta', f: { title: [title, null] } };
+    return { deltas: [board], into: [parent, child].map((id) => ({ scopeKey: `tree:${id}`, deltas: [meta] })),
+      write: [{ t: 'board', id: child, born: null }], detail: { created: true } };
   }
 
   start(ctx, args) {

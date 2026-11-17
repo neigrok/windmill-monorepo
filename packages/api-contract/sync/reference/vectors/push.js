@@ -2,6 +2,7 @@
 // each request emits (§6.8). `faults` names the n's whose admission faults; `limits` shrinks a limit.
 
 import { CONSTANTS } from '../core/constants.js';
+import assert from 'node:assert/strict';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
 import { intentDigest } from '../core/wire.js';
@@ -154,6 +155,35 @@ function serve() {
   ];
 }
 
+export function scopedBatches() {
+  const first = cardCreate(1, 'card0002', 2000);
+  const second = { ...cardCreate(2, 'card0003', 2001), cmd: { name: 'probe.capture', args: {} } };
+  const third = { n: 3, scope: 'self/probe', cmd: { name: 'probe.capture', args: {} }, gestureId: 'g3' };
+  const a = pushed('ordinary results continue before an opted command without admitting it', { state: base(), request: request([first, second, third]) });
+  assert.deepEqual(a.expect.response.body.results.map(({ n }) => n), [1]);
+  assert.deepEqual(a.expect.response.body.retry, { n: 2, retryAfterMs: 0 });
+  assert.equal(a.expect.state.replicas[REPLICA].lastN, 1);
+  const b = pushed('an opted command occupies one response and continues before the next command', { state: a.expect.state, request: request([second, third]) });
+  assert.deepEqual(b.expect.response.body.results.map(({ n }) => n), [2]);
+  assert.deepEqual(b.expect.response.body.retry, { n: 3, retryAfterMs: 0 });
+  const c = pushed('the next opted command makes progress at its unchanged watermark', { state: b.expect.state, request: request([third]) });
+  assert.equal(c.expect.response.body.results[0].detail.windmillKit.effects[0].seq, 3);
+  const legacy = pushed('mixed replay returns ordinary results before the saved scoped receipt', { state: c.expect.state, request: request([first, second, third]) });
+  assert.equal(legacy.expect.response.body.lastN, 3);
+  assert.deepEqual(legacy.expect.response.body.results.map(({ n }) => n), [1]);
+  assert.equal(legacy.expect.response.body.retry.n, 2);
+  const captured = pushed('saved scoped receipts replay exclusively with durable lastN beyond the returned result', { state: c.expect.state, request: request([second, third], 1) });
+  assert.equal(captured.expect.response.body.lastN, 3);
+  assert.deepEqual(captured.expect.response.body.results, b.expect.response.body.results);
+  assert.equal(captured.expect.response.body.retry.n, 3);
+  const replayed = pushed('the unreturned saved receipt remains fetchable after the previous receipt is acknowledged', { state: captured.expect.state, request: request([third], 2) });
+  assert.deepEqual(replayed.expect.response.body.results, c.expect.response.body.results);
+  const duplicate = pushed('duplicate opted intent numbers neither repeat the result nor stall continuation', { state: c.expect.state, request: request([second, second, third], 1) });
+  assert.deepEqual(duplicate.expect.response.body.results, b.expect.response.body.results);
+  assert.equal(duplicate.expect.response.body.retry.n, 3);
+  return [a, b, c, legacy, captured, replayed, duplicate];
+}
+
 export function files() {
-  return { 'push/serve.json': serve() };
+  return { 'push/serve.json': [...serve(), ...scopedBatches()] };
 }
