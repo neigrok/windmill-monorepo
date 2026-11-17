@@ -105,6 +105,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `SSH_KEY` | CI deploy **private** key (whole PEM) |
 | `POSTGRES_PASSWORD` | Postgres password |
 | `AI_DB_PASSWORD` | AI database role password, 64 lowercase hex characters |
+| `AI_PASS_PRIVATE_SEED` | Optional backend-only Ed25519 32-byte private seed as unpadded base64url; empty leaves its pass door unmounted |
 | `AI_CARRY_KEY` | 32 random bytes encoded as unpadded base64url |
 | `AI_FUNDING_SECRET`, `AI_OPERATOR_SECRET` | Distinct 32–256 character bearer secrets; ASCII letters, digits, `_`, `-` |
 | `SUBSCRIPTIONS_DB_PASSWORD` | The subscription database role's password, 64 lowercase hex characters ([below](#the-subscription-database)) |
@@ -117,7 +118,6 @@ The deploy job creates `~/windmill/` and everything under it.
 | `DOMAIN_API` | alias for the API host, e.g. `api.example.com` |
 | `ACME_EMAIL` | Let's Encrypt contact address |
 | `RESEND_FROM` | verified sender address |
-| `AI_PASS_PRIVATE_SEED` | Optional backend-only Ed25519 32-byte private seed as unpadded base64url; empty leaves its pass door unmounted |
 | `AI_PASS_KID`, `AI_PASS_MIN_VERSIONS` | Optional backend issuer key ID and JSON profile minimum versions; required when its seed is set. Compose fixes its environment to production |
 | `AI_PASS_KEYS` | JSON object mapping key IDs to 32-byte public keys encoded as unpadded base64url; `{}` keeps public AI admission dark |
 | `WINDMILL_MCP_ALLOWED_ORIGINS` | comma-separated Origins, or empty for all |
