@@ -282,6 +282,11 @@ def stories():
         s['service']['exchanges']=[exchange(refusal=refusal(code))]
         s['expected']['waitsMs']=[1000,2000,4000]+[8000]*149+[1000]
         finish(s,'failed','','answer-timeout',duration=1200000); out.append(s)
+    s=story('refresh-loss-after-refusal-deadline'); opened(s); begin(s,0,'',[first(s)])
+    s['service']['passes']=[{'pass':'vector-pass','expiresIn':60001},{'transport':'offline','elapsedMs':30000}]
+    s['service']['exchanges']=[exchange(refusal=refusal('busy'))]
+    s['expected']['waitsMs']=[1000]
+    finish(s,'failed','','busy',duration=31000); out.append(s)
     s=story('offline-before-pass'); opened(s); begin(s,0,'',[first(s)])
     s['service']['passes']=[{'transport':'offline'}]; s['expected']['requests']=[]
     finish(s,'interrupted','',withdraw=True); out.append(s)

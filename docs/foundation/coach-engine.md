@@ -187,7 +187,10 @@ the first account pass that names the installation
   answers a call it admitted and admits one it did not. A resent first `PUT` keeps this rule even
   after a lost answer: `paused`, `concurrency_exhausted` and `provider_unavailable` wait up to
   `REFUSAL_RETRY` from its first dispatch. The asking-again refusals above keep their longer window.
-  Every other refusal is given at once.
+  A refresh that finishes after the active refusal deadline returns that refusal, whether the
+  refresh succeeded or failed; a late failure cannot reopen an expired window. A temporary
+  preparation failure observed before that deadline, with possible admission, enters asking again
+  under the original `ASK_AGAIN_FOR` clock. Every other refusal is given at once.
 - **What a refusal proves.** `busy` and `accounting_unavailable` can be answered for a call the
   service did admit. Every other refusal of a `PUT` whose earlier attempts all had an answer proves
   that nothing was admitted. Only a known code in a valid service refusal is such evidence. An
