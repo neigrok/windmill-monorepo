@@ -238,7 +238,7 @@ TEST(server_builder_creates_only_the_callers_overlay_of_a_readable_tree) {
     const auto before = world.dump();
     SyncCatalog catalog(registry);
     for (const auto& type : registry.types()) catalog.bindType(world.catalog().store(type.name), world.catalog().rules(type.name));
-    for (const auto& command : registry.commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+    for (const auto& command : registry.commands()) if (!command.engine) catalog.bindCommand(command.name, world.catalog().command(command.name));
     catalog.seal();
     BuilderScopeStore store(world.store());
     Admission admission(catalog, store, world.feed, world.clock(), world.failures);

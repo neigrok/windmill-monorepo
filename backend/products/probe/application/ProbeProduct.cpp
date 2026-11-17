@@ -152,12 +152,39 @@ public:
   }
 };
 
+class ProbeProduct::Branch final : public SyncCommand {
+public:
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    return {ScopeKey::tree(ctx.args["parent"].asString()), ScopeKey::tree(ctx.args["child"].asString())};
+  }
+
+  bool isReplay(CommandCtx&) override { return false; }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const std::string parent = ctx.args["parent"].asString();
+    const std::string child = ctx.args["child"].asString();
+    if (parent == child) throw Refusal(code::invalid);
+    if (ctx.read.lock("board", RecordId(child)).stored) throw Refusal(code::idTaken);
+    Delta board{.t = "board", .id = RecordId(child)};
+    board.lattice.born = Stamp{};
+    board.lattice.life = Life(LifeState::alive, Stamp{});
+    Delta meta{.t = "meta", .id = RecordId(std::string("meta"))};
+    meta.lattice.f.emplace("title", Reg(ctx.args["title"], Stamp{}));
+    CommandOutcome outcome{.deltas = {board},
+      .into = {{ScopeKey::tree(parent), {meta}}, {ScopeKey::tree(child), {meta}}},
+      .write = {{.t = "board", .id = RecordId(child), .born = Stamp{}}}};
+    outcome.detail["created"] = true;
+    return outcome;
+  }
+};
+
 ProbeProduct::ProbeProduct(ProbeReceipts& receipts)
     : runRules_(std::make_unique<RunRules>()),
       start_(std::make_unique<Start>(receipts)),
       end_(std::make_unique<End>()),
       copy_(std::make_unique<Copy>(receipts)),
-      tick_(std::make_unique<Tick>()) {}
+      tick_(std::make_unique<Tick>()),
+      branch_(std::make_unique<Branch>()) {}
 
 ProbeProduct::~ProbeProduct() = default;
 
@@ -167,6 +194,7 @@ void ProbeProduct::bindTo(SyncCatalog& catalog, const std::map<std::string, Type
   catalog.bindCommand("probe.end", *end_);
   catalog.bindCommand("probe.copy", *copy_);
   catalog.bindCommand("probe.tick", *tick_);
+  catalog.bindCommand("probe.branch", *branch_);
 }
 
 }

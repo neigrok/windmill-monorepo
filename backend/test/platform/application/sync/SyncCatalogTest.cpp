@@ -52,19 +52,20 @@ TEST(a_catalog_seals_only_when_every_registry_type_and_command_is_bound) {
 
   SyncCatalog missingType(registry);
   stores.bindAll(missingType, "lap");
-  for (const CommandDef& def : registry.commands()) missingType.bindCommand(def.name, command);
+  for (const CommandDef& def : registry.commands()) if (!def.engine) missingType.bindCommand(def.name, command);
   CHECK_EQ(sealError(missingType), std::string("the registry type lap has no binding"));
 
   SyncCatalog missingCommand(registry);
   stores.bindAll(missingCommand);
   for (const CommandDef& def : registry.commands()) {
+    if (def.engine) continue;
     if (def.name != "probe.tick") missingCommand.bindCommand(def.name, command);
   }
   CHECK_EQ(sealError(missingCommand), std::string("the registry command probe.tick has no binding"));
 
   SyncCatalog complete(registry);
   stores.bindAll(complete);
-  for (const CommandDef& def : registry.commands()) complete.bindCommand(def.name, command);
+  for (const CommandDef& def : registry.commands()) if (!def.engine) complete.bindCommand(def.name, command);
   CHECK_EQ(sealError(complete), std::string());
 }
 
@@ -116,4 +117,20 @@ TEST(step_13_writes_a_type_after_every_type_its_fields_and_key_reference) {
   std::vector<std::string> order;
   for (const TypeDef* type : catalog.applyOrder()) order.push_back(type->name);
   CHECK_EQ(order, (std::vector<std::string>{"tag", "mark", "run", "lap"}));
+}
+
+TEST(a_catalog_owns_capture_commands_and_refuses_product_rebinding) {
+  const Registry& registry = wm::probe::registry();
+  ProbeStores stores(registry);
+  NoCommand command;
+  SyncCatalog catalog(registry);
+  stores.bindAll(catalog);
+  for (const CommandDef& def : registry.commands()) if (!def.engine) catalog.bindCommand(def.name, command);
+  CHECK_EQ(sealError(catalog), std::string());
+  CHECK(&catalog.command("probe.capture") != &command);
+  CHECK(&catalog.command("probe.captureTree") == &catalog.command("probe.capture"));
+  SyncCatalog unsealed(registry);
+  std::string error;
+  try { unsealed.bindCommand("probe.capture", command); } catch (const CatalogError& fault) { error = fault.what(); }
+  CHECK_EQ(error, std::string("the command probe.capture is bound twice"));
 }

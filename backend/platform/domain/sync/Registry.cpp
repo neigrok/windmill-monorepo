@@ -441,7 +441,7 @@ TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
 }
 
 CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
-  const Reader element(json, elementPath, {"name", "scope", "origins", "serverInternal", "beforePull", "args", "predicts"});
+  const Reader element(json, elementPath, {"name", "scope", "origins", "serverInternal", "beforePull", "args", "predicts", "scopedEffects", "engine"});
   static const Pattern commandNames{"^[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*$"};
   const std::string name = element.name("name", commandNames);
   const Reader reader = element.under("registry.commands." + name);
@@ -451,7 +451,10 @@ CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
       .origins = originsOf(reader),
       .serverInternal = reader.boolean("serverInternal"),
       .beforePull = reader.optionalBoolean("beforePull"),
+      .scopedEffects = reader.optionalBoolean("scopedEffects"),
   };
+  if (reader.has("scopedEffects") && !command.scopedEffects) reader.fail("scopedEffects is true or absent");
+  if (reader.has("engine")) command.engine = reader.oneOf<EngineCommand>("engine", {{"capture", EngineCommand::capture}});
   if (reader.has("predicts")) command.predicts = reader.names("predicts", &memberNames(), false);
   const Json::Value& args = reader.value("args");
   if (!args.isObject()) reader.fail("has \"args\" that are not an object");
@@ -472,6 +475,7 @@ CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
   }
   if (command.serverInternal && command.origins.replica) reader.fail("is server-internal with a replica origin");
   if (command.beforePull && !command.serverInternal) reader.fail("runs before pulls without being server-internal");
+  if (command.engine && (!command.scopedEffects || !command.args.empty())) reader.fail("engine capture requires scopedEffects and empty args");
   return command;
 }
 
