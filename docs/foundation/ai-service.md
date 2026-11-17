@@ -902,7 +902,7 @@ designed when the service is built, one integration at a time.
 - **I-5 Talk.** Journal Talk streams the microphone to the live transcription door from the device,
   detecting the person's pauses there and naming no language. It is part of Windmill One. Where Talk
   is offered, the product tells the person that their speech is sent to the provider and kept there
-  for 30 days (R-11).
+  for 30 days (R-11). [Journal Talk](journal-talk.md) specifies it.
 - **I-6 Work nobody waits on.** When the backend has AI work for an account with no device present,
   it calls the same doors with a pass it signs for that account. The queue of that work stays in the
   backend, and a refusal or an unreachable service leaves the work due. Such a call takes one of the
