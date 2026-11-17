@@ -88,7 +88,10 @@ A principal cannot evict another principal's result.
 Uploaded JPEG/PNG pictures live in a separate principal-keyed memory cache: 2 MiB each, 8 MiB per
 principal, 256 MiB total including entry metadata, oldest first evicted. They expire 30 minutes after upload or last reference,
 with a timer pruning idle entries. An idempotent upload keeps the first bytes and its original expiry.
-The text boundary resolves references to inline images before provider counting and reservation;
+The text boundary snapshots each unique picture under the cache lock, counts every reference and
+inline image against the 8 MiB provider request limit before renewing entries, then encodes each
+unique picture outside the lock. The provider checks the exact serialized body limit with a bounded
+byte counter before counting and reservation;
 a missing reference answers `picture_gone` without a call row, so the caller can repair it under the
 same call ID. Uploads consume the read rate and make no provider call. A timer removes expired results even without
 new traffic. Audio and transcript buffers are bounded separately from socket buffering.

@@ -20,7 +20,7 @@ pub const MAX_PICTURE: usize = 2 * 1024 * 1024;
 pub const PICTURE_HOLD: Duration = Duration::from_secs(30 * 60);
 pub const PICTURES_PER_PRINCIPAL: usize = 8 * 1024 * 1024;
 pub const PICTURES_TOTAL: usize = 256 * 1024 * 1024;
-pub const MAX_TEXT_BODY: usize = 8 * 1024 * 1024;
+pub use ai_providers::MAX_TEXT_BODY;
 pub const MAX_AUDIO_FRAME: usize = 64 * 1024;
 pub const LINGER_PER_PRINCIPAL: usize = 16 * 1024 * 1024;
 pub const LINGER_TOTAL: usize = 256 * 1024 * 1024;

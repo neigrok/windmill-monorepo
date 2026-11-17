@@ -18,6 +18,12 @@ namespace wm {
 using WriteHttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 inline constexpr char kWriteObservationAttribute[] = "wm.write_observation";
 
+struct WriteRoutePolicy {
+  std::string cacheControl;
+  std::string failureOperation;
+  std::vector<std::string> unavailableRefusals;
+};
+
 struct WriteRoute {
   std::string path;
   std::string operation;
@@ -25,6 +31,7 @@ struct WriteRoute {
   std::string door;
   std::vector<drogon::HttpMethod> methods;
   bool retired = false;
+  WriteRoutePolicy policy;
 };
 
 bool mutatingMethod(drogon::HttpMethod method);
@@ -41,6 +48,7 @@ drogon::HttpResponsePtr retiredWriteResponse();
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request);
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route);
+void applyWriteResponsePolicy(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response);
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response);
 // The static operation of the route the request matched: its write route's, else its declared read route's, else empty.
 std::string httpOperation(const drogon::HttpRequestPtr& request);
@@ -48,7 +56,8 @@ std::string httpOperation(const drogon::HttpRequestPtr& request);
 bool writeFailureReported(const drogon::HttpRequestPtr& request);
 void writeHttpFailure(const drogon::HttpRequestPtr& request, const std::exception& error);
 void writeHttpFailureUnknown(const drogon::HttpRequestPtr& request);
-std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std::string& operation);
+std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std::string& operation,
+                             const WriteRoutePolicy& policy = {});
 void installPrivacySafeExceptionHandler(drogon::HttpAppFramework& app,
     std::function<void(const std::exception&, const drogon::HttpRequestPtr&)> onFailure = {},
     bool jsonError = false);
@@ -126,8 +135,8 @@ public:
 
   template <typename Handler>
   void registerWriteHandler(const std::string& operation, const std::string& path, Handler handler,
-                            const std::vector<drogon::HttpMethod>& methods) {
-    registerRoute({path, operation, product_, door_, methods}, std::move(handler));
+                            const std::vector<drogon::HttpMethod>& methods, WriteRoutePolicy policy = {}) {
+    registerRoute({path, operation, product_, door_, methods, false, std::move(policy)}, std::move(handler));
   }
 
   // A write path an installed client still calls after its writes moved elsewhere: it answers

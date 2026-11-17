@@ -81,10 +81,11 @@ struct PassFixture {
     const auto request = wire.exchange("POST /v1/ai/passes HTTP/1.1\r\nHost: localhost\r\n" + contentType +
         "Content-Length: " + std::to_string(body.size()) + "\r\n" + headers + "\r\n" + body).request;
     if (!request) throw std::runtime_error("pass request did not parse");
-    beginWriteRequest(request, {"/v1/ai/passes", "ai.pass.sign", "platform", "rest", {drogon::Post}});
+    beginWriteRequest(request, {"/v1/ai/passes", "ai.pass.sign", "platform", "rest", {drogon::Post}, false, kAiPassRoutePolicy});
     drogon::HttpResponsePtr response;
     observeHttpWork(request, [&] { api.sign(request, [&](const auto& result) { response = result; }); });
     finishWriteRequest(request, response);
+    applyWriteResponsePolicy(request, response);
     CHECK_EQ(response->getHeader("cache-control"), "no-store");
     return response;
   }
@@ -215,4 +216,25 @@ TEST(ai_pass_principal_limit_is_separate_from_installation_address_limit) {
     if (index == 1) CHECK_EQ((*response->getJsonObject())["code"].asString(), "rate_limited");
   }
   CHECK(fixture.rows.admissions.empty());
+}
+
+TEST(ai_pass_json_and_origin_policy_counts_raw_header_occurrences) {
+  PassFixture fixture;
+  const std::string body = R"({"client":"ios","use":"gym.coach","version":2})";
+  for (const auto& headers : {"Authorization: Bearer session\r\n", "Authorization: Bearer session\r\nOrigin: \t https://windmill.works \t\r\n"}) {
+    CHECK_EQ(fixture.call(headers, body, "cOnTeNt-TyPe: \t Application/JSON \t; charset=utf-8\r\n")->statusCode(), drogon::k200OK);
+  }
+  for (const auto& headers : {"Origin: \r\n", "Origin: \t \r\n", "Origin: null\r\n",
+       "Origin: https://windmill.works\r\nOrigin: https://windmill.works\r\n"}) {
+    const auto response = fixture.call(std::string("Authorization: Bearer session\r\n") + headers, body);
+    CHECK_EQ(response->statusCode(), drogon::k403Forbidden);
+    CHECK_EQ((*response->getJsonObject())["code"].asString(), "untrusted-origin");
+  }
+  for (const auto& media : {"", "Content-Type: \r\n", "Content-Type: text/plain; x=application/json\r\n",
+       "Content-Type: application/json\r\nContent-Type: application/json\r\n"}) {
+    const auto response = fixture.call("Authorization: Bearer session\r\n", body, media);
+    CHECK_EQ(response->statusCode(), drogon::k415UnsupportedMediaType);
+    CHECK_EQ((*response->getJsonObject())["code"].asString(), "unsupported-media-type");
+  }
+  CHECK(fixture.failures->reports.empty());
 }

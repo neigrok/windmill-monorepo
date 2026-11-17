@@ -413,6 +413,7 @@ target_sources(windmill_platform PRIVATE
   platform/adapters/oidc/AppleOAuthClient.cpp
   platform/adapters/sentry/SentryClient.cpp
   platform/adapters/sentry/LogTee.cpp
+  platform/adapters/http/MutationPolicy.cpp
   platform/adapters/http/WriteRoutes.cpp
   platform/adapters/sentry/ObservedTool.cpp
   platform/adapters/http/AccessLog.cpp

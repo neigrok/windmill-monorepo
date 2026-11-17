@@ -1,8 +1,16 @@
 #include "platform/ai_passes/AiPassApi.h"
-#include "platform/adapters/http/WriteRoutes.h"
+#include "platform/adapters/http/MutationPolicy.h"
 #include <algorithm>
 
 namespace wm {
+namespace {
+const WriteMetadataField passMetadata[] = {
+    {"client", {"web", "ios", "android", "server"}},
+    {"use", {}},
+    {"version", {}, 10, true},
+    {"principal", {"account", "installation"}},
+    {"plan", {"none", "one"}}};
+}
 
 AiPassApi::AiPassApi(std::shared_ptr<AiPasses> passes, std::shared_ptr<AuthService> auth,
                      std::shared_ptr<AiInstallations> installations, std::shared_ptr<Entitlements> entitlements,
@@ -16,41 +24,30 @@ void AiPassApi::sign(const drogon::HttpRequestPtr& request, std::function<void(c
   const auto observation = beginWriteRequest(request);
   const auto refuse = [&](drogon::HttpStatusCode status, const char* code) {
     const auto response = error(status, "AI access could not be started.", code);
-    response->addHeader("Cache-Control", "no-store");
     reply(response);
   };
   try {
     const auto sent = sync::SentCredentials::fromOccurrences(request->headerOccurrences());
-    std::optional<std::string> origin, mediaType, installationToken;
+    std::optional<std::string> installationToken;
     bool cookie = false;
     for (const auto& credential : sent.each()) cookie = cookie || credential.kind == sync::SentCredential::Kind::cookie;
     for (auto [name, value] : request->headerOccurrences()) {
       std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return c >= 'A' && c <= 'Z' ? c + 'a' - 'A' : c; });
       const auto first = value.find_first_not_of(" \t");
       value = first == std::string::npos ? "" : value.substr(first, value.find_last_not_of(" \t") - first + 1);
-      if (name == "origin") {
-        if (origin) { refuse(drogon::k403Forbidden, "untrusted-origin"); return; }
-        origin = value;
-      } else if (name == "content-type") {
-        if (mediaType) { refuse(drogon::k415UnsupportedMediaType, "unsupported-media-type"); return; }
-        mediaType = value;
-      } else if (name == "x-windmill-installation") {
+      if (name == "x-windmill-installation") {
         if (installationToken) { refuse(drogon::k401Unauthorized, "invalid_installation"); return; }
         installationToken = value;
       }
     }
-    if ((cookie || origin) && (!origin || !origins_.contains(*origin))) {
-      refuse(drogon::k403Forbidden, "untrusted-origin"); return;
-    }
-    std::string essence = mediaType.value_or("").substr(0, mediaType.value_or("").find(';'));
-    while (!essence.empty() && (essence.back() == ' ' || essence.back() == '\t')) essence.pop_back();
-    std::transform(essence.begin(), essence.end(), essence.begin(), [](unsigned char c) { return c >= 'A' && c <= 'Z' ? c + 'a' - 'A' : c; });
-    if (essence != "application/json") { refuse(drogon::k415UnsupportedMediaType, "unsupported-media-type"); return; }
+    const auto mutation = MutationPolicy{MutationHeaders::Occurrences, cookie, true}.check(request, origins_);
+    if (mutation == MutationRefusal::UntrustedOrigin) { refuse(drogon::k403Forbidden, "untrusted-origin"); return; }
+    if (mutation == MutationRefusal::UnsupportedMediaType) { refuse(drogon::k415UnsupportedMediaType, "unsupported-media-type"); return; }
     const auto input = AiPassRequest::parse(request->getBody());
     if (!input) { refuse(drogon::k400BadRequest, "invalid_request"); return; }
     const auto versionRefusal = passes_->refusal(*input);
     if (observation && (versionRefusal.empty() || versionRefusal == "client-update-required"))
-      observation->metadata({{"client", input->client}, {"use", input->use}, {"version", std::to_string(input->version)}});
+      observation->metadata(passMetadata, {{"client", input->client}, {"use", input->use}, {"version", std::to_string(input->version)}});
     if (!versionRefusal.empty()) {
       refuse(versionRefusal == "client-update-required" ? drogon::k426UpgradeRequired : drogon::k400BadRequest, versionRefusal.c_str()); return;
     }
@@ -79,7 +76,7 @@ void AiPassApi::sign(const drogon::HttpRequestPtr& request, std::function<void(c
       principal = {{AiBudgetSubjectKind::Device, installation->id()}, AiBudgetTier::Anonymous};
     }
     const std::string kind = account ? "account" : "installation";
-    if (observation) observation->metadata({{"principal", kind}, {"plan", account && principal.tier == AiBudgetTier::WindmillOne ? "one" : "none"}});
+    if (observation) observation->metadata(passMetadata, {{"principal", kind}, {"plan", account && principal.tier == AiBudgetTier::WindmillOne ? "one" : "none"}});
     if (!limiter_->allow(kind + ":" + principal.subject.id)) { refuse(drogon::k429TooManyRequests, "rate_limited"); return; }
     if (!account) {
       const auto address = aiInstallationClientAddress(request->headerOccurrences(), request->peerAddr().toIp(), proxy_);
@@ -93,7 +90,6 @@ void AiPassApi::sign(const drogon::HttpRequestPtr& request, std::function<void(c
     responseBody["pass"] = passes_->sign(passes_->claims(principal, boundInstallation, input->client, clock_.nowMs()));
     responseBody["expiresIn"] = Json::Int64(kAiPassLifetimeMs);
     const auto response = jsonResponse(responseBody);
-    response->addHeader("Cache-Control", "no-store");
     reply(response);
   } catch (...) {
     reportCurrentUnknownWriteFailure();

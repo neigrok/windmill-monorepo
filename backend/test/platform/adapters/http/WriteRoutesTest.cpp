@@ -565,3 +565,60 @@ TEST(write_http_registered_retired_routes_equal_the_gym_retirement_ledger) {
   CHECK_EQ(registered["gym"].size(), std::size_t{20});
   CHECK_EQ(registered["gym"], ledger);
 }
+
+TEST(write_http_declared_operation_resolves_before_an_observation_exists) {
+  declareWriteRoute({"/v1/test/early/{id}", "test.early", "platform", "rest", {drogon::Post}});
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setPath("/V1/Test/Early/value");
+  request->setMethod(drogon::Post);
+  CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+  CHECK_EQ(httpOperation(request), std::string("test.early"));
+  CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+  request->setMethod(drogon::Get);
+  CHECK_EQ(httpOperation(request), std::string{});
+}
+
+TEST(write_http_declared_policy_covers_early_responses_and_owns_technical_failure_names) {
+  HttpWriteCapture capture;
+  installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
+  const WriteRoute route{"/v1/test/policy", "test.policy", "platform", "rest", {drogon::Post}, false,
+      {"no-store", "test-issuer", {"test_unconfigured"}}};
+  declareWriteRoute(route);
+  for (const auto status : {drogon::k200OK, drogon::k429TooManyRequests, drogon::k503ServiceUnavailable}) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setPath("/V1/Test/Policy");
+    request->setMethod(drogon::Post);
+    auto response = error(status, "private", "test_unconfigured");
+    CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+    applyWriteResponsePolicy(request, response);
+    CHECK_EQ(response->getHeader("cache-control"), std::string("no-store"));
+    CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+    finishWriteRequest(request, response);
+    finishWriteRequest(request, response);
+  }
+  REQUIRE_EQ(capture.lines.size(), std::size_t{3});
+  CHECK_EQ(capture.lines[0].outcome, std::string("ok"));
+  CHECK_EQ(capture.lines[1].outcome, std::string("test_unconfigured"));
+  CHECK_EQ(capture.lines[2].outcome, std::string("test_unconfigured"));
+  CHECK(capture.issues.empty());
+  auto failed = drogon::HttpRequest::newHttpRequest();
+  failed->setPath(route.path);
+  failed->setMethod(drogon::Post);
+  const auto response = error(drogon::k500InternalServerError, "PRIVATE SECRET");
+  writeHttpFailure(failed, std::runtime_error("PRIVATE SECRET"));
+  finishWriteRequest(failed, response);
+  applyWriteResponsePolicy(failed, response);
+  CHECK_EQ(response->getHeader("cache-control"), std::string("no-store"));
+  REQUIRE_EQ(capture.lines.size(), std::size_t{4});
+  CHECK_EQ(capture.lines.back().operation, std::string("test.policy"));
+  CHECK_EQ(capture.lines.back().outcome, std::string("failed"));
+  REQUIRE_EQ(capture.issues.size(), std::size_t{1});
+  CHECK(capture.issues.front().find("test-issuer") != std::string::npos);
+  CHECK(capture.issues.front().find("PRIVATE") == std::string::npos);
+  auto other = drogon::HttpRequest::newHttpRequest();
+  other->setPath(route.path);
+  other->setMethod(drogon::Get);
+  const auto read = drogon::HttpResponse::newHttpResponse();
+  applyWriteResponsePolicy(other, read);
+  CHECK(read->getHeader("cache-control").empty());
+}

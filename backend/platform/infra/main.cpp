@@ -987,7 +987,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       });
 
   app.registerPreSendingAdvice([](const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
-    if (httpOperation(request) == "ai.pass.sign") response->addHeader("Cache-Control", "no-store");
+    applyWriteResponsePolicy(request, response);
   });
 
   // Token auth, not cookies, so no Allow-Credentials.
@@ -1040,9 +1040,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
             observeHttpWork(request, [&] { aiPassApi->sign(request, std::move(*callback)); });
           })) return;
           const auto response = error(drogon::k503ServiceUnavailable, "AI access is busy.", "unavailable");
-          response->addHeader("Cache-Control", "no-store");
           (*callback)(response);
-        }, {drogon::Post});
+        }, {drogon::Post}, kAiPassRoutePolicy);
   }
   const auto installationHandler = [aiInstallationApi, aiInstallationWorkers](auto action) {
     return [aiInstallationApi, aiInstallationWorkers, action](const drogon::HttpRequestPtr& request, HttpCallback&& reply) {

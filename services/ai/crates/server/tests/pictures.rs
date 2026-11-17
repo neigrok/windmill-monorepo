@@ -189,3 +189,91 @@ fn strict_picture_references_preserve_inline_images_and_reject_mixed_shapes() {
         Err(StaticCode::TooLarge)
     );
 }
+
+#[test]
+fn expanded_picture_budget_counts_every_reference_and_inline_image_before_renewal() {
+    use ai_providers::{Image, MAX_TEXT_BODY, Message, Part};
+    use ai_server::config::MAX_PICTURE;
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    for inline in [false, true] {
+        let pictures = Pictures::default();
+        let now = Instant::now();
+        let id = "pictureabcdefghijklmn0";
+        let mut bytes = vec![0; MAX_PICTURE];
+        bytes[..3].copy_from_slice(&[255, 216, 255]);
+        pictures
+            .put("a".into(), id.into(), "image/jpeg".into(), bytes, now)
+            .unwrap();
+        let mut expanded = request(id);
+        let Message::User { parts } = &mut expanded.messages[0] else {
+            panic!("user expected")
+        };
+        let first = parts[0].clone();
+        if inline {
+            parts.push(first);
+            let mut bytes = vec![0; 3 * 1024 * 1024];
+            bytes[..3].copy_from_slice(&[255, 216, 255]);
+            parts.push(Part::Image {
+                image: Image {
+                    media_type: "image/jpeg".into(),
+                    data: STANDARD.encode(bytes),
+                },
+            });
+        } else {
+            parts.resize(8, first);
+        }
+        let before = serde_json::to_value(&expanded).unwrap();
+        assert!(serde_json::to_vec(&expanded).unwrap().len() < MAX_TEXT_BODY);
+        assert_eq!(
+            pictures.resolve(
+                "a",
+                &mut expanded,
+                now + PICTURE_HOLD - Duration::from_secs(1)
+            ),
+            Err(StaticCode::InvalidRequest)
+        );
+        assert_eq!(serde_json::to_value(&expanded).unwrap(), before);
+        assert_eq!(
+            pictures.resolve("a", &mut request(id), now + PICTURE_HOLD),
+            Err(StaticCode::PictureGone)
+        );
+    }
+}
+
+#[test]
+fn missing_picture_precedes_expansion_refusal_without_mutation_or_renewal() {
+    use ai_providers::{Message, Part, Picture};
+    let pictures = Pictures::default();
+    let now = Instant::now();
+    let id = "pictureabcdefghijklmn0";
+    let mut bytes = vec![0; ai_server::config::MAX_PICTURE];
+    bytes[..3].copy_from_slice(&[255, 216, 255]);
+    pictures
+        .put("a".into(), id.into(), "image/jpeg".into(), bytes, now)
+        .unwrap();
+    let mut expanded = request(id);
+    let Message::User { parts } = &mut expanded.messages[0] else {
+        panic!("user expected")
+    };
+    parts.resize(7, parts[0].clone());
+    parts.push(Part::Picture {
+        image: Picture {
+            picture: "pictureabcdefghijklmn1".into(),
+        },
+    });
+    let before = serde_json::to_value(&expanded).unwrap();
+    assert_eq!(
+        pictures.resolve(
+            "a",
+            &mut expanded,
+            now + PICTURE_HOLD - Duration::from_secs(1)
+        ),
+        Err(StaticCode::PictureGone)
+    );
+    assert_eq!(serde_json::to_value(&expanded).unwrap(), before);
+    assert_eq!(
+        pictures.resolve("a", &mut request(id), now + PICTURE_HOLD),
+        Err(StaticCode::PictureGone)
+    );
+}

@@ -476,6 +476,10 @@ listed separately because their only server writes are authentication refresh or
 | The paid line at start (`platform/infra/main.cpp`, `SUBSCRIPTIONS_PURCHASABLE_STORES`) | `subscription.paid_line` | one ERROR `subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed` line when the variable names a store outside `app_store`, `play_store` and `paddle`; the server starts and keeps that store closed. Neither the line nor the report carries the value | one report per start, detail `unknown_store` |
 | Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted` or `debt_outstanding` | expected refusals create no Issue |
 
+The pass feature declares its metadata schema and route policy. The shared write observer enforces
+bounded labels and reserved fields; the final response boundary applies the route’s `no-store`
+policy, including responses sent before a write observation starts.
+
 Standalone MCP accepts unprefixed tool aliases; completions use canonical operations
 (for example `mcp.roadmap_create_tree`). Process construction/teardown exceptions use `server.lifecycle`,
 `mcp.stdio.lifecycle`, `mcp.http.lifecycle` or `process.shutdown` with the same privacy rules.

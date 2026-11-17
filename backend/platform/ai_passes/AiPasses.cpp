@@ -1,5 +1,6 @@
 #include "platform/ai_passes/AiPasses.h"
 
+#include <drogon/utils/Utilities.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <algorithm>
@@ -38,16 +39,6 @@ bool validUse(const std::string& use) {
       std::all_of(use.begin(), use.end(), [](unsigned char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '.'; });
 }
 
-std::string base64url(const unsigned char* bytes, std::size_t size) {
-  std::string encoded(4 * ((size + 2) / 3), '\0');
-  const int count = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(encoded.data()), bytes, static_cast<int>(size));
-  if (count < 0) throw std::runtime_error("ai_pass_encoding_failed");
-  encoded.resize(count);
-  while (!encoded.empty() && encoded.back() == '=') encoded.pop_back();
-  std::replace(encoded.begin(), encoded.end(), '+', '-');
-  std::replace(encoded.begin(), encoded.end(), '/', '_');
-  return encoded;
-}
 
 }
 
@@ -82,14 +73,14 @@ AiPasses::AiPasses(const std::string& seed, std::string kid, std::string environ
   std::replace(encoded.begin(), encoded.end(), '_', '/');
   std::array<unsigned char, 33> decoded{};
   const int length = EVP_DecodeBlock(decoded.data(), reinterpret_cast<const unsigned char*>(encoded.data()), encoded.size());
-  if (length != 33 || base64url(decoded.data(), 32) != seed) { OPENSSL_cleanse(decoded.data(), decoded.size()); invalid(); }
+  if (length != 33 || drogon::utils::base64Encode(decoded.data(), 32, true, false) != seed) { OPENSSL_cleanse(decoded.data(), decoded.size()); invalid(); }
   std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key(EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, nullptr, decoded.data(), 32), EVP_PKEY_free);
   OPENSSL_cleanse(decoded.data(), decoded.size());
   if (!key) invalid();
   std::array<unsigned char, 32> publicKey{};
   std::size_t size = publicKey.size();
   if (EVP_PKEY_get_raw_public_key(key.get(), publicKey.data(), &size) != 1 || size != publicKey.size()) invalid();
-  const bool published = base64url(publicKey.data(), publicKey.size()) == "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo";
+  const bool published = drogon::utils::base64Encode(publicKey.data(), publicKey.size(), true, false) == "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo";
   if ((environment_ == "production" && (published || kid_.starts_with("test-"))) || (published && !kid_.starts_with("test-"))) invalid();
   key_ = key.release();
 }
@@ -124,7 +115,7 @@ Json::Value AiPasses::claims(const AiBudgetPrincipal& principal, const std::opti
 }
 
 std::string AiPasses::signPayload(const std::string& payload) const {
-  const std::string signedText = "wm-pass.v1." + kid_ + "." + base64url(reinterpret_cast<const unsigned char*>(payload.data()), payload.size());
+  const std::string signedText = "wm-pass.v1." + kid_ + "." + drogon::utils::base64Encode(reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), true, false);
   if (signedText.size() + 87 > 2048) throw std::invalid_argument("AI pass exceeds length limit");
   std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(), EVP_MD_CTX_free);
   std::array<unsigned char, 64> signature{};
@@ -132,7 +123,7 @@ std::string AiPasses::signPayload(const std::string& payload) const {
   if (!context || EVP_DigestSignInit(context.get(), nullptr, nullptr, nullptr, key_) != 1 ||
       EVP_DigestSign(context.get(), signature.data(), &size, reinterpret_cast<const unsigned char*>(signedText.data()), signedText.size()) != 1 || size != signature.size())
     throw std::runtime_error("ai_pass_sign_failed");
-  return signedText + "." + base64url(signature.data(), signature.size());
+  return signedText + "." + drogon::utils::base64Encode(signature.data(), signature.size(), true, false);
 }
 
 std::string AiPasses::sign(const Json::Value& claims) const {

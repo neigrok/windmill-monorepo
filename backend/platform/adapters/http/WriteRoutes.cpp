@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string_view>
@@ -30,6 +31,15 @@ bool routeMatches(std::string_view pattern, std::string_view path) {
     path.remove_prefix(slash == std::string_view::npos ? path.size() : slash);
   }
   return path.empty();
+}
+
+std::optional<WriteRoute> matchingWriteRoute(const drogon::HttpRequestPtr& request) {
+  std::lock_guard<std::mutex> lock(routesMutex);
+  for (const auto& route : routes) {
+    if (std::find(route.methods.begin(), route.methods.end(), request->method()) == route.methods.end()) continue;
+    if (routeMatches(route.path, request->path())) return route;
+  }
+  return std::nullopt;
 }
 
 struct HttpWriteFailure : std::runtime_error {
@@ -75,7 +85,7 @@ std::string redirectCode(const std::string& location) {
   return refusalCodes.count(code) ? code : std::string{};
 }
 
-std::string responseCode(const drogon::HttpResponsePtr& response) {
+std::string responseCode(const drogon::HttpResponsePtr& response, const WriteRoutePolicy& policy) {
   std::shared_ptr<Json::Value> body;
   try { body = response->getJsonObject(); }
   catch (const std::exception&) { return {}; }
@@ -85,7 +95,7 @@ std::string responseCode(const drogon::HttpResponsePtr& response) {
     const auto& value = fields[field];
     if (!value.isString()) continue;
     const std::string code = value.asString();
-    if (refusalCodes.count(code)) return code;
+    if (refusalCodes.count(code) || std::find(policy.unavailableRefusals.begin(), policy.unavailableRefusals.end(), code) != policy.unavailableRefusals.end()) return code;
   }
   return {};
 }
@@ -135,7 +145,8 @@ std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr
   if (request->attributes()->find(kWriteObservationAttribute))
     return request->attributes()->get<std::shared_ptr<WriteObservation>>(kWriteObservationAttribute);
   auto observation = std::make_shared<WriteObservation>(route.operation, route.product, route.door);
-  if (route.operation == "ai.pass.sign") observation->failureOperation("ai-pass");
+  observation->failureOperation(route.policy.failureOperation);
+  request->attributes()->insert("wm.write_policy", route.policy);
   request->attributes()->insert(kWriteObservationAttribute, observation);
   request->attributes()->insert("wm.write_operation", route.operation);
   request->attributes()->insert("wm.retired_route", route.retired);
@@ -145,14 +156,12 @@ std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request) {
   if (request->attributes()->find(kWriteObservationAttribute))
     return request->attributes()->get<std::shared_ptr<WriteObservation>>(kWriteObservationAttribute);
-  for (const WriteRoute& route : registeredWriteRoutes()) {
-    if (std::find(route.methods.begin(), route.methods.end(), request->method()) == route.methods.end()) continue;
-    if (routeMatches(route.path, request->path())) return beginWriteRequest(request, route);
-  }
+  if (const auto route = matchingWriteRoute(request)) return beginWriteRequest(request, *route);
   return nullptr;
 }
 
-std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std::string& operation) {
+std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std::string& operation,
+                             const WriteRoutePolicy& policy) {
   if (!response) return "failed";
   const int status = response->statusCode();
   if (status < 400) {
@@ -175,10 +184,11 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
     if (operation == "auth.google.start" && response->cookies().empty()) return "unavailable";
     return "ok";
   }
-  const std::string code = responseCode(response);
+  const std::string code = responseCode(response, policy);
   if (status < 500) return code.empty() ? "http_" + std::to_string(status) : code;
   if (status != 503) return "failed";
-  if ((operation == "ai.installation.issue" || operation == "ai.installation.bind" || operation == "ai.pass.sign" ||
+  if (std::find(policy.unavailableRefusals.begin(), policy.unavailableRefusals.end(), code) != policy.unavailableRefusals.end()) return code;
+  if ((operation == "ai.installation.issue" || operation == "ai.installation.bind" ||
        operation == "platform.GET.v1.ai.installations.current" || operation == "gym.coach.onboarding.start") &&
       code == "anonymous_ai_unavailable") return code;
   if (code == "unavailable" || code == "temporarily_unavailable" || code.rfind("gym-", 0) == 0 ||
@@ -203,6 +213,7 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
 
 std::string httpOperation(const drogon::HttpRequestPtr& request) {
   if (request->attributes()->find("wm.write_operation")) return request->attributes()->get<std::string>("wm.write_operation");
+  if (const auto route = matchingWriteRoute(request)) return route->operation;
   std::lock_guard<std::mutex> lock(routesMutex);
   for (const WriteRoute& route : readRoutes) {
     if (std::find(route.methods.begin(), route.methods.end(), request->method()) == route.methods.end()) continue;
@@ -216,11 +227,22 @@ bool writeFailureReported(const drogon::HttpRequestPtr& request) {
   return request->attributes()->get<std::shared_ptr<WriteObservation>>(kWriteObservationAttribute)->reportedFailure();
 }
 
+void applyWriteResponsePolicy(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
+  if (!response) return;
+  WriteRoutePolicy policy;
+  if (request->attributes()->find("wm.write_policy")) {
+    policy = request->attributes()->get<WriteRoutePolicy>("wm.write_policy");
+  } else if (const auto route = matchingWriteRoute(request)) {
+    policy = route->policy;
+  }
+  if (!policy.cacheControl.empty()) response->addHeader("Cache-Control", policy.cacheControl);
+}
+
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
   const auto observation = beginWriteRequest(request);
   if (!observation) return;
-  if (httpOperation(request) == "ai.pass.sign" && response) response->addHeader("Cache-Control", "no-store");
-  const std::string outcome = writeHttpOutcome(response, httpOperation(request));
+  const auto policy = request->attributes()->get<WriteRoutePolicy>("wm.write_policy");
+  const std::string outcome = writeHttpOutcome(response, httpOperation(request), policy);
   if (outcome == "failed") {
     observation->fail(HttpWriteFailure{});
     return;

@@ -9,10 +9,20 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <span>
+#include <vector>
 #include <type_traits>
 #include <utility>
 
 namespace wm {
+
+struct WriteMetadataField {
+  std::string_view key;
+  std::vector<std::string_view> values;
+  std::size_t maxLength = 64;
+  bool digitsOnly = false;
+};
 
 struct WriteRequestState;
 enum class WriteSeverity { debug, info, warn, error };
@@ -90,7 +100,7 @@ public:
   void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
   void countRefused(std::uint64_t count) { completion_.refused += count; }
   void code(std::string code) { completion_.code = std::move(code); }
-  void metadata(const std::map<std::string, std::string>& values);
+  void metadata(std::span<const WriteMetadataField> schema, const std::map<std::string, std::string>& values);
   void failureOperation(std::string operation) { failureOperation_ = std::move(operation); }
   void skip();
   void ownInfo();

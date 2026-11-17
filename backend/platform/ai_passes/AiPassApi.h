@@ -1,11 +1,14 @@
 #pragma once
 
 #include "platform/ai_passes/AiPasses.h"
+#include "platform/adapters/http/WriteRoutes.h"
 #include "platform/ai_installations/AiInstallationApi.h"
 #include "platform/adapters/http/RateLimiter.h"
 #include <set>
 
 namespace wm {
+
+inline const WriteRoutePolicy kAiPassRoutePolicy{"no-store", "ai-pass", {"anonymous_ai_unavailable", "unavailable"}};
 
 class AiPassApi {
 public:

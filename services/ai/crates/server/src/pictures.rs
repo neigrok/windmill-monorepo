@@ -1,6 +1,6 @@
 use crate::{Service, authenticate, body, config::*, principal_key, read_rate, refusal, reject};
 use ai_domain::{CallerId, StaticCode};
-use ai_providers::{Image, Message, Part, TextRequest};
+use ai_providers::{Image, MAX_TEXT_BODY, Message, Part, TextRequest};
 use axum::{
     extract::{Path, Request, State},
     http::{StatusCode, header},
@@ -13,9 +13,13 @@ use std::{
     time::Instant,
 };
 
-struct HeldPicture {
+struct PicturePayload {
     media_type: String,
     bytes: Vec<u8>,
+}
+
+struct HeldPicture {
+    payload: Arc<PicturePayload>,
     touched: Instant,
     order: u64,
     weight: usize,
@@ -80,6 +84,8 @@ impl Pictures {
             + id.capacity()
             + media_type.capacity()
             + std::mem::size_of::<((String, String), HeldPicture)>()
+            + std::mem::size_of::<PicturePayload>()
+            + 2 * std::mem::size_of::<usize>()
             + 64;
         if weight > self.per_principal || weight > self.total {
             return Err(StaticCode::Busy);
@@ -121,8 +127,7 @@ impl Pictures {
         cache.entries.insert(
             key,
             HeldPicture {
-                media_type,
-                bytes,
+                payload: Arc::new(PicturePayload { media_type, bytes }),
                 touched: now,
                 order,
                 weight,
@@ -141,33 +146,65 @@ impl Pictures {
         cache
             .entries
             .retain(|_, value| now.saturating_duration_since(value.touched) < PICTURE_HOLD);
+        let mut payloads = HashMap::new();
         for message in &request.messages {
-            if let Message::User { parts } = message {
-                for part in parts {
-                    if let Part::Picture { image } = part
-                        && !cache
-                            .entries
-                            .contains_key(&(principal.to_owned(), image.picture.clone()))
-                    {
-                        return Err(StaticCode::PictureGone);
-                    }
-                }
-            }
-        }
-        for message in &mut request.messages {
             if let Message::User { parts } = message {
                 for part in parts {
                     if let Part::Picture { image } = part {
                         let picture = cache
                             .entries
-                            .get_mut(&(principal.to_owned(), image.picture.clone()))
+                            .get(&(principal.to_owned(), image.picture.clone()))
                             .ok_or(StaticCode::PictureGone)?;
-                        picture.touched = now;
+                        payloads
+                            .entry(image.picture.clone())
+                            .or_insert_with(|| Arc::clone(&picture.payload));
+                    }
+                }
+            }
+        }
+        let mut image_bytes = 0usize;
+        for message in &request.messages {
+            if let Message::User { parts } = message {
+                for part in parts {
+                    let size = match part {
+                        Part::Image { image } => image.data.len(),
+                        Part::Picture { image } => {
+                            base64::encoded_len(payloads[&image.picture].bytes.len(), true)
+                                .ok_or(StaticCode::InvalidRequest)?
+                        }
+                        _ => continue,
+                    };
+                    image_bytes = image_bytes
+                        .checked_add(size)
+                        .filter(|total| *total <= MAX_TEXT_BODY)
+                        .ok_or(StaticCode::InvalidRequest)?;
+                }
+            }
+        }
+        for id in payloads.keys() {
+            if let Some(picture) = cache.entries.get_mut(&(principal.to_owned(), id.clone())) {
+                picture.touched = now;
+            }
+        }
+        drop(cache);
+        let images: HashMap<_, _> = payloads
+            .into_iter()
+            .map(|(id, payload)| {
+                (
+                    id,
+                    Image {
+                        media_type: payload.media_type.clone(),
+                        data: STANDARD.encode(&payload.bytes),
+                    },
+                )
+            })
+            .collect();
+        for message in &mut request.messages {
+            if let Message::User { parts } = message {
+                for part in parts {
+                    if let Part::Picture { image } = part {
                         *part = Part::Image {
-                            image: Image {
-                                media_type: picture.media_type.clone(),
-                                data: STANDARD.encode(&picture.bytes),
-                            },
+                            image: images[&image.picture].clone(),
                         };
                     }
                 }

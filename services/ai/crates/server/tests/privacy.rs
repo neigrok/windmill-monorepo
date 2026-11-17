@@ -657,6 +657,50 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
             .is_none()
     );
     assert!(seen.lock().unwrap().is_empty());
+    let large_picture_id = format!("{MARKER}_large_picture");
+    let mut large_picture = vec![0; ai_server::config::MAX_PICTURE];
+    large_picture[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+    large_picture[8..8 + MARKER.len()].copy_from_slice(MARKER.as_bytes());
+    let uploaded = router
+        .clone()
+        .oneshot(
+            Request::put(format!("/v1/pictures/{large_picture_id}"))
+                .header(header::AUTHORIZATION, format!("Bearer {}", pass(PRINCIPAL)))
+                .header(header::CONTENT_TYPE, "image/png")
+                .body(Body::from(large_picture))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(uploaded.status(), 204);
+    let mut expanded = request.clone();
+    expanded["messages"][0]["parts"] =
+        json!(vec![json!({"image":{"picture":large_picture_id}}); 8]);
+    let oversized = call(
+        &router,
+        "PUT",
+        &format!("/v1/calls/{CALLER}/text"),
+        PRINCIPAL,
+        expanded,
+    )
+    .await;
+    assert_eq!(oversized.0, 400);
+    assert_eq!(
+        serde_json::from_str::<Value>(&oversized.1).unwrap(),
+        json!({"code":"invalid_request","allowance":null})
+    );
+    assert!(
+        service
+            .ledger
+            .lookup(
+                &ai_domain::Principal::new("account", PRINCIPAL.into()).unwrap(),
+                &ai_domain::CallerId::new(CALLER.into()).unwrap()
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(seen.lock().unwrap().is_empty());
     for bytes in [
         STANDARD.decode(&image_data).unwrap(),
         b"\x89PNG\r\n\x1a\nreplacement".to_vec(),

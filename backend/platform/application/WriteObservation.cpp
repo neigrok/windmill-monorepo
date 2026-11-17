@@ -3,6 +3,8 @@
 #include <json/json.h>
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <mutex>
@@ -27,6 +29,15 @@ thread_local WriteObservation* currentObservation = nullptr;
 std::mutex configurationMutex;
 std::shared_ptr<FailureReporter> installedReporter;
 std::function<void(const WriteCompletion&)> installedSink;
+
+bool validMetadata(const std::string& key, const std::string& value) {
+  constexpr std::array reserved{"operation", "product", "door", "outcome", "duration_ms", "request_id", "refused", "code"};
+  return !key.empty() && key.size() <= 64 &&
+      key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") == std::string::npos &&
+      std::find(reserved.begin(), reserved.end(), key) == reserved.end() &&
+      !value.empty() && value.size() <= 64 &&
+      value.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-.") == std::string::npos;
+}
 
 std::string newRequestId() {
   static thread_local std::mt19937_64 random{std::random_device{}()};
@@ -64,7 +75,7 @@ std::string writeCompletionJson(const WriteCompletion& completion) {
   fields["request_id"] = completion.requestId;
   if (completion.refused) fields["refused"] = static_cast<Json::UInt64>(completion.refused);
   if (!completion.code.empty()) fields["code"] = completion.code;
-  for (const auto& [key, value] : completion.metadata) fields[key] = value;
+  for (const auto& [key, value] : completion.metadata) if (validMetadata(key, value)) fields[key] = value;
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   builder["precisionType"] = "decimal";
@@ -168,14 +179,14 @@ void WriteObservation::ownInfo() {
   if (transport != 0) state_->infoOwner.compare_exchange_strong(transport, serial_);
 }
 
-void WriteObservation::metadata(const std::map<std::string, std::string>& values) {
+void WriteObservation::metadata(std::span<const WriteMetadataField> schema,
+                                const std::map<std::string, std::string>& values) {
   for (const auto& [key, value] : values) {
-    if (key != "client" && key != "use" && key != "version" && key != "principal" && key != "plan") continue;
-    if (value.empty() || value.size() > 64 || value.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-.") != std::string::npos) continue;
-    if (key == "client" && value != "web" && value != "ios" && value != "android" && value != "server") continue;
-    if (key == "principal" && value != "account" && value != "installation") continue;
-    if (key == "plan" && value != "none" && value != "one") continue;
-    if (key == "version" && (value.size() > 10 || value.find_first_not_of("0123456789") != std::string::npos)) continue;
+    if (!validMetadata(key, value)) continue;
+    const auto field = std::find_if(schema.begin(), schema.end(), [&](const auto& field) { return field.key == key; });
+    if (field == schema.end() || value.size() > field->maxLength) continue;
+    if (field->digitsOnly && value.find_first_not_of("0123456789") != std::string::npos) continue;
+    if (!field->values.empty() && std::find(field->values.begin(), field->values.end(), value) == field->values.end()) continue;
     completion_.metadata[key] = value;
   }
 }
