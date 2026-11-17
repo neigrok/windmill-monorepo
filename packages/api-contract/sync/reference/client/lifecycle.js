@@ -148,8 +148,9 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   }
 
   if (hasAnonWork && anon !== target) {
+    let nextOrder = target.nextCommitOrder();
     for (const entry of anon.entries()) {
-      entry.commitOrder = target.nextCommitOrder();
+      entry.commitOrder = nextOrder++;
       target.outbox.push(entry);
     }
     for (const [product, rows] of Object.entries(anon.device)) {

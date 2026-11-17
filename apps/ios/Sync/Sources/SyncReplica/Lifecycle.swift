@@ -250,9 +250,11 @@ public struct ReplicaLifecycle: Sendable {
         for entry in anon.outbox { anon.apply(.deleteEntry(entry.localId)) }
       }
       device.modify(target) { target in
+        var nextOrder = target.nextCommitOrder
         for entry in anon.outbox {
           var moved = entry
-          moved.commitOrder = target.nextCommitOrder
+          moved.commitOrder = nextOrder
+          nextOrder += 1
           target.apply(.putEntry(moved))
         }
         for (product, rows) in anon.deviceRows.sorted(by: { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }) {

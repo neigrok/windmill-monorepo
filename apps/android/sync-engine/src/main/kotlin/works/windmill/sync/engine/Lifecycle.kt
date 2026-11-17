@@ -173,8 +173,9 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
         else -> freshReplica(identities.replicaID(), account).also { device.replicas.add(it) }
     }
     if (anon != null && anon !== target && hasAnonymousWork) {
+        var nextOrder = 1 + (target.outbox.maxOfOrNull { it.order } ?: 0)
         for (entry in anon.entries()) {
-            entry.json = entry.json.with("commitOrder" to Json.of(1 + (target.outbox.maxOfOrNull { it.order } ?: 0)))
+            entry.json = entry.json.with("commitOrder" to Json.of(nextOrder++))
             target.outbox.add(entry)
         }
         for ((product, rows) in anon.device) target.device[product] = Json.Obj(rows.obj().toMutableMap().apply { putAll(target.device[product]?.obj().orEmpty()) }.toList())
