@@ -31,18 +31,29 @@ as in the web proposal.
 
 The owner ruled on 2026-11-08 and accepted every default:
 
-1. Roadmap is the third room, with its own TabView: Board · Graph · Search.
+1. Roadmap is the third room, with its own TabView: Board · Graph · Coach, and Search (ruling 10).
 2. The Board's three groups are sections of one List, Up next first.
-3. Roadmap is fully offline through a Swift client of roadmap's own graph sync, held to the web by shared
-   vectors.
+3. Roadmap is fully offline through the shared sync engine and the Swift domain kit, held to the web by
+   shared vectors (owner, 2026-11-17; [Roadmap on iOS](../../foundation/roadmap-ios.md)).
 4. Graph layout is a Swift port of the bubble layout, checked against the web's output.
 5. The Graph draws with SwiftUI Canvas, with Metal only for speed. It looks and behaves as the web
    renders it at every size: no iOS-only treatment of large roadmaps.
 6. The step page is one scroll; History is one row away.
-7. The app claims `/t/:id` as universal links, so shared roadmaps open in it.
+7. The app claims `/t/:id` and a person's own `/#/app/:id` as universal links, so shared roadmaps and
+   their own open in it (owner, 2026-11-17).
 8. Completing from the Board is the leading swipe only.
 9. An offline edit to a step deleted on another device brings the step back, named once in the band, by
    the same rule as creations below.
+
+The owner ruled further on 2026-11-17:
+
+10. Coach is in the room's first release, as its third tab, with Search beside it
+    ([design](../roadmap-coach.md)).
+11. A step that opens a roadmap, a subtree and a guide work as on the web in the first version. None is
+    drawn here yet; each state is drawn and approved before it is built.
+12. A form commits from the toolbar, with Cancel and Save, as the
+    [rendering contract](ios-redesign.md) says. The boards that draw a commit at the foot are redrawn.
+13. The step page's workspace follows a person across their devices.
 
 ## A person's own work always lands
 
@@ -147,10 +158,8 @@ to 8.60:1 (milestone). The light milestone is gold 600 (`#A17822`), not the web'
 - **The step page is one scroll**: status, description, Prerequisites, Unlocks, then the private
   workspace (Subtasks, Note, Your links), then *History* as a row. The kind name is the subtitle.
   When every subtask is checked, the Subtasks footer says so and the pinned Complete is the one tap.
-- **Forms commit at the foot, in thumb reach**: a full-width *Create step* (*Save* when editing, *Create
-  roadmap* for a new roadmap) in `.safeAreaBar(edge: .bottom)`, riding the keyboard; the head keeps only
-  ✕, `Button(role: .close)` in `.cancellationAction` (*Cancel* on iOS 18, where the commit is
-  `.bordered`).
+- **Forms commit from the toolbar** (ruling 12): *Cancel* and *Save*, *Create step* or *Create roadmap*,
+  as the app's other forms do.
 - **Kind is a pushed picker list** with the legend descriptions, not six inline swatches.
 - **The prerequisites picker has no Apply**: it is bound to the draft, and only the form's commit writes. A
   *Selected* section that no query hides replaces the chip strip.

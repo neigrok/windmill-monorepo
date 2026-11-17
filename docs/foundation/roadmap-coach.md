@@ -6,40 +6,43 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. The roadmap's AI today is tending: a server-side agent that
+**Status:** Specified, and approved by the owner on 2026-11-15. It was revised on 2026-11-17 for two
+later rulings, roadmap on the sync engine (R-13) and Coach on the iPhone in the first release
+(R-14), and that revision is not yet approved. Nothing is built. The roadmap's AI today is tending: a server-side agent that
 edits a roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `roadmap-coach`.
 
-**Scope:** Coach in the roadmap room on the web: the turn that runs in the browser, the abilities it
-calls on the browser's own copy of a roadmap, the proposals a person reviews and applies, and the
-records of a conversation. The catalog, its vectors and the records are written so that the iPhone's
-Roadmap room builds the same Coach on them.
+**Scope:** Coach in the roadmap room, on the web and on the iPhone: the turn that runs on the
+device, the abilities it calls on the device's own copy of a roadmap, the proposals a person reviews
+and applies, and the records of a conversation. One catalog, one set of vectors and the same records
+serve both surfaces.
 
 **Out of scope:** The screens, which the design canon holds; a screen is built only from a board the
 owner has marked ready, and the boards for the review, signed out and History are still proposals.
 The [AI service](ai-service.md), which makes each model call. The engine that runs a turn, the AI
 client and the pass door, which the [Coach engine](coach-engine.md) holds. Gym Coach's own move onto
-the device ([Gym Coach on the AI service](gym-coach-on-ai-service.md)). The iPhone room, which does
-not exist yet. `POST /v1/compose`. The roadmap tools
+the device ([Gym Coach on the AI service](gym-coach-on-ai-service.md)). The iPhone's room
+([Roadmap on iOS](roadmap-ios.md)). `POST /v1/compose`. The roadmap tools
 an outside assistant reaches over MCP, which stay on the server as a catalog of their own.
 
-**Depends on:** the [Coach engine](coach-engine.md), and through it the AI service's text door and
-the backend signing passes for it (AI service I-1).
+**Depends on:** [Roadmap on the sync engine](roadmap-on-the-engine.md), whose registry and shared
+domain the abilities are built on; the [Coach engine](coach-engine.md), and through it the AI
+service's text door and the backend signing passes for it (AI service I-1).
 
 ## §1 The rule
 
 The owner's default for every Coach, ruled on 2026-11-14. (R-1)
 
 - **P-1 Abilities run on the device's copy.** Coach reads and changes a roadmap through the copy the
-  browser already keeps of it, never through a call to the server.
+  device keeps of it, never through a call to the server.
 - **P-2 A change is an ordinary local write.** Whatever Coach changes goes through the same door as
   the person's own gesture, and reaches the server and every other device by synchronization.
 - **P-3 What is missing is brought, not asked for.** A roadmap Coach needs and the device does not
   hold is brought onto the device by synchronization and then read there.
 - **P-4 A backend ability is an exception with a reason.** An ability may call the backend only for
-  a fact synchronization does not carry. The catalog names each one and why. There is one (§4).
+  a fact synchronization does not carry. The catalog names each one and why. There is none (§4).
 - **P-5 The turn runs on the device.** The loop, the gate and the system prompt are the device's;
   each model round is one call to the AI service ([Coach engine](coach-engine.md) P-1). (R-2)
 - **P-6 One engine, a Coach a product.** The [Coach engine](coach-engine.md) that runs a turn names
@@ -51,11 +54,13 @@ The owner's default for every Coach, ruled on 2026-11-14. (R-1)
 [phone-hosted Coach abilities](mobile/gym_coach.md) D-1 to D-10 define. *Round*, *profile*, *mark*
 and *gate* mean what the [Coach engine](coach-engine.md) defines. This document adds:
 
-- **D-1 Copy.** What the browser holds of one roadmap: its structure and the person's own progress,
-  as `web/src/products/roadmap/sync` keeps them, durable across reloads and usable offline.
+- **D-1 Copy.** What the device holds of one roadmap in its replica of the sync engine
+  ([Roadmap on the sync engine](roadmap-on-the-engine.md)): its structure and the person's own marks
+  and workspace, durable and usable offline.
 - **D-2 Standing roadmap.** A roadmap as the room shows it: the steps, links, kinds and marks on the
   screen. It is the copy, less a step under a delete the person can still undo, and with the marks
-  the room shows, which for a reader are the owner's.
+  the room shows. For a reader those are the owner's, which the room read from the backend; Coach
+  reads what the room holds of them and asks for nothing.
 - **D-3 Direct write.** A change Coach makes at once, to one step, that removes nothing (§6).
 - **D-4 Receipt.** The record of a direct write: what changed, in at most eight words.
 - **D-5 Proposal.** A set of changes to one roadmap that Coach suggests and only the person applies
@@ -81,7 +86,13 @@ web/src/products/roadmap/
                           rules they share with the room's controls
   coach/                  roadmap's profile: prompt, context, the tool host over the copy,
                           proposals, receipts
+apps/ios/Domain/Sources/RoadmapDomain/
+                          the same abilities and rules in Swift, with the tool host's executor
 ```
+
+- `domain/` is roadmap's domain on the domain kit, which
+  [Roadmap on the sync engine](roadmap-on-the-engine.md) §9 gives its rules, actions and reads. The
+  abilities are built on those and add none of their own.
 
 - An ability is a pure function: it takes a roadmap as plain data and an input, and returns what it
   read, or the writes to make, or a refusal. It touches no network, store or clock. The tool host
@@ -112,7 +123,7 @@ is `{name, description, input, result, class, agent, seats, phrase, ui}`, `class
 | `find_nodes` | read | runs | on the copy | Steps by kind, state or text; `state: available` is the frontier |
 | `get_progress` | read | runs | on the copy | The person's completed steps, with the dates the copy holds |
 | `get_diagnostics` | read | runs | on the copy | What is wrong with the graph: cycles, links to missing steps, self links, masked work, smells |
-| `list_trees` | read | runs | **on the backend** | One line for each roadmap the person owns. Offered only in a conversation about all roadmaps |
+| `list_trees` | read | runs | on the copy | One line for each roadmap the person owns. Offered only in a conversation about all roadmaps |
 | `set_progress` | change | runs | on the copy | Marks one step done or not done |
 | `rename_node` | change | runs | on the copy | Changes one step's title |
 | `annotate_node` | change | runs | on the copy | Changes one step's description or its web links |
@@ -120,11 +131,8 @@ is `{name, description, input, result, class, agent, seats, phrase, ui}`, `class
 | `connect` | add | runs | on the copy | Adds one link between two steps |
 | `propose_roadmap_change` | change | proposes | on the copy | Mints a proposal of one or more changes to one roadmap (§7) |
 
-- `list_trees` is the one backend ability. The list of everything an account owns is not something
-  a device holds or synchronization carries; the backend answers it, and the device adds the
-  roadmaps that live on it alone. (R-5)
-- The room itself reads one fact from the backend when it opens a roadmap: what the roadmaps its
-  steps open have come to. Coach reads what the room holds of that and asks for nothing more (§5).
+- No ability calls the backend. A signed-in device holds every roadmap its person owns, so
+  `list_trees` and what a step's opened roadmap has come to are read from the copy. (R-5)
 - Withheld from Coach: creating, deleting, renaming and sharing a roadmap, its guide, the roadmaps a
   step opens, and removing or reordering kinds.
 - Every ability that `runs` and is not a `read` changes one step and removes nothing. That is the
@@ -166,8 +174,8 @@ ability's result as data and never as instructions.
   never gives a state the screen contradicts.
 - A step's state (locked, available, complete) is the one the room shows, from the function that
   derives it today, `UnlockRules.derive`, over the graph as the room draws it.
-- A step that opens another roadmap is complete when that roadmap is. Where the room does not know
-  what the opened roadmap has come to, as offline, the step's state is `unknown`. So is the state of
+- A step that opens another roadmap is complete when that roadmap is. Where the device has not
+  finished pulling the opened roadmap, the step's state is `unknown`. So is the state of
   every step that waits on it. `find_nodes` with a state leaves unknown steps out, and counts by
   state give them a count of their own.
 - A completion has a date only where the copy holds one. A step complete through the roadmap it
@@ -180,14 +188,11 @@ ability's result as data and never as instructions.
 
 ## §6 Writing
 
-A direct write (D-3) is carried out by the tool host through the room's own doors: the structure
-door, `SyncSession.dispatch`, and the room's mark door, `RoomProgress.mark`. The structure door
-checks only that the session is ready, and neither checks who is writing or what, so the ability and
-the host check first:
+A direct write (D-3) is carried out by the tool host as the domain's own actions, the ones the
+room's controls run. The ability and the host check first:
 
-1. **The roadmap can take a write.** Its session is ready, no part of it is being rebuilt from the
-   server, and the step is under no delete the person can still undo. Otherwise the ability is
-   refused as `roadmap-not-ready`.
+1. **The roadmap can take a write.** The device holds it whole, and the step is under no delete the
+   person can still undo. Otherwise the ability is refused as `roadmap-not-ready`.
 2. **The person may write it.** The person owns the roadmap, as the room itself decides before it
    offers its own controls. A reader's Coach answers questions and is offered no ability that
    writes or proposes.
@@ -196,9 +201,7 @@ the host check first:
 4. **The server will take it.** The write is inside the caps of `limits.json`: a label of 200
    characters, a description of 16,000, 10,000 steps, 20,000 links, 32 web links a step with a label
    of 200 and an address of 2,048, an id of 128, 6 kinds with a label of 24 and a description of 80.
-   The server refuses a whole frame that breaks a cap and resends nothing of it until the person
-   deals with the refusal, so an over-cap write is refused on the device as `over-limit` and never
-   sent.
+   An over-cap write is refused on the device as `over-limit` and never sent.
 5. **The graph stays whole.** `connect` and `create_node` refuse a link that would close a cycle or
    name a step the roadmap does not hold. A web link's address is one the contract allows. A new
    step names a kind the roadmap has, or takes terracotta as the room's own control gives it.
@@ -217,13 +220,13 @@ or `no-change`, never success.
   the conversation is what says Coach made it. (R-7)
 - A direct write leaves a receipt and offers Undo in the room's band for 6 s. For a change to
   structure, Undo reverts that one act and spares anything written since. For a mark, Undo marks the
-  step back, and a completion's first date is not restored. The means to undo live in the tab's
-  memory.
+  step back, and a completion's first date is not restored. The means to undo live in the
+  process's memory.
 - A message's receipts are final once its turn has ended. What became of a write afterwards, that it
   was undone or that the server refused it, is a record of its own (§9), so the receipt can read
   "Undone" on every device.
-- A refusal from the server after the write was made stands as the room shows every refusal, with
-  Retry and Discard.
+- A write that could not land afterwards joins the one list the room keeps of those
+  ([Roadmap on the sync engine](roadmap-on-the-engine.md) §6).
 
 ## §7 Proposals
 
@@ -270,14 +273,15 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
    over the standing roadmap as it is now; a set that no longer validates is out of date too. An
    out-of-date proposal becomes `stale` and nothing is written.
 3. Otherwise the folded result is reduced to one write for each register and written as one act on
-   the device: the structure under one stamp through the structure door, and the marks with it
-   through the mark door. The act's stamp is written to the device's row.
+   the device: one gesture over the roadmap's scope, for the structure, and the person's overlay of
+   it, for the marks (Roadmap on the sync engine K-2). The act's stamp is written to the device's
+   row.
 4. The record becomes `applied`, and the row is removed.
 5. Undo is offered for 6 s in the room's band. It reverts the act and sets `undone`. An undone
    proposal is not offered again; the person asks Coach for another.
 
 - **INV-3.** A proposal applies whole or not at all on the device. On the wire it is the person's
-  own writes: structure and marks travel apart, and a large act travels as several frames.
+  own writes: structure and marks are separate intents, and a large act travels as several.
 - **INV-4.** An applied proposal is never set aside because the roadmap changed elsewhere. It merges
   as any two edits do, and nothing about a later sync returns it to the person for a second look.
 - A row found `applying` when the engine starts is settled by its act: the record becomes `applied`
@@ -327,17 +331,17 @@ an installation as `medium`, with the effort gym's Coach asks for and the label
 `CONTEXT_BYTES` 64 KiB. A call asks for at most 2,000 output tokens and at least 1,024. A message, a
 question and a picture keep gym's bounds.
 
-**The words.** The prompt is a file of the web bundle, written with the owner, and so are the
-words of the first content and the sentence the model reads beside each refusal code. A person can
-read them there; they hold no secret.
+**The words.** The prompt, the words of the first content and the sentence the model reads beside
+each refusal code are files under `packages/api-contract/roadmap/coach/`, written with the owner and
+shipped in each app, as gym's are. A person can read them there; they hold no secret.
 
 ## §9 Records and History
 
 Coach's records are private to a person and are no part of a roadmap's shared structure, which a
 reader of a shared roadmap can see. They are records of the [sync engine](engine.md), in a registry
 for the product `roadmap` under the scope `self/roadmap`, beside gym's and journal's in the
-composition. (R-4) The engine's own appendix sketches roadmap types for a roadmap's structure; this
-registry holds Coach's records only and builds none of those.
+composition. (R-4) They join the registry that holds a roadmap's structure
+([Roadmap on the sync engine](roadmap-on-the-engine.md) §3).
 
 | Type | Holds |
 |---|---|
@@ -353,9 +357,9 @@ picture's original, as gym keeps one.
   `interrupted`. Once a turn has ended, its message's text, calls and receipts are final.
 - History is one list of every conversation, each tagged with its roadmap or with "All roadmaps",
   the current roadmap's first, filtered by roadmap from the title.
-- Deleting a roadmap deletes the conversations and proposals about it. The backend, which deletes a
-  roadmap for every device, deletes the records that name it; a device that deletes a roadmap living
-  on it alone deletes them itself. Conversations about all roadmaps stay.
+- Deleting a roadmap deletes the conversations and proposals about it, in the same gesture, on the
+  device that deletes it. A roadmap deleted through the backend's door has them deleted there.
+  Conversations about all roadmaps stay.
 - The opening of a turn and its end are declared once in the domain kit and proven by shared
   vectors, as gym's are, so the iPhone writes the same records.
 
@@ -365,15 +369,9 @@ messages' `carry`, not an ability's full result. A record holds what a person re
 ## §10 Other roadmaps
 
 - `list_trees` answers, for each roadmap the person owns: its title, its counts by state, the titles
-  of its frontier and the date of its last completion. The backend's list carries the title and the
-  counts of all and of done today, and gains the rest. The device adds the roadmaps that live on it
-  alone, which the backend does not know.
-- To read a roadmap the device does not hold, the tool host opens it without showing it and waits,
-  within a time limit, until both its structure and the person's marks have arrived; a roadmap that
-  does not arrive is refused as `roadmap-unavailable`. It is then on the device like any roadmap the
-  person has opened, and enters the device's list under the title `list_trees` gave. (P-3)
-- A roadmap the room already holds is read through the room's own session, never a second one. A
-  roadmap opened for Coach is closed when the turn ends, and before the room opens it.
+  of its frontier and the date of its last completion, all computed from the copy.
+- A roadmap the device has not finished pulling is refused as `roadmap-unavailable` until it has
+  arrived whole. (P-3)
 - In a conversation about all roadmaps Coach changes a roadmap only through a proposal, which names
   the one roadmap it changes (§6).
 - Applying a proposal to a roadmap other than the one on screen opens that roadmap first, so the
@@ -382,12 +380,13 @@ messages' `carry`, not an ability's full result. A record holds what a person re
 ## §11 Signed out
 
 The design rules that everything works signed out: asking, direct writes, reviewing and applying.
-Coach goes live on the web only when it works signed out too. (R-6) A signed-out person's roadmap
-already lives on the device, and the browser's sync engine already keeps a signed-out person's
-records and carries them to the account at sign-in. What the web lacks, and this build adds, is:
+Coach goes live, on the web and on the iPhone, only when it works signed out too. (R-6) A signed-out person's roadmap
+already lives on the device, and the sync engine already keeps a signed-out person's records and
+carries them to the account at sign-in. The iPhone holds an installation credential already. What
+is lacking, and this build adds, is:
 
-- **A credential to ask with.** The AI service admits an installation on a pass the backend signs
-  for an installation credential. No such credential exists in the browser.
+- **A credential to ask with, in the browser.** The AI service admits an installation on a pass the
+  backend signs for an installation credential. No such credential exists in the browser.
 - **A screen for sign-in when both sides hold conversations.** The sync engine asks a person what to
   do with a device's records when the account already has some. No board draws that for Coach.
 
@@ -420,43 +419,28 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
 - Unexpected failures report to Sentry under the static names `roadmap-coach-turn`,
   `roadmap-coach-ability`, `roadmap-coach-apply` and `ai-call`. A refusal the person can act on is
   an event, not an Issue.
-- The backend logs nothing of a turn but the pass it signed and the `list_trees` read.
-- They are listed in the web observability notes when built.
+- The backend logs nothing of a turn but the pass it signed.
+- They are listed in the web's and the iPhone's observability notes when built.
 
 ## §14 What must be built beneath Coach
 
-Reading `web/src/products/roadmap`, the sync engine and the backend against this document on
-2026-11-14 found these gaps. Each is work of this build.
+[Roadmap on the sync engine](roadmap-on-the-engine.md) builds the copy, the registry and the shared
+domain. Beyond what it lists, Coach needs of that domain:
 
-In the copy's sync:
+- an action that changes the web links of an existing step, for `annotate_node`;
+- one act that carries a proposal's folded changes, of different kinds, under one stamp, with
+  merging and splitting steps among them, and an Undo that takes back structure and marks together
+  and says whether anything was taken back (§7);
+- diagnostics computed on the device and held to the server's by vectors, and a step's `unknown`
+  state (§5);
+- the stamp of every register a read returned, for a proposal's `base` (§7).
 
-- No gesture changes the web links of an existing step; `annotate_node` needs one.
-- No gesture carries several changes of different kinds under one stamp, and none merges or splits
-  steps. Apply (§7) needs one act for structure, made from a folded set of changes.
-- Marks have no journal to undo from and travel apart from structure. Apply writes both, and its
-  Undo must take both back.
-- Reverting an act reports success even when every register it wrote has since been overwritten.
-  Undo after Apply must know whether anything was taken back.
-- The caps of §6 are not checked on the device, and a second kind of one hue is refused only by the
-  legend's own control.
-- The session does not read what the server says it refused of a batch or of a mark.
-- A session says when its structure has joined and not when the person's marks have (§10).
-- Sessions for a second roadmap are opened today only to claim a device's roadmaps, one at a time.
-  Nothing opens one beside the room's and reads it.
-- Diagnostics are computed on the server alone, and a step has no `unknown` state (§5).
-- A link to a step deleted elsewhere becomes masked work with an offer to restore it. The design
-  rules that it is replaced by the deleted step's own prerequisites, with a line in the band saying
-  so.
+In the backend:
 
-In the sync engine and the backend:
+- The backend stores and admits none of §9's types, and its door that deletes a roadmap deletes no
+  record that names it.
 
-- Roadmap has no registry in the composition, and the backend stores and admits none of §9's types.
-- The backend's delete of a roadmap deletes no record that names it (§9).
-- The backend's list of roadmaps lacks what §10 adds to it.
-- Roadmap is not a consumer of the domain kit, which §9's shared vectors make it.
-
-Not carried to the device, and so not part of Coach: the server's `outOfOrder` flag on a mark, which
-only an outside assistant's mark sets, and the guides of the roadmaps above one.
+Not read by Coach: the `outOfOrder` flag on a mark, which only an outside assistant's mark sets.
 
 ## §15 Rulings
 
@@ -469,14 +453,16 @@ states them. This document's own:
 | R-2 | Where the turn runs | On the device: the loop, the gate and the prompt. Each model round is a call to the AI service. (2026-11-14) |
 | R-3 | One Coach or one per product | One engine; a separate Coach in each product with its own prompt, abilities and conversations. (2026-11-14) |
 | R-4 | Where conversations and proposals are stored | As records of the sync engine in a registry of roadmap's own, since they are private and belong to no one roadmap's shared structure. (2026-11-15) |
-| R-5 | Which abilities call the backend | `list_trees` alone, with each roadmap's counts by state, frontier titles and last completion date added to what the backend lists. (2026-11-15) |
+| R-5 | Which abilities call the backend | None. It was `list_trees` alone while a device held only the roadmaps it had opened; with roadmap on the sync engine a device holds every roadmap its person owns (R-13). (2026-11-15, revised 2026-11-17) |
 | R-6 | Signed-out Coach on the web | It ships together with signed-in Coach: Coach does not go live on the web until both work. (2026-11-15) |
 | R-7 | Whether Coach's writes are told apart from the person's | In the conversation only, where the receipt says Coach made the change. On the wire and in Activity a change Coach made is the person's own. (2026-11-15) |
 | R-8 | How "you asked for exactly this" is enforced | By the prompt. The catalog's shape keeps a direct write to one step that removes nothing, and the gate keeps it within the turn's volume. (2026-11-15) |
 | R-9 | What `merge` and `split` do | As §7's table says. (2026-11-15) |
-| R-10 | An applied proposal the server then refuses | A proposal is applied on the device and then synced, and the server can refuse the synced change: a cap reached by an edit elsewhere, a roadmap deleted or no longer the person's. The refusal stands as it does for a person's own edit, with Retry and Discard, and the record stays `applied`. (2026-11-15) |
+| R-10 | An applied proposal the server then refuses | A proposal is applied on the device and then synced, and the server can refuse the synced change: a cap reached by an edit elsewhere, a roadmap deleted or no longer the person's. The refusal stands as it does for a person's own edit, and the record stays `applied`. A person's own edit is no longer shown as refused for what happened elsewhere, and what cannot land is listed in one place ([Roadmap on the sync engine](roadmap-on-the-engine.md) §5). (2026-11-15, revised 2026-11-17) |
 | R-11 | One allowance while gym's Coach is metered elsewhere | Roadmap Coach is built beside gym's move and goes live only after the server's gym Coach has closed ([Gym Coach on the AI service](gym-coach-on-ai-service.md) §8), so a person never holds two allowances for Coach. (2026-11-15) |
 | R-12 | The Windmill One button on the web | The web shows no such button while Windmill One cannot be bought there. It says the allowance is used up and when it returns. (2026-11-15) |
+| R-13 | The copy Coach's abilities run on | The device's replica of the sync engine, once roadmap has moved onto it. Nothing of Coach is built on roadmap's former sync. (2026-11-17) |
+| R-14 | Coach on the iPhone | In the iPhone's first release of the Roadmap room, on the same catalog, vectors and records. (2026-11-17) |
 
 The design draws none of these, and each needs a board before it is built: Coach for a person who
 only reads a roadmap; a card whose proposal was applied and then undone; a replaced card; and the

@@ -205,7 +205,8 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
   the AI service holds for a turn, and its `pictures` entry is `localOnly`.
 - The browser's mark is one for a browser, so a browser runs one gym turn at a time across its
   tabs.
-- Signing out removes what Coach kept in the browser: drafts, pictures and the mark.
+- Signing out removes what Coach kept in the browser: drafts, pictures and the mark. Where the
+  person keeps their unsent work, a picture an unsent message names stays with it.
 
 **What a person on the web gets, and loses:**
 
@@ -225,7 +226,7 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
 - Existing web conversations are not carried into the records, and a draft waiting for
   **Save routine** on the day the web moves is lost with them. (R-6)
 - Coach on the web stays closed while a workout is open, and signed out the gym room stays a sign-in
-  door. Neither is this move's to change.
+  door. Neither is this move's to change; [the web as a device](web-device-parity.md) changes both.
 - A workout proposal a phone made appears in the shared History, where the web has no card for it.
 - The room, History, a created routine's card, the read receipt, a turn answering elsewhere, the
   ends of a turn, a picture held elsewhere, a phone's workout proposal and the access states of §6
