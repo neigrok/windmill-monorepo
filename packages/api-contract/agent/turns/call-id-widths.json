@@ -98,7 +98,8 @@
       "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
       "CCCCCCCCCCCCCCCCCCCCCC"
     ],
-    "lockAvailable": true
+    "lockAvailable": true,
+    "connected": true
   },
   "host": {
     "open": {

@@ -30,11 +30,16 @@ Admission certainty never moves backward. A pass-expired or picture-gone repair 
 the same ID. A seat change cancels local transport, clears cached allowance and cannot authorize
 late replies to publish under another seat.
 
-Offline policy follows dispatch evidence. A pass or picture failure before text dispatch restores
-the draft promptly. A cached pass can permit a text attempt while offline; that attempt is uncertain
-and retries under the same call ID. Temporary pass refresh transport loss, rate limits and
-unavailability keep the original recovery deadline. No connectivity monitor or saved working
-conversation is needed.
+`ServiceAiClient.connected` answers whether the device reports a connection, from the `connection`
+it was constructed with. No application constructs this client yet, and until one passes
+`connection` (its path monitor's report, `SyncEngine.PathConnectivity.isOnline`), every turn counts
+as connected. The engine asks once, before a turn's first round, and withdraws a turn begun with no
+connection, so the client is never called for it. The client itself never asks.
+
+After that, offline policy follows dispatch evidence. A pass or picture failure before text dispatch
+restores the draft promptly. A text attempt that fails is uncertain whatever the device reports and
+retries under the same call ID. Temporary pass refresh transport loss, rate limits and
+unavailability keep the original recovery deadline. No saved working conversation is needed.
 
 `CoachRuntime` supplies cryptographic IDs and holds `CoachWorkLease` for the turn. On iOS,
 `CoachBackgroundLease` returns UIKit background time once on completion or expiration.

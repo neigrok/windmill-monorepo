@@ -52,6 +52,7 @@ extension AiClock {
   let clock: any AiClock
   let diagnostics: any AiDiagnostics
   let credentials: @MainActor (Seat) throws -> AiCredentials
+  let connection: @MainActor () -> Bool
   var pass: Pass?
   var generation: UInt64 = 0
   var stop = false
@@ -60,9 +61,13 @@ extension AiClock {
   public private(set) var lastAllowance: JSON?
 
   public init(transport: any AiTransport, clock: any AiClock, diagnostics: any AiDiagnostics,
-              credentials: @escaping @MainActor (Seat) throws -> AiCredentials) {
+              credentials: @escaping @MainActor (Seat) throws -> AiCredentials,
+              connection: @escaping @MainActor () -> Bool = { true }) {
     self.transport = transport; self.clock = clock; self.diagnostics = diagnostics; self.credentials = credentials
+    self.connection = connection
   }
+
+  public var connected: Bool { connection() }
 
   public func seatWillChange() {
     generation &+= 1; pass = nil; lastAllowance = nil; stop = true; waitTask?.cancel()

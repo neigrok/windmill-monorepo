@@ -64,6 +64,7 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                     if (turn.done) return@withLease turn.end
                     if (turn.seatChanged) return@withLease finish(turn, EndState.interrupted)
                     if (turn.wait.stopped) return@withLease finish(turn, EndState.stopped)
+                    if (round == 1L && !ai.connected()) return@withLease finish(turn, EndState.interrupted, withdraw = true)
                     val callId = runtime.newId()
                     mutations.withLock {
                         if (turn.done || turn.seatChanged) return@withLock

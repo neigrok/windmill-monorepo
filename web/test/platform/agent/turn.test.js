@@ -12,7 +12,7 @@ test('the seat barrier resolves when the active record has disappeared', async (
   let enter;
   const dispatched = new Promise((resolve) => { enter = resolve; });
   const runner = new TurnRunner({
-    ai: { clearPass() {}, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
+    ai: { clearPass() {}, connected: () => true, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
     telemetry: { failure: (operation) => events.push({ failure: operation }), turn: (event) => events.push(event) },
     runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
     host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, end: async () => { throw new HostUnavailable(); } },
@@ -32,7 +32,7 @@ test('an unexpected seat-barrier write failure reports immediately and once befo
   let release; let enter;
   const dispatched = new Promise((resolve) => { enter = resolve; });
   const runner = new TurnRunner({
-    ai: { clearPass() {}, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
+    ai: { clearPass() {}, connected: () => true, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
     telemetry: { failure: (operation) => reports.push(operation) },
     runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
     host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, end: async () => { throw new Error('storage failure'); } },
@@ -103,6 +103,7 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
     let idIndex = 0;
     let barrier;
     let engine;
+    let connected = story.runtime.connected;
     const controls = structuredClone(story.controls);
     const control = (at) => {
       const index = controls.findIndex((item) => item.at === at);
@@ -112,6 +113,7 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
       if (action === 'seat') barrier = engine.seatWillChange().then(() => { generation++; });
       if (action === 'delete') exists = false;
       if (action === 'stale') state = 'interrupted';
+      if (action === 'disconnect') connected = false;
     };
     const guard = (lease) => { if (!exists || lease !== writer || lease.generation !== generation) throw new HostUnavailable(); };
     const host = {
@@ -158,6 +160,7 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
         assert.ok(value, `unexpected service request ${path}`);
         if (++repeat >= value.repeat) { exchangeIndex++; repeat = 0; }
         if (value.http) throw new TransportFailure('lost');
+        if (value.transport) throw new TransportFailure(value.transport);
         if (value.refusal) {
           const fixture = refusals.find(({ body }) => body.code === value.refusal.code);
           assert.ok(fixture, `missing refusal status for ${value.refusal.code}`);
@@ -169,7 +172,7 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
         })() };
       },
     };
-    const ai = new AiClient({ transport, telemetry, now: () => now, wait: async (ms, signal) => {
+    const ai = new AiClient({ transport, telemetry, now: () => now, connected: () => connected, wait: async (ms, signal) => {
       const index = trace.waitsMs.length; trace.waitsMs.push(ms); control(`wait:${index}`);
       if (signal.aborted) return false;
       now += ms; return true;
