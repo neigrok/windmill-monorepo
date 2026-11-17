@@ -3,9 +3,11 @@ package works.windmill.platform.ai
 import java.io.File
 import java.util.Base64
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
@@ -212,6 +214,51 @@ class CoachBoundaryTests {
         }
     }
 
+    @Test fun seatChangeAndStopAreRecheckedAfterTheExecutionAcquiresItsLock() = runBlocking {
+        for (seatChange in listOf(true, false)) withTimeout(3000) {
+            val abilities = mutableListOf<Json>()
+            val marks = mutableListOf<Json>()
+            val delegate = ProbeHost(Json.objectOf(), null, marks, abilities)
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val ends = mutableListOf<TurnEnd>()
+            val host = object : ToolHost by delegate {
+                override suspend fun check(lease: HostLease, rule: String, call: ToolCall): String? {
+                    if (rule == "product") { entered.complete(Unit); release.await() }
+                    return delegate.check(lease, rule, call)
+                }
+                override suspend fun end(lease: HostLease, end: TurnEnd) { delegate.end(lease, end); ends += end }
+            }
+            val story = Json.parse(File(System.getProperty("windmill.contract"), "agent/turns/two-rounds.json").readText())
+            val reports = Reports()
+            val ai = object : AiClient {
+                override fun clearPass() {}
+                override suspend fun result(callId: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer = error("unexpected-result")
+                override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer {
+                    val terminal = story.member("service").member("exchanges").arr().first().member("events").arr().last()
+                    return AiAnswer.Terminal("ended", terminal.member("data"))
+                }
+            }
+            val runner = TurnRunner(host, ai, reports, CoachRuntime(CoachBackgroundLease { AutoCloseable {} }))
+            val task = async { runner.run(TurnInput("turn", Seat(SeatKind.bound, "seat"), "", emptyList()), Profile(story.member("profile"))) }
+            entered.await()
+            val mutex = TurnRunner::class.java.getDeclaredField("mutations").apply { isAccessible = true }.get(runner) as Mutex
+            mutex.lock()
+            release.complete(Unit)
+            kotlinx.coroutines.yield()
+            val barrier = if (seatChange) async(start = CoroutineStart.UNDISPATCHED) { runner.seatWillChange() } else null
+            if (!seatChange) runner.stop()
+            mutex.unlock()
+            barrier?.await()
+            val expected = TurnEnd(if (seatChange) EndState.interrupted else EndState.stopped, "")
+            assertEquals(expected, task.await())
+            assertEquals(listOf(expected), ends)
+            assertEquals(Json.Null, marks.last())
+            assertEquals(emptyList<Json>(), abilities)
+            assertEquals(emptyList<FailureOperation>(), reports.failures)
+        }
+    }
+
     @Test fun newSeatCanFetchItsPassWhileTheOldSeatsPassDoorDrains() = runBlocking {
         withTimeout(3000) {
             val host = ProbeHost(Json.objectOf(), null, mutableListOf(), mutableListOf())
@@ -311,7 +358,7 @@ class CoachBoundaryTests {
         }
     }
 
-    @Test fun malformedRefusalAllowancesAreOneBoundedWireDefectAtBothDoors() = runBlocking {
+    @Test fun malformedRefusalAllowancesAreTransportLossAtBothPreparationDoors() = runBlocking {
         for (picture in listOf(false, true)) for (code in listOf("subject_exhausted", "pass_expired")) {
             val reports = Reports()
             val paths = mutableListOf<String>()
@@ -324,8 +371,8 @@ class CoachBoundaryTests {
             }, reports)
             val answer = if (picture) client.text("AAAAAAAAAAAAAAAAAAAAAA", Json.objectOf(), listOf(Picture("BBBBBBBBBBBBBBBBBBBBBB", "image/png", byteArrayOf(1))), "other", "vector.coach", 1, StopSignal()) {}
                 else client.allowance("vector.coach", 1).second
-            assertEquals(AiAnswer.Failure(AiFailure("wire", "invalid-answer", Admission.none)), answer)
-            assertEquals(listOf(FailureOperation.aiCall), reports.failures)
+            assertEquals(AiAnswer.Failure(AiFailure("transport", null, Admission.none)), answer)
+            assertEquals(emptyList<FailureOperation>(), reports.failures)
             assertEquals(listOf(if (picture) "/v1/pictures/BBBBBBBBBBBBBBBBBBBBBB" else "/v1/allowance"), paths)
         }
     }

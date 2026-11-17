@@ -13,5 +13,6 @@ dependencies {
 
 tasks.test {
     systemProperty("windmill.contract", rootProject.file("../../packages/api-contract").absolutePath)
+    inputs.file(rootProject.file("../../packages/api-contract/catalog/schema-patterns.json"))
     testLogging { events("failed", "standardOut") }
 }

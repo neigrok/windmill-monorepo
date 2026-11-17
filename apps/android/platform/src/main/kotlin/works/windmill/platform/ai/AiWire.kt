@@ -19,6 +19,14 @@ interface AiTransport {
 object AiWire {
     private val amount = Regex("(0|[1-9][0-9]*)(\\.[0-9]{1,9})?")
     private val models = setOf("large", "medium", "small")
+    private val refusalCodes = setOf("invalid_request", "provider_rejected", "pass_missing", "pass_signature", "pass_audience", "pass_malformed", "pass_expired", "funding_required", "device_bound", "call_unknown", "conflict", "result_gone", "picture_gone", "too_large", "subject_exhausted", "free_month_exhausted", "free_day_exhausted", "rate_limited", "concurrency_exhausted", "accounting_unavailable", "provider_unavailable", "provider_failed", "busy", "paused", "untrusted-origin", "unsupported-media-type")
+    fun refusal(value: Json?): Json? = try {
+        requireNotNull(value).expectKeys(listOf("code", "allowance"))
+        require(value.member("code").str() in refusalCodes)
+        value.member("allowance").orNull()?.let(::allowance)
+        value
+    } catch (_: Exception) { null }
+
     fun allowance(value: Json) {
         value.expectKeys(listOf("tier", "period", "limit", "used", "reserved", "remaining", "resetsAt", "budgetResetsAt", "code", "capabilities"))
         require(value.member("tier").str() in setOf("anonymous", "free", "one"))

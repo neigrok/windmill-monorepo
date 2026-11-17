@@ -14,7 +14,8 @@ states outrank a stale observer's `interrupted` state.
 Call `seatWillChange()` and await it before changing host generations or credentials. It waits for
 pending host commits, ends the old turn interrupted, drops the pass and frees the active slot.
 The old network operation may drain afterward; its callbacks and cleanup cannot affect the next
-turn. Stop only wakes retry waits. During a model stream it awaits the terminal; a completed answer
+turn. Stop wakes retry waits and cancels pending retry credentials, picture repair and HTTP headers.
+During a model stream it awaits the terminal; a completed answer
 wins, while terminal tool calls are discarded. Every admitted execution is sequential and counts
 against volume, including executor refusals; only success consumes a once-group slot.
 
@@ -30,6 +31,11 @@ repair and retry policy; `AiHttp` owns HTTPS, credential separation and bounded 
 It sends session/installation credentials only to the pass door and never accepts redirects or
 cookies. Local HTTP is an explicit constructor opt-in for literal `127.0.0.1` or `::1`. Requests
 are serialized once per call, event cursors suppress replay, and admission only increases.
+Before a text dispatch, an offline pass or picture preparation failure withdraws the turn so its
+draft can return. A cached pass can reach text dispatch while offline; that attempt is uncertain
+and retains its records. Lost calls keep their original twenty-minute deadline through temporary
+pass refresh failures and proxy responses. A resent PUT still gives paused, concurrency and
+provider-unavailable refusals thirty seconds from the first PUT.
 `CoachRuntime` supplies cryptographic 128-bit identifiers and process-local turn leases. Its
 injected background lease is acquired and released with the turn. `AndroidCoachBackgroundLease`
 provides a bounded partial wake lock for a future integrating application that declares
@@ -41,6 +47,8 @@ transport and protocol defects as `ai-call`, and unexpected pass-door faults as 
 the existing Android Sentry boundary. Lost connections and expected refusals do not become Issues.
 A product adapter supplies its registered first-party event names. No IDs, seats' keys, content,
 credentials, raw errors or amounts enter these outcomes. Telemetry observers cannot fail a turn.
+Recovery `call_unknown` is an interrupted turn without an Issue; the same refusal during a live
+turn is a call defect. Non-service HTTP error bodies and expected temporary pass refusals are quiet.
 See [Android observability](../../../docs/ANDROID_OBSERVABILITY.md).
 
 From `apps/android`, `:platform:testDebugUnitTest --tests '*Coach*Tests'` runs every shared story in

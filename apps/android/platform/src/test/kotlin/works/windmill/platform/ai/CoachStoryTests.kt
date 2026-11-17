@@ -6,6 +6,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,6 +92,7 @@ class CoachStoryTests(private val file: File) {
             override suspend fun pass(body: Json): AiResponse {
                 val passes = service.member("passes").arr()
                 val value = passes[minOf(passIndex++, passes.lastIndex)]
+                value["transport"]?.let { throw AiTransportFailure(it.str()) }
                 return if (value["pass"] != null) AiResponse(200, value) else AiResponse(value.member("status").long().toInt(), Json.objectOf("code" to value.member("code")))
             }
             override suspend fun request(request: AiRequest): AiResponse {
@@ -98,6 +101,12 @@ class CoachStoryTests(private val file: File) {
                 val current = exchangeIndex
                 val value = service.member("exchanges").arr().getOrNull(exchangeIndex) ?: error("unexpected-request")
                 if (++repeat >= value.member("repeat").long()) { exchangeIndex++; repeat = 0 }
+                value["http"]?.let { http ->
+                    MockWebServer().use { server ->
+                        server.enqueue(MockResponse().setResponseCode(http.member("status").long().toInt()).setHeader("Content-Type", http.member("contentType").str()).setBody(http.member("body").str()))
+                        AiHttp(server.url("/").newBuilder().host("127.0.0.1").build(), { AiCredentials(null, null) }, allowLocalHttp = true).use { return it.request(request) }
+                    }
+                }
                 if (value["refusal"]?.orNull() != null) return AiResponse(429, value.member("refusal"))
                 return AiResponse(200, events = flow {
                     for (event in value.member("events").arr()) { control("event:$current:${event.member("id").long()}"); emit(event) }

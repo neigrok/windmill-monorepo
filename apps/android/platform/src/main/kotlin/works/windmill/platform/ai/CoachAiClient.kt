@@ -2,9 +2,15 @@ package works.windmill.platform.ai
 
 import java.net.URLEncoder
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import works.windmill.agent.coach.*
 import works.windmill.sync.core.Json
 
@@ -20,15 +26,39 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
     override fun clearPass() = synchronized(state) { generation++; pass = null; passLock = Mutex(); uploads.clear() }
     private fun report(operation: FailureOperation) { try { telemetry.failure(operation) } catch (_: Exception) {} }
 
-    private suspend fun credential(use: String, version: Long, expectedGeneration: Long, force: Boolean): Pair<String?, AiAnswer.Failure?> = passLock.withLock {
+    private suspend fun request(stop: StopSignal?, dispatch: suspend () -> AiResponse): AiResponse {
+        if (stop == null) return dispatch()
+        if (stop.stopped) throw AiTransportFailure("stopped")
+        return coroutineScope {
+            var response: AiResponse? = null
+            var accepted = false
+            val call = async { dispatch().also { response = it } }
+            val stopped = async { stop.wait(Long.MAX_VALUE) }
+            try {
+                select {
+                    call.onAwait { accepted = true; it }
+                    stopped.onAwait { throw AiTransportFailure("stopped") }
+                }
+            } finally {
+                withContext(NonCancellable) {
+                    call.cancelAndJoin()
+                    stopped.cancelAndJoin()
+                    if (!accepted) response?.close()
+                }
+            }
+        }
+    }
+
+    private suspend fun credential(use: String, version: Long, expectedGeneration: Long, force: Boolean, stop: StopSignal? = null): Pair<String?, AiAnswer.Failure?> = passLock.withLock {
         synchronized(state) {
             if (expectedGeneration != generation) throw AiTransportFailure("seat-changed")
             if (!force) pass?.takeIf { it.use == use && it.version == version && it.until - now() >= 60_000 }?.let { return@withLock it.value to null }
         }
-        val response = try { transport.pass(Json.objectOf("client" to Json.of("android"), "use" to Json.of(use), "version" to Json.of(version))) }
+        val response = try { request(stop) { transport.pass(Json.objectOf("client" to Json.of("android"), "use" to Json.of(use), "version" to Json.of(version))) } }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
             if (expectedGeneration != generation) throw AiTransportFailure("seat-changed")
+            if (error is AiTransportFailure && error.code == "stopped") throw error
             if (error is AiTransportFailure && error.code in setOf("offline", "lost"))
                 return@withLock null to AiAnswer.Failure(AiFailure("transport", null, Admission.none))
             report(FailureOperation.aiPass)
@@ -38,9 +68,16 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
             synchronized(state) {
                 if (expectedGeneration != generation) throw AiTransportFailure("seat-changed")
                 if (response.status != 200) {
-                    val value = response.body?.get("code")?.let { it as? Json.Str }?.value
-                    val code = if (value in passCodes) value!! else if (response.status == 404) "anonymous_ai_unavailable" else "invalid-answer"
-                    if (code in defects || response.status >= 500 && code != "anonymous_ai_unavailable") report(FailureOperation.aiPass)
+                    val code = try {
+                        response.body!!.expectKeys(listOf("code"), listOf("error"))
+                        response.body["error"]?.str()
+                        response.body.member("code").str().takeIf { it in passCodes }
+                    } catch (_: Exception) { null }
+                    if (code == null) {
+                        if (response.status == 404) return@withLock null to AiAnswer.Failure(AiFailure("pass", "anonymous_ai_unavailable", Admission.none))
+                        return@withLock null to AiAnswer.Failure(AiFailure("transport", null, Admission.none))
+                    }
+                    if (code in defects) report(FailureOperation.aiPass)
                     return@withLock null to AiAnswer.Failure(AiFailure("pass", code, Admission.none))
                 }
                 try {
@@ -77,11 +114,11 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                 transport.request(AiRequest("GET", "/v1/allowance", pass!!)).use { response ->
                     if (currentGeneration != generation) return null to AiAnswer.Failure(AiFailure("pass", null, Admission.none))
                     if (response.status == 200) { AiWire.allowance(response.body!!); return response.body to null }
-                    val code = response.body?.get("code")?.str()
-                    val allowance = response.body?.get("allowance")?.orNull()
-                    allowance?.let(AiWire::allowance)
+                    val refusalBody = AiWire.refusal(response.body) ?: return null to failedAnswer("transport", null, Admission.none)
+                    val code = refusalBody.member("code").str()
+                    val allowance = refusalBody.member("allowance").orNull()
                     if (code == "pass_expired" && !refreshed) refreshed = true
-                    else return null to failedAnswer("text", code?.takeIf { it in codes } ?: "invalid-answer", Admission.none, allowance)
+                    else return null to failedAnswer("text", code, Admission.none, allowance)
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -103,6 +140,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         var start: Long? = if (recover) now() else null
         var admission = if (recover) Admission.admitted else Admission.none
         var lost = recover
+        var retryLostCall = recover
         var cursor = 0L
         var retry = 0
         var refresh = false
@@ -112,38 +150,55 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         var callbackFailure: Throwable? = null
         fun promote(value: Admission) { if (value > admission) admission = value }
         fun seatChanged() = AiAnswer.Failure(AiFailure("pass", null, admission))
+        fun expired(): AiAnswer.Failure? {
+            val firstRequest = start ?: return null
+            if (now() >= firstRequest + 1_200_000) return failedAnswer("result", "answer-timeout", admission)
+            if (retry > 0 && !retryLostCall && now() >= firstRequest + 30_000) return lastFailure
+            return null
+        }
         operation@ while (true) {
             if (currentGeneration != generation || stop.invalidated) return seatChanged()
-            if (retry > 0 && now() >= start!! + if (lost) 1_200_000 else 30_000) return if (lost) failedAnswer("result", "answer-timeout", admission) else lastFailure!!
+            expired()?.let { return it }
             try {
-                val (pass, refusal) = credential(use, version, currentGeneration, forcePass)
+                val (pass, refusal) = credential(use, version, currentGeneration, forcePass, stop.takeIf { start != null })
                 if (currentGeneration != generation || stop.invalidated) return seatChanged()
+                expired()?.let { return it }
+                if (refusal != null) {
+                    if (admission != Admission.none && (refusal.failure.source == "transport" || refusal.failure.code in setOf("rate_limited", "unavailable"))) {
+                        forcePass = true
+                        throw AiTransportFailure("lost")
+                    }
+                    return AiAnswer.Failure(refusal.failure.copy(admission = admission))
+                }
                 forcePass = false
-                if (refusal != null) return AiAnswer.Failure(refusal.failure.copy(admission = admission))
                 for (picture in pictures) {
                     if (synchronized(state) { picture.pictureId in uploads }) continue
                     if (currentGeneration != generation || stop.invalidated) return seatChanged()
-                    transport.request(AiRequest("PUT", "/v1/pictures/${picture.pictureId}", pass!!, bytes = picture.bytes, mediaType = picture.mediaType)).use { response ->
+                    expired()?.let { return it }
+                    request(stop.takeIf { start != null }) { transport.request(AiRequest("PUT", "/v1/pictures/${picture.pictureId}", pass!!, bytes = picture.bytes, mediaType = picture.mediaType)) }.use { response ->
                         if (currentGeneration != generation || stop.invalidated) return seatChanged()
                         if (response.status != 204) {
-                            val code = response.body?.get("code")?.str()
-                            val allowance = response.body?.get("allowance")?.orNull()
-                            allowance?.let(AiWire::allowance)
+                            val refusalBody = AiWire.refusal(response.body) ?: throw AiTransportFailure("lost")
+                            val code = refusalBody.member("code").str()
+                            val allowance = refusalBody.member("allowance").orNull()
                             if (code == "pass_expired" && !refresh) { refresh = true; forcePass = true }
-                            else return failedAnswer("text", code?.takeIf { it in codes } ?: "invalid-answer", admission, allowance)
+                            else return failedAnswer("text", code, admission, allowance)
                         } else synchronized(state) { if (currentGeneration == generation) uploads += picture.pictureId }
                     }
                     if (forcePass) continue@operation
                 }
                 val read = recover || cursor > 0
                 val path = if (read) "/v1/calls/$callId/result" + if (cursor > 0) "?after=$cursor" else "" else "/v1/calls/$callId/text?label=" + URLEncoder.encode(label, "UTF-8").replace("+", "%20")
+                val retryStop = stop.takeIf { start != null }
                 if (start == null) start = now()
                 if (currentGeneration != generation || stop.invalidated) return seatChanged()
-                val response = try { transport.request(AiRequest(if (read) "GET" else "PUT", path, pass!!, if (read) null else body, timeoutMs = maxOf(1, start!! + 1_200_000 - now()))) }
+                expired()?.let { return it }
+                val response = try { request(retryStop) { transport.request(AiRequest(if (read) "GET" else "PUT", path, pass!!, if (read) null else body, timeoutMs = maxOf(1, start!! + 1_200_000 - now()))) } }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) {
                     if (currentGeneration != generation || stop.invalidated) return seatChanged()
-                    promote(Admission.possible); lost = true
+                    if (error is AiTransportFailure && error.code == "stopped") return AiAnswer.Failure(AiFailure("result", "stopped", admission))
+                    promote(Admission.possible); lost = true; retryLostCall = true
                     if (error !is AiTransportFailure || error.code !in setOf("offline", "lost")) return failedAnswer("transport", "invalid-answer", admission)
                     null
                 }
@@ -151,10 +206,13 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                 response?.use {
                     if (currentGeneration != generation || stop.invalidated) return seatChanged()
                     if (response.status != 200) {
-                        val code = response.body?.get("code")?.str()
-                        if (code !in codes) return failedAnswer("wire", "invalid-answer", admission)
-                        val allowance = response.body?.get("allowance")?.orNull()
-                        allowance?.let(AiWire::allowance)
+                        val refusalBody = AiWire.refusal(response.body)
+                        if (refusalBody == null) {
+                            promote(Admission.possible); lost = true; retryLostCall = true
+                            return@use
+                        }
+                        val code = refusalBody.member("code").str()
+                        val allowance = refusalBody.member("allowance").orNull()
                         if (code in setOf("busy", "accounting_unavailable")) promote(Admission.possible)
                         if (code == "pass_expired" && !refresh) { refresh = true; forcePass = true }
                         else if (code == "picture_gone" && !pictureRepair && pictures.isNotEmpty() && !read) {
@@ -162,8 +220,12 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                             synchronized(state) { pictures.forEach { uploads.remove(it.pictureId) } }
                             forcePass = false
                         } else {
-                            val retryable = if (lost) code in setOf("rate_limited", "busy", "accounting_unavailable") else code in transient
-                            if (!retryable) return failedAnswer(if (read) "result" else "text", code, admission, allowance)
+                            retryLostCall = lost && code in setOf("rate_limited", "busy", "accounting_unavailable")
+                            val retryable = retryLostCall || !read && code in transient
+                            if (!retryable) {
+                                if (recover && code == "call_unknown") return AiAnswer.Failure(AiFailure("result", code, admission, allowance))
+                                return failedAnswer(if (read) "result" else "text", code, admission, allowance)
+                            }
                             lastFailure = AiAnswer.Failure(AiFailure(if (read) "result" else "text", code, admission, allowance))
                         }
                         if (forcePass || repaired) return@use
@@ -181,7 +243,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                                 if (name == "started" && data.member("callId").str() != callId) throw AiTransportFailure("invalid-answer")
                                 if (name == "text") try { onText(data.member("delta").str()) } catch (error: Throwable) { callbackFailure = error; throw error }
                                 name == "ended" || name == "failed"
-                            } ?: run { lost = true; null }
+                            } ?: run { lost = true; retryLostCall = true; null }
                             if (terminal != null) {
                                 val event = terminal.member("event").str()
                                 val data = terminal.member("data")
@@ -190,7 +252,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                             }
                         } catch (error: AiTransportFailure) {
                             if (error.code !in setOf("lost", "offline")) throw error
-                            lost = true
+                            lost = true; retryLostCall = true
                         }
                     }
                 }
@@ -199,19 +261,21 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
             catch (error: Exception) {
                 if (callbackFailure === error || error is HostUnavailable) throw error
                 if (currentGeneration != generation || stop.invalidated || error is AiTransportFailure && error.code == "seat-changed") return seatChanged()
-                if (error is AiTransportFailure && error.code in setOf("offline", "lost")) return failedAnswer("transport", null, admission)
-                return failedAnswer("wire", "invalid-answer", admission)
+                if (error is AiTransportFailure && error.code == "stopped") return AiAnswer.Failure(AiFailure("result", "stopped", admission))
+                if (error is AiTransportFailure && error.code in setOf("offline", "lost")) {
+                    if (admission == Admission.none) return failedAnswer("transport", null, admission)
+                    lost = true; retryLostCall = true
+                } else return failedAnswer("wire", "invalid-answer", admission)
             }
-            val deadline = start!! + if (lost) 1_200_000 else 30_000
+            val deadline = start!! + if (retryLostCall) 1_200_000 else 30_000
             val delay = minOf(1000L shl minOf(retry++, 3), maxOf(0, deadline - now()))
-            if (delay == 0L) return if (lost) failedAnswer("result", "answer-timeout", admission) else lastFailure!!
+            if (delay == 0L) return if (retryLostCall) failedAnswer("result", "answer-timeout", admission) else lastFailure!!
             if (!wait(delay, stop)) return AiAnswer.Failure(AiFailure("result", "stopped", admission))
         }
     }
     private companion object {
         val transient = setOf("busy", "paused", "rate_limited", "concurrency_exhausted", "accounting_unavailable", "provider_unavailable")
         val defects = setOf("invalid_request", "too_large", "provider_rejected", "funding_required", "conflict", "call_unknown", "invalid-answer", "untrusted-origin", "unsupported-media-type")
-        val codes = transient + defects + setOf("subject_exhausted", "free_day_exhausted", "free_month_exhausted", "device_bound", "result_gone", "pass_missing", "pass_signature", "pass_audience", "pass_malformed", "pass_expired", "picture_gone", "provider_failed")
         val passCodes = setOf("invalid_request", "unauthenticated", "invalid_installation", "device_bound", "client-update-required", "rate_limited", "anonymous_ai_unavailable", "unavailable", "untrusted-origin", "unsupported-media-type")
     }
 }

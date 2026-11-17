@@ -119,7 +119,8 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                             ToolOutcome.Refused(code)
                         } else {
                             mutations.withLock {
-                                if (turn.done || turn.seatChanged) throw HostUnavailable()
+                                if (turn.done || turn.seatChanged) return@withLease finishInside(turn, EndState.interrupted)
+                                if (turn.wait.stopped) return@withLease finishInside(turn, EndState.stopped)
                                 turn.abilities++
                                 if (tool!!.countsAsWrite) turn.writes++
                                 host.execute(turn.lease!!, identity, call)

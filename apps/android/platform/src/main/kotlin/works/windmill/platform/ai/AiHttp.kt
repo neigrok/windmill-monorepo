@@ -100,9 +100,16 @@ class AiHttp(private val origin: HttpUrl, private val credentials: suspend () ->
             return withContext(Dispatchers.IO) { response.use {
                 val source = it.body?.source() ?: return@use AiResponse(it.code)
                 source.request(1_048_577)
-                if (source.buffer.size > 1_048_576) throw AiTransportFailure("invalid-answer")
+                if (source.buffer.size > 1_048_576) {
+                    if (it.code != 200) return@use AiResponse(it.code)
+                    throw AiTransportFailure("invalid-answer")
+                }
                 val bytes = source.readByteArray()
-                if (bytes.isEmpty() && it.code == 404) AiResponse(404) else AiResponse(it.code, Json.parse(bytes))
+                val body = try { Json.parse(bytes) } catch (_: Exception) {
+                    if (it.code != 200) return@use AiResponse(it.code)
+                    throw AiTransportFailure("invalid-answer")
+                }
+                AiResponse(it.code, body)
             } }
         } catch (failure: Exception) {
             response.close()
