@@ -19,9 +19,9 @@ generation; deleting a record prevents every subsequent write. The initial open 
 mark atomically. Begin writes text and mark together; end writes final values and removes the mark.
 
 `service.passes` is a queue of pass-door responses (a successful entry is `{pass,expiresIn}`;
-a refusal is `{code,status}`). Its last entry repeats. `service.exchanges` is the service transport
+a refusal is `{code,status}`, and a connection loss is `{transport:"offline"}`). Its last entry repeats. `service.exchanges` is the service transport
 queue for text PUT and result GET. Each has `events`, `refusal` (null or `{code,allowance}`),
-`broken` and `repeat`. An event is `{id,event,data}` with the AI wire event's exact shape.
+`broken` and `repeat`, plus optional `http: {status,contentType,body}` for an untrusted proxy response. An event is `{id,event,data}` with the AI wire event's exact shape.
 `repeat` repeats the transport response, never client policy. A stream with no terminal is lost.
 `service.pictures` supplies upload status codes, defaulting to 204. The client owns retries.
 
@@ -49,3 +49,7 @@ Call identity is `(turnId,callId,toolCallId)`. Duplicate IDs in one terminal fai
 before any dispatch. Local codes are `model-call-limit`, `answer-timeout` and `invalid-answer`.
 The safety corpus covers pending open, async deletion, multibyte recovery, seat fencing, replay,
 and an active writer finishing over another device's stale interruption.
+
+`../catalog/schema-patterns.json` holds whole-value pattern cases shared by the schema checkers.
+Each case supplies `schema`, `value` and the exact `fault` (null when it matches). Alternation must
+backtrack to match the whole value; a match ending before a final newline is not a whole match.

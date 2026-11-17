@@ -168,10 +168,6 @@
     "waitsMs": [],
     "telemetry": [
       {
-        "kind": "failure",
-        "operation": "ai-pass"
-      },
-      {
         "kind": "turn",
         "state": "failed",
         "seat": "bound",

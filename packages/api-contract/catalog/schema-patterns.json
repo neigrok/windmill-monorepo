@@ -1,0 +1,40 @@
+[
+  {
+    "name": "alternative-short",
+    "schema": {
+      "pattern": "a|ab"
+    },
+    "value": "a",
+    "fault": null
+  },
+  {
+    "name": "alternative-backtracks",
+    "schema": {
+      "pattern": "a|ab"
+    },
+    "value": "ab",
+    "fault": null
+  },
+  {
+    "name": "alternative-extra",
+    "schema": {
+      "pattern": "a|ab"
+    },
+    "value": "abc",
+    "fault": {
+      "path": "",
+      "reason": "not a|ab"
+    }
+  },
+  {
+    "name": "whole-newline",
+    "schema": {
+      "pattern": "[a-z]+$"
+    },
+    "value": "abc\n",
+    "fault": {
+      "path": "",
+      "reason": "not [a-z]+$"
+    }
+  }
+]

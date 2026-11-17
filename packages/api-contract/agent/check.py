@@ -13,7 +13,11 @@ def check(story):
     wire.require(story['format'] == 'coach-turn/v1', 'unknown story format')
     wire.fields(story['expected'], 'requests hostCalls gateRefusals marks waitsMs telemetry end')
     for exchange in story['service']['exchanges']:
-        wire.fields(exchange, 'events refusal broken repeat')
+        wire.fields({key: value for key, value in exchange.items() if key != 'http'}, 'events refusal broken repeat')
+        if 'http' in exchange:
+            wire.fields(exchange['http'], 'status contentType body')
+            wire.require(exchange['http']['status'] in [502, 503, 504], 'proxy status')
+            wire.require(exchange['http']['contentType'] == 'text/html' and isinstance(exchange['http']['body'], str), 'proxy body')
         wire.integer(exchange['repeat'], 1)
         for event in exchange['events']:
             wire.fields(event, 'id event data')

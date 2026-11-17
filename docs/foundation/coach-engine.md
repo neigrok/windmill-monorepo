@@ -155,7 +155,10 @@ the first account pass that names the installation
 - **A pass.** The client asks the pass door when it holds no pass, or one with less than
   `PASS_REFRESH` left. A call refused `pass_expired` fetches a new pass and asks once more under the
   same `callId`; a second `pass_expired` is a defect. `pass_missing`, `pass_signature`,
-  `pass_audience` and `pass_malformed` are defects too: the client stops and reports.
+  `pass_audience` and `pass_malformed` are defects too: the client stops and reports. Once a text
+  request may have been admitted, a temporary refresh failure (connection loss, rate limiting or
+  backend unavailability) stays inside that round's asking-again window; it cannot withdraw the
+  turn or restart the clock. A definitive pass refusal ends it with its admission evidence intact.
 - **A call.** `PUT /v1/calls/{callId}/text?label=<label>` with the pass as `Authorization: Bearer`.
   The client sends no cookie and no installation credential to the service's routes. They are on
   the API origin the device already talks to
@@ -163,7 +166,8 @@ the first account pass that names the installation
   host.
 - **A `callId`** is 22 characters of unpadded base64url from 128 bits of a cryptographic random
   source, minted for each round.
-- **Asking again.** An answer that breaks, or ends without `ended` or `failed`, is asked for again
+- **Asking again.** An answer that breaks, ends without `ended` or `failed`, or is an HTTP error
+  without a valid service refusal is asked for again
   under the same `callId`:
   - before any event arrived, by sending the same `PUT` with the same body. The service answers a
     call it admitted from its first event, and admits one it never saw;
@@ -174,21 +178,29 @@ the first account pass that names the installation
   An asking-again answered `rate_limited`, `busy` or `accounting_unavailable` waits and asks once
   more. One answered `result_gone` means the call was made and its answer is lost, and ends the
   asking. One answered `call_unknown` is a defect: the pass names another principal than the one
-  that made the call.
+  that made the call. During process recovery, however, `call_unknown` is expected (§5): the mark
+  may have been written before its request left the device.
 - **A refusal that passes.** A call refused as `busy`, `paused`, `rate_limited`,
   `concurrency_exhausted`, `accounting_unavailable` or `provider_unavailable` is sent again under
   the same `callId`, after 1, 2, 4 and 8 s and then every 8 s, for `REFUSAL_RETRY`; the client then
   gives the refusal to the engine. Sending again is safe whatever became of the first: the service
-  answers a call it admitted and admits one it did not. Every other refusal is given at once.
+  answers a call it admitted and admits one it did not. A resent first `PUT` keeps this rule even
+  after a lost answer: `paused`, `concurrency_exhausted` and `provider_unavailable` wait up to
+  `REFUSAL_RETRY` from its first dispatch. The asking-again refusals above keep their longer window.
+  Every other refusal is given at once.
 - **What a refusal proves.** `busy` and `accounting_unavailable` can be answered for a call the
   service did admit. Every other refusal of a `PUT` whose earlier attempts all had an answer proves
-  that nothing was admitted.
+  that nothing was admitted. Only a known code in a valid service refusal is such evidence. An
+  unreadable proxy response, including an HTML 502, proves nothing, is treated as connection loss
+  and files no Issue. A malformed successful event protocol remains a reported wire defect; its
+  turn retains possible admission and is never withdrawn.
 - **A picture.** The client uploads a picture once, with `PUT /v1/pictures/{pictureId}`, and each
   round names it ([AI service §6.7](ai-service.md#67-pictures-a-caller-uploads)). A call refused
   `picture_gone` uploads the picture again and is sent once more under the same `callId`. A second
   `picture_gone` is a defect and ends that operation; it does not mint another call.
 - **The allowance.** `GET /v1/allowance` answers what the seat has left. An `ended`, a `failed` and
-  a refusal carry it too, or null where the service could not read it.
+  a refusal carry it too, or null where the service could not read it. Clients validate its wire
+  types, formats and enums, never its arithmetic or the service's tier and transcription policy.
 - The client never makes a call under a second `callId` for the same round (INV-2).
 
 ## §5 The turn
@@ -234,6 +246,12 @@ pass door refused before any call was sent, or the text door's refusal proves it
 whose round 1 may have been admitted is never withdrawn: it ends `failed` with the code the engine
 was given, or `interrupted` when it was given none, with its question on the record.
 
+**Offline before dispatch.** Failure while obtaining a first pass or uploading a picture returns
+the unsent question and picture to the field promptly. Once the text transport is invoked, a
+connection error cannot prove it was unsent: the record stays and the same call is asked for again.
+A cached pass can therefore take an offline send past this boundary; the rule follows dispatch
+evidence, not the presence of a pass. No working conversation is persisted for this retry.
+
 **Stop.** Stop takes effect before the next round or the next ability call. The round in flight is
 read to its end and paid for, as the service reads every call to its end
 ([AI service INV-8](ai-service.md#52-a-calls-life)). A round that ends `completed` completes the
@@ -250,7 +268,8 @@ the round's `PUT` again: it no longer holds the request.
 - An answer that is `failed` ends the turn `failed` with its code.
 - Everything else ends the turn `interrupted`, with the text that had arrived: an answer that ends
   `tool_calls`, an answer the service no longer holds, a pass or a read refused, and no answer
-  within `ASK_AGAIN_FOR`.
+  within `ASK_AGAIN_FOR`. A recovered `call_unknown` is also an expected interruption with no
+  failure report: the process may have ended between writing its mark and sending its request.
 
 A recovered turn is never withdrawn, and a turn is not otherwise resumed. A round in flight when
 the process ended is paid for. (R-4)
@@ -269,7 +288,9 @@ again. A phone holds the platform's lease for work in progress while a turn runs
 sign-out sends what the device still holds, so the account's record carries it.
 The caller awaits this barrier before replacing the seat or credentials. The host guards every
 write and ability execution against that turn's seat and record identities within its commit;
-a late response cannot write through an invalidated seat or recreate a removed record.
+a late response cannot write through an invalidated seat or recreate a removed record. A removed
+record completes the barrier normally. Stop and seat validity are checked again while holding the
+ability mutation lock, before an execution is counted or started.
 
 **A record gone.** A Coach message removed under its running turn, as when the conversation is
 deleted on another device, ends the turn. Nothing is written, and nothing is reported as a failure.
@@ -339,7 +360,7 @@ for each are the product's.
 | Switched off | the pass door's `anonymous_ai_unavailable`; a 404 from the pass door, which means this server has no AI |
 | Offline | no connection |
 | Did not answer | `provider_unavailable`, `provider_failed`, `accounting_unavailable`, `result_gone`, `answer-timeout`, `model-call-limit` |
-| A defect | `invalid_request`, `invalid-answer`, `untrusted-origin`, `unsupported-media-type`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, `call_unknown`, a second `picture_gone`, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
+| A defect | `invalid_request`, `invalid-answer`, `untrusted-origin`, `unsupported-media-type`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, a live `call_unknown` (not process recovery), a second `picture_gone`, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
 
 - The engine reads `GET /v1/allowance` when Coach opens, and its `code` says before a question is
   sent whether one could be asked.
@@ -397,7 +418,9 @@ order, the mark at each step, and the end.
   call, with the ability's name and its outcome or refusal code.
 - The AI client reports to Sentry under the static name `ai-call`: a transport failure that is not
   a lost connection, an answer it cannot read, and every code §7 calls a defect. The pass door's
-  failures report under `ai-pass`. A refusal a person can act on is an event and never an Issue.
+  unexpected failures report under `ai-pass`; a recognized temporary pass refusal is quiet on the
+  client because the backend reports its originating failure. Proxy errors treated as loss and
+  recovery `call_unknown` file no Issue. A refusal a person can act on is an event and never an Issue.
   Unexpected host or runtime failures report under `agent-host`; a removed record or stale seat is
   an expected interruption and files no Issue.
 - The backend logs one line for each pass it signs or refuses: operation `ai.pass.sign`, the kind

@@ -133,7 +133,7 @@
           "allowance": null
         },
         "broken": false,
-        "repeat": 1
+        "repeat": 5
       }
     ],
     "pictures": []
@@ -141,6 +141,274 @@
   "controls": [],
   "expected": {
     "requests": [
+      {
+        "method": "PUT",
+        "path": "/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      },
       {
         "method": "PUT",
         "path": "/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other",
@@ -323,7 +591,12 @@
       null
     ],
     "waitsMs": [
-      1000
+      1000,
+      2000,
+      4000,
+      8000,
+      8000,
+      7000
     ],
     "telemetry": [
       {
@@ -335,7 +608,7 @@
         "abilityCalls": 0,
         "refusals": 0,
         "answerBytes": 0,
-        "durationMs": 1000
+        "durationMs": 30000
       }
     ],
     "end": {

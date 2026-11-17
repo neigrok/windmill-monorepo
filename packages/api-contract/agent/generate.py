@@ -174,16 +174,16 @@ def stories():
             else:
                 text_write(s,'Hello'); finish(s,'stopped' if terminal_stop=='tool_calls' else 'completed')
         out.append(s)
-    for stop in ['completed','truncated','declined','tool_calls','provider_failed','gone','no-call']:
+    for stop in ['completed','truncated','declined','tool_calls','provider_failed','gone','unknown','no-call']:
         s=story('recover-'+stop); mark={'turnId':TURN,'callId':None if stop=='no-call' else CALLS[0],'textBytesBeforeRound':3}
         s['host']['recovery']={'mark':mark,'text':'é!partial','state':'running'}
         s['expected']['hostCalls']=[{'op':'recover','turnId':TURN}]
         if stop!='no-call':
-            s['service']['exchanges']=[exchange(refusal=refusal('result_gone')) if stop=='gone' else exchange(events('Hello', stop=stop if stop not in ['provider_failed'] else 'completed', code=stop if stop=='provider_failed' else None))]
+            s['service']['exchanges']=[exchange(refusal=refusal('result_gone' if stop=='gone' else 'call_unknown')) if stop in ['gone','unknown'] else exchange(events('Hello', stop=stop if stop not in ['provider_failed'] else 'completed', code=stop if stop=='provider_failed' else None))]
             s['expected']['requests']=[{'method':'GET','path':f'/v1/calls/{CALLS[0]}/result','body':None}]
-            if stop!='gone': text_write(s,'é!Hello')
-        text='é!partial' if stop in ['gone','no-call'] else 'é!Hello'
-        state='interrupted' if stop in ['tool_calls','gone','no-call'] else 'failed' if stop=='provider_failed' else 'declined' if stop=='declined' else 'completed'
+            if stop not in ['gone','unknown']: text_write(s,'é!Hello')
+        text='é!partial' if stop in ['gone','unknown','no-call'] else 'é!Hello'
+        state='interrupted' if stop in ['tool_calls','gone','unknown','no-call'] else 'failed' if stop=='provider_failed' else 'declined' if stop=='declined' else 'completed'
         finish(s,state,text,'provider_failed' if stop=='provider_failed' else None,truncated=stop=='truncated',rounds=0); out.append(s)
     s=simple('duplicate-tool-ids'); duplicate={'id':'same','name':'read','input':{'value':1}}
     s['service']['exchanges']=[exchange(events(stop='tool_calls',calls=[duplicate,duplicate]))]
@@ -203,11 +203,11 @@ def stories():
     s['service']['exchanges']=[exchange(broken=True),exchange(refusal=refusal('subject_exhausted'))]
     s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
     finish(s,'failed','','subject_exhausted',duration=1000); out.append(s)
-    for code in ['paused', 'provider_unavailable']:
+    for code in ['paused', 'provider_unavailable', 'concurrency_exhausted']:
         s=story('lost-then-' + code); opened(s); begin(s,0,'',[first(s)])
-        s['service']['exchanges']=[exchange(broken=True),exchange(refusal=refusal(code))]
-        s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
-        finish(s,'failed','',code,duration=1000); out.append(s)
+        s['service']['exchanges']=[exchange(broken=True),exchange(refusal=refusal(code), repeat=5)]
+        s['expected']['requests'] *= 6; s['expected']['waitsMs']=[1000,2000,4000,8000,8000,7000]
+        finish(s,'failed','',code,duration=30000); out.append(s)
     s=story('answer-deadline'); opened(s); begin(s,0,'',[first(s)])
     s['service']['exchanges']=[exchange(broken=True,repeat=153)]
     s['expected']['requests'] *= 153; s['expected']['waitsMs']=[1000,2000,4000]+[8000]*149+[1000]
@@ -242,12 +242,43 @@ def stories():
     s['service']['passes']=[{'status':401,'code':'unauthenticated'}]; finish(s,'failed','','unauthenticated',withdraw=True); out.append(s)
     s=story('pass-door-unavailable'); opened(s); begin(s,0,'',[first(s)]); s['expected']['requests']=[]
     s['service']['passes']=[{'status':503,'code':'unavailable'}]
-    s['expected']['telemetry'].append({'kind':'failure','operation':'ai-pass'})
     finish(s,'failed','','unavailable',withdraw=True); out.append(s)
     encoded = json.dumps(tool_story('call-id-widths', [{}]))
     for before, after in zip(CALLS[:2], ['A' * 24, 'B' * 64]):
         encoded = encoded.replace(before, after)
     out.append(json.loads(encoded))
+    for after in [False, True]:
+        s=story('proxy-' + ('after-event' if after else 'before-event')); opened(s); begin(s,0,'',[first(s)])
+        proxy={**exchange(), 'http':{'status':502,'contentType':'text/html','body':'<html>Bad gateway</html>'}}
+        if after:
+            s['service']['exchanges']=[exchange(events()[:2],broken=True),proxy,exchange(events())]
+            text_write(s,'Hello')
+            s['expected']['requests'] += [{'method':'GET','path':f'/v1/calls/{CALLS[0]}/result?after=2','body':None}]*2
+            s['expected']['waitsMs']=[1000,2000]; finish(s,duration=3000)
+        else:
+            s['service']['exchanges']=[proxy,exchange(events())]
+            s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
+            text_write(s,'Hello'); finish(s,duration=1000)
+        out.append(s)
+    for resumes in [False, True]:
+        s=story('refresh-offline-' + ('resumes' if resumes else 'deadline')); opened(s); begin(s,0,'',[first(s)])
+        s['service']['passes']=[{'pass':'vector-pass','expiresIn':90000},{'transport':'offline'}]
+        s['service']['exchanges']=[exchange(events()[:2],broken=True),exchange(broken=True,repeat=5)]
+        text_write(s,'Hello')
+        s['expected']['requests'] += [{'method':'GET','path':f'/v1/calls/{CALLS[0]}/result?after=2','body':None}]*5
+        if resumes:
+            s['service']['passes'].append({'pass':'renewed-vector-pass','expiresIn':600000})
+            s['service']['exchanges'].append(exchange(events()))
+            s['expected']['requests'].append({'method':'GET','path':f'/v1/calls/{CALLS[0]}/result?after=2','body':None})
+            s['expected']['waitsMs']=[1000,2000,4000,8000,8000,8000,8000]
+            finish(s,duration=39000)
+        else:
+            s['expected']['waitsMs']=[1000,2000,4000]+[8000]*149+[1000]
+            finish(s,'failed','Hello','answer-timeout',duration=1200000)
+        out.append(s)
+    s=story('offline-before-pass'); opened(s); begin(s,0,'',[first(s)])
+    s['service']['passes']=[{'transport':'offline'}]; s['expected']['requests']=[]
+    finish(s,'failed','',withdraw=True); out.append(s)
     return out
 
 if __name__ == '__main__':
