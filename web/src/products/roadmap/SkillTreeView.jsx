@@ -320,6 +320,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const stepCovering = detailId !== null || boardComposer !== null;
   activationRef.current = (id) => {
     if (!canvasView || stepCovering || selection.multiMode || tablet.aim || !boardTree?.nodesById.has(id)) return;
+    sceneRef.current?.claimActivationClick?.();
     stepPage.openFromGraph(id);
   };
   useEffect(() => {
