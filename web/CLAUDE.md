@@ -253,6 +253,10 @@ this only for preview builds.
 land before backend deployment because the embedder mounts weights from the web directory.
 See [embedder operations](../services/embedder/README.md).
 
+Watch every PR check with `gh pr checks <number> --watch --fail-fast --interval 45` under a bounded
+process deadline. A workflow can still be running after one of its jobs has failed; filtering to
+active jobs hides that failure. Confirm the check set belongs to the pushed head before merging.
+
 `.github/workflows/web-smoke.yml` runs `scripts/smoke-roadmap.mjs` from the deployed commit after every successful deploy of
 web or the backend on main, and by hand with a base URL and a public roadmap id. It walks the demo, a public roadmap and the
 landings as a signed-out reader at 390, 744 and 1440, and makes one returning visit through the service worker at 1440,
