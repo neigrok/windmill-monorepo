@@ -34,8 +34,8 @@ are serialized once per call, event cursors suppress replay, and admission only 
 Before round 1 writes its mark, `TurnRunner` asks `AiClient.connected()` once whether the device
 reports a connection. With none it withdraws the turn, so its draft returns at once with no mark,
 pass fetch, picture upload or request; later rounds and recovery never ask. `CoachAiClient` answers
-with what the integrating application passes as `connection`, its connectivity callback's report; a
-client given none counts the device as connected.
+from the `connection` it was constructed with. No application constructs this client yet, and until
+one passes `connection` (its connectivity callback's report), every turn counts as connected.
 Before a text dispatch, an offline pass or picture preparation failure also withdraws the turn. A
 text dispatch that fails is uncertain whatever the device reports and retains its records. Lost calls keep their original twenty-minute deadline through temporary
 pass refresh failures and proxy responses. A resent PUT still gives paused, concurrency and
