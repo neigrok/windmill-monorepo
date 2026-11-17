@@ -80,6 +80,7 @@ add_library(windmill_platform
   platform/domain/sync/Digest.cpp
   platform/domain/sync/Pattern.cpp
   platform/domain/sync/Registry.cpp
+  platform/domain/sync/RegistryComposition.cpp
   platform/domain/sync/Record.cpp
   platform/domain/sync/Lattice.cpp
   platform/domain/sync/FractionalIndex.cpp
@@ -194,15 +195,16 @@ add_library(windmill_gym
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
+include(cmake/SyncComposition.cmake)
+function(wm_register_sync_product target namespace filename)
+  wm_embed_registry(${target} ${namespace} registryText "${WM_API_CONTRACT_DIR}/sync/${filename}")
+  set(WM_BOUND_REGISTRIES ${WM_BOUND_REGISTRIES} "${filename}" PARENT_SCOPE)
+endfunction()
+set(WM_BOUND_REGISTRIES)
+wm_register_sync_product(windmill_gym wm::gym::engine gym.registry.json)
+wm_register_sync_product(windmill_journal wm::journal::engine journal.registry.json)
 file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
-string(JSON WM_REGISTRY_COUNT LENGTH "${WM_COMPOSITION}" registries)
-string(JSON WM_GYM_REGISTRY GET "${WM_COMPOSITION}" registries 0)
-string(JSON WM_JOURNAL_REGISTRY GET "${WM_COMPOSITION}" registries 1)
-if(NOT WM_REGISTRY_COUNT EQUAL 2 OR NOT WM_GYM_REGISTRY STREQUAL "gym.registry.json" OR NOT WM_JOURNAL_REGISTRY STREQUAL "journal.registry.json")
-  message(FATAL_ERROR "the server binds the gym + journal composition")
-endif()
-wm_embed_registry(windmill_gym wm::gym::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_GYM_REGISTRY}")
-wm_embed_registry(windmill_journal wm::journal::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_JOURNAL_REGISTRY}")
+wm_validate_sync_composition("${WM_COMPOSITION}" "${WM_BOUND_REGISTRIES}")
 # The gym ability catalog (gym_coach.md §3.1) the tool declarations are pinned to, byte for byte (CatalogContractTest).
 wm_embed_registry(windmill_gym wm::gym catalogText "${WM_API_CONTRACT_DIR}/gym/catalog.json")
 
@@ -637,6 +639,7 @@ target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_PG_TEST_URL_ENV="WM_SYNC_DATABASE_URL")
 add_test(NAME sync COMMAND windmill_sync_tests)
+add_test(NAME sync_composition COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/test/platform/domain/sync/composition_test.cmake)
 
 add_executable(windmill_adapters_tests
   test/http_main.cpp

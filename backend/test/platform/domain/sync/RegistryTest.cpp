@@ -2,6 +2,7 @@
 
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Record.h"
+#include "platform/domain/sync/RegistryComposition.h"
 
 #include "products/probe/ProbeRegistry.h"
 #include "products/gym/sync/GymProduct.h"
@@ -57,17 +58,11 @@ std::string refusalOf(const std::function<void(Json::Value&)>& breakIt) {
   return "(admitted)";
 }
 
-// The registries the products ship: every registry file of the contract but the test-only probe's, by file name.
 std::vector<Registry> productRegistries() {
-  std::vector<std::filesystem::path> files;
-  for (const auto& entry : std::filesystem::directory_iterator(WM_SYNC_CONTRACT_DIR)) {
-    const std::string name = entry.path().filename().string();
-    if (name.ends_with(".registry.json") && name != "probe.registry.json") files.push_back(entry.path());
-  }
-  std::sort(files.begin(), files.end());
   std::vector<Registry> registries;
-  for (const std::filesystem::path& file : files) {
-    std::ifstream in(file);
+  const auto manifest = parseJson(compositionText());
+  for (const auto& file : manifest["registries"]) {
+    std::ifstream in(std::filesystem::path(WM_SYNC_CONTRACT_DIR) / file.asString());
     std::stringstream text;
     text << in.rdbuf();
     registries.emplace_back(parseJson(text.str()));
@@ -482,8 +477,7 @@ TEST(a_domain_admits_a_number_only_on_its_quantum_at_any_depth) {
   CHECK_FALSE(attachment.admits(parseJson(R"({"id": "pic00001", "scale": 1.2})")));
   CHECK(attachment.admits(parseJson(R"({"id": "pic00001"})")));
 
-  const std::vector<Registry> registries = productRegistries();
-  const Registry& gym = registries.front();
+  const Registry& gym = wm::gym::engine::registry();
   const Domain& entries = *gym.type("routine")->fields.at("entries").domain;
   CHECK(entries.admits(parseJson(R"([{"exerciseId": "dip", "sets": [{"reps": 8, "weightKg": 60.25}, {}]}])")));
   CHECK_FALSE(entries.admits(parseJson(R"([{"exerciseId": "dip", "sets": [{"reps": 8, "weightKg": 60.25}, {"weightKg": 60.005}]}])")));
@@ -512,15 +506,9 @@ TEST(a_string_domain_measures_its_bounds_in_the_unit_it_states) {
   CHECK_FALSE(stringDomain(R"({"type": "string", "unit": "chars", "min": 3})").admits(twoAccents));
 }
 
-TEST(the_product_registries_are_gym_and_journal_and_each_loads) {
-  std::vector<std::string> names;
-  for (const Registry& registry : productRegistries()) names.push_back(registry.name());
-  CHECK_EQ(names, (std::vector<std::string>{"gym", "journal"}));
-}
 
 TEST(the_gym_registry_reads_as_declared) {
-  const std::vector<Registry> registries = productRegistries();
-  const Registry& gym = registries.front();
+  const Registry& gym = wm::gym::engine::registry();
   CHECK_EQ(namesOf(gym.types()), (std::vector<std::string>{"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin",
                                                           "prefs", "proposal", "workoutProposal", "thread", "message"}));
   CHECK_EQ(namesOf(gym.commands()), (std::vector<std::string>{"gym.start", "gym.importSession", "gym.correctSession", "gym.finish",
@@ -559,14 +547,20 @@ TEST(the_gym_registry_reads_as_declared) {
 
 // The product registries ship as one registry: one version and minVersion, and no product, type, command or
 // refusal code a second registry declares again.
-TEST(the_deployment_composition_embeds_gym_and_journal) {
+TEST(the_deployment_composition_embeds_every_manifest_member_in_order) {
   const Json::Value composition = parseJson(compositionText());
-  CHECK_EQ(jcs(composition), jcs(parseJson(R"({"composition":"windmill","registries":["gym.registry.json","journal.registry.json"]})")));
+  CHECK_EQ(productRegistry().name(), composition["composition"].asString());
   CHECK_EQ(productRegistry().version(), 12);
   CHECK_EQ(productRegistry().minVersion(), 11);
-  const std::vector<Registry> registries{wm::gym::engine::registry(), wm::journal::engine::registry()};
+  const std::vector<Registry> registries = productRegistries();
   const auto catalog = productCatalog();
-  CHECK_EQ(namesOf(catalog->registry().types()), (std::vector<std::string>{"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal", "workoutProposal", "thread", "message", "page", "journalState"}));
+  std::vector<std::string> types, commands;
+  for (const auto& registry : registries) {
+    for (const auto& type : registry.types()) types.push_back(type.name);
+    for (const auto& command : registry.commands()) commands.push_back(command.name);
+  }
+  CHECK_EQ(namesOf(catalog->registry().types()), types);
+  CHECK_EQ(namesOf(catalog->registry().commands()), commands);
   CHECK(catalog->registry().command("journal.savePage") != nullptr);
   CHECK(catalog->registry().command("journal.claimPage") != nullptr);
   for (const auto& type : catalog->registry().types()) CHECK_EQ(catalog->store(type.name).def().name, type.name);
@@ -584,6 +578,50 @@ TEST(the_deployment_composition_embeds_gym_and_journal) {
   CHECK_EQ(versions.size(), 1u);
   std::sort(declared.begin(), declared.end());
   CHECK(std::adjacent_find(declared.begin(), declared.end()) == declared.end());
+}
+
+TEST(composition_joins_three_registered_documents_in_manifest_order_and_refuses_an_invalid_third) {
+  std::map<std::string, Json::Value> documents;
+  for (const std::string name : {"alpha", "beta", "gamma"}) {
+    auto document = smallestRegistry();
+    document["registry"] = name;
+    document["products"] = Json::Value(Json::objectValue);
+    document["products"][name] = Json::Value(Json::objectValue);
+    document["types"][0]["type"] = name;
+    document["types"][0]["scope"] = "product:" + name;
+    document["commands"][0]["name"] = name + ".sweep";
+    document["commands"][0]["scope"] = "product:" + name;
+    documents.emplace(name + ".registry.json", document);
+  }
+  documents.emplace("unused.registry.json", Json::Value());
+  const auto manifest = parseJson(R"({"composition":"three","registries":["beta.registry.json","alpha.registry.json","gamma.registry.json"]})");
+  auto expected = smallestRegistry();
+  expected["registry"] = "three";
+  expected["products"] = parseJson(R"({"alpha":{},"beta":{},"gamma":{}})");
+  expected["types"] = Json::Value(Json::arrayValue);
+  expected["commands"] = Json::Value(Json::arrayValue);
+  for (const std::string name : {"beta", "alpha", "gamma"}) {
+    expected["types"].append(documents.at(name + ".registry.json")["types"][0]);
+    expected["commands"].append(documents.at(name + ".registry.json")["commands"][0]);
+  }
+  CHECK_EQ(jcs(composeRegistry(manifest, documents)), jcs(expected));
+  for (const auto& breakThird : std::vector<std::function<void(Json::Value&)>>{
+           [](auto& part) { part["version"] = 3; },
+           [](auto& part) { part["minVersion"] = 2; },
+           [](auto& part) { part["products"]["alpha"] = Json::Value(Json::objectValue); },
+           [](auto& part) { part["types"][0]["type"] = "alpha"; },
+           [](auto& part) { part["commands"][0]["name"] = "alpha.sweep"; },
+           [](auto& part) { part["types"][0]["fields"]["title"]["writer"] = "unknown"; }}) {
+    auto invalid = documents;
+    breakThird(invalid.at("gamma.registry.json"));
+    try { composeRegistry(manifest, invalid); CHECK(false); } catch (const RegistryError&) {}
+  }
+  for (const auto& files : {R"([])", R"(["alpha.registry.json","alpha.registry.json"])",
+                            R"(["unknown.registry.json"])", R"(["../alpha.registry.json"])"}) {
+    auto invalid = manifest;
+    invalid["registries"] = parseJson(files);
+    try { composeRegistry(invalid, documents); CHECK(false); } catch (const RegistryError&) {}
+  }
 }
 
 // SPEC-GAP 12: roundHalfAway(x × k) ÷ k for q = 1/k, roundHalfAway(x ÷ q) × q for an integer q, in doubles.

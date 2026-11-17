@@ -400,17 +400,27 @@ class DeployProductionTest(unittest.TestCase):
     def test_metadata_generation_matches_every_registry_in_the_compiled_composition(self):
         contract = self.bin.parent / "contract"
         contract.mkdir()
-        (contract / "composition.json").write_text(json.dumps({"registries": ["gym.registry.json", "journal.registry.json"]}))
-        for name in ("gym", "journal"):
-            (contract / (name + ".registry.json")).write_text(json.dumps({"version": 8, "minVersion": 8}))
+        names = ["alpha", "beta", "third-product3"]
+        manifest = {"registries": [name + ".registry.json" for name in names]}
+        (contract / "composition.json").write_text(json.dumps(manifest))
+        for name in names:
+            (contract / (name + ".registry.json")).write_text(json.dumps({"version": 8, "minVersion": 7}))
         output = self.bin.parent / "metadata.json"
         command = [sys.executable, str(SCRIPT.with_name("sync_compatibility.py")), "metadata", str(contract), str(output)]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
         self.assertEqual((result.returncode, result.stdout, result.stderr, output.read_text()),
-                         (0, "", "", '{"schema": 8, "minSchema": 8}\n'))
+                         (0, "", "", '{"schema": 8, "minSchema": 7}\n'))
         output.unlink()
-        (contract / "journal.registry.json").write_text(json.dumps({"version": 7, "minVersion": 4}))
-        result = subprocess.run(command, capture_output=True, text=True)
+        for interval in ({"version": 9, "minVersion": 7}, {"version": 8, "minVersion": 8}):
+            (contract / "third-product3.registry.json").write_text(json.dumps(interval))
+            result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+            self.assertEqual((result.returncode, result.stdout, result.stderr),
+                             (1, "", "FAIL sync compatibility verification could not complete\n"))
+            self.assertFalse(output.exists())
+        (contract / "third-product3.registry.json").write_text(json.dumps({"version": 8, "minVersion": 7}))
+        manifest["registries"].append("alpha.registry.json")
+        (contract / "composition.json").write_text(json.dumps(manifest))
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
         self.assertEqual((result.returncode, result.stdout, result.stderr),
                          (1, "", "FAIL sync compatibility verification could not complete\n"))
         self.assertFalse(output.exists())

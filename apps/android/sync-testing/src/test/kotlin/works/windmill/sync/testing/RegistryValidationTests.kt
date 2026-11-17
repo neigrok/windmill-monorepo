@@ -216,10 +216,39 @@ class RegistryCompositionTests {
     private val root = File(System.getProperty("windmill.contract"), "sync")
     private fun registry(name: String) = Registry(Json.parse(File(root, "$name.registry.json").readBytes()))
 
+    @Test fun threeSyntheticProductsComposeAndAnInvalidThirdCannotHide() {
+        val parts = listOf("beta", "alpha", "gamma").map { name -> Registry(Json.parse("""{
+            "registry":"$name","version":3,"minVersion":2,"products":{"$name":{}},
+            "types":[{"type":"$name","scope":"product:$name","identity":"singleton","singletonId":"$name",
+            "idPattern":"^$name$","life":false,"origins":["replica"],"fields":{}}],
+            "commands":[{"name":"$name.set","scope":"product:$name","origins":["server"],"serverInternal":false,"args":{}}]
+        }""")) }
+        val composed = Registry.compose("three", parts)
+        assertEquals(listOf("beta", "alpha", "gamma"), composed.types.map { it.name })
+        assertEquals(parts.flatMap { it.types.map(TypeDef::json) }, composed.types.map(TypeDef::json))
+        assertEquals(parts.flatMap { it.commands }, composed.commands)
+        assertEquals(setOf("alpha", "beta", "gamma"), composed.products.keys)
+        for (key in listOf("version", "minVersion")) {
+            val members = parts.last().json.obj().toMutableMap()
+            members[key] = Json.of(if (key == "version") 4 else 1)
+            val third = Registry(Json.Obj(members.toList()))
+            assertThrows(IllegalArgumentException::class.java) { Registry.compose("three", parts.take(2) + third) }
+        }
+        assertThrows(IllegalArgumentException::class.java) { Registry.compose("three", parts.take(2) + parts.first()) }
+        for ((key, field, value) in listOf(Triple("types", "type", "alpha"), Triple("commands", "name", "alpha.set"))) {
+            val members = parts.last().json.obj().toMutableMap()
+            val definitions = members.getValue(key).arr().toMutableList()
+            definitions[0] = Json.Obj((definitions[0].obj() + (field to Json.of(value))).toList())
+            members[key] = Json.Arr(definitions)
+            val third = Registry(Json.Obj(members.toList()))
+            assertThrows(IllegalArgumentException::class.java) { Registry.compose("three", parts.take(2) + third) }
+        }
+    }
+
     @Test fun composesCurrentProductRegistriesLosslessly() {
-        val parts = listOf(registry("gym"), registry("journal"))
+        val parts = Json.parse(File(root, "composition.json").readBytes()).member("registries").arr().map { Registry(Json.parse(File(root, it.str()).readBytes())) }
         val composed = Registry.compose("windmill", parts)
-        assertEquals(setOf("gym", "journal"), composed.products.keys)
+        assertEquals(parts.flatMap { it.products.keys }.toSet(), composed.products.keys)
         assertEquals(parts.flatMap { it.types.map(TypeDef::json) }, composed.types.map(TypeDef::json))
         assertEquals(parts.flatMap { it.commands }, composed.commands)
         assertEquals(12L, composed.version)

@@ -59,7 +59,7 @@ class CoverageTests {
         assertEquals(Registry.compose(composition.member("composition").str(), registries).json, SyncSchema.registry.json)
         assertEquals(12L, SyncSchema.version)
         assertEquals(11L, SyncSchema.registry.minVersion)
-        assertEquals(setOf("gym", "journal"), SyncSchema.registry.products.keys)
+        assertEquals(registries.flatMap { it.products.keys }.toSet(), SyncSchema.registry.products.keys)
     }
     @Test fun confirmedRecordsHaveRegistryVisibilityAndNoPendingState() {
         val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))

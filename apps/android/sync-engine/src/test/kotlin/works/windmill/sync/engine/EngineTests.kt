@@ -13,6 +13,38 @@ import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class EngineTests {
+    @Test fun gymDefaultsDoNotSubscribeOrPullAnUnsupportedProductsOwnedTrees() {
+        val leaves = listOf("gym", "journal").map { name -> Registry(Json.parse("""{
+            "registry":"$name","version":3,"minVersion":2,"products":{"$name":{}},
+            "types":[{"type":"$name","scope":"product:$name","identity":"singleton","singletonId":"$name",
+            "idPattern":"^$name$","life":false,"origins":["replica"],"fields":{}}],"commands":[]
+        }""")) }
+        val third = Registry(Json.parse("""{
+            "registry":"third","version":3,"minVersion":2,"products":{"third":{}},"commands":[],
+            "types":[{"type":"board","scope":"product:third","identity":"minted","idSpace":"global",
+            "idPattern":"^b[0-9]+$","mint":{"prefix":"b","alphabet":"0123456789","length":4},
+            "life":true,"revivable":false,"deadRows":"spent","governs":"tree","origins":["replica"],"fields":{}},
+            {"type":"meta","scope":"tree","identity":"singleton","singletonId":"meta","idPattern":"^meta$",
+            "life":false,"origins":["replica"],"fields":{}}]
+        }"""))
+        val composed = Registry.compose("three", leaves + third)
+        Engine.memory(composed, identities = identities, actor = "actor").use { engine ->
+            engine.signIn("A", emptyMap())
+            val stamp = Stamp("1:0:a")
+            engine.store.transaction { engine.store.put(engine.device.current().id, ScopeRef.product("third"),
+                Row(RecordKey("board", RecordID("b0001")), Lattice(Life("alive", stamp), stamp), seq = 1)) }
+            assertEquals(setOf(ScopeRef.product("gym")), engine.subscriptions())
+            assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null}]}"""), engine.pullRequest(engine.subscriptions()))
+            val tree = ScopeRef.tree("b0001")
+            val overlay = ScopeRef.overlay("b0001")
+            assertEquals(setOf(ScopeRef.product("third"), tree, overlay), engine.subscriptions(listOf("third")))
+            assertNull(engine.subscribe(tree))
+            assertEquals(setOf(ScopeRef.product("gym"), tree, overlay), engine.subscriptions())
+            assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null},{"scope":"self/overlay/b0001","cursor":null},{"scope":"tree/b0001","cursor":null}]}"""),
+                engine.pullRequest(engine.subscriptions().sortedBy { it.text }))
+        }
+    }
+
     @Test fun readerTreesPairTheBoundAccountsOverlayAndReopenBothScopes() {
         val tree = ScopeRef.tree("b_00000001")
         val overlay = ScopeRef.overlay("b_00000001")

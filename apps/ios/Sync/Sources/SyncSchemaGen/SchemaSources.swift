@@ -64,8 +64,14 @@ enum SchemaSources {
   // Every file of the target, sorted by name. A registry must decode, and decode losslessly, so the literal written is
   // the file itself; the registries must compose, so SyncSchema.swift cannot fail when the app first reads it.
   static func files(from registries: [RegistryFile], composition: Composition) throws -> [GeneratedFile] {
+    var documents: [String: RegistryFile] = [:]
+    for file in registries {
+      guard documents.updateValue(file, forKey: file.name) == nil else {
+        throw GenerationError(description: "registry inputs repeat \(file.name)")
+      }
+    }
     let parts = try composition.registries.map { name in
-      guard let file = registries.first(where: { $0.name == name }) else {
+      guard let file = documents[name] else {
         throw GenerationError(description: "composition.json names missing registry \(name)")
       }
       return try part(file)

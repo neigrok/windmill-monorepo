@@ -18,9 +18,12 @@ def compatibility(value):
 
 def metadata(contract):
     composition = json.loads((contract / "composition.json").read_text())
+    names = composition["registries"]
+    if not isinstance(names, list) or any(not isinstance(name, str) for name in names) or len(set(names)) != len(names):
+        raise ValueError("invalid or repeated registry members")
     versions = []
-    for name in composition["registries"]:
-        if not re.fullmatch(r"[a-z]+\.registry\.json", name):
+    for name in names:
+        if not re.fullmatch(r"[a-z][a-z0-9-]*\.registry\.json", name):
             raise ValueError("invalid registry filename")
         registry = json.loads((contract / name).read_text())
         versions.append(compatibility({"schema": registry["version"], "minSchema": registry["minVersion"]}))
