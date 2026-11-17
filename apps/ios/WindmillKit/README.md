@@ -13,15 +13,26 @@ to the pass door. Text, result, allowance and picture requests carry only the pa
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
-only. Before an answer is lost, transient refusal retries stop at thirty seconds. Each round has
-one twenty-minute deadline spanning
-pass acquisition, requests, streamed reads and recovery waits; expiry cancels its suspended task.
-After a lost answer, only rate-limited, busy and accounting-unavailable refusals retry.
+only. PUT transient refusal retries stop thirty seconds after the first PUT. After a lost answer,
+rate-limited, busy and accounting-unavailable refusals use the twenty-minute deadline; the other
+transient PUT refusals keep their original thirty-second window. The twenty-minute deadline begins
+at the first PUT or recovery start and spans pass refresh, requests, streamed reads and retry waits.
+Pass preparation has its own bounded watchdog; expiry cancels suspended work.
 Every event, terminal, allowance and refusal is validated before delivery, including exact fields,
-nonnegative decimal money, allowance arithmetic and the started event's requested call ID.
+nonnegative decimal money and the started event's requested call ID. Allowance validation checks
+wire types and enums; the service owns arithmetic, tier and capability policy. Money is validated as
+a decimal string without integer conversion. Non-service HTTP errors are ambiguous transport loss;
+they retry quietly after dispatch. A recovery `call_unknown` ends quietly because its mark may
+predate dispatch. Live `call_unknown` remains a defect.
 Admission certainty never moves backward. A pass-expired or picture-gone repair runs once under
 the same ID. A seat change cancels local transport, clears cached allowance and cannot authorize
 late replies to publish under another seat.
+
+Offline policy follows dispatch evidence. A pass or picture failure before text dispatch restores
+the draft promptly. A cached pass can permit a text attempt while offline; that attempt is uncertain
+and retries under the same call ID. Temporary pass refresh transport loss, rate limits and
+unavailability keep the original recovery deadline. No connectivity monitor or saved working
+conversation is needed.
 
 `CoachRuntime` supplies cryptographic IDs and holds `CoachWorkLease` for the turn. On iOS,
 `CoachBackgroundLease` returns UIKit background time once on completion or expiration.

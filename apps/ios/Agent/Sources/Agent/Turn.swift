@@ -171,7 +171,7 @@ public struct Recovery: Sendable {
             let code: String?
             switch outcome {
             case .success(let value): content = value; code = nil
-            case .refusal(let value): content = profile.refusal(value); code = value
+            case .refusal(let value): code = profile.refusalCode(value); content = profile.refusal(value)
             }
             telemetry.ability(name: profile.tools.contains(where: { $0.name == call.name }) ? call.name : "unoffered", code: bounded(code))
             results.append(.object(.init(uniqueKeysWithValues: [("id", .string(call.id)), ("content", .string(content)), ("isError", .bool(code != nil))])))
@@ -189,11 +189,11 @@ public struct Recovery: Sendable {
     } catch let failure as AiFailure {
       if seatChange { return await finish(.interrupted) }
       if failure.code == "stopped" { return await finish(.stopped) }
-      return await finish(.failed, code: failure.code, withdraw: rounds <= 1 && failure.admission == .none)
+      return await finish(failure.code == nil ? .interrupted : .failed, code: failure.code, withdraw: rounds <= 1 && failure.admission == .none)
     } catch is HostBoundaryFailure {
       return await finish(.failed, code: "invalid-answer")
     } catch HostFailure.refused(let code) {
-      return await finish(.failed, code: code)
+      return await finish(.failed, code: profile.refusalCode(code))
     } catch {
       client.invalidAnswer()
       return await finish(.failed, code: "invalid-answer")
@@ -262,7 +262,7 @@ public struct Recovery: Sendable {
   func reset(_ input: TurnInput, profile: Profile) {
     self.input = input; active = true; lease = nil; text = ""; stopRequested = false; seatChange = false
     rounds = 0; abilityCalls = 0; refusals = 0; writes = 0; groupSuccesses = [:]; identities = []
-    telemetryCodes = AiFailure.codes.union((try? profile.value.asObject().member("refusals").asObject().keys) ?? [])
+    telemetryCodes = AiFailure.codes.union(profile.refusals.keys).union(["product-refused"])
     start = runtime.nowMs; mutation = nil; finishTask = nil
   }
 

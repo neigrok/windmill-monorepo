@@ -14,19 +14,14 @@ enum AiWire {
     guard try value.asInteger() >= minimum else { throw AiTransportFailure.invalidResponse }
   }
 
-  static func money(_ value: JSON, nullable: Bool = false) throws -> Int64 {
-    if nullable && value == .null { return 0 }
+  static func money(_ value: JSON, nullable: Bool = false) throws {
+    if nullable && value == .null { return }
     let text = try value.asString()
     let pieces = text.split(separator: ".", omittingEmptySubsequences: false)
     guard (1...2).contains(pieces.count), let whole = pieces.first, !whole.isEmpty,
-          whole == "0" || whole.first != "0", whole.utf8.allSatisfy({ (48...57).contains($0) }),
-          let dollars = Int64(whole), dollars <= Int64.max / 1_000_000_000 else { throw AiTransportFailure.invalidResponse }
+          whole == "0" || whole.first != "0", whole.utf8.allSatisfy({ (48...57).contains($0) }) else { throw AiTransportFailure.invalidResponse }
     let fraction = pieces.count == 2 ? pieces[1] : ""
     guard pieces.count == 1 || (1...9).contains(fraction.count), fraction.utf8.allSatisfy({ (48...57).contains($0) }) else { throw AiTransportFailure.invalidResponse }
-    let nanos = Int64(fraction + String(repeating: "0", count: 9 - fraction.count))!
-    let (amount, overflow) = (dollars * 1_000_000_000).addingReportingOverflow(nanos)
-    guard !overflow else { throw AiTransportFailure.invalidResponse }
-    return amount
   }
 
   static func allowance(_ value: JSON, nullable: Bool = false) throws {
@@ -34,22 +29,16 @@ enum AiWire {
     let object = try fields(value, "tier period limit used reserved remaining resetsAt budgetResetsAt code capabilities")
     let tier = try object.member("tier").asString()
     let period = try object.member("period").asString()
-    guard ["anonymous", "free", "one"].contains(tier), ["lifetime", "calendar_month_utc", "billing_period"].contains(period),
-          tier != "anonymous" || period == "lifetime", tier != "free" || period == "calendar_month_utc" else { throw AiTransportFailure.invalidResponse }
-    let limit = try money(object.member("limit"))
-    let used = try money(object.member("used"))
-    let reserved = try money(object.member("reserved"))
-    guard try money(object.member("remaining")) == max(0, max(0, limit - used) - reserved) else { throw AiTransportFailure.invalidResponse }
+    guard ["anonymous", "free", "one"].contains(tier), ["lifetime", "calendar_month_utc", "billing_period"].contains(period) else { throw AiTransportFailure.invalidResponse }
+    for key in ["limit", "used", "reserved", "remaining"] { try money(object.member(key)) }
     try integer(object.member("resetsAt"), nullable: true)
     try integer(object.member("budgetResetsAt"), nullable: true)
     let code = try object.member("code").asString()
-    guard (object["resetsAt"] == .null) == (period == "lifetime"),
-          ["ok", "device_bound", "subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted"].contains(code),
-          ["subject_exhausted", "free_month_exhausted", "free_day_exhausted"].contains(code) || object["budgetResetsAt"] == .null else { throw AiTransportFailure.invalidResponse }
+    guard ["ok", "device_bound", "subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted"].contains(code) else { throw AiTransportFailure.invalidResponse }
     let capabilities = try fields(object.member("capabilities"), "text transcription")
     let text = try fields(capabilities.member("text"), "large medium small")
     for member in text.members { guard try ["large", "medium", "small"].contains(member.value.asString()) else { throw AiTransportFailure.invalidResponse } }
-    guard try capabilities.member("transcription").asBool() == (tier == "one") else { throw AiTransportFailure.invalidResponse }
+    _ = try capabilities.member("transcription").asBool()
   }
 
   static func tool(_ value: JSON) throws {
@@ -93,7 +82,7 @@ enum AiWire {
     case "toolCall": try tool(event.data)
     case "ended", "failed":
       let value = try fields(event.data, event.name == "ended" ? "stop message charged allowance" : "code charged allowance")
-      _ = try money(value.member("charged"), nullable: true)
+      try money(value.member("charged"), nullable: true)
       try allowance(value.member("allowance"), nullable: true)
       if event.name == "failed" {
         guard try ["provider_rejected", "provider_unavailable", "provider_failed", "accounting_unavailable"].contains(value.member("code").asString()) else { throw AiTransportFailure.invalidResponse }

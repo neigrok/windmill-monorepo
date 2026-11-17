@@ -22,6 +22,7 @@ public struct Profile: Sendable {
   public let abilityCalls: Int
   public let writes: Int
   public let label: String
+  let refusals: [String: String]
 
   public init(_ value: JSON) throws {
     self.value = value
@@ -52,9 +53,9 @@ public struct Profile: Sendable {
     let minimum = minimumValue == .null ? 0 : try minimumValue.asInteger()
     let first = try object.member("firstContent").asObject()
     for key in ["historyPrefix", "contextPrefix", "questionPrefix", "emptyQuestion"] { _ = try first.member(key).asString() }
-    for (_, sentence) in try object.member("refusals").asObject().members { _ = try sentence.asString() }
+    refusals = try Dictionary(uniqueKeysWithValues: object.member("refusals").asObject().members.map { ($0.key, try $0.value.asString()) })
     guard Self.label(name), Self.label(label), tools.allSatisfy({ Self.label($0.name) }),
-          try object.member("refusals").asObject().keys.allSatisfy(Self.label), version > 0, modelCalls > 0, abilityCalls >= 0, writes >= 0,
+          refusals.keys.allSatisfy(Self.label), version > 0, modelCalls > 0, abilityCalls >= 0, writes >= 0,
           maximum > 0, minimum >= 0, minimum <= maximum,
           Set(tools.map(\.name)).count == tools.count,
           Set(groups.map(\.name)).count == groups.count,
@@ -95,7 +96,11 @@ public struct Profile: Sendable {
   }
 
   public func refusal(_ code: String) -> String {
-    let sentence = try? value.asObject().member("refusals").asObject()[code]?.asString()
-    return JSON.object(.init(uniqueKeysWithValues: [("code", .string(code)), ("message", .string(sentence ?? code))])).jcsText
+    let code = refusalCode(code)
+    return JSON.object(.init(uniqueKeysWithValues: [("code", .string(code)), ("message", .string(refusals[code] ?? code))])).jcsText
+  }
+
+  func refusalCode(_ code: String) -> String {
+    refusals[code] == nil ? "product-refused" : code
   }
 }

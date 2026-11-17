@@ -37,7 +37,7 @@ import SyncCore
       ("failed", try samples[4].1.changed(["code"], to: "paused")),
       ("unknown", [:]),
     ]
-    for amount: JSON in [-100, "-1", "01", "1.", "0.0000000001", "9223372036.854775808", true] {
+    for amount: JSON in [-100, "-1", "01", "1.", "0.0000000001", true] {
       invalid.append(("ended", try samples[3].1.changed(["charged"], to: amount)))
     }
     let profile = try AiPolicyTests.profile()
@@ -52,6 +52,7 @@ import SyncCore
       } catch let error as AiFailure {
         #expect(error.code == "invalid-answer")
         #expect(error.source == .wire)
+        #expect(error.admission == .possible)
       }
       #expect(events == [])
       #expect(diagnostics.failures == ["ai-call"])
@@ -60,12 +61,12 @@ import SyncCore
     }
   }
 
-  @Test func malformedAllowancePassAndRefusalBodiesAreRejected() async throws {
+  @Test func malformedSuccessfulAllowanceAndPassBodiesAreDefects() async throws {
     let good = try AiPolicyTests.allowance()
     var badAllowances: [JSON] = []
     for key in try good.asObject().keys { badAllowances.append(try good.changed([key], to: nil)) }
     for (path, value): ([String], JSON) in [
-      (["extra"], true), (["limit"], "-1"), (["remaining"], "900"), (["resetsAt"], -1),
+      (["extra"], true), (["limit"], "-1"), (["resetsAt"], -1),
       (["budgetResetsAt"], "today"), (["tier"], "unknown"), (["period"], "week"), (["code"], "provider_failed"),
       (["capabilities", "text", "large"], "huge"), (["capabilities", "transcription"], "yes"),
     ] { badAllowances.append(try good.changed(path, to: value)) }
@@ -73,11 +74,6 @@ import SyncCore
       ["pass": "token", "expiresIn": 0], ["pass": "token", "expiresIn": 600001], ["pass": "token", "expiresIn": 600000, "extra": true]]
     var cases: [([AiResponse], String)] = badAllowances.map { ([ValidationTransport.pass(), ValidationTransport.json($0)], "ai-call") }
     cases += badPasses.map { ([ValidationTransport.json($0)], "ai-pass") }
-    for body: JSON in [["code": "paused"], ["code": "unknown", "allowance": .null], ["code": "paused", "allowance": good, "extra": true], ["code": "paused", "allowance": [:]]] {
-      cases.append(([ValidationTransport.pass(), ValidationTransport.json(body, status: 503)], "ai-call"))
-    }
-    cases.append(([ValidationTransport.pass(), ValidationTransport.json(["code": "paused", "allowance": .null], status: 400)], "ai-call"))
-    cases.append(([ValidationTransport.json(["code": "unauthenticated"], status: 401)], "ai-pass"))
     let profile = try AiPolicyTests.profile()
     for (responses, operation) in cases {
       let transport = ValidationTransport(responses)
@@ -100,7 +96,7 @@ import SyncCore
       let client = ServiceAiClient(transport: transport, clock: PolicyClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
       do { _ = try await client.allowance(profile: profile, seat: Seat(kind: .anon, key: "seat")); Issue.record("Refusal succeeded") }
       catch let error as AiFailure { #expect(error.code == code); #expect(error.source == .pass) }
-      #expect(diagnostics.failures == (code == "unavailable" ? ["ai-pass"] : []))
+      #expect(diagnostics.failures == [])
       #expect(transport.requests.map(\.path) == ["/v1/ai/passes"])
     }
   }
@@ -152,6 +148,37 @@ import SyncCore
       stream.continuation.finish()
       delivered.continuation.finish()
     }
+  }
+
+  @Test func preparationTimeDoesNotShortenTheTextRecoveryDeadline() async throws {
+    let clock = DeadlineClock()
+    let diagnostics = PolicyDiagnostics()
+    let pass = AsyncThrowingStream<[UInt8], Error>.makeStream()
+    let answer = AsyncThrowingStream<[UInt8], Error>.makeStream()
+    let transport = ValidationTransport([
+      AiResponse(status: 200, contentType: "application/json", bytes: pass.stream),
+      AiResponse(status: 200, contentType: "text/event-stream", bytes: answer.stream),
+    ])
+    let client = ServiceAiClient(transport: transport, clock: clock, diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+    let profile = try AiPolicyTests.profile()
+    let call = Task {
+      try await client.call(id: String(repeating: "A", count: 22), request: [:], profile: profile,
+        seat: Seat(kind: .anon, key: "seat"), pictures: []) { _ in Issue.record("Unexpected event") }
+    }
+    while transport.requests.isEmpty || clock.deadlines.isEmpty { await Task.yield() }
+    clock.nowMs = 60_000
+    pass.continuation.yield(JSON.object(["pass": "token", "expiresIn": 600000]).jcs)
+    pass.continuation.finish()
+    while transport.requests.count < 2 { await Task.yield() }
+    clock.expire()
+    while clock.deadlines.count < 2 { await Task.yield() }
+    #expect(clock.deadlines == [1_200_000, 1_260_000])
+    clock.expire()
+    do { try await call.value; Issue.record("Text deadline did not expire") }
+    catch let error as AiFailure { #expect(error.code == "answer-timeout"); #expect(error.admission == .possible) }
+    #expect(clock.nowMs == 1_260_000)
+    #expect(diagnostics.failures == [])
+    answer.continuation.finish()
   }
 }
 

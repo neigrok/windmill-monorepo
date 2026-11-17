@@ -10,8 +10,9 @@ streams visible text and dispatches final tool calls sequentially. The working r
 full tool results exist only inside the invocation. `recover` reads a marked result without PUT or
 ability execution. Its prefix uses UTF-8 bytes. Duplicate call IDs fail before any dispatch.
 
-Stop lets an in-flight completed round finish, discards tool calls after Stop, and cancels only
-retry waits. Await `seatWillChange()` before changing credentials, the host generation or active
+Stop lets an in-flight completed round finish, discards tool calls after Stop, and cancels retry
+waits and pending retry preparation or response headers. Successful event streams and host commits
+finish normally. Await `seatWillChange()` before changing credentials, the host generation or active
 replica: it waits for pending host mutations, writes interruption and drops the pass. Each invocation
 holds its own state and work lease; after the barrier, a new seat can run while an old response drains. A host must
 check its lease and record existence inside every commit; `WindmillPlatform.CoachCommitGuard`
@@ -21,7 +22,8 @@ live sync connection and corrected server time; it never consults a wall clock i
 `Profile` validates before host admission. Every gate runs offered, seat, shape, successful group
 limits, execution/write volume, product and Stop in that order. Only admitted executions consume
 volume; successful executions consume group slots. Product refusal sentences are carried as JSON
-error content. Telemetry contains bounded ability names, refusal labels and turn counts, never
+error content. Unknown host refusal codes use the profile's `product-refused` code and sentence in
+model results and telemetry. Telemetry contains bounded ability names, refusal labels and turn counts, never
 questions, results, credentials, seat keys or call identifiers. `Telemetry.hostFailure()` has no
 payload: the integration routes it to static failure operation `agent-host` for unexpected host,
 storage and runtime failures. Expected record deletion, stale seats and host refusals stay quiet.

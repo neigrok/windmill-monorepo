@@ -189,6 +189,7 @@ extension JSON {
       let passes = try story.field("service").field("passes").array
       let value = passes[min(passIndex, passes.count - 1)]
       passIndex += 1
+      if value.field("transport") == "offline" { throw AiTransportFailure.offline }
       let status = Int((try? value.field("status").integer) ?? 200)
       let body: JSON = status == 200 ? value : ["code": value.field("code"), "error": "Pass refused"]
       return response(status: status, type: "application/json", chunks: [body.jcs])
@@ -207,6 +208,11 @@ extension JSON {
     let exchange = exchanges[index]
     repeats += 1
     if repeats >= Int(try exchange.field("repeat").integer) { exchangeIndex += 1; repeats = 0 }
+    if exchange.field("http") != .null {
+      let http = exchange.field("http")
+      return response(status: Int(try http.field("status").integer), type: try http.field("contentType").string,
+        chunks: [Array(try http.field("body").string.utf8)])
+    }
     if exchange.field("refusal") != .null {
       return response(status: refusalStatus[try exchange.field("refusal").field("code").string] ?? 500, type: "application/json", chunks: [exchange.field("refusal").jcs])
     }

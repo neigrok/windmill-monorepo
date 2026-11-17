@@ -1,9 +1,28 @@
+import Foundation
 import Testing
 import Agent
 import SyncCore
 @testable import WindmillPlatform
 
 @Suite @MainActor struct TurnFailureTests {
+  @Test func unknownHostRefusalsUseTheProfileCodeAndMessageAtEveryBoundary() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let original = try JSON(parsing: Array(Data(contentsOf: root.appending(path: "packages/api-contract/agent/turns/two-rounds.json"))))
+    for boundary in ["seat", "shape", "product", "executor"] {
+      let story = boundary == "executor"
+        ? try original.changed(["host", "executions", "tool-0"], to: ["ok": false, "code": "private host message"])
+        : try original.changed(["host", "checks", "tool-0"], to: .object(.init(uniqueKeysWithValues: [(boundary, .string("private host message"))])))
+      let harness = try StoryHarness(story, refusalStatus: [:])
+      let actual = try await harness.run()
+      let requests = try actual.field("requests").array
+      let messages = try requests[1].field("body").field("messages").array
+      #expect(messages.last == ["role": "tool", "results": [["id": "tool-0", "content": "{\"code\":\"product-refused\",\"message\":\"product-refused.\"}", "isError": true]]])
+      let events = try actual.field("telemetry").array.filter { $0.field("kind") == "ability" }
+      #expect(events == [["kind": "ability", "name": "read", "outcome": "refused", "code": "product-refused"]])
+    }
+  }
+
   @Test func unexpectedHostFailuresReportOnlyTheStaticHostOperation() async throws {
     let profile = try AiPolicyTests.profile()
     let input = TurnInput(turnId: "turn", seat: Seat(kind: .bound, key: "seat"), question: "private question")
@@ -20,6 +39,36 @@ import SyncCore
       #expect(client.defects == 0)
       #expect(host.releases == (operation == "acquire" ? 0 : 1))
     }
+  }
+
+  @Test func offlinePreparationRestoresTheDraftBeforeAnyTextDispatch() async throws {
+    let profile = try AiPolicyTests.profile()
+    for picture in [false, true] {
+      let host = FaultHost(operation: "none", error: StorageFault.disk)
+      if picture { host.pictures = [Picture(pictureId: String(repeating: "P", count: 22), mediaType: "image/png", bytes: [137, 80, 78, 71])] }
+      let diagnostics = PolicyDiagnostics()
+      let client = ServiceAiClient(transport: OfflineAiTransport(picture: picture), clock: PolicyClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+      let turn = Turn(host: host, client: client, telemetry: host, runtime: host)
+      let end = await turn.run(input: TurnInput(turnId: "turn", seat: Seat(kind: .anon, key: "seat"), question: "private draft"), profile: profile)
+      #expect(end == TurnEnd(state: .interrupted, text: ""))
+      #expect(host.withdrawals == 1)
+      #expect(host.failures == [])
+      #expect(diagnostics.failures == [])
+    }
+  }
+
+  @Test func aMalformedFirstAnswerRetainsThePossiblyAdmittedTurn() async throws {
+    let profile = try AiPolicyTests.profile()
+    let host = FaultHost(operation: "none", error: StorageFault.disk)
+    let diagnostics = PolicyDiagnostics()
+    let transport = ValidationTransport([ValidationTransport.pass(), ValidationTransport.json(["unexpected": "body"])])
+    let client = ServiceAiClient(transport: transport, clock: PolicyClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+    let turn = Turn(host: host, client: client, telemetry: host, runtime: host)
+    let end = await turn.run(input: TurnInput(turnId: "turn", seat: Seat(kind: .anon, key: "seat"), question: "private draft"), profile: profile)
+    #expect(end == TurnEnd(state: .failed, text: "", code: "invalid-answer"))
+    #expect(host.withdrawals == 0)
+    #expect(host.failures == [])
+    #expect(diagnostics.failures == ["ai-call"])
   }
 
   @Test func corruptRecoveryOffsetsReportHostFailureBeforeReadingAnAnswer() async throws {
@@ -60,6 +109,8 @@ private enum StorageFault: Error { case disk }
   let error: any Error
   var failures: [String] = []
   var releases = 0
+  var withdrawals = 0
+  var pictures: [Picture] = []
   var recoveryOffset: Int?
   var nowMs: Int64 { 0 }
   init(operation: String, error: any Error) { self.operation = operation; self.error = error }
@@ -69,7 +120,7 @@ private enum StorageFault: Error { case disk }
   func callID() throws -> String { try fail("callID"); return String(repeating: "A", count: 22) }
   func open(_ input: TurnInput) async throws -> OpenTurn {
     try fail("open")
-    return OpenTurn(lease: HostLease(turnId: input.turnId, seat: input.seat, generation: 0))
+    return OpenTurn(lease: HostLease(turnId: input.turnId, seat: input.seat, generation: 0), pictures: pictures)
   }
   func recover(_ input: TurnInput) async throws -> Recovery? {
     try fail("recover")
@@ -80,7 +131,7 @@ private enum StorageFault: Error { case disk }
   func text(_ text: String, lease: HostLease) async throws { try fail("text") }
   func beginRound(_ mark: Mark, text: String, lease: HostLease) async throws { try fail("beginRound") }
   func end(_ end: TurnEnd, lease: HostLease) async throws { try fail("end") }
-  func withdraw(lease: HostLease) async throws { try fail("withdraw") }
+  func withdraw(lease: HostLease) async throws { try fail("withdraw"); withdrawals += 1 }
   func check(_ check: GateCheck, call: ToolCall, lease: HostLease) async throws -> String? { try fail("check"); return nil }
   func execute(_ call: ToolCall, callId: String, lease: HostLease) async throws -> ToolOutcome { try fail("execute"); return .success("") }
   func hostFailure() { failures.append("agent-host") }

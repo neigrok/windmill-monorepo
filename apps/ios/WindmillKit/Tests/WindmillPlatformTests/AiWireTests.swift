@@ -5,6 +5,15 @@ import SyncCore
 @testable import WindmillPlatform
 
 @Suite @MainActor struct AiWireTests {
+  @Test func allowanceAcceptsServerPolicyAndArbitraryDecimalMagnitude() throws {
+    let value = try AiPolicyTests.allowance().changed(["tier"], to: "anonymous")
+      .changed(["period"], to: "billing_period").changed(["remaining"], to: "999999999999999999999.123456789")
+      .changed(["resetsAt"], to: .null).changed(["budgetResetsAt"], to: 42)
+      .changed(["capabilities", "transcription"], to: true)
+    #expect(throws: Never.self) { try AiWire.allowance(value) }
+    #expect(throws: Never.self) { try AiWire.money("999999999999999999999.123456789") }
+  }
+
   @Test func callAndPictureIdentifiersUseTheServicesFullWidth() {
     for count in [22, 24, 64] { #expect(ServiceAiClient.validID(String(repeating: "A", count: count))) }
     for value in [String(repeating: "A", count: 21), String(repeating: "A", count: 65), String(repeating: "A", count: 21) + "/", String(repeating: "A", count: 21) + "é"] {

@@ -7,7 +7,7 @@ nonisolated struct AiDeliveryFailure: Error { let error: any Error }
 nonisolated struct AiDeadlineFailure: Error {}
 
 final class AiRoundBudget {
-  let deadline: Int64
+  var deadline: Int64
   var admission: Admission
   init(deadline: Int64, admission: Admission) { self.deadline = deadline; self.admission = admission }
 }
@@ -56,6 +56,7 @@ extension AiClock {
   var generation: UInt64 = 0
   var stop = false
   var waitTask: Task<Void, Error>?
+  var cancelPreparation: (() -> Void)?
   public private(set) var lastAllowance: JSON?
 
   public init(transport: any AiTransport, clock: any AiClock, diagnostics: any AiDiagnostics,
@@ -64,10 +65,11 @@ extension AiClock {
   }
 
   public func seatWillChange() {
-    generation &+= 1; pass = nil; lastAllowance = nil; stop = true; waitTask?.cancel(); transport.cancel()
+    generation &+= 1; pass = nil; lastAllowance = nil; stop = true; waitTask?.cancel()
+    cancelPreparation?(); cancelPreparation = nil; transport.cancel()
   }
   public func invalidAnswer() { diagnostics.failure(operation: "ai-call", kind: "wire") }
-  public func stopAskingAgain() { stop = true; waitTask?.cancel() }
+  public func stopAskingAgain() { stop = true; waitTask?.cancel(); cancelPreparation?() }
 
   public func allowance(profile: Profile, seat: Seat) async throws -> JSON {
     let epoch = generation
@@ -115,8 +117,10 @@ extension AiClock {
           recover: recover, budget: budget, epoch: epoch, receive: receive)
       }
       let expiry: @Sendable () async throws -> Void = { @MainActor [self] in
-        try await clock.waitUntil(budget.deadline)
-        throw AiDeadlineFailure()
+        while true {
+          try await clock.waitUntil(budget.deadline)
+          if clock.nowMs >= budget.deadline { throw AiDeadlineFailure() }
+        }
       }
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask(operation: operation)
@@ -131,9 +135,8 @@ extension AiClock {
 
   func exchange(id: String, body: [UInt8]?, profile: Profile, seat: Seat, pictures: [Picture], recover: Bool,
                 budget: AiRoundBudget, epoch: UInt64, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
-    let deadline = budget.deadline
     var refusalDeadline: Int64?
-    var lastRefusal: AiFailure?
+    var retryRefusal: (deadline: Int64, failure: AiFailure)?
     var cursor: Int64 = 0
     var admission = budget.admission
     defer { budget.admission = admission }
@@ -144,8 +147,7 @@ extension AiClock {
     var lost = recover
     while true {
       try fence(epoch)
-      if clock.nowMs >= deadline { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
-      if !lost, let refusalDeadline, clock.nowMs >= refusalDeadline, let lastRefusal { throw lastRefusal }
+      if clock.nowMs >= budget.deadline { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
       if stop && askAgain { throw AiFailure(source: .transport, code: "stopped", admission: admission) }
       let method = recover || cursor > 0 ? "GET" : "PUT"
       let label = profile.label.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#?"))) ?? ""
@@ -153,36 +155,54 @@ extension AiClock {
       let source: AiFailure.Source = method == "GET" ? .result : .text
       var attemptSent = false
       do {
-        let token = try await token(profile: profile, seat: seat, epoch: epoch)
-        guard clock.nowMs < deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
+        let token = try await prepare(retry: askAgain, epoch: epoch) { [self] in
+          try await token(profile: profile, seat: seat, epoch: epoch)
+        }
+        guard clock.nowMs < budget.deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
+        if let retryRefusal, clock.nowMs >= retryRefusal.deadline { throw retryRefusal.failure }
+        if method == "PUT", refusalDeadline == nil {
+          refusalDeadline = clock.nowMs + 30_000
+          budget.deadline = clock.nowMs + 1_200_000
+        }
         attemptSent = true
-        let response = try await transport.send(AiRequest(method: method, path: path,
-          headers: ["Authorization": "Bearer " + token, "Content-Type": "application/json", "Accept": "text/event-stream"],
-          body: method == "PUT" ? body : nil))
+        let response = try await prepare(retry: askAgain, epoch: epoch) { [self] in
+          try await transport.send(AiRequest(method: method, path: path,
+            headers: ["Authorization": "Bearer " + token, "Content-Type": "application/json", "Accept": "text/event-stream"],
+            body: method == "PUT" ? body : nil))
+        }
         try fence(epoch)
-        guard clock.nowMs < deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: max(admission, .possible)) }
+        guard clock.nowMs < budget.deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: max(admission, .possible)) }
         if !(200..<300).contains(response.status) {
-          let failure = try await refusal(response, source: source, admission: admission, epoch: epoch)
+          let evidence = admission
+          let failure = try await prepare(retry: askAgain, epoch: epoch) { [self] in
+            try await refusal(response, source: source, admission: evidence, epoch: epoch)
+          }
           try fence(epoch)
+          attemptSent = false
           if failure.code == "pass_expired" && !passRefresh { passRefresh = true; pass = nil; continue }
           if failure.code == "picture_gone" && !pictureRefresh && !pictures.isEmpty && method == "PUT" {
+            try await prepare(retry: askAgain, epoch: epoch) { [self] in
+              try await upload(pictures, profile: profile, seat: seat)
+            }
             pictureRefresh = true
-            try await upload(pictures, profile: profile, seat: seat)
             continue
           }
           if failure.code == "busy" || failure.code == "accounting_unavailable" { admission = max(admission, .possible) }
           let result = AiFailure(source: source, code: failure.code, admission: admission, allowance: failure.allowance)
-          lastRefusal = result
+          if recover && failure.code == "call_unknown" { throw result }
           if Self.defectCodes.contains(failure.code ?? "") || failure.code?.hasPrefix("pass_") == true || failure.code == "picture_gone" {
             throw defect(failure.code ?? "invalid-answer", source: source, admission: admission)
           }
-          let transient = (lost ? Self.recoveryRetryCodes : Self.transientCodes).contains(failure.code ?? "")
-          if !transient { throw result }
-          if refusalDeadline == nil { refusalDeadline = clock.nowMs + 30_000 }
-          let until = lost ? deadline : min(deadline, refusalDeadline!)
+          let code = failure.code ?? ""
+          let until: Int64
+          if lost && Self.recoveryRetryCodes.contains(code) { until = budget.deadline }
+          else if method == "PUT", Self.transientCodes.contains(code), let refusalDeadline { until = min(budget.deadline, refusalDeadline) }
+          else { throw result }
           guard clock.nowMs < until else { throw result }
+          retryRefusal = (until, result)
           askAgain = true
           try await wait(attempt: attempt, until: until, epoch: epoch, admission: admission)
+          if clock.nowMs >= until && until < budget.deadline { throw result }
           attempt += 1
           continue
         }
@@ -192,7 +212,7 @@ extension AiClock {
         var parser = AiEventParser()
         for try await chunk in response.bytes {
           try fence(epoch)
-          guard clock.nowMs < deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: max(admission, .possible)) }
+          guard clock.nowMs < budget.deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: max(admission, .possible)) }
           let events: [AiEvent]
           do { events = try parser.append(chunk) }
           catch { throw defect("invalid-answer", source: .wire, admission: max(admission, .possible)) }
@@ -215,17 +235,38 @@ extension AiClock {
       } catch let failure as AiDeliveryFailure { throw failure.error }
       catch let failure as AiFailure {
         admission = max(admission, failure.admission)
-        throw AiFailure(source: failure.source, code: failure.code, admission: admission, allowance: failure.allowance)
+        if attemptSent && failure.source == .transport { admission = max(admission, .possible) }
+        let temporaryTransport = failure.source == .transport && !["stopped", "answer-timeout"].contains(failure.code)
+        let temporaryPass = failure.source == .pass && ["rate_limited", "unavailable"].contains(failure.code)
+        if !(lost || attemptSent || admission > .none) || !(temporaryTransport || temporaryPass) {
+          throw AiFailure(source: failure.source, code: failure.code, admission: admission, allowance: failure.allowance)
+        }
       } catch let failure as HostFailure { throw failure }
       catch {
         if attemptSent { admission = max(admission, .possible) }
         try fence(epoch)
         if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-call", kind: "transport") }
       }
-      askAgain = true; lost = true
-      guard clock.nowMs < deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
-      try await wait(attempt: attempt, until: deadline, epoch: epoch, admission: admission)
+      askAgain = true; lost = true; retryRefusal = nil
+      guard clock.nowMs < budget.deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
+      try await wait(attempt: attempt, until: budget.deadline, epoch: epoch, admission: admission)
       attempt += 1
+    }
+  }
+
+  func prepare<Value: Sendable>(retry: Bool, epoch: UInt64,
+                               _ operation: @escaping @MainActor @Sendable () async throws -> Value) async throws -> Value {
+    guard retry else { return try await operation() }
+    if stop { throw AiFailure(source: .transport, code: "stopped") }
+    let task = Task { try await operation() }
+    cancelPreparation = { task.cancel() }
+    defer { if generation == epoch { cancelPreparation = nil } }
+    do {
+      return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+    } catch {
+      try fence(epoch)
+      if stop { throw AiFailure(source: .transport, code: "stopped") }
+      throw error
     }
   }
 
@@ -274,7 +315,7 @@ extension AiClock {
     catch {
       try fence(epoch)
       if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-pass", kind: "transport") }
-      throw AiFailure(source: error as? AiTransportFailure == .offline ? .transport : .pass, code: error as? AiTransportFailure == .offline ? nil : "invalid-answer")
+      throw AiFailure(source: .transport, code: error as? AiTransportFailure == .offline ? nil : "invalid-answer")
     }
   }
 
@@ -316,6 +357,7 @@ extension AiClock {
       return try JSON(parsing: bytes)
     } catch {
       try fence(epoch)
+      if !(200..<300).contains(response.status) { throw AiFailure(source: .transport, code: nil) }
       if error as? AiTransportFailure == .offline { throw AiFailure(source: .transport, code: nil) }
       let transportFailure = error as? AiTransportFailure == .transport
       diagnostics.failure(operation: operation, kind: transportFailure ? "transport" : "wire")
@@ -341,9 +383,9 @@ extension AiClock {
         try AiWire.allowance(value.member("allowance"), nullable: true)
         allowance = value["allowance"].flatMap { $0 == .null ? nil : $0 }
       }
-    } catch { throw defect("invalid-answer", source: source == .pass ? .pass : .wire, admission: admission) }
+    } catch { throw AiFailure(source: .transport, code: nil, admission: admission) }
     if let allowance { lastAllowance = allowance }
-    if source == .pass && (Self.defectCodes.contains(code) || ["untrusted-origin", "unsupported-media-type", "unavailable"].contains(code)) { diagnostics.failure(operation: "ai-pass", kind: "refusal") }
+    if source == .pass && (Self.defectCodes.contains(code) || ["untrusted-origin", "unsupported-media-type"].contains(code)) { diagnostics.failure(operation: "ai-pass", kind: "refusal") }
     return AiFailure(source: source, code: code, admission: admission, allowance: allowance)
   }
 
