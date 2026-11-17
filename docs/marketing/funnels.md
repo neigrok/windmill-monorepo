@@ -17,13 +17,26 @@ A locally successful action can teach us about usability even when it cannot be 
 
 For publishing and distribution, also record placements, attributable first actions, mature returns and actual founder time in the [editorial scorecard](reports/17-distribution-and-editorial.md#continue-rework-and-expand). Keep reach and behavior separate.
 
+## Growth mechanism measures
+
+The [Balanced Scorecard](reports/18-growth-options.md#balanced-scorecard-test-the-causal-chain) owns strategic owners, proposed targets and review dates across learning, delivery, customer behavior and economics. It is a causal hypothesis, with no invented baseline. Use these definitions when recording a host/artifact trial:
+
+- **Placement:** the host actually makes the agreed artifact available. Accepted, drafted and sent are separate statuses; a placement is not an audience count.
+- **Own first action:** one predeclared task completed in the recipient's own plan, log or journal, among distinct observed starters from that route. Name the task and clock before distribution. A read, download, template duplication or assisted demo is a separate outcome.
+- **Second use:** the same person performs the relevant task again in its declared return window. Show the same starter denominator, mature windows, assisted use and unknowns. Use the existing Roadmap/Gym definitions for cohort gates; do not combine rooms into one activation rate.
+- **Cost per returning person:** attributable founder hours or cash divided by observed returning people for the same source/window. If nobody returns, report cost and zero people; the ratio is undefined. Source attribution requires a verified join or labelled consented observation.
+
+For a future [generated-content test](reports/19-product-generated-content.md#measure-value-burden-and-cost), keep usefulness, amusement, unwanted/creepy reactions, factual errors, acceptance, next action and second use separate. Count costs per accepted artifact and per useful next action; views, shares and regeneration are not activation. No such events or baseline are claimed here.
+
+A host trial stays inside one of the two cohorts or replaces a finished slot. A readable public resource requires no signup; its product action may need an account or access. Record that requirement without forcing sign-in for measurement. No marketing record contains participant plans, private exports, workout names, journal text or contact details.
+
 ## Public iOS launch
 
 The [launch contract](strategy.md#launch-contract) defines release readiness. Day 0 is the first verified public install date for the announced storefront. Open a new cohort for the first seven days of the App Store release. Keep prelaunch web builders and beta lifters in their original cohorts. Windmill One goes on sale inside the iOS app with this release, so its purchase window also starts on day 0.
 
 | Question | Readout |
 |---|---|
-| Did people find and install Windmill? | At day 7 record App Store product-page views and first-time downloads for the same dates and storefront, with source where available. Keep store totals and in-app totals in their own columns. |
+| Did people find and install Windmill? | At day 7 record App Store product-page views and first-time downloads for the same dates and storefront, with source where available. Keep store totals and in-app totals in their own columns. Campaign analytics require Apple's reporting eligibility and privacy thresholds; missing reports are unknown, not zero. Do not assume a person-level web-to-install join. [Store attribution limits](reports/05-aso-and-featuring.md#read-results-without-inventing-attribution) |
 | Did the iPhone Roadmap give them a reason to return? | Among observable first-time native Roadmap starters, count distinct people who complete a step within 48 hours of starting and whose progress persists. For the same starters count returns to their tree on days 7 through 13 after starting. Report observed starters, mature windows and unknowns beside each count. Until a native cohort query is verified, use opt-in observations and label that sample. |
 | Did Gym Coach help on the iPhone? | Proposed readout: among distinct eligible users who attempt a Coach task in the launch cohort, count those receiving a completed result and those confirming it was useful, separately. Record direct new-routine creation separately from a proposed change to an existing routine and from that proposal being applied. For the same first-attempt users, count a repeat useful task from day 7 inclusive to day 14 exclusive after the first attempt; show mature windows and unknowns. A proposal displayed is not an applied change. |
 | Did Journal Talk work and get used again? | Proposed readout: among distinct eligible users who attempt live Talk in the launch cohort, count those completing a successful live transcription on the verified build. For those same first-attempt users, count another successful Talk use from day 7 inclusive to day 14 exclusive after the first attempt. Show mature windows and unknowns. Count only task outcomes, never audio or transcript text. |
