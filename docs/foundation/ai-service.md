@@ -450,7 +450,7 @@ never on the status.
 | 403 | `funding_required`, `device_bound` |
 | 404 | `call_unknown` |
 | 409 | `conflict` |
-| 410 | `result_gone` |
+| 410 | `result_gone`, `picture_gone` |
 | 413 | `too_large` |
 | 429 | `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `concurrency_exhausted`, `rate_limited` |
 | 503 | `busy`, `paused`, `accounting_unavailable`, `provider_unavailable` |

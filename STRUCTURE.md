@@ -8,6 +8,7 @@ backend/                    C++20 modular monolith
   platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry, AI usage and
                             the sync engine server
     infra/                  composition roots for the server and standalone MCP transports
+    ai_passes/              optional Ed25519 pass issuer for the AI service
   products/
     roadmap/                tree domain, synchronization and roadmap adapters
     journal/                pages, nudges, voice and echoes
@@ -22,7 +23,8 @@ web/                        Vite/React superapp for all three products
     main.jsx                entry point
     styles/                 shared tokens and global styles
     telemetry/              product-neutral telemetry
-    platform/               browser sync runtime, product-neutral domain kit and the translator
+    platform/               browser sync runtime, product-neutral domain kit, Coach engine, AI client
+                            and the translator
     design-system/          shared components
     showcase/               component and product gallery
     shell/                  router, product registry, account, billing and shared navigation
@@ -30,14 +32,16 @@ web/                        Vite/React superapp for all three products
   test/                     mirrors the source
 apps/
   ios/                      App/ (the journal and gym app), Sync/ (the sync engine client), Domain/ (the
-                            domain kit and the gym and journal domains on it), SyncTestingSurface/ and
-                            the dev-only SyncProbe/ app
+                            domain kit and the gym and journal domains on it), Agent/ (the Coach engine),
+                            WindmillKit/ (its AI client and runtime), SyncTestingSurface/ and the dev-only
+                            SyncProbe/ app
   android/                  Kotlin/Compose gym app; :app, :platform, :gym (its presentation package
                             projects :gym:domain for the screens) and :gym:domain, the sync engine
                             (:sync-*), the domain kit (:domain-kit, :domain-kit-testing) and the
                             product-neutral agent turn (:agent)
 packages/
   api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
+    agent/                  shared device Coach turn stories and their checker
 services/
   embedder/                 HTTP sidecar for journal passage vectors
   ai/                       Rust workspace for AI admission, provider calls and allowance accounting:
@@ -47,6 +51,7 @@ services/
 tools/                     standalone operational tools
   lift-import/              imports Lift training history over the gym API
   resend-webhook-probe/     sends a signed synthetic bounce to verify webhook configuration
+  coach-e2e/                drives the device engines through local pass and AI services
 docs/                       product strategy, current contracts, design canon and unresolved work
 .github/workflows/          build, test, release-input and deployment workflows
 ```
@@ -78,7 +83,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 |---|---|
 | `backend.yml` | build and run C++ tests in Docker, Postgres cases, pattern fuzz and sync deployment conformance; require both ledger services' checks before publishing server, embedder, subscriptions and AI images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
-| `ios.yml` | parallel packages/builds, App unit tests and three class-based UI shards; Sync, Domain and SyncTestingSurface tests, engine/SyncProbe simulator builds, and App Debug/Release builds with Xcode 26.3 |
+| `ios.yml` | parallel packages/builds, App unit tests and three class-based UI shards; Sync, Domain, Agent, WindmillKit and SyncTestingSurface tests, engine/SyncProbe simulator builds, and App Debug/Release builds with Xcode 26.3 |
 | `ios-release.yml` | archive the app and upload it to App Store Connect, dispatched by hand |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
@@ -86,6 +91,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 | `subscriptions.yml` | check the subscription service's crate dependency rule, formatting, Clippy with warnings denied and tests; build its image and run it; check its wire fixtures are what `generate.py` writes and pass `check.py` |
 | `tools.yml` | run the Lift importer suite |
 | `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
+| `coach.yml` | check the shared Coach turn stories match their declarations and the AI wire shapes |
 | `deploy.yml` | deploy a successful backend main-push SHA or a main-reachable commit SHA; sync minimum changes require an exact manual cutoff acknowledgement |
 
 Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger
@@ -127,10 +133,12 @@ contents. Native acceptance and a same-key update check precede publication. See
   [The AI service](docs/foundation/ai-service.md), which takes over the AI allowance ledger and every
   provider call, is implemented under `services/ai`; its [architecture](services/ai/ARCHITECTURE.md) names the
   running boundaries. Existing feature callers remain in the backend until their integrations move.
+  [The Coach engine](docs/foundation/coach-engine.md) supplies product-neutral device turn libraries
+  and AI clients, with shared stories under `packages/api-contract/agent`.
   [Roadmap Coach](docs/foundation/roadmap-coach.md), which replaces tending with a Coach whose
-  abilities run on the browser's copy of a roadmap; the [Coach engine](docs/foundation/coach-engine.md),
-  which runs a Coach turn on the device; and [Gym Coach on the AI service](docs/foundation/gym-coach-on-ai-service.md),
-  which moves gym Coach onto that engine on every surface, are specified and not built.
+  abilities run on the browser's copy of a roadmap, and
+  [Gym Coach on the AI service](docs/foundation/gym-coach-on-ai-service.md), which moves gym Coach onto
+  that engine on every surface, are specified and not built.
   Four more are specified and not built: [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md),
   which moves roadmap's records and rules onto the engine and the domain kit;
   [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on them;

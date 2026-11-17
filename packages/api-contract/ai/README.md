@@ -38,3 +38,7 @@ python3 packages/api-contract/ai/check.py --self-test
 and WebSocket messages against these examples. Its database cases require `AI_TEST_DATABASE_URL` and
 create and remove isolated databases. CI requires that variable. All provider traffic in those tests
 stays on loopback; no provider key or paid call is used.
+
+The wire includes raw PNG/JPEG `pictureUploads`, `textPictureRequest` references and the preadmission
+410 `picture_gone` refusal. `textRequest` retains its inline-image example. The strict checker rejects
+mixed references, invalid picture IDs, unknown upload fields and mismatched media signatures.

@@ -403,6 +403,31 @@
       }
     },
     {
+      "status": 410,
+      "body": {
+        "code": "picture_gone",
+        "allowance": {
+          "tier": "free",
+          "period": "calendar_month_utc",
+          "limit": "0.5",
+          "used": "0.01",
+          "reserved": "0.02",
+          "remaining": "0.47",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": false
+          }
+        }
+      }
+    },
+    {
       "status": 413,
       "body": {
         "code": "too_large",
@@ -773,6 +798,105 @@
     "effort": "high",
     "cache": true
   },
+  "textPictureRequest": {
+    "model": "large",
+    "system": [
+      "Help me plan a small next step."
+    ],
+    "tools": [
+      {
+        "name": "read",
+        "description": "Read the current item.",
+        "input": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "What can I do next?"
+          },
+          {
+            "image": {
+              "picture": "pictureabcdefghijklmn0"
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "parts": [
+          {
+            "text": "I will read the item."
+          },
+          {
+            "toolCall": {
+              "id": "tool-1",
+              "name": "read",
+              "input": {
+                "id": "item-1"
+              }
+            }
+          }
+        ],
+        "carry": "wm-carry.v1.opaque"
+      },
+      {
+        "role": "tool",
+        "results": [
+          {
+            "id": "tool-1",
+            "content": "The item is ready.",
+            "isError": false
+          }
+        ]
+      }
+    ],
+    "output": {
+      "maxTokens": 2000,
+      "minTokens": 1024,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "effort": "high",
+    "cache": true
+  },
+  "pictureUploads": [
+    {
+      "pictureId": "pictureabcdefghijklmn0",
+      "mediaType": "image/png",
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aSh0AAAAASUVORK5CYII=",
+      "status": 204
+    },
+    {
+      "pictureId": "pictureabcdefghijklmn1",
+      "mediaType": "image/jpeg",
+      "data": "/9j/2Q==",
+      "status": 204
+    }
+  ],
   "calls": [
     {
       "callId": "abcdefghijklmnopqrstuv",

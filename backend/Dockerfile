@@ -9,9 +9,8 @@
 # resolve them once in a fat builder and ship a slim runtime that carries the
 # service binaries, the schema, and their shared libraries.
 #
-# The context is backend/, which cannot see the contract the build embeds and the tests read (the sync
-# registries and corpus, the gym ability catalog and its corpus, the subscription service's wire fixtures), so the
-# build takes it as a second, named context:
+# The context is backend/, so the build receives the complete API contract package as a second, named
+# context. The builder carries every fixture family that the compiled code and tests can read:
 #   docker buildx build --build-context contract=packages/api-contract backend
 
 ########################  builder  ########################
@@ -48,13 +47,7 @@ RUN git clone --depth 1 --branch "${LIBPQXX_VERSION}" https://github.com/jtv/lib
 
 WORKDIR /src
 COPY . .
-COPY --from=contract sync/*.registry.json sync/composition.json /contract/sync/
-COPY --from=contract sync/corpus /contract/sync/corpus
-COPY --from=contract gym /contract/gym
-COPY --from=contract roadmap-addresses.json /contract/roadmap-addresses.json
-COPY --from=contract roadmap-link-urls.json /contract/roadmap-link-urls.json
-COPY --from=contract roadmap-socket.json /contract/roadmap-socket.json
-COPY --from=contract subscriptions/*.json /contract/subscriptions/
+COPY --from=contract / /contract/
 
 # Configure once, then build the two service binaries, the probe server the sync conformance runs against, the offline
 # tools and every test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a

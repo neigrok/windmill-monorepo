@@ -94,7 +94,7 @@
 
 # Only public AI routes reach port 8084. Browser passes in the WebSocket subprotocol stay intact.
 (ai_doors) {
-	@ai path /v1/calls/* /v1/allowance
+	@ai path /v1/calls/* /v1/pictures/* /v1/allowance
 	handle @ai {
 		reverse_proxy ai:8084 {
 			header_up -Cookie

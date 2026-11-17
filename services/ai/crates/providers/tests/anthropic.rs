@@ -622,3 +622,45 @@ async fn budget_reasoning_keeps_the_counted_configuration_under_admission_cap_ch
     );
     assert!(!body.to_string().contains("cache_control"));
 }
+
+#[tokio::test]
+async fn provider_request_limit_counts_exact_serialized_bytes_including_escapes() {
+    use ai_providers::{MAX_TEXT_BODY, Message};
+    let mut fixture = HttpFixture::new(vec![(503, "unavailable".into(), Duration::ZERO)]).await;
+    let client = Anthropic::new(
+        &fixture.url,
+        Secret::new("test".into()),
+        CarryKey::new([7; 32]),
+    )
+    .unwrap();
+    let mut input = request();
+    let Message::User { parts } = &mut input.messages[0] else {
+        panic!("user expected")
+    };
+    parts.push(Part::Text {
+        text: "\"\\\n".repeat(100),
+    });
+    let prepared = client.prepare(input, &profile()).unwrap();
+    let count = client.count(&prepared).await.unwrap();
+    let (_, mut body) = fixture.requests.recv().await.unwrap();
+    body["max_tokens"] = json!(2048);
+    body["stream"] = json!(true);
+    let base_size = serde_json::to_vec(&body).unwrap().len();
+    assert_eq!(count.source, CountSource::Fallback);
+    assert_eq!(count.input_tokens, base_size as u64 + 286);
+    for extra in [0, 1] {
+        let mut input = request();
+        let Message::User { parts } = &mut input.messages[0] else {
+            panic!("user expected")
+        };
+        parts.push(Part::Text {
+            text: "\"\\\n".repeat(100) + &"x".repeat(MAX_TEXT_BODY - base_size + extra),
+        });
+        let result = client.prepare(input, &profile());
+        if extra == 0 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(ValidationError::TooLarge)));
+        }
+    }
+}

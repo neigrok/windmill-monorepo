@@ -7,6 +7,7 @@ import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core
 import { compareRecords, recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { bodyBytes, Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 import { Stamp } from '../../../../packages/api-contract/sync/reference/core/stamp.js';
+import { Offset } from '../../../../packages/api-contract/sync/reference/core/clock.js';
 import { CommitError, commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { release, releaseAll, releaseDue, undo, undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
@@ -344,6 +345,18 @@ export class BrowserSyncEngine {
   // passes it as `opts.gestureId`.
   newGestureId() { return crypto.randomUUID(); }
 
+  freshness(scope, replica = this.device.activeReplica) {
+    const reading = this.reading();
+    const sample = replica.meta.clockReading;
+    const syncLive = Boolean(replica.id === this.device.activeReplica.id && this.canSync()
+      && !this.authenticating && !this.signOutOpening && !this.device.meta.signOut && !this.device.meta.pendingSignIn
+      && this.live.socket?.readyState === 1 && this.live.following.has(scope)
+      && firstPullComplete(replica, scope, this.scopes(replica))
+      && replica.meta.offsetSamples.length > 0 && sample !== undefined
+      && !Offset.jumped(sample, reading, this.limits));
+    return { syncLive, serverNow: syncLive ? reading.wall + replica.meta.serverOffsetMs : null };
+  }
+
   // Confirmed rows and reconciliation metadata must come from the same replica as a commit's views.
   readMetadata(scope, replica = this.device.activeReplica, actor = this.actor) {
     const record = replica.cursorOf(scope);
@@ -352,7 +365,8 @@ export class BrowserSyncEngine {
       && !record.behind && record.digestStop === undefined && !record.mismatchReset && !replica.staging[scope];
     return {
       confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id),
-        structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }) })])),
+        structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }), ...(row.ru === undefined ? {} : { ru: row.ru }) })])),
+      freshness: this.freshness(scope, replica),
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
       firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
       actor,
@@ -838,16 +852,17 @@ export class BrowserSyncEngine {
     let generation;
     const current = this.device.activeReplica.meta;
     if (current.state === 'bound' && current.account !== account) throw new CommitError('finish sign-out before changing accounts');
-    await this.write(null, (device, ctx) => {
-      if (device.meta.signOut) throw new CommitError('finish or cancel sign-out before signing in');
-      if (device.activeReplica.meta.state === 'bound' && device.activeReplica.meta.account !== account)
-        throw new CommitError('finish sign-out before changing accounts');
-      generation = device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
-      if (device.activeReplica.meta.state !== 'bound') device.meta.pendingSignIn = { account };
-      if (device.activeReplica.meta.state !== 'bound')
-        for (const replica of device.replicas) releaseAll(replica, this.registry, ctx.ended);
-    });
+    this.authenticating = (this.authenticating ?? 0) + 1;
     try {
+      await this.write(null, (device, ctx) => {
+        if (device.meta.signOut) throw new CommitError('finish or cancel sign-out before signing in', 'not-writable');
+        if (device.activeReplica.meta.state === 'bound' && device.activeReplica.meta.account !== account)
+          throw new CommitError('finish sign-out before changing accounts');
+        generation = device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
+        if (device.activeReplica.meta.state !== 'bound') device.meta.pendingSignIn = { account };
+        if (device.activeReplica.meta.state !== 'bound')
+          for (const replica of device.replicas) releaseAll(replica, this.registry, ctx.ended);
+      });
       const { response, timing } = await this.request('hello');
       if (response.status === 426) return { complete: false, upgradeRequired: true };
       this.validateResponse('hello', response);
@@ -874,8 +889,10 @@ export class BrowserSyncEngine {
       this.kick();
       return result;
     } catch (error) {
-      this.telemetry.failure('auth');
+      if (!(error instanceof CommitError && error.kind === 'not-writable')) this.telemetry.failure('auth');
       throw error;
+    } finally {
+      this.authenticating--;
     }
   }
 

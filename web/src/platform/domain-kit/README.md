@@ -12,9 +12,9 @@ path, the web's `sync/core/encoding.js` and `content.js`, and kit files; a produ
 (`src/products/<p>/domain/`) imports the same core modules, the kit, `platform/sync/schema.js` and
 itself. No clock, randomness, platform global, console, locale, rounding (the quantum's is
 `core/values.js`) or concurrency; `runner.js`, the one impure file, alone awaits the engine. Every
-file opts into `tsc --checkJs` with `// @ts-check` and `npm run check:domain` type-checks them
-(`tsconfig.domain.json`). `test/domain-layering.test.js` parses every file with acorn and enforces
-all of it, with a fixture per rule.
+file opts into `tsc --checkJs` with `// @ts-check`. `npm run check:domain` first runs
+`test/domain-layering.test.js`, which parses every file with acorn and enforces these rules with a
+fixture per rule, then type-checks the files using `tsconfig.domain.json`.
 
 ## Files
 
@@ -72,3 +72,10 @@ meaning; it does not establish that a command's result has been pulled in the cu
 Persisted runner tests cover stale-tab transactional reads, predictions over confirmed records,
 checkpoint rejection states, opaque identities and anonymous supersession across an aborted commit
 and reopening.
+## Ability catalogs
+
+`abilities.js` reads plain catalog data with `Ability` and `Catalog`; `JsonSchema` implements the
+same recursive subset as Kotlin's domain-kit `Abilities.kt`. Required fields keep their declared
+order; object members use canonical key order. String lengths count Unicode scalars and patterns
+match the whole value. Unknown schema keywords pass. Platform tests load the shared gym catalog as
+data, with no product-code dependency.

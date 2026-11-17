@@ -19,7 +19,7 @@
     "test:sync:browser": "node scripts/install-sync-browser.mjs && node --test --test-timeout=30000 test/platform/sync/browser.test.js test/platform/sync/transport-browser.test.js",
     "test:sync:server": "node scripts/replay-sync-server.mjs",
     "test:journal:server": "node scripts/install-sync-browser.mjs && node scripts/e2e-journal.mjs",
-    "check:domain": "tsc -p tsconfig.domain.json"
+    "check:domain": "node --test test/domain-layering.test.js && tsc -p tsconfig.domain.json"
   },
   "dependencies": {
     "@fontsource/baloo-2": "^5.2.7",

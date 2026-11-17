@@ -428,3 +428,29 @@ Sampled stacks identify framework UI work, not a changed flow function. This est
 simulator responsiveness issue, not harmlessness or severity/rate equivalence. The scoped comparison
 is `/tmp/ios-gym-ui-verify/gym-hang-audit.md`; the load-wheel Release/device profiling follow-up is in
 [App/WORK_LOG.md](../apps/ios/App/WORK_LOG.md).
+
+## Coach engine libraries
+
+The `Agent` and `WindmillPlatform` packages expose telemetry ports for their library integration;
+the app's existing Coach event and failure routes above remain its current wiring. `Agent.Telemetry`
+receives one ability outcome with a profile-allowlisted name (unknown names become `unoffered`)
+and bounded refusal code, and one turn outcome with state, seat kind, bounded code, rounds,
+admitted executions, gate refusals, answer bytes and elapsed milliseconds. Host-returned codes
+outside the profile and engine allowlists become `unknown` in telemetry. Its `hostFailure()` port
+carries no data and must report static operation `agent-host`: unexpected host/storage/runtime
+failures at open, recovery, marks, visible text, ability checks/execution or completion use this port.
+Expected record-gone, stale-seat and host refusals produce no Issue. These failures are distinct
+from AI wire defects.
+
+`AiDiagnostics` receives only static operation `ai-call` or `ai-pass` and kind `wire`, `refusal` or
+`transport`. It reports malformed answers, unexpected transport failures and defect refusal codes.
+Offline connections, proxy responses without a valid service refusal, recognized temporary pass
+refusals and actionable refusals create no Issue. Recovery `call_unknown` is quiet because its mark
+may precede dispatch; a live `call_unknown` remains a defect. A pass-expired answer refreshes once;
+a second reports a defect. Picture repair follows the same once-only rule. Passes, installation and
+session credentials, seat keys, call IDs, prompts, questions, text deltas, assistant carry and tool
+inputs/results never enter these ports. The shared-story tests assert complete telemetry traces;
+platform tests reject malformed event, allowance, pass and refusal shapes before delivery, assert
+delayed old-seat replies cannot publish allowance or authorize another seat, and prove a suspended
+response ends at the whole-round deadline. Host fault tests assert only `agent-host`, with no raw
+error text. Offline pass and picture requests map to the offline outcome without an Issue.

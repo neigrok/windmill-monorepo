@@ -385,3 +385,28 @@ TEST(WriteObservation_wrapper_preserves_return_and_exception) {
   CHECK(recording.lines[0].outcome == "ok");
   CHECK(recording.lines[1].outcome == "failed");
 }
+
+TEST(WriteObservation_metadata_requires_a_schema_and_cannot_replace_reserved_fields) {
+  Recording recording;
+  const wm::WriteMetadataField schema[] = {
+      {"mode", {"fast", "slow"}}, {"revision", {}, 3, true}, {"label", {}},
+      {"operation", {}}, {"product", {}}, {"door", {}}, {"outcome", {}},
+      {"duration_ms", {}}, {"request_id", {}}, {"refused", {}}, {"code", {}}};
+  wm::WriteObservation observation("test.metadata", "platform", "rest");
+  observation.metadata(schema, {{"mode", "fast"}, {"revision", "12"}, {"label", "bounded-label"},
+      {"private", "secret"}, {"operation", "forged"}, {"product", "forged"}, {"door", "forged"},
+      {"outcome", "forged"}, {"duration_ms", "1"}, {"request_id", "forged"}, {"refused", "1"}, {"code", "forged"}});
+  observation.metadata(schema, {{"mode", "unknown"}, {"revision", "1234"}, {"label", std::string(65, 'x')}});
+  observation.metadata(schema, {{"revision", "1.2"}, {"label", "PRIVATE email@example.test"}});
+  observation.finish();
+  REQUIRE_EQ(recording.lines.size(), std::size_t{1});
+  CHECK(recording.lines[0].metadata == (std::map<std::string, std::string>{
+      {"mode", "fast"}, {"revision", "12"}, {"label", "bounded-label"}}));
+  auto completion = recording.lines[0];
+  completion.metadata["operation"] = "forged";
+  completion.metadata["label"] = "PRIVATE payload";
+  const auto text = wm::writeCompletionJson(completion);
+  CHECK(text.find("forged") == std::string::npos);
+  CHECK(text.find("PRIVATE") == std::string::npos);
+  CHECK(recording.reporter->issues.empty());
+}

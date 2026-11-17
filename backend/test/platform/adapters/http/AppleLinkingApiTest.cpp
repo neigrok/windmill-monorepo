@@ -1,6 +1,7 @@
 #include "platform/adapters/http/AuthApi.h"
 #include "test/platform/AppleLinkingFixture.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 using namespace wm;
 using namespace wm::fake;
@@ -304,4 +305,21 @@ TEST(apple_guard_preserves_the_existing_native_cookie_code_door_without_a_ticket
       "{\"email\":\"sam@example.com\",\"code\":\"" + f.code() + "\"}", "android-session", false, "");
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*response->getJsonObject())["user"]["id"].asString(), mine.id.str());
+}
+
+TEST(apple_mutations_keep_empty_origin_and_duplicate_header_compatibility_for_native_callers) {
+  for (const auto& headers : {"Origin: \r\n", "Origin: https://windmill.works\r\nOrigin: https://windmill.works\r\n",
+       "Content-Type: application/json\r\n"}) {
+    HttpFixture fixture;
+    wm::test::DrogonLoopback::Connection wire;
+    const std::string body = R"({"identityToken":"token","nonce":"nonce"})";
+    const auto request = wire.exchange("POST /v1/auth/apple/native HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n" +
+        std::string(headers) + "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body).request;
+    REQUIRE(request);
+    drogon::HttpResponsePtr response;
+    fixture.api.appleNative(request, [&](const auto& result) { response = result; });
+    REQUIRE(response);
+    CHECK_EQ(response->statusCode(), drogon::k200OK);
+    CHECK(response->getJsonObject()->isMember("appleTicket"));
+  }
 }

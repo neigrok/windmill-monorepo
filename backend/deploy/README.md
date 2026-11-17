@@ -105,6 +105,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `SSH_KEY` | CI deploy **private** key (whole PEM) |
 | `POSTGRES_PASSWORD` | Postgres password |
 | `AI_DB_PASSWORD` | AI database role password, 64 lowercase hex characters |
+| `AI_PASS_PRIVATE_SEED` | Optional backend-only Ed25519 32-byte private seed as unpadded base64url; empty leaves its pass door unmounted |
 | `AI_CARRY_KEY` | 32 random bytes encoded as unpadded base64url |
 | `AI_FUNDING_SECRET`, `AI_OPERATOR_SECRET` | Distinct 32–256 character bearer secrets; ASCII letters, digits, `_`, `-` |
 | `SUBSCRIPTIONS_DB_PASSWORD` | The subscription database role's password, 64 lowercase hex characters ([below](#the-subscription-database)) |
@@ -117,6 +118,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `DOMAIN_API` | alias for the API host, e.g. `api.example.com` |
 | `ACME_EMAIL` | Let's Encrypt contact address |
 | `RESEND_FROM` | verified sender address |
+| `AI_PASS_KID`, `AI_PASS_MIN_VERSIONS` | Optional backend issuer key ID and JSON profile minimum versions; required when its seed is set. Compose fixes its environment to production |
 | `AI_PASS_KEYS` | JSON object mapping key IDs to 32-byte public keys encoded as unpadded base64url; `{}` keeps public AI admission dark |
 | `WINDMILL_MCP_ALLOWED_ORIGINS` | comma-separated Origins, or empty for all |
 
@@ -200,7 +202,7 @@ must be public.
 ## The AI service
 
 The AI container serves public port 8084 and internal port 8085 on the private Compose network.
-Caddy routes exactly `/v1/calls/*` and `/v1/allowance` to 8084 before the backend catch-all, and
+Caddy routes exactly `/v1/calls/*`, `/v1/pictures/*` and `/v1/allowance` to 8084 before the backend catch-all, and
 preserves WebSocket upgrades. It strips the product session cookie and installation header. Caddy's
 global runtime log encoder removes request objects and headers, including on upstream errors, so
 neither passes in `Sec-WebSocket-Protocol` nor caller IDs in URLs enter those logs.

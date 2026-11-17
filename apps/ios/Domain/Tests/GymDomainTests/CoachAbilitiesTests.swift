@@ -21,6 +21,16 @@ struct CoachAbilitiesTests {
     #expect(try Contract.files(under: "gym/abilities") == Self.files.map { "gym/abilities/\($0).json" })
   }
 
+  @Test func sharedPatternsMatchTheWholeValueWithBacktracking() throws {
+    for sample in try Contract.json("catalog/schema-patterns.json").asArray() {
+      let expected = try sample.member("fault")
+      let fault = JSONSchema(try sample.member("schema")).fault(in: try sample.member("value"))
+      let actual: JSON = fault.map { ["path": .string($0.path.text), "reason": .string($0.reason)] } ?? .null
+      let name = try sample.member("name").asString()
+      #expect(actual == expected, "\(name)")
+    }
+  }
+
   @Test func derivedResultSchemasAdmitNullWithoutInventingZero() throws {
     func metrics(_ value: JSON) -> [JSON] {
       switch value {

@@ -424,3 +424,20 @@ superseded callbacks cannot expose content, change recovery state or restore foc
 step and tree identifiers, account identifiers, URLs and raw exception messages are absent from these events.
 Auth reports each throwing product session invalidator as `auth-document-data-invalidate` with a static auth
 operation and no exception stack or message. One invalidator cannot stop the scope fence or the remaining cleanup callbacks.
+
+## Device Coach libraries
+
+The product-neutral Coach engine and AI client are available as libraries; released products do
+not call them yet. The engine's injected telemetry port emits one turn outcome (state, seat kind,
+code, counts, answer byte count and duration) and each ability's bounded name and outcome. Product
+adapters supply event names through the first-party intake when they integrate the library.
+`AiClient` reports defects and unreadable answers through `telemetry/sentry.js` under static
+`ai-call`, and pass-door defects under `ai-pass`. Expected actionable refusals return as outcomes.
+Transport loss, unvalidated HTTP error envelopes or status/code pairs, temporary pass unavailability, a missing host
+record at the seat barrier, and recovery `call_unknown` are quiet. A live `call_unknown` and malformed
+successful protocol replies remain defects; retrying cannot erase admission evidence. Sign-in
+refused while sign-out is pending does not report an auth failure. Stop during preparation or a
+repeated request's headers/error body reports the stopped turn outcome without a technical failure.
+Unexpected host write failures report `agent-host` once per turn. A seat-barrier write failure reports
+before the barrier rejects, without waiting for an in-flight provider to finish.
+No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.

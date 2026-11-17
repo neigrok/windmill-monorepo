@@ -169,6 +169,7 @@ async fn detached_text_replay_and_internal_secrets_on_real_ledger() {
             .unwrap(),
         )),
         results: Results::default(),
+        pictures: ai_server::pictures::Pictures::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
         provider_health: ai_server::telemetry::ProviderHealth::default(),

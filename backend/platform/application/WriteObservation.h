@@ -9,10 +9,20 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <span>
+#include <vector>
 #include <type_traits>
 #include <utility>
 
 namespace wm {
+
+struct WriteMetadataField {
+  std::string_view key;
+  std::vector<std::string_view> values;
+  std::size_t maxLength = 64;
+  bool digitsOnly = false;
+};
 
 struct WriteRequestState;
 enum class WriteSeverity { debug, info, warn, error };
@@ -29,6 +39,7 @@ struct WriteCompletion {
   std::uint64_t refused = 0;
   // A bounded word that says more of the outcome, as the answer a called service gave: on the line as `code` when set.
   std::string code;
+  std::map<std::string, std::string> metadata;
 };
 std::string writeCompletionJson(const WriteCompletion& completion);
 
@@ -89,6 +100,8 @@ public:
   void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
   void countRefused(std::uint64_t count) { completion_.refused += count; }
   void code(std::string code) { completion_.code = std::move(code); }
+  void metadata(std::span<const WriteMetadataField> schema, const std::map<std::string, std::string>& values);
+  void failureOperation(std::string operation) { failureOperation_ = std::move(operation); }
   void skip();
   void ownInfo();
   void wrote();
@@ -116,6 +129,7 @@ private:
   std::atomic<bool> failed_{false};
   std::string failedOutcome_ = "failed";
   std::string settledOutcome_;
+  std::string failureOperation_;
 };
 
 template<class Run>

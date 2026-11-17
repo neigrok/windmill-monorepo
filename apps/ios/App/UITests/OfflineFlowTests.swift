@@ -15,7 +15,19 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-scenario", scenario, "-offline-fixture", "seed-\(state)"]
     app.launch()
-    XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10), "The seed must persist its page and account before the HTTP launch.")
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10), "The seed must persist its page and account before the HTTP launch.")
+    let seed = "Saved on this phone."
+    XCTAssertEqual(editor.value as? String, seed)
+    // The seeded phone has used its keyboard; first-ever simulator keyboard initialization belongs to setup.
+    ready(app.buttons["write-today"])
+    app.buttons["write-today"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+    app.typeText(" ")
+    XCTAssertTrue(editor.waitForValue(seed + " ", timeout: 30), "The seed keyboard must finish its first input.")
+    app.typeText(XCUIKeyboardKey.delete.rawValue)
+    XCTAssertTrue(editor.waitForValue(seed, timeout: 5), "The seed must retain its exact original text.")
+    app.buttons["done-writing"].tap()
     app.terminate()
     let server = mode == "black-hole" ? "https://192.0.2.1" : "https://offline.invalid"
     app.launchArguments = ["-scenario", scenario, "-restore-board", "-server", server, "-offline-fixture", mode]
