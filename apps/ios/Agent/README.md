@@ -6,7 +6,9 @@ The application still uses its existing Gym turn implementation; this package is
 
 `Turn` sequences `ToolHost`, `AiClient` and `Telemetry` over injected time, cryptographic IDs and a
 work lease. `run` opens records and the initial mark, uploads pictures, writes each round's mark,
-streams visible text and dispatches final tool calls sequentially. The working request, carry and
+streams visible text and dispatches final tool calls sequentially. It marks the turn's first call
+`firstRound`; a client that sends nothing because the device reports no connection has the turn
+withdrawn. The working request, carry and
 full tool results exist only inside the invocation. `recover` reads a marked result without PUT or
 ability execution. Its prefix uses UTF-8 bytes. Duplicate call IDs fail before any dispatch.
 

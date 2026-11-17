@@ -114,7 +114,7 @@ public struct Recovery: Sendable {
         rounds += 1
         var terminal: AiEvent?
         try await client.call(id: callId, request: profile.request(messages: messages), profile: profile,
-          seat: input.seat, pictures: open.pictures) { [self] event in
+          seat: input.seat, pictures: open.pictures, firstRound: rounds == 1) { [self] event in
           try checkSeat()
           if event.name == "text" {
             text += try event.data.asObject().member("delta").asString()

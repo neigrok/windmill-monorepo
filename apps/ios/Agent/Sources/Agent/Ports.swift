@@ -122,7 +122,7 @@ public struct AiEvent: Sendable {
 @MainActor public protocol AiClient: AnyObject {
   func allowance(profile: Profile, seat: Seat) async throws -> JSON
   func upload(_ pictures: [Picture], profile: Profile, seat: Seat) async throws
-  func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture],
+  func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture], firstRound: Bool,
             receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws
   func recover(id: String, profile: Profile, seat: Seat,
                receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws

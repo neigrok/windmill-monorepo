@@ -87,6 +87,36 @@ import SyncCore
     }
   }
 
+  @Test func aTurnAsksOnceWhetherTheDeviceReportsAConnectionAndSendsNothingWithoutOne() async throws {
+    let profile = try Self.profile()
+    let seat = Seat(kind: .anon, key: "seat")
+    let id = String(repeating: "A", count: 22)
+    let turns: [[Picture]] = [[], [Picture(pictureId: String(repeating: "P", count: 22), mediaType: "image/png", bytes: [137, 80, 78, 71])]]
+    for reports in [false, true] {
+      for pictures in turns {
+        let device = ConnectionSwitch(reports: reports)
+        var answers: [Result<AiResponse, AiTransportFailure>] = [.success(ValidationTransport.pass())]
+        for _ in pictures { answers.append(.success(AiResponse(status: 204, contentType: "", bytes: AsyncThrowingStream { $0.finish() }))) }
+        answers.append(.success(AiRecoveryTests.completed()))
+        let transport = RecoveryTransport(answers)
+        let client = ServiceAiClient(transport: transport, clock: PolicyClock(), diagnostics: PolicyDiagnostics(),
+          credentials: { _ in AiCredentials() }, connected: device.report)
+        var events: [String] = []
+        do {
+          try await client.upload(pictures, profile: profile, seat: seat)
+          try await client.call(id: id, request: [:], profile: profile, seat: seat, pictures: pictures, firstRound: true) { events.append($0.name) }
+          #expect(reports)
+        } catch let failure as AiFailure {
+          #expect(!reports); #expect(failure.source == .transport); #expect(failure.code == nil); #expect(failure.admission == .none)
+        }
+        #expect(device.asked == 1)
+        #expect(events == (reports ? ["ended"] : []))
+        let sent: [String] = ["/v1/ai/passes"] + pictures.map { "/v1/pictures/" + $0.pictureId } + ["/v1/calls/\(id)/text?label=other"]
+        #expect(transport.requests.map(\.path) == (reports ? sent : []))
+      }
+    }
+  }
+
   @Test func aLostPassBodyIsOfflineAndAnOldSeatsMalformedBodyIsFenced() async throws {
     let profile = try Self.profile()
     let diagnostics = PolicyDiagnostics()
@@ -152,6 +182,12 @@ import SyncCore
   func failure(operation: String, kind: String) { failures.append(operation) }
 }
 
+@MainActor final class ConnectionSwitch {
+  let reports: Bool
+  var asked = 0
+  init(reports: Bool) { self.reports = reports }
+  func report() -> Bool { asked += 1; return reports }
+}
 @MainActor final class OfflineAiTransport: AiTransport {
   let picture: Bool
   init(picture: Bool) { self.picture = picture }
