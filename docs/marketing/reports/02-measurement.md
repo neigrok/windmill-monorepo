@@ -1,6 +1,6 @@
 # 02 · Establish the two pilot baselines
 
-**Week 1, November 12–18.** Before invitations, the founder and analyst agree on eligibility, observation
+**Before the first invitation.** Record the actual intake start, close, first-action cutoff and read dates; the founder and analyst agree on eligibility, observation
 windows and what counts. Keep one row per cohort in the weekly review. Record the period, eligible people,
 people who tried, matured windows, outcomes, unknowns and founder hours. A missing or immature number stays
 unknown.
@@ -10,6 +10,8 @@ unknown.
 | Do builders activate? | For the 20 people who personally try the starter, count each builder once if they own a copy of the starter with at least three present nodes and complete a node on it within 48 hours of creation. | Confirm the participant's own tree through a consented observation. Keep guest-only attempts in the 20. Label manual evidence. |
 | Do they return? | Read days 7–14 after signup. The SQL window includes day 7 and ends just before day 14. The weekly view requires 14 days of maturity and includes any attributed activity. | Reconcile the pilot cohort separately. Where the claim is a Roadmap return, verify activity on the tree. An unrelated event cannot establish that. |
 | Do lifters return to log? | Of ten qualified native testers, count distinct people who log two distinct sessions with at least five sets each within seven days of their first set. | With permission, ask each tester to check the dates and counts in their own history. Record only eligibility, threshold met, assistance and evidence type. Keep nonstarters in the denominator. |
+
+The [distribution scorecard](17-distribution-and-editorial.md#continue-rework-and-expand) adds source, placement, search coverage and actual workload without changing either cohort denominator.
 
 The shipped SQL covers Roadmap landings, fork intent, completed forks, activation and returns. Run its
 documented aggregate queries for the baseline, then check one internal journey against them. A copied link

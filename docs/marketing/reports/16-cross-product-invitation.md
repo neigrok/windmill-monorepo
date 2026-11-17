@@ -2,8 +2,8 @@
 
 **Deferred lifecycle experiment.** Start after one product has demonstrated sustained use, a second
 destination has an independently verified activation definition, a slot is free and the owner has approved
-the proposed surface. A four-week Gym user might want a Roadmap tree to plan a training block. Roadmap opens
-on the web. The invitation must identify that destination clearly. [Surface map](../../../STRUCTURE.md)
+the proposed surface. A four-week Gym user might want a Roadmap tree to plan a training block. Use the verified destination on the participant’s build: current web or native Roadmap once released.
+The invitation must identify that destination clearly. [Surface map](../../../STRUCTURE.md)
 
 **Design the comparison.** Define eligibility, baseline first-product return, second-product activation,
 observation windows, the smallest benefit worth shipping and the maximum acceptable drop in first-product
