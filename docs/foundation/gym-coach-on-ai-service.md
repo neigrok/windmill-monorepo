@@ -225,7 +225,7 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
 - Existing web conversations are not carried into the records, and a draft waiting for
   **Save routine** on the day the web moves is lost with them. (R-6)
 - Coach on the web stays closed while a workout is open, and signed out the gym room stays a sign-in
-  door. Neither is this move's to change.
+  door. Neither is this move's to change; [the web as a device](web-device-parity.md) changes both.
 - A workout proposal a phone made appears in the shared History, where the web has no card for it.
 - The room, History, a created routine's card, the read receipt, a turn answering elsewhere, the
   ends of a turn, a picture held elsewhere, a phone's workout proposal and the access states of §6

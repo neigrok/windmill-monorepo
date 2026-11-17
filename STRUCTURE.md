@@ -131,6 +131,12 @@ contents. Native acceptance and a same-key update check precede publication. See
   abilities run on the browser's copy of a roadmap; the [Coach engine](docs/foundation/coach-engine.md),
   which runs a Coach turn on the device; and [Gym Coach on the AI service](docs/foundation/gym-coach-on-ai-service.md),
   which moves gym Coach onto that engine on every surface, are specified and not built.
+  Four more are specified and not built: [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md),
+  which moves roadmap's records and rules onto the engine and the domain kit;
+  [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on them;
+  [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI service; and
+  [the web as a device](docs/foundation/web-device-parity.md), which makes gym and journal on the web
+  work as they do on a phone.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.

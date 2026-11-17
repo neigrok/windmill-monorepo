@@ -2643,55 +2643,9 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 ### A.1 Roadmap
 
-**Surfaces:** web. **Primary types** (§9.2): `tree`.
-
-| Type | Scope | Identity | Life | Fields | Cap |
-|---|---|---|---|---|---|
-| `tree` | self/roadmap | minted g `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | — | — |
-| `track` | self/roadmap | keyed (tree id) | yes, keep | — | — |
-| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `visibility` lww **server** ∈ {private, unlisted, public}, `opens` at {unlisted, public} (D-4); `visibilitySetBy` lww server; `forkedFrom` const server | — |
-| `node` | tree/T | derived ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord` (D-25), `status`, `description` ≤16 000 chars, `links` (`maxItems` 32 of {url ≤2048 chars, label ≤200 chars}) | 10 000 |
-| `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20 000 |
-| `kind` | tree/T | derived ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` (D-25) | 6 |
-| `progress` | self/overlay/T | keyed (`ref<node>` id) | none | `mark` lww `{status: complete\|none, outOfOrder: bool}` | — |
-
-**Gestures:**
-- **Atomic:** create tree, which is `tree` + `track`, followed by one `tree/<T>` intent carrying
-  `meta.title`, the genesis kinds and the first nodes.
-- **Held:** delete node (the node's life and the splice edges it adds), delete tree, delete kind,
-  untrack.
-- Deleting a node writes no incident edges; an edge with an absent endpoint is masked.
-- Undo of a released node or kind delete is a `revive`.
-- Every other gesture, including paste, is one intent per record.
-- A reorder writes the moved record's `ord`.
-
-**Commands:**
-- `roadmap.setVisibility {visibility, stamp}` in `tree/<T>`, by the owner. `stamp` is the
-  gesture's stamp.
-  - Replay: `stamp` equal to `meta.visibilitySetBy` → ok. Otherwise it writes `visibility` and
-    `visibilitySetBy := stamp`.
-  - Committed with a guard on the `stored` `meta.visibility` stamp; `stale` if it moved.
-  - Predicts `meta.visibility`. A pending prediction's stamp is replaced through the write map
-    (§7.7), so a second change guards on the stamp the first one wrote.
-- `roadmap.fork {src: ref<tree>, dst: ref<tree>, title?}` in `self/roadmap`.
-  - `src` unreadable → `not-found`.
-  - `dst` alive, the caller's, with `forkedFrom = src` → ok (replay). Any other state of `dst`
-    (§4.3) → `id-taken`.
-  - Otherwise: create `tree dst` and `track dst`; write `meta {title: title ?? src title,
-    forkedFrom: src}`; copy every node, edge and kind row of `src`, with ids and stamps kept, `born`
-    as §6.1 step 14 gives it, and `status` cleared. `src` is read under `FOR SHARE` on
-    `sync_scopes(tree:src)`, taken after `acct:A/roadmap`.
-  - Predicts `tree` and `track`.
-
-**Other bindings:**
-- **Projections:**
-  - `tree_ops`: one headline per `(tree, gestureId)`, skipping a gesture that leaves no deed;
-  - the tree room: a read cache keyed by `(tree, seq)`.
-- **Server-origin writers:** MCP roadmap write tools, each advertising an optional `requestId`
-  (§6.3), and tending.
-- **Consequences:** a `tree` delete also writes the owner's `track` of that tree dead.
-- **Subscriptions** (§7.9): a bound replica also subscribes `tree/<T>` and `self/overlay/<T>` for
-  every `tree` and `track` record alive in `drawn` or in `stored`.
+Not bound. Roadmap syncs through a sync of its own, and no registry of it is in the composition.
+[Roadmap on the sync engine](roadmap-on-the-engine.md) §3 specifies its registry, commands and
+consequences, which join this appendix in the change that binds them.
 
 ### A.2 Gym
 
