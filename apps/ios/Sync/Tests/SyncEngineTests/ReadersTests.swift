@@ -1,6 +1,6 @@
 import SyncAPI
 import SyncCore
-import SyncEngine
+@testable import SyncEngine
 import SyncReplica
 import SyncStore
 import SyncTesting
@@ -30,6 +30,74 @@ struct ReadersTests {
   }
 
   static func ids(_ records: [Record]) -> [String] { records.map(\.id.description) }
+
+  @Test func everyReadPathPreservesHeldPendingAndTextMetadata() throws {
+    var document = try Rig.shelf.json.asObject()
+    document["types"] = .array(try document.member("types").asArray().map { value in
+      var type = try value.asObject()
+      if type["type"] == "item" {
+        var fields = try type.member("fields").asObject()
+        for name in ["memo", "detail", "untouched"] {
+          fields[name] = ["kind": "text", "writer": "client", "unit": "bytes", "max": 80]
+        }
+        type["fields"] = .object(fields)
+      }
+      return .object(type)
+    })
+    let rig = try Rig(registry: Registry(json: .object(document)))
+    let scope = Self.scope
+    let seeded = try Stamp("1:0:r_seed")
+    let changed = try Stamp("2:0:r_change")
+    let keys = ["i_aaaa", "i_bbbb", "i_cccc"].map { RecordKey("item", RecordID($0)) }
+    let rows = keys.map { key in
+      Row(key: key, lattice: Lattice(life: Life(.alive, seeded), born: seeded,
+        fields: ["listId": Register("l_one", seeded), "name": Register(key.id.json, seeded)]),
+        texts: Dictionary(uniqueKeysWithValues: ["memo", "detail", "untouched"].map { ($0, TextState(text: "confirmed", rev: 1, merged: true)) }),
+        seq: 1, rc: 5, ru: 6)
+    }
+    let entries = [
+      OutboxEntry(localId: "held/0", gestureId: "held", lineage: "anon", scope: scope, state: .held, commitOrder: 1,
+        releaseAt: Int64.max, stamp: changed, intent: Intent(scope: scope, deltas: [
+          Delta(key: keys[0], texts: ["memo": TextWrite(text: "held memo", base: .rev(1))]),
+          Delta(key: keys[1], lattice: Lattice(fields: ["name": Register("held name", changed)])),
+        ]), predict: [Delta(key: keys[0], texts: ["detail": TextWrite(text: "held detail", base: .rev(1))])]),
+      OutboxEntry(localId: "ready/0", gestureId: "ready", lineage: "anon", scope: scope, state: .ready, commitOrder: 2,
+        releaseAt: 0, stamp: changed, intent: Intent(scope: scope, deltas: [
+          Delta(key: keys[1], texts: ["memo": TextWrite(text: "ready memo", base: .rev(1))]),
+        ]), predict: [Delta(key: keys[1], texts: ["detail": TextWrite(text: "ready detail", base: .rev(1))])]),
+    ]
+    _ = try rig.store.write(.commit) { tx in
+      let replica = try tx.activeReplica()
+      return Planned((), ReplicaBatch(writes: rows.map { .replica(replica, .putRow(scope, $0)) }
+        + entries.map { .replica(replica, .putEntry($0)) }))
+    }
+    for mode in [ViewMode.drawn, .stored] {
+      let expected = keys.enumerated().map { index, key in
+        let pending = index == 1 || index == 0 && mode == .drawn
+        var texts = Dictionary(uniqueKeysWithValues: ["memo", "detail", "untouched"].map {
+          ($0, TextValue(text: "confirmed", merged: true, pending: false))
+        })
+        if pending {
+          for field in ["memo", "detail"] {
+            texts[field] = TextValue(text: "\(index == 0 ? "held" : "ready") \(field)", merged: false, pending: true)
+          }
+        }
+        return Record(type: "item", id: key.id, life: Life(.alive, seeded), born: seeded,
+          values: ["listId": "l_one", "name": index == 1 && mode == .drawn ? "held name" : key.id.json],
+          texts: texts, serials: [:], rc: 5, ru: 6, isVisible: true, isPending: pending, isHeld: index < 2)
+      }
+      let indexed = Dictionary(uniqueKeysWithValues: zip(keys, expected))
+      try rig.store.read { tx in
+        let reader = try TransactionReader(tx, core: rig.engine.core, scope: scope, deviceNow: Rig.startMs)
+        let all = try Listing("item", mode, in: scope, registry: rig.store.registry)
+        let narrowed = try Listing("item", mode, where: Listing.Narrowing(field: "listId", id: "l_one"), in: scope, registry: rig.store.registry)
+        #expect(try reader.records(Set(keys), mode) == indexed)
+        #expect(try reader.records(all) == expected)
+        #expect(try reader.records(narrowed) == expected)
+        #expect(try reader.records(Set(keys), in: narrowed) == indexed)
+      }
+    }
+  }
 
   @Test func queuedCommandsReportAdmissionBeforeTheirPredictionIsPulled() async throws {
     let rig = try Rig(account: "A")
