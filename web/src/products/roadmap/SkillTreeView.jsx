@@ -772,7 +772,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {inlineEditor?.unavailable && <UnavailableStepDraft editor={inlineEditor} onClose={inlineEditor.host.cancel} />}
+      {inlineEditor?.unavailable && <UnavailableStepDraft editor={inlineEditor} phone={phone} onClose={inlineEditor.host.cancel} />}
       {shownDetailId !== null && !inlineEditor?.unavailable && (
         <ErrorBoundary fallback={null} onCrash={stepPage.crash}>
           <StepDetail

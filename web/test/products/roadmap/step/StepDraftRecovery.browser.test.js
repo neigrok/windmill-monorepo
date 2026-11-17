@@ -255,15 +255,15 @@ for (const loss of ['permission', 'deletion']) {
     try {
       await page.evaluate(() => window.scene.activate('wind'));
       await page.getByRole('button', { name: 'Edit name', exact: true }).click();
-      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Keep unavailable text');
+      const field = page.getByRole('textbox', { name: 'Name', exact: true });
+      await field.fill('Keep unavailable text');
+      await field.evaluate((node) => node.setSelectionRange(2, 7));
       await page.evaluate((loss) => {
         if (loss === 'deletion') window.session.dispatch({ kind: 'BulkDelete', nodeIds: ['wind'] });
         else window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } }));
       }, loss);
       await page.getByText('Editing is unavailable. Copy your draft or discard it.', { exact: true }).waitFor();
-      const field = page.getByRole('textbox', { name: 'Name', exact: true });
-      await field.focus();
-      await field.evaluate((node) => node.setSelectionRange(2, 7));
+      assert.equal(await field.evaluate((node) => document.activeElement === node), true);
       const before = requests.length;
       await page.keyboard.press('Escape');
       assert.equal(await page.locator('.st-draft-decision').count(), 1);
@@ -311,3 +311,62 @@ hostTest('retained recovery follows the phone keyboard viewport and keeps its fo
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+
+for (const width of [640, 744]) {
+  hostTest(`unavailable recovery keeps the containing phone viewport contract at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, height: 844, shell: true });
+    try {
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Keep keyboard visible');
+      await page.evaluate(() => {
+        Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => 450 });
+        visualViewport.dispatchEvent(new Event('resize'));
+      });
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).evaluate((node) => node.getBoundingClientRect().bottom <= visualViewport.height), width < 744);
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } })));
+      await page.getByText('Editing is unavailable. Copy your draft or discard it.', { exact: true }).waitFor();
+      assert.equal(await page.locator('.st-unavailable-draft footer').evaluate((node) => node.getBoundingClientRect().bottom <= visualViewport.height), width < 744);
+      if (process.env.WM_INLINE_SCREENSHOTS && width === 640) await page.screenshot({ path: `${process.env.WM_INLINE_SCREENSHOTS}/transition-unavailable-640.png` });
+      await page.evaluate(() => {
+        Object.defineProperty(visualViewport, 'scale', { configurable: true, get: () => 2 });
+        visualViewport.dispatchEvent(new Event('resize'));
+      });
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      assert.equal(await page.locator('.st-unavailable-draft footer').evaluate((node) => node.getBoundingClientRect().bottom), 844);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const focus of ['shell control', 'draft decision']) {
+  hostTest(`access loss preserves focus on a surviving ${focus}`, async () => {
+    const { page, errors } = await openHost({ width: 390, shell: true });
+    try {
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Keep the current focus');
+      let target;
+      if (focus === 'shell control') {
+        target = page.getByRole('link', { name: 'Home', exact: true });
+        await target.focus();
+      } else {
+        await page.evaluate(() => { window.fixtureSignOut(); });
+        target = page.getByRole('button', { name: 'Keep editing', exact: true });
+        await target.waitFor();
+      }
+      assert.equal(await target.evaluate((node) => document.activeElement === node), true);
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } })));
+      await page.locator('.st-unavailable-draft').waitFor();
+      assert.equal(await target.evaluate((node) => document.activeElement === node), true);
+      assert.equal(await page.evaluate(() => window.draftStore.getSnapshot().draft.draftValue), 'Keep the current focus');
+      if (focus === 'draft decision') {
+        await target.click();
+        await page.waitForFunction(() => document.activeElement?.matches('.st-unavailable-draft textarea'));
+      }
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

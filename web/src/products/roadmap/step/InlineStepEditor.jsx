@@ -14,6 +14,7 @@ import { useComposerViewport } from './composerFocus.js';
 export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthority, acts, legend, completed, stepId }) {
   const host = useStepDraft();
   const latest = useRef(null);
+  const fieldFocus = useRef(null);
   const [failure, setFailure] = useState(null);
   const slot = host?.slot;
   const active = slot?.mode === 'active' && slot.treeId === treeId ? slot : null;
@@ -93,7 +94,7 @@ export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthorit
     host.change(active.token, next, display(next.field, next.draftValue));
     host.event('load_latest'); host.input.current?.focus();
   };
-  return { host, active, draft, unavailable, conflict: conflict || problem?.kind === 'conflict',
+  return { host, active, draft, fieldFocus, unavailable, conflict: conflict || problem?.kind === 'conflict',
     currentValue,
     problem, display, change, save, loadLatest, legend, tree, completed, savingBlocked: readAuthority().savingBlocked,
     start: (step, field, element) => host.start(step, field, treeId, element),
@@ -120,11 +121,17 @@ export function InlineField({ editor, field }) {
   const shown = draft?.field === field;
   useLayoutEffect(() => {
     if (!shown) return;
+    editor.fieldFocus.current = null;
     const element = root.current?.querySelector('input, textarea, [role="radio"][aria-checked="true"], button');
     host.input.current = element;
     element?.focus({ preventScroll: true });
     const container = root.current;
-    return () => { if (container?.contains(host.input.current)) host.input.current = null; };
+    return () => {
+      const focused = document.activeElement;
+      if (container?.contains(focused) && host.store.getSnapshot()?.token === editor.active.token)
+        editor.fieldFocus.current = { token: editor.active.token, start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection };
+      if (container?.contains(host.input.current)) host.input.current = null;
+    };
   }, [shown, draft?.editId]);
   useEffect(() => {
     if (!shown || !editor.conflict) { shownConflict.current = null; return; }
@@ -167,13 +174,21 @@ export function InlineFieldActions({ editor, inline = false }) {
   </div>;
 }
 
-export function UnavailableStepDraft({ editor, onClose }) {
+export function UnavailableStepDraft({ editor, phone, onClose }) {
   const field = useRef(null);
   const layer = useRef(null);
-  const viewport = useComposerViewport(undefined, layer);
+  const viewport = useComposerViewport(phone, layer);
   useLayoutEffect(() => {
     const element = field.current;
+    const previous = editor.fieldFocus.current;
+    editor.fieldFocus.current = null;
     editor.host.input.current = element;
+    if (previous?.token === editor.active.token && editor.host.store.getSnapshot()?.token === editor.active.token
+      && document.activeElement === document.body && !element.closest('[inert]')) {
+      element.focus({ preventScroll: true });
+      if (['label', 'description'].includes(editor.draft.field) && previous.start != null)
+        element.setSelectionRange(previous.start, previous.end, previous.direction);
+    }
     return () => { if (editor.host.input.current === element) editor.host.input.current = null; };
   }, [editor.draft.editId]);
   return <section ref={layer} style={viewport.style} className="st-board-step-layer st-unavailable-draft" aria-label={t('roadmap.draft.title')} onKeyDown={(event) => {
