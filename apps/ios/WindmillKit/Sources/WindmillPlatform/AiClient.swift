@@ -155,8 +155,8 @@ extension AiClock {
       let source: AiFailure.Source = method == "GET" ? .result : .text
       var attemptSent = false
       do {
-        let token = try await prepare(retry: askAgain, epoch: epoch) { [self] in
-          try await token(profile: profile, seat: seat, epoch: epoch)
+        let passToken: String = try await prepare(retry: askAgain, epoch: epoch) { [self] in
+          try await self.token(profile: profile, seat: seat, epoch: epoch)
         }
         guard clock.nowMs < budget.deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
         if let retryRefusal, clock.nowMs >= retryRefusal.deadline { throw retryRefusal.failure }
@@ -167,7 +167,7 @@ extension AiClock {
         attemptSent = true
         let response = try await prepare(retry: askAgain, epoch: epoch) { [self] in
           try await transport.send(AiRequest(method: method, path: path,
-            headers: ["Authorization": "Bearer " + token, "Content-Type": "application/json", "Accept": "text/event-stream"],
+            headers: ["Authorization": "Bearer " + passToken, "Content-Type": "application/json", "Accept": "text/event-stream"],
             body: method == "PUT" ? body : nil))
         }
         try fence(epoch)
