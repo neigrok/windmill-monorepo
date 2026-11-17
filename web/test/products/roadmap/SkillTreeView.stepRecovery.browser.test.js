@@ -178,6 +178,9 @@ hostTest('Chromium: a slow failed Discard retains the notice, then a successful 
       session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
       session.inFlight.set('refused', session.lattice.toFrame());
       session.receiveReject({ frameId: 'refused', code: 'bad-frame' });
+      window.nestedEditDispatches = [];
+      const dispatch = session.dispatch.bind(session);
+      session.dispatch = (gesture) => { window.nestedEditDispatches.push(gesture); return dispatch(gesture); };
       const replace = session.store.replaceLane.bind(session.store);
       session.store.replaceLane = (...args) => new Promise((resolve, reject) => {
         window.finishReplacement = (outcome) => {
@@ -205,10 +208,14 @@ hostTest('Chromium: a slow failed Discard retains the notice, then a successful 
     const dialog = page.locator('.st-inline-field');
     await dialog.waitFor();
     await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Draft kept open');
+    assert.equal(await page.evaluate(() => window.session.ready), false);
+    assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).isDisabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.nestedEditDispatches), []);
     await page.evaluate(() => window.finishReplacement('success'));
     await page.locator('.st-step-refusal').waitFor({ state: 'detached' });
     assert.equal(await dialog.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Draft kept open');
     assert.equal(await dialog.evaluate((node) => node.contains(document.activeElement)), true);
+    assert.deepEqual(await page.evaluate(() => window.nestedEditDispatches), []);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

@@ -88,6 +88,7 @@ node --test --test-concurrency=1 --test-timeout=120000 \
   test/products/roadmap/paste/NewTreeBirth.test.js \
   test/products/roadmap/SkillTreeView.stepInput.browser.test.js \
   test/products/roadmap/SkillTreeView.stepRead.browser.test.js \
+  test/products/roadmap/SkillTreeView.stepRecovery.browser.test.js \
   test/products/roadmap/step/StepDraftRecovery.browser.test.js
 ```
 

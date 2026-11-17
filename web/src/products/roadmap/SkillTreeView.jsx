@@ -233,8 +233,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [setSelectedId]);
   const readEditAuthority = () => {
     const session = sessionRef.current;
-    const ready = Boolean(!loading && session?.treeId === treeId && session.ready && !session.closed);
-    const currentTree = ready ? new SkillTree(makeRenderable(session.lattice.toTreeData()).tree) : null;
+    const currentSession = !loading && session?.treeId === treeId && !session.closed ? session : null;
+    const ready = Boolean(currentSession?.ready);
+    const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.lattice.toTreeData()).tree) : null;
     const onDevice = holder?.place === 'device' && new LocalTreeRegistry().onDevice(treeId) !== null;
     const editable = owner && sharedWritesAllowed() && (onDevice || session?.reach !== 'reader') && !session?.closed;
     return { tree: currentTree, ready, editable, session, savingBlocked: !ready || Boolean(session?.rebaselining || session?.discardPending) };
