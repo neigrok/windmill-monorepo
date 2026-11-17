@@ -432,5 +432,9 @@ not call them yet. The engine's injected telemetry port emits one turn outcome (
 code, counts, answer byte count and duration) and each ability's bounded name and outcome. Product
 adapters supply event names through the first-party intake when they integrate the library.
 `AiClient` reports defects and unreadable answers through `telemetry/sentry.js` under static
-`ai-call`, and pass-door failures under `ai-pass`. Expected actionable refusals return as outcomes.
+`ai-call`, and pass-door defects under `ai-pass`. Expected actionable refusals return as outcomes.
+Transport loss, unvalidated HTTP error envelopes, temporary pass unavailability, a missing host
+record at the seat barrier, and recovery `call_unknown` are quiet. A live `call_unknown` and malformed
+successful protocol replies remain defects; retrying cannot erase admission evidence. Sign-in
+refused while sign-out is pending does not report an auth failure.
 No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.

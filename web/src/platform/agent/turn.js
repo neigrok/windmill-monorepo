@@ -224,8 +224,16 @@ export class TurnRunner {
     const end = { state, text: turn.text, truncated, code };
     await this.mutate(async () => {
       if (turn.done) return;
-      if (withdraw) await this.host.withdraw(turn.lease);
-      else await this.host.end(turn.lease, end);
+      try {
+        if (withdraw) await this.host.withdraw(turn.lease);
+        else await this.host.end(turn.lease, end);
+      } catch (error) {
+        if (!(error instanceof HostUnavailable)) throw error;
+        turn.done = true;
+        turn.end = null;
+        this.report(turn, 'interrupted', null);
+        return;
+      }
       turn.done = true;
       turn.end = end;
       this.report(turn, state, code);

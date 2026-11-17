@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Catalog, JsonSchema } from '../../../src/platform/domain-kit/abilities.js';
 
+test('shared schema patterns match the whole value with backtracking', () => {
+  const vectors = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/catalog/schema-patterns.json', import.meta.url)));
+  for (const { name, schema, value, fault } of vectors) assert.deepEqual(new JsonSchema(schema).fault(value), fault, name);
+});
+
 test('shared gym catalog is data consumed without any platform product import', () => {
   const document = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/gym/catalog.json', import.meta.url)));
   const catalog = new Catalog(document);

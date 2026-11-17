@@ -45,12 +45,13 @@ test('the actual client returns every terminal fixture intact and bounds unexpec
     assert.deepEqual(failures, terminal.data.code === 'provider_rejected' ? ['ai-call'] : []);
   }
   const reports = [];
-  const client = new AiClient({ telemetry: { failure: (name) => reports.push(name) }, transport: {
+  let now = 0;
+  const client = new AiClient({ now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: (name) => reports.push(name) }, transport: {
     pass: async () => ({ status: 200, body: { pass: 'private', expiresIn: 600000 } }), request: async () => ({ status: 400, body: { code: 'private-user-content', allowance: null } }),
   } });
   assert.deepEqual(await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: fixtures.textRequest, label: 'other', use: 'vector.coach', version: 1, onText: () => {} }),
-    { failure: { source: 'wire', code: 'invalid-answer', admission: 'none', allowance: null } });
-  assert.deepEqual(reports, ['ai-call']);
+    { failure: { source: 'result', code: 'answer-timeout', admission: 'possible', allowance: null } });
+  assert.deepEqual(reports, []);
 });
 
 test('all wire refusals before and after a lost stream keep exact codes and monotonic admission', async () => {
@@ -129,7 +130,7 @@ test('allowance uses its complete wire shape and repairs one expired pass', asyn
   }
 });
 
-test('allowance and picture refusals reject unknown codes and malformed allowance data', async () => {
+test('unvalidated allowance and picture HTTP errors are quiet transport loss before text dispatch', async () => {
   for (const boundary of ['allowance', 'picture']) for (const body of [{ code: 'private-user-content', allowance: null }, { code: 'subject_exhausted', allowance: { bogus: true } }]) {
     const reports = [];
     const client = new AiClient({ telemetry: { failure: (operation) => reports.push(operation) }, transport: {
@@ -141,7 +142,151 @@ test('allowance and picture refusals reject unknown codes and malformed allowanc
       pictures: [{ pictureId: 'PPPPPPPPPPPPPPPPPPPPPP', mediaType: 'image/png', bytes: [137, 80, 78, 71, 13, 10, 26, 10] }], onText() {},
     });
     assert.deepEqual(result,
-      { failure: { source: 'wire', code: 'invalid-answer', admission: 'none', allowance: null } });
-    assert.deepEqual(reports, ['ai-call']);
+      { failure: { source: 'transport', code: null, admission: 'none', allowance: null } });
+    assert.deepEqual(reports, []);
   }
+});
+
+test('temporary refresh failures preserve the uncertain call and its original deadline', async () => {
+  for (const boundary of ['transport', 'rate_limited', 'unavailable']) for (const resumes of [true, false]) {
+    let now = 0; let passes = 0; const requests = []; const reports = [];
+    const client = new AiClient({ now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: (operation) => reports.push(operation) }, transport: {
+      pass: async () => {
+        passes++;
+        if (passes === 1 || (resumes && passes === 3)) return { status: 200, body: { pass: 'private', expiresIn: 60001 } };
+        if (boundary === 'transport') throw new TransportFailure('offline');
+        return { status: boundary === 'rate_limited' ? 429 : 503, body: { code: boundary } };
+      },
+      request: async (request) => {
+        requests.push({ method: request.method, path: request.path, body: request.body });
+        if (requests.length === 1) throw new TransportFailure('lost');
+        return { status: 200, events: (async function* () { yield { id: 1, event: 'ended', data: { stop: 'completed', message: { role: 'assistant', parts: [], carry: '' }, charged: '0', allowance: null } }; })() };
+      },
+    } });
+    const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: { messages: [] }, label: 'other', use: 'vector.coach', version: 1, onText() {} });
+    if (resumes) {
+      assert.equal(result.event, 'ended', boundary);
+      assert.deepEqual(requests, Array(2).fill({ method: 'PUT', path: '/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other', body: '{"messages":[]}' }));
+      assert.equal(now, 3000);
+    } else {
+      assert.deepEqual(result, { failure: { source: 'result', code: 'answer-timeout', admission: 'possible', allowance: null } }, boundary);
+      assert.equal(now, 1200000);
+      assert.equal(requests.length, 1);
+    }
+    assert.deepEqual(reports, []);
+  }
+});
+
+test('raw HTTP failures retain admission and retry quietly through the real adapter', async () => {
+  for (const status of [502, 503, 504]) for (const prior of ['none', 'event']) for (const raw of ['html', 'unknown', 'naked-code', 'bad-allowance', 'body-loss']) {
+    let count = 0; let now = 0; const requests = []; const reports = [];
+    const terminal = 'id: 2\nevent: ended\ndata: {"stop":"completed","message":{"role":"assistant","parts":[],"carry":""},"charged":"0","allowance":null}\n\n';
+    const transport = new HttpAiTransport({ fetch: async (url, options) => {
+      if (url.endsWith('/v1/ai/passes')) return new Response('{"pass":"private","expiresIn":600000}');
+      requests.push({ method: options.method, body: options.body ?? null, url });
+      if (prior === 'event' && count++ === 0) return new Response('id: 1\nevent: text\ndata: {"delta":"hi"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+      if (requests.length === (prior === 'event' ? 2 : 1)) {
+        if (raw === 'body-loss') return { status, json: async () => { throw new TypeError('body unavailable'); } };
+        return new Response(raw === 'html' ? '<html>Bad gateway</html>' : JSON.stringify(raw === 'unknown' ? { code: 'private-content', allowance: null } : raw === 'naked-code' ? { code: 'subject_exhausted' } : { code: 'subject_exhausted', allowance: { bogus: true } }), { status, headers: { 'Content-Type': raw === 'html' ? 'text/html' : 'application/json' } });
+      }
+      return new Response(terminal, { headers: { 'Content-Type': 'text/event-stream' } });
+    } });
+    const client = new AiClient({ transport, now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: (operation) => reports.push(operation) } });
+    const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} });
+    assert.equal(result.event, 'ended', `${status}/${prior}/${raw}`);
+    assert.deepEqual(requests.map(({ method, body }) => ({ method, body })), prior === 'event' ? [{ method: 'PUT', body: '{}' }, { method: 'GET', body: null }, { method: 'GET', body: null }] : [{ method: 'PUT', body: '{}' }, { method: 'PUT', body: '{}' }]);
+    if (prior === 'event') assert.ok(requests.slice(1).every(({ url }) => url.endsWith('/result?after=1')));
+    assert.deepEqual(reports, []);
+  }
+});
+
+test('malformed successful events keep possible admission and report their wire defect', async () => {
+  const reports = [];
+  const client = new AiClient({ telemetry: { failure: (operation) => reports.push(operation) }, transport: {
+    pass: async () => ({ status: 200, body: { pass: 'private', expiresIn: 600000 } }),
+    request: async () => ({ status: 200, events: (async function* () { yield { id: 1, event: 'text', data: { delta: 3 } }; })() }),
+  } });
+  assert.deepEqual(await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} }), { failure: { source: 'wire', code: 'invalid-answer', admission: 'possible', allowance: null } });
+  assert.deepEqual(reports, ['ai-call']);
+});
+
+test('a cached pass reaches uncertain offline dispatch while preparation failures do not', async () => {
+  for (const boundary of ['pass', 'picture', 'cached-pass']) {
+    let now = 0; let dispatches = 0; const reports = [];
+    const client = new AiClient({ now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: (operation) => reports.push(operation) }, transport: {
+      pass: async () => { throw new TransportFailure('offline'); },
+      request: async () => { dispatches++; throw new TransportFailure('offline'); },
+    } });
+    if (boundary !== 'pass') client.pass = { use: 'vector.coach', version: 1, value: 'private', until: 2000000 };
+    const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, pictures: boundary === 'picture' ? [{ pictureId: 'PPPPPPPPPPPPPPPPPPPPPP', mediaType: 'image/png', bytes: [1] }] : [], label: 'other', use: 'vector.coach', version: 1, onText() {} });
+    assert.deepEqual(result, { failure: boundary === 'cached-pass' ? { source: 'result', code: 'answer-timeout', admission: 'possible', allowance: null } : { source: 'transport', code: null, admission: 'none', allowance: null } });
+    assert.equal(now, boundary === 'cached-pass' ? 1200000 : 0);
+    if (boundary === 'cached-pass') assert.ok(dispatches > 1);
+    else assert.equal(dispatches, boundary === 'picture' ? 1 : 0);
+    assert.deepEqual(reports, []);
+  }
+});
+
+test('recovery call_unknown is quiet while the live equivalent remains a defect', async () => {
+  for (const recover of [false, true]) {
+    const reports = [];
+    const client = new AiClient({ telemetry: { failure: (operation) => reports.push(operation) }, transport: {
+      pass: async () => ({ status: 200, body: { pass: 'private', expiresIn: 600000 } }),
+      request: async () => ({ status: 404, body: { code: 'call_unknown', allowance: null } }),
+    } });
+    const result = await client[recover ? 'result' : 'text']({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} });
+    assert.deepEqual(result, { failure: { source: recover ? 'result' : 'text', code: 'call_unknown', admission: recover ? 'admitted' : 'none', allowance: null } });
+    assert.deepEqual(reports, recover ? [] : ['ai-call']);
+  }
+});
+
+test('resent PUT keeps thirty seconds for paused, concurrency and provider refusals', async () => {
+  for (const code of ['paused', 'concurrency_exhausted', 'provider_unavailable']) for (const resumes of [false, true]) {
+    let now = 0; const requests = [];
+    const client = new AiClient({ now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: () => assert.fail('unexpected issue') }, transport: {
+      pass: async () => ({ status: 200, body: { pass: 'private', expiresIn: 600000 } }),
+      request: async (request) => {
+        requests.push({ method: request.method, body: request.body });
+        if (requests.length === 1) throw new TransportFailure('lost');
+        if (resumes && requests.length === 3) return { status: 200, events: (async function* () { yield { id: 1, event: 'ended', data: { stop: 'completed', message: { role: 'assistant', parts: [], carry: '' }, charged: '0', allowance: null } }; })() };
+        return { status: 503, body: { code, allowance: null } };
+      },
+    } });
+    const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} });
+    if (resumes) assert.equal(result.event, 'ended', code);
+    else assert.deepEqual(result, { failure: { source: 'text', code, admission: 'possible', allowance: null } });
+    assert.equal(now, resumes ? 3000 : 30000);
+    assert.deepEqual(requests, Array(resumes ? 3 : 6).fill({ method: 'PUT', body: '{}' }));
+  }
+});
+
+test('pass proxy errors are quiet preparation failures and retry after uncertain dispatch', async () => {
+  for (const prior of ['none', 'lost']) for (const body of ['<html>Bad gateway</html>', '{"code":"unknown"}']) {
+    let now = 0; let passes = 0; let calls = 0; const reports = [];
+    const transport = new HttpAiTransport({ fetch: async (url) => {
+      if (url.endsWith('/v1/ai/passes')) {
+        passes++;
+        if (passes === (prior === 'lost' ? 2 : 1)) return new Response(body, { status: 503 });
+        return new Response('{"pass":"private","expiresIn":60001}');
+      }
+      if (++calls === 1) throw new TypeError('response lost');
+      return new Response('id: 1\nevent: ended\ndata: {"stop":"completed","message":{"role":"assistant","parts":[],"carry":""},"charged":"0","allowance":null}\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+    } });
+    const client = new AiClient({ transport, now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: (operation) => reports.push(operation) } });
+    const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} });
+    if (prior === 'lost') { assert.equal(result.event, 'ended'); assert.equal(calls, 2); assert.equal(now, 3000); }
+    else { assert.deepEqual(result, { failure: { source: 'transport', code: null, admission: 'none', allowance: null } }); assert.equal(calls, 0); }
+    assert.deepEqual(reports, []);
+  }
+});
+
+test('a pass refresh that finishes at the asking deadline cannot dispatch again', async () => {
+  let now = 0; let passes = 0; let calls = 0;
+  const client = new AiClient({ now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: () => assert.fail('unexpected failure') }, transport: {
+    pass: async () => { if (++passes === 2) now = 1200000; return { status: 200, body: { pass: 'private', expiresIn: 60001 } }; },
+    request: async () => { calls++; throw new TransportFailure('lost'); },
+  } });
+  assert.deepEqual(await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} }), { failure: { source: 'result', code: 'answer-timeout', admission: 'possible', allowance: null } });
+  assert.equal(passes, 2);
+  assert.equal(calls, 1);
 });

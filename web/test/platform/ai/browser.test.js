@@ -20,14 +20,15 @@ test('real browser holds one turn lock, recovers without waiting, omits credenti
     if (path === '/v1/ai/passes') { response.setHeader('Content-Type', 'application/json'); response.end('{"pass":"private-pass","expiresIn":600000}'); return; }
     response.statusCode = 204; response.end();
   });
-  await new Promise((resolve) => server.listen(19465, '127.0.0.1', resolve));
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const origin = `http://127.0.0.1:${server.address().port}`;
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     await context.addCookies([{ name: 'wm_session', value: 'private-session', domain: '127.0.0.1', path: '/' }]);
     const first = await context.newPage(); const second = await context.newPage();
-    await first.goto('http://127.0.0.1:19465/'); await second.goto('http://127.0.0.1:19465/');
+    await first.goto(origin); await second.goto(origin);
     await first.evaluate(async () => {
       const { browserRuntime } = await import('/src/platform/agent/runtime.js');
       window.runtime = browserRuntime();

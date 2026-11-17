@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { environment } from './fakes.js';
 
+test('pending sign-out refuses sign-in without an auth failure or hello request', async (t) => {
+  const env = environment();
+  const engine = await BrowserSyncEngine.open(env.options);
+  t.after(() => engine.close());
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  engine.setOnline(false);
+  await engine.beginSignOut();
+  const before = structuredClone(env.requests);
+  await assert.rejects(engine.signIn('A'), /finish or cancel sign-out before signing in/);
+  assert.deepEqual(env.requests, before);
+  assert.deepEqual(env.failures, []);
+  assert.equal(engine.authenticating, 0);
+});
+
 test('sign-out without a fence preserves completion behavior', async (t) => {
   const env = environment();
   const engine = await BrowserSyncEngine.open(env.options);

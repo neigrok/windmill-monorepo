@@ -2,8 +2,21 @@ export class TransportFailure extends Error {
   constructor(code) { super(code); this.code = code; }
 }
 
+const refusalCodes = new Set(['busy', 'paused', 'rate_limited', 'concurrency_exhausted', 'accounting_unavailable', 'provider_unavailable',
+  'invalid_request', 'too_large', 'provider_rejected', 'funding_required', 'conflict', 'call_unknown', 'untrusted-origin', 'unsupported-media-type',
+  'subject_exhausted', 'free_day_exhausted', 'free_month_exhausted', 'device_bound', 'result_gone', 'pass_missing', 'pass_signature', 'pass_audience',
+  'pass_malformed', 'pass_expired', 'picture_gone', 'provider_failed']);
+
 function object(value, fields) {
   if (!value || Array.isArray(value) || typeof value !== 'object' || Object.keys(value).sort().join(' ') !== fields.split(' ').sort().join(' ')) throw new TransportFailure('invalid-answer');
+}
+
+export function validateRefusal(value) {
+  try {
+    object(value, 'code allowance');
+    if (!refusalCodes.has(value.code)) throw new TransportFailure('invalid-answer');
+    if (value.allowance !== null) validateAllowance(value.allowance);
+  } catch { throw new TransportFailure('lost'); }
 }
 
 export function validateAllowance(value) {
@@ -104,7 +117,8 @@ export class HttpAiTransport {
           headers: { 'Content-Type': 'application/json', ...(installation ? { 'X-Windmill-Installation': installation } : {}) }, body: JSON.stringify(body) });
       } catch { throw new TransportFailure(globalThis.navigator?.onLine === false ? 'offline' : 'lost'); }
       if (response.status === 404) return { status: 404, body: null };
-      return { status: response.status, body: await response.json() };
+      try { return { status: response.status, body: await response.json() }; }
+      catch { throw new TransportFailure(response.status === 200 ? 'invalid-answer' : 'lost'); }
     } finally { this.timers.clearTimeout(timer); }
   }
 
@@ -131,7 +145,7 @@ export class HttpAiTransport {
     }
     if (response.status === 204) { this.timers.clearTimeout(timer); return { status: 204, body: null }; }
     try { return { status: response.status, body: await response.json() }; }
-    catch { throw new TransportFailure('invalid-answer'); }
+    catch { throw new TransportFailure(response.status === 200 ? 'invalid-answer' : 'lost'); }
     finally { this.timers.clearTimeout(timer); }
   }
 }

@@ -110,8 +110,8 @@ export class JsonSchema {
       if (integer(rules.maxLength) && length > rules.maxLength) return fault(`longer than ${rules.maxLength}`);
       if (typeof rules.pattern === 'string') {
         try {
-          const match = new RegExp(`(?:${rules.pattern})`, 'u').exec(value);
-          if (!match || match.index !== 0 || match[0].length !== value.length) return fault(`not ${rules.pattern}`);
+          const pattern = new RegExp(rules.pattern, 'u').source;
+          if (!new RegExp(`^(?:${pattern})(?![\\s\\S])`, 'u').test(value)) return fault(`not ${rules.pattern}`);
         } catch { return fault(`not ${rules.pattern}`); }
       }
     } else if (typeof value === 'number') {

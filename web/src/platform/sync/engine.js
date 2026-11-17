@@ -855,7 +855,7 @@ export class BrowserSyncEngine {
     this.authenticating = (this.authenticating ?? 0) + 1;
     try {
       await this.write(null, (device, ctx) => {
-        if (device.meta.signOut) throw new CommitError('finish or cancel sign-out before signing in');
+        if (device.meta.signOut) throw new CommitError('finish or cancel sign-out before signing in', 'not-writable');
         if (device.activeReplica.meta.state === 'bound' && device.activeReplica.meta.account !== account)
           throw new CommitError('finish sign-out before changing accounts');
         generation = device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
@@ -889,7 +889,7 @@ export class BrowserSyncEngine {
       this.kick();
       return result;
     } catch (error) {
-      this.telemetry.failure('auth');
+      if (!(error instanceof CommitError && error.kind === 'not-writable')) this.telemetry.failure('auth');
       throw error;
     } finally {
       this.authenticating--;

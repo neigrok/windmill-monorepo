@@ -10,6 +10,7 @@ The constructor takes `host`, `ai`, `telemetry` and `runtime`. `run(input, profi
 `stop()` interrupts retry waits but lets a live provider stream finish. The composition root must
 await `seatWillChange()` before credentials, active replica or host generation change. The barrier
 waits for pending host mutations, writes interrupted, and drops the in-memory pass immediately.
+If the active record has disappeared, the barrier resolves without writing or reporting a failure.
 
 The host implements `open(input)`, `recover(turnId,seat)`, `beginRound(lease,text,mark)`,
 `text(lease,text)`, `check(lease,rule,call)`, `execute(lease,identity,call)`, `end(lease,end)` and

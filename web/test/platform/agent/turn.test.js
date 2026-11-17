@@ -5,6 +5,27 @@ import { TurnRunner, HostUnavailable } from '../../../src/platform/agent/turn.js
 import { AiClient } from '../../../src/platform/ai/client.js';
 import { TransportFailure } from '../../../src/platform/ai/wire.js';
 
+test('the seat barrier resolves when the active record has disappeared', async () => {
+  const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
+  const events = [];
+  let release;
+  let enter;
+  const dispatched = new Promise((resolve) => { enter = resolve; });
+  const runner = new TurnRunner({
+    ai: { clearPass() {}, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
+    telemetry: { failure: (operation) => events.push({ failure: operation }), turn: (event) => events.push(event) },
+    runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
+    host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, end: async () => { throw new HostUnavailable(); } },
+  });
+  const turn = runner.run(story.input, story.profile);
+  await dispatched;
+  try { await assert.doesNotReject(runner.seatWillChange()); }
+  finally { release(); }
+  assert.equal(await turn, null);
+  assert.equal(runner.active, null);
+  assert.deepEqual(events, [{ state: 'interrupted', seat: 'bound', code: null, rounds: 1, abilityCalls: 0, refusals: 0, answerBytes: 0, durationMs: 0 }]);
+});
+
 test('the awaited seat barrier permits a new turn while the old provider finishes without late writes', async () => {
   const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
   const writes = [];
@@ -103,6 +124,7 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
     const transport = {
       async pass() {
         const value = story.service.passes[Math.min(passIndex++, story.service.passes.length - 1)];
+        if (value.transport) throw new TransportFailure(value.transport);
         return value.pass ? { status: 200, body: value } : { status: value.status, body: { code: value.code } };
       },
       async request({ method, path, body, bytes }) {
@@ -112,6 +134,7 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
         const value = story.service.exchanges[exchangeIndex];
         assert.ok(value, `unexpected service request ${path}`);
         if (++repeat >= value.repeat) { exchangeIndex++; repeat = 0; }
+        if (value.http) throw new TransportFailure('lost');
         if (value.refusal) return { status: 429, body: value.refusal };
         return { status: 200, events: (async function* () {
           for (const event of value.events) { control(`event:${current}:${event.id}`); yield event; }

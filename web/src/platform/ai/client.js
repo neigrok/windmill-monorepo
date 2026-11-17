@@ -1,12 +1,11 @@
 import { waitFor } from '../agent/runtime.js';
-import { validateEvent, validateAllowance, TransportFailure } from './wire.js';
+import { validateEvent, validateAllowance, validateRefusal, TransportFailure } from './wire.js';
 import { captureError } from '../../telemetry/sentry.js';
 
 const TRANSIENT = new Set(['busy', 'paused', 'rate_limited', 'concurrency_exhausted', 'accounting_unavailable', 'provider_unavailable']);
 const DEFECTS = new Set(['invalid_request', 'too_large', 'provider_rejected', 'funding_required', 'conflict', 'call_unknown', 'invalid-answer', 'untrusted-origin', 'unsupported-media-type']);
 const uncertain = new Set(['busy', 'accounting_unavailable']);
-const CODES = new Set([...TRANSIENT, ...DEFECTS, 'subject_exhausted', 'free_day_exhausted', 'free_month_exhausted', 'device_bound',
-  'result_gone', 'pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired', 'picture_gone', 'provider_failed']);
+const AFTER_LOSS = new Set(['rate_limited', 'busy', 'accounting_unavailable']);
 const PASS_CODES = new Set(['invalid_request', 'unauthenticated', 'invalid_installation', 'device_bound', 'client-update-required',
   'rate_limited', 'anonymous_ai_unavailable', 'unavailable', 'untrusted-origin', 'unsupported-media-type']);
 
@@ -45,7 +44,8 @@ export class AiClient {
       if (generation !== this.generation) throw new TransportFailure('seat-changed');
       if (response.status !== 200) {
         const code = PASS_CODES.has(response.body?.code) ? response.body.code : response.status === 404 ? 'anonymous_ai_unavailable' : 'invalid-answer';
-        if (DEFECTS.has(code) || (response.status >= 500 && code !== 'anonymous_ai_unavailable')) this.telemetry.failure('ai-pass');
+        if (code === 'invalid-answer') return { failure: { source: 'transport', code: null, admission: 'none', allowance: null } };
+        if (DEFECTS.has(code)) this.telemetry.failure('ai-pass');
         return { failure: { source: 'pass', code, admission: 'none', allowance: null } };
       }
       if (typeof response.body?.pass !== 'string' || !response.body.pass || !Number.isSafeInteger(response.body.expiresIn) || response.body.expiresIn <= 0) {
@@ -73,8 +73,7 @@ export class AiClient {
         const response = await this.transport.request({ method: 'GET', path: '/v1/allowance', pass });
         if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } };
         if (response.status === 200) { validateAllowance(response.body); return response.body; }
-        if (!CODES.has(response.body?.code)) return this.failure('wire', 'invalid-answer', 'none');
-        if (response.body.allowance !== null && response.body.allowance !== undefined) validateAllowance(response.body.allowance);
+        validateRefusal(response.body);
         if (response.body?.code === 'pass_expired' && !refreshed) { refreshed = true; continue; }
         return this.failure('text', response.body?.code ?? 'invalid-answer', 'none', response.body?.allowance ?? null);
       }
@@ -95,30 +94,37 @@ export class AiClient {
     const body = request === undefined ? undefined : JSON.stringify(request);
     let started = recover ? this.now() : null;
     let admission = recover ? 'admitted' : 'none';
-    let lost = recover;
+    let uncertainDispatch = recover;
     let cursor = 0;
     let retry = 0;
     let refresh = false;
     let pictureRepair = false;
     let forcePass = false;
     let lastFailure = null;
+    let retryDeadline = null;
     let callbackFailure;
     const promote = (value) => { if (['none', 'possible', 'admitted'].indexOf(value) > ['none', 'possible', 'admitted'].indexOf(admission)) admission = value; };
-    const failed = (source, code, allowance = null) => this.failure(source, code, admission, allowance);
+    const failed = (source, code, allowance = null) => recover && code === 'call_unknown'
+      ? { failure: { source, code, admission, allowance } } : this.failure(source, code, admission, allowance);
     operation: while (true) {
       if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission, allowance: null } };
-      if (retry > 0 && this.now() >= started + (lost ? 1_200_000 : 30_000)) return lost ? failed('result', 'answer-timeout') : lastFailure;
+      if (signal?.aborted) return { failure: { source: 'result', code: 'stopped', admission, allowance: null } };
+      if (retry > 0 && this.now() >= retryDeadline) return lastFailure;
       try {
         const pass = await this.credential(use, version, generation, forcePass);
+        if (pass.failure) {
+          if (uncertainDispatch && (pass.failure.source === 'transport' || ['rate_limited', 'unavailable'].includes(pass.failure.code))) throw new TransportFailure('lost');
+          return { failure: { ...pass.failure, admission } };
+        }
         forcePass = false;
-        if (pass.failure) { pass.failure.admission = admission; return pass; }
+        if (started !== null && this.now() >= started + 1_200_000) return failed('result', 'answer-timeout');
+        if (retry > 0 && this.now() >= retryDeadline) return lastFailure;
         for (const picture of pictures) {
           if (this.uploads.has(picture.pictureId)) continue;
           const response = await this.transport.request({ method: 'PUT', path: `/v1/pictures/${picture.pictureId}`, bytes: new Uint8Array(picture.bytes), mediaType: picture.mediaType, pass });
           if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission, allowance: null } };
           if (response.status !== 204) {
-            if (!CODES.has(response.body?.code)) return failed('wire', 'invalid-answer');
-            if (response.body?.allowance !== null && response.body?.allowance !== undefined) validateAllowance(response.body.allowance);
+            validateRefusal(response.body);
             if (response.body?.code === 'pass_expired' && !refresh) { refresh = true; forcePass = true; continue operation; }
             return failed('text', response.body.code, response.body?.allowance ?? null);
           }
@@ -130,24 +136,27 @@ export class AiClient {
         let response;
         try { response = await this.transport.request({ method: read ? 'GET' : 'PUT', path, body: read ? undefined : body, pass, timeoutMs: Math.max(1, started + 1_200_000 - this.now()) }); }
         catch (error) {
-          promote('possible'); lost = true;
-          if (!(error instanceof TransportFailure) || !['offline', 'lost'].includes(error.code)) return failed('transport', 'invalid-answer');
+          promote('possible'); uncertainDispatch = true;
+          if (!(error instanceof TransportFailure) || !['offline', 'lost'].includes(error.code)) return failed(error?.code === 'invalid-answer' ? 'wire' : 'transport', 'invalid-answer');
+          throw error;
         }
         if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission, allowance: null } };
-        if (response && response.status !== 200) {
+        if (response.status !== 200) {
+          try { validateRefusal(response.body); }
+          catch (error) { promote('possible'); uncertainDispatch = true; throw error; }
           const code = response.body?.code;
-          if (!CODES.has(code)) return failed('wire', 'invalid-answer');
           const allowance = response.body?.allowance ?? null;
-          if (allowance !== null) validateAllowance(allowance);
           if (uncertain.has(code)) promote('possible');
           if (code === 'pass_expired' && !refresh) { refresh = true; forcePass = true; continue; }
           if (code === 'picture_gone' && !pictureRepair && pictures.length && !read) {
             pictureRepair = true; for (const picture of pictures) this.uploads.delete(picture.pictureId); continue;
           }
-          const retryable = lost ? ['rate_limited', 'busy', 'accounting_unavailable'].includes(code) : TRANSIENT.has(code);
+          const retryable = read ? AFTER_LOSS.has(code) : TRANSIENT.has(code);
           if (!retryable) return failed(read ? 'result' : 'text', code, allowance);
-          lastFailure = { failure: { source: read ? 'result' : 'text', code, admission, allowance } };
-        } else if (response) {
+          const longRetry = uncertainDispatch && AFTER_LOSS.has(code);
+          retryDeadline = started + (longRetry ? 1_200_000 : 30_000);
+          lastFailure = longRetry ? failed('result', 'answer-timeout') : { failure: { source: read ? 'result' : 'text', code, admission, allowance } };
+        } else {
           promote('possible');
           try {
             for await (const event of response.events) {
@@ -170,18 +179,20 @@ export class AiClient {
             if (!(error instanceof TransportFailure)) throw error;
             if (!['offline', 'lost'].includes(error.code)) return failed('wire', 'invalid-answer');
           }
-          lost = true;
+          uncertainDispatch = true;
+          throw new TransportFailure('lost');
         }
       } catch (error) {
         if (callbackFailure === error) throw error;
         if (error instanceof TransportFailure && error.code === 'seat-changed') return { failure: { source: 'pass', code: null, admission, allowance: null } };
-        if (error instanceof TransportFailure && ['offline', 'lost'].includes(error.code)) return failed('transport', null);
         if (error?.name === 'HostUnavailable' || error?.reason === 'gone') throw error;
-        return failed('wire', 'invalid-answer');
+        if (!(error instanceof TransportFailure) || !['offline', 'lost'].includes(error.code)) return failed('wire', 'invalid-answer');
+        if (!uncertainDispatch) return failed('transport', null);
+        retryDeadline = started + 1_200_000;
+        lastFailure = failed('result', 'answer-timeout');
       }
-      const deadline = started + (lost ? 1_200_000 : 30_000);
-      const delay = Math.min(1000 * 2 ** Math.min(retry++, 3), Math.max(0, deadline - this.now()));
-      if (delay === 0) return lost ? failed('result', 'answer-timeout') : lastFailure;
+      const delay = Math.min(1000 * 2 ** Math.min(retry++, 3), Math.max(0, retryDeadline - this.now()));
+      if (delay === 0) return lastFailure;
       if (!await this.wait(delay, signal)) return { failure: { source: 'result', code: 'stopped', admission, allowance: null } };
     }
   }
