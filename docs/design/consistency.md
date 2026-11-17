@@ -601,19 +601,42 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   what could not land; sign-in's Add or Discard and sign-out's Keep or Discard for roadmaps; the room without
   presence and remote cursors. The refused-change states of flow 43 and the Restore offer for a hidden link retire
   with the build.
-- **Roadmap · iOS · boards the 2026-11-17 rulings change.** [Roadmap · iOS](ios/roadmap.md) rulings 10 to 13. To
-  redraw before the owner reviews the 🧪 boards (and, by the owner's ruling of the same day, renaming and deleting a
-  roadmap and managing kinds are in the first version and are not drawn): the New step, edit and New roadmap forms with the commit in the
-  toolbar (05.1, 05.4, 05.6, 05.7, and NOTE 05, whose title and boards disagree today). To draw new: a step that
-  opens a roadmap and a subtree, going in and back, attach, change and detach, fork first; reading and editing a
-  guide and the guides above; the list of what could not land; History with no connection; a link to a roadmap the
-  phone cannot read; a gesture a limit refuses on the phone; a fork in progress; and the sign-in question that
-  names roadmaps and conversations. The room's *Where to start?* door is still owed in the Shell file.
-  The page's own text that those rulings and [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md)
-  §6 leave untrue, to rewrite with the redraw: the room's three tabs, where Coach is the third; section 05's
-  commit at the foot; *never drops or refuses a person's own creation* and *no Discard*, since a change to a
-  roadmap deleted elsewhere cannot land and is listed with copy and discard; *every string is `copy.js`'s*; and
-  whether a toolbar's Save is glass or the bar's prominent capsule, as gym's is.
+- **Roadmap · iOS · what the web does differently.** [Roadmap · iOS](ios/roadmap.md) is drawn as one room and
+  waits for the owner's review. Where it and the web now disagree, for the web's owner to rule or redraw: the web
+  says *tree* where iOS says *roadmap* (*Fork this tree*, *Attach a tree*, *Open tree*); the web's phone has no
+  rename, no delete and no kinds management, and its desktop deletes a roadmap at once where iOS holds it nine
+  seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
+  *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
+  links*.
+- **Roadmap · iOS · the design draws more than the spec's build reads.** For parity with the web the boards
+  include quests and a pasted plan (01.6 to 01.8b, 02.16 to 02.18), Share with its public switch and Export (09.1
+  to 09.3), the public gallery (09.12) and the roadmap's Activity (01.13). [Roadmap on iOS](../foundation/roadmap-ios.md)
+  INV-1 names three reads outside the sync engine (the owner's progress on a shared roadmap, History, Fork); the
+  gallery's list and the visibility switch are two more, and its build tree has no step for any of these. When the
+  owner approves the boards, the spec's invariant and the tree follow; a board the owner strikes leaves both as
+  they are.
+- **Roadmap · iOS · the Shell owes the room its door.** A proposal is drawn in the Shell file
+  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)): *Where to start?* with a
+  third door. The Design System has no `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a
+  detached copy; both belong in the library before it is built. The sign-in and sign-out questions that name
+  roadmaps and conversations (Roadmap · iOS 10.7, 10.8) are proposals for the Shell's owner too.
+- **iOS · system parts in the Design System predate the simulator probe.** A SwiftUI probe on the iOS 26.5
+  simulator (2026-11-18) found that the system draws several parts otherwise than the library and the Gym and
+  Journal iOS boards do: a menu's symbols and checkmark are on the leading side (`iOS / Menu item` puts the symbol
+  trailing); a `.confirmationDialog` on iPhone is a small popover anchored to its source with no Cancel and no
+  dimming; an alert stacks its actions as capsules and emphasises none; a sheet's *Cancel* and confirm are two
+  untinted glass words, and an active `EditButton` is a tinted checkmark circle; swipe actions are 50 pt shapes
+  with their title beneath; a `.medium` sheet floats 8 pt inside the screen and becomes the large one when the
+  keyboard rises; a bar folds its buttons into an overflow before it truncates a title; `.glass` on a white card
+  is white on white. Roadmap's kit is matched to the probe. To check against it: the library's iOS parts and the
+  Gym and Journal iOS boards.
+- **Roadmap · iOS · the iOS 18 boards are not probed.** Section 12's iOS 18 boards are drawn from knowledge of
+  iOS 18, with no simulator run. Before they are built: one probe of the bar, the sheets, Find and the action
+  sheet on an iOS 18 runtime. With the title in the principal slot the system's in-bar rename is unavailable there,
+  so renaming on iOS 18 needs a ruling.
+- **Roadmap file · a prototype variable collection nothing on the iPhone pages binds.** *🧪 iOS 07 · Local picker
+  state* held the state of boards that are deleted. No node on the Roadmap · iOS or Roadmap Coach page binds it;
+  the file's other pages were not checked. Delete it once they are.
 - **Roadmap Coach · the engineering note against the spec.** The Figma
   [engineering note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) of 2026-11-08 and
   [Roadmap Coach](../foundation/roadmap-coach.md) disagree in every section, and the spec stands (owner, 2026-11-14).
