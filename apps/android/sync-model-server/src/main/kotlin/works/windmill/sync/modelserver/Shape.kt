@@ -9,6 +9,16 @@ data class TextReplacement(val text: String, val archiveNonempty: Boolean = fals
 data class PlannedDelta(val key: RecordKey, val op: String, val life: PlannedLife? = null, val born: Stamp? = null,
     val mintsBorn: Boolean = false, val fields: Map<String, PlannedRegister> = emptyMap(), val texts: Map<String, TextWrite> = emptyMap(),
     val serials: Map<String, Json> = emptyMap(), val replacements: Map<String, TextReplacement> = emptyMap()) {
+    val json: Json get() {
+        val text = texts.mapValues { it.value.json }.toMutableMap()
+        for ((name, replacement) in replacements) text[name] = Json.objectOf("text" to Json.of(replacement.text), "replace" to Json.of(true), "archiveNonempty" to Json.of(replacement.archiveNonempty), "archive" to replacement.archive)
+        return Json.objectOf("t" to Json.of(key.type), "id" to key.id.json).with(
+            "life" to life?.let { Json.array(Json.of(it.state), it.stamp?.json ?: Json.Null) },
+            "born" to if (mintsBorn) Json.Null else born?.json,
+            "f" to fields.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.map { (name, register) -> name to Json.array(register.value, register.stamp?.json ?: Json.Null) }) },
+            "x" to text.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.toList()) },
+            "v" to serials.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.toList()) })
+    }
     val serverRegisters: List<String> get() = buildList {
         if (life != null && life.stamp == null) add("life"); if (mintsBorn) add("born")
         addAll(fields.filterValues { it.stamp == null }.keys.sorted())
@@ -90,6 +100,24 @@ object IntentShape {
         }) }
         CheckedIntent(scope, clamped, guards, checkedCommand)
     } catch (refusal: Refusal) { throw refusal } catch (_: IllegalArgumentException) { throw Refusal("invalid") }
+    fun effect(json: Json, scope: ScopeKey, source: String, registry: Registry): PlannedDelta = try {
+        require(!json.holdsNul())
+        val kind = registry.scopeKind(scope.ref) ?: throw Refusal("invalid")
+        val serials = json["v"]?.obj().orEmpty()
+        val replacements = mutableMapOf<String, TextReplacement>()
+        val text = json["x"]?.obj()?.mapValues { (name, write) ->
+            if (write["replace"] == Json.of(true) && source == "command") {
+                val value = write.member("text").str(); val archive = write["archive"] ?: Json.objectOf(); archive.obj()
+                replacements[name] = TextReplacement(value, write["archiveNonempty"] == Json.of(true), archive)
+                Json.objectOf("text" to Json.of(value), "base" to Json.objectOf("rev" to Json.of(0)))
+            } else write
+        }
+        val wire = json.with("v" to null, "x" to text?.let { Json.Obj(it.toList()) })
+        val parsed = delta(wire, false, registry, kind)
+        for ((name, value) in serials) require(registry.type(parsed.key.type)?.fields?.get(name)?.kind == "serial" && value.long(1) >= 1)
+        parsed.copy(serials = serials, texts = parsed.texts - replacements.keys, replacements = replacements)
+    } catch (refusal: Refusal) { throw refusal } catch (_: IllegalArgumentException) { throw Refusal("invalid") }
+
     private fun slot(value: Json, replica: Boolean): Stamp? {
         if (value === Json.Null && !replica) return null
         return Stamp(value.str()).also { require(it != Stamp.UNSET) }

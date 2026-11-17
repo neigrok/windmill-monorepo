@@ -10,12 +10,20 @@ public struct ProbeServerRules: ServerRules {
 
   public init() {}
 
+  public var localCheckTypes: Set<String>? { ["run"] }
+
   public func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool {
     switch command.name {
     case "probe.start": receipt(of: command.string("id"), in: context) != nil
     case "probe.copy": copySource(of: command.string("dst"), in: context)?.isSameID(as: command.string("src")) ?? false
     default: false
     }
+  }
+
+  public func discoverEffectScopes(in context: RuleContext, command: CheckedCommand?) -> Set<ScopeKey> {
+    guard let command, command.name == "probe.copy", !replays(command, in: context),
+          case .none = context.idState(of: RecordKey("board", RecordID(command.string("dst")))) else { return [] }
+    return [ScopeKey(.tree(command.string("dst")))]
   }
 
   public func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
@@ -124,7 +132,7 @@ public struct ProbeServerRules: ServerRules {
     return CommandOutcome(
       deltas: [.serverCreate(board)], write: [WriteClaim(key: board, born: .minted)],
       product: recording(source, under: "copies", at: board.id.description, in: context),
-      created: [ScopeKey(.tree(board.id.description)): copies])
+      into: [ScopeKey(.tree(board.id.description)): copies])
   }
 
   func tick(in context: RuleContext) -> CommandOutcome {

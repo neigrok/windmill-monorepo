@@ -85,6 +85,7 @@ public struct ServerLimits: Sendable, Hashable {
   public var maxRecordBytes = Constants.maxRecordBytes
   public var pushMaxIntents = Constants.pushMaxIntents
   public var pushMaxBytes = Constants.pushMaxBytes
+  public var effectMaxBytes = Constants.effectMaxBytes
   public var pullPageBytes = Constants.pullPageBytes
   public var pullMaxScopes = Constants.pullMaxScopes
   public var pullMaxBytes = Constants.pullMaxBytes
@@ -97,10 +98,12 @@ public struct ServerLimits: Sendable, Hashable {
   public init(json: JSON?) throws {
     let knobs = try json?.asObject() ?? JSON.Object()
     try knobs.expectKeys(
-      required: [], optional: ["MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "PULL_PAGE_BYTES", "PULL_MAX_BYTES"])
+      required: [], optional: ["MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "EFFECT_MAX_BYTES", "PULL_PAGE_BYTES", "PULL_MAX_BYTES"])
     maxRecordBytes = try knobs["MAX_RECORD_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? maxRecordBytes
     pushMaxIntents = try knobs["PUSH_MAX_INTENTS"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pushMaxIntents
     pushMaxBytes = try knobs["PUSH_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pushMaxBytes
+    effectMaxBytes = try knobs["EFFECT_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? effectMaxBytes
+    guard effectMaxBytes <= Constants.effectMaxBytes else { throw JSONError.shape("effect limit exceeds its default") }
     pullPageBytes = try knobs["PULL_PAGE_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pullPageBytes
     pullMaxBytes = try knobs["PULL_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pullMaxBytes
   }
@@ -137,7 +140,7 @@ public struct Admission: Sendable {
   }
 }
 
-// A record where it lives: in the intent's scope, or in a scope a command of the intent writes into (§6.1 step 14).
+// A record is keyed by its scope and identity throughout admission.
 struct Place: Hashable {
   let scope: ScopeKey
   let key: RecordKey
@@ -167,8 +170,7 @@ struct Touched {
   var diesHere: Bool { locked.isAlive && joined?.isAlive == false }
 }
 
-// One admission in progress: its own copy of the tables, which the caller keeps only on success. Steps 5 to 13 run over
-// every record the intent touches, in its scope and in the scopes a command of it writes into, which step 15 creates.
+// Admission owns a copy of all tables; the caller keeps it only after every scope succeeds.
 struct AdmissionRun {
   static let serverActor = try! Stamp.Actor("srv")
 
@@ -181,7 +183,8 @@ struct AdmissionRun {
   var touched: [Place: Touched] = [:]
   var order: [Place] = []
   var firstPassStamp: Stamp?
-  var createdScopes: [ScopeKey] = []
+  var declared: Set<ScopeKey> = []
+  var effectBytes = 0
   var changeEvents: [LiveEvent] = []
   var deathEvents: [LiveEvent] = []
   var intentDeltas: [PlannedDelta] = []
@@ -204,23 +207,25 @@ struct AdmissionRun {
     let deltas = try lockIdentities(intent.deltas, in: scope, from: .intent)
     let replay = intent.command.map { admission.rules.replays($0, in: context()) } ?? false
     if !replay { try checkGuards(intent.guards, writtenBy: deltas) }
+    try discoverEffectScopes(command: intent.command)
     let outcome = try runCommand(intent.command)
     state.product = outcome?.product ?? state.product
-    var commandDeltas = try lockIdentities(outcome?.deltas ?? [], in: scope, from: .command)
-    for (created, written) in (outcome?.created ?? [:]).sorted(by: { $0.key < $1.key }) {
-      commandDeltas += try lockIdentities(written, in: created, from: .command)
-    }
+    var commandEffects = outcome?.into ?? [:]
+    commandEffects[scope, default: []].insert(contentsOf: outcome?.deltas ?? [], at: 0)
+    let commandDeltas = try admitEffects(Effects(byScope: commandEffects), from: .command)
     firstPassStamp = try join(deltas + commandDeltas, observing: deltas)
     var checking = context()
-    let appended = try admission.rules.check(changes(), in: &checking)
+    let appended = try admission.rules.effects(changes(), in: &checking)
     state.product = checking.product
-    _ = try join(try lockIdentities(appended, in: scope, from: .check), observing: deltas)
+    _ = try join(try admitEffects(appended, from: .check), observing: deltas)
     try checkParents()
     assignSerials()
     try checkCaps()
+    try createScopes()
     apply(scope)
-    applyLifecycle()
-    try applyCreatedScopes()
+    for written in Set(order.map(\.scope)).subtracting([scope]).sorted() { apply(written) }
+    applyDeaths()
+    deathEvents.sort { $0.key < $1.key }
     let write = outcome.map { outcome in
       outcome.write.map { $0.json(minted: firstPassStamp, born: touched[Place(scope: scope, key: $0.key)]?.joined?.lattice.born) }
     }
@@ -245,6 +250,46 @@ struct AdmissionRun {
     if intent.deltas.contains(where: { !(registry.type($0.key.type)?.origins.contains(origin.kind) ?? false) }) {
       throw Refusal(.forbidden)
     }
+  }
+
+  mutating func discoverEffectScopes(command: CheckedCommand?) throws {
+    declared = try admission.rules.discoverEffectScopes(in: context(), command: command).union([scope])
+    for target in declared.subtracting([scope]).sorted() {
+      guard ScopeKey(target.ref, account: origin.account) == target else {
+        throw Refusal(.forbidden)
+      }
+      guard registry.scopeKind(of: target.ref) != nil, registry.isScopeID(target.ref) else { throw Refusal(.invalid) }
+      if let stored = state.scopes[target] {
+        guard stored.owner.isSameID(as: origin.account) else { throw Refusal(.forbidden) }
+        guard stored.isAlive else { throw Refusal(.scopeDead) }
+      }
+      if case .overlay = target.kind {
+        switch state.access(target, as: origin.account, registry: registry) {
+        case .writable, .absent: break
+        case .gone: throw Refusal(.scopeDead)
+        case .notFound: throw Refusal(.notFound)
+        case .readable: throw Refusal(.forbidden)
+        }
+      }
+    }
+  }
+
+  mutating func admitEffects(_ effects: Effects, from source: ChangeSource) throws -> [PlacedDelta] {
+    var deltas: [PlacedDelta] = []
+    let targets = (effects.byScope[scope] == nil ? [] : [scope]) + effects.byScope.keys.filter { $0 != scope }.sorted()
+    for target in targets {
+      guard declared.contains(target) else { throw AdmissionFault(description: "undeclared effect target") }
+      let written = effects.byScope[target]!
+      for delta in written {
+        let parsed = try IntentShape.effect(delta.json, in: target, source: source, registry: registry)
+        guard parsed.op == delta.op else { throw Refusal(.invalid) }
+        let wire: JSON = ["scope": .string(target.text), "delta": delta.json]
+        effectBytes += wire.jcs.count
+        if effectBytes > admission.limits.effectMaxBytes { throw Refusal(.tooLarge) }
+      }
+      deltas += try lockIdentities(written, in: target, from: source)
+    }
+    return deltas
   }
 
   // MARK: - Steps 5–6: each record locked, each delta through §4.3, and §4.4's const and time rule
@@ -308,7 +353,7 @@ struct AdmissionRun {
 
   // MARK: - Step 8: the command's handler
 
-  func runCommand(_ command: CheckedCommand?) throws(Refusal) -> CommandOutcome? {
+  func runCommand(_ command: CheckedCommand?) throws -> CommandOutcome? {
     guard let command else { return nil }
     return try admission.rules.run(command, in: context())
   }
@@ -418,9 +463,12 @@ struct AdmissionRun {
   func context() -> RuleContext {
     let joined = touched.filter { $0.key.scope == scope }.compactMap { place, record in record.joined.map { (place.key, $0) } }
     return RuleContext(
-      registry: registry, scope: scope, origin: origin, deltas: intentDeltas, guards: intentGuards,
+      registry: registry, scope: scope, originScope: scope, origin: origin, deltas: intentDeltas, guards: intentGuards,
       serverNow: serverNow, product: state.product, rules: admission.rules, state: state,
-      joined: Dictionary(uniqueKeysWithValues: joined))
+      joined: Dictionary(uniqueKeysWithValues: joined), declared: declared.union([scope]),
+      scopedJoins: Dictionary(grouping: order, by: \.scope).mapValues { places in
+        Dictionary(uniqueKeysWithValues: places.compactMap { place in touched[place]?.joined.map { (place.key, $0) } })
+      }, ruleProducts: Set(registry.products.map(\.name)))
   }
 
   // Every create or update, a command's or an appended one's included, whose parent is not alive among the joined
@@ -530,30 +578,26 @@ struct AdmissionRun {
     state.spent[scope, default: [:]][row.key] = SpentRow(born: row.lattice.born, lifeStamp: row.lattice.life!.stamp, seq: row.seq)
   }
 
-  // MARK: - Step 14: a command's writes into the scopes this intent created, each at its own seq and digest
-
-  mutating func applyCreatedScopes() throws {
-    for written in Set(order.map(\.scope)).subtracting([scope]).sorted() {
-      guard createdScopes.contains(written) else {
-        throw AdmissionFault(description: "a command wrote into \(written), which this intent did not create")
-      }
-      apply(written)
+  // Missing targets require the exact governing record to be created by this admission.
+  mutating func createScopes() throws(Refusal) {
+    var creates: [ScopeKey: String] = [:]
+    for place in order {
+      guard let record = touched[place], registry.type(place.key.type)?.governsTree == true,
+            case .none = record.locked, record.joined?.isAlive == true else { continue }
+      let tree = ScopeKey(.tree(place.key.id.description))
+      if state.scopes[tree] == nil { creates[tree] = ScopeRecord.governor(scope: place.scope, key: place.key) }
+    }
+    for target in declared where state.scopes[target] == nil && creates[target] == nil { throw Refusal(.notFound) }
+    for (tree, governor) in creates {
+      state.scopes[tree] = ScopeRecord(owner: origin.account, born: .governingCreate, governedBy: governor)
     }
   }
 
-  // MARK: - Step 15: a governing create inserts its tree; a governing death kills the tree and its overlays
-
-  mutating func applyLifecycle() {
-    let owner = state.scopes[scope]!.owner
+  mutating func applyDeaths() {
     for place in order {
-      guard let record = touched[place], record.changed, registry.type(place.key.type)?.governsTree == true else { continue }
-      let tree = ScopeKey(.tree(place.key.id.description))
-      if case .none = record.locked, record.joined?.isAlive == true, state.scopes[tree] == nil {
-        state.scopes[tree] = ScopeRecord(
-          owner: owner, born: .governingCreate, governedBy: ScopeRecord.governor(scope: place.scope, key: place.key))
-        createdScopes.append(tree)
-      }
-      if record.diesHere { kill(tree: place.key.id.description) }
+      guard let record = touched[place], record.changed, record.diesHere,
+            registry.type(place.key.type)?.governsTree == true else { continue }
+      kill(tree: place.key.id.description)
     }
   }
 

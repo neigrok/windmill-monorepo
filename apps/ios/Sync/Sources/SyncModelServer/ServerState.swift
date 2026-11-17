@@ -210,7 +210,7 @@ extension Row {
 
   // The content admission compares: the row without its seq and receipt times.
   var content: Row {
-    Row(key: key, lattice: lattice, texts: texts, serials: serials, seq: 0)
+    Row(key: key, lattice: lattice, texts: texts.mapValues { TextState(text: $0.text, rev: 0, merged: $0.merged) }, serials: serials, seq: 0)
   }
 }
 

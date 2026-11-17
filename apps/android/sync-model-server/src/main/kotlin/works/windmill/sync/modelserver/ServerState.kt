@@ -74,7 +74,7 @@ class ServerState(json: Json = Json.objectOf("epoch" to Json.of("ep-1"), "clock"
 val Json.recordKey: RecordKey get() = RecordKey(member("t").str(), RecordID(member("id")))
 val Row.thin get() = Row(key, Lattice(lattice.life, lattice.born), seq = seq)
 val Row.pageForm get() = if (isAlive) this else thin
-val Row.content get() = copy(seq = 0, rc = null, ru = null)
+val Row.content get() = copy(texts = texts.mapValues { it.value.copy(rev = 0) }, seq = 0, rc = null, ru = null)
 fun governor(scope: ScopeKey, key: RecordKey) = "${scope.text}#${key.type}#${key.id}"
 
 data class ScopeKey(val text: String) : Comparable<ScopeKey> {
@@ -116,6 +116,7 @@ class ServerLimits(json: Json? = null) {
     val maxRecordBytes = json?.get("MAX_RECORD_BYTES")?.long(1)?.toInt() ?: Constants.MAX_RECORD_BYTES
     val pushMaxIntents = json?.get("PUSH_MAX_INTENTS")?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS
     val pushMaxBytes = json?.get("PUSH_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES
+    val effectMaxBytes = (json?.get("EFFECT_MAX_BYTES")?.long(1) ?: Constants.EFFECT_MAX_BYTES.toLong()).also { require(it <= Constants.EFFECT_MAX_BYTES) }.toInt()
     val pullPageBytes = json?.get("PULL_PAGE_BYTES")?.long(1)?.toInt() ?: Constants.PULL_PAGE_BYTES
     val pullMaxBytes = json?.get("PULL_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PULL_MAX_BYTES
     val pullMaxScopes = Constants.PULL_MAX_SCOPES

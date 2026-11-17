@@ -92,6 +92,20 @@ public struct PlannedDelta: Sendable, Hashable {
       fields: row.lattice.fields.mapValues { PlannedRegister($0.value, .given($0.stamp)) })
   }
 
+  public var json: JSON {
+    var object: JSON.Object = ["t": .string(key.type), "id": key.id.json]
+    object["life"] = life.map { [.string($0.state.rawValue), $0.slot.stamp?.json ?? .null] }
+    object["born"] = born.map { $0.stamp?.json ?? .null }
+    if !fields.isEmpty { object["f"] = .object(JSON.Object(uniqueKeysWithValues: fields.map { ($0.key, .array([$0.value.value, $0.value.slot.stamp?.json ?? .null])) })) }
+    var text = JSON.Object(uniqueKeysWithValues: texts.map { ($0.key, $0.value.json) })
+    for (name, replacement) in replacements {
+      text[name] = ["text": .string(replacement.text), "replace": true, "archiveNonempty": .bool(replacement.archiveNonempty), "archive": .object(replacement.archive)]
+    }
+    if !text.isEmpty { object["x"] = .object(text) }
+    if !serials.isEmpty { object["v"] = .object(JSON.Object(uniqueKeysWithValues: serials.map { ($0.key, $0.value) })) }
+    return .object(object)
+  }
+
   public var hasServerSlots: Bool { !serverRegisters.isEmpty }
 
   // The registers whose stamps the server mints: "life", "born", or a field's name.
@@ -184,6 +198,36 @@ public enum IntentShape {
     let command = try object["cmd"].map { json throws(Refusal) in try commandOf(json, kind: kind, registry: registry) }
     guard !deltas.isEmpty || command != nil, Set(deltas.map(\.key)).count == deltas.count else { throw Refusal(.invalid) }
     return CheckedIntent(scope: scope, deltas: deltas, guards: guards, command: command)
+  }
+
+  public static func effect(_ json: JSON, in scope: ScopeKey, source: ChangeSource, registry: Registry) throws(Refusal) -> PlannedDelta {
+    guard !json.holdsNul, var wire = try? json.asObject(), let kind = registry.scopeKind(of: scope.ref) else { throw Refusal(.invalid) }
+    let serials = try members(wire["v"] ?? [:])
+    wire["v"] = nil
+    var replacements: [String: TextReplacement] = [:]
+    if let writes = wire["x"] {
+      var texts = JSON.Object()
+      for (name, write) in try members(writes) {
+        if write["replace"] == true && source == .command {
+          guard let text = try? write["text"]?.asString(),
+                let archive = try? (write["archive"] ?? [:]).asObject() else { throw Refusal(.invalid) }
+          replacements[name] = TextReplacement(text, archiveNonempty: write["archiveNonempty"] == true, archive: archive)
+          texts[name] = ["text": .string(text), "base": ["rev": 0]]
+        } else { texts[name] = write }
+      }
+      wire["x"] = .object(texts)
+    }
+    var parsed = try delta(.object(wire), kind: kind, isReplica: false, registry: registry)
+    for (name, value) in serials {
+      guard case .serial? = registry.type(parsed.key.type)?.field(name)?.kind,
+            (try? value.asInteger(atLeast: 1)) != nil else { throw Refusal(.invalid) }
+      parsed.serials[name] = value
+    }
+    for (name, replacement) in replacements {
+      parsed.texts[name] = nil
+      parsed.replacements[name] = replacement
+    }
+    return parsed
   }
 
   static func delta(_ json: JSON, kind: ScopeKind, isReplica: Bool, registry: Registry) throws(Refusal) -> PlannedDelta {

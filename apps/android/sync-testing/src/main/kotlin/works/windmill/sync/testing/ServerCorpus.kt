@@ -14,8 +14,15 @@ object ServerCorpus {
         fun admit(input: Json, registry: Registry = probe, rules: ServerRules = ProbeServerRules()): Json {
             val origin = input.member("origin"); val account = origin.member("account").str()
             val from = if (origin.member("kind").str() == "replica") IntentOrigin(account, origin.member("replica").str(), origin.member("n").long()) else IntentOrigin(account)
-            val (state, answer) = Admission(registry, rules, ServerLimits(input["limits"])).admit(input.member("intent"), from, input.member("serverNow").long(), ServerState(input.member("state")))
-            return Json.objectOf("result" to answer.result, "state" to state.json)
+            val state = ServerState(input.member("state"))
+            val binding = input["effectPlan"]?.let(::EffectPlanRules) ?: rules
+            try {
+                val (after, answer) = Admission(registry, binding, ServerLimits(input["limits"])).admit(input.member("intent"), from, input.member("serverNow").long(), state)
+                return Json.objectOf("result" to answer.result, "state" to after.json)
+            } catch (fault: AdmissionFault) {
+                if (input["effectPlan"]?.get("fault") != Json.of(true)) throw fault
+                return Json.objectOf("fault" to Json.of(true), "state" to state.json)
+            }
         }
         val handlers = corpus.paths.filter { it.startsWith("admit/") && it != "admit/requests.json" }.associateWith { { input: Json -> admit(input) } }.toMutableMap<String, Handler>()
         handlers += mapOf(
@@ -111,3 +118,29 @@ fun runServerCorpus(root: File) {
 }
 
 fun main(args: Array<String>) = runServerCorpus(File(args.single()))
+
+internal class EffectPlanRules(val plan: Json) : ServerRules {
+    val probe = ProbeServerRules()
+    override val localCheckTypes get() = plan["legacyTypes"]?.arr()?.map { it.str() }?.toSet() ?: probe.localCheckTypes
+    override fun check(changes: List<RecordChange>, context: RuleContext) = probe.check(changes, context)
+    override fun replays(command: CheckedCommand, context: RuleContext) = probe.replays(command, context)
+    override fun discoverEffectScopes(context: RuleContext, command: CheckedCommand?) =
+        probe.discoverEffectScopes(context, command) + plan["declared"]?.arr().orEmpty().map { ScopeKey(it.str()) }
+    override fun run(command: CheckedCommand, context: RuleContext): CommandOutcome {
+        val result = probe.run(command, context)
+        val into = result.into.toMutableMap()
+        for ((scope, deltas) in effects("command", context)) into[scope] = into[scope].orEmpty() + deltas
+        return result.copy(into = into)
+    }
+    override fun effects(changes: List<RecordChange>, context: RuleContext): Effects {
+        val byScope = super<ServerRules>.effects(changes, context).byScope.toMutableMap()
+        for ((scope, deltas) in effects("check", context)) byScope[scope] = byScope[scope].orEmpty() + deltas
+        return Effects(byScope)
+    }
+    fun effects(stage: String, context: RuleContext) = plan[stage]?.obj().orEmpty().map { (key, values) ->
+        val scope = ScopeKey(key)
+        scope to values.arr().map { IntentShape.effect(it, scope, stage, context.registry) }
+    }.toMap()
+    override fun pruneRevisions(revisions: List<Json>, archived: List<Json>, now: Long, scope: ScopeKey, context: ServerState) =
+        probe.pruneRevisions(revisions, archived, now, scope, context)
+}
