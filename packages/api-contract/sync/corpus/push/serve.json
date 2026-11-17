@@ -9318,5 +9318,160 @@
       },
       "frames": []
     }
+  },
+  {
+    "name": "scoped response classification leaves malformed command bodies to ordinary admission refusal",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "cmd": "not-a-command"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": "A",
+          "lastN": 1,
+          "results": [
+            {
+              "n": 1,
+              "s": "refused",
+              "code": "invalid"
+            }
+          ]
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "replicas": {
+          "rp_0000000000000000000000000000000a": {
+            "account": "A",
+            "lastN": 1
+          }
+        },
+        "results": {
+          "rp_0000000000000000000000000000000a": [
+            {
+              "n": 1,
+              "digest": "fb085725930fb7a518495232a2be52654c83a511889b1743bbd74ee521d13b73",
+              "result": {
+                "s": "refused",
+                "code": "invalid"
+              },
+              "faults": 0
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
   }
 ]

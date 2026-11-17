@@ -181,7 +181,11 @@ export function scopedBatches() {
   const duplicate = pushed('duplicate opted intent numbers neither repeat the result nor stall continuation', { state: c.expect.state, request: request([second, second, third], 1) });
   assert.deepEqual(duplicate.expect.response.body.results, b.expect.response.body.results);
   assert.equal(duplicate.expect.response.body.retry.n, 3);
-  return [a, b, c, legacy, captured, replayed, duplicate];
+  const malformed = pushed('scoped response classification leaves malformed command bodies to ordinary admission refusal', {
+    state: base(), request: request([{ n: 1, scope: 'self/probe', cmd: 'not-a-command' }]),
+  });
+  assert.deepEqual(malformed.expect.response.body.results, [{ n: 1, s: 'refused', code: 'invalid' }]);
+  return [a, b, c, legacy, captured, replayed, duplicate, malformed];
 }
 
 export function files() {

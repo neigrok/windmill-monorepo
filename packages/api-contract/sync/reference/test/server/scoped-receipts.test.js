@@ -8,5 +8,5 @@ test('scoped receipt vectors assert actual versions, watermarks and absent targe
 });
 
 test('scoped receipt batching and saved-result replay make bounded progress', () => {
-  assert.equal(scopedBatches().length, 7);
+  assert.equal(scopedBatches().length, 8);
 });

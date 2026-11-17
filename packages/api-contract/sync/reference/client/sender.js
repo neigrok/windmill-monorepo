@@ -198,6 +198,7 @@ export function applyPushResult(replica, ctx, result, body) {
 
 // The ACK transaction's receipt-application point, before any projection settles or the entry resolves.
 export function applyReceipt(replica, ctx, entry, effects, write) {
+  const previous = entry.acceptedEffects ?? [];
   entry.acceptedEffects = structuredClone(effects);
   for (const effect of effects) {
     let projection = entry.predictions.find((candidate) => candidate.scope === effect.scope);
@@ -218,7 +219,7 @@ export function applyReceipt(replica, ctx, entry, effects, write) {
     ];
     for (const item of slots) if (!row.slots.some(({ slot }) => slot.kind === item.slot.kind && slot.name === item.slot.name)) row.slots.push(item);
   }
-  applyAcceptedVersions(replica, ctx, entry, accepted);
+  applyAcceptedVersions(replica, ctx, entry, accepted, previous);
 }
 
 // §7.4 the sender's wait between pushes. A backoff draws a sleep in [0, min(ceiling, base · 2^k)) and
