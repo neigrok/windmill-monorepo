@@ -19,6 +19,8 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 PRIVATE_TEXT = "COACH_PRIVATE_LOCAL_PROBE"
+SCENARIOS = ("two-rounds", "transient", "cut-stream", "proxy-before-event", "proxy-after-event",
+             "stop", "recover-final", "recover-tools")
 
 
 def require(condition, message):
@@ -94,7 +96,7 @@ class Provider(http.server.BaseHTTPRequestHandler):
         if fixture.hold_round == round_number:
             fixture.waiting.set()
             require(fixture.release.wait(90), "provider barrier timed out")
-        elif fixture.scenario in ("stop", "cut-stream"):
+        elif fixture.scenario in ("stop", "cut-stream", "proxy-after-event"):
             time.sleep(0.3)
         if first:
             for index, name in enumerate(("read", "write"), 1):
@@ -155,6 +157,19 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         try:
             upstream.request(self.command, self.path, body or None, headers)
             response = upstream.getresponse()
+            proxy_error = (
+                (fixture.scenario == "proxy-before-event" and self.command == "PUT" and path.endswith("/text"))
+                or (fixture.scenario == "proxy-after-event" and self.command == "GET" and path.endswith("/result"))
+            )
+            if proxy_error and not fixture.proxy_error and response.status == 200:
+                fixture.proxy_error = True
+                data = b"<html>Bad gateway</html>"
+                self.send_response(502)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             self.send_response(response.status)
             for key, value in response.getheaders():
                 if key.lower() not in ("connection", "transfer-encoding", "content-length"):
@@ -171,7 +186,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 self.wfile.flush()
                 if line.strip():
                     continue
-                if fixture.scenario == "cut-stream" and not fixture.injected and b"event: text" in frame:
+                if fixture.scenario in ("cut-stream", "proxy-after-event") and not fixture.injected and b"event: text" in frame:
                     fixture.injected = True
                     self.close_connection = True
                     return
@@ -207,6 +222,7 @@ class Fixture:
         self.scenario = scenario
         self.dispatches, self.requests, self.bodies = [], [], {}
         self.injected = False
+        self.proxy_error = False
         self.hold_round = {"recover-final": 2, "recover-tools": 1}.get(scenario)
         self.release.clear()
         self.waiting.clear()
@@ -334,10 +350,16 @@ class Fixture:
             resumed = self.requests[first_request_count:]
             require(any(item["method"] == "GET" and "/v1/calls/" in item["path"] for item in resumed), "recovery did not read its call")
             require(not any(item["method"] == "PUT" for item in resumed), "recovery admitted another call")
-        if scenario == "cut-stream":
+        if scenario in ("cut-stream", "proxy-after-event"):
             require(self.injected and any(item["method"] == "GET" and "after=" in item["path"] for item in self.requests), "cut stream did not resume by cursor")
-        if scenario == "transient":
+        if scenario in ("transient", "proxy-before-event"):
             require(sum(item["method"] == "PUT" and urllib.parse.urlsplit(item["path"]).path == "/v1/calls/" + call_ids[0] + "/text" for item in self.requests) == 2, "transient refusal did not retry identical call")
+        if scenario.startswith("proxy-"):
+            require(self.proxy_error, "proxy error did not replace an admitted response")
+            if scenario == "proxy-after-event":
+                require(sum(item["method"] == "GET" and "/result" in item["path"] for item in self.requests) >= 2, "proxy result error was not retried")
+        failures = output.get("failures", []) + [item for item in output.get("telemetry", []) if "operation" in item]
+        require(not failures, "expected local-service scenario reported a client failure")
         selected = ",".join("'" + value + "'" for value in call_ids)
         rows = self.sql(self.ai_database, "SELECT caller_id,state,held,applied,charged,(SELECT coalesce(sum(delta),0) FROM ai_spend_events WHERE call_id=c.id) FROM ai_calls c WHERE caller_id IN (" + selected + ") ORDER BY caller_id").splitlines()
         require(len(rows) == expected_calls, "ledger call identity duplicated")
@@ -377,13 +399,13 @@ def main():
     parser.add_argument("--client-cwd", type=Path, required=True)
     parser.add_argument("--scratch", type=Path, required=True)
     parser.add_argument("--surface", choices=("web", "ios", "android"), required=True)
-    parser.add_argument("--scenario", action="append", choices=("two-rounds", "transient", "cut-stream", "stop", "recover-final", "recover-tools"))
+    parser.add_argument("--scenario", action="append", choices=SCENARIOS)
     args = parser.parse_args()
     fixture = Fixture(args)
     evidence = []
     try:
         fixture.start()
-        for scenario in args.scenario or ("two-rounds", "transient", "cut-stream", "stop", "recover-final", "recover-tools"):
+        for scenario in args.scenario or SCENARIOS:
             evidence.append(fixture.run_case(scenario))
             print(args.surface + ": " + scenario + " passed", flush=True)
     finally:
