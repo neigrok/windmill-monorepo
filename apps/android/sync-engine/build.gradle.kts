@@ -23,6 +23,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(project(":sync-schema"))
+    testImplementation(project(":sync-model-server"))
 }
 
 // The testing kit is a JVM module; the runtime kernel has no Android references.

@@ -641,6 +641,11 @@ target_compile_definitions(windmill_sync_tests PRIVATE
 add_test(NAME sync COMMAND windmill_sync_tests)
 add_test(NAME sync_composition COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/test/platform/domain/sync/composition_test.cmake)
 
+# Opt-in request timings over the isolated scale database; never linked into a server or run by ctest.
+add_executable(windmill_sync_scale EXCLUDE_FROM_ALL test/platform/adapters/postgres/SyncScaleBenchmarks.cpp)
+target_link_libraries(windmill_sync_scale PRIVATE windmill_probe windmill_product_sync)
+target_compile_definitions(windmill_sync_scale PRIVATE WM_PG_TEST_URL_ENV="WM_SCALE_DATABASE_URL" WM_SCALE_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
+
 add_executable(windmill_adapters_tests
   test/http_main.cpp
   test/platform/adapters/http/AuthApiTest.cpp
