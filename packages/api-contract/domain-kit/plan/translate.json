@@ -1335,5 +1335,13 @@
       "plan": [{"op": "update", "t": "fact", "id": "2027-01-10", "f": {"value": 80, "at": 5}, "fields": ["value"]}]
     },
     "expect": {"error": true}
-  }
+  },
+  {"name": "meta declaration binds to a second scope", "input": {"scope": "tree/b_00000002", "plan": [{"op": "create", "t": "meta", "id": "meta", "f": {"title": " Plan "}}]}, "expect": {"gesture": {"changes": [{"op": "write", "t": "meta", "id": "meta", "f": {"title": "Plan"}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}},
+  {"name": "mark declaration binds to a second scope", "input": {"scope": "self/overlay/b_00000002", "plan": [{"op": "create", "t": "mark", "id": "oak", "f": {"done": true, "memo": "first note"}}]}, "expect": {"gesture": {"changes": [{"op": "write", "t": "mark", "id": "oak", "f": {"done": true}, "x": {"memo": {"text": "first note", "from": ""}}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}},
+  {"name": "meta refuses binding to self/probe", "input": {"scope": "self/probe", "plan": [{"op": "guardRead", "t": "meta", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {"name": "meta refuses binding to self/overlay/b_00000002", "input": {"scope": "self/overlay/b_00000002", "plan": [{"op": "guardRead", "t": "meta", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {"name": "mark refuses binding to tree/b_00000002", "input": {"scope": "tree/b_00000002", "plan": [{"op": "guardRead", "t": "mark", "id": "c_00000001", "fields": ["done"]}]}, "expect": {"error": true}},
+  {"name": "mark refuses binding to self/probe", "input": {"scope": "self/probe", "plan": [{"op": "guardRead", "t": "mark", "id": "c_00000001", "fields": ["done"]}]}, "expect": {"error": true}},
+  {"name": "card refuses binding to tree/b_00000002", "input": {"scope": "tree/b_00000002", "plan": [{"op": "guardRead", "t": "card", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {"name": "card refuses binding to self/other", "input": {"scope": "self/other", "plan": [{"op": "guardRead", "t": "card", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}}
 ]

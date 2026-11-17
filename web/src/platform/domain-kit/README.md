@@ -59,6 +59,15 @@ writes keep plan order; command text predictions carry `from: null` because they
 
 ## Binding
 
+A declaration sets `scope` to null for tree and overlay records. Callers supply the
+actual scope to `runner.mint(type, scope)`, `open(type, id, scope)` and
+`openOrNew(type, id, blank, scope)`. `Draft.new(blank, placement, scope)`,
+`Draft.opening(value, scope)`, `SaveDraft.creating(value, refusals, placement, scope)`,
+`Remove(id, refusals, scope)` and `Move(id, below, refusals, scope)` take the same explicit binding.
+Fixed declarations keep their existing calls through the scope default. A draft retains its binding
+through edits, rebasing and saves; `runner.save(draft, refusals, scope)` rejects any different scope.
+Readers and plan translation check both the registry's scope kind and any fixed declaration.
+
 `new ActionRunner(new EngineReplica(engine), engine.registry, zone)`, where `engine` is the shell's
 `BrowserSyncEngine`. The runner mints the gesture id through `engine.newGestureId()` and passes it as
 `opts.gestureId`, so a `too-large` refusal names the notice the commit wrote and the runner dismisses it;
@@ -72,6 +81,7 @@ meaning; it does not establish that a command's result has been pulled in the cu
 Persisted runner tests cover stale-tab transactional reads, predictions over confirmed records,
 checkpoint rejection states, opaque identities and anonymous supersession across an aborted commit
 and reopening.
+
 ## Ability catalogs
 
 `abilities.js` reads plain catalog data with `Ability` and `Catalog`; `JsonSchema` implements the

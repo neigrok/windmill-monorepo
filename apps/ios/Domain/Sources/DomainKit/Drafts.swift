@@ -4,6 +4,7 @@ import SyncCore
 // D-20 an entity being edited. A value and not `Sendable`: an editor holds one draft of a record and saves it in place,
 // on the actor that holds it (§10.1).
 public struct Draft<E: Draftable> {
+  public let scope: ScopeRef
   public let id: ID<E>
   // Opened or blank; then what the last save stored.
   public private(set) var base: E
@@ -11,15 +12,17 @@ public struct Draft<E: Draftable> {
   public private(set) var isNew: Bool
   public let placement: Placement?
 
-  public init(new blank: E) {
-    self.init(blank, isNew: true, placement: nil)
+  public init(new blank: E, in scope: ScopeRef) {
+    self.init(blank, in: scope, isNew: true, placement: nil)
   }
 
-  public init(opening value: E) {
-    self.init(value, isNew: false, placement: nil)
+  public init(opening value: E, in scope: ScopeRef) {
+    self.init(value, in: scope, isNew: false, placement: nil)
   }
 
-  init(_ value: E, isNew: Bool, placement: Placement?) {
+  init(_ value: E, in scope: ScopeRef, isNew: Bool, placement: Placement?) {
+    precondition(EntityFacts(E.self).scope.map { $0 == scope } ?? true, "\(E.type) cannot be rebound to \(scope)")
+    self.scope = scope
     id = value.id
     base = value
     current = value
@@ -39,7 +42,7 @@ public struct Draft<E: Draftable> {
   public func rebased(onto theirs: E) -> Draft {
     precondition(E.savesGuarded, "rebased(onto:) resolves a stale save, and \(E.type) saves unguarded")
     precondition(theirs.id == id, "rebased(onto:) takes theirs of the draft's own record, not \(theirs.id)")
-    var rebased = Draft(theirs, isNew: isNew, placement: placement)
+    var rebased = Draft(theirs, in: scope, isNew: isNew, placement: placement)
     let mine = current.fields
     rebased.current = E.decoding(id, theirs.fields.merging(touched.map { ($0, mine[$0] ?? .null) }) { _, kept in kept })
     return rebased
@@ -55,8 +58,8 @@ public struct Draft<E: Draftable> {
 }
 
 extension Draft where E: Ordered {
-  public init(new blank: E, placed: Placement) {
-    self.init(blank, isNew: true, placement: placed)
+  public init(new blank: E, in scope: ScopeRef, placed: Placement) {
+    self.init(blank, in: scope, isNew: true, placement: placed)
   }
 }
 
@@ -66,7 +69,7 @@ extension Draft {
   package init(orNew blank: E, in read: Reader) throws {
     let identity = read.registry.type(E.type)?.identity
     precondition(identity == .keyed || identity == .singleton, "open(_:orNew:) opens a keyed or singleton type, and \(E.type) is not")
-    self = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0) } ?? Draft(new: blank)
+    self = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0, in: read.scope) } ?? Draft(new: blank, in: read.scope)
   }
 }
 
@@ -92,14 +95,18 @@ public struct Saved: Equatable {
 
 extension ActionRunner {
   // The record as `drawn` shows it, or nil when it does not.
-  public func open<E: Draftable>(_ id: ID<E>) throws -> Draft<E>? {
-    try read(E.scope) { try $0.repository(E.self).find(id, in: .drawn) }.map { Draft(opening: $0) }
+  public func open<E: Draftable>(_ id: ID<E>, in scope: ScopeRef) throws -> Draft<E>? {
+    precondition(EntityFacts(E.self).scope.map { $0 == scope } ?? true, "\(E.type) cannot be rebound to \(scope)")
+    precondition(registry.lives(E.type, in: scope), "\(E.type) is outside \(scope)")
+    return try read(scope) { try $0.repository(E.self).find(id, in: .drawn) }.map { Draft(opening: $0, in: scope) }
   }
 
   // A keyed or singleton record, or a new draft of its blank.
-  public func open<E: Draftable>(_ id: ID<E>, orNew blank: E) throws -> Draft<E> {
+  public func open<E: Draftable>(_ id: ID<E>, in scope: ScopeRef, orNew blank: E) throws -> Draft<E> {
+    precondition(EntityFacts(E.self).scope.map { $0 == scope } ?? true, "\(E.type) cannot be rebound to \(scope)")
+    precondition(registry.lives(E.type, in: scope), "\(E.type) is outside \(scope)")
     precondition(blank.id == id, "open(_:orNew:) takes a blank of \(id), not of \(blank.id)")
-    return try read(E.scope) { try Draft(orNew: blank, in: $0) }
+    return try read(scope) { try Draft(orNew: blank, in: $0) }
   }
 
   // §10.1 the draft's save as one commit. Synchronous, and it never throws: a refused or failed save leaves the draft as
@@ -125,5 +132,30 @@ extension ActionRunner {
     case .refused(let refusal):
       return .refused(refusal)
     }
+  }
+}
+
+extension Draft where E: ProductEntity {
+  public init(new blank: E) { self.init(new: blank, in: E.scope) }
+  public init(opening value: E) { self.init(opening: value, in: E.scope) }
+}
+
+extension Draft where E: ProductEntity & Ordered {
+  public init(new blank: E, placed: Placement) { self.init(new: blank, in: E.scope, placed: placed) }
+}
+
+extension ActionRunner {
+  public func open<E: Draftable & ProductEntity>(_ id: ID<E>) throws -> Draft<E>? {
+    try open(id, in: E.scope)
+  }
+
+  public func open<E: Draftable & ProductEntity>(_ id: ID<E>, orNew blank: E) throws -> Draft<E> {
+    try open(id, in: E.scope, orNew: blank)
+  }
+
+  public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, in scope: ScopeRef,
+                                                  _ type: SaveDraft<E, R>.Type) -> SaveResult<R> {
+    precondition(draft.scope == scope, "a draft saves in its bound scope")
+    return save(&draft, type)
   }
 }

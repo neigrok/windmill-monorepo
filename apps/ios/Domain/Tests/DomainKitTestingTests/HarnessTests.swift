@@ -390,7 +390,7 @@ struct HarnessCommandTests {
 }
 
 // The probe card as a product writes it to a server: every field it writes stays inside its registry domain.
-struct Sticky: Draftable, Removable, Ordered {
+struct Sticky: ProductEntity, Draftable, Removable, Ordered {
   static let type = "card"
   static let scope = Probe.scope
   static let orderField = "ord"
@@ -428,7 +428,7 @@ struct Sticky: Draftable, Removable, Ordered {
 typealias SaveSticky = SaveDraft<Sticky, ProbeRefusal>
 
 // The probe run with no check on its label, so nothing keeps a save inside the registry's bound.
-struct Scrawl: Draftable {
+struct Scrawl: ProductEntity, Draftable {
   static let type = "run"
   static let scope = Probe.scope
   static let savesGuarded = false

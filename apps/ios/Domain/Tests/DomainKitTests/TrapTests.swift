@@ -97,7 +97,7 @@ enum Kit {
            isVisible: true, isPending: false, isHeld: false)
   }
 
-  struct Card: Draftable, Ordered {
+  struct Card: ProductEntity, Draftable, Ordered {
     static let type = "card"
     static let scope = ScopeRef.product("probe")
     static let orderField = "ord"
@@ -127,7 +127,7 @@ enum Kit {
     ]
   }
 
-  struct Lap: Draftable {
+  struct Lap: ProductEntity, Draftable {
     static let type = "lap"
     static let scope = ScopeRef.product("probe")
     static let savesGuarded = false

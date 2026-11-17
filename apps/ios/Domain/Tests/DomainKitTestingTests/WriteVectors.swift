@@ -169,14 +169,14 @@ enum Drafts {
     let save: SaveDraft<E, ProbeRefusal>
     if let draft = vector.input["draft"] {
       let id = try RecordID(json: draft.member("id"))
-      var opened = Draft(try E.decoding(id, fields(draft["base"])), isNew: try draft.member("isNew").asBool(),
+      var opened = Draft(try E.decoding(id, fields(draft["base"])), in: E.fixtureScope, isNew: try draft.member("isNew").asBool(),
                          placement: try placement(draft["placement"]))
       opened.current = try E.decoding(id, fields(draft["current"]))
       save = SaveDraft(opened)
     } else {
       let creating = try vector.input.member("creating")
       save = SaveDraft(creating: try E.decoding(RecordID(json: creating.member("id")), fields(creating["f"])),
-                       placement: try placement(creating["placement"]))
+                       in: E.fixtureScope, placement: try placement(creating["placement"]))
     }
     let reader = VectorReader(records: try VectorRecords(drawn: vector.input["drawn"], stored: vector.input["stored"], registry: registry),
                               now: vector.moment.now.ms)
@@ -189,7 +189,7 @@ enum Drafts {
       folded: try decode(try reader.stored(E.type, save.id.record)),
       anchor: try recordID(vector.input["anchor"]), moment: vector.moment, definition: definition)
     let decision = save.decision(loaded, ids: IDSource(context: reader))
-    return ["decision": try decision.form(in: E.scope, registry: registry, result: \.form, refusal: \.form)]
+    return ["decision": try decision.form(in: E.fixtureScope, registry: registry, result: \.form, refusal: \.form)]
   }
 
   // Runs the script's operations; a last step that expects a trap runs only when `trapping`, in its own process.
@@ -202,6 +202,12 @@ enum Drafts {
     let replica = VectorReplica(try VectorRecords(drawn: vector.input["drawn"], stored: vector.input["stored"], registry: registry),
                                 now: vector.moment.now.ms, registry: registry)
     let runner = ActionRunner(replica: replica, registry: registry, zone: vector.moment.zone)
+    if case .object(let scopes)? = vector.input["scopes"] {
+      for (scope, rows) in scopes.members {
+        replica.scopes[try ScopeRef(scope)] = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"], registry: registry)
+      }
+    }
+    var remembered: [String: Draft<E>] = [:]
     let operations = try vector.input.member("ops").asArray()
     let trapsLast = Traps.trapsLast(vector)
     var draft: Draft<E>?
@@ -213,15 +219,16 @@ enum Drafts {
       }
       var step: JSON.Object = [:]
       let id = try recordID(operation["id"])
+      let scope = try (operation["scope"] ?? vector.input["scope"]).map { try ScopeRef($0.asString()) } ?? E.fixtureScope
       switch try operation.member("op").asString() {
       case "new":
         let blank = try E.decoding(try id ?? missing("id"), [:])
-        draft = Draft(blank, isNew: true, placement: try placement(operation["placement"]))
+        draft = Draft(blank, in: scope, isNew: true, placement: try placement(operation["placement"]))
       case "open":
-        draft = try runner.open(ID<E>(try id ?? missing("id")))
+        draft = try runner.open(ID<E>(try id ?? missing("id")), in: scope)
       case "openOrNew":
         let key = try id ?? missing("id")
-        draft = try runner.open(ID<E>(key), orNew: try E.decoding(try recordID(operation["blank"]) ?? key, [:]))
+        draft = try runner.open(ID<E>(key), in: scope, orNew: try E.decoding(try recordID(operation["blank"]) ?? key, [:]))
       case "edit":
         guard var edited = draft else { throw ContractError("an edit with no draft") }
         edited.current = try E.decoding(edited.id.record, edited.current.fields.merging(try fields(operation["f"])) { _, set in set })
@@ -231,9 +238,13 @@ enum Drafts {
         if let other = try recordID(operation["as"]) { saving.current = try E.decoding(other, saving.current.fields) }
         if operation["fail"] == true { replica.failNextCommit() }
         let committed = replica.gestures.count
-        var result = form(runner.save(&saving, SaveDraft<E, ProbeRefusal>.self))
+        var result = form(runner.save(&saving, in: try operation["scope"].map { try ScopeRef($0.asString()) } ?? saving.scope, SaveDraft<E, ProbeRefusal>.self))
         if operation["gesture"] == true, case .object(var members) = result {
           members["gesture"] = replica.gestures.count > committed ? replica.gestures[committed].form : .null
+          result = .object(members)
+        }
+        if vector.input["reportScope"] == true, case .object(var members) = result {
+          members["scope"] = replica.commitScopes.count > committed ? .string(replica.commitScopes[committed].description) : .null
           result = .object(members)
         }
         step["result"] = result
@@ -241,12 +252,23 @@ enum Drafts {
       case "rebase":
         guard let mine = draft else { throw ContractError("a rebase with no draft") }
         draft = mine.rebased(onto: try E.decoding(id ?? mine.id.record, fields(operation["f"])))
+      case "load":
+        guard let draft else { throw ContractError("a load with no draft") }
+        _ = try runner.read(scope) { try SaveDraft<E, ProbeRefusal>(draft).load($0) }
+      case "remember":
+        remembered[try operation.member("name").asString()] = draft
+      case "recall":
+        draft = remembered[try operation.member("name").asString()]
       case "records":
         replica.records = try VectorRecords(drawn: operation["drawn"], stored: operation["stored"], registry: registry)
       case let op:
         throw ContractError("no script operation \(op)")
       }
       step["draft"] = draft?.form ?? .null
+      if vector.input["reportScope"] == true, let draft, case .object(var members) = draft.form {
+        members["scope"] = .string(draft.scope.description)
+        step["draft"] = .object(members)
+      }
       steps.append(.object(step))
     }
     return ["steps": .array(steps)]

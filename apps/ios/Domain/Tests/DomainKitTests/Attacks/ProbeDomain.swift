@@ -5,7 +5,7 @@ import SyncCore
 // The product domain every attack compiles against: an ordered, guarded card with a held removal, and a keyed mark with
 // a text field, over the engine's probe registry.
 
-public struct Card: Draftable, Removable, Ordered {
+public struct Card: ProductEntity, Draftable, Removable, Ordered {
   public static let type = "card"
   public static let scope = ScopeRef.product("probe")
   public static let orderField = "ord"
@@ -32,7 +32,7 @@ public struct Card: Draftable, Removable, Ordered {
   ]
 }
 
-public struct Mark: Draftable {
+public struct Mark: ProductEntity, Draftable {
   public static let type = "mark"
   public static let scope = ScopeRef.overlay("b_00000001")
   public static let savesGuarded = false

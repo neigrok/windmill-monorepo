@@ -118,10 +118,10 @@ export class Harness {
     };
   }
 
-  /** @template E @param {import('../../../src/platform/domain-kit/entities.js').EntityType<E>} type */
-  drawn(type) { return this.runner.read(type.scope, (read) => read.repository(type).all('drawn')); }
-  /** @template E @param {import('../../../src/platform/domain-kit/entities.js').EntityType<E>} type */
-  stored(type) { return this.runner.read(type.scope, (read) => read.repository(type).all('stored')); }
+  /** @template E @param {import('../../../src/platform/domain-kit/entities.js').EntityType<E>} type @param {string} [scope] */
+  drawn(type, scope = type.boundScope()) { return this.runner.read(type.boundScope(scope), (read) => read.repository(type).all('drawn')); }
+  /** @template E @param {import('../../../src/platform/domain-kit/entities.js').EntityType<E>} type @param {string} [scope] */
+  stored(type, scope = type.boundScope()) { return this.runner.read(type.boundScope(scope), (read) => read.repository(type).all('stored')); }
   /** @template R @param {import('../../../src/platform/domain-kit/refusals.js').Refusals<R>} refusals */
   notices(refusals) { return this.engine.observe(this.world.scope).getSnapshot().notices.map((/** @type {any} */ notice) => new DomainNotice(notice, this.world.registry, refusals)); }
   undoOffers() { return undoOffers(this.engine.device.activeReplica, this.world.scope); }

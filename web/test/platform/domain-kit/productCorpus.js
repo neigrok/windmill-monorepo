@@ -86,11 +86,12 @@ export class ProductCorpus {
    * @param {(value: E) => E} edit
    * @param {(result: T) => Json} resultForm
    * @param {(refusal: R) => Json} refusalForm
+   * @param {string} [scope]
    */
-  save(save, vector, blank, edit, resultForm, refusalForm) {
+  save(save, vector, blank, edit, resultForm, refusalForm, scope = blank.id.entity.boundScope()) {
     const type = blank.id.entity;
-    const existing = this.reader(vector, type.scope).repository(type).find(blank.id, 'drawn');
-    const draft = (existing === null ? Draft.new(blank) : Draft.opening(existing)).edit(edit);
+    const existing = this.reader(vector, type.boundScope(scope)).repository(type).find(blank.id, 'drawn');
+    const draft = (existing === null ? Draft.new(blank, null, scope) : Draft.opening(existing, scope)).edit(edit);
     return this.decision(save(draft), vector, resultForm, refusalForm);
   }
 

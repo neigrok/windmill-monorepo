@@ -18,7 +18,7 @@ import { Instant, LocalDay } from '../../../src/platform/domain-kit/time.js';
 import { translate } from '../../../src/platform/domain-kit/translation.js';
 import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { CountSpec, Fault, NumberSpec, Path, TextSpec, Violation } from '../../../src/platform/domain-kit/values.js';
-import { PROBE_SCOPE, ProbeRefusals, probeCommand, probeEntity, probeValue, refusalForm } from './probe.js';
+import { PROBE_SCOPE, ProbeRefusals, probeCommand, probeEntity, probeValue, probeScope, refusalForm } from './probe.js';
 import { Contract, ContractError, VectorReplica, applySpec, decisionForm, draftForm, listsRecords, momentOf, outcomeForm, placementOf,
   probeRegistry, savedForm, specOf, vectorViews, withRecordsReversed } from './vectors.js';
 
@@ -190,20 +190,20 @@ async function pipelineVector(input) {
 function listVector(input) {
   const type = probeEntity(input.t);
   const views = vectorViews(input.records);
-  const reader = new Reader(views, type.scope, momentOf(input));
+  const reader = new Reader(views, probeScope(type), momentOf(input));
   const repository = reader.repository(type);
   const ids = (/** @type {{ id: Id<any> }[]} */ entities) => entities.map((entity) => entity.id.json);
   if (input.view) return { ids: ids(repository.all(input.view)) };
   if (input.children) return { ids: ids(repository.children(new Id(input.children.of, type), input.children.via, input.children.view ?? 'drawn')) };
   if (input.remove) {
     if (!type.isRemovable) return { error: true };
-    const remove = new Remove(new Id(input.remove.id, type), ProbeRefusals);
-    return { decision: decisionForm(remove.decide(remove.load(reader)), type.scope, nothing, refusalForm) };
+    const remove = new Remove(new Id(input.remove.id, type), ProbeRefusals, probeScope(type));
+    return { decision: decisionForm(remove.decide(remove.load(reader)), probeScope(type), nothing, refusalForm) };
   }
   if (!type.isOrdered) return { error: true };
   if (input.placement) return { anchor: repository.anchor(/** @type {NonNullable<ReturnType<typeof placementOf>>} */ (placementOf(input.placement))) };
-  const move = new Move(new Id(input.move.id, type), recordID(input.move.below) === null ? null : new Id(input.move.below, type), ProbeRefusals);
-  return { decision: decisionForm(move.decide(move.load(reader)), type.scope, nothing, refusalForm) };
+  const move = new Move(new Id(input.move.id, type), recordID(input.move.below) === null ? null : new Id(input.move.below, type), ProbeRefusals, probeScope(type));
+  return { decision: decisionForm(move.decide(move.load(reader)), probeScope(type), nothing, refusalForm) };
 }
 
 /** @param {any} input */
@@ -225,11 +225,11 @@ function saveVector(input) {
   const form = input.draft ?? input.creating;
   const type = draftable(form.t);
   const save = input.draft
-    ? SaveDraft.ofDraft((form.isNew ? Draft.new(probeValue(type, form.id, form.base ?? {}), placementOf(form.placement)) : Draft.opening(probeValue(type, form.id, form.base ?? {})))
+    ? SaveDraft.ofDraft((form.isNew ? Draft.new(probeValue(type, form.id, form.base ?? {}), placementOf(form.placement), probeScope(type)) : Draft.opening(probeValue(type, form.id, form.base ?? {}), probeScope(type)))
       .edit(() => probeValue(type, form.id, form.current ?? {})), ProbeRefusals)
-    : SaveDraft.creating(probeValue(type, form.id, form.f ?? {}), ProbeRefusals, placementOf(form.placement));
+    : SaveDraft.creating(probeValue(type, form.id, form.f ?? {}), ProbeRefusals, placementOf(form.placement), probeScope(type));
   const views = vectorViews({ drawn: input.drawn, stored: input.stored });
-  const repository = new Reader(views, type.scope, momentOf(input)).repository(type);
+  const repository = new Reader(views, probeScope(type), momentOf(input)).repository(type);
   const folded = repository.record(form.id, 'stored');
   const loaded = {
     drawn: repository.find(save.id, 'drawn'),
@@ -239,7 +239,7 @@ function saveVector(input) {
     moment: momentOf(input),
     definition: /** @type {NonNullable<ReturnType<typeof probeRegistry.type>>} */ (probeRegistry.type(type.type)),
   };
-  return { decision: decisionForm(decision(save, loaded, new IDSource(views)), type.scope, savedForm, refusalForm) };
+  return { decision: decisionForm(decision(save, loaded, new IDSource(views)), probeScope(type), savedForm, refusalForm) };
 }
 
 /** @param {any} input */
@@ -248,6 +248,8 @@ async function scriptVector(input) {
   const at = momentOf(input);
   const replica = new VectorReplica({ drawn: input.drawn, stored: input.stored }, at.now.ms);
   const runner = new ActionRunner(replica, probeRegistry, at.zone);
+  replica.scopes = input.scopes ?? {};
+  const remembered = new Map();
   /** @type {Draft<import('./probe.js').ProbeEntity> | null} */
   let draft = null;
   /** @type {Json[]} */
@@ -260,16 +262,17 @@ async function scriptVector(input) {
     /** @type {{ [key: string]: Json }} */
     const step = {};
     const id = recordID(operation.id);
+    const scope = operation.scope ?? input.scope ?? probeScope(type);
     try {
       switch (operation.op) {
         case 'new':
-          draft = Draft.new(probeValue(type, id), placementOf(operation.placement));
+          draft = Draft.new(probeValue(type, id), placementOf(operation.placement), scope);
           break;
         case 'open':
-          draft = runner.open(type, new Id(id, type));
+          draft = runner.open(type, new Id(id, type), scope);
           break;
         case 'openOrNew':
-          draft = runner.openOrNew(type, new Id(id, type), probeValue(type, recordID(operation.blank) ?? id));
+          draft = runner.openOrNew(type, new Id(id, type), probeValue(type, recordID(operation.blank) ?? id), scope);
           break;
         case 'edit':
           draft = held().edit((current) => probeValue(type, current.id.record, { ...current.fields(), ...operation.f }));
@@ -279,18 +282,28 @@ async function scriptVector(input) {
           if (operation.as) saving = saving.edit((current) => probeValue(type, operation.as, current.fields()));
           if (operation.fail) replica.failNext = true;
           const before = replica.gestures.length;
-          const saved = await runner.save(saving, ProbeRefusals);
+          const saved = await runner.save(saving, ProbeRefusals, operation.scope ?? saving.scope);
           draft = saved.draft;
           const result = saved.result;
           /** @type {{ [key: string]: Json }} */
           const form = result.kind === 'saved' ? { saved: result.receipt?.gestureId ?? null }
             : result.kind === 'refused' ? { refused: refusalForm(result.refusal) } : { failed: true };
           if (operation.gesture) form.gesture = /** @type {Json} */ (/** @type {unknown} */ (replica.gestures[before] ?? null));
+          if (input.reportScope) form.scope = replica.commitScopes[before] ?? null;
           step.result = form;
           break;
         }
         case 'rebase':
           draft = held().rebased(probeValue(type, id ?? held().id.record, operation.f ?? {}));
+          break;
+        case 'load':
+          runner.read(scope, (read) => SaveDraft.ofDraft(held(), ProbeRefusals).load(read));
+          break;
+        case 'remember':
+          remembered.set(operation.name, held());
+          break;
+        case 'recall':
+          draft = remembered.get(operation.name);
           break;
         case 'records':
           replica.records = { drawn: operation.drawn, stored: operation.stored };
@@ -298,7 +311,7 @@ async function scriptVector(input) {
         default:
           throw new ContractError(`unknown script operation ${operation.op}`);
       }
-      step.draft = draft === null ? null : draftForm(draft);
+      step.draft = draft === null ? null : { ...draftForm(draft), ...(input.reportScope ? { scope: draft.scope } : {}) };
       steps.push(step);
     } catch (error) {
       if (!(error instanceof Fault)) throw error;
@@ -335,6 +348,7 @@ const handlers = {
   'run/pipeline.json': pipelineVector,
   'draft/save.json': saveVector,
   'draft/script.json': scriptVector,
+  'scope/bindings.json': scriptVector,
   'refusal/subject.json': subjectVector,
 };
 

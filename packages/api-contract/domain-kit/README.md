@@ -1,7 +1,7 @@
 # Domain kit corpus
 
 The shared vectors of the domain kit ([domain-kit.md](../../../docs/foundation/domain-kit.md) §15). Every
-implementation of the kit (Swift `DomainKit`, Kotlin `:domain-kit`) reproduces each `expect` byte for byte.
+implementation of the kit (Swift `DomainKit`, Kotlin `:domain-kit`, web `platform/domain-kit`) reproduces each `expect` byte for byte.
 A runner written from this README alone needs no other file than `../sync/probe.registry.json`.
 
 ## Conventions
@@ -63,12 +63,12 @@ not kit content. `f` in an input lists field values; a field it leaves out takes
 | `Card` | `card`, `self/probe` | `Draftable` (`savesGuarded` true), `Removable` (`heldRemoval` true), `Ordered` (`ord`) | `title` (`""`), `body` (`""`), `size` (null), `claim` (null), `tier` (`"draft"`) | `title`: text `card.title` chars 1–12 trim nfc; `body`: text `card.body` bytes 0–24 trim nfc; `size`: number `card.size` −500…500 quantum 0.01; `claim`: text `card.claim` chars 0–12 trim nfc; `tier`: choice `card.tier` `draft`, `review`, `done`, `dropped` |
 | `Day` | `day`, `self/probe` | `Draftable` (`savesGuarded` false), `Removable` (`heldRemoval` true) | `score` (null) | key check `day.notFuture`: the id's local day after the moment's `today` → `{rule: "day.notFuture", path: "id", reason: "custom", custom: "future"}`; `score`: number `day.score` 0–10 integer |
 | `Fact` | `fact`, `self/probe` | `Draftable` (`savesGuarded` false), `Removable` (`heldRemoval` true), `Timestamped` (`at`) | `value` (null), `at` (null, epoch ms) | `value`: number `fact.value` 0–500 quantum 0.1; then `at` takes the moment's `now` when named |
-| `Mark` | `mark`, `self/overlay/b_00000001` | `Draftable` (`savesGuarded` false) | `done` (null), `memo` (`""`, a text field) | `memo`: text `mark.memo` bytes 0–40, no trim, no nfc |
-| `Meta` | `meta`, `tree/b_00000001` | `Draftable` (`savesGuarded` false) | `title` (`""`) | `title`: text `meta.title` chars 0–12 trim nfc |
+| `Mark` | `mark`, dynamic overlay | `Draftable` (`savesGuarded` false) | `done` (null), `memo` (`""`, a text field) | `memo`: text `mark.memo` bytes 0–40, no trim, no nfc |
+| `Meta` | `meta`, dynamic tree | `Draftable` (`savesGuarded` false) | `title` (`""`) | `title`: text `meta.title` chars 0–12 trim nfc |
 | `Lap` | `lap`, `self/probe` | `Writable`, `Removable` (`heldRemoval` false) | `runId` (`""`), `at` (null), `weight` (null) | `weight`: number `lap.weight` −500…500 quantum 0.01 |
 | `Run` | `run`, `self/probe` | `Writable`, `Removable` (`heldRemoval` false) | `startedAt` (null), `label` (null) | `label`: text `run.label` chars 0–12 trim nfc |
-| `Link` | `link`, `tree/b_00000001` | `Writable`, `Removable` (`heldRemoval` true) | `strength` (null) | `strength`: number `link.strength` 0–9 integer |
-| `Tag` | `tag`, `tree/b_00000001` | `Writable` | `label` (`""`) | none |
+| `Link` | `link`, dynamic tree | `Writable`, `Removable` (`heldRemoval` true) | `strength` (null) | `strength`: number `link.strength` 0–9 integer |
+| `Tag` | `tag`, dynamic tree | `Writable` | `label` (`""`) | none |
 
 Every entity's `fields` holds every field of its row above, a nil value as `null`; `Mark.memo` decodes by
 `Fields.text`. They are vector declarations, not a product's: a card writes `claim: null` and a blank `title`, which the
@@ -201,3 +201,24 @@ A notice's subject is its first delta's record, else the first `ref<t>` argument
 registry's argument order (the `args` object's keys in JCS order), else null. `values(of:)` folds the
 content's deltas, then each dependent's in order, depth first, a later write of a field replacing an
 earlier one; a text is its `text`.
+
+
+### `scope/bindings.json`
+
+Runs the `draft/script.json` operations through the same runner with `scopes`, a map from actual
+scope to `{drawn, stored}` records. An `open`, `openOrNew` or `new` operation may name `scope`;
+a save uses the draft's bound scope and an explicit save `scope` must equal it. `remember` stores
+the current draft under `name`; `recall` restores that draft. These operations make two drafts of
+the same declaration and id coexist without changing their binding. `reportScope: true` adds
+`scope` to each non-null draft and the actual committed scope (or null) to a save result.
+The replica remains the deterministic script double: it records the scoped gestures and does not
+apply them to its input records. Existing files omit these added output fields.
+
+`GuardedMeta` (`t: "guardedMeta"`) uses `Meta`'s registry type, fields and checks with
+`savesGuarded: true`, to exercise rebasing without changing `Meta`. The script operation
+`load` attempts to load the current draft's save through a reader of its explicit `scope`;
+a different scope traps before the repository is read.
+
+The declaration is dynamic for `GuardedMeta`, `Meta`, `Mark`, `Link` and `Tag`. Older vectors that omit the actual
+scope explicitly use `tree/b_00000001` or `self/overlay/b_00000001` in their fixture runner; those
+fixture defaults are not part of the entity declaration. Product entities keep `self/probe` fixed.

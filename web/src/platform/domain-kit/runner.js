@@ -156,9 +156,14 @@ export class ActionRunner {
   /**
    * @template E
    * @param {import('./entities.js').EntityType<E>} type
+   * @param {string | null} [scope]
    */
-  mint(type) {
-    return new Id(this.replica.mintId(type.type, takenIn(this.replica.read(type.scope).drawn, type.type)), type);
+  mint(type, scope = type.scope) {
+    const actual = type.boundScope(scope);
+    return this.read(actual, (read) => {
+      read.repository(type);
+      return new Id(this.replica.mintId(type.type, takenIn(read.views.drawn, type.type)), type);
+    });
   }
 
   moment() {
@@ -170,10 +175,12 @@ export class ActionRunner {
    * @template {import('./entities.js').Writable<any>} E
    * @param {import('./entities.js').EntityType<E>} type
    * @param {import('./entities.js').Id<E>} id
+   * @param {string | null} [scope]
    */
-  open(type, id) {
-    const found = this.read(type.scope, (read) => read.repository(type).find(id, 'drawn'));
-    return found === null ? null : Draft.opening(found);
+  open(type, id, scope = type.scope) {
+    const actual = type.boundScope(scope);
+    const found = this.read(actual, (read) => read.repository(type).find(id, 'drawn'));
+    return found === null ? null : Draft.opening(found, actual);
   }
 
   // A keyed or singleton record's draft, or a new draft of its blank.
@@ -182,12 +189,14 @@ export class ActionRunner {
    * @param {import('./entities.js').EntityType<E>} type
    * @param {import('./entities.js').Id<E>} id
    * @param {E} blank
+   * @param {string | null} [scope]
    */
-  openOrNew(type, id, blank) {
+  openOrNew(type, id, blank, scope = type.scope) {
+    const actual = type.boundScope(scope);
     precondition(blank.id.equals(id), 'the blank must name the opened record');
     const identity = this.registry.type(type.type)?.identity;
     precondition(identity === 'keyed' || identity === 'singleton', 'open with a blank requires a keyed or singleton type');
-    return this.open(type, id) ?? Draft.new(blank);
+    return this.open(type, id, actual) ?? Draft.new(blank, null, actual);
   }
 
   // The draft's one door (INV-14): its save as one commit, answering the result and the draft after it.
@@ -196,10 +205,11 @@ export class ActionRunner {
    * @template R
    * @param {Draft<E>} draft
    * @param {import('./refusals.js').Refusals<R>} refusals
+   * @param {string} [scope]
    * @returns {Promise<{ result: import('./drafts.js').SaveResult<R>, draft: Draft<E> }>}
    */
-  async save(draft, refusals) {
-    const save = SaveDraft.ofDraft(draft, refusals);
+  async save(draft, refusals, scope = draft.scope) {
+    const save = SaveDraft.ofDraft(draft, refusals, scope);
     /** @type {import('./actions.js').Outcome<import('./drafts.js').Saved, R>} */
     let outcome;
     try {

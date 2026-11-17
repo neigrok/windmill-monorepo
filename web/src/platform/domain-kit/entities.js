@@ -65,13 +65,16 @@ export function sameJson(a, b) {
   return jcs(a) === jcs(b);
 }
 
-// An entity's declaration (§3.1): the registry type and scope its records live in, its decoder, and
+// An entity's declaration (§3.1): its registry type, optional fixed scope, decoder, and
 // the protocols it takes. `checks` makes it Writable, `heldRemoval` Removable, `orderField` Ordered,
 // `savesGuarded` Draftable and `timestampField` Timestamped.
-/** @template E */
+/**
+ * @template E
+ * @template {string | null} [S=string | null]
+ */
 export class EntityType {
   /**
-   * @param {{ type: string, scope: string, decode: (f: Fields) => E, checks?: import('./validation.js').Check<E>[],
+   * @param {{ type: string, scope: S, decode: (f: Fields) => E, checks?: import('./validation.js').Check<E>[],
    *   heldRemoval?: boolean, orderField?: string, savesGuarded?: boolean, timestampField?: string }} declaration
    */
   constructor({ type, scope, decode, checks, heldRemoval, orderField, savesGuarded, timestampField }) {
@@ -86,6 +89,13 @@ export class EntityType {
     this.savesGuarded = savesGuarded ?? null;
     this.timestampField = timestampField ?? null;
     Object.freeze(this);
+  }
+
+  /** @param {string | null} [scope] */
+  boundScope(scope = this.scope) {
+    precondition(typeof scope === 'string', `${this.type} requires an explicit scope`);
+    precondition(this.scope === null || this.scope === scope, `${this.type} cannot be rebound to ${scope}`);
+    return scope;
   }
 
   get isWritable() {

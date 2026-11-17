@@ -108,7 +108,7 @@ extension Operation {
   // The table's cell for this operation, or nil for a guard, which writes nothing.
   func change(in scope: ScopeRef, registry: Registry) throws(PlanError) -> Change? {
     guard let definition = registry.type(entity.type) else { throw PlanError(rule: 0, "the registry holds no type \(entity.type)") }
-    guard entity.scope == scope, registry.lives(entity.type, in: scope) else {
+    guard entity.scope.map({ $0 == scope }) ?? true, registry.lives(entity.type, in: scope) else {
       throw PlanError(rule: 1, "\(entity.type) lives outside the action's scope \(scope)")
     }
     guard definition.identity != .derived else { throw PlanError(rule: 0, "the kit writes no derived type (\(entity.type))") }

@@ -4,7 +4,7 @@ import SyncCore
 // §7.1 what a load reads through, valid only inside the one run or read that made it.
 public struct Reader {
   public let moment: Moment
-  let scope: ScopeRef
+  public let scope: ScopeRef
   let source: any ScopeReader
   let registry: Registry
 
@@ -21,10 +21,13 @@ public struct Reader {
   public func commands() throws -> [QueuedCommand] { try (source as? any CommitContext)?.commands() ?? [] }
   public func devices(prefix: String) throws -> JSON.Object { try source.devices(prefix: prefix) }
   public func checkpoint() throws -> ScopeCheckpoint { try source.checkpoint() }
-  public func confirmed<E: Entity>(_ type: E.Type, _ id: ID<E>) throws -> Record? { try source.confirmed(E.type, id.record) }
+  public func confirmed<E: Entity>(_ type: E.Type, _ id: ID<E>) throws -> Record? {
+    try repository(type).checkScope()
+    return try source.confirmed(E.type, id.record)
+  }
 
   public func repository<E: Entity>(_ type: E.Type) -> Repository<E> {
-    Repository(source: source, registry: registry)
+    Repository(source: source, registry: registry, scope: scope)
   }
 
   // A `device/<product>` row of the scope's product (engine §2.5).
@@ -42,6 +45,13 @@ public struct Reader {
 public struct Repository<E: Entity> {
   let source: any ScopeReader
   let registry: Registry
+  let scope: ScopeRef
+
+  func checkScope() throws {
+    guard EntityFacts(E.self).scope.map({ $0 == scope }) ?? true, registry.lives(E.type, in: scope) else {
+      throw CommitFailure.malformed("\(E.type) is no type of \(scope)")
+    }
+  }
 
   public func find(_ id: ID<E>, in view: ViewMode) throws -> E? {
     guard let record = try record(id.record, in: view), record.isVisible else { return nil }
@@ -49,11 +59,13 @@ public struct Repository<E: Entity> {
   }
 
   public func all(in view: ViewMode) throws -> [E] {
-    try Repository.decode(view == .drawn ? source.drawn(E.type) : source.stored(E.type))
+    try checkScope()
+    return try Repository.decode(view == .drawn ? source.drawn(E.type) : source.stored(E.type))
   }
 
   // Through the engine's indexed read (ER-12): the cost follows the children, not the type.
   public func children<P: Entity>(of parent: ID<P>, via field: String, in view: ViewMode) throws -> [E] {
+    try checkScope()
     let records = view == .drawn
       ? try source.drawn(E.type, where: field, is: parent.record)
       : try source.stored(E.type, where: field, is: parent.record)
@@ -61,7 +73,8 @@ public struct Repository<E: Entity> {
   }
 
   public func capacity() throws -> Capacity {
-    Capacity(of: E.self, stored: try source.stored(E.type), registry: registry)
+    try checkScope()
+    return Capacity(of: E.self, stored: try source.stored(E.type), registry: registry)
   }
 
   public func record(_ id: ID<E>, in view: ViewMode) throws -> Record? { try record(id.record, in: view) }
@@ -78,6 +91,7 @@ public struct Repository<E: Entity> {
 
   // §7.5: top → none; below(x) → x; bottom → the last member in `stored` order, a held one included, or none.
   func anchor(_ placement: Placement, orderField: String) throws -> RecordID? {
+    try checkScope()
     switch placement {
     case .top: return nil
     case .below(let above): return above
@@ -87,7 +101,8 @@ public struct Repository<E: Entity> {
 
   // The record of a view, visible or not: the engine's folded record (ER-3).
   func record(_ id: RecordID, in view: ViewMode) throws -> Record? {
-    view == .drawn ? try source.drawn(E.type, id) : try source.stored(E.type, id)
+    try checkScope()
+    return view == .drawn ? try source.drawn(E.type, id) : try source.stored(E.type, id)
   }
 
   static func ordered(_ records: [Record]) -> [Record] {

@@ -11,9 +11,15 @@ interface Entity<E : Entity<E>> { val id: Id<E> }
 interface Writable<E : Writable<E>> : Entity<E> { fun fields(): Map<String, Json> }
 interface EntityType<E : Entity<E>> {
     val type: String
-    val scope: ScopeRef
+    val scope: ScopeRef? get() = null
     fun decode(f: Fields): E
 }
+fun EntityType<*>.boundScope(actual: ScopeRef? = scope): ScopeRef {
+    checkNotNull(actual) { "$type requires an explicit scope" }
+    check(scope == null || scope == actual) { "$type cannot be rebound to $actual" }
+    return actual
+}
+
 interface WritableType<E : Writable<E>> : EntityType<E> { val checks: List<Check<E>> }
 interface RemovableType<E : Entity<E>> : EntityType<E> { val heldRemoval: Boolean }
 interface OrderedType<E : Entity<E>> : EntityType<E> { val orderField: String }
@@ -36,7 +42,7 @@ class Id<E : Entity<E>>(val record: RecordID, val entity: EntityType<E>) : Compa
 
 class EntityFacts(val entity: EntityType<*>) {
     val type: String get() = entity.type
-    val scope: ScopeRef get() = entity.scope
+    val scope: ScopeRef? get() = entity.scope
     val orderField: String? get() = (entity as? OrderedType<*>)?.orderField
     val heldRemoval: Boolean? get() = (entity as? RemovableType<*>)?.heldRemoval
     val savesGuarded: Boolean? get() = (entity as? DraftableType<*>)?.savesGuarded

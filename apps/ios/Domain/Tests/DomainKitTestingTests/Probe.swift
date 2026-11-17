@@ -17,13 +17,16 @@ enum Probe {
 protocol ProbeEntity: Writable {}
 
 extension ProbeEntity {
+  static var fixtureScope: ScopeRef {
+    (Self.self as? any ProductEntity.Type)?.scope ?? (type == "mark" ? Probe.overlay : Probe.tree)
+  }
   static func decoding(_ id: RecordID, _ f: [String: JSON]) throws -> Self {
     try Self(Fields(Record(type: type, id: id, life: nil, born: nil, values: f, texts: [:], serials: [:], rc: nil, ru: nil,
                            isVisible: true, isPending: false, isHeld: false)))
   }
 }
 
-struct Card: ProbeEntity, Draftable, Removable, Ordered {
+struct Card: ProductEntity, ProbeEntity, Draftable, Removable, Ordered {
   static let type = "card"
   static let scope = Probe.scope
   static let orderField = "ord"
@@ -69,7 +72,7 @@ struct Card: ProbeEntity, Draftable, Removable, Ordered {
   ]
 }
 
-struct Day: ProbeEntity, Draftable, Removable {
+struct Day: ProductEntity, ProbeEntity, Draftable, Removable {
   static let type = "day"
   static let scope = Probe.scope
   static let savesGuarded = false
@@ -98,7 +101,7 @@ struct Day: ProbeEntity, Draftable, Removable {
   ]
 }
 
-struct Fact: ProbeEntity, Draftable, Removable, Timestamped {
+struct Fact: ProductEntity, ProbeEntity, Draftable, Removable, Timestamped {
   static let type = "fact"
   static let scope = Probe.scope
   static let savesGuarded = false
@@ -129,7 +132,6 @@ struct Fact: ProbeEntity, Draftable, Removable, Timestamped {
 
 struct Mark: ProbeEntity, Draftable {
   static let type = "mark"
-  static let scope = Probe.overlay
   static let savesGuarded = false
   static let memo = TextSpec("mark.memo", unit: .bytes, min: 0, max: 40, trim: false, nfc: false)
 
@@ -156,7 +158,6 @@ struct Mark: ProbeEntity, Draftable {
 
 struct Meta: ProbeEntity, Draftable {
   static let type = "meta"
-  static let scope = Probe.tree
   static let savesGuarded = false
   static let title = TextSpec("meta.title", unit: .chars, min: 0, max: 12, trim: true, nfc: true)
 
@@ -179,7 +180,24 @@ struct Meta: ProbeEntity, Draftable {
   ]
 }
 
-struct Lap: ProbeEntity, Removable {
+struct GuardedMeta: ProbeEntity, Draftable {
+  static let type = Meta.type
+  static let savesGuarded = true
+  let id: ID<GuardedMeta>
+  var title: String
+
+  init(_ record: Fields) throws(DecodeError) {
+    id = ID(record.id)
+    title = try record.string("title", default: "")
+  }
+
+  var fields: [String: JSON] { ["title": .string(title)] }
+  static let checks: [Check<GuardedMeta>] = [
+    Check("title") { value, _ in value.title = try Meta.title.apply(value.title, at: "title") },
+  ]
+}
+
+struct Lap: ProductEntity, ProbeEntity, Removable {
   static let type = "lap"
   static let scope = Probe.scope
   static let heldRemoval = false
@@ -204,7 +222,7 @@ struct Lap: ProbeEntity, Removable {
   ]
 }
 
-struct Run: ProbeEntity, Removable {
+struct Run: ProductEntity, ProbeEntity, Removable {
   static let type = "run"
   static let scope = Probe.scope
   static let heldRemoval = false
@@ -229,7 +247,6 @@ struct Run: ProbeEntity, Removable {
 
 struct Link: ProbeEntity, Removable {
   static let type = "link"
-  static let scope = Probe.tree
   static let heldRemoval = true
   static let strength = NumberSpec("link.strength", min: 0, max: 9, integer: true)
 
@@ -250,7 +267,6 @@ struct Link: ProbeEntity, Removable {
 
 struct Tag: ProbeEntity {
   static let type = "tag"
-  static let scope = Probe.tree
 
   let id: ID<Tag>
   var label: String
@@ -267,6 +283,7 @@ struct Tag: ProbeEntity {
 
 // The entity a vector names by its registry type.
 func probeEntity(_ type: String) throws -> any ProbeEntity.Type {
+  if type == "guardedMeta" { return GuardedMeta.self }
   let entities: [any ProbeEntity.Type] = [Card.self, Day.self, Fact.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
   guard let entity = entities.first(where: { $0.type == type }) else { throw ContractError("no probe entity \(type)") }
   return entity

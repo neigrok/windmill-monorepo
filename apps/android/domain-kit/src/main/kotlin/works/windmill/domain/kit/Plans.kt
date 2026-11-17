@@ -149,7 +149,7 @@ data class Operation(val kind: Kind, val entity: EntityFacts, val id: RecordID,
     fun recordID(definition: TypeDef): RecordID = definition.json["singletonId"]?.str()?.let(::RecordID) ?: id
     fun change(scope: ScopeRef, registry: Registry): Change? {
         val d = registry.type(entity.type) ?: throw PlanError(0, "the registry has no type ${entity.type}")
-        if (entity.scope != scope || !registry.lives(entity.type, scope)) throw PlanError(1, "${entity.type} lives outside $scope")
+        if ((entity.scope != null && entity.scope != scope) || !registry.lives(entity.type, scope)) throw PlanError(1, "${entity.type} lives outside $scope")
         if (d.identity == "derived") throw PlanError(0, "the kit writes no derived type")
         return when (val kind = kind) {
             is Kind.Create -> {

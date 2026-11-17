@@ -29,7 +29,7 @@ export class PreferencesValue {
   }
 }
 
-/** @type {EntityType<PreferencesValue>} */
+/** @type {EntityType<PreferencesValue, string>} */
 export const Preferences = new EntityType({
   type: 'prefs', scope: 'self/gym', savesGuarded: false,
   decode: (f) => new PreferencesValue(new Id(f.id, Preferences), f.string('units', 'kg'),

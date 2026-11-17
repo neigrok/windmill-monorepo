@@ -145,7 +145,7 @@ export class RoutineValue {
   }
 }
 
-/** @type {EntityType<RoutineValue>} */
+/** @type {EntityType<RoutineValue, string>} */
 export const Routine = new EntityType({
   type: 'routine', scope: 'self/gym', savesGuarded: true, heldRemoval: true,
   decode: (fields) => new RoutineValue(new Id(fields.id, Routine), fields.string('name'), fields.optionalInt('position') ?? 0,

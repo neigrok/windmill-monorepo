@@ -47,11 +47,15 @@ class ProductCorpus(val book: RuleBook) {
         return Json.objectOf("decision" to decider.decision(decider.load(read), IDSource(source)).form(decider.scope, book.registry, result, refusal))
     }
     fun <E : Writable<E>, R> save(type: DraftableType<E>, refusals: Refusals<R>, vector: Vector, blank: E,
+        edit: (E) -> E, result: (Saved) -> Json, refusal: (R) -> Json): Json =
+        save(type, refusals, vector, blank, type.boundScope(), edit, result, refusal)
+
+    fun <E : Writable<E>, R> save(type: DraftableType<E>, refusals: Refusals<R>, vector: Vector, blank: E, scope: ScopeRef,
         edit: (E) -> E, result: (Saved) -> Json, refusal: (R) -> Json): Json {
-        val source = scene(vector, type.scope)
-        val read = Reader(source, type.scope, moment(vector.input), book.registry)
+        val source = scene(vector, type.boundScope(scope))
+        val read = Reader(source, scope, moment(vector.input), book.registry)
         val existing = read.repository(type).find(blank.id, works.windmill.sync.api.ViewMode.drawn)
-        val draft = (existing?.let { Draft.opening(it) } ?: Draft.new(blank)).edit(edit)
+        val draft = (existing?.let { Draft.opening(it, scope) } ?: Draft.new(blank, scope = scope)).edit(edit)
         return decision(SaveDraft.fromDraft(draft, type, refusals), vector, result, refusal)
     }
     fun read(vector: Vector, scope: ScopeRef, body: (Reader) -> Json): Json = Json.objectOf("result" to body(Reader(scene(vector, scope), scope, moment(vector.input), book.registry)))

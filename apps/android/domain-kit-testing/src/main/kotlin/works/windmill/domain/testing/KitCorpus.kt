@@ -38,6 +38,7 @@ object KitCorpus {
         "run/pipeline.json" to WriteVectors::pipeline,
         "draft/save.json" to WriteVectors::save,
         "draft/script.json" to WriteVectors::script,
+        "scope/bindings.json" to WriteVectors::script,
         "refusal/subject.json" to WriteVectors::subject,
     )
     fun valueVector(input: Json): Json = if (input["spec"]?.get("kind")?.str() == "count") handlers.getValue("value/count.json")(input) else value(input)

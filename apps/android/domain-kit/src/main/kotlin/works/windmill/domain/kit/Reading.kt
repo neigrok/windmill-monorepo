@@ -16,9 +16,12 @@ class Reader(val source: ScopeReader, val scope: ScopeRef, val moment: Moment, v
     fun commands(): List<QueuedCommand> = (source as? CommitContext)?.commands() ?: emptyList()
     fun devices(prefix: String): Map<String, Json> = source.devices(prefix)
     fun checkpoint(): ScopeCheckpoint = source.checkpoint()
-    fun <E : Entity<E>> confirmed(type: EntityType<E>, id: Id<E>): Record? = source.confirmed(type.type, id.record)
+    fun <E : Entity<E>> confirmed(type: EntityType<E>, id: Id<E>): Record? {
+        repository(type)
+        return source.confirmed(type.type, id.record)
+    }
     fun <E : Entity<E>> repository(type: EntityType<E>): Repository<E> {
-        check(type.scope == scope && registry.lives(type.type, scope)) { "${type.type} is outside $scope" }
+        check((type.scope == null || type.scope == scope) && registry.lives(type.type, scope)) { "${type.type} is outside $scope" }
         return Repository(type, source, registry)
     }
     fun device(key: String): Json? = source.device(key)

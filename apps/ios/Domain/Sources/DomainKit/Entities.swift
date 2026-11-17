@@ -6,9 +6,12 @@ import SyncCore
 
 public protocol Entity: Sendable {
   static var type: String { get }
-  static var scope: ScopeRef { get }
   var id: ID<Self> { get }
   init(_ record: Fields) throws(DecodeError)
+}
+
+public protocol ProductEntity: Entity {
+  static var scope: ScopeRef { get }
 }
 
 public protocol Writable: Entity {
@@ -61,7 +64,7 @@ public struct ID<E: Entity>: Hashable, Comparable, Sendable, CustomStringConvert
 struct EntityFacts: Sendable {
   let entity: any Entity.Type
   let type: String
-  let scope: ScopeRef
+  let scope: ScopeRef?
   let orderField: String?
   let heldRemoval: Bool?
   let savesGuarded: Bool?
@@ -70,7 +73,7 @@ struct EntityFacts: Sendable {
   init(_ entity: any Entity.Type) {
     self.entity = entity
     type = entity.type
-    scope = entity.scope
+    scope = (entity as? any ProductEntity.Type)?.scope
     orderField = (entity as? any Ordered.Type)?.orderField
     heldRemoval = (entity as? any Removable.Type)?.heldRemoval
     savesGuarded = (entity as? any Draftable.Type)?.savesGuarded

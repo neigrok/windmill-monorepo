@@ -33,6 +33,7 @@ import works.windmill.sync.core.Constants
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.RefusalCode
+import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.core.Sha256
 import works.windmill.sync.modelserver.GymServerRules
 import works.windmill.sync.modelserver.ServerState
@@ -50,7 +51,7 @@ class RunAbilityTests {
         fun call(turn: OpenTurn.Turn, name: String, input: String, callId: String = "call-1", seat: Seat = Seat.bound) = run(AbilityRequest(callId, name, Json.parse(input)), turn.coach, seat)
         fun message(id: Id<CoachMessage>): CoachMessage = runner.read(CoachMessage.scope) { it.repository(CoachMessage).find(id, ViewMode.stored)!! }
         fun calls(turn: OpenTurn.Turn): List<AbilityCall> = message(turn.coach).calls
-        fun <E : Entity<E>> stored(type: EntityType<E>): List<E> = runner.read(type.scope) { it.repository(type).all(ViewMode.stored) }
+        fun <E : Entity<E>> stored(type: EntityType<E>): List<E> = runner.read(ScopeRef(Gym.scope)) { it.repository(type).all(ViewMode.stored) }
 
         // The log seeded whole: every closed session imported with its sets, at the instants given.
         fun seed(sessions: List<Session>, sets: List<TrainingSet>) {

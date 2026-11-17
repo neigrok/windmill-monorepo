@@ -53,13 +53,17 @@ public struct ProductCorpus {
   }
 
   // An editor opens the drawn entity or starts a new draft, edits its current value, then decides its save (§10.2).
+  public func save<E: Draftable & ProductEntity, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector, opening blank: E,
+                                                   edit: (inout E) -> Void, result: (Saved) -> JSON, refusal: (R) -> JSON) throws -> JSON {
+    try save(type, vector, opening: blank, in: E.scope, edit: edit, result: result, refusal: refusal)
+  }
+
   public func save<E: Draftable, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector, opening blank: E,
-                                                   edit: (inout E) -> Void, result: (Saved) -> JSON, refusal: (R) -> JSON)
-    throws -> JSON
-  {
-    let (context, moment) = try scene(of: vector, in: E.scope)
-    let read = Reader(context, scope: E.scope, moment: moment, registry: book.registry)
-    var draft = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0) } ?? Draft(new: blank)
+                                                   in scope: ScopeRef, edit: (inout E) -> Void, result: (Saved) -> JSON,
+                                                   refusal: (R) -> JSON) throws -> JSON {
+    let (context, moment) = try scene(of: vector, in: scope)
+    let read = Reader(context, scope: scope, moment: moment, registry: book.registry)
+    var draft = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0, in: scope) } ?? Draft(new: blank, in: scope)
     edit(&draft.current)
     return try decision(of: SaveDraft<E, R>(draft), vector, result: result, refusal: refusal)
   }

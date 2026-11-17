@@ -112,7 +112,13 @@ public final class ActionRunner: Sendable {
     try replica.undo(gestureId)
   }
 
-  public func mint<E: Entity>(_ type: E.Type) -> ID<E> {
+  public func mint<E: ProductEntity>(_ type: E.Type) -> ID<E> {
+    mint(type, in: E.scope)
+  }
+
+  public func mint<E: Entity>(_ type: E.Type, in scope: ScopeRef) -> ID<E> {
+    precondition(EntityFacts(type).scope.map { $0 == scope } ?? true, "\(E.type) cannot be rebound to \(scope)")
+    precondition(registry.lives(E.type, in: scope), "\(E.type) is outside \(scope)")
     do {
       return ID(try replica.mintID(E.type))
     } catch {

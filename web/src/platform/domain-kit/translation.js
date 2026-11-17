@@ -127,7 +127,7 @@ function changeOf(operation, scope, registry) {
   const { entity, kind } = operation;
   const definition = /** @type {Definition | undefined} */ (registry.type(entity.type));
   if (!definition) throw new PlanError(0, `the registry has no type ${entity.type}`);
-  if (entity.scope !== scope || definition.scope !== registry.scopeKindOf(scope)) throw new PlanError(1, `${entity.type} lives outside ${scope}`);
+  if ((entity.scope !== null && entity.scope !== scope) || definition.scope !== registry.scopeKindOf(scope)) throw new PlanError(1, `${entity.type} lives outside ${scope}`);
   if (definition.identity === 'derived') throw new PlanError(0, 'the kit writes no derived type');
   const minted = definition.identity === 'minted';
   const keyedWithLife = definition.identity === 'keyed' && definition.life === true;

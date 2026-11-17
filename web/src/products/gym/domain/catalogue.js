@@ -81,7 +81,7 @@ function aliasesOf(fields) {
   });
 }
 
-/** @type {EntityType<ExerciseValue>} */
+/** @type {EntityType<ExerciseValue, string>} */
 export const Exercise = new EntityType({
   type: 'exercise', scope: 'self/gym',
   decode: (f) => new ExerciseValue(new Id(f.id, Exercise), f.string('name'), f.string('pattern'),
@@ -98,7 +98,7 @@ export const Exercise = new EntityType({
   ],
 });
 
-/** @type {EntityType<ExerciseNameValue>} */
+/** @type {EntityType<ExerciseNameValue, string>} */
 export const ExerciseName = new EntityType({
   type: 'exerciseName', scope: 'self/gym',
   decode: (f) => new ExerciseNameValue(new Id(f.id, ExerciseName), f.optionalString('name'), aliasesOf(f), f.optionalString('equipment'), f.optionalInt('loadCount')),

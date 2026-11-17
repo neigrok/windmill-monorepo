@@ -97,7 +97,7 @@ export const RegistryCheck = Object.freeze({
   /** @param {EntityType} type @param {import('../../../src/platform/domain-kit/entities.js').Writable<any> | null} sample @param {RuleBook} book */
   entity(type, sample, book) {
     const definition = /** @type {any} */ (book.registry.type(type.type));
-    if (!definition || definition.scope !== book.registry.scopeKindOf(type.scope) || !definition.scope.startsWith('product:')) fail(1, type.type, 'the registry declares no type in this product scope');
+    if (!definition || (type.scope !== null && definition.scope !== book.registry.scopeKindOf(type.scope))) fail(1, type.type, 'the registry declares no type in its fixed scope');
     if (type.isRemovable && !definition.life) fail(2, type.type, 'a removable type without life');
     if (type.orderField !== null) {
       const order = definition.fields[type.orderField];

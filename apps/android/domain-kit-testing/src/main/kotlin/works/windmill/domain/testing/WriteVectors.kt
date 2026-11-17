@@ -90,20 +90,20 @@ internal object WriteVectors {
         val registry = probeRegistry()
         val records = VectorRecords(input["records"]?.get("drawn"), input["records"]?.get("stored"), registry)
         val source = VectorReader(records, moment(input).now.ms)
-        val reader = Reader(source, type.scope, moment(input), registry)
+        val reader = Reader(source, type.fixtureScope, moment(input), registry)
         val repository = reader.repository(type)
         input["view"]?.let { view -> return Json.objectOf("ids" to Json.Arr(repository.all(if (view.str() == "drawn") ViewMode.drawn else ViewMode.stored).map { it.id.json })) }
         input["children"]?.let { child -> return Json.objectOf("ids" to Json.Arr(repository.children(Id(RecordID(child.member("of")), type), child.member("via").str(), if (child["view"]?.str() == "stored") ViewMode.stored else ViewMode.drawn).map { it.id.json })) }
         input["remove"]?.let {
             @Suppress("UNCHECKED_CAST") val removable = type as? RemovableType<ProbeEntity> ?: return Json.objectOf("error" to Json.of(true))
-            val action = Remove(removable, Id(RecordID(it.member("id")), type), ProbeRefusals)
-            return Json.objectOf("decision" to action.decide(action.load(reader), IDSource(source)).form(type.scope, registry, { Json.Null }, { it.form }))
+            val action = Remove(removable, Id(RecordID(it.member("id")), type), ProbeRefusals, type.fixtureScope)
+            return Json.objectOf("decision" to action.decide(action.load(reader), IDSource(source)).form(type.fixtureScope, registry, { Json.Null }, { it.form }))
         }
         @Suppress("UNCHECKED_CAST") val ordered = type as? OrderedType<ProbeEntity> ?: return Json.objectOf("error" to Json.of(true))
         placement(input["placement"])?.let { return Json.objectOf("anchor" to (repository.anchor(it, ordered.orderField)?.json ?: Json.Null)) }
         val move = input.member("move")
-        val action = Move(ordered, Id(RecordID(move.member("id")), type), recordID(move["below"])?.let { Id(it, type) }, ProbeRefusals)
-        return Json.objectOf("decision" to action.decide(action.load(reader), IDSource(source)).form(type.scope, registry, { Json.Null }, { it.form }))
+        val action = Move(ordered, Id(RecordID(move.member("id")), type), recordID(move["below"])?.let { Id(it, type) }, ProbeRefusals, type.fixtureScope)
+        return Json.objectOf("decision" to action.decide(action.load(reader), IDSource(source)).form(type.fixtureScope, registry, { Json.Null }, { it.form }))
     }
     fun capacity(input: Json): Json {
         val type = Probe.entity(input.member("t").str())
@@ -122,15 +122,15 @@ internal object WriteVectors {
         val id = RecordID(form.member("id"))
         val save = if (input["draft"] != null) {
             val base = probe.entity(id, fields(form["base"]))
-            val draft = (if (form.member("isNew").bool()) Draft.new(base, placement(form["placement"])) else Draft.opening(base))
+            val draft = (if (form.member("isNew").bool()) Draft.new(base, placement(form["placement"]), type.fixtureScope) else Draft.opening(base, type.fixtureScope))
                 .edit { probe.entity(id, fields(form["current"])) }
             SaveDraft.fromDraft(draft, type, ProbeRefusals)
-        } else SaveDraft(probe.entity(id, fields(form["f"])), type, ProbeRefusals, placement(form["placement"]))
+        } else SaveDraft(probe.entity(id, fields(form["f"])), type, ProbeRefusals, placement(form["placement"]), type.fixtureScope)
         val source = VectorReader(VectorRecords(input["drawn"], input["stored"], registry), moment(input).now.ms)
         val drawn = source.drawn(type.type, id)?.takeIf { it.isVisible }?.let { type.decode(Fields(it)) }
         val stored = source.stored(type.type, id)
         val loaded = SaveDraftLoaded(drawn, stored?.takeIf { it.isVisible }?.let { type.decode(Fields(it)) }, stored?.let { type.decode(Fields(it)) }, recordID(input["anchor"]), moment(input), registry.type(type.type)!!)
-        return Json.objectOf("decision" to save.decision(loaded, IDSource(source)).form(type.scope, registry, { it.form }, { it.form }))
+        return Json.objectOf("decision" to save.decision(loaded, IDSource(source)).form(type.fixtureScope, registry, { it.form }, { it.form }))
     }
     fun script(input: Json): Json = runBlocking { withActionContext { script(input, it) } }
     private fun script(input: Json, context: ActionContext): Json {
@@ -140,35 +140,45 @@ internal object WriteVectors {
         val at = moment(input)
         val replica = VectorReplica(VectorRecords(input["drawn"], input["stored"], registry), at.now.ms, registry)
         val runner = ActionRunner(replica, registry, at.zone, context)
+        for ((scope, rows) in input["scopes"]?.obj().orEmpty()) {
+            replica.scopes[ScopeRef(scope)] = VectorRecords(rows["drawn"], rows["stored"], registry)
+        }
+        val remembered = mutableMapOf<String, Draft<ProbeEntity>>()
         var draft: Draft<ProbeEntity>? = null
         val steps = mutableListOf<Json>()
         for (operation in input.member("ops").arr()) {
             val step = linkedMapOf<String, Json>()
             val id = recordID(operation["id"])
+            val scope = (operation["scope"] ?: input["scope"])?.str()?.let(::ScopeRef) ?: type.fixtureScope
             try {
                 when (operation.member("op").str()) {
-                    "new" -> draft = Draft.new(probe.entity(requireNotNull(id)), placement(operation["placement"]))
-                    "open" -> draft = runner.open(type, Id(requireNotNull(id), type))
-                    "openOrNew" -> draft = runner.open(type, Id(requireNotNull(id), type), probe.entity(recordID(operation["blank"]) ?: id))
+                    "new" -> draft = Draft.new(probe.entity(requireNotNull(id)), placement(operation["placement"]), scope)
+                    "open" -> draft = runner.open(type, Id(requireNotNull(id), type), scope)
+                    "openOrNew" -> draft = runner.open(type, Id(requireNotNull(id), type), probe.entity(recordID(operation["blank"]) ?: id), scope)
                     "edit" -> draft = requireNotNull(draft).edit { probe.entity(it.id.record, it.fields() + fields(operation["f"])) }
                     "save" -> {
                         var saving = requireNotNull(draft)
                         recordID(operation["as"])?.let { other -> saving = saving.edit { probe.entity(other, it.fields()) } }
                         if (operation["fail"]?.bool() == true) replica.failNextCommit()
                         val before = replica.gestures.size
-                        val result = runner.save(saving, type, ProbeRefusals) { draft = it }
+                        val result = runner.save(saving, type, ProbeRefusals, operation["scope"]?.str()?.let(::ScopeRef) ?: saving.scope) { draft = it }
                         val form = when (result) {
                             is SaveResult.Saved -> Json.objectOf("saved" to (result.receipt?.gestureId?.let(Json::of) ?: Json.Null))
                             is SaveResult.Refused -> Json.objectOf("refused" to result.refusal.form)
                             is SaveResult.Failed -> Json.objectOf("failed" to Json.of(true))
                         }
-                        step["result"] = if (operation["gesture"]?.bool() == true) Json.Obj((form.obj() + ("gesture" to (replica.gestures.getOrNull(before)?.form ?: Json.Null))).toList()) else form
+                        var savedForm = form
+                        if (input["reportScope"]?.bool() == true) savedForm = Json.Obj((form.obj() + ("scope" to (replica.commitScopes.getOrNull(before)?.let { Json.of(it.text) } ?: Json.Null))).toList())
+                        step["result"] = if (operation["gesture"]?.bool() == true) Json.Obj((savedForm.obj() + ("gesture" to (replica.gestures.getOrNull(before)?.form ?: Json.Null))).toList()) else savedForm
                     }
                     "rebase" -> draft = requireNotNull(draft).rebased(probe.entity(id ?: draft!!.id.record, fields(operation["f"])))
+                    "load" -> runner.read(scope) { SaveDraft.fromDraft(requireNotNull(draft), type, ProbeRefusals).load(it) }
+                    "remember" -> remembered[operation.member("name").str()] = requireNotNull(draft)
+                    "recall" -> draft = remembered[operation.member("name").str()]
                     "records" -> replica.records = VectorRecords(operation["drawn"], operation["stored"], registry)
                     else -> throw ContractError("unknown script operation")
                 }
-                step["draft"] = draft?.form ?: Json.Null
+                step["draft"] = draft?.let { if (input["reportScope"]?.bool() == true) Json.Obj((it.form.obj() + ("scope" to Json.of(it.scope.text))).toList()) else it.form } ?: Json.Null
                 steps.add(Json.Obj(step.toList()))
             } catch (trap: IllegalStateException) {
                 steps.add(Json.objectOf("trap" to Json.of(true)))

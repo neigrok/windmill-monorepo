@@ -17,7 +17,8 @@ each product declares its own entities, value objects, aggregates, repositories,
 kit names no product concept. Appendices A–C illustrate it; they are not kit content.
 
 **Consumers.** Gym (iOS, Android) and journal (iOS), with the phone Coach. Roadmap is web-only and is
-not a kit consumer. Every type the kit writes lives in a product scope (engine D-4), fixed per type.
+not a kit consumer. An entity can bind to a product, tree or overlay scope (engine D-4); every reader,
+action and plan still addresses exactly one scope.
 
 **Outside the kit:**
 - **UI, absolutely.** No SwiftUI, UIKit, AppKit, Combine, Observation, Compose or `android.*`; no
@@ -116,7 +117,7 @@ committed on this device was refused by the server). A product refusal is the pr
 built from a `Violation` or a `Refused` by one total mapping (§12).
 
 **D-20 Draft.** An entity being edited: its id, its base (the value it was opened from or a blank,
-then what its last save stored) and its current value (§10).
+then what its last save stored), its current value and its bound scope (§10).
 
 **D-21 Instant, local day, zone, moment.** An instant is integer epoch milliseconds. A local day is a
 Gregorian `YYYY-MM-DD` date. A zone maps an instant to its offset from UTC. A moment is an instant
@@ -347,9 +348,11 @@ Kotlin does not check global mutable state (an `object` holding a `var`); a doma
 ```swift
 public protocol Entity: Sendable {
   static var type: String { get }                  // the registry type, from SyncSchema
-  static var scope: ScopeRef { get }               // its product scope, from SyncSchema
   var id: ID<Self> { get }
   init(_ record: Fields) throws(DecodeError)
+}
+public protocol ProductEntity: Entity {
+  static var scope: ScopeRef { get }               // its fixed scope, from SyncSchema
 }
 public protocol Writable: Entity {
   var fields: [String: JSON] { get }               // every field the client writes; nil as JSON null
@@ -376,7 +379,7 @@ interface Entity<E : Entity<E>> { val id: Id<E> }
 interface Writable<E : Writable<E>> : Entity<E> { fun fields(): Map<String, Json> }
 interface EntityType<E : Entity<E>> {                             // the entity's companion object
     val type: String
-    val scope: ScopeRef
+    val scope: ScopeRef? get() = null             // null requires an explicit actual scope
     fun decode(f: Fields): E
 }
 interface WritableType<E : Writable<E>> : EntityType<E> { val checks: List<Check<E>> }
@@ -394,8 +397,27 @@ optional is a nullable type, and an overload that differs from another only in t
 may refuse after building one leaves the plan a refusal path reuses untouched. `Decider.decision` turns only a
 `Violation` into a refusal, so a decider reading untrusted JSON turns `DecodeError` and `JsonError` into its own.
 
-**The developer declares** per entity: its type and scope, its stored properties, its constructor
+**The developer declares** per entity: its registry type, its fixed scope when it has one, its stored properties, its constructor
 from `Fields`, and when written, `fields` and `checks`.
+
+A tree or overlay entity declares its type once, with no placeholder tree id. Swift's base `Entity`
+has no scope; `ProductEntity` adds the fixed-scope requirement used by gym and journal. Kotlin's
+`EntityType.scope` and JavaScript's `EntityType.scope` are nullable fixed scopes. A null scope requires
+an explicit actual scope; it never means the current tree or every scope.
+
+The action or reader supplies that actual scope. `Registry.lives(type, actualScope)` must hold (on
+web, the type's registry scope kind must equal `scopeKindOf(actualScope)`). A fixed declaration must
+also equal the actual scope exactly. Readers and translation reject mismatches before any write.
+`ID<E>` remains scope-free: the enclosing reader, draft and engine gesture retain the scope, so the
+same typed id in two trees names independent records. Any collection combining those records keys
+by scope as well as type and id. Standard deciders also require their load reader to match
+the scope they were constructed with; composition cannot load one tree and write another.
+
+On web, a fixed declaration is annotated `EntityType<Value, string>` so its static `scope`
+remains a string; a dynamic declaration has `scope: null`. Kotlin
+`runner.open(type, id, scope = actual)`, `runner.open(type, id, blank, scope = actual)`,
+`runner.mint(type, scope = actual)` and draft/standard-action constructors accept the same
+explicit `scope`. Both languages retain fixed-scope defaults for existing callers.
 
 Rules:
 - An entity is a value type (Swift `struct`, Kotlin `data class`) whose stored properties are values.
@@ -474,7 +496,7 @@ public struct DecodeError: Error, Equatable, Sendable {
 
 `RegistryCheck.entity(E.self, sample:book:registry:)` (§14.4), run by each product's tests for every
 entity, fails unless:
-1. the registry declares `E.type` in a product scope whose reference is `E.scope`;
+1. the registry declares `E.type`; if the entity declares a fixed scope, the type lives in that scope;
 2. `Removable` implies the type has life;
 3. `Ordered.orderField` is a client `lww` field with a `fracKey` domain;
 4. every key of `sample.fields` is a client-written, non-serial field of the type, and none is the
@@ -833,6 +855,7 @@ public struct RuleBook: Sendable {
 
 ```swift
 public struct Reader {                                  // valid only inside one run or read
+  public let scope: ScopeRef
   public let moment: Moment
   public var replica: String { get }                   // the replica a run's commit writes to (engine §7.12), "" in a read
   public func repository<E: Entity>(_ type: E.Type) -> Repository<E>
@@ -1095,7 +1118,8 @@ public final class ActionRunner: Sendable {
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal>
   public func read<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T
   public func undo(_ gestureId: String) throws -> Bool
-  public func mint<E: Entity>(_ type: E.Type) -> ID<E>
+  public func mint<E: Entity>(_ type: E.Type, in scope: ScopeRef) -> ID<E>
+  public func mint<E: ProductEntity>(_ type: E.Type) -> ID<E>
   public func moment() throws -> Moment
 }
 ```
@@ -1173,18 +1197,24 @@ product. Swift keeps the same types in `GymDomain/Coach/Catalog.swift` (`JSONSch
 
 ```swift
 public struct Draft<E: Draftable> {                        // a value; not Sendable
+  public let scope: ScopeRef
   public let id: ID<E>
   public private(set) var base: E                          // opened or blank; then the last save's
   public var current: E
   public private(set) var isNew: Bool
   public let placement: Placement?                         // a new draft of an Ordered type
-  public init(new blank: E)
-  public init(opening value: E)
+  public init(new blank: E, in scope: ScopeRef)
+  public init(opening value: E, in scope: ScopeRef)
   public var touched: [String] { get }                     // UTF-8 order
   public var isDirty: Bool { get }
   public func rebased(onto theirs: E) -> Draft
 }
-extension Draft where E: Ordered { public init(new blank: E, placed: Placement) }
+extension Draft where E: Ordered { public init(new blank: E, in scope: ScopeRef, placed: Placement) }
+extension Draft where E: ProductEntity {
+  public init(new blank: E)
+  public init(opening value: E)
+}
+extension Draft where E: ProductEntity & Ordered { public init(new blank: E, placed: Placement) }
 public enum SaveResult<R: ProductRefusal>: Sendable {
   case saved(CommitReceipt?)                               // nil: nothing needed writing
   case refused(R)
@@ -1195,13 +1225,20 @@ public struct Saved: Equatable {                           // made only by SaveD
   public let exists: Bool                                  // the record is in `stored` after the save
 }
 extension ActionRunner {
-  public func open<E: Draftable>(_ id: ID<E>) throws -> Draft<E>?                  // nil: not in drawn
-  public func open<E: Draftable>(_ id: ID<E>, orNew blank: E) throws -> Draft<E>  // keyed or singleton
+  public func open<E: Draftable>(_ id: ID<E>, in scope: ScopeRef) throws -> Draft<E>?
+  public func open<E: Draftable>(_ id: ID<E>, in scope: ScopeRef, orNew blank: E) throws -> Draft<E>
+  public func open<E: Draftable & ProductEntity>(_ id: ID<E>) throws -> Draft<E>?
+  public func open<E: Draftable & ProductEntity>(_ id: ID<E>, orNew blank: E) throws -> Draft<E>
   public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, _ type: SaveDraft<E, R>.Type)
     -> SaveResult<R>
+  public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, in scope: ScopeRef,
+                                                  _ type: SaveDraft<E, R>.Type) -> SaveResult<R>
 }
 ```
 
+- Every draft retains the actual scope supplied at construction or opening. Edits, rebasing and each
+  save preserve it. `save` uses that bound scope; its explicit `in:` overload requires the same scope.
+  A fixed entity cannot be rebound, even to a scope of the same kind.
 - A field is **touched** when its value in `current` differs from its value in `base`, by JCS of
   `fields`. `isDirty` is true iff a field is touched.
 - `init(new:)` takes a **blank** as its base: the entity with its id and nothing a person set. A
@@ -1343,7 +1380,7 @@ value, and `exists`, whether the record is in `stored` after the save:
 
 ```swift
 public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
-  public init(creating value: E)                           // an executor's own new record
+  public init(creating value: E, in scope: ScopeRef)        // an executor's own new record
   public var id: ID<E> { get }                             // the draft's, or the created value's
   public var scope: ScopeRef { get }
   public func load(_ read: Reader) throws -> SaveDraftLoaded<E>
@@ -1354,19 +1391,22 @@ public struct SaveDraftLoaded<E: Draftable>: Sendable {
   public let moment: Moment
 }
 public struct Remove<E: Removable, R: ProductRefusal>: Action {
-  public init(_ id: ID<E>)
+  public init(_ id: ID<E>, in scope: ScopeRef)
   public var scope: ScopeRef { get }
   public func load(_ read: Reader) throws -> E?
   public func decide(_ loaded: E?, ids: IDSource) throws(Violation) -> Decision<Void, R>
 }
 public struct Move<E: Ordered, R: ProductRefusal>: Action {
-  public init(_ id: ID<E>, below: ID<E>?)
+  public init(_ id: ID<E>, in scope: ScopeRef, below: ID<E>?)
   public var scope: ScopeRef { get }
   public func load(_ read: Reader) throws -> (moving: E?, above: ID<E>?)
   public func decide(_ loaded: (moving: E?, above: ID<E>?), ids: IDSource) throws(Violation) -> Decision<Void, R>
 }
-extension SaveDraft where E: Ordered { public init(creating value: E, placed: Placement) }
+extension SaveDraft where E: Ordered { public init(creating value: E, in scope: ScopeRef, placed: Placement) }
 ```
+
+`ProductEntity` retains the scope-free conveniences `SaveDraft(creating:)`,
+`SaveDraft(creating:placed:)`, `Remove(id)` and `Move(id, below:)`; they bind to `E.scope`.
 
 | Save or action | Load | Decide |
 |---|---|---|
@@ -1570,8 +1610,10 @@ public final class Harness {
   public func advance(ms: Int64)                           // the clock; due holds release
   public func leave()                                      // engine §7.3 leaving the app
   public func failNextCommit()                             // the next commit, written or not (ER-9)
-  public func drawn<E: Entity>(_ type: E.Type) throws -> [E]
-  public func stored<E: Entity>(_ type: E.Type) throws -> [E]
+  public func drawn<E: Entity>(_ type: E.Type, in scope: ScopeRef) throws -> [E]
+  public func stored<E: Entity>(_ type: E.Type, in scope: ScopeRef) throws -> [E]
+  public func drawn<E: ProductEntity>(_ type: E.Type) throws -> [E]
+  public func stored<E: ProductEntity>(_ type: E.Type) throws -> [E]
   public func notices<R: ProductRefusal>(_ type: R.Type) throws -> [DomainNotice<R>]
   public func undoOffers() -> [UndoOffer]
 }
@@ -1642,9 +1684,13 @@ public struct ProductCorpus {                                                   
   public func decision<D: Decider>(of decider: D, _ vector: Vector, result: (D.Result) -> JSON,
                                    refusal: (D.Refusal) -> JSON) throws -> JSON       // an action's case
   public func save<E: Draftable, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector,
-                                                   opening blank: E, edit: (inout E) -> Void,
+                                                   opening blank: E, in scope: ScopeRef, edit: (inout E) -> Void,
                                                    result: (Saved) -> JSON, refusal: (R) -> JSON)
     throws -> JSON                                                                   // a draft save's case
+  public func save<E: Draftable & ProductEntity, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector,
+                                                                   opening blank: E, edit: (inout E) -> Void,
+                                                                   result: (Saved) -> JSON, refusal: (R) -> JSON)
+    throws -> JSON
   public func read(_ vector: Vector, in scope: ScopeRef, _ body: (Reader) throws -> JSON) throws -> JSON
 }
 extension Entity { public init(form: JSON) throws }                                 // {id, fields}
@@ -1794,7 +1840,7 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-public struct Routine: Draftable, Removable {
+public struct Routine: ProductEntity, Draftable, Removable {
   public static let type = Gym.Types.routine
   public static let scope = Gym.scope
   public static let savesGuarded = true
@@ -1988,7 +2034,7 @@ held delete keeps its slot until it lands; a reorder writes one `ord`; a new not
 Its `note.cap`, `note.gone`, `note.stale` and `note.taken` rules are the book's standard rules (§6.3).
 
 ```swift
-public struct Note: Draftable, Removable, Ordered {
+public struct Note: ProductEntity, Draftable, Removable, Ordered {
   public static let type = Gym.Types.note
   public static let scope = Gym.scope
   public static let orderField = "ord"

@@ -61,8 +61,12 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
         return replica.read(scope) { body(Reader(it, scope, moment, registry)) }
     }
     fun undo(gestureId: String): Boolean = replica.undo(gestureId)
-    fun <E : Entity<E>> mint(type: EntityType<E>): Id<E> = try { Id(replica.mintID(type.type), type) }
+    fun <E : Entity<E>> mint(type: EntityType<E>, scope: ScopeRef = type.boundScope()): Id<E> {
+        type.boundScope(scope)
+        check(registry.lives(type.type, scope)) { "${type.type} is outside $scope" }
+        return try { Id(replica.mintID(type.type), type) }
         catch (failure: Exception) { throw ProgrammingFault("minting an entity identity failed", failure) }
+    }
     fun moment(): Moment = Moment(Instant(replica.physNow()), zone)
 
     internal fun <L, T, R> perform(decider: Decider<L, T, R>): Outcome<T, R> {

@@ -564,7 +564,7 @@ extension Bodyweight {
 
 // Another client of the registry's weighin type, writing any id its pattern admits, and every field, as a save of a record
 // saved whole must.
-struct AnotherClientsWeighIn: Draftable {
+struct AnotherClientsWeighIn: ProductEntity, Draftable {
   static let type = Gym.Types.weighin
   static let scope = Gym.scope
   static let savesGuarded = false

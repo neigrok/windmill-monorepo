@@ -29,8 +29,10 @@ export class Draft {
    * @param {E} current
    * @param {boolean} isNew
    * @param {import('./reading.js').Placement | null} placement
+   * @param {string} [scope]
    */
-  constructor(id, base, current, isNew, placement) {
+  constructor(id, base, current, isNew, placement, scope = id.entity.boundScope()) {
+    this.scope = id.entity.boundScope(scope);
     this.id = id;
     this.base = base;
     this.current = current;
@@ -44,20 +46,22 @@ export class Draft {
    * @template {import('./entities.js').Writable<any>} E
    * @param {E} blank
    * @param {import('./reading.js').Placement | null} placed
+   * @param {string | null} [scope]
    */
-  static new(blank, placed = null) {
+  static new(blank, placed = null, scope = blank.id.entity.scope) {
     precondition(blank.id.entity.isDraftable, `${blank.id.entity.type} is not Draftable`);
     precondition(placed === null || blank.id.entity.isOrdered, 'only an Ordered draft has a placement');
-    return new Draft(blank.id, blank, blank, true, placed);
+    return new Draft(blank.id, blank, blank, true, placed, blank.id.entity.boundScope(scope));
   }
 
   /**
    * @template {import('./entities.js').Writable<any>} E
    * @param {E} value
+   * @param {string | null} [scope]
    */
-  static opening(value) {
+  static opening(value, scope = value.id.entity.scope) {
     precondition(value.id.entity.isDraftable, `${value.id.entity.type} is not Draftable`);
-    return new Draft(value.id, value, value, false, null);
+    return new Draft(value.id, value, value, false, null, value.id.entity.boundScope(scope));
   }
 
   // The fields whose value in `current` differs from `base`, by JCS, in byte order.
@@ -75,7 +79,7 @@ export class Draft {
   edit(change) {
     const edited = change(this.current);
     precondition(edited.id.equals(this.id), 'a draft edits its own record');
-    return new Draft(this.id, this.base, edited, this.isNew, this.placement);
+    return new Draft(this.id, this.base, edited, this.isNew, this.placement, this.scope);
   }
 
   // §10.3 Keep mine: every touched field keeps its value, every other field takes theirs.
@@ -86,7 +90,7 @@ export class Draft {
     precondition(theirs.id.equals(this.id), 'a draft rebases onto its own record');
     const current = this.current.fields();
     const kept = Object.fromEntries(this.touched.map((name) => [name, current[name] ?? null]));
-    return new Draft(this.id, theirs, type.decoding(this.id, { ...theirs.fields(), ...kept }), this.isNew, this.placement);
+    return new Draft(this.id, theirs, type.decoding(this.id, { ...theirs.fields(), ...kept }), this.isNew, this.placement, this.scope);
   }
 
   // After a save: base and current take what the store holds, and a new draft ends when the record exists.
@@ -95,7 +99,7 @@ export class Draft {
     const type = this.id.entity;
     const base = type.decoding(this.id, { ...this.base.fields(), ...saved.values });
     const current = type.decoding(this.id, { ...this.current.fields(), ...saved.values });
-    return new Draft(this.id, base, current, saved.exists ? false : this.isNew, this.placement);
+    return new Draft(this.id, base, current, saved.exists ? false : this.isNew, this.placement, this.scope);
   }
 }
 
@@ -145,9 +149,10 @@ export const SaveResult = Object.freeze({
 export class SaveDraft {
   /**
    * @param {{ refusals: import('./refusals.js').Refusals<R>, id: import('./entities.js').Id<E>, base: E, current: E, isNew: boolean,
-   *   placement: import('./reading.js').Placement | null, touched: readonly string[], creating: boolean }} parts
+   *   placement: import('./reading.js').Placement | null, touched: readonly string[], creating: boolean, scope?: string }} parts
    */
-  constructor({ refusals, id, base, current, isNew, placement, touched, creating }) {
+  constructor({ refusals, id, base, current, isNew, placement, touched, creating, scope = id.entity.boundScope() }) {
+    this.scope = id.entity.boundScope(scope);
     this.type = id.entity;
     this.refusals = refusals;
     this.id = id;
@@ -165,11 +170,13 @@ export class SaveDraft {
    * @template R
    * @param {Draft<E>} draft
    * @param {import('./refusals.js').Refusals<R>} refusals
+   * @param {string} [scope]
    */
-  static ofDraft(draft, refusals) {
+  static ofDraft(draft, refusals, scope = draft.scope) {
+    precondition(scope === draft.scope, 'a draft saves in its bound scope');
     precondition(draft.current.id.equals(draft.id), 'a draft saves its own record');
     return new SaveDraft({ refusals, id: draft.id, base: draft.base, current: draft.current, isNew: draft.isNew,
-      placement: draft.placement, touched: draft.touched, creating: false });
+      placement: draft.placement, touched: draft.touched, creating: false, scope });
   }
 
   /**
@@ -178,16 +185,13 @@ export class SaveDraft {
    * @param {E} value
    * @param {import('./refusals.js').Refusals<R>} refusals
    * @param {import('./reading.js').Placement | null} placed
+   * @param {string | null} [scope]
    */
-  static creating(value, refusals, placed = null) {
+  static creating(value, refusals, placed = null, scope = value.id.entity.scope) {
     precondition(value.id.entity.isDraftable, `${value.id.entity.type} is not Draftable`);
     precondition(placed === null || value.id.entity.isOrdered, 'only an Ordered create has a placement');
     return new SaveDraft({ refusals, id: value.id, base: value, current: value, isNew: true, placement: placed,
-      touched: uniqueInByteOrder(Object.keys(value.fields())), creating: true });
-  }
-
-  get scope() {
-    return this.type.scope;
+      touched: uniqueInByteOrder(Object.keys(value.fields())), creating: true, scope: value.id.entity.boundScope(scope) });
   }
 
   /**
@@ -195,6 +199,7 @@ export class SaveDraft {
    * @returns {SaveDraftLoaded<E>}
    */
   load(read) {
+    precondition(read.scope === this.scope, 'a decider loads its bound scope');
     const definition = /** @type {import('./entities.js').Definition | undefined} */ (read.registry.type(this.type.type));
     precondition(definition !== undefined, `the registry lacks ${this.type.type}`);
     const repository = read.repository(this.type);

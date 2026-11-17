@@ -63,7 +63,7 @@ export class SessionValue {
   }
 }
 
-/** @type {EntityType<SessionValue>} */
+/** @type {EntityType<SessionValue, string>} */
 export const Session = new EntityType({
   type: 'session', scope: 'self/gym', heldRemoval: true,
   checks: [
@@ -229,7 +229,7 @@ export class TrainingSetValue {
   get e1rm() { return GymEstimate.value(this.weightKg, this.reps, this.rpe); }
 }
 
-/** @type {EntityType<TrainingSetValue>} */
+/** @type {EntityType<TrainingSetValue, string>} */
 export const TrainingSet = new EntityType({
   type: 'set', scope: 'self/gym', heldRemoval: true,
   decode: (f) => new TrainingSetValue(new Id(f.id, TrainingSet), f.ref('sessionId', Session), f.ref('exerciseId', Exercise),

@@ -3,7 +3,7 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-public struct Page: Entity, Equatable {
+public struct Page: ProductEntity, Equatable {
   public static let type = Journal.Types.page
   public static let scope = Journal.scope
   public let id: ID<Page>
@@ -60,7 +60,7 @@ public enum EchoQuote {
   }
 }
 
-public struct JournalState: Writable, Equatable {
+public struct JournalState: ProductEntity, Writable, Equatable {
   public static let type = Journal.Types.journalState
   public static let scope = Journal.scope
   public let id = ID<JournalState>(RecordID("journalState"))

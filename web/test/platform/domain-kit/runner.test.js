@@ -20,7 +20,7 @@ import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { Fault } from '../../../src/platform/domain-kit/values.js';
 import { environment } from '../sync/fakes.js';
-import { PROBE_SCOPE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
+import { PROBE_SCOPE, PROBE_TREE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
 import { Contract, momentOf, probeRegistry, viewRecords } from './vectors.js';
 
 /** @typedef {import('./probe.js').ProbeRefusal} ProbeRefusal */
@@ -87,7 +87,7 @@ test('view reference indexes compare tuple references by JCS and exclude absent 
     { t: 'tag', id: 'tag-c', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { label: ['Unlinked', '1:0:srv'] } },
   ]);
   const views = Views.ofRecords(registry, { drawn: rows, stored: rows });
-  const tags = new Reader(views, Probe.tag.scope, momentOf({})).repository(Probe.tag);
+  const tags = new Reader(views, PROBE_TREE, momentOf({})).repository(Probe.tag);
   assert.deepEqual(tags.children(new Id(['left', 'right'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-a']);
   assert.deepEqual(tags.children(new Id(['right', 'left'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-b']);
   assert.deepEqual(tags.children(new Id('["left","right"]', Probe.link), 'linkId', 'stored'), []);
@@ -391,4 +391,42 @@ test('a too-large commit is refused once, with the record as its subject, and it
   assert.equal(notices.length, 1);
   assert.equal(notices[0].dismissed, true);
   engine.close();
+});
+
+test('dynamic drafts persist independently by scope and a scoped held removal undoes only its tree', async () => {
+  const { engine, runner } = await open();
+  try {
+    await engine.commit(PROBE_SCOPE, [
+      { op: 'create', t: 'board', id: 'b_00000001', f: {} },
+      { op: 'create', t: 'board', id: 'b_00000002', f: {} },
+    ]);
+    for (const [scope, title] of [['tree/b_00000001', 'First'], ['tree/b_00000002', 'Second']]) {
+      assert.ok(scope && title);
+      const draft = runner.openOrNew(Probe.meta, new Id('meta', Probe.meta), probeValue(Probe.meta, 'meta'), scope)
+        .edit((meta) => probeValue(Probe.meta, meta.id.record, { title }));
+      const saved = await runner.save(draft, ProbeRefusals);
+      assert.equal(saved.result.kind, 'saved');
+      assert.equal(saved.draft.scope, scope);
+      const twice = await runner.save(saved.draft.edit((meta) => probeValue(Probe.meta, meta.id.record, { title: `${title} twice` })), ProbeRefusals);
+      assert.equal(twice.result.kind, 'saved');
+      assert.equal(twice.draft.scope, scope);
+      await engine.commit(scope, [{ op: 'put', t: 'link', id: ['left', 'right'], present: true, f: { strength: 2 } }]);
+    }
+    assert.deepEqual(['tree/b_00000001', 'tree/b_00000002'].map((scope) => runner.open(Probe.meta, new Id('meta', Probe.meta), scope)?.current.fields()),
+      [{ title: 'First twice' }, { title: 'Second twice' }]);
+    const id = new Id(['left', 'right'], Probe.link);
+    const removed = await runner.run(new Remove(id, ProbeRefusals, 'tree/b_00000002'));
+    assert.equal(removed.kind, 'committed');
+    const receipt = removed.kind === 'committed' ? removed.receipt : assert.fail('not committed');
+    assert.ok(receipt.releaseAt !== null);
+    const counts = () => ['tree/b_00000001', 'tree/b_00000002'].map((scope) => runner.read(scope, (read) => ({
+      drawn: read.repository(Probe.link).all('drawn').length,
+      stored: read.repository(Probe.link).all('stored').length,
+    })));
+    assert.deepEqual(counts(), [{ drawn: 1, stored: 1 }, { drawn: 0, stored: 1 }]);
+    assert.equal(await runner.undo(receipt.gestureId), true);
+    assert.deepEqual(counts(), [{ drawn: 1, stored: 1 }, { drawn: 1, stored: 1 }]);
+    assert.throws(() => runner.open(Probe.meta, new Id('meta', Probe.meta)), Fault);
+    assert.throws(() => runner.mint(Probe.card, 'tree/b_00000001'), Fault);
+  } finally { engine.close(); }
 });

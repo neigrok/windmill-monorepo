@@ -111,6 +111,10 @@ export function vectorViews(records, { ids = [], firstPullComplete = true } = {}
 // The commit double (D-18's port) every run and script vector runs over: it answers the receipt the
 // vector gives, or `g<k>` for its k-th committed gesture, and never changes its records by itself.
 export class VectorReplica {
+  /** @type {Record<string, any>} */
+  scopes = {};
+  /** @type {string[]} */
+  commitScopes = [];
   /**
    * @param {{ drawn?: any[], stored?: any[] }} records
    * @param {number} now
@@ -127,7 +131,7 @@ export class VectorReplica {
 
   /** @param {string} scope */
   read(scope) {
-    const views = vectorViews(this.records);
+    const views = vectorViews(this.scopes[scope] ?? this.records);
     return { drawn: views.drawn, stored: views.stored, devices: {}, firstPullComplete: true };
   }
 
@@ -144,6 +148,7 @@ export class VectorReplica {
     }
     if (gesture === null) return { outcome: null, value };
     this.gestures.push(gesture);
+    this.commitScopes.push(scope);
     const id = `g${this.gestures.length}`;
     return { outcome: this.answer ?? { receipt: { gestureId: id, localIds: [`${id}/0`], retired: [], releaseAt: null } }, value };
   }
@@ -249,7 +254,7 @@ export function savedForm(saved) {
 
 /**
  * @param {import('../../../src/platform/domain-kit/drafts.js').Draft<any>} draft
- * @returns {Json}
+ * @returns {Record<string, Json>}
  */
 export function draftForm(draft) {
   return { id: draft.id.json, base: draft.base.fields(), current: draft.current.fields(), isNew: draft.isNew, placement: placementForm(draft.placement) };

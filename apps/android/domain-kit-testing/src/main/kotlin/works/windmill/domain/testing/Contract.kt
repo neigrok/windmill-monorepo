@@ -134,6 +134,8 @@ class VectorReplica(records: VectorRecords, val now: Long, val registry: Registr
     var answer: CommitOutcome? = null) : Replica {
     private val lock = Any()
     private var currentRecords = records
+    val scopes = mutableMapOf<ScopeRef, VectorRecords>()
+    val commitScopes = mutableListOf<ScopeRef>()
     private val committedGestures = mutableListOf<Gesture>()
     var records: VectorRecords
         get() = synchronized(lock) { currentRecords }
@@ -142,18 +144,19 @@ class VectorReplica(records: VectorRecords, val now: Long, val registry: Registr
     private var failNext = false
     fun failNextCommit() { synchronized(lock) { failNext = true } }
     override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> {
-        val (gesture, value) = body(VectorReader(records, now, scope = scope, registry = registry))
+        val (gesture, value) = body(VectorReader(scopes[scope] ?: records, now, scope = scope, registry = registry))
         return synchronized(lock) {
             if (failNext) { failNext = false; throw CommitFailure(CommitFailure.Kind.storeFailure, "the disk is full") }
             if (gesture == null) null to value else {
                 committedGestures.add(gesture)
+                commitScopes.add(scope)
                 val id = "g${committedGestures.size}"
                 (answer ?: CommitOutcome.Committed(CommitReceipt(id, Stamp.UNSET, listOf("$id/0"), emptyList(), null, emptyList()))) to value
             }
         }
     }
     override fun undo(gestureId: String) = false
-    override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T) = body(VectorReader(records, now, scope = scope, registry = registry))
+    override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T) = body(VectorReader(scopes[scope] ?: records, now, scope = scope, registry = registry))
     override fun mintID(type: String): RecordID = throw CommitFailure.malformed("a vector mints no id")
     override fun physNow() = now
     override fun dismissNotice(id: String): Unit = throw ContractError("a vector's commit writes no notice, and $id was dismissed")

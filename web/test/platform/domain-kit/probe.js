@@ -35,7 +35,7 @@ export class ProbeEntity {
 // An entity declaration whose decoder takes each declared field as the record holds it, or its default,
 // and whose checks apply the README's specs to their fields in order.
 /**
- * @param {{ type: string, scope: string, defaults: Record<string, Json>, specs: ValueSpec[], heldRemoval?: boolean,
+ * @param {{ type: string, scope: string | null, defaults: Record<string, Json>, specs: ValueSpec[], heldRemoval?: boolean,
  *   orderField?: string, savesGuarded?: boolean, timestampField?: string }} declaration
  * @returns {EntityType<ProbeEntity>}
  */
@@ -80,20 +80,21 @@ export const Probe = Object.freeze({
     savesGuarded: false, heldRemoval: true }),
   fact: probeType({ type: 'fact', scope: PROBE_SCOPE, defaults: { value: null, at: null }, specs: [new NumberSpec('fact.value', { min: 0, max: 500, quantum: 0.1 })],
     savesGuarded: false, heldRemoval: true, timestampField: 'at' }),
-  mark: probeType({ type: 'mark', scope: PROBE_OVERLAY, defaults: { done: null, memo: '' },
+  mark: probeType({ type: 'mark', scope: null, defaults: { done: null, memo: '' },
     specs: [new TextSpec('mark.memo', { unit: 'bytes', min: 0, max: 40, trim: false, nfc: false })], savesGuarded: false }),
-  meta: probeType({ type: 'meta', scope: PROBE_TREE, defaults: { title: '' }, specs: [chars('meta.title', 0, 12)], savesGuarded: false }),
+  guardedMeta: probeType({ type: 'meta', scope: null, defaults: { title: '' }, specs: [chars('meta.title', 0, 12)], savesGuarded: true }),
+  meta: probeType({ type: 'meta', scope: null, defaults: { title: '' }, specs: [chars('meta.title', 0, 12)], savesGuarded: false }),
   lap: probeType({ type: 'lap', scope: PROBE_SCOPE, defaults: { runId: '', at: null, weight: null },
     specs: [new NumberSpec('lap.weight', { min: -500, max: 500, quantum: 0.01 })], heldRemoval: false }),
   run: probeType({ type: 'run', scope: PROBE_SCOPE, defaults: { startedAt: null, label: null }, specs: [chars('run.label', 0, 12)], heldRemoval: false }),
-  link: probeType({ type: 'link', scope: PROBE_TREE, defaults: { strength: null }, specs: [new NumberSpec('link.strength', { min: 0, max: 9, integer: true })],
+  link: probeType({ type: 'link', scope: null, defaults: { strength: null }, specs: [new NumberSpec('link.strength', { min: 0, max: 9, integer: true })],
     heldRemoval: true }),
-  tag: probeType({ type: 'tag', scope: PROBE_TREE, defaults: { label: '' }, specs: [] }),
+  tag: probeType({ type: 'tag', scope: null, defaults: { label: '' }, specs: [] }),
 });
 
 /** @param {string} type */
 export function probeEntity(type) {
-  const found = Object.values(Probe).find((entity) => entity.type === type);
+  const found = Object.entries(Probe).find(([name]) => name === type)?.[1];
   if (!found) throw new Error(`no probe entity ${type}`);
   return found;
 }
@@ -135,4 +136,9 @@ export function refusalForm(refusal) {
   if (refusal.kind === 'invalid') return { violation: refusal.violation.json };
   const { code, subject, detail, path } = refusal.refused;
   return { refused: { code, subject: subject === null ? null : { t: subject.t, id: subject.id }, detail, path } };
+}
+
+/** @param {import('../../../src/platform/domain-kit/entities.js').EntityType<any>} type */
+export function probeScope(type) {
+  return type.scope ?? (type.type === 'mark' ? PROBE_OVERLAY : PROBE_TREE);
 }

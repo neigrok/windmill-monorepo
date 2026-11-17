@@ -170,7 +170,7 @@ export class Reader {
    */
   repository(type) {
     const definition = this.registry.type(type.type);
-    precondition(type.scope === this.scope && definition !== undefined && definition.scope === this.registry.scopeKindOf(this.scope),
+    precondition((type.scope === null || type.scope === this.scope) && definition !== undefined && definition.scope === this.registry.scopeKindOf(this.scope),
       `${type.type} is outside ${this.scope}`);
     return new Repository(type, this.views);
   }

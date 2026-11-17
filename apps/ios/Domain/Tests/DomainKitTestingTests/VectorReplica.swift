@@ -8,6 +8,8 @@ import Synchronization
 // `failNextCommit` throws before committing, whether or not the body decides a gesture.
 final class VectorReplica: Replica {
   struct State {
+    var scopes: [ScopeRef: VectorRecords] = [:]
+    var commitScopes: [ScopeRef] = []
     var records: VectorRecords
     var answer: CommitOutcome?
     var failNext = false
@@ -24,6 +26,13 @@ final class VectorReplica: Replica {
     state = Mutex(State(records: records, answer: answer))
   }
 
+  var scopes: [ScopeRef: VectorRecords] {
+    get { state.withLock(\.scopes) }
+    set { state.withLock { $0.scopes = newValue } }
+  }
+
+  var commitScopes: [ScopeRef] { state.withLock(\.commitScopes) }
+
   var records: VectorRecords {
     get { state.withLock(\.records) }
     set { state.withLock { $0.records = newValue } }
@@ -36,10 +45,10 @@ final class VectorReplica: Replica {
   var gestures: [Gesture] { state.withLock(\.gestures) }
 
   func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T) {
-    let (gesture, value) = try body(VectorReader(records: records, now: now, scope: (scope, registry)))
+    let (gesture, value) = try body(VectorReader(records: scopes[scope] ?? records, now: now, scope: (scope, registry)))
     let (failing, answer, k) = state.withLock { state in
       defer { state.failNext = false }
-      if let gesture, !state.failNext { state.gestures.append(gesture) }
+      if let gesture, !state.failNext { state.gestures.append(gesture); state.commitScopes.append(scope) }
       return (state.failNext, state.answer, state.gestures.count)
     }
     if failing { throw CommitFailure(.storeFailure, "the disk is full") }
@@ -51,7 +60,7 @@ final class VectorReplica: Replica {
   func undo(_ gestureId: String) throws -> Bool { false }
 
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
-    try body(VectorReader(records: records, now: now, scope: (scope, registry)))
+    try body(VectorReader(records: scopes[scope] ?? records, now: now, scope: (scope, registry)))
   }
 
   func mintID(_ type: String) throws -> RecordID {
