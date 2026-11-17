@@ -155,14 +155,14 @@ guide and the guides above it, and an owner edits their own.
 - Forking first needs a connection, as every fork does.
 - The iPhone design draws none of it, so each state is drawn and approved before it is built.
 
-## §6a A roadmap and its kinds
+## §7 A roadmap and its kinds
 
 A person renames and deletes a roadmap on the phone, and adds, renames, recolours and removes its
 kinds (R-6). These are the domain's actions, the web's own: a delete is held with Undo, and
 recolouring a kind is the server's command. The iPhone design draws none of it, so each state is
 drawn and approved before it is built.
 
-## §7 Coach
+## §8 Coach
 
 Coach is the room's third tab, as the design rules, with Search beside it.
 
@@ -174,7 +174,7 @@ Coach is the room's third tab, as the design rules, with Search beside it.
   web: once gym's server Coach has closed (Roadmap Coach R-11). Until that day the tab is not shown.
 - [Roadmap Coach](roadmap-coach.md) specifies it for both surfaces.
 
-## §8 Forms, colour and words
+## §9 Forms, colour and words
 
 - A form commits from the toolbar, with Cancel and Save, as every form in the app does (R-5). The
   rendering contract takes no exception for roadmap.
@@ -183,7 +183,7 @@ Coach is the room's third tab, as the design rules, with Search beside it.
 - A sentence a rule produces, a reason line or a refusal, comes from the shared vectors. Every
   other string is in the app's catalog and is the board's.
 
-## §9 Testing
+## §10 Testing
 
 - **The domain** runs every file under `packages/api-contract/roadmap/domain/` and the kit's
   harness. Coach's executor runs roadmap's ability vectors, and the Coach engine's turn stories
@@ -201,7 +201,7 @@ Coach is the room's third tab, as the design rules, with Search beside it.
   conversation joined at sign-in.
 - **On a device**, links from Messages and Safari open the app, and the budget of §5 is measured.
 
-## §10 Observability
+## §11 Observability
 
 - **Events**, with no title or text of the person's and no id of a roadmap or a step: the room
   opened; a roadmap created, switched and deleted; a step created, edited, completed, reset and
@@ -221,7 +221,7 @@ Coach is the room's third tab, as the design rules, with Search beside it.
   report carries an address.
 - The iPhone's observability document lists them, and its telemetry allowlist gains the labels.
 
-## §11 What the build makes false
+## §12 What the build makes false
 
 The lines that say the iPhone carries journal and gym only, that roadmap is on the web only, that
 roadmap is not a consumer of the domain kit, and that the iPhone has no Undo for a delete: in
@@ -229,7 +229,7 @@ roadmap is not a consumer of the domain kit, and that the iPhone has no Undo for
 the sync engine's documents, and the documentation index. Each is corrected in the change that
 makes it false.
 
-## §12 Gaps this build closes
+## §13 Gaps this build closes
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
   is on the web. Nothing serves an association file.
@@ -242,7 +242,7 @@ makes it false.
   land, a gesture a limit refuses, a fork in progress, a link that cannot be opened, History with
   no connection, and the sign-in question that names roadmaps and conversations.
 
-## §13 Rulings
+## §14 Rulings
 
 | | Question | Ruling |
 |---|---|---|
