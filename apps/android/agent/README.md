@@ -31,9 +31,13 @@ repair and retry policy; `AiHttp` owns HTTPS, credential separation and bounded 
 It sends session/installation credentials only to the pass door and never accepts redirects or
 cookies. Local HTTP is an explicit constructor opt-in for literal `127.0.0.1` or `::1`. Requests
 are serialized once per call, event cursors suppress replay, and admission only increases.
-Before a text dispatch, an offline pass or picture preparation failure withdraws the turn so its
-draft can return. A cached pass can reach text dispatch while offline; that attempt is uncertain
-and retains its records. Lost calls keep their original twenty-minute deadline through temporary
+Before a turn's first round sends anything, `CoachAiClient` asks `connected` once whether the device
+reports a connection. With none it sends nothing and answers a transport failure with no code and
+no admission, so the turn is withdrawn and its draft returns at once. `TurnRunner` marks that call
+`firstRound`; later rounds and recovery never ask. The integrating application passes what its
+connectivity callback reports; a client given no answer counts the device as connected.
+Before a text dispatch, an offline pass or picture preparation failure also withdraws the turn. A
+text dispatch that fails is uncertain whatever the device reports and retains its records. Lost calls keep their original twenty-minute deadline through temporary
 pass refresh failures and proxy responses. A resent PUT still gives paused, concurrency and
 provider-unavailable refusals thirty seconds from the first PUT.
 `CoachRuntime` supplies cryptographic 128-bit identifiers and process-local turn leases. Its

@@ -27,6 +27,26 @@ class CoachRetryTests {
         return AiResponse(value.member("status").long().toInt(), Json.objectOf("code" to Json.of(code), "allowance" to Json.Null))
     }
 
+    @Test fun firstRoundWithNoReportedConnectionSendsNothingAndOnlyAFirstRoundAsks() = runBlocking {
+        for (firstRound in listOf(true, false)) {
+            var asked = 0
+            val sent = mutableListOf<String>()
+            val reports = Reports()
+            val client = CoachAiClient(object : AiTransport {
+                override suspend fun pass(body: Json): AiResponse {
+                    sent += "pass"
+                    return AiResponse(200, Json.objectOf("pass" to Json.of("pass"), "expiresIn" to Json.of(600000)))
+                }
+                override suspend fun request(request: AiRequest): AiResponse { sent += request.path; throw AiTransportFailure("offline") }
+            }, reports, now = { 0 }, connected = { asked++; false })
+            val answer = client.text("AAAAAAAAAAAAAAAAAAAAAA", Json.objectOf(), listOf(Picture("BBBBBBBBBBBBBBBBBBBBBB", "image/png", byteArrayOf(1))), "other", "vector.coach", 1, StopSignal(), firstRound) {}
+            assertEquals(AiAnswer.Failure(AiFailure("transport", null, Admission.none)), answer)
+            assertEquals(if (firstRound) 1 else 0, asked)
+            assertEquals(if (firstRound) emptyList() else listOf("pass", "/v1/pictures/BBBBBBBBBBBBBBBBBBBBBB"), sent)
+            assertEquals(emptyList<FailureOperation>(), reports.failures)
+        }
+    }
+
     @Test fun lostCallSurvivesTemporaryPassRefreshFailures() = runBlocking {
         for (failure in listOf("offline", "rate_limited", "unavailable")) {
             var now = 0L

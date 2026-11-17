@@ -28,6 +28,7 @@ class CoachStoryTests(private val file: File) {
         val controls = story.member("controls").arr().toMutableList()
         var now = story.member("runtime").member("nowMs").long()
         var generation = 0
+        var connected = story.member("runtime").member("connected").bool()
         var exists = story.member("host")["recovery"]?.orNull() != null
         var recordState: String? = story.member("host")["recovery"]?.get("state")?.str()
         class Lease(val generation: Int) : HostLease
@@ -42,6 +43,7 @@ class CoachStoryTests(private val file: File) {
                 "seat" -> barrier = launch(start = CoroutineStart.UNDISPATCHED) { runner.seatWillChange(); generation++ }
                 "delete" -> exists = false
                 "stale" -> recordState = "interrupted"
+                "disconnect" -> connected = false
             }
         }
         fun guard(lease: HostLease) { if (!exists || writer !== lease || (lease as Lease).generation != generation) throw HostUnavailable() }
@@ -105,6 +107,7 @@ class CoachStoryTests(private val file: File) {
                 val current = exchangeIndex
                 val value = service.member("exchanges").arr().getOrNull(exchangeIndex) ?: error("unexpected-request")
                 if (++repeat >= value.member("repeat").long()) { exchangeIndex++; repeat = 0 }
+                value["transport"]?.let { throw AiTransportFailure(it.str()) }
                 value["http"]?.let { http ->
                     MockWebServer().use { server ->
                         server.enqueue(MockResponse().setResponseCode(http.member("status").long().toInt()).setHeader("Content-Type", http.member("contentType").str()).setBody(http.member("body").str()))
@@ -121,7 +124,7 @@ class CoachStoryTests(private val file: File) {
         val ai = CoachAiClient(transport, telemetry, now = { now }, wait = { ms, stop ->
             val index = waits.size; waits += Json.of(ms); control("wait:$index")
             if (stop.stopped) false else { now += ms; true }
-        })
+        }, connected = { connected })
         runner = TurnRunner(host, ai, telemetry, object : Runtime {
             override fun now() = now
             override fun newId() = story.member("runtime").member("callIds").arr()[idIndex++].str()
