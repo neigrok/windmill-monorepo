@@ -202,7 +202,7 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
   let enabled: Bool
   var connectionRequired: Bool { session.offline.withLock { $0 } || session.sentryOffline.withLock { $0 } }
 
-  init(info: [String: Any], baseURL: URL?, directory: URL, debug: Bool) {
+  init(info: [String: Any], baseURL: URL?, directory: URL, debug: Bool, deliver: EventQueue.Delivery? = nil) {
     enabled = !debug || info["WMDebugTelemetry"] as? String == "YES"
     if let options = CrashReports.options(info: info, debug: debug) { SentrySDK.start(options: options) }
     if enabled, let baseURL {
@@ -214,7 +214,7 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
                              let first = session.sentryOffline.withLock { value in let first = !value; value = true; return first }
                              if first { CrashReports.offline(properties: properties.merging(["operation": operation]) { _, value in value }) }
                            } else { CrashReports.failure(operation, kind: kind, properties: properties, durationMs: duration) }
-                         })
+                         }, deliver: deliver)
     } else { queue = nil }
     if let queue {
       Task { [weak queue] in
