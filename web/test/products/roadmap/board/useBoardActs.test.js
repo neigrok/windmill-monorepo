@@ -462,6 +462,23 @@ test('recolor choosing the shared kind and empty selections are no-ops without t
   assert.equal(c.toast, undefined);
 });
 
+test('a retained bulk delete callback rechecks roots, selection membership and authority before holding or writing', () => {
+  for (const change of ['roots', 'missing', 'owner', 'active']) {
+    const { acts, c, calls } = fixture();
+    const remove = () => acts.delete(['wind'], 'bulk');
+    const current = { ...c };
+    if (change === 'roots') current.tree = c.tree.without(['spare']);
+    if (change === 'missing') current.tree = c.tree.without(['wind']);
+    if (change === 'owner') current.owner = false;
+    if (change === 'active') current.active = false;
+    acts.update(current);
+    assert.equal(remove(), false, change);
+    assert.deepEqual(calls, [], change);
+    assert.equal(acts.held, null, change);
+    assert.equal(c.toast, undefined, change);
+  }
+});
+
 test('bulk and key deletion use one held entity and reject the sole root', () => {
   const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
     { id: 'root', label: 'Root', prerequisites: [] },

@@ -785,13 +785,24 @@
   font: 700 14px/20px var(--font-body);
 }
 
-.st-board-bulk-heading {
+.st-board-bulk-summary {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
   min-height: 44px;
   margin: 0 0 var(--space-2);
+}
+
+.st-board-bulk-heading {
+  margin: 0;
   font: inherit;
+}
+
+.st-board-bulk-reason {
+  margin: 0;
+  color: var(--text-secondary);
+  font: 600 12px/16px var(--font-body);
 }
 
 .st-board-bulk-done {
@@ -803,6 +814,11 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+
+.st-board-bulk.is-delete-refused .st-board-bulk-heading,
+.st-board-bulk.is-delete-refused .st-board-bulk-done {
+  font: 800 15px/20px var(--font-body);
 }
 
 .st-board-bulk-kinds {
@@ -893,6 +909,10 @@
   border-color: var(--color-bark);
   background: var(--color-bark);
   color: var(--surface-card);
+}
+
+.st-board-bulk-delete[aria-disabled="true"] {
+  opacity: 0.45;
 }
 
 .st-board-bulk button:focus-visible {

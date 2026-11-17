@@ -137,7 +137,10 @@ export const NOTE_EDITOR = {
   urlPlaceholder: t('roadmap.noteEditor.urlPlaceholder'),
   apply: t('roadmap.common.apply'),
 };
-export const BULK = { region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor };
+export const BULK = {
+  region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor,
+  keepRoot: t('roadmap.bulk.keepRoot'),
+};
 export const RECOLOR = {
   steps: t('roadmap.recolor.steps'),
   kind: (name) => t('roadmap.recolor.kind', { name }),

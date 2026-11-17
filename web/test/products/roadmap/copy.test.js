@@ -385,7 +385,7 @@ test('copy — edit and workspace labels match the wave 5 contract', () => {
 });
 
 test('copy — bulk selection formats full counts', () => {
-  assert.deepEqual(BULK, { region: 'Selection', done: 'Done', recolor: 'Recolor' });
+  assert.deepEqual(BULK, { region: 'Selection', done: 'Done', recolor: 'Recolor', keepRoot: 'A roadmap keeps one starting step' });
   assert.equal(selectingAnnouncement({ count: 1 }), 'Selecting. 1 selected.');
   assert.deepEqual([0, 1, 3, 1200].map((count) => selectedCount({ count })), [
     '0 selected', '1 selected', '3 selected', '1,200 selected',

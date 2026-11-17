@@ -236,6 +236,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Phone selection ends | `roadmap_board_select` | `step: end`, `via: done/back/acted/emptied/left` |
 | Graph multi-select starts or ends | `roadmap_board_select` | `step: start/end`, `view: graph` |
 | Reveal the bulk bar's kinds | `roadmap_board_bulk` | `step: kinds` |
+| Attempt phone bulk Delete with every root selected; nudge the reason | `roadmap_board_bulk` | `step: delete_refused`, `reason: last_root` |
 | Bulk act on the Board | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+` |
 | Bulk act on the Graph | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+`, `view: graph` |
 | Workspace in the shared step document | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskDelete/linkAdd/linkDelete/noteSave/noteDiscard/undo` |
@@ -330,8 +331,8 @@ A step is a thing a reader did or was told. These emit nothing:
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
 - The unavailable Graph option's reason opening on hover or focus.
-- A Delete key on a selection that takes every root a roadmap has left, on either view: Delete is not offered, so nothing
-  happened.
+- A Delete key on a selection that takes every root a roadmap has left, on either view. Activating the phone Board's
+  disabled Delete button separately emits `delete_refused` when it nudges the reason.
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
 - The camera, the minimap, the legend's highlight and folding, selecting one step, hovering and focus moves.
 - Closing the guide, reading it, its counter appearing and a guide set elsewhere arriving.

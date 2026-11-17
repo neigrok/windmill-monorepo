@@ -84,6 +84,7 @@
   "roadmap.browse.unreachable": "Can’t reach the gallery just now.",
   "roadmap.bulk.deleteSteps": "Delete {count, plural, one {{shown} step} other {{shown} steps}}",
   "roadmap.bulk.done": "Done",
+  "roadmap.bulk.keepRoot": "A roadmap keeps one starting step",
   "roadmap.bulk.region": "Selection",
   "roadmap.bulk.selected": "{count} selected",
   "roadmap.bulk.selecting": "Selecting. {count} selected.",
