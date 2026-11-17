@@ -101,11 +101,15 @@ bash apps/ios/Sync/bench.sh              # or: bash apps/ios/Sync/bench.sh simul
 
 **The domain kit.** `WindmillDomain` builds `WindmillSync` as a dependency. Its compile attacks run the Xcode
 toolchain's `swiftc` against the modules the build made; its layering tests run `swift package dump-package` on every
-package, and `xcodegen` and `xcodebuild` on the app fixtures and on `SyncProbe/project.yml` when `xcodegen` is installed:
+package, and `xcodegen` and `xcodebuild` on the app fixtures and on `SyncProbe/project.yml` when `xcodegen` is installed.
+
+Use the compiler pinned by [iOS CI](../../.github/workflows/ios.yml) for the full domain-kit gate. Its
+SwiftSyntax version and compile attacks target that compiler; a newer installed Xcode is not an
+equivalent check. `DEVELOPER_DIR` must select the matching Xcode before the commands below.
 
 ```sh
 cd apps/ios/Domain
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --explicit-target-dependency-import-check error
+xcrun swift test --explicit-target-dependency-import-check error
 ```
 
 **The harness from outside.** `SyncTestingSurface` builds `WindmillSync` as a dependency:
