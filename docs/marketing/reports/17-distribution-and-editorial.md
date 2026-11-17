@@ -1,6 +1,6 @@
 # 17 · Build a useful, recurring internet presence
 
-The founder owns this queue under the proposed **eight hours a week and $0 incremental cash** cap. Engineering owns HTML and publishing fixes; the release owner supplies build evidence and store readiness. The [strategy](../strategy.md#launch-contract) owns release scope. The [marketing execution tree](https://windmill.works/#/app/t_970fc0a989207ce2) owns task progress and outcomes. This is planned work, not a record of campaigns sent or articles published.
+The founder owns this queue under the proposed **eight hours a week and $0 incremental campaign cash** scenario. The [growth options report](18-growth-options.md) owns the broader portfolio, strategic choices and resource alternatives. Engineering owns HTML and publishing fixes; the release owner supplies build evidence and store readiness. The [strategy](../strategy.md#launch-contract) owns release scope. The [marketing execution tree](https://windmill.works/#/app/t_970fc0a989207ce2) owns task progress and outcomes. This is planned work, not a record of campaigns sent or articles published.
 
 ## First 14 days from the actual start
 
@@ -10,9 +10,9 @@ Record day 1's calendar date on the execution tree before starting. These are el
 |---|---|---|---|
 | Days 1–2 | P0 · Founder + engineering | Reinspect the six priority public URLs and open fixes for absent text, wrong headings/canonicals or fetch failures. Establish a private source and placement ledger. | Dated provider verdicts, current served HTML and exact failing route; no claim that submission means indexed. [Search procedure](06-brand-search-identity.md) |
 | Days 1–4 | P0 · Founder + release owner | Identity sheet with product names, descriptive terms, candidate evidence and a three-room default App Store listing draft. | One job per lane; actual build supports every screenshot and claim. [ASO](05-aso-and-featuring.md) |
-| Days 2–7 | P1 · Founder + engineering | Outline the six resources below; publish the first owned original when its approved publishing surface and evidence are ready. Make three short cuts from that original. | A reader can read the resource without signing up; action, account and paid-access requirements are explicit; one relevant CTA opens a working destination; cuts accurately reflect the demo. |
-| Days 4–7 | P1 · Founder | Place the first resource in two relevant, permitted contexts; prepare the Telegraph adaptation and a small earned-outreach shortlist. | Two observed placements, or a recorded refusal/shortfall; first adaptation links its owned source. Count no draft as sent. |
-| Days 8–12 | P1 · Founder | Publish a second owned original or demo and three cuts; place it twice. Publish the second external adaptation on one selected audience-fit channel. | Two adaptations total across the 14 days, with original value and one relevant action each. Record actual workload. |
+| Days 2–7 | P1 · Founder + engineering | Prepare one course/club companion kit: a useful next-project checklist, a worked Ship v1 example and the existing starter-picker destination. Use it as the first query-led resource and 3–6 minute tutorial when the publishing surface and evidence are ready. | The kit is useful without signup; account/access requirements for the action are explicit. Synthetic click-path check reaches the intended task. Host source belongs inside the Roadmap cohort; no destination change during a frozen intake. |
+| Days 4–7 | P1 · Founder | Prepare two relevant host conversations and one permitted companion-kit placement. Reuse the same artifact for a second contextual answer only if capacity remains. | Record actual host conversations, accepted placements and live placements separately. Count opted-in recipients within Roadmap's 20; keep the Gym 10 as the second cohort. No draft is sent by this documentation task. |
+| Days 8–12 | P1 · Founder | Follow up on the first task, improve the artifact at an observed obstacle, and prepare up to two short cuts. Select at most one external adaptation in the base cycle; Telegraph is an option. | Actual first actions and unknowns recorded; cuts have a verified onward route. A second original or publisher stays in reserve and replaces work, rather than adding hours. |
 | Days 10–14 | P1 · Founder + analyst | Inspect referrals, first actions, unknowns, provider coverage and any mature returns. Check listing/submission status. | Continue, revise or pause a placement format with evidence; leave immature behavior windows pending. Record next owner and read date. |
 
 If public HTML or the resource surface blocks publishing, prepare the evidence, drafts and clips while engineering fixes it. Do not scatter provisional copies across external hosts to fill a quota. This queue does not authorize outreach sending, submissions, public UI changes or paid activity during the documentation task.
@@ -36,22 +36,22 @@ These queries are hypotheses, not keyword-volume findings. Use actual Search Con
 
 | Founder block | Hours | Output |
 |---|---|---|
-| Original guide or demo | 2 | One useful owned piece built from a real task; use founder-owned or synthetic data. |
-| Editing and reuse | 1 | Three short cuts: task/problem, useful step, demonstrated result. Captions and destination match the build. |
-| Placement and earned discovery | 1.5 | Two relevant placements, plus bounded editorial/directory preparation. During the external pilot, adaptations consume this block. |
-| Two behavior cohorts | 2 | Invitations, consented observations and follow-ups within the fixed protocols. |
-| Search, store identity and scorecard | 1.5 | Provider reinspection, listing corrections, 30-minute review and the actual time ledger. |
-| **Total** | **8** | No incremental cash. Engineering time is separately recorded and scheduled, not assumed free or unlimited. |
+| Companion kit and query tutorial | 2.5 | One useful artifact reused across a host kit, owned resource and demonstration; founder-owned or synthetic data. One artifact may take the full 14-day cycle. |
+| Editing and reuse | 0.5 | Up to two short cuts or one visual extract if the original is ready; no fixed clip quota. |
+| Host and contextual placement | 1.5 | Host-fit conversations and one actual placement sought. One external adaptation can consume this block; no automatic second publisher. |
+| Two behavior cohorts | 2 | Invitations, consented observations and follow-ups. The host/assistant subgroups stay inside Roadmap; Gym retains the other slot. |
+| Search, store identity and scorecard | 1.5 | Provider reinspection, listing corrections, 30-minute review and actual time ledger. |
+| **Total** | **8** | $0 incremental campaign cash. Engineering time is separately recorded and scheduled, not assumed free or unlimited. |
 
-This output rate is a workload hypothesis. During the first cycle, foundation work uses the same blocks. If eight hours cannot support the proposed cadence, reduce cuts or placements first and record the sustainable rate; never borrow from promised participant follow-up or invent output. A founder-authored tutorial can support all three cuts. Avoid repetitive product-only posts. [Community practice](15-community-answering.md)
+This allocation is a workload hypothesis, not an output guarantee. During the first cycle, foundation work uses the same blocks. Reduce cuts and adaptations first if eight hours cannot support follow-up and repairs. Do not borrow from promised participant follow-up. A second host, workshop, utility or platform needs an explicit substitution or the [larger capacity scenario](18-growth-options.md#resource-scenarios-and-sequencing). The six topics remain an inventory. [Community practice](15-community-answering.md)
 
 ## Proposed channel choices
 
-Start the short-demo trial on **YouTube Shorts**: the proposed use is a visual, searchable explanation of
-one task, with three cuts from the same weekly original. This is a channel hypothesis, not evidence that
-Windmill has an audience or an account there. Confirm the account and available destination-link behavior
-before publishing. If founder access or audience evidence favors Instagram Reels, choose it instead for
-that cycle; do not add a second short-video workload. Record the chosen account, channel and actual time.
+Start with **one 3–6 minute query-led YouTube tutorial** that answers the same question as the usable artifact. The title, demonstration and destination must concern one job. Short cuts serve discovery of that tutorial; they are not assumed to deliver direct outbound clicks. This is a channel hypothesis, not evidence of an existing Windmill account or audience. Confirm account access, feature eligibility and the actual route before production.
+
+YouTube makes URLs in Shorts descriptions and comments non-clickable. A channel profile link or a related-video link can provide an onward route; external links in long-form descriptions require advanced-feature access. Test the complete path on the intended account and device: short → related tutorial/profile → owned artifact → named product action. If any part is unavailable, choose a working route and describe it accurately. Keep tutorial viewers, onward clicks and useful actions separate. [YouTube link behavior](https://support.google.com/youtube/answer/13748639?hl=en)
+
+If founder access or observed audience fit favors Reels instead, substitute it for the short-video workload after verifying its link behavior. [Pinterest and portable templates](18-growth-options.md#route-portfolio) are candidates for a later bounded test, not extra weekly obligations. A long tutorial, a short cut and a saved visual have different discovery and click mechanics.
 
 | Lane | Proposed placement | Reason and constraint |
 |---|---|---|
@@ -59,15 +59,14 @@ that cycle; do not add a second short-video workload. Record the chosen account,
 | Lifters | A coach's opt-in training group; a moderator-approved relevant thread in a lifting community such as r/Fitness. | The artifact explains repeating a routine. Ask the host or moderator which format is welcome before including a product link; do not send unsolicited DMs. |
 | Writers | A journaling-group host or a permitted tutorial discussion in r/Journaling. | Teach retrieval or a reflection practice using invented entries. Participation and private writing remain separate. |
 
-Choose **two placements total per week**, matched to that week's original; the lanes do not each receive
-a quota. Telegraph consumes one placement during its pilot week. Check community rules at the time of
+Seek **one actual host placement in the first 14-day cycle**, matched to the companion kit. A second contextual placement is optional within the same block; the lanes do not each receive a quota. An external adaptation consumes that block during its pilot week. Check community rules at the time of
 placement, disclose authorship and record declines. Reddit prohibits spam and lets communities set their
 own rules. [Community practice](15-community-answering.md) ·
 [Reddit spam policy](https://support.reddithelp.com/hc/en-us/articles/360043504051-Spam)
 
 ## External publishing pilot
 
-Publish **two adaptations total over 14 days**, one on Telegraph and one in a channel whose audience fits the resource, such as a permitted builder tutorial on DEV Community. Verify that channel's current publishing and affiliation rules before selecting it. The owned original publishes first. Each adaptation must stand alone as a useful tutorial or excerpt, name Windmill's authorship, link the original and end with one relevant CTA. A source attribution and the CTA may point to the same owned resource; do not scatter keyword links through the text.
+Select **at most one adaptation in the base 14-day cycle**: Telegraph or an audience-fit channel such as a permitted builder tutorial on DEV Community. The second platform remains a reserve until the first result and time ledger justify it. Verify publishing and affiliation rules before selection. The owned original publishes first. Each adaptation must stand alone as a useful tutorial or excerpt, name Windmill's authorship, link the original and end with one relevant CTA. A source attribution and the CTA may point to the same owned resource; do not scatter keyword links through the text.
 
 Telegraph is a publishing surface to test reader referrals. Its documented API exposes title, authorship and content but no canonical-setting field. Do not assume control over a canonical tag or a ranking benefit. Prefer a distinct useful adaptation or short excerpt there; on another platform, use supported canonical settings only after verifying the rendered result. Canonical signals help search engines choose among duplicates but do not guarantee their selection. [Telegraph](https://telegra.ph/) · [Official introduction](https://telegram.org/blog/instant-view) · [Telegraph API](https://telegra.ph/api) · [Google canonical guidance](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls)
 

@@ -1,9 +1,12 @@
 # Running Windmill marketing
 
-Start with [the iOS-first strategy](strategy.md) and its [launch contract](strategy.md#launch-contract). Build Windmill's presence across Roadmap, Journal and Gym through search, useful owned resources, store identity and regular distribution, while learning from two behavior cohorts. Launch timing follows readiness. The proposed cap is eight founder hours a week and zero incremental campaign spend.
+Start with [the iOS-first strategy](strategy.md) and its [launch contract](strategy.md#launch-contract). The proposed direction is a useful companion kit through a trusted host, searchable artifacts, and iPhone pages matched to a room's job. The [24-route growth portfolio](reports/18-growth-options.md) compares these with wider options using Ansoff, Blue Ocean and a Balanced Scorecard. Launch timing follows readiness. Eight founder hours a week and zero incremental campaign spend is the proposed operating scenario; only two behavioral cohorts run at once.
 
 | When you need to… | Open |
 |---|---|
+| Choose a growth mechanism, compare alternatives or change the resource scenario | [18 · Growth options and decision scorecard](reports/18-growth-options.md) |
+| Assess useful, playful or shareable product-generated content | [19 · Product-generated content](reports/19-product-generated-content.md) |
+| Compare each room's competitors and observed market presence | [20 · Competitive presence](reports/20-competitive-presence.md) |
 | Run this week's recruitment, demonstration and follow-up | [Strategy and readiness](strategy.md) |
 | Count a participant, handle a missing observation, or make Monday's decision | [Funnels and scorecard](funnels.md) |
 | Verify a product or market claim before using it in copy | [Evidence and economics](benchmarks.md) |
@@ -22,6 +25,6 @@ Start with [the iOS-first strategy](strategy.md) and its [launch contract](strat
 | Expand a working channel | [07 · Sharing](reports/07-sharing-surfaces.md), [09 · Creators](reports/09-creator-campaign.md), [14 · Apple Ads](reports/14-apple-ads-test.md) | A working destination; paid expansion also needs cohort evidence and owner approval |
 | Test another reason to return | [10 · Recap](reports/10-weekly-recap.md), [13 · Journal](reports/13-journal-voice-cohort.md), [16 · Cross-product invitation](reports/16-cross-product-invitation.md) | A free experiment slot and enough eligible users |
 
-Run publishing, distribution, external adaptations and earned outreach from [17 · Distribution and editorial](reports/17-distribution-and-editorial.md). Its start-relative queue and six-topic inventory run alongside the cohorts.
+Run publishing, distribution, external adaptations and earned outreach from [17 · Distribution and editorial](reports/17-distribution-and-editorial.md). Its start-relative queue reuses one companion artifact across the host trial, search and a query tutorial; the six-topic inventory is a reserve, not a publication quota.
 
-Store aggregate outcomes and the next decision in the [marketing execution tree](https://windmill.works/#/app/t_970fc0a989207ce2), connected from the [dogfood tree](https://windmill.works/#/app/t_9362d9bc883e0a1e). The structure task is `marketing-ios-discovery-structure`. Keep participant records, account verification details and private console exports out of this public repository.
+Store aggregate outcomes and the next decision in the [marketing execution tree](https://windmill.works/#/app/t_970fc0a989207ce2), connected from the [dogfood tree](https://windmill.works/#/app/t_9362d9bc883e0a1e). Keep participant records, account verification details and private console exports out of this public repository.
