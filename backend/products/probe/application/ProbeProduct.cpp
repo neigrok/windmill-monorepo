@@ -92,6 +92,12 @@ class ProbeProduct::Copy final : public SyncCommand {
 public:
   explicit Copy(ProbeReceipts& receipts) : receipts_(receipts) {}
 
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    if (receipts_.copiedFrom(ctx.txn, ctx.scope.key, ctx.args["dst"].asString()) == ctx.args["src"].asString()) return {};
+    if (ctx.read.lock("board", RecordId(ctx.args["dst"])).state.kind != IdState::Kind::none) return {};
+    return {ScopeKey::tree(ctx.args["dst"].asString())};
+  }
+
   bool isReplay(CommandCtx& ctx) override {
     return receipts_.copiedFrom(ctx.txn, ctx.scope.key, ctx.args["dst"].asString()) == ctx.args["src"].asString();
   }

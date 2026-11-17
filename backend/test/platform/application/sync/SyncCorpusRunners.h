@@ -28,12 +28,14 @@ inline Limits limitsOf(const Json::Value& input) {
   const std::map<std::string, std::size_t*> knobs{{"MAX_RECORD_BYTES", &limits.maxRecordBytes},
                                                   {"PUSH_MAX_INTENTS", &limits.pushMaxIntents},
                                                   {"PUSH_MAX_BYTES", &limits.pushMaxBytes},
+                                                  {"EFFECT_MAX_BYTES", &limits.effectMaxBytes},
                                                   {"PULL_PAGE_BYTES", &limits.pullPageBytes},
                                                   {"PULL_MAX_BYTES", &limits.pullMaxBytes}};
   for (const std::string& name : input["limits"].getMemberNames()) {
     const auto knob = knobs.find(name);
     if (knob == knobs.end()) throw std::logic_error("the runner configures no limit " + name);
     *knob->second = input["limits"][name].asUInt64();
+    if (name == "EFFECT_MAX_BYTES" && (*knob->second == 0 || *knob->second > Limits{}.effectMaxBytes)) throw std::logic_error("effect budget only shrinks");
   }
   return limits;
 }
@@ -53,6 +55,105 @@ inline void checkDigests(const Json::Value& state) {
   }
 }
 
+class EffectPlanRules final : public TypeRules {
+public:
+  EffectPlanRules(SyncWorld& world, const Json::Value& plan) : world_(world), plan_(plan) {}
+
+  std::set<ScopeKey> discoverEffectScopes(const CheckCtx& ctx) override {
+    std::set<ScopeKey> targets;
+    std::set<TypeRules*> seen;
+    for (const Delta& delta : ctx.intent.d) {
+      TypeRules* rule = world_.catalog().rules(delta.t);
+      if (!rule || !seen.insert(rule).second) continue;
+      const auto own = rule->discoverEffectScopes(ctx);
+      targets.insert(own.begin(), own.end());
+    }
+    for (const auto& key : plan_["declared"]) targets.insert(world_.storeKey(key.asString()));
+    return targets;
+  }
+
+  Effects effects(const CheckCtx& ctx, const std::vector<Change>& changes) override {
+    if (plan_.isMember("legacyTypes")) {
+      CheckCtx local = ctx;
+      local.localScopes.clear();
+      for (const auto& change : changes) {
+        for (const auto& type : plan_["legacyTypes"]) {
+          if (change.type->name == type.asString()) local.localScopes.insert(change.scope);
+        }
+      }
+      for (const auto& delta : ctx.intent.d) {
+        for (const auto& type : plan_["legacyTypes"]) {
+          if (delta.t == type.asString()) local.localScopes.insert(ctx.scope.key);
+        }
+      }
+      return TypeRules::effects(local, changes);
+    }
+    Effects result;
+    std::set<TypeRules*> seen;
+    for (const Change& change : changes) {
+      TypeRules* rule = world_.catalog().rules(change.type->name);
+      if (!rule || !seen.insert(rule).second) continue;
+      CheckCtx local = ctx;
+      local.localScopes.clear();
+      for (const auto& change : changes) {
+        if (world_.catalog().rules(change.type->name) == rule) local.localScopes.insert(change.scope);
+      }
+      for (const auto& delta : ctx.intent.d) {
+        if (world_.catalog().rules(delta.t) == rule) local.localScopes.insert(ctx.scope.key);
+      }
+      const Effects own = rule->effects(local, changes);
+      for (const auto& [key, deltas] : own.byScope) result.byScope[key].insert(result.byScope[key].end(), deltas.begin(), deltas.end());
+    }
+    append(result, "check", ctx.caller.account, ctx.serverNow);
+    return result;
+  }
+
+  void append(Effects& result, const std::string& phase, const UserId& account, Ms now) {
+    for (const std::string& key : plan_[phase].getMemberNames()) {
+      const ScopeKey scope = world_.storeKey(key);
+      for (const Json::Value& delta : plan_[phase][key]) {
+        Json::Value wire(Json::objectValue);
+        wire["scope"] = scope.ref();
+        wire["d"].append(delta);
+        auto shaped = shapeIntent(world_.catalog().registry(), wire, Sender{account, true}, now, 300'000);
+        result.byScope[scope].push_back(std::move(shaped.intent.d.front()));
+      }
+    }
+  }
+
+private:
+  SyncWorld& world_;
+  const Json::Value& plan_;
+};
+
+class EffectPlanCommand final : public SyncCommand {
+public:
+  EffectPlanCommand(SyncCommand& command, EffectPlanRules& effects, SyncWorld& world, const Json::Value& plan)
+      : command_(command), effects_(effects), world_(world), plan_(plan) {}
+
+  bool isReplay(CommandCtx& ctx) override { return command_.isReplay(ctx); }
+
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    auto targets = command_.discoverEffectScopes(ctx);
+    for (const auto& key : plan_["declared"]) targets.insert(world_.storeKey(key.asString()));
+    return targets;
+  }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    auto result = command_.run(ctx);
+    Effects effects;
+    effects_.append(effects, "command", ctx.caller.account, ctx.serverNow);
+    for (auto& [key, deltas] : effects.byScope) result.into.push_back(IntoScope{key, std::move(deltas)});
+    return result;
+  }
+
+private:
+  SyncCommand& command_;
+  EffectPlanRules& effects_;
+  SyncWorld& world_;
+  const Json::Value& plan_;
+};
+
 // admit/*.json: §6.1 steps 1–16 for one intent, with no push bookkeeping. A replica origin is bound at n − 1
 // for the admission and its binding and result are left out of the answer, as the vectors carry none.
 inline Json::Value admitVector(SyncWorld& world, const Json::Value& input) {
@@ -64,13 +165,28 @@ inline Json::Value admitVector(SyncWorld& world, const Json::Value& input) {
   if (replica) state["replicas"][replicaId] = object({{"account", origin["account"]}, {"lastN", origin["n"].asUInt64() - 1}});
   world.seed(state);
 
-  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures, limitsOf(input));
+  const SyncCatalog* catalog = &world.catalog();
+  SyncCatalog planned(catalog->registry());
+  EffectPlanRules effects(world, input["effectPlan"]);
+  std::vector<std::unique_ptr<EffectPlanCommand>> commands;
+  if (input.isMember("effectPlan")) {
+    for (const TypeDef& type : catalog->registry().types()) planned.bindType(catalog->store(type.name), &effects);
+    for (const CommandDef& command : catalog->registry().commands()) {
+      commands.push_back(std::make_unique<EffectPlanCommand>(catalog->command(command.name), effects, world, input["effectPlan"]));
+      planned.bindCommand(command.name, *commands.back());
+    }
+    planned.seal();
+    catalog = &planned;
+  }
+  Admission admission(*catalog, world.store(), world.feed, world.clock(), world.failures, limitsOf(input));
   const UserId account = world.account(origin["account"].asString());
   const Origin who = replica ? Origin(ReplicaOrigin{account, replicaId, origin["n"].asUInt64(), intentDigest(input["intent"])})
                              : Origin(ServerOrigin{account, std::nullopt});
+  const auto reportsBefore = world.failures.reports.size();
+  const auto publicationsBefore = world.feed.published.size();
   const AdmitOutcome outcome = admission.admit(who, input["intent"], input["serverNow"].asUInt64());
   const Admitted* admitted = std::get_if<Admitted>(&outcome);
-  if (!admitted) throw std::logic_error("the admission was not admitted: " + std::to_string(outcome.index()));
+  if (!admitted && !input["effectPlan"]["fault"].asBool()) throw std::logic_error("the admission was not admitted: " + std::to_string(outcome.index()));
 
   Json::Value after = world.dump();
   checkDigests(after);
@@ -79,6 +195,13 @@ inline Json::Value admitVector(SyncWorld& world, const Json::Value& input) {
     after["results"].removeMember(replicaId);
     if (after["replicas"].empty()) after.removeMember("replicas");
     if (after["results"].empty()) after.removeMember("results");
+  }
+  if (input["effectPlan"]["fault"].asBool()) {
+    CHECK(world.failures.reports.size() > reportsBefore);
+    CHECK_EQ(world.feed.published.size(), publicationsBefore);
+    if (admitted) CHECK_EQ(jcs(admitted->result), R"({"code":"internal","s":"refused"})");
+    else CHECK(std::holds_alternative<Retry>(outcome));
+    return object({{"fault", true}, {"state", after}});
   }
   return object({{"result", admitted->result}, {"state", after}});
 }

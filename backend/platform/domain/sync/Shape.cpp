@@ -182,6 +182,43 @@ void clampTimes(const Registry& registry, Intent& intent, Ms serverNow, Ms bound
 
 }
 
+Json::Value effectWire(const Registry& registry, const ScopeKey& scope, const Delta& delta, bool command) {
+  Json::Value wire = delta.lattice.toJson();
+  wire["t"] = delta.t;
+  wire["id"] = delta.id.json();
+  auto slot = [](const Stamp& stamp) { return stamp.isSet() ? Json::Value(toString(stamp)) : Json::Value(Json::nullValue); };
+  if (delta.lattice.life) wire["life"][1] = slot(delta.lattice.life->stamp);
+  if (delta.lattice.born) wire["born"] = slot(*delta.lattice.born);
+  for (const auto& [name, reg] : delta.lattice.f) wire["f"][name][1] = slot(reg.stamp);
+  for (const auto& [name, text] : delta.x) {
+    wire["x"][name]["text"] = text.text;
+    if (text.replacement) {
+      if (!command) invalid();
+      wire["x"][name]["base"]["rev"] = 0;
+    } else if (text.base.rev) wire["x"][name]["base"]["rev"] = Json::UInt64(*text.base.rev);
+    else wire["x"][name]["base"]["text"] = text.base.text;
+  }
+  if (holdsNul(wire)) invalid();
+  const Delta shaped = deltaOf(registry, scope, wire, Sender{scope.account(), true});
+  const TypeDef& type = *registry.type(shaped.t);
+  for (const auto& [name, reg] : shaped.lattice.f) {
+    if (!registry.admitsValue(*type.field(name), reg.value)) invalid();
+  }
+  for (const auto& [name, value] : delta.v) {
+    const FieldDef* field = type.field(name);
+    if (!field || field->kind != FieldKind::serial || !isSafeInteger(value) || value.asDouble() < 1) invalid();
+    wire["v"][name] = value;
+  }
+  for (const auto& [name, text] : delta.x) {
+    if (!text.replacement) continue;
+    wire["x"][name].removeMember("base");
+    wire["x"][name]["replace"] = true;
+    wire["x"][name]["archiveNonempty"] = text.archiveNonempty;
+    wire["x"][name]["archive"] = text.archive;
+  }
+  return wire;
+}
+
 Shaped shapeIntent(const Registry& registry, const Json::Value& wire, const Sender& sender, Ms serverNow, Ms maxSkewMs) {
   const std::optional<ScopeKey> scope =
       wire.isObject() && wire["scope"].isString() ? resolve(registry, wire["scope"].asString(), sender.account) : std::nullopt;

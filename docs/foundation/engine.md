@@ -350,6 +350,18 @@ class SyncType {
 The engine composes each id's state (§4.2) from `lock`, `elsewhere` and its own tables; a product
 adapter never reads a `sync_*` table. `maxSerial` serves §6.1 step 11.
 
+Rules return `Effects {byScope: Map<ScopeKey, Delta[]>}` with an explicit origin key; the local
+`check` adapter wraps its deltas at that key. `discoverEffectScopes(ctx)` is a pure, default-empty
+hook over the raw intent and stable owner reads. It declares the complete consequence scope
+closure before commands or joined checks run. Command discovery includes the closure of checks
+triggered by its generated deltas. The engine invokes each touched rules object once on the complete
+joined changes; it neither reruns discovery nor computes a recursive fixed point.
+The default local adapter derives its relevant scopes from changes to types bound to that rules
+object, including incoming no-op touches. A sole relevant scope rebinds the adapter's context and
+reader there while preserving the full changes, original intent and caller. More than one relevant
+scope is a technical contract failure unless the rules object supplies scoped effects. A scoped
+effects override retains the explicit origin context.
+
 ### §2.4 The registry
 
 The registry's format is `packages/api-contract/sync/registry.schema.json`, and that schema is
@@ -939,7 +951,10 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    The order has no cycle except through step 15's locks or an id locked on demand (3.6): every
    scope and tree row of 3.5 is taken in that one pass, and 3.4's shared mode conflicts only with a
    death. A deadlock through those is retried as transient (§6.6). No overlay outlives its tree.
-   1. Take the in-process mutex of the scope key with timeout `LOCK_TIMEOUT_MS`.
+   1. Every admission door takes the catalog's owner admission gate, then the in-process mutex of
+      the origin scope key, each with timeout `LOCK_TIMEOUT_MS`. Both remain held through commit
+      and publication. Target scopes acquire no process mutex. This contract has one active
+      admitting process; `ChangeFeed` is the boundary for a future multi-process relay.
    2. `BEGIN`; `SET LOCAL lock_timeout`.
    3. A replica origin locks its `sync_replicas` row, inserting it with `last_n = 0` when absent,
       and re-checks, in this order, that the row is bound to the origin's account, else the push
@@ -975,17 +990,31 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    hold, else `stale` with detail `{t, id, field, current}`. A guard also holds when the stored
    register already carries the stamp this intent writes to it (a replay, for example after
    re-identify).
-8. **Command.** Run the handler (§6.4). Its deltas pass steps 5, 6 and 9.
+8. **Effect discovery and command.** Union the scopes declared by the incoming deltas' rules and
+   command discovery. Lock their governing global ids in the existing id-lock order before reading
+   target rows, so a declared absent tree cannot race another owner's governing create. After the
+   origin, lock declared target scope rows in ascending key order,
+   taking each overlay's governing tree `FOR KEY SHARE` before its overlay row. Authoritative scope
+   rows must be owned by the caller and alive (`forbidden` or `scope-dead` otherwise). An absent
+   target is allowed only when the exact tree has a governing create in this same intent;
+   otherwise the whole intent is `not-found`. A dead scope is never recreated. Run the command
+   once, normalize its local deltas and `into` into `Effects`, and load target records only after
+   these locks. Generated deltas pass target registration, domain, writer, identity and life rules,
+   then steps 5, 6 and 9. All generated `{scope, delta}` JCS bytes share `EFFECT_MAX_BYTES`
+   (§9.7), independent of the input's `PUSH_MAX_BYTES`; maximal Unicode ids can make a bulk
+   effect larger than its command. Tests may shrink this budget. Dividing effects among targets
+   never increases it. An effect outside the declared set is a technical contract failure (§6.6), not a new lock pass or a user refusal.
 9. **Join.**
    - The server stamps of the deltas this pass joins are minted (§10.3). A later pass, for deltas
      step 10 appends, observes their registers and ticks again; the write map carries the first
      pass's stamp.
    - `after = joinRecord(before, δ)` for each delta, in order.
    - Text fields are merged or replaced by a command's internal replacement (§6.11).
-   - Each row the intent changes, in its scope or in one it creates, is measured as step 13 would
+   - Each row the intent changes, in any target scope, is measured as step 13 would
      store it, before step 11 gives a new alive record its serial: an encoding over `MAX_RECORD_BYTES` →
      `too-large`. Text bases do not count, and a row the intent leaves unchanged is not measured.
-10. **Product check.** `check` per type touched, on the joined records.
+10. **Product check.** Each touched rules object runs once on all joined records, including the
+    declared targets. Scoped reads and staged changes remain available inside these locked scopes.
     - A create from a replica is re-checked like any write: `check` re-computes and validates every
       value the product's rules derive (Appendix A).
     - Appendix A rules may refuse with their codes, or append server deltas, which pass steps 5, 6
@@ -997,7 +1026,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
 11. **Serial.** A new alive record without a serial value gets 1 plus the maximum over alive records
     sharing its `serialNext` fields, or 1 if there are none, in admission order (a command: in
     argument order). A value a command supplies is kept.
-12. **Caps.** For each capped type, `after = counters[type] + net alive change`. Refuse `cap`
+12. **Caps.** In each scope, for each capped type, `after = counters[type] + net alive change`. Refuse `cap`
     (detail `{type, cap}`) iff `after > cap ∧ after > counters[type]`.
 13. **Apply.** If any row changed:
     1. `seq := ++scope.seq`.
@@ -1007,12 +1036,13 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
        row of a keyed record that became alive.
     5. `rc := serverNow` on rows that did not exist; `ru := serverNow` on every changed row.
     6. The scope digest takes every changed row (§6.12).
-14. **Command scopes.** Writes into a scope the same intent creates (a command that copies into a
-    new tree) are applied after step 15 creates it, and take that scope's seq and digest. A copied
+14. **Effect scopes.** Apply the remaining targets in key order, coalescing every contribution to a
+    scope into one advance and one frame. Each uses its own counters, seq, text revision and digest;
+    no-op and replayed effects advance none. A governing create first inserts
+    `sync_scopes(tree:<id>, alive, seq 0, digest 0)`; its effects follow, before lifecycle deaths. A copied
     minted or derived record takes its alive source's life, and `born :=` that life's stamp (a
     create, §4.1), so a revived source's copy keeps its life.
-15. **Lifecycle.**
-    - A governing create inserts `sync_scopes(tree:<id>, alive, seq 0, digest 0)`.
+15. **Lifecycle deaths.**
     - A governing death marks `tree:<id>` and every `acct:*/overlay/<id>` dead, with `dead_at`.
     - An overlay row stores `governed_by = tree:<id>`. These scope rows are locked in this order:
       `tree:<id>`, then overlays in ascending key order.
@@ -1020,7 +1050,11 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
     its write map, possibly empty.
     - Replica origin: upsert `sync_results(replica, n, digest, result)` and set `last_n := n`.
     - Server origin with a `requestId`: store the result as the call's part `requestId#k` (§6.3).
-17. **`COMMIT`.** Publish the live frames (§6.8), then release the mutex.
+17. **`COMMIT`.** All scopes, product receipts and the result commit in one transaction. Publish
+    the origin's frame first, other changed scopes in key order, then lifecycle deaths (§6.8), and
+    release the origin mutex and owner gate. Any refusal or technical failure before commit rolls
+    back every effect and product receipt. Foreign read locks and lifecycle locks can still
+    deadlock; Postgres deadlock, serialization and lock timeout failures remain transient (§6.6).
 
 **Step R.**
 1. `ROLLBACK`.
@@ -1112,9 +1146,12 @@ MCP tools, REST writes, tending and server-internal commands call
 
 ### §6.4 Commands
 
-`handler(txn, ctx, args) → {deltas, write, detail} | refuse(code)`:
+`handler(txn, ctx, args) → {deltas, into, write, detail} | refuse(code)`:
 - It is deterministic given the locked rows, `args` and `serverNow`.
 - It MAY lock more rows through the ports, and MAY write any field.
+- `into` names another declared, live scope owned by the caller, or an exact tree a governing
+  record creates in this intent. Discovery runs before the handler and declares every target of
+  both the command and its consequences. The handler runs once, with all declared scope locks held.
 - It resolves its own replays (Appendix A), comparing the raw arguments, or their digest, stored with
   its receipt, before the guards are checked (§6.1 step 7).
 - A command not in the registry is refused `invalid`.
@@ -1197,10 +1234,12 @@ snapshot is taken. An absent scope runs none.
 
 ### §6.8 Live push
 
-At step 17, after the commit and before the scope mutex is released, the server publishes
+At step 17, after the commit and before the owner gate and origin scope mutex are released, the server publishes
 `{op: change, scope, epoch, seq, digest, rows}` at once, with no debounce, to every socket
 subscribed to the scope that still holds read access. Frames of one scope so leave in seq order.
 `digest` is the scope digest committed with `seq`.
+- One intent's origin frame comes first, then the other changed scopes in key order. Its lifecycle
+  death frames follow; a terminal `gone` can never be followed by a valid live frame for that scope.
 - `rows` is omitted when the `jcs` of the rows array exceeds `LIVE_INLINE_BYTES`.
 - A scope that dies sends each subscriber the page kind a pull of it would answer (§6.7 step 1):
   `gone` to the tree's owner, for the tree and for that owner's overlay, and `not-found` to
@@ -2534,6 +2573,7 @@ product copy shows its generic refusal line.
 |---|---|
 | `MAX_RECORD_BYTES` | 1 048 576, a joined row (admits a 131 072-byte body at worst-case JSON escaping). It is measured before step 11's serial (§6.1 step 9), so a stored row may exceed it by that register. |
 | `PUSH_MAX_INTENTS` / `PUSH_MAX_BYTES` | 64 / 2 097 152 (admits a text intent with its inline base) |
+| `EFFECT_MAX_BYTES` | 67 108 864 bytes (64 MiB), summed JCS `{scope, delta}` bytes of generated command and check effects across all scopes, independent of the input body; supports bulk changes carrying maximal Unicode ids. Tests may shrink it. |
 | `PUSH_WORK_MS` | 50 |
 | `PULL_PAGE_BYTES` | 1 048 576 (at least one row) |
 | `PULL_MAX_SCOPES` / `PULL_MAX_BYTES` | 64 / 65 536 (admits `PULL_MAX_SCOPES` scopes with their cursors) |

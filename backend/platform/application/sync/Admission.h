@@ -130,6 +130,7 @@ private:
 
   // §6.1 step 3.1: the catalog's scope mutex, held across commit and publish by every admission door.
   std::unique_lock<std::timed_mutex> takeStripe(const ScopeKey& scope);
+  std::unique_lock<std::timed_mutex> takeOwner(const UserId& owner);
 
   const SyncCatalog& catalog_;
   SyncStore& store_;

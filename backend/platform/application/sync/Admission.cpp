@@ -4,6 +4,7 @@
 #include "platform/application/WriteObservation.h"
 
 #include "platform/domain/sync/Admit.h"
+#include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Shape.h"
 
 #include <algorithm>
@@ -102,6 +103,12 @@ private:
   }
 
   AdmitOutcome runAttempt() {
+    std::unique_lock<std::timed_mutex> owner;
+    try {
+      owner = a_.takeOwner(caller_.account);
+    } catch (const std::exception& error) {
+      return answerFault(error);
+    }
     if (std::optional<AdmitOutcome> answered = answeredCall()) return *answered;
     try {
       shaped_.emplace(shapeIntent(registry_, wire_, caller_, now_, a_.limits_.maxSkewMs));
@@ -135,6 +142,12 @@ public:
   const Locked& lock(const std::string& type, const RecordId& id) override {
     lockRecords(scope(), {{type, id}});
     return records_.at(RecordRef{scope(), type, id});
+  }
+
+  const Locked& lockIn(const ScopeKey& key, const std::string& type, const RecordId& id) override {
+    if (!effectScopes_.contains(key)) throw std::logic_error("undeclared effect read");
+    lockRecords(key, {{type, id}});
+    return records_.at(RecordRef{key, type, id});
   }
 
   std::vector<Row> scan(const std::string& type, const FeedQuery& query) override {
@@ -243,15 +256,18 @@ private:
     lockIntentRecords();                                                  // 5
     admitDeltas(scope(), intent().d, caller_.server ? Source::server : Source::client);  // 6
     checkGuardsUnlessReplay();                                            // 7
+    discoverEffectScopes();
     runCommand();                                                         // 8
     join();                                                               // 9
     checkProduct();                                                       // 10
     checkParents();                                                       // 10
     assignSerials();                                                      // 11
     checkCaps();                                                          // 12
+    validateMissingScopes();
     applyIntentScope();                                                   // 13
-    applyLifecycle();                                                     // 15
-    applyCreatedScopes();                                                 // 14
+    createScopes();
+    applyOtherScopes();                                                   // 14
+    killScopes();                                                         // 15
     const Json::Value result = okResult(scopeRow_->seq, commandWriteMap(), detail_);  // 16
     recordResult(result);
     commitAndPublish();                                                   // 17
@@ -414,8 +430,79 @@ private:
     CommandOutcome outcome = a_.catalog_.command(intent().cmd->name).run(ctx);
     changes_->setWriteMap(std::move(outcome.write));
     detail_ = std::move(outcome.detail);
-    admitDeltas(scope(), outcome.deltas, Source::command);
-    for (const IntoScope& into : outcome.into) admitDeltas(into.scope, into.deltas, Source::command);
+    Effects effects{{{scope(), std::move(outcome.deltas)}}};
+    for (const IntoScope& into : outcome.into) {
+      auto& deltas = effects.byScope[into.scope];
+      deltas.insert(deltas.end(), into.deltas.begin(), into.deltas.end());
+    }
+    admitEffects(effects, Source::command);
+  }
+
+  void discoverEffectScopes() {
+    effectScopes_.insert(scope());
+    const CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this, *txn_, intent()};
+    std::set<TypeRules*> discovered;
+    for (const Delta& delta : intent().d) {
+      TypeRules* rules = a_.catalog_.rules(delta.t);
+      if (!rules || !discovered.insert(rules).second) continue;
+      const auto targets = rules->discoverEffectScopes(ctx);
+      effectScopes_.insert(targets.begin(), targets.end());
+    }
+    if (intent().cmd) {
+      const auto targets = a_.catalog_.command(intent().cmd->name).discoverEffectScopes(commandCtx());
+      effectScopes_.insert(targets.begin(), targets.end());
+    }
+    std::vector<std::pair<std::string, RecordId>> governors;
+    const TypeDef* governing = registry_.governingType();
+    if (governing && governing->idSpace == IdSpace::global) {
+      for (const ScopeKey& key : effectScopes_) {
+        if (key != scope() && key.kind() != ScopeKind::product) governors.emplace_back(governing->name, RecordId(key.treeId()));
+      }
+    }
+    lockGlobalIds(governors);
+    std::map<ScopeKey, ScopeRow> trees;
+    for (const ScopeKey& key : effectScopes_) {
+      if (key == scope() || key.kind() != ScopeKind::overlay) continue;
+      const auto tree = store().scope(*txn_, key.governingTree(), RowLock::keyShare);
+      if (tree) trees.emplace(tree->key, *tree);
+    }
+    for (const ScopeKey& key : effectScopes_) {
+      if (key == scope()) continue;
+      if (!resolve(registry_, key.ref(), caller_.account)) throw Refusal(code::invalid);
+      if (key.kind() != ScopeKind::tree && key.account() != caller_.account) throw Refusal(code::forbidden);
+      const auto row = store().scope(*txn_, key, RowLock::noKeyUpdate);
+      if (!row) {
+        missingScopes_.insert(key);
+        continue;
+      }
+      if (row->owner != caller_.account) throw Refusal(code::forbidden);
+      if (row->dead) throw Refusal(code::scopeDead);
+      if (key.kind() == ScopeKind::overlay) {
+        const auto tree = trees.find(key.governingTree());
+        const auto facts = tree == trees.end() ? std::nullopt : std::optional(tree->second.facts());
+        const Access access = accessOf(key, row->facts(), facts, caller_.account);
+        if (!access.write) throw Refusal(access.refusal);
+      }
+      scopes_.insert_or_assign(key, *row);
+    }
+  }
+
+  void admitEffects(const Effects& effects, Source source) {
+    auto admit = [&](const ScopeKey& key, const std::vector<Delta>& deltas) {
+      if (!effectScopes_.contains(key)) throw std::logic_error("undeclared effect target");
+      for (const Delta& delta : deltas) {
+        Json::Value envelope(Json::objectValue);
+        envelope["scope"] = key.text();
+        envelope["delta"] = effectWire(registry_, key, delta, source == Source::command);
+        effectBytes_ += jcs(envelope).size();
+        if (effectBytes_ > std::min(a_.limits_.effectMaxBytes, Limits{}.effectMaxBytes)) throw Refusal(code::tooLarge);
+      }
+      admitDeltas(key, deltas, source);
+    };
+    if (const auto local = effects.byScope.find(scope()); local != effects.byScope.end()) admit(local->first, local->second);
+    for (const auto& [key, deltas] : effects.byScope) {
+      if (key != scope()) admit(key, deltas);
+    }
   }
 
   // 9, one pass: its server stamp, then the joins, text merges and the record bound.
@@ -426,25 +513,35 @@ private:
       const RecordRef& record = wanted.record;
       revisions.emplace(wanted, a_.catalog_.store(record.t).revisionText(*txn_, record.scope, record.id, wanted.field, wanted.rev));
     }
-    changes_->join(revisions, {{scope().text(), scopeRow_->seq}});
+    std::map<std::string, Seq> seqs{{scope().text(), scopeRow_->seq}};
+    for (const auto& [key, row] : scopes_) seqs.emplace(key.text(), row.seq);
+    changes_->join(revisions, seqs);
   }
 
-  // 10: each touched type's rules once, in registry order; the deltas they append pass 5, 6 and 9.
+  // 10: each touched rules object once, in registry order, over all joined scopes.
   void checkProduct() {
     std::set<std::string> touched;
     for (const Change& change : changes_->changes()) touched.insert(change.type->name);
     for (const Delta& delta : intent().d) touched.insert(delta.t);
-    std::vector<Delta> appended;
-    const CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this, *txn_, intent()};
+    Effects appended;
     std::set<TypeRules*> checked;
     for (const TypeDef& type : registry_.types()) {
       TypeRules* rules = touched.contains(type.name) ? a_.catalog_.rules(type.name) : nullptr;
       if (!rules || !checked.insert(rules).second) continue;
-      std::vector<Delta> deltas = rules->check(ctx, changes_->changes());
-      appended.insert(appended.end(), std::make_move_iterator(deltas.begin()), std::make_move_iterator(deltas.end()));
+      CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this, *txn_, intent()};
+      for (const Change& change : changes_->changes()) {
+        if (a_.catalog_.rules(change.type->name) == rules) ctx.localScopes.insert(change.scope);
+      }
+      for (const Delta& delta : intent().d) {
+        if (a_.catalog_.rules(delta.t) == rules) ctx.localScopes.insert(scope());
+      }
+      Effects effects = rules->effects(ctx, changes_->changes());
+      for (auto& [key, deltas] : effects.byScope) {
+        auto& target = appended.byScope[key];
+        target.insert(target.end(), std::make_move_iterator(deltas.begin()), std::make_move_iterator(deltas.end()));
+      }
     }
-    if (appended.empty()) return;
-    admitDeltas(scope(), appended, Source::check);
+    admitEffects(appended, Source::check);
     join();
   }
 
@@ -469,7 +566,19 @@ private:
 
   // 12.
   void checkCaps() {
-    changes_->checkCaps({{scope().text(), scopeRow_->counters}});
+    std::map<std::string, std::map<std::string, std::int64_t>> counters{{scope().text(), scopeRow_->counters}};
+    for (const auto& [key, row] : scopes_) counters.emplace(key.text(), row.counters);
+    changes_->checkCaps(counters);
+  }
+
+  void validateMissingScopes() {
+    std::set<ScopeKey> created;
+    for (const Governed& governed : changes_->lifecycle()) {
+      if (governed.created) created.insert(governed.tree);
+    }
+    for (const ScopeKey& key : missingScopes_) {
+      if (!created.contains(key)) throw Refusal(code::notFound);
+    }
   }
 
   // 13 for the intent's scope.
@@ -495,25 +604,34 @@ private:
     if (write) persist(*write, *scopeRow_);
   }
 
-  // 15: a governing create inserts its tree; a governing death kills the tree and its overlays.
-  void applyLifecycle() {
+  // A governing create inserts its tree before that tree's effects are applied.
+  void createScopes() {
     for (const Governed& governed : changes_->lifecycle()) {
-      if (governed.created) {
-        if (store().insertScope(*txn_, governed.tree, caller_.account, governed.governedBy)) created_.insert(governed.tree);
-        continue;
-      }
-      std::vector<ScopeKey> killed = store().killTree(*txn_, governed.tree, now_);
-      killed_.insert(killed_.end(), killed.begin(), killed.end());
+      if (!governed.created) continue;
+      store().insertScope(*txn_, governed.tree, caller_.account, governed.governedBy);
+      const auto row = store().scope(*txn_, governed.tree, RowLock::none);
+      if (!row || row->dead) throw Refusal(code::scopeDead);
+      if (row->owner != caller_.account || row->governedBy != governed.governedBy) throw Refusal(code::idTaken);
+      scopes_.insert_or_assign(governed.tree, *row);
     }
   }
 
-  // 14: a command's writes into the scopes this intent created, each at its own seq and digest.
-  void applyCreatedScopes() {
+  void killScopes() {
+    for (const Governed& governed : changes_->lifecycle()) {
+      if (governed.created) continue;
+      std::vector<ScopeKey> killed = store().killTree(*txn_, governed.tree, now_);
+      killed_.insert(killed_.end(), killed.begin(), killed.end());
+    }
+    std::sort(killed_.begin(), killed_.end());
+    killed_.erase(std::unique(killed_.begin(), killed_.end()), killed_.end());
+  }
+
+  // 14: the remaining declared scopes, each at its own seq and digest.
+  void applyOtherScopes() {
     for (const ScopeKey& key : changes_->otherScopes()) {
-      if (!created_.contains(key)) throw std::logic_error("a command wrote into " + key.text() + ", which this intent did not create");
-      std::optional<ScopeRow> row = store().scope(*txn_, key, RowLock::none);
-      if (std::optional<ScopeWrite> write = changes_->stage(key, row->seq, row->counters, row->digest, row->open, a_.catalog_.opening())) {
-        persist(*write, *row);
+      ScopeRow& row = scopes_.at(key);
+      if (std::optional<ScopeWrite> write = changes_->stage(key, row.seq, row.counters, row.digest, row.open, a_.catalog_.opening())) {
+        persist(*write, row);
       }
     }
   }
@@ -555,7 +673,7 @@ private:
     if (const CallPart* part = call()) store().putRequest(*txn_, caller_.account, RequestRow{partId(*part), part->digest, false, result, now_});
   }
 
-  // 17: commit, then publish while the scope's mutex is still held, so its frames leave in seq order. The
+  // 17: commit, then publish while the owner gate and origin mutex remain held. The
   // intent is admitted once COMMIT returns: a publish that fails is reported, never answered as a fault.
   void commitAndPublish() {
     if (published_.empty() && killed_.empty()) {
@@ -741,7 +859,9 @@ private:
   Json::Value detail_;
   std::vector<ScopeChange> published_;
   std::vector<ScopeKey> killed_;
-  std::set<ScopeKey> created_;
+  std::set<ScopeKey> effectScopes_;
+  std::set<ScopeKey> missingScopes_;
+  std::size_t effectBytes_ = 0;
 };
 
 Admission::Admission(const SyncCatalog& catalog, SyncStore& store, ChangeFeed& feed, ServerClock& clock, FailureReporter& failures, Limits limits)
@@ -760,6 +880,12 @@ std::unique_lock<std::timed_mutex> Admission::takeStripe(const ScopeKey& scope) 
   std::unique_lock<std::timed_mutex> stripe(catalog_.scopeMutex(scope), std::defer_lock);
   if (!stripe.try_lock_for(std::chrono::milliseconds(limits_.lockTimeoutMs))) throw ScopeLockTimeout("the scope " + scope.text() + " stayed locked");
   return stripe;
+}
+
+std::unique_lock<std::timed_mutex> Admission::takeOwner(const UserId& owner) {
+  std::unique_lock<std::timed_mutex> gate(catalog_.ownerMutex(owner), std::defer_lock);
+  if (!gate.try_lock_for(std::chrono::milliseconds(limits_.lockTimeoutMs))) throw ScopeLockTimeout("owner admission stayed locked");
+  return gate;
 }
 
 }

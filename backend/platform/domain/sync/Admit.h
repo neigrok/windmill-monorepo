@@ -185,7 +185,7 @@ public:
   // Step 15: the trees the intent's changed governing records create or kill.
   std::vector<Governed> lifecycle() const;
 
-  // Step 14: the scopes a command wrote into other than the intent's, ascending.
+  // Step 14: the scopes any effect wrote into other than the intent's, ascending.
   std::vector<ScopeKey> otherScopes() const;
 
 private:

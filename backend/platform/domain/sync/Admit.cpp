@@ -385,8 +385,8 @@ std::optional<ScopeWrite> ChangeSet::stage(const ScopeKey& scope, Seq seq, const
 std::vector<Governed> ChangeSet::lifecycle() const {
   std::vector<Governed> governed;
   for (const Change& change : changes_) {
-    if (change.scope != intentScope_ || !change.type->governsTree || !change.changed()) continue;
-    const std::string governedBy = intentScope_.text() + "#" + change.type->name + "#" + change.after.id.column();
+    if (!change.type->governsTree || !change.changed()) continue;
+    const std::string governedBy = change.scope.text() + "#" + change.type->name + "#" + change.after.id.column();
     const ScopeKey tree = ScopeKey::tree(change.after.id.column());
     if (change.after.alive() && !change.wasAlive()) governed.push_back(Governed{tree, true, governedBy});
     if (!change.after.alive() && change.wasAlive()) governed.push_back(Governed{tree, false, governedBy});

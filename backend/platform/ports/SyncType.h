@@ -60,11 +60,26 @@ public:
 
   // A record of the intent's scope, locked as step 5 locks it, with its id state (§4.2).
   virtual const Locked& lock(const std::string& type, const RecordId& id) = 0;
+  virtual const Locked& lockIn(const ScopeKey& scope, const std::string& type, const RecordId& id) = 0;
   // The intent scope's rows of a type.
   virtual std::vector<Row> scan(const std::string& type, const FeedQuery& query = {}) = 0;
   // Another scope's row: a tree a command argument names, as step 3.5 locked it.
   virtual std::optional<ScopeRow> scope(const ScopeKey& key) = 0;
   virtual std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query = {}) = 0;
+};
+
+class ScopeReader final : public SyncReader {
+public:
+  ScopeReader(SyncReader& reader, const ScopeKey& key) : reader_(reader), key_(key) {}
+  const Locked& lock(const std::string& type, const RecordId& id) override { return reader_.lockIn(key_, type, id); }
+  const Locked& lockIn(const ScopeKey& key, const std::string& type, const RecordId& id) override { return reader_.lockIn(key, type, id); }
+  std::vector<Row> scan(const std::string& type, const FeedQuery& query = {}) override { return reader_.scanScope(key_, type, query); }
+  std::optional<ScopeRow> scope(const ScopeKey& key) override { return reader_.scope(key); }
+  std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query = {}) override { return reader_.scanScope(key, type, query); }
+
+private:
+  SyncReader& reader_;
+  const ScopeKey& key_;
 };
 
 struct CheckCtx {
@@ -75,15 +90,32 @@ struct CheckCtx {
   SyncReader& read;
   SyncTxn& txn;
   const Intent& intent;
+  std::set<ScopeKey> localScopes;
+};
+
+struct Effects {
+  std::map<ScopeKey, std::vector<Delta>> byScope;
 };
 
 // A type's product rules (Appendix A).
 class TypeRules {
 public:
   virtual ~TypeRules() = default;
+  // Pure discovery over the intent and stable owner reads. Declare the complete consequence closure;
+  // admission locks it once before any command or joined check runs, and never expands it afterward.
+  virtual std::set<ScopeKey> discoverEffectScopes(const CheckCtx&) { return {}; }
+  virtual Effects effects(const CheckCtx& ctx, const std::vector<Change>& changes) {
+    if (ctx.localScopes.size() > 1) throw std::logic_error("local check spans multiple scopes");
+    const ScopeKey& key = ctx.localScopes.empty() ? ctx.scope.key : *ctx.localScopes.begin();
+    if (key == ctx.scope.key) return Effects{{{key, check(ctx, changes)}}};
+    const ScopeRow row = ctx.read.scope(key).value_or(ScopeRow{.key = key, .owner = ctx.caller.account});
+    ScopeReader read(ctx.read, key);
+    const CheckCtx local{ctx.registry, row, ctx.caller, ctx.serverNow, read, ctx.txn, ctx.intent, ctx.localScopes};
+    return Effects{{{key, check(local, changes)}}};
+  }
   // §6.1 step 10, on the joined records of the whole intent (every type): throws Refusal, or answers the
-  // server deltas it appends to the intent's scope, their stamps unset for step 9's next pass.
-  virtual std::vector<Delta> check(const CheckCtx& ctx, const std::vector<Change>& changes) = 0;
+  // server deltas for the adapter's scope, their stamps unset for step 9's next pass.
+  virtual std::vector<Delta> check(const CheckCtx&, const std::vector<Change>&) { return {}; }
 };
 
 struct CommandCtx {
@@ -97,14 +129,13 @@ struct CommandCtx {
   const Json::Value& rawArgs;
 };
 
-// Deltas a command writes into a scope the same intent creates (§6.1 step 14).
+// Deltas a command writes into another owned live scope, or one this intent creates.
 struct IntoScope {
   ScopeKey scope;
   std::vector<Delta> deltas;
 };
 
-// §6.4: the deltas a command writes into the intent's scope (stamps unset where step 9 mints), its writes
-// into a scope it creates, its write map (D-20) and its detail (null for none).
+// §6.4: origin deltas, declared target deltas, the write map and detail; unset stamps mint in step 9.
 struct CommandOutcome {
   std::vector<Delta> deltas;
   std::vector<IntoScope> into;
@@ -115,6 +146,8 @@ struct CommandOutcome {
 class SyncCommand {
 public:
   virtual ~SyncCommand() = default;
+  // Includes the complete scope closure of checks triggered by this command's generated deltas.
+  virtual std::set<ScopeKey> discoverEffectScopes(const CommandCtx&) { return {}; }
   // §6.1 step 7: whether the call replays one admitted before, by the receipt it stored; a replay skips
   // the intent's guards.
   virtual bool isReplay(CommandCtx& ctx) = 0;

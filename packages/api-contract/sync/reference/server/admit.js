@@ -35,7 +35,7 @@ export function replacementText(text, { archiveNonempty = false, archive = {} } 
 export function localEffects(product, ctx, changes) {
   const matches = (type) => !product.localCheckTypes || product.localCheckTypes.includes(type);
   const scopes = new Set(changes.filter((change) => matches(change.type.type)).map((change) => change.scopeKey));
-  if (ctx.deltas.some((delta) => matches(delta.t))) scopes.add(ctx.scopeKey);
+  if (ctx.deltas.some((delta) => matches(delta.t))) scopes.add(ctx.originScopeKey);
   if (scopes.size > 1) throw new Error('local check spans multiple scopes');
   const key = scopes.values().next().value ?? ctx.scopeKey;
   return { byScope: { [key]: product.check(ctx.inScope(key), changes) } };
@@ -583,7 +583,7 @@ class Admission {
     this.writes.push({ key: scopeKey, rows });
     if (this.product.pruneRevisions && changed.some((record) => record.revisions.length > 0)) {
       this.work.revisions[scopeKey] = this.product.pruneRevisions({
-        ...this.context(), scopeKey, revisions: this.work.revisions[scopeKey] ?? [],
+        ...this.context(scopeKey), revisions: this.work.revisions[scopeKey] ?? [],
         archived: changed.flatMap((record) => record.revisions),
       });
     }

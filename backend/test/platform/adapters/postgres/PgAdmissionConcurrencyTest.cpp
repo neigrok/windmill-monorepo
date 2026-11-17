@@ -21,7 +21,7 @@
 #include <vector>
 
 // §6.1 under concurrency, over Postgres: seq is taken under the scope's lock and committed before it is
-// released (INV-5), stripes serialize only one scope's work, and a tree's death and its overlays' writes
+// released (INV-5), owner gates serialize that owner's scopes, and a tree's death and its overlays' writes
 // order through the row modes of step 3 (INV-13).
 
 using namespace wm;
@@ -212,7 +212,7 @@ TEST(concurrent_admissions_of_one_scope_take_every_seq_once_and_commit_in_seq_or
   CHECK_EQ(world().failures.reports.size(), 0u);
 }
 
-TEST(an_admission_holding_its_scope_never_holds_up_another_scope) {
+TEST(an_admission_holding_its_scope_allows_another_owners_scope) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   world().seed(parseJson(R"({"epoch": "ep-1", "clock": {"ms": 0, "counter": 0}, "accounts": {"A": {"name": "Ann"}, "B": {"name": "Bob"}}})"));
   const ScopeKey mine = ScopeKey::product(world().account("A"), "probe");
@@ -471,4 +471,195 @@ TEST(apple_takeover_finishes_while_an_unrelated_sync_push_holds_its_replica) {
   CHECK(!auth.findUserById(world().account("AX")));
   CHECK_EQ(auth.findIdentity(Provider::apple, identity.subject), std::optional<UserId>{world().account("BX")});
   CHECK(world().failures.reports.empty());
+}
+
+TEST(pg_admission_opposite_owned_scope_effects_commit_and_publish_in_order) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  test::PgWorld world;
+  auto state = parseJson(R"({"epoch":"ep-1","accounts":{"A":{"name":"Ann"}},"scopes":{
+    "tree:b_00000001":{"kind":"tree","owner":"A","seq":0,"state":"alive","counters":{}},
+    "tree:b_00000002":{"kind":"tree","owner":"A","seq":0,"state":"alive","counters":{}}}})");
+  for (const auto& key : state["scopes"].getMemberNames()) state["scopes"][key]["digest"] = Digest256{}.hex();
+  world.seed(state);
+  struct Opposite final : TypeRules {
+    std::set<ScopeKey> discoverEffectScopes(const CheckCtx&) override {
+      return {ScopeKey::tree("b_00000001"), ScopeKey::tree("b_00000002")};
+    }
+    Effects effects(const CheckCtx& ctx, const std::vector<Change>&) override {
+      const ScopeKey other = ScopeKey::tree(ctx.scope.key.treeId() == "b_00000001" ? "b_00000002" : "b_00000001");
+      Delta delta{.t = "meta", .id = RecordId(std::string("meta"))};
+      delta.lattice.f.emplace("title", Reg("Effect", Stamp{}));
+      return Effects{{{other, {delta}}}};
+    }
+  } rules;
+  SyncCatalog catalog(world.catalog().registry());
+  for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "meta" ? &rules : world.catalog().rules(type.name));
+  for (const auto& command : catalog.registry().commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  catalog.seal();
+  fake::RecordingChangeFeed feed;
+  Admission admission(catalog, world.store(), feed, world.clock(), world.failures);
+  std::promise<void> start;
+  auto ready = start.get_future().share();
+  auto run = [&](const std::string& scope) {
+    BlockingThread::Mark blocking;
+    if (ready.wait_for(std::chrono::seconds(1)) != std::future_status::ready) throw std::runtime_error("concurrency test timed out");
+    auto intent = parseJson(R"({"scope":"","d":[{"t":"meta","id":"meta","f":{"title":["Origin",null]}}]})");
+    intent["scope"] = scope;
+    return admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
+  };
+  auto first = std::async(std::launch::async, run, "tree/b_00000001");
+  auto second = std::async(std::launch::async, run, "tree/b_00000002");
+  start.set_value();
+  CHECK(first.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+  CHECK(second.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+  for (const auto& outcome : {first.get(), second.get()}) {
+    REQUIRE(std::holds_alternative<Admitted>(outcome));
+    CHECK_EQ(std::get<Admitted>(outcome).result["s"].asString(), "ok");
+  }
+  REQUIRE_EQ(feed.published.size(), 2u);
+  for (std::size_t i = 0; i != 2; ++i) {
+    const auto& change = feed.published[i];
+    REQUIRE_EQ(change.changed.size(), 2u);
+    CHECK(change.changed[0].key != change.changed[1].key);
+    CHECK_EQ(change.changed[0].seq, i + 1);
+    CHECK_EQ(change.changed[1].seq, i + 1);
+  }
+  const auto after = world.dump();
+  CHECK_EQ(after["scopes"]["tree:b_00000001"]["seq"].asUInt64(), 2u);
+  CHECK_EQ(after["scopes"]["tree:b_00000002"]["seq"].asUInt64(), 2u);
+  CHECK(world.failures.reports.empty());
+}
+
+TEST(pg_foreign_overlay_effect_publication_cannot_follow_tree_death_with_live_rows) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  test::PgWorld world;
+  auto state = parseJson(R"({"epoch":"ep-1","accounts":{"A":{"name":"Ann"},"B":{"name":"Bob"}},
+    "scopes":{"acct:A/probe":{"kind":"product","owner":"A","seq":1,"state":"alive","counters":{}},
+      "acct:B/probe":{"kind":"product","owner":"B","seq":0,"state":"alive","counters":{}},
+      "tree:b_00000001":{"kind":"tree","owner":"A","seq":1,"state":"alive","counters":{},"governedBy":"acct:A/probe#board#b_00000001"}},
+    "rows":{"acct:A/probe":[{"t":"board","id":"b_00000001","life":["alive","1000:0:srv"],"born":"1000:0:srv","seq":1,"rc":1000,"ru":1000}],
+      "tree:b_00000001":[{"t":"meta","id":"meta","f":{"visibility":["public","1000:0:srv"]},"seq":1,"rc":1000,"ru":1000}]}})");
+  for (const auto& key : state["scopes"].getMemberNames()) {
+    const auto& rows = state["rows"][key];
+    state["scopes"][key]["digest"] = scopeDigest(std::vector<Json::Value>(rows.begin(), rows.end())).hex();
+  }
+  state["replicas"][kMarks] = test::object({{"account", "B"}, {"lastN", 0}});
+  world.seed(state);
+  struct MarkRules final : TypeRules {
+    std::set<ScopeKey> discoverEffectScopes(const CheckCtx& ctx) override { return {ScopeKey::product(ctx.caller.account, "probe")}; }
+    Effects effects(const CheckCtx& ctx, const std::vector<Change>&) override {
+      Delta day{.t = "day", .id = RecordId(std::string("2026-11-17"))};
+      day.lattice.life = Life(LifeState::alive, Stamp{});
+      day.lattice.f.emplace("score", Reg(1, Stamp{}));
+      return Effects{{{ScopeKey::product(ctx.caller.account, "probe"), {day}}}};
+    }
+  } rules;
+  SyncCatalog catalog(world.catalog().registry());
+  for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "mark" ? &rules : world.catalog().rules(type.name));
+  for (const auto& command : catalog.registry().commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  catalog.seal();
+  SyncLive live(catalog, world.store(), Limits{});
+  auto bob = std::make_shared<fake::RecordingSocket>();
+  live.open(bob, world.account("B"));
+  live.subscribe(*bob, parseJson(R"(["tree/b_00000001","self/overlay/b_00000001"])"));
+  struct DelayedFeed final : ChangeFeed {
+    explicit DelayedFeed(SyncLive& live) : live(live) {}
+    SyncLive& live;
+    std::promise<void> committed;
+    std::promise<void> release;
+    void publish(const CommittedChange& change) override {
+      committed.set_value();
+      if (release.get_future().wait_for(std::chrono::seconds(4)) != std::future_status::ready) throw std::runtime_error("publication test timed out");
+      live.publish(change);
+    }
+  } delayed(live);
+  Admission overlay(catalog, world.store(), delayed, world.clock(), world.failures);
+  Admission death(catalog, world.store(), live, world.clock(), world.failures);
+  auto write = std::async(std::launch::async, [&] {
+    BlockingThread::Mark worker;
+    const auto intent = parseJson(R"({"scope":"self/overlay/b_00000001","d":[{"t":"mark","id":"oak","f":{"done":[true,"1000000:0:r_aaaaaaaaaaaa"]}}]})");
+    return overlay.admit(ReplicaOrigin{world.account("B"), kMarks, 1, intentDigest(intent)}, intent, 1'000'000);
+  });
+  auto committed = delayed.committed.get_future();
+  const bool ready = committed.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+  const auto killed = death.admit(ServerOrigin{world.account("A"), std::nullopt},
+    parseJson(R"({"scope":"self/probe","d":[{"t":"board","id":"b_00000001","born":"1000:0:srv","life":["dead",null]}]})"), 1'000'001);
+  delayed.release.set_value();
+  const auto written = write.get();
+  REQUIRE(ready);
+  REQUIRE(std::holds_alternative<Admitted>(written));
+  REQUIRE(std::holds_alternative<Admitted>(killed));
+  CHECK_EQ(std::get<Admitted>(written).result["s"].asString(), "ok");
+  CHECK_EQ(std::get<Admitted>(killed).result["s"].asString(), "ok");
+  auto expected = parseJson(R"([{"op":"not-found","as":"","scope":"self/overlay/b_00000001"},{"op":"not-found","as":"","scope":"tree/b_00000001"}])");
+  for (auto& frame : expected) frame["as"] = world.account("B").str();
+  CHECK_EQ(jcs(bob->frames), jcs(expected));
+  const auto after = world.dump();
+  CHECK_EQ(after["scopes"]["acct:B/probe"]["seq"].asUInt64(), 1u);
+  CHECK_EQ(after["scopes"]["acct:B/overlay/b_00000001"]["state"].asString(), "dead");
+  CHECK(world.failures.reports.empty());
+}
+
+TEST(pg_declared_absent_target_keeps_foreign_creation_out_until_authority_is_proven) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  test::PgWorld pg;
+  for (bool creates : {false, true}) {
+    pg.seed(parseJson(R"({"epoch":"ep-1","accounts":{"A":{"name":"Ann"},"B":{"name":"Bob"}}})"));
+    struct Creation final : SyncCommand {
+      explicit Creation(bool creates) : creates(creates) {}
+      bool creates;
+      std::promise<void> reached;
+      std::promise<void> release;
+      bool isReplay(CommandCtx&) override { return false; }
+      std::set<ScopeKey> discoverEffectScopes(const CommandCtx&) override { return {ScopeKey::tree("b_00000009")}; }
+      CommandOutcome run(CommandCtx&) override {
+        reached.set_value();
+        if (release.get_future().wait_for(std::chrono::seconds(2)) != std::future_status::ready) throw std::runtime_error("creation test timed out");
+        CommandOutcome result;
+        if (creates) {
+          Delta board{.t = "board", .id = RecordId(std::string("b_00000009"))};
+          board.lattice.born = Stamp{};
+          board.lattice.life = Life(LifeState::alive, Stamp{});
+          result.deltas.push_back(board);
+        }
+        Delta meta{.t = "meta", .id = RecordId(std::string("meta"))};
+        meta.lattice.f.emplace("title", Reg("Effect", Stamp{}));
+        result.into.push_back(IntoScope{ScopeKey::tree("b_00000009"), {meta}});
+        return result;
+      }
+    } command(creates);
+    SyncCatalog catalog(pg.catalog().registry());
+    for (const auto& type : catalog.registry().types()) catalog.bindType(pg.catalog().store(type.name), pg.catalog().rules(type.name));
+    for (const auto& def : catalog.registry().commands()) catalog.bindCommand(def.name, def.name == "probe.tick" ? command : pg.catalog().command(def.name));
+    catalog.seal();
+    fake::RecordingChangeFeed feed;
+    Admission admission(catalog, pg.store(), feed, pg.clock(), pg.failures);
+    auto first = std::async(std::launch::async, [&] {
+      BlockingThread::Mark blocking;
+      return admission.admit(ServerOrigin{pg.account("A"), std::nullopt},
+        parseJson(R"({"scope":"self/probe","cmd":{"name":"probe.tick","args":{}}})"), kNow);
+    });
+    auto reached = command.reached.get_future();
+    const bool ready = reached.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+    auto foreign = std::async(std::launch::async, [&] {
+      BlockingThread::Mark blocking;
+      return admission.admit(ServerOrigin{pg.account("B"), std::nullopt},
+        parseJson(R"({"scope":"self/probe","d":[{"t":"board","id":"b_00000009","born":null,"life":["alive",null]}]})"), kNow);
+    });
+    const bool held = foreign.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout;
+    command.release.set_value();
+    const auto mine = first.get();
+    const auto theirs = foreign.get();
+    REQUIRE(ready);
+    CHECK(held);
+    CHECK_EQ(codeOf(mine), creates ? "ok" : "not-found");
+    CHECK_EQ(codeOf(theirs), creates ? "id-taken" : "ok");
+    const auto state = pg.dump();
+    CHECK_EQ(state["scopes"]["tree:b_00000009"]["owner"].asString(), creates ? "A" : "B");
+    CHECK_EQ(state["scopes"].isMember(creates ? "acct:B/probe" : "acct:A/probe"), false);
+    if (!creates) CHECK(state["rows"]["tree:b_00000009"].empty());
+    REQUIRE_EQ(feed.published.size(), 1u);
+    CHECK(pg.failures.reports.empty());
+  }
 }

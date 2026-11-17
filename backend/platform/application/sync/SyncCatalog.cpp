@@ -102,6 +102,13 @@ std::timed_mutex& SyncCatalog::scopeMutex(const ScopeKey& scope) const {
   return scopeMutexes_[std::hash<std::string>{}(scope.text()) % scopeMutexes_.size()];
 }
 
+std::timed_mutex& SyncCatalog::ownerMutex(const UserId& owner) const {
+  std::lock_guard lock(ownerMutexesLock_);
+  auto& gate = ownerMutexes_[owner.str()];
+  if (!gate) gate = std::make_unique<std::timed_mutex>();
+  return *gate;
+}
+
 std::vector<const TypeDef*> SyncCatalog::typesIn(const RegistryScope& scope) const {
   std::vector<const TypeDef*> types;
   for (const TypeDef& type : registry_.types()) {
