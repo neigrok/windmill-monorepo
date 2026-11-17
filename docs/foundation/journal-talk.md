@@ -6,7 +6,7 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified; not approved, and nothing is built. Talk exists on the web only, as a
+**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. Talk exists on the web only, as a
 finished recording sent to the backend's `POST /v1/journal/transcribe`
 ([journal architecture](../../backend/products/journal/ARCHITECTURE.md)). The iPhone has no Talk.
 The build order lives in the Journal Talk roadmap tree, which the dogfood tree
@@ -107,8 +107,8 @@ person is told why before they speak. It stops at the first row that holds:
   cannot read why an upgrade failed, so it does the same once for any failed upgrade.
 - Wherever Talk is offered, the product says that Windmill keeps no audio and that the service that
   writes it down keeps it for 30 days. The microphone permission text says the same. Neither names a
-  provider; the privacy page does. (R-3; AI service R-11) The sentence is true of the provider the
-  AI service calls today; its fallback is not switched on until the same is known of it.
+  provider; the privacy page does. (R-3; AI service R-11) The AI service calls one provider and has
+  no fallback, so the sentence has one provider to be true of.
 
 ## §5 The take
 

@@ -6,9 +6,9 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15. It was revised on 2026-11-17 for two
-later rulings, roadmap on the sync engine (R-13) and Coach on the iPhone in the first release
-(R-14), and that revision is not yet approved. Nothing is built. The roadmap's AI today is tending: a server-side agent that
+**Status:** Specified, and approved by the owner on 2026-11-15, and again on 2026-11-17 as revised
+for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Nothing
+is built. The roadmap's AI today is tending: a server-side agent that
 edits a roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree

@@ -6,7 +6,7 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified; not approved, and nothing is built. The iPhone app carries journal and gym.
+**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. The iPhone app carries journal and gym.
 Roadmap's design for it is [Roadmap · iOS, wave 1](../design/ios/roadmap.md), with its boards in
 the Roadmap Figma file; some are approved and some are proposals. The build order lives in the
 Roadmap on iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node

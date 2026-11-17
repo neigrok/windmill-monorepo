@@ -711,7 +711,7 @@ principal.
   `provider_rejected`, every other as `provider_unavailable`. A 401, 402 or 403 from the provider is
   reported at once, since the key or the account is at fault.
 
-### §8.2 Transcription: OpenAI, with Azure as the fallback
+### §8.2 Transcription: OpenAI
 
 Transcription runs live on `gpt-live-transcribe`, called at OpenAI. No language is named to it: the
 model decides what it hears (R-6). Read on OpenAI's documentation on 2026-11-14:
@@ -748,26 +748,8 @@ Transcription, as the provider documents it:
   adapter sends none. It keeps what a Realtime session carried for 30 days for abuse monitoring and
   does not train on it. Zero data retention exists for the account and is not arranged (R-11).
 
-The fallback is Azure (R-6). Read on Microsoft's documentation on 2026-11-14:
-
-- Microsoft hosts the same model, `gpt-live-transcribe`, as a Realtime transcription session at
-  `wss://<resource>.openai.azure.com/openai/v1/realtime?intent=transcription`. Its Realtime API
-  "follows the OpenAI Realtime API specification"; the stated difference is that a session names a
-  deployment and not a model. The fallback is therefore the same adapter with another address, key
-  header and deployment name, and the door of §6.6 does not change.
-- The price is the same, $1.02 an hour of audio, billed by duration, and a language is an optional
-  hint there too.
-- Microsoft does not give what a session carried to OpenAI and does not train on it. A sample may be
-  stored for a person to review for abuse; the period is not stated, and turning that off needs
-  Microsoft's approval.
-- No retirement date is published for the model there. It is offered as a global deployment from
-  eight regions.
-- Azure's own speech recognition cannot be the fallback while no language is named: without one it
-  assumes English, and its language identification chooses among at most ten languages somebody
-  lists.
-
-The service calls one provider at a time, the one the tier table names. Moving to the fallback is a
-change of that table made by hand; the service does not fail over by itself.
+There is no fallback provider (R-6). While the provider is down or its fuse is open, transcription
+is unavailable and Talk says so.
 
 ## §9 Structure
 
@@ -909,9 +891,11 @@ designed when the service is built, one integration at a time.
   account's calls in flight, as it does in the backend's ledger.
 - **I-7 Funding.** When a paid period is recorded, one grant is funded for exactly that period. When
   it is refunded the grant is closed, and when the refund is reversed it is reopened
-  ([subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)). Whether a worker of this
-  service follows the subscription feed or the feed's follower calls the grants door is open. Either
-  way no call waits on it (INV-15). The amount a period funds then has one home, this service's tier
+  ([subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)). While the backend's ledger
+  still has a caller, a paid period funds a grant in both ledgers, so nothing a subscriber has stops
+  working and Windmill's most for one subscriber is twice the tier's amount until that ledger
+  retires (R-16). Whether a worker of this service follows the subscription feed or the feed's
+  follower calls the grants door is open. Either way no call waits on it (INV-15). The amount a period funds then has one home, this service's tier
   table; where the buy sheet reads it from is settled with this move.
 - **I-8 Cutover.** The backend's ledger rows are not carried over: every allowance starts empty in
   this service. The backend's ledger, its provider clients and its provider keys are deleted when
@@ -919,8 +903,9 @@ designed when the service is built, one integration at a time.
 - **I-9 Erasure.** When an account is erased the backend signs no further pass for it. The ledger
   keeps the account's opaque id on its budgets, grants and bindings, as accounting, and its call
   rows until `CALL_RETENTION` ends them.
-- **I-10 Order.** Which integration is built first, and when, is the owner's to decide once the
-  service is built.
+- **I-10 Order.** Gym's Coach and roadmap's move first, on one shared engine; Talk on the iPhone and
+  Echoes follow, all before the iOS release; the web's Talk moves after it. The backend's ledger
+  retires when the web's Talk has moved. (R-17)
 
 ## §13 Rulings
 
@@ -933,13 +918,18 @@ The owner's rulings. All are settled.
 | R-3 | The ledger rows the backend holds at cutover | Dropped. No subscription has been sold, so no paid grant is lost; each installation's lifetime spend and each account's month start again. (2026-11-14) |
 | R-4 | The amounts and limits of each tier | One table with a row a tier, holding the backend's amounts as they stand. The output ceilings, the calls a minute and `OWNER_GRANTS_MAX` are values this document sets. (2026-11-14) |
 | R-5 | Who may use transcription | Windmill One only, from a grant. (2026-11-14) |
-| R-6 | The model that serves transcription | Live, word by word, on `gpt-live-transcribe` at OpenAI, with no language named: the model decides what it hears. The fallback is Azure, which hosts the same model (§8.2). (2026-11-14) |
+| R-6 | The model that serves transcription | Live, word by word, on `gpt-live-transcribe` at OpenAI, with no language named: the model decides what it hears. There is no fallback provider: a second one would hold people's speech under terms Talk cannot state. (2026-11-14, revised 2026-11-17) |
 | R-7 | Whose prompts the service accepts | Any. It enforces money rules only. (2026-11-14) |
 | R-8 | A call the provider billed above its reservation | The whole cost is spent and reported, and nobody is locked out. (2026-11-14) |
 | R-9 | How long a call's row is kept | 90 days, after which only the budgets' sums remain. (2026-11-14) |
 | R-10 | Whether installations and free accounts share one daily pool | Shared. The tier table can give each its own. (2026-11-14) |
 | R-11 | Whether the transcription provider may keep what a session carried | Zero data retention is not arranged; the owner cannot arrange it. What a Talk session carried is kept at the provider for 30 days for abuse monitoring and is not used for training, as its data page said on 2026-11-14. The product says so wherever Talk is offered (I-5). (2026-11-14) |
 | R-12 | Whether the service may hold a picture between calls | Yes, in memory only and for a short time, so that a device uploads a picture once for a turn of several rounds (§6.7). (2026-11-15) |
+| R-13 | Whether a changed tier amount or pool limit reaches budgets that exist | It applies at once to every budget, an installation's lifetime budget and a pool's current period included, so a limit lowered in an emergency holds from the moment it is set. (2026-11-17) |
+| R-14 | Whether a `carry` is bound to the principal that received it | It is not. Any caller may send any sealed `carry`; none can read one, and no money is at risk. (2026-11-17) |
+| R-15 | What raises the provider-trouble alert | The share of calls that failed in a short window, not a run of failures a single success resets. (2026-11-17) |
+| R-16 | Which ledger a paid period funds while two live | Both, until the backend's ledger retires. (2026-11-17) |
+| R-17 | The order of the moves onto this service | Coach first; Talk on the iPhone and Echoes before the iOS release; the web's Talk after it. (2026-11-15, completed 2026-11-17) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 

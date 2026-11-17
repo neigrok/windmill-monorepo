@@ -245,7 +245,10 @@ profile. The engine runs it in this order.
 
 **A turn that never began.** A turn is withdrawn, its records removed and its question and picture
 returned to the field, only when the engine knows the service admitted nothing for round 1: the
-pass door refused before any call was sent, or the text door's refusal proves it (§4.2). A turn
+pass door refused before any call was sent, the text door's refusal proves it (§4.2), or the device
+had no connection when round 1 was to be sent, so nothing left it. A turn sent with no connection is
+therefore returned to the field at once, with or without a pass in hand, and Coach says it needs a
+connection (R-6). A connection lost after a round was sent is asked for again as §4.2 says. A turn
 whose round 1 may have been admitted is never withdrawn: it ends `failed` with the code the engine
 was given, or `interrupted` when it was given none, with its question on the record.
 
@@ -453,3 +456,4 @@ order, the mark at each step, and the end.
 | R-3 | How long a pass lasts | 10 minutes. A sign-out, an erased account and a change of plan therefore reach the AI service within 10 minutes and no sooner (AI service INV-2). (2026-11-15) |
 | R-4 | A turn whose process ends | Its answer is recovered when the round in flight was the turn's last and the service still holds it; otherwise the turn ends `interrupted`. Carrying on a turn that was still calling abilities would need the working conversation written to the device, which P-5 rules out. (2026-11-15) |
 | R-5 | A turn its device never ends | Any of the person's devices ends it `interrupted` once no write has reached it for 30 minutes by the server's clock. No server ends a turn. (2026-11-15) |
+| R-6 | A question sent with no connection | It returns to the field at once and Coach says it needs a connection. Nothing is left trying. (2026-11-17) |
