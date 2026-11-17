@@ -124,7 +124,7 @@ class CoachStoryTests(private val file: File) {
         val ai = CoachAiClient(transport, telemetry, now = { now }, wait = { ms, stop ->
             val index = waits.size; waits += Json.of(ms); control("wait:$index")
             if (stop.stopped) false else { now += ms; true }
-        }, connected = { connected })
+        }, connection = { connected })
         runner = TurnRunner(host, ai, telemetry, object : Runtime {
             override fun now() = now
             override fun newId() = story.member("runtime").member("callIds").arr()[idIndex++].str()

@@ -114,6 +114,7 @@ sealed interface AiAnswer {
 }
 interface AiClient {
     fun clearPass()
+    fun connected(): Boolean
     suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer
     suspend fun result(callId: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer
 }

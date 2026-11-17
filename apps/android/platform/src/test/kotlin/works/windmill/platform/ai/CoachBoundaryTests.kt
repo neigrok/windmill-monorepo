@@ -238,6 +238,7 @@ class CoachBoundaryTests {
             val reports = Reports()
             val ai = object : AiClient {
                 override fun clearPass() {}
+                override fun connected() = true
                 override suspend fun result(callId: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer = error("unexpected-result")
                 override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer {
                     val terminal = story.member("service").member("exchanges").arr().first().member("events").arr().last()
