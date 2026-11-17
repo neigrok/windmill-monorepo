@@ -13,7 +13,7 @@ import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class EngineTests {
-    @Test fun gymDefaultsDoNotSubscribeOrPullAnUnsupportedProductsOwnedTrees() {
+    @Test fun gymDefaultsDoNotSubscribeOrPullAnUnsupportedProductsOwnedTrees() = runBlocking<Unit> {
         val leaves = listOf("gym", "journal").map { name -> Registry(Json.parse("""{
             "registry":"$name","version":3,"minVersion":2,"products":{"$name":{}},
             "types":[{"type":"$name","scope":"product:$name","identity":"singleton","singletonId":"$name",
@@ -35,6 +35,36 @@ class EngineTests {
                 Row(RecordKey("board", RecordID("b0001")), Lattice(Life("alive", stamp), stamp), seq = 1)) }
             assertEquals(setOf(ScopeRef.product("gym")), engine.subscriptions())
             assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null}]}"""), engine.pullRequest(engine.subscriptions()))
+            val pulled = CompletableDeferred<Json>()
+            val subscribed = CompletableDeferred<Json>()
+            val connection = object : LiveConnection {
+                override suspend fun send(request: Json) { subscribed.complete(request) }
+                override suspend fun receive(): Json? = awaitCancellation()
+                override fun close() {}
+            }
+            val transport = object : SyncTransport {
+                override suspend fun hello(token: String?) = Reply.Answer(SyncResponse(200, Json.parse("""{
+                    "serverTime":5000,"epoch":"ep-1","as":"A","schema":3,"minSchema":2,"holdsRecords":{}}
+                """)))
+                override suspend fun push(request: Json, token: String): Reply<SyncResponse> = Reply.Unreachable
+                override suspend fun pull(request: Json, token: String?): Reply<SyncResponse> {
+                    pulled.complete(request)
+                    awaitCancellation()
+                }
+                override suspend fun openLive(token: String): Reply<LiveConnection> = Reply.Answer(connection)
+            }
+            val tokens = object : SessionTokens {
+                override fun token(account: String) = "token"
+                override fun accounts() = setOf("A")
+                override fun save(account: String, token: String) {}
+                override fun delete(account: String) {}
+            }
+            val sleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() }
+            SyncRuntime(engine, transport, tokens, "1", sleeper).use { runtime ->
+                runtime.enter()
+                assertEquals(Json.parse("""{"op":"sub","scopes":["self/gym"]}"""), withTimeout(2_000) { subscribed.await() })
+                assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null}]}"""), withTimeout(2_000) { pulled.await() })
+            }
             val tree = ScopeRef.tree("b0001")
             val overlay = ScopeRef.overlay("b0001")
             assertEquals(setOf(ScopeRef.product("third"), tree, overlay), engine.subscriptions(listOf("third")))
