@@ -60,8 +60,8 @@ Signed out, the gym room is the room, on the browser's `anon` replica.
   need the account, and Coach until the browser holds an installation credential. The web's forms
   for a past workout and for correcting one are left out too: each is a server command, which a
   signed-out replica never sends. (R-5)
-- **What it says.** A signed-out room says once that the work is kept in this browser only, and
-  that clearing the browser's data removes it. (R-6)
+- **What it says.** Nothing of where the work is kept, as on the iPhone. A browser can clear a
+  site's data where a phone cannot, and the room does not say so. (R-6)
 
 **Sign-in.** Gym supplies what the engine's lineage rule asks of a product, as journal does, and
 what the phones do before the replica changes:
@@ -224,5 +224,5 @@ the iPhone offers no Undo for a delete, where Android and the web hold one.
 | R-2 | Logging a workout on the web | The web has full workout entry, with Coach open during a workout. (2026-11-17) |
 | R-3 | Gym signed out on the web | It opens on the browser's own copy and joins the account at sign-in. (2026-11-17) |
 | R-4 | Whether this gates the iOS release | It does not; it runs alongside. (2026-11-17) |
-| R-5 | The web's past-workout and correction forms, signed out | Open. This document assumes they are left out signed out. |
-| R-6 | Whether a signed-out room says its work lives in this browser only | Open. This document assumes it says so once. |
+| R-5 | The web's past-workout and correction forms, signed out | Left out signed out; they appear after sign-in. (2026-11-17) |
+| R-6 | Whether a signed-out room says its work lives in this browser only | It says nothing. (2026-11-17) |

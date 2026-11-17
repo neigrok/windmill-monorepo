@@ -205,7 +205,8 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
   the AI service holds for a turn, and its `pictures` entry is `localOnly`.
 - The browser's mark is one for a browser, so a browser runs one gym turn at a time across its
   tabs.
-- Signing out removes what Coach kept in the browser: drafts, pictures and the mark.
+- Signing out removes what Coach kept in the browser: drafts, pictures and the mark. Where the
+  person keeps their unsent work, a picture an unsent message names stays with it.
 
 **What a person on the web gets, and loses:**
 

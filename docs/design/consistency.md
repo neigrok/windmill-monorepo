@@ -602,7 +602,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   presence and remote cursors. The refused-change states of flow 43 and the Restore offer for a hidden link retire
   with the build.
 - **Roadmap · iOS · boards the 2026-11-17 rulings change.** [Roadmap · iOS](ios/roadmap.md) rulings 10 to 13. To
-  redraw before the owner reviews the 🧪 boards: the New step, edit and New roadmap forms with the commit in the
+  redraw before the owner reviews the 🧪 boards (and, by the owner's ruling of the same day, renaming and deleting a
+  roadmap and managing kinds are in the first version and are not drawn): the New step, edit and New roadmap forms with the commit in the
   toolbar (05.1, 05.4, 05.6, 05.7, and NOTE 05, whose title and boards disagree today). To draw new: a step that
   opens a roadmap and a subtree, going in and back, attach, change and detach, fork first; reading and editing a
   guide and the guides above; the list of what could not land; History with no connection; a link to a roadmap the

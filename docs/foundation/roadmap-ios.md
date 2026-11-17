@@ -155,6 +155,13 @@ guide and the guides above it, and an owner edits their own.
 - Forking first needs a connection, as every fork does.
 - The iPhone design draws none of it, so each state is drawn and approved before it is built.
 
+## §6a A roadmap and its kinds
+
+A person renames and deletes a roadmap on the phone, and adds, renames, recolours and removes its
+kinds (R-6). These are the domain's actions, the web's own: a delete is held with Undo, and
+recolouring a kind is the server's command. The iPhone design draws none of it, so each state is
+drawn and approved before it is built.
+
 ## §7 Coach
 
 Coach is the room's third tab, as the design rules, with Search beside it.
@@ -230,7 +237,8 @@ makes it false.
   trigonometry.
 - The app's one runner deletes at once, in every room.
 - The Board, the room's entry screens, the New step form and the held delete are proposals in
-  Figma. Not drawn for the iPhone at all: nested roadmaps and guides, the list of what could not
+  Figma. Not drawn for the iPhone at all: nested roadmaps and guides, renaming and deleting a
+  roadmap, managing kinds, the list of what could not
   land, a gesture a limit refuses, a fork in progress, a link that cannot be opened, History with
   no connection, and the sign-in question that names roadmaps and conversations.
 
@@ -243,4 +251,4 @@ makes it false.
 | R-3 | Nested roadmaps and guides | Full parity with the web in the first version. (2026-11-17) |
 | R-4 | Which links open the app | Shared links and a person's own links. (2026-11-17) |
 | R-5 | Where a form commits | In the toolbar, as every other form. (2026-11-17) |
-| R-6 | Renaming and deleting a roadmap, and managing kinds, on the iPhone | Open. The design draws none. This document assumes renaming and deleting a roadmap are in the first version and managing kinds is not. |
+| R-6 | Renaming and deleting a roadmap, and managing kinds, on the iPhone | All are in the first version: rename and delete a roadmap, and add, rename, recolour and remove a kind. The design draws none, so each is drawn and approved first. (2026-11-17) |
