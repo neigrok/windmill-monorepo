@@ -298,6 +298,10 @@ def stories():
     s['service']['exchanges']=[{**exchange(),'transport':'offline'},exchange(events())]
     s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
     text_write(s,'Hello'); finish(s,duration=1000); out.append(s)
+    s=story('connection-lost-after-check'); s['controls']=[{'at':'beginRound:beforeCommit','action':'disconnect'}]; opened(s); begin(s,0,'',[first(s)])
+    s['service']['exchanges']=[{**exchange(),'transport':'offline'},exchange(refusal=refusal('subject_exhausted'))]
+    s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
+    finish(s,'failed','','subject_exhausted',duration=1000); out.append(s)
     s=tool_story('no-connection-later-round',[{}]); s['controls']=[{'at':'execute:tool-0:beforeCommit','action':'disconnect'}]
     s['service']['exchanges'].insert(1,{**exchange(),'transport':'offline'})
     s['expected']['requests'].append(copy.deepcopy(s['expected']['requests'][1])); s['expected']['waitsMs']=[1000]
