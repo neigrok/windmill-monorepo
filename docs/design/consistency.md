@@ -596,11 +596,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 - **Roadmap on the sync engine · what the web redraws (owner, 2026-11-17).**
   [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md) rules that a change is never shown as
-  refused for what happened elsewhere, and that presence ends. To draw for the web, before it is built: the quiet
-  line for an edit that brought a step back and for a step re-linked past a deleted one; the one place that lists
-  what could not land; sign-in's Add or Discard and sign-out's Keep or Discard for roadmaps; the room without
-  presence and remote cursors. The refused-change states of flow 43 and the Restore offer for a hidden link retire
-  with the build.
+  refused for what happened elsewhere, and that presence ends. The owner approved
+  [web journeys 48–52](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1531)
+  on 2026-11-17; the sections and their 22 screen frames are ✅ Ready for dev. They cover the quiet
+  line for a step brought back or following through an absent step; the one list of what could not
+  land; sign-in's Add or Discard and sign-out's Keep or Discard; nine-second roadmap-delete Undo;
+  and the room and activity without presence. Deletion is permanent after the hold. The
+  [interaction handoff](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1555)
+  specifies the paths. The web implementation is pending; flow 43's refused-change states and the
+  Restore offer for a hidden link retire with that build.
 - **Roadmap · iOS · boards the 2026-11-17 rulings change.** [Roadmap · iOS](ios/roadmap.md) rulings 10 to 13. To
   redraw before the owner reviews the 🧪 boards (and, by the owner's ruling of the same day, renaming and deleting a
   roadmap and managing kinds are in the first version and are not drawn): the New step, edit and New roadmap forms with the commit in the
