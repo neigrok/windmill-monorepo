@@ -85,9 +85,9 @@ And of the domain kit:
 - **K-2 A gesture over several scopes.** A plan MAY write more than one scope. The runner commits
   one intent a scope, in a stated order, as one act of the person's: one hold and one Undo cover
   all of them.
-- **K-3 Undo of an act.** The kit offers, for any act, an action that writes back each field's
-  earlier value under a new stamp, leaves alone a field written since, and says whether anything
-  was taken back (§4).
+- **K-3 Undo of an act.** Except for a released roadmap deletion, the kit offers an action that
+  writes back each field's earlier value under a new stamp, leaves alone a field written since,
+  and says whether anything was taken back (§5).
 
 ## §4 The registry
 
@@ -168,7 +168,7 @@ Every gesture is an action on the domain kit, the same in each language.
   alike. Removing a followed link that is read through an absent step retires the link from that
   step.
 - **Delete a roadmap** is held, and writes the `tree` record's death. The server does the rest
-  (§4). Until now a roadmap's delete was final at once; it gains the hold and its Undo.
+  (§4). Undo cancels it only during its 9-second hold; after the hold ends the deletion is permanent.
 - **Complete and Reset** write the step's `progress` mark. A step that opens a roadmap or owns a
   subtree is complete exactly when that roadmap is, and takes no mark. That is a rule of reading:
   a mark on such a step is kept and not read.
@@ -178,8 +178,8 @@ Every gesture is an action on the domain kit, the same in each language.
   steps follow, a hue another kind wears. A gesture that would break one is refused there, before
   anything is written. The server refuses none of the three for structure: a loop two devices
   close between them lands, is read without harm, and is reported by diagnostics, as today.
-- **Undo** of any act is the kit's (K-3). A surface keeps its own stack of acts for its keyboard's
-  Undo and Redo.
+- **Undo** of an act is the kit's (K-3). A surface keeps its own stack of acts for its keyboard's
+  Undo and Redo. A roadmap deletion leaves that stack when its hold ends and cannot be restored.
 - **Hidden.** A subtree that does not stand is hidden on every device, the owner's included: it is
   in no list, no count and no address.
 - **A reader** subscribes a readable roadmap when a person opens its link, signed in or not, and a
@@ -419,3 +419,4 @@ What changes is built only from boards marked ✅ Ready for dev:
 | R-4 | Nested roadmaps and guides on the iPhone | Full parity with the web in the first version. (2026-11-17) |
 | R-5 | How the data moves | One planned cutover with a short maintenance window and a verified backup. What browsers hold is carried over at their next load. (2026-11-17) |
 | R-6 | Presence and remote cursors | They end with the move. (2026-11-17) |
+| R-7 | Undo after a roadmap's delete window | A roadmap deletion is permanent once its 9-second hold ends. Undo is available only during that hold. (2026-11-17) |
