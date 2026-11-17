@@ -11,8 +11,8 @@ Figma: separate [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-i
 Code: `web/src/products/roadmap/`. [Evidence and limits](design/roadmap-web-reconciliation.md).
 🚀 In production identifies current flows reconciled against source and available runtime evidence.
 The [reference family map](design/roadmap-web-reconciliation.md#reference-family-map) connects retained
-specimens to deployed source. Superseded drawings are labeled as such; the shared editor read view is
-delivered while inline editing and creation remain separate targets. Status does not grant new human
+specimens to deployed source. Superseded drawings are labeled as such; the shared step document
+includes field editing and recovery, while creation alignment remains unfinished. Status does not grant new human
 approval or claim every branch was exercised. Native graph lighting is a static approximation.
 
 | Flow | Web | Web Mobile | Entry → exit |
@@ -36,20 +36,23 @@ Workspace and History, relationships, pinned actions and an operable Shell. Deli
 [Roadmap alignment subtree](https://windmill.works/#/app/t_63c2c557d482dece). The
 [current interaction handoff](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1157-3166)
 specifies direct node activation, plain description and shared-link data, and an unfinished Coach
-placeholder. Functional Coach remains deferred. Editing and creation still use the existing nested
-composer; the approved inline editing/creation flows remain unbuilt. Link-copy recovery follows section 37.
+placeholder. Functional Coach remains deferred. Existing steps use one inline shared-field editor,
+with conflict and navigation recovery from 46/47. New step retains its separate composer;
+creation alignment remains unfinished. Link-copy recovery follows section 37.
 
 | Flow | Approved source | Entry → exit |
 |---|---|---|
 | 18 · Open from Board or Tree | [18](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=754-74703), [keyboard and graph focus](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=766-2400) | Card or node activation, or Enter on the focused node → shared nonmodal editor → source and focus return; bulk selection and connections keep distinct gestures |
-| 19 · Edit a step | [19](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=754-74704) | Approved inline-edit target → Save/Cancel; the initial read-shell migration retains the existing functional editor until that separate implementation has parity |
+| 19 · Edit a step | [19](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=754-74704) | Shared field → Save/Cancel; responsive editing and recovery follow 46/47 |
 | 20 · Create a step | [20](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=754-74705) | New step → draft and prerequisites → create or cancel |
 | 21 · Laptop workspace | [21](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=822-3609) | Board/Graph entry and focused Graph node → laptop editor |
 | 22 · Coach history and actions | [22](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=832-4672) | Collapsed/expanded right sidebar and editor actions; functional Coach history and sending remain deferred |
-| 27 · Mobile web | [27](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=754-74706) | Board/Graph → shared read document → inline Workspace/History and Back; full inline editing remains unbuilt |
+| 27 · Mobile web | [27](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=754-74706) | Board/Graph → shared document → inline fields, private Workspace/History and Back |
 | 37 · Link-copy recovery | [37.01–37.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911) | Copy available step link → nonmodal failure feedback → reveal/select or retry → original control |
 | 40 · Tablet read document | [40.01–40.14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1156-79681), [responsive contract](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1157-3169) | 744 px owner/reader, attached tree and keyboard states; 56 px collapsed or 280 px expanded Coach placeholder; the available product column stacks below 1000 px |
 | 43 · Refused sync recovery | [43.01–43.14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922) | Refused changes stay below the toolbar → Retry or Discard; structure recovery preserves completion Undo, while progress recovery waits for its baseline |
+| 46 · Shared-field editing | [46.01–46.12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1322-81073) | One field → sparse Save/Cancel; dirty departure → Keep editing/Discard; changed field → Load latest/Save anyway; access loss → copyable draft |
+| 47 · Retained draft recovery | [47.01–47.07](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1348-81444) | Unrestorable same-document departure → content-free draft strip → View, Copy, Return or explicit Discard; account cleanup clears the tab's retained draft |
 
 [List vocabulary](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=16-3) on Components
 is marked Superseded development target. The [mobile owner editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=158-121)

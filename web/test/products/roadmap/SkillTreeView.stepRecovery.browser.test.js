@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium, webkit } from 'playwright';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { EDIT_STEP, REFUSED_CAPACITY, REFUSED_SYNC, STEP_DETAIL, discardChanges, refusedSyncBody } from '../../../src/products/roadmap/copy.js';
+import { REFUSED_CAPACITY, REFUSED_SYNC, STEP_DETAIL, discardChanges, refusedSyncBody } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost({ browserTypes: { chromium, webkit } });
 
@@ -67,7 +67,7 @@ for (const options of [
         await page.keyboard.press('Tab');
         assert.equal(await alert.getByRole('button', { name: REFUSED_SYNC.retry, exact: true }).evaluate((node) => node === document.activeElement), true);
         await page.keyboard.press('Tab');
-        assert.equal(await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).evaluate((node) => node === document.activeElement), true);
+        assert.equal(await page.getByRole('button', { name: 'Edit kind', exact: true }).evaluate((node) => node === document.activeElement), true);
         assert.deepEqual(errors, []);
       } finally { await page.close(); }
     });
@@ -79,9 +79,9 @@ for (const browserName of ['chromium', 'webkit']) {
     const { page, errors } = await openHost({ browserName, width: 744, surface: 'board' });
     try {
       await page.locator('.st-board-card[data-step-id="wind"]').click();
-      await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
       await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Read gusts');
-      await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
       await page.getByRole('article', { name: 'Read gusts', exact: true }).waitFor();
       await page.evaluate(() => {
         const session = window.session;
@@ -178,6 +178,9 @@ hostTest('Chromium: a slow failed Discard retains the notice, then a successful 
       session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
       session.inFlight.set('refused', session.lattice.toFrame());
       session.receiveReject({ frameId: 'refused', code: 'bad-frame' });
+      window.nestedEditDispatches = [];
+      const dispatch = session.dispatch.bind(session);
+      session.dispatch = (gesture) => { window.nestedEditDispatches.push(gesture); return dispatch(gesture); };
       const replace = session.store.replaceLane.bind(session.store);
       session.store.replaceLane = (...args) => new Promise((resolve, reject) => {
         window.finishReplacement = (outcome) => {
@@ -201,14 +204,18 @@ hostTest('Chromium: a slow failed Discard retains the notice, then a successful 
       { operation: 'roadmap-sync-discard', stack: true },
     ]);
     await alert.getByRole('button', { name: REFUSED_SYNC.discard, exact: true }).click();
-    await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Edit step', exact: true });
+    await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+    const dialog = page.locator('.st-inline-field');
     await dialog.waitFor();
     await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Draft kept open');
+    assert.equal(await page.evaluate(() => window.session.ready), false);
+    assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).isDisabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.nestedEditDispatches), []);
     await page.evaluate(() => window.finishReplacement('success'));
     await page.locator('.st-step-refusal').waitFor({ state: 'detached' });
     assert.equal(await dialog.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Draft kept open');
     assert.equal(await dialog.evaluate((node) => node.contains(document.activeElement)), true);
+    assert.deepEqual(await page.evaluate(() => window.nestedEditDispatches), []);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
@@ -224,15 +231,15 @@ for (const close of ['Cancel', 'Save']) {
         session.inFlight.set('refused', session.lattice.toFrame());
         session.receiveReject({ frameId: 'refused', code: 'server-error' });
       });
-      await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Edit step', exact: true });
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      const dialog = page.locator('.st-inline-field');
       await dialog.waitFor();
-      assert.equal(await page.locator('.st-step-refusal').evaluate((node) => Boolean(node.closest('[inert]'))), true);
+      assert.equal(await page.locator('.st-step-refusal').evaluate((node) => Boolean(node.closest('[inert]'))), false);
       assert.equal(await page.locator('.st-step-refusal').evaluate((node) => node.querySelector('[role="alert"]') !== null), true);
-      if (close === 'Save') await dialog.getByRole('textbox', { name: 'Description · optional', exact: true }).fill('Watch the water.');
-      await dialog.getByRole('button', { name: close, exact: true }).click();
+      if (close === 'Save') await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Watch the water.');
+      await page.getByRole('button', { name: close, exact: true }).filter({ visible: true }).click();
       await dialog.waitFor({ state: 'detached' });
-      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Edit step');
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Edit name');
       const count = close === 'Save' ? 2 : 1;
       await page.getByRole('alert').getByRole('button', { name: discardChanges({ count }), exact: true }).waitFor();
       assert.equal(await page.getByRole('alert').locator('p').textContent(), refusedSyncBody({ count }));

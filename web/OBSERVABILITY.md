@@ -71,7 +71,7 @@ admitted action. A late asynchronous action failure still reports `navigation-co
 fallback or disposal has revoked its navigation capability; each action reports that failure once and
 cannot revive parked writes. Applied history remains owned until reconciliation or a handoff to newer
 navigation; an error does not drop that responsibility. Admission context carries only the frozen `navigation` or
-`sign-out` kind and is not a telemetry payload. No product currently registers a navigation blocker.
+`sign-out` kind and is not a telemetry payload. Roadmap registers its shared-field draft blocker and reports its bounded decisions below.
 
 The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
 rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste
@@ -219,12 +219,13 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Add a pasted plan to the roadmap | `roadmap_board_create` | `step: saved`, `door: paste`, `view: board/graph`, `count: 0/1/2-5/6-20/21+` |
 | Composer's other outcomes | `roadmap_board_create` | `step: failed/retry/discard/cancel` |
 | Planting a new roadmap failed | `roadmap_board_create` | `step: failed`, `door: blank/import/quest` |
-| Edit saved in the composer | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
-| Edit composer's other outcomes | `roadmap_board_edit` | `step: failed/retry/discard/cancel/unchanged` |
+| Shared field saved in the step document | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
+| Shared-field editor actions and outcomes | `roadmap_step_edit` | `step: open/change/guard/keep/discard/cancel/saved/unchanged/invalid/failed/retry/conflict/load_latest/selection_updated/unavailable`, `field: label/description/color/prerequisites` |
+| Retained one-field draft and read-only recovery | `roadmap_step_draft` | `step: retained/view/close/copy/copied/copy_failed/return/return_failed/adopted/unavailable/collision/signout_prompt/discard_prompt/keep/discard/select` |
 | Rename, recolor, link, unlink, reconnect or reorder on the Graph | `roadmap_board_edit` | `step: saved`, `view: graph`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false`, `order: true/false` |
 | Change a kind in the Graph's legend | `roadmap_board_edit` | `step: saved`, `view: graph`, `legend: rename/describe/add/remove/recolor` |
-| Prerequisite picker | `roadmap_board_picker` | `step: open/cancel/more/revalidated`, `mode: create/edit` |
-| Picker applied | `roadmap_board_picker` | `step: apply`, `mode: create/edit`, `count: 0/1/2-5/6-20/21+` |
+| Prerequisite picker | `roadmap_board_picker` | `step: open/cancel/more/revalidated`, `mode: create` |
+| Picker applied | `roadmap_board_picker` | `step: apply`, `mode: create`, `count: 0/1/2-5/6-20/21+` |
 | Delete's confirmation | `roadmap_board_delete` | `step: confirm/cancel`, `view: board/graph` |
 | Delete held for nine seconds | `roadmap_board_delete` | `step: held`, `door: menu/key/bulk`, `view: board/graph` |
 | Held delete released | `roadmap_board_delete` | `step: sent`, `via: timer/replaced/left`, `view: board/graph` |
@@ -326,7 +327,7 @@ A step is a thing a reader did or was told. These emit nothing:
 - The read that follows a pointer set or changed while the roadmap is open, when it succeeds or is cut off at its
   ten-second limit: a read cut off reports nothing and leaves the step with nothing said of its tree until a reload.
 - Dismissing a menu, a sheet, Fork or Ask AI; re-picking the order or the shared kind in force; a recolor the session refused;
-  a clean Save, which writes nothing and emits `unchanged` from the edit composer and the guide alone.
+  a clean Save, which writes nothing and emits `unchanged` from the inline field editor and the guide alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
 - The unavailable Graph option's reason opening on hover or focus.
@@ -360,6 +361,8 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-board-composer` | The composer's render | The composer closes |
 | `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface | The draft and its Retry stay; the failed Undo's toast closes |
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
+| `roadmap-step-draft-copy` | An unexpected clipboard exception; browser permission and security refusals emit only the failed attempt | The draft stays selectable with Select text and Try again |
+| `roadmap-step-draft-return` | Navigation or matching-editor adoption failed | The retained draft stays available with Try again; nothing is saved |
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
 | `roadmap-step-copy` | An unexpected clipboard exception. Browser permission and security refusals (`NotAllowedError`, `SecurityError`) emit the failed attempt without an Issue; other failures report only the static operation and sanitized stack | *Couldn’t copy link*, Try again and Show link; a failed retry keeps the card, and success uses *Link copied*. Copy and Try again stay disabled while a write is pending, including across step navigation. A newer interaction keeps its focus when failure arrives; nested modal boundaries cover the recovery. A step or link change, dismissal or unmount makes a late result silent |
@@ -413,3 +416,11 @@ sends the labels and frames the shell's reporter above describes and no exceptio
 
 `scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer. Any Sentry attempt or
 `client_error` beacon it blocks fails its walk.
+
+Roadmap's one-field recovery reports unexpected clipboard failures as `roadmap-step-draft-copy` and failed
+return/adoption as `roadmap-step-draft-return`, through the existing sanitized Roadmap reporter. Expected
+clipboard permission refusals emit only `roadmap_step_draft` with `step: copy_failed`. Scope-invalidated or
+superseded callbacks cannot expose content, change recovery state or restore focus. Draft values, field contents,
+step and tree identifiers, account identifiers, URLs and raw exception messages are absent from these events.
+Auth reports each throwing product session invalidator as `auth-document-data-invalidate` with a static auth
+operation and no exception stack or message. One invalidator cannot stop the scope fence or the remaining cleanup callbacks.

@@ -251,7 +251,7 @@ for (const width of [1440, 390]) {
       assert.equal(await step.locator('.st-board-workspace').count(), 0);
       await page.getByRole('button', { name: 'More', exact: true }).click();
       assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Copy link', 'Open in Graph']);
-      for (const name of ['Workspace', 'Edit step', 'Complete', 'Reset', 'Delete step']) {
+      for (const name of ['Workspace', 'Edit name', 'Complete', 'Reset', 'Delete step']) {
         assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0);
       }
       await page.keyboard.press('Escape');

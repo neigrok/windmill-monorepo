@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { API_BASE } from '../apiBase.js';
 import { fetchMe, logout } from './AuthClient.js';
 import { closeAccount as requestAccountClosure, listSessions } from './AccountClient.js';
-import { DeviceSeat } from './accountChange.js';
+import { DeviceSeat, DocumentDataScope } from './accountChange.js';
 import { requestNavigation } from '../navigation.js';
 import { PRODUCTS } from '../products.js';
 import { syncSession } from '../../platform/sync/session.js';
@@ -48,6 +48,15 @@ export default function AuthProvider({ children }) {
     () => false,
   );
   const [seat] = useState(() => new DeviceSeat(PRODUCTS));
+  const [dataScope] = useState(() => new DocumentDataScope({
+    invalidate: () => {
+      for (const product of PRODUCTS) {
+        try { product.session?.invalidateAccount?.(); }
+        catch { captureError('auth', 'auth-document-data-invalidate', '', '/auth'); }
+      }
+    },
+    report: () => captureError('auth', 'auth-document-data-invalidate', '', '/auth'),
+  }));
   // Earlier queued binds cannot release a newer confirmed account's room.
   const roomOwnership = useRef({ revision: 0, confirmed: null, target: null,
     blocked: Boolean(syncSession.engine?.device.meta.deviceCleanup) });
@@ -55,6 +64,9 @@ export default function AuthProvider({ children }) {
   const confirmRoom = useCallback((me) => {
     if (!me) return roomOwnership.current.revision;
     const previous = roomOwnership.current.confirmed;
+    const owner = dataScope.read.getSnapshot().owner;
+    if (owner && !dataScope.sameOwner(owner, { kind: 'account', id: me.id }))
+      roomOwnership.current.scopeTicket = dataScope.begin({ kind: 'account', id: me.id });
     if (previous !== me.id) roomOwnership.current.revision += 1;
     roomOwnership.current.confirmed = me.id;
     const engine = syncSession.engine;
@@ -67,7 +79,7 @@ export default function AuthProvider({ children }) {
     // Remove the previous room in this turn, before queued writes or cleanup can yield.
     flushSync(() => setRoomChanging(true));
     return roomOwnership.current.revision;
-  }, [seat]);
+  }, [seat, dataScope]);
   const channel = useRef(null);
   const pending = useRef(null);
   const signOutResult = useRef(null);
@@ -94,9 +106,11 @@ export default function AuthProvider({ children }) {
       roomOwnership.current.target = null;
       setRoomChanging(false);
     }
+    if (revision === roomOwnership.current.revision)
+      dataScope.reconcile(syncSession.engine, roomOwnership.current.scopeTicket ?? dataScope.ticket);
     syncSession.publish({ signedIn: Boolean(value.account) });
     if (value.confirmed) remember(value.user);
-  }, [seat]);
+  }, [seat, dataScope]);
   const signedOut = useCallback(() => {
     pending.current = null; setQuestion(null); setError(false); settle(null, { signedOut: true });
     channel.current?.postMessage({ type: 'signed-out' });
@@ -105,6 +119,8 @@ export default function AuthProvider({ children }) {
   const cleanupDevice = useCallback(async (engine, next = null, navigation = null) => {
     const change = engine.device.meta.deviceCleanup;
     if (!change) return;
+    if (dataScope.read.getSnapshot().phase !== 'changing')
+      roomOwnership.current.scopeTicket = dataScope.begin(next ? { kind: 'account', id: next } : { kind: 'anonymous' });
     roomOwnership.current.blocked = true;
     flushSync(() => setRoomChanging(true));
     await seat.finishDeviceCleanup({ previous: change.previous, next, ...(navigation ? { navigation } : {}) });
@@ -112,13 +128,23 @@ export default function AuthProvider({ children }) {
       if (device.meta.deviceCleanup?.previous === change.previous && device.meta.deviceCleanup?.generation === change.generation)
         delete device.meta.deviceCleanup;
     });
-  }, [seat]);
+  }, [seat, dataScope]);
   const finishSignOut = useCallback(async (options, next = null, navigation = null) => {
     const engine = syncSession.engine;
-    const result = await engine.finishSignOut({ ...options, deviceCleanup: true });
+    const captured = dataScope.read.getSnapshot();
+    let ticket = roomOwnership.current.scopeTicket;
+    const result = await engine.finishSignOut({ ...options, deviceCleanup: true, beforeSignOutCommit: () => {
+      const current = dataScope.read.getSnapshot();
+      if (current !== captured && !(current.phase === 'changing' && dataScope.ticket === ticket && current.epoch === ticket?.epoch))
+        throw new Error('stale document data transition');
+      if (current.phase !== 'changing') {
+        ticket = dataScope.begin(next ? { kind: 'account', id: next } : { kind: 'anonymous' });
+        roomOwnership.current.scopeTicket = ticket;
+      }
+    } });
     if (result.complete) await cleanupDevice(engine, next, navigation);
     return result;
-  }, [cleanupDevice]);
+  }, [cleanupDevice, dataScope]);
   const finishClosure = useCallback(async () => {
     const engine = syncSession.engine;
     const { account, sessionId } = engine.device.meta.closingAccount;
@@ -191,6 +217,13 @@ export default function AuthProvider({ children }) {
     if (!engine || engine.closed) return undefined;
     await cleanupDevice(engine);
     seat.restoreHolder(engine);
+    const owner = dataScope.read.getSnapshot();
+    const replica = engine.device.activeReplica.meta;
+    if (owner.phase === 'ready' && !engine.signingOut && !engine.device.meta.deviceCleanup) {
+      const holder = replica.state === 'bound' ? { kind: 'account', id: replica.account } : { kind: 'anonymous' };
+      if (!dataScope.sameOwner(owner.owner, holder)) roomOwnership.current.scopeTicket = dataScope.begin(holder);
+    }
+    dataScope.reconcile(engine, roomOwnership.current.scopeTicket ?? dataScope.ticket);
     if (engine.device.meta.closingAccount) {
       const lock = engine.device.meta.signOut?.lock;
       if (lock && !engine.releaseSignOut && (await navigator.locks.query()).held.some((held) => held.name === lock)) return undefined;
@@ -222,7 +255,7 @@ export default function AuthProvider({ children }) {
     }
     pending.current = null; setQuestion(null); settle(null, { signedOut: ended }, confirmedRevision);
     return null;
-  }), [enqueue, settle, bind, seat, finishClosure, finishSignOut, cleanupDevice, confirmRoom]);
+  }), [enqueue, settle, bind, seat, finishClosure, finishSignOut, cleanupDevice, confirmRoom, dataScope]);
   const signIn = useCallback((me) => {
     const revision = confirmRoom(me);
     return enqueue(async () => {
@@ -348,9 +381,8 @@ export default function AuthProvider({ children }) {
       const revision = roomOwnership.current.revision;
       const current = await fetchMe();
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
-      confirmRoom(current);
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
-      if (current?.id !== account) return;
+      if (current?.id !== account) { confirmRoom(current); return; }
       const closure = syncSession.engine.device.meta.closingAccount;
       if (closure?.account === account) {
         const session = (await listSessions()).find((session) => session.current);
@@ -392,7 +424,7 @@ export default function AuthProvider({ children }) {
     setDeviceLineHolders((holders) => holders + 1);
     return () => setDeviceLineHolders((holders) => holders - 1);
   }, []);
-  return <AuthContext.Provider value={{ user, status, account, confirmed, lapsed, roomChanging, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
+  return <AuthContext.Provider value={{ dataScope: dataScope.read, user, status, account, confirmed, lapsed, roomChanging, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
     {!session.online && roomStatus?.status?.connectivity !== 'offline' && (
       <div role="status" style={{

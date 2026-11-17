@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { chromium, webkit } from 'playwright';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost({ realScene: true });
+startRoadmapHost({ realScene: true, browserTypes: { chromium, webkit } });
 
 async function nodePosition(page, id) {
   await page.waitForFunction((id) => {
@@ -81,3 +82,22 @@ hostTest('Chromium: actual canvas Shift selection does not activate; Delete and 
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const [browserName, input] of [['chromium', 'touch'], ['chromium', 'keyboard'], ['webkit', 'touch'], ['webkit', 'keyboard']]) {
+  hostTest(`${browserName}: an immediate ${input} action after a real tablet node tap follows the chosen relationship once`, async () => {
+    const { page, errors } = await openHost({ browserName, width: 744, touch: true });
+    try {
+      await page.locator('canvas[data-graph-focus]').tap({ position: await nodePosition(page, 'wind') });
+      const step = page.getByRole('article', { name: 'Read the wind', exact: true });
+      assert.equal(await step.count(), 1);
+      const relationship = step.locator('.st-board-step-row').filter({ hasText: 'Leave the dock' });
+      if (input === 'touch') await relationship.tap();
+      else await relationship.press('Enter');
+      await page.getByRole('article', { name: 'Leave the dock', exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => location.hash), '#/app/t_sail?step=dock');
+      await page.getByRole('button', { name: 'Back to Read the wind', exact: true }).click();
+      await step.waitFor();
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

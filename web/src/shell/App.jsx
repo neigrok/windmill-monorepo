@@ -7,6 +7,8 @@ import { verifyToken } from './auth/AuthClient.js';
 import { BrandLanding } from './marketing/BrandLanding.jsx';
 import { pendingTransactionId, openCheckout } from './billing/checkout.js';
 import { PRODUCTS, activeProduct } from './products.js';
+import { ProductSessions } from './ProductSessions.jsx';
+import { PageFrame } from './PageFrame.jsx';
 import { navigate, readNavigation, subscribeNavigation, replaceLocation } from './navigation.js';
 
 const Showcase = lazy(() => import('../showcase/Showcase.jsx'));
@@ -91,6 +93,10 @@ function useOwnNavigation() {
 
 // mark={false} is bare ground, no logo.
 function RouteFallback({ mark = true }) {
+  return <PageFrame><RouteFallbackContent mark={mark} /></PageFrame>;
+}
+
+function RouteFallbackContent({ mark = true }) {
   const [waited, setWaited] = React.useState(false);
   React.useEffect(() => {
     if (!mark) return undefined;
@@ -143,18 +149,18 @@ function AppRoutes() {
   if (route.startsWith('#/auth')) {
     return (
       <Suspense fallback={<RouteFallback />}>
-        <AuthLanding
+        <PageFrame><AuthLanding
           onVerify={verifyToken}
           onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = activeProduct(route).landingAfterSignIn(forkedTree); }}
           onOpenDoor={() => { window.location.hash = activeProduct(route).switchHash; openSignInDoor(); }}
-        />
+        /></PageFrame>
       </Suspense>
     );
   }
 
   // /oauth/authorize redirects here with the PKCE params in the hash; #/auth would drop them.
   if (route.startsWith('#/oauth/authorize')) {
-    return <Suspense fallback={<RouteFallback />}><OAuthConsent /></Suspense>;
+    return <Suspense fallback={<RouteFallback />}><PageFrame><OAuthConsent /></PageFrame></Suspense>;
   }
 
   if (pathname === '/app' || pathname.startsWith('/app/')) {
@@ -174,7 +180,7 @@ function AppRoutes() {
   }
 
   if (route === '#/showcase') {
-    return <Suspense fallback={<RouteFallback />}><Showcase /></Suspense>;
+    return <Suspense fallback={<RouteFallback />}><PageFrame><Showcase /></PageFrame></Suspense>;
   }
 
   // The first product whose route table claims this URL wins.
@@ -184,7 +190,7 @@ function AppRoutes() {
     if (match) {
       const { Component, props, inRoom } = match;
       if (inRoom) return <Suspense fallback={<RouteFallback mark={false} />}><Shell location={location} roomProduct={product} /></Suspense>;
-      return <Suspense fallback={<RouteFallback />}><Component {...props} /></Suspense>;
+      return <Suspense fallback={<RouteFallback />}><PageFrame><Component {...props} /></PageFrame></Suspense>;
     }
   }
 
@@ -213,13 +219,18 @@ function ResumeCheckout() {
   return null;
 }
 
+function AppSession() {
+  const { dataScope } = useAuth();
+  return <Suspense fallback={<RouteFallback />}><ProductSessions products={PRODUCTS} dataScope={dataScope}><AppRoutes /></ProductSessions></Suspense>;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <EntitlementsProvider>
         <SignInDoorProvider>
           <ResumeCheckout />
-          <AppRoutes />
+          <AppSession />
         </SignInDoorProvider>
       </EntitlementsProvider>
     </AuthProvider>

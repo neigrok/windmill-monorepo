@@ -10,26 +10,20 @@ import { KindChoice } from '../board/BoardControls.jsx';
 import { coverBeneath, useComposerFocus, useComposerViewport } from './composerFocus.js';
 import { DiscardDraft } from './DiscardDraft.jsx';
 import { StepIcons } from './StepIcons.jsx';
-import { COLUMN_TITLES, COMPOSER, EDIT_STEP, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from '../copy.js';
+import { COLUMN_TITLES, COMPOSER, SAVE_FAILURE, STEP_DETAIL, prerequisiteNames } from '../copy.js';
 import './composer.css';
 
-export function StepComposer({ tree, completed, legend, band, editing, onCreate, onEdit, onClose, savingBlocked = false }) {
+export function StepComposer({ tree, completed, legend, band, onCreate, onClose, savingBlocked = false }) {
   const phone = band === 'phone';
-  const missingStep = Boolean(editing && !tree.nodesById.has(editing));
-  const mode = editing ? 'edit' : 'create';
-  const eventName = editing ? 'roadmap_board_edit' : 'roadmap_board_create';
+  const mode = 'create';
+  const eventName = 'roadmap_board_create';
   const viewport = useComposerViewport(phone);
-  const [stored, setDraft] = useState(() => {
-    const step = tree.nodesById.get(editing);
-    return step ? StepDraft.forStep(step) : new StepDraft();
-  });
+  const [stored, setDraft] = useState(() => new StepDraft());
   const [picker, setPicker] = useState(null);
   const [discard, setDiscard] = useState(false);
   const [failed, setFailed] = useState(false);
   const [nameError, setNameError] = useState(null);
   const request = useRef(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
   const dialog = useRef(null);
   const layer = useRef(null);
   const revalidationReported = useRef(null);
@@ -68,10 +62,6 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
 
   useLayoutEffect(() => coverBeneath(layer.current), []);
 
-  useEffect(() => {
-    if (missingStep) closeRef.current();
-  }, [missingStep]);
-
   const revalidation = choices?.revalidated.map((row) => row.id).join(',') || null;
   useEffect(() => {
     if (revalidation && revalidation !== revalidationReported.current) {
@@ -104,12 +94,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
     setFailed(false);
   };
   const save = () => {
-    if (missingStep || savingBlocked) return;
-    if (editing && !draft.dirty) {
-      track(eventName, { step: 'unchanged' });
-      onClose();
-      return;
-    }
+    if (savingBlocked) return;
     const errors = draft.validate();
     setNameError(errors.name);
     if (errors.name) {
@@ -117,8 +102,8 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
       return;
     }
     if (failed) track(eventName, { step: 'retry' });
-    request.current ??= editing ? draft.toEditRequest(tree) : draft.toCreateRequest(tree);
-    const result = editing ? onEdit(request.current) : onCreate(request.current);
+    request.current ??= draft.toCreateRequest(tree);
+    const result = onCreate(request.current);
     if (result.ok) {
       onClose();
       return;
@@ -166,7 +151,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
         {phone && (
           <button className="st-board-draft-cancel" type="button" onClick={cancel}>{COMPOSER.cancel}</button>
         )}
-        <h2 id={titleId}>{editing ? EDIT_STEP.title : COMPOSER.title}</h2>
+        <h2 id={titleId}>{COMPOSER.title}</h2>
         {phone && <span className="st-board-draft-balance" />}
       </header>
       <form
@@ -223,7 +208,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
             onClick={() => {
               if (tree.nodes.length === 0) return;
               track('roadmap_board_picker', { step: 'open', mode });
-              setPicker(new PrerequisiteChoices(tree, completed, { selected: draft.prerequisites, editing }));
+              setPicker(new PrerequisiteChoices(tree, completed, { selected: draft.prerequisites }));
             }}
           >
             <strong>{COMPOSER.prerequisites}</strong>
@@ -257,7 +242,7 @@ export function StepComposer({ tree, completed, legend, band, editing, onCreate,
             ) : (
               <>
                 {!phone && <Button variant="secondary" onClick={cancel}>{COMPOSER.cancel}</Button>}
-                <Button size={phone ? 'lg' : 'md'} full={phone} type="submit" disabled={savingBlocked}>{editing ? EDIT_STEP.save : COMPOSER.create}</Button>
+                <Button size={phone ? 'lg' : 'md'} full={phone} type="submit" disabled={savingBlocked}>{COMPOSER.create}</Button>
               </>
             )}
           </div>

@@ -62,3 +62,51 @@ function forget(product, change) {
 function complain(product, error) {
   console.error(`forgetDevice failed for product "${product?.id}" — its device residue may survive this account change`, error);
 }
+
+export class DocumentDataScope {
+  constructor({ invalidate = () => {}, report = () => {} } = {}) {
+    this.snapshot = Object.freeze({ epoch: 0, phase: 'pending', owner: null });
+    this.listeners = new Set();
+    this.invalidate = invalidate;
+    this.report = report;
+    this.ticket = null;
+    this.read = Object.freeze({
+      getSnapshot: () => this.snapshot,
+      subscribe: (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); },
+    });
+  }
+
+  publish(snapshot) {
+    this.snapshot = Object.freeze(snapshot);
+    for (const listener of this.listeners) listener();
+  }
+
+  begin(owner) {
+    const target = Object.freeze({ ...owner });
+    const ticket = Object.freeze({ epoch: this.snapshot.epoch + 1, owner: target });
+    this.ticket = ticket;
+    this.snapshot = Object.freeze({ epoch: ticket.epoch, phase: 'changing', owner: target });
+    try { this.invalidate(); } catch { this.report(); }
+    for (const listener of this.listeners) listener();
+    return ticket;
+  }
+
+  reconcile(engine, ticket = this.ticket) {
+    if (!engine || engine.closed || engine.restoring || engine.signingOut) return false;
+    const meta = engine.device?.meta;
+    if (!meta || meta.signOut || meta.deviceCleanup || meta.clearCredential || meta.closingAccount) return false;
+    const replica = engine.device.activeReplica?.meta;
+    if (!replica || !['anon', 'bound'].includes(replica.state)) return false;
+    const owner = replica.state === 'bound' ? { kind: 'account', id: replica.account } : { kind: 'anonymous' };
+    if (this.snapshot.phase === 'changing') {
+      if (ticket !== this.ticket || ticket.epoch !== this.snapshot.epoch || !this.sameOwner(owner, ticket.owner)) return false;
+      this.publish({ ...this.snapshot, phase: 'ready' });
+      return true;
+    }
+    if (this.snapshot.phase === 'ready') return this.sameOwner(owner, this.snapshot.owner);
+    this.publish({ ...this.snapshot, phase: 'ready', owner: Object.freeze(owner) });
+    return true;
+  }
+
+  sameOwner(left, right) { return left?.kind === right?.kind && left?.id === right?.id; }
+}

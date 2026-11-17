@@ -1,4 +1,5 @@
 import { lazy } from 'react';
+import { invalidateStepDraftSession } from './step/StepDraftSession.js';
 import { readNavigation, replaceLocation } from '../../shell/navigation.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { noteForked } from './persistence/ViewPrefs.js';
@@ -7,6 +8,9 @@ import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
 import { t } from './i18n/entry/index.js';
+
+const StepDraftProvider = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftProvider })));
+const StepDraftNotice = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftNotice })));
 
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
 const SkillTreeApp = lazy(importSkillTreeApp);
@@ -83,6 +87,7 @@ async function forgetDevice({ next, navigation }) {
 
 export const roadmapRoutes = {
   id: 'roadmap',
+  session: { Provider: StepDraftProvider, Notice: StepDraftNotice, invalidateAccount: invalidateStepDraftSession },
   label: t('roadmap.product.name'),
   switchHash: '#/app',
   home,

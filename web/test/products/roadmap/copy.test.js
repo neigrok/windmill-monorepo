@@ -65,7 +65,6 @@ import {
   sortButtonLabel,
   DELETE_CONFIRM,
   COMPOSER,
-  EDIT_STEP,
   PICKER,
   WORKSPACE,
   NOTE_EDITOR,
@@ -241,7 +240,6 @@ test('copy — the step page and modal', async () => {
     copyLink: 'Copy link',
     openInGraph: 'Open in Graph',
     deleteStep: 'Delete step',
-    editStep: 'Edit step',
     editNote: 'Edit note',
     viewBranch: 'View branch',
     subtasks: 'Subtasks',
@@ -354,7 +352,6 @@ test('copy — the tablet draft context uses lowercase for without a roadmap cou
 });
 
 test('copy — edit and workspace labels match the wave 5 contract', () => {
-  assert.deepEqual(EDIT_STEP, { title: 'Edit step', save: 'Save' });
   assert.deepEqual(WORKSPACE, {
     subtask: 'Subtask',
     subtasks: 'Subtasks',

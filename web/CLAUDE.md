@@ -59,7 +59,8 @@ rewrite; the data or security cleanup itself remains immediate.
 
 A product can register one identity-bound guard with `blocked`, `onBlocked` and synchronous
 `onUnrestorableNavigation`. Releasing that registration cancels its unanswered decision; an admitted
-action can finish after its original view unmounts. No product currently registers one. Indexed
+action can finish after its original view unmounts. Roadmap registers its single shared-field draft through
+its persistent product session provider. Indexed
 native Back/Forward restores the accepted entry before asking, retains the first destination, and
 uses positional traversal without replacing Forward history. Every newly observed indexed
 displacement can correct the remaining distance to that immutable origin, under one deadline. Paired
@@ -85,7 +86,10 @@ node --test --test-concurrency=1 --test-timeout=120000 \
   test/shell/auth/AuthProvider.test.js \
   test/products/journal/echoes/useEchoes.test.js \
   test/products/roadmap/paste/NewTreeBirth.test.js \
-  test/products/roadmap/SkillTreeView.stepRead.browser.test.js
+  test/products/roadmap/SkillTreeView.stepInput.browser.test.js \
+  test/products/roadmap/SkillTreeView.stepRead.browser.test.js \
+  test/products/roadmap/SkillTreeView.stepRecovery.browser.test.js \
+  test/products/roadmap/step/StepDraftRecovery.browser.test.js
 ```
 
 Keep this consumer list current when another hook, rendered door or browser host starts executing the
@@ -177,6 +181,10 @@ npm run build    # fetch model weights, run tests, build Vite and static landing
 Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `public/models`;
 `vite build` alone skips that step, tests and static-page generation.
 
+When Roadmap events or failure boundaries change, run the existing cheap observability audit before
+browser tests and include it in the final verification gates:
+`node --test --test-concurrency=1 --test-timeout=120000 test/products/roadmap/observability.test.mjs`.
+
 The test runner caps ordinary file concurrency at four, using one fewer than the available CPUs
 with a minimum of one. This bounds concurrent browser and Vite hosts. Runtime fuzz and performance
 files run separately, one at a time.
@@ -245,6 +253,10 @@ this only for preview builds.
 land before backend deployment because the embedder mounts weights from the web directory.
 See [embedder operations](../services/embedder/README.md).
 
+Watch every PR check with `gh pr checks <number> --watch --fail-fast --interval 45` under a bounded
+process deadline. A workflow can still be running after one of its jobs has failed; filtering to
+active jobs hides that failure. Confirm the check set belongs to the pushed head before merging.
+
 `.github/workflows/web-smoke.yml` runs `scripts/smoke-roadmap.mjs` from the deployed commit after every successful deploy of
 web or the backend on main, and by hand with a base URL and a public roadmap id. It walks the demo, a public roadmap and the
 landings as a signed-out reader at 390, 744 and 1440, and makes one returning visit through the service worker at 1440,
@@ -269,3 +281,12 @@ cache generation before promoting it; a failed update retains the previous compl
 enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use.
 API/model responses bypass the worker, and bounded network navigation falls back to the cached shell.
 Server features name their connection requirement in the offline state.
+
+Product session contributions are static `routes.session = { Provider, Notice, invalidateAccount }` entries.
+`ProductSessions` mounts them above keyed routes, with Auth's read-only `DocumentDataScope`. A scope is pending
+until a usable engine holder resolves, ready for that owner, or changing while committed cleanup is fenced.
+Replacement and committed cleanup advance the epoch before invalidating product memory and publishing account
+changes; each invalidator is isolated. Lapse and same-owner recovery retain the epoch. Completion requires the
+current transition ticket and matching usable holder. `PageFrame` places actual header, session notices and
+contained content in normal flow; landing headers keep their responsive height. Headerless routes and fallbacks
+use the same top notice slot. Product session data never enters shell layout or navigation state.
