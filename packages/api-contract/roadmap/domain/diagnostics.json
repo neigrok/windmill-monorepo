@@ -1,0 +1,249 @@
+[
+  {
+    "name": "Missing endpoint diagnostics do not confuse known absent nodes with missing records",
+    "input": {
+      "operation": "diagnostics",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "missing", "present": true},
+          {"from": "missing", "to": "z", "present": true},
+          {"from": "unknown", "to": "z", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "cycles": {"entries": [], "omitted": 0},
+      "absentCycles": {"entries": [], "omitted": 0},
+      "missingEdges": {"entries": [["a", "missing"], ["missing", "z"], ["unknown", "z"]], "omitted": 0},
+      "selfEdges": {"entries": [], "omitted": 0},
+      "smells": [],
+      "legendEmpty": true,
+      "unclaimedHues": []
+    }
+  },
+  {
+    "name": "Absent-only and effective self cycles retain graph meaning",
+    "input": {
+      "operation": "diagnostics",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": false, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "y", "present": false, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "b", "present": true},
+          {"from": "b", "to": "a", "present": true},
+          {"from": "x", "to": "y", "present": true},
+          {"from": "y", "to": "x", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "cycles": {"entries": [{"count": 1, "named": ["a"]}], "omitted": 0},
+      "absentCycles": {"entries": [{"count": 2, "named": ["x", "y"]}], "omitted": 0},
+      "missingEdges": {"entries": [], "omitted": 0},
+      "selfEdges": {"entries": [], "omitted": 0},
+      "smells": [],
+      "legendEmpty": true,
+      "unclaimedHues": []
+    }
+  },
+  {
+    "name": "A direct self edge is both a cycle and a self-edge diagnostic",
+    "input": {
+      "operation": "diagnostics",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "a", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "cycles": {"entries": [{"count": 1, "named": ["a"]}], "omitted": 0},
+      "absentCycles": {"entries": [], "omitted": 0},
+      "missingEdges": {"entries": [], "omitted": 0},
+      "selfEdges": {"entries": [["a", "a"]], "omitted": 0},
+      "smells": [],
+      "legendEmpty": true,
+      "unclaimedHues": []
+    }
+  },
+  {
+    "name": "Diagnostics count every finding while bounding lists and named nodes",
+    "input": {
+      "operation": "diagnostics",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "n00", "present": true, "born": null, "rc": null, "ru": null, "label": "n00", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n01", "present": true, "born": null, "rc": null, "ru": null, "label": "n01", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n02", "present": true, "born": null, "rc": null, "ru": null, "label": "n02", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n03", "present": true, "born": null, "rc": null, "ru": null, "label": "n03", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n04", "present": true, "born": null, "rc": null, "ru": null, "label": "n04", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n05", "present": true, "born": null, "rc": null, "ru": null, "label": "n05", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n06", "present": true, "born": null, "rc": null, "ru": null, "label": "n06", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n07", "present": true, "born": null, "rc": null, "ru": null, "label": "n07", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n08", "present": true, "born": null, "rc": null, "ru": null, "label": "n08", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n09", "present": true, "born": null, "rc": null, "ru": null, "label": "n09", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n10", "present": true, "born": null, "rc": null, "ru": null, "label": "n10", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n11", "present": true, "born": null, "rc": null, "ru": null, "label": "n11", "icon": "", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "m00", "to": "n00", "present": true},
+          {"from": "m01", "to": "n00", "present": true},
+          {"from": "m02", "to": "n00", "present": true},
+          {"from": "m03", "to": "n00", "present": true},
+          {"from": "m04", "to": "n00", "present": true},
+          {"from": "m05", "to": "n00", "present": true},
+          {"from": "m06", "to": "n00", "present": true},
+          {"from": "m07", "to": "n00", "present": true},
+          {"from": "m08", "to": "n00", "present": true},
+          {"from": "m09", "to": "n00", "present": true},
+          {"from": "m10", "to": "n00", "present": true},
+          {"from": "m11", "to": "n00", "present": true},
+          {"from": "m12", "to": "n00", "present": true},
+          {"from": "m13", "to": "n00", "present": true},
+          {"from": "m14", "to": "n00", "present": true},
+          {"from": "m15", "to": "n00", "present": true},
+          {"from": "m16", "to": "n00", "present": true},
+          {"from": "m17", "to": "n00", "present": true},
+          {"from": "m18", "to": "n00", "present": true},
+          {"from": "m19", "to": "n00", "present": true},
+          {"from": "m20", "to": "n00", "present": true},
+          {"from": "m21", "to": "n00", "present": true},
+          {"from": "m22", "to": "n00", "present": true},
+          {"from": "m23", "to": "n00", "present": true},
+          {"from": "m24", "to": "n00", "present": true},
+          {"from": "m25", "to": "n00", "present": true},
+          {"from": "m26", "to": "n00", "present": true},
+          {"from": "m27", "to": "n00", "present": true},
+          {"from": "m28", "to": "n00", "present": true},
+          {"from": "m29", "to": "n00", "present": true},
+          {"from": "m30", "to": "n00", "present": true},
+          {"from": "m31", "to": "n00", "present": true},
+          {"from": "m32", "to": "n00", "present": true},
+          {"from": "m33", "to": "n00", "present": true},
+          {"from": "m34", "to": "n00", "present": true},
+          {"from": "m35", "to": "n00", "present": true},
+          {"from": "m36", "to": "n00", "present": true},
+          {"from": "m37", "to": "n00", "present": true},
+          {"from": "m38", "to": "n00", "present": true},
+          {"from": "m39", "to": "n00", "present": true},
+          {"from": "m40", "to": "n00", "present": true},
+          {"from": "m41", "to": "n00", "present": true},
+          {"from": "m42", "to": "n00", "present": true},
+          {"from": "m43", "to": "n00", "present": true},
+          {"from": "m44", "to": "n00", "present": true},
+          {"from": "m45", "to": "n00", "present": true},
+          {"from": "m46", "to": "n00", "present": true},
+          {"from": "m47", "to": "n00", "present": true},
+          {"from": "m48", "to": "n00", "present": true},
+          {"from": "m49", "to": "n00", "present": true},
+          {"from": "m50", "to": "n00", "present": true},
+          {"from": "m51", "to": "n00", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "cycles": {"entries": [], "omitted": 0},
+      "absentCycles": {"entries": [], "omitted": 0},
+      "missingEdges": {
+        "entries": [
+          ["m00", "n00"],
+          ["m01", "n00"],
+          ["m02", "n00"],
+          ["m03", "n00"],
+          ["m04", "n00"],
+          ["m05", "n00"],
+          ["m06", "n00"],
+          ["m07", "n00"],
+          ["m08", "n00"],
+          ["m09", "n00"],
+          ["m10", "n00"],
+          ["m11", "n00"],
+          ["m12", "n00"],
+          ["m13", "n00"],
+          ["m14", "n00"],
+          ["m15", "n00"],
+          ["m16", "n00"],
+          ["m17", "n00"],
+          ["m18", "n00"],
+          ["m19", "n00"],
+          ["m20", "n00"],
+          ["m21", "n00"],
+          ["m22", "n00"],
+          ["m23", "n00"],
+          ["m24", "n00"],
+          ["m25", "n00"],
+          ["m26", "n00"],
+          ["m27", "n00"],
+          ["m28", "n00"],
+          ["m29", "n00"],
+          ["m30", "n00"],
+          ["m31", "n00"],
+          ["m32", "n00"],
+          ["m33", "n00"],
+          ["m34", "n00"],
+          ["m35", "n00"],
+          ["m36", "n00"],
+          ["m37", "n00"],
+          ["m38", "n00"],
+          ["m39", "n00"],
+          ["m40", "n00"],
+          ["m41", "n00"],
+          ["m42", "n00"],
+          ["m43", "n00"],
+          ["m44", "n00"],
+          ["m45", "n00"],
+          ["m46", "n00"],
+          ["m47", "n00"],
+          ["m48", "n00"],
+          ["m49", "n00"]
+        ],
+        "omitted": 2
+      },
+      "selfEdges": {"entries": [], "omitted": 0},
+      "smells": [{"kind": "empty-icon", "nodes": {"count": 12, "named": ["n00", "n01", "n02", "n03", "n04", "n05", "n06", "n07", "n08", "n09"]}}],
+      "legendEmpty": true,
+      "unclaimedHues": []
+    }
+  }
+]
