@@ -21,9 +21,15 @@ person is told. Then the retirement of the backend's transcription route.
 ([Coach engine](coach-engine.md) §4.1). Buying Windmill One and the door a person without it meets
 ([subscriptions](subscriptions.md)). Echoes. Android, which has no journal.
 
-**Depends on:** the AI service's live door open in production, which needs its provider key and its
-audio billing check (AI service §8.2); a paid period funding a grant in the AI service (AI service
-I-7); the pass door and the AI clients of the Coach engine.
+**Depends on:**
+
+- the pass door and the device AI clients of the Coach engine, merged and linked into the app, with
+  the backend's signing key and the AI service's matching key set in production;
+- `journal.talk` among the uses the backend signs for;
+- the live door open in production, which needs the AI service's own provider key and its audio
+  billing check (AI service §8.2);
+- a paid period funding a grant in the AI service (AI service I-7), without which only an owner's
+  account can talk.
 
 ## §1 Principles
 
@@ -34,12 +40,12 @@ I-7); the pass door and the AI clients of the Coach engine.
   meters. No server of Windmill's holds a recording or a transcript (AI service INV-13).
 - **P-3 Windmill keeps no audio.** A device holds audio in memory only, and only what §5.5 names.
   It writes none to a file, a store, a log or a backup.
-- **P-4 The page is the record.** Words Talk settles are journal text like typed words, saved by
-  the page's ordinary save. Talk adds no synced record of its own.
+- **P-4 The page is the record.** Words Talk settles are journal text like typed words, saved as
+  typing is saved. Talk adds no synced record of its own.
 - **P-5 One behaviour, two languages.** Swift and JavaScript answer the same script with the same
   frames, the same page text and the same end. Shared stories hold them to it (§9).
-- **P-6 Talk holds no money rule.** The AI service decides whether a session is admitted and what it
-  costs. Talk carries its refusals to the person and decides nothing by an amount.
+- **P-6 Talk holds no money rule and shows no count of money or allowance.** The AI service decides
+  whether a session is admitted and when the allowance ends it.
 
 ## §2 Vocabulary
 
@@ -51,98 +57,121 @@ I-7); the pass door and the AI clients of the Coach engine.
   several in order when a connection is bridged (§5.5).
 - **D-3 Settled, unsettled.** A turn's words are *unsettled* while they arrive as `text` deltas and
   *settled* once its `turn` message has given its final text.
-- **D-4 Passage.** The span of today's page a take writes: every session's text, in order.
-- **D-5 Mark.** A device row, which does not sync, naming the take in progress: its day, its
-  sessions' `callId`s in order, the UTF-8 byte length of the page's text before the passage, and the
-  UTF-8 byte length of the passage as last saved.
+- **D-4 Passage.** The span of today's page a take writes: every session's part, in order.
+- **D-5 Mark.** The device row `talkTake` of `device/journal`, which does not sync. It names the
+  take in progress: its day, the UTF-8 byte length of the page's text before the passage, and for
+  each session in order its `callId`, the byte length of its part as last saved, and the device's
+  time when it was last heard from.
 
 ## §3 Where things live
 
 | Part | iPhone | Web |
 |---|---|---|
 | The pause rule, the passage and the take's states: pure, no I/O | `JournalDomain` | `web/src/products/journal/domain/` |
+| The save that writes spoken words and the mark together, `SaveSpoken` | `JournalDomain` | the same folder |
 | Their stories | `packages/api-contract/journal/talk/` | the same files |
 | A pass for a use, and the live connection | `WindmillPlatform`, beside the AI client | `web/src/platform/ai/` |
 | Microphone capture and conversion | the app's journal room | `web/src/products/journal/talk/` |
-| The mark | the device scope's row `talkTake` | the same |
 
+- The journal's registry gains the device row `talkTake`, kept on the device only. The registry's
+  version rises with it and its minimum does not.
 - The AI client MUST offer a pass for a named use without a Coach profile, and the live connection
   MUST obey the client's rules for a pass: memory only, dropped when the seat changes
   (Coach engine INV-1).
-- Talk's use is `journal.talk`, version 1. The backend lists it among the uses it signs for.
+- Talk's use is `journal.talk`, version 1.
 - The live connection sends the pass as `Authorization: Bearer` on the iPhone and as the second
   offered subprotocol in a browser, beside `wm-live.v1`. It sends no cookie and no installation
   credential.
 
 ## §4 Who may talk
 
-Talk is part of Windmill One. What the button does, by the person's state:
+Talk is part of Windmill One. When the button is pressed the device reads the backend's
+`GET /v1/subscription` and the AI service's `GET /v1/allowance`, before the microphone opens, so a
+person is told why before they speak. It stops at the first row that holds:
 
 | State | Read from | Talk does |
 |---|---|---|
 | Signed out | the shell | The button is shown and opens the sign-in door. (R-4) |
-| No Windmill One | `GET /v1/allowance`: `capabilities.transcription` false with plan none | Opens the store door [subscriptions](subscriptions.md) designs. |
-| Windmill One with no funded period | `funding_required` | Says Talk returns when the period is paid. |
-| Allowance used | `subject_exhausted` | Says when it returns. |
-| Another request running | `concurrency_exhausted` | Says so; nothing is recorded. |
-| This build is retired | the pass door's `client-update-required` | Asks for an update. |
-| Talk is off | the pass door's 404 or `anonymous_ai_unavailable`; the live door's `provider_unavailable` or `paused` | Says Talk is not available now. |
 | Offline | no connection | Says Talk needs a connection, and typing goes on. |
 | Microphone refused | the system | Points to Settings. |
+| This build is retired | the pass door's `client-update-required` | Asks for an update. |
+| No Windmill One | the subscription's `windmillOne` false | Opens the store door [subscriptions](subscriptions.md) designs. |
+| Windmill One with no funded period | `windmillOne` true and the allowance's `capabilities.transcription` false; the live door's `funding_required` | Says Talk returns when the period is paid. |
+| Allowance used | `subject_exhausted` | Says when it returns. |
+| Another request running | `concurrency_exhausted` | Says so; nothing is recorded. |
+| Busy | `busy`, `rate_limited`, `accounting_unavailable`, from either door | Says to try again in a moment. |
+| Talk is off | the pass door's 404 or `unavailable`; the live door's `provider_unavailable` or `paused` | Says Talk is not available now. |
+| A defect | `invalid_request`, `conflict`, `too_large`, `untrusted-origin`, every `pass_` code but one `pass_expired`, an answer that cannot be read | Says Talk is not available now, and is reported. |
 
-- The device reads `GET /v1/allowance` when the button is pressed, before the microphone opens, so
-  a person is told why before they speak.
-- No screen states an amount of money.
+- A refusal of the upgrade for `pass_expired` fetches a new pass and tries once more. A browser
+  cannot read why an upgrade failed, so it does the same once for any failed upgrade.
 - Wherever Talk is offered, the product says that Windmill keeps no audio and that the service that
   writes it down keeps it for 30 days. The microphone permission text says the same. Neither names a
-  provider; the privacy page does. (R-3; AI service R-11)
+  provider; the privacy page does. (R-3; AI service R-11) The sentence is true of the provider the
+  AI service calls today; its fallback is not switched on until the same is known of it.
 
 ## §5 The take
 
 ### §5.1 Open
 
-1. The device checks §4's states in the table's order and stops at the first that holds.
+1. The device checks §4's states.
 2. It mints a `callId`, writes the mark, and opens the live door,
-   `GET /v1/calls/{callId}/transcription`.
-3. The microphone opens when `started` arrives, so nothing is recorded that cannot be written down.
-   A first message `failed` ends the take with its code as §4 maps it, and clears the mark.
+   `GET /v1/calls/{callId}/transcription?label=talk`.
+3. Until `started` arrives Talk shows that it is connecting, and the microphone is closed, so
+   nothing is recorded that cannot be written down. A first message `failed` ends the take with its
+   code as §4 maps it, and clears the mark.
 4. Talk sends no `context` frame and names no language.
+5. A take is not opened within `END_WAIT` of the end of the day.
 
 ### §5.2 Audio and pauses
 
-- The device sends 16-bit little-endian PCM, mono, 24 kHz, in frames of `FRAME`, as they are
-  captured.
-- **The pause rule.** A frame's level is the RMS of its samples in dBFS. The floor is the lowest
-  one-second mean level of the last 10 s. A frame is speech when its level is at least
-  `SPEECH_OVER_FLOOR` above the floor and at least `SPEECH_MIN`. The device sends `commit` when
-  speech since the last commit has lasted `MIN_TURN` and `PAUSE` of frames that are not speech has
-  followed it.
+- The device captures with the system's voice processing, automatic gain, noise suppression and
+  echo cancellation all off, and sends 16-bit little-endian PCM, mono, 24 kHz, in frames of `FRAME`
+  (2,400 samples), as they are captured.
+- **The pause rule** works in whole numbers, so two implementations agree to the frame.
+  - A frame's *energy* is the sum of its samples' squares divided by 2,400, rounded down.
+  - Frames are counted from a session's first. Each ten in a row are a *block*, whose energy is the
+    sum of its frames' energies divided by ten, rounded down.
+  - The *floor* is the lowest energy among the last ten whole blocks. Before one whole block exists
+    it is zero.
+  - A frame is *speech* when its energy is at least ten times the floor and at least `SPEECH_MIN`.
+  - The device sends `commit` after the frame that makes `PAUSE` of frames in a row that are not
+    speech, once the speech frames since the last commit number at least `MIN_TURN`. The counts
+    start again at a commit and at a new session.
 - The service commits a turn itself at its `MAX_TURN`. A pause the rule misses delays when words
   settle and loses none of them.
 
 ### §5.3 Words
 
 - A `text` delta appends to its turn's unsettled words. A `turn` message replaces that turn's words
-  with its final text and settles them. Turns are placed in turn order whatever order they settle
-  in.
-- The passage starts as a new paragraph after the page's text. A session's part of it is its
-  settled and unsettled turns in order, joined by one space, until the session's `ended` or `failed`
-  arrives; then it is that message's `text`, whole.
-- The device shows the whole passage as it changes. It saves settled words only: at each `turn`, and
-  at each session's end, the page is saved through the page's ordinary save with the page's text and
-  the passage's settled part, and the mark's lengths are written in the same local write.
-- A page Talk has written into has `source` `spoken`, and typing does not change it back.
-- While a take runs, the page takes no typing. One writer changes a page's text at a time.
+  with its final text and settles them; a later delta for that turn is ignored.
+- **A session's part** is its turns that hold text, in turn order whatever order they settle in,
+  joined by one space, until the session's `ended` or `failed` arrives; then it is that message's
+  `text`, whole.
+- **The passage** is the sessions' parts joined by one space. It follows the page's text, with its
+  trailing whitespace removed, after a blank line; on an empty page it stands alone.
+- **Showing.** The device shows the whole passage as it changes. Unsettled words are shown only:
+  they are never in the editor's document or its draft.
+- **Saving.** At each `turn`, and at each session's end, `SaveSpoken` saves the page with every
+  settled turn in place, and writes the mark's lengths in the same local write. It replaces the
+  page's text whole, as typing does, and never carries a page into another day.
+- A page Talk has written into has `source` `spoken`, and typing keeps it.
+- While a take runs, the page takes no typing on that device, and in a browser no other tab types
+  on it.
+- A take stops at the last whole turn that fits the page's size limit, and says the page is full.
 
 ### §5.4 End
 
-A take ends when the person ends it, at `TAKE_MAX`, at the last second the allowance covers
-(`started.remainingSeconds`), when the day changes, or when the app leaves the foreground (R-5).
-The last minute before a limit is counted down.
+A take ends when the person ends it; at `TAKE_MAX`, whose last minute is counted down; `END_WAIT`
+before the day ends; when the app leaves the foreground (R-5); when the system takes the microphone
+for a call, an alarm or its assistant, or the microphone's device goes; and when capture fails.
 
 1. The microphone closes at once. The device sends `end`.
-2. It waits `END_WAIT` for `ended`, places its `text`, saves, and clears the mark.
-3. With no `ended` in that time the take ends with the words it has, and the mark stays for §5.6.
+2. It waits `END_WAIT` for `ended`, places its `text`, saves, and clears the mark. On the iPhone it
+   asks the system for that long when it has left the foreground.
+3. With no `ended` in that time it saves the unsettled words as they arrived, and the mark stays
+   for §5.6.
+4. An ended take offers Undo once, which removes its passage in one save.
 
 A session the service ends is read the same way: its `text` is placed and saved.
 
@@ -150,37 +179,52 @@ A session the service ends is read the same way: its `text` is placed and saved.
 |---|---|
 | `ended` `cut` with `idle` | ends; the words stay. Talk says it stopped listening. |
 | `ended` `cut` with a refusal of the next slice | ends; the words stay; §4 says why. |
-| `ended` `cut` with `restarting` or `paused`; `failed` after `started` | is bridged (§5.5). |
+| `ended` `cut` with `paused` or `restarting` | ends; the words stay; Talk says it is not available now. |
+| `failed` `provider_failed` after `started` | is bridged (§5.5). |
+| any other `failed` after `started` | ends; the words stay; §4 says why. |
 
 ### §5.5 A connection lost
 
-A session whose connection closes or errors without `ended` or `failed`, and one the table above
-names, is *bridged*:
+A connection is lost when it closes or errors without `ended` or `failed`, and when the device's
+own check says it is dead: audio waiting to be sent passes `LIVENESS`, or on the iPhone a ping goes
+unanswered that long. A lost session, and one the table above names, is *bridged*:
 
 1. The microphone stays open. The device keeps what it captures in memory, at most `BRIDGE_WAIT` of
    it, and opens a new session under a new `callId`, added to the mark.
-2. When the new session answers `started`, the device sends what it kept, then the live audio.
-3. With no `started` within `BRIDGE_WAIT`, or on any refusal, the take ends with the words it has.
-4. The lost session's text is read from `GET /v1/calls/{callId}/result` once the service has closed
-   it, and replaces that session's part of the passage.
+2. A new session refused `concurrency_exhausted` is tried again within `BRIDGE_WAIT`: the lost
+   session can hold its place for some tens of seconds.
+3. When the new session answers `started`, the device sends what it kept, then the live audio. A
+   person who ends the take meanwhile is answered the same way: the kept audio is sent, then `end`.
+4. With no `started` within `BRIDGE_WAIT`, or on any other refusal, the take ends with its words.
+5. The lost session's `text` is read from `GET /v1/calls/{callId}/result`, every `RESULT_POLL`
+   while the service answers that the session is still open, and replaces that session's part of
+   the passage. A session whose result is gone or unknown keeps the part it has.
 
 - Audio sent into a failing connection and never transcribed is not sent again, so nothing is
   written twice. Words spoken in that moment can be missing.
 - A take is bridged at most `MAX_BRIDGES` times.
 - This is the only audio a device holds: at most `BRIDGE_WAIT` of it, in memory, during a bridge.
 
-### §5.6 After the process ends
+### §5.6 Recovery
 
-When the journal room opens and a mark exists, the device reads each marked session's result while
-the service still holds it (`RECOVER_FOR` from the session's start by the device's clock).
+When the journal room opens or returns to the foreground and a mark exists, the device recovers
+it, once it has pulled the journal's scope whole.
 
-- It replaces the passage with the sessions' texts only while the page's text after the mark's first
-  length is exactly the passage the mark recorded. Otherwise it changes nothing.
-- Either way it clears the mark once every session has answered, or `RECOVER_FOR` has passed.
+- A mark whose day is no longer today, or whose seat is no longer the device's, is cleared and
+  nothing is written.
+- Otherwise the device reads the result of each marked session heard from within `RECOVER_FOR`. A
+  session that answers with its text has its part replaced by it; one whose result is gone or
+  unknown keeps its part.
+- It writes only while the page's text after the mark's first length is exactly the parts the mark
+  recorded. Otherwise it changes nothing.
+- It clears the mark once every session has answered or `RECOVER_FOR` has passed for it.
 - It never opens a session and never records.
 
 - **INV-1.** A device writes no audio to storage and holds none in memory beyond §5.5.
-- **INV-2.** Only settled words are saved to a page, and a take changes no text but its own passage.
+- **INV-2.** On the device that runs a take, nothing but the take changes the page's text while it
+  runs, and only settled words are saved, but for the end §5.4 step 3 names. A change another
+  device makes to the same page meanwhile meets the take's saves as it would meet typing: the later
+  save stands.
 - **INV-3.** A device sends audio only while a take is running and the app is in the foreground.
 - **INV-4.** Nothing of a take is logged or reported: no audio, no level, no word, no `callId` and
   no pass.
@@ -188,14 +232,15 @@ the service still holds it (`RECOVER_FOR` from the session's start by the device
 ## §6 What a person sees
 
 What a person sees is built only from boards marked ✅ Ready for dev. The boards approved on
-2026-11-08 draw a finished recording written down at the end (Journal · iOS 03.3P to 03.6P); R-1
-replaces that interaction, so Talk's live states are drawn again and approved before they are built.
-The boards for the first microphone request (03.1P), a refused microphone (03.2P), offline (03.7P)
-and the largest text (03.8P) keep their place, with §4's sentence in the permission text.
+2026-11-08 draw a finished recording written down at the end (Journal · iOS 03.3P to 03.6P, and
+03.8P at the largest text); R-1 replaces that interaction, so Talk is drawn again and approved
+before it is built. The first microphone request (03.1P), a refused microphone (03.2P) and offline
+(03.7P) keep their place, with their words checked against live Talk and §4's sentence.
 
-The design MUST draw: listening with words arriving; unsettled words told apart from settled ones;
-ending; the last minute; a take that ended by itself, for each cause §5.4 names; a bridge, which
-SHOULD be quiet; every state of §4; and the web's twins of each.
+The design MUST draw, for the iPhone and the web: connecting; listening with words arriving;
+unsettled words told apart from settled ones; ending; the last minute; Undo of a take; a take that
+ended by itself, for each cause §5.4 names; a bridge, which SHOULD be quiet; every state of §4; and
+each at the largest text.
 
 ## §7 The web
 
@@ -204,12 +249,14 @@ The web's Talk moves to the same behaviour after the iPhone's (R-6).
 - It captures with an audio worklet, converts to the door's format in the browser, and runs the same
   domain code against the same stories.
 - A take runs in one tab. The tab takes a browser lock named for the day's page before it writes
-  the mark, and another tab shows Talk as running elsewhere.
+  the mark, and another tab shows Talk as running elsewhere and takes no typing on that page.
 - Once the web's bundle has moved, `POST /v1/journal/transcribe` answers `410`
-  `client-update-required`, and a bundle that still calls it reloads. The route, the backend's
-  transcriber, its voice ration and its provider key for transcription are then deleted
-  (AI service I-8).
+  `client-update-required`, as gym's retired routes do, and a bundle that still calls it reloads.
+  The backend's transcriber, its voice ration, its provider key and their configuration are then
+  deleted (AI service I-8).
 - The web's held recording, its Download and its retry of a refused take retire with the route.
+- Should the web's move not land before the backend's transcription model shuts down on
+  2027-02-26, Talk on the web is off from that day until it does.
 
 ## §8 What the backend does
 
@@ -218,25 +265,33 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 
 ## §9 Testing
 
-- **Stories.** `packages/api-contract/journal/talk/pauses.json` gives sequences of frame levels and
-  the frames at which a commit is sent. `takes/` gives scripts: the person's acts, the service's
-  messages and the connection's faults in, and out the frames sent, the page's text and the saved
-  text after each step, the mark, and how the take ends. Each language runs every file, and a story
-  lands before the rule it pins.
+- **Stories.** `packages/api-contract/journal/talk/pauses.json` gives sequences of frame energies
+  and the frames after which a commit is sent: made-up ones for each clause of the rule, and
+  recorded ones from a quiet room, a car, a café, earbuds and a whisper. `takes/` gives scripts:
+  the person's acts, the service's messages and the connection's faults in, and out the frames
+  sent, the page's text and the saved text after each step, the mark, and how the take ends. They
+  cover every row of §5.4's table, each step of §5.5 and §5.6, a turn that settles out of order, an
+  empty turn, a take across the page's size limit, and typing that keeps `spoken`. Each language
+  runs every file, and a story lands before the rule it pins.
 - **The service played.** No test in CI calls the AI service or a provider. Tests play the live
   door from `packages/api-contract/ai`.
 - **Through the real door.** Before a product screen depends on it, each surface drives a take
   through the pass door and the AI service on a local stack with a played provider: a take that
-  ends, one cut by the allowance, one bridged, and one recovered after the process is killed. Each
-  checks one settled charge a session and that no log holds a word.
+  ends, one cut by the allowance, one bridged, one whose connection dies silently, and one recovered
+  after the process is killed. Each checks one settled charge a session and that no log holds a
+  word.
 - **On a device.** A take against the real provider on a physical iPhone is part of the AI
   service's billing check, with spending the owner authorises.
 
 ## §10 Observability
 
-- Events, with no word of the person's: `journal_talk_refused` with the code and whether it came
-  before or during a take; `journal_talk_take` when a take ends, with how it ended, its code, its
-  length in seconds as a bucket, its turns and its bridges as counts.
+- Events, with no word of the person's:
+  - `journal_talk_refused`, with the code and whether it came before or during a take;
+  - `journal_talk_started`;
+  - `journal_talk_ended`, with how it ended, its code, its length in seconds as a bucket, its turns,
+    the turns the service had to commit itself, and its bridges as counts;
+  - `journal_talk_undone` and `journal_talk_recovered`, the second with how many sessions answered.
+- The web's present `journal_talk_take` and `journal_talk_retry` retire with its held recording.
 - Sentry, under static names: `ai-pass` and `ai-call` as the AI client reports them;
   `journal-talk-capture` for a microphone or conversion failure; `journal-talk-recover` for a
   recovery that could not read a result it should have. A refusal a person can act on is an event
@@ -249,16 +304,18 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 | Name | Value | Whose |
 |---|---|---|
 | `TAKE_MAX` | 10 min (R-2) | Talk's |
-| `FRAME` | 100 ms, 4,800 bytes | Talk's |
-| `PAUSE` | 700 ms | the pause rule's |
-| `SPEECH_OVER_FLOOR`, `SPEECH_MIN` | 10 dB, −50 dBFS | the pause rule's |
-| `MIN_TURN` | 1 s, the service's | the live door's |
+| `FRAME` | 100 ms: 2,400 samples, 4,800 bytes | Talk's |
+| `PAUSE` | 7 frames | the pause rule's |
+| `MIN_TURN` | 10 speech frames, the service's 1 s | the pause rule's |
+| `SPEECH_MIN` | an energy of 10,737, which is −50 dBFS | the pause rule's |
+| `LIVENESS` | 2 s | Talk's |
 | `BRIDGE_WAIT` | 10 s, the service's `LIVE_BURST` | Talk's |
 | `MAX_BRIDGES` | 3 | Talk's |
 | `END_WAIT` | 15 s, over the service's `LIVE_CLOSE_WAIT` | Talk's |
-| `RECOVER_FOR` | 10 min, the service's `RESULT_LINGER` | Talk's |
+| `RESULT_POLL` | 5 s | Talk's |
+| `RECOVER_FOR` | 10 min from when a session was last heard, the service's `RESULT_LINGER` | Talk's |
 
-## §12 Gaps this build closes
+## §12 Gaps this build closes, and what it asks of others
 
 - The iPhone app reads nothing about Windmill One or an allowance, has no microphone code and no
   microphone permission text.
@@ -267,6 +324,16 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 - The web's copy says no audio is kept anywhere, which the provider's 30 days makes untrue.
 - The live door refuses every session in production until its audio billing is verified, and a paid
   period funds no grant in the AI service yet.
+
+Asked of the AI service, for its own tree:
+
+- A session's result can answer that it is gone in the instant between its settling and its last
+  message; Talk reads once more after `RESULT_POLL`, and the service should not answer so.
+- A session whose connection has died holds one of the account's calls for some tens of seconds; a
+  shorter rule for a dead socket would let a bridge through sooner.
+
+The build makes false, and corrects in the same change, the sync engine's line that transcription
+stays a backend route and the journal architecture's account of Talk.
 
 ## §13 Rulings
 
