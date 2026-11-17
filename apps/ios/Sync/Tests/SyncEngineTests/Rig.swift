@@ -46,7 +46,7 @@ struct Rig {
   init(account: String? = nil, token: SessionToken? = SessionToken("token-1"), registry: Registry = Rig.probe,
        limits: Limits = Limits(), slicing: WriterSlicing = .measured, drivesLoops: Bool = false, bindings: [any ProductBinding] = [],
        crashPoints: CrashPoints = .none, path: String? = nil, pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] },
-       telemetry: any Telemetry = NoopTelemetry(), freshHelloFallback: Bool = true) throws {
+       telemetry: any Telemetry = NoopTelemetry(), freshHelloFallback: Bool = true, writerObserver: WriterObserver? = nil) throws {
     self.slicing = slicing
     clock = SimClock(wallMs: Self.startMs)
     random = QueuedRandom(seed: 7)
@@ -71,7 +71,7 @@ struct Rig {
     }
     engine = try Rig.engine(over: store, clock: clock, random: random, transport: transport, tokens: tokens, forkGuard: forkGuard,
                             connectivity: connectivity, slicing: slicing, drivesLoops: drivesLoops, bindings: bindings, events: events,
-                            telemetry: telemetry)
+                            telemetry: telemetry, writerObserver: writerObserver)
   }
 
   // Another process over the same store: the engine as a relaunch builds it.
@@ -83,11 +83,12 @@ struct Rig {
   static func engine(over store: Store, clock: SimClock, random: QueuedRandom, transport: ScriptedTransport,
                      tokens: InMemoryTokenStore, forkGuard: InMemoryForkGuardStore, connectivity: SwitchedConnectivity,
                      slicing: WriterSlicing, drivesLoops: Bool, bindings: [any ProductBinding], events: EventLog,
-                     telemetry: any Telemetry = NoopTelemetry()) throws -> SyncEngine {
+                     telemetry: any Telemetry = NoopTelemetry(), writerObserver: WriterObserver? = nil) throws -> SyncEngine {
     try SyncEngine(
       config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops, slicing: slicing), bindings: bindings, store: store,
       transport: transport, tokens: tokens, forkGuard: forkGuard, clock: clock.engineClock, random: random,
-      identities: Identities(random: random), connectivity: connectivity, tap: { events.append($0) }, telemetry: telemetry)
+      identities: Identities(random: random), connectivity: connectivity, tap: { events.append($0) }, telemetry: telemetry,
+      writerObserver: writerObserver)
   }
 
   // The changes of the active replica announced so far (§7.12), each as "previous -> replica".

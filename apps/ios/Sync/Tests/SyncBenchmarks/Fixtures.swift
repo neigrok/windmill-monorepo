@@ -26,17 +26,19 @@ final class Phone: Sendable {
   let engine: SyncEngine
   let keys: Keys
 
-  init(store: Store, transport: any SyncTransport, keys: Keys = Keys()) throws {
+  init(store: Store, transport: any SyncTransport, keys: Keys = Keys(), writerObserver: WriterObserver? = nil) throws {
     self.store = store
     self.keys = keys
     engine = try SyncEngine(
       config: EngineConfig(appVersion: "bench", surface: .ios, drivesLoops: false), store: store, transport: transport,
-      tokens: keys.tokens, forkGuard: keys.forkGuard, clock: .system, random: SystemRandom(), connectivity: keys.connectivity)
+      tokens: keys.tokens, forkGuard: keys.forkGuard, clock: .system, random: SystemRandom(), connectivity: keys.connectivity,
+      writerObserver: writerObserver)
   }
 
   static func onDisk(_ path: URL, registry: Registry, transport: any SyncTransport, keys: Keys = Keys(),
-                     crashPoints: CrashPoints = .none) throws -> Phone {
-    try Phone(store: Store(path: path.path, registry: registry, crashPoints: crashPoints), transport: transport, keys: keys)
+                     crashPoints: CrashPoints = .none, writerObserver: WriterObserver? = nil) throws -> Phone {
+    try Phone(store: Store(path: path.path, registry: registry, crashPoints: crashPoints), transport: transport, keys: keys,
+              writerObserver: writerObserver)
   }
 
   // Engine start, and a sign-in that nothing written signed out makes complete at once.

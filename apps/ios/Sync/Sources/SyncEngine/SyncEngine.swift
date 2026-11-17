@@ -5,6 +5,18 @@ import SyncReplica
 import SyncStore
 import Synchronization
 
+public struct WriterTiming: Sendable {
+  public enum Operation: String, Sendable { case commit, engine }
+  public enum Outcome: String, Sendable { case success, failure }
+  public let operation: Operation
+  public let queue: Duration
+  public let held: Duration
+  public let outcome: Outcome
+}
+
+// Runs synchronously after writer release; observation is outside the measured hold.
+public typealias WriterObserver = @Sendable (WriterTiming) -> Void
+
 // The engine (design §5.3): the `Replica` products commit and read through, the loops that send, release, pull and
 // follow live, and the views UI modules observe. Construction runs the start work that must precede the first frame;
 // `start()` says hello and starts the loops.
@@ -30,9 +42,11 @@ public final class SyncEngine: Replica {
 
   public convenience init(config: EngineConfig, bindings: [any ProductBinding] = [], store: Store, transport: any SyncTransport,
                           tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
-                          connectivity: any Connectivity, telemetry: any Telemetry = NoopTelemetry()) throws {
+                          connectivity: any Connectivity, telemetry: any Telemetry = NoopTelemetry(),
+                          writerObserver: WriterObserver? = nil) throws {
     try self.init(config: config, bindings: bindings, store: store, transport: transport, tokens: tokens, forkGuard: forkGuard,
-                  clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity, telemetry: telemetry)
+                  clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity, telemetry: telemetry,
+                  writerObserver: writerObserver)
   }
 
   // Construction runs engine start's first half (`EngineCore.launch`). `identities` mints every id and actor; the
@@ -41,9 +55,10 @@ public final class SyncEngine: Replica {
   package init(config: EngineConfig, bindings: [any ProductBinding], store: Store, transport: any SyncTransport,
                tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
                identities: any IdentitySource & Sendable, connectivity: any Connectivity,
-               tap: (@Sendable (EngineEvent) -> Void)? = nil, telemetry: any Telemetry = NoopTelemetry()) throws {
+               tap: (@Sendable (EngineEvent) -> Void)? = nil, telemetry: any Telemetry = NoopTelemetry(),
+               writerObserver: WriterObserver? = nil) throws {
     let core = EngineCore(config: config, bindings: bindings, store: store, tokens: tokens, clock: clock, random: random,
-                          identities: identities, connectivity: connectivity, telemetry: telemetry)
+                          identities: identities, connectivity: connectivity, telemetry: telemetry, writerObserver: writerObserver)
     if let tap { core.publisher.tap(tap) }
     try core.launch(forkGuard: forkGuard)
 
@@ -122,7 +137,7 @@ public final class SyncEngine: Replica {
     -> (outcome: CommitOutcome?, value: T) {
     let committed: (outcome: CommitOutcome?, value: T)
     do {
-      committed = try core.write { store, instance in
+      committed = try core.write(operation: .commit) { store, instance in
         try store.commit(in: scope, instance: instance, identities: core.identities) { [core, deviceNow = instance.deviceNow, actor = instance.actor.text] tx in
           let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: deviceNow, actor: actor)
           defer { context.end() }
@@ -154,7 +169,7 @@ public final class SyncEngine: Replica {
                            segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
     let committed: (outcome: ActCommitOutcome?, value: T)
     do {
-      committed = try core.write { store, instance in
+      committed = try core.write(operation: .commit) { store, instance in
         var newMints: Set<ScopeRef> = []
         return try store.commitAct(instance: instance, identities: core.identities, prepare: { [core] tx in
           let context = try TransactionActContext(tx, core: core, instance: instance)
@@ -386,6 +401,7 @@ final class EngineCore: Sendable {
   let doubts = Mutex(Doubts())
   let failedPushScopes = Mutex<[[UInt8]: [ScopeRef: PushFailure]]>([:])
   let writers = WriterLine()
+  let writerObserver: WriterObserver?
   let slices: Mutex<WriterSlices>
   // The thread inside a write, 0 when none: a write nested in one on the same thread (an engine call from a commit's
   // body) stops with a message instead of waiting on itself.
@@ -393,7 +409,7 @@ final class EngineCore: Sendable {
 
   init(config: EngineConfig, bindings: [any ProductBinding], store: Store, tokens: any TokenStore, clock: EngineClock,
        random: any RandomSource, identities: any IdentitySource & Sendable, connectivity: any Connectivity,
-       telemetry: any Telemetry = NoopTelemetry()) {
+       telemetry: any Telemetry = NoopTelemetry(), writerObserver: WriterObserver? = nil) {
     self.config = config
     self.bindings = bindings
     self.store = store
@@ -402,6 +418,7 @@ final class EngineCore: Sendable {
     self.random = random
     self.identities = identities
     self.connectivity = connectivity
+    self.writerObserver = writerObserver
     let telemetry: any Telemetry = telemetry is NoopTelemetry || telemetry is BoundedTelemetry ? telemetry : BoundedTelemetry(telemetry)
     self.telemetry = telemetry
     diagnostics = TransportDiagnostics(telemetry)
@@ -429,18 +446,28 @@ final class EngineCore: Sendable {
   // while a scope waits for its governing record's create, or that touches a governing record and so may change the
   // subscription set, wakes both, which pull and follow the scopes that joined it (§7.9). One that takes rows out of
   // every view wakes the sweep.
-  func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
-    try timedWrite(action).value
+  func write<Value>(operation: WriterTiming.Operation = .engine, _ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
+    try timedWrite(operation: operation, action).value
   }
 
   // The same, and how long it held the writer on the engine's clock, which sizes the next sliced step (§2.5).
-  func timedWrite<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> (value: Value, held: Duration) {
+  func timedWrite<Value>(operation: WriterTiming.Operation = .engine,
+                         _ action: (Store, inout Instance) throws -> Written<Value>) throws -> (value: Value, held: Duration) {
     var thread: UInt64 = 0
     pthread_threadid_np(nil, &thread)
     precondition(writingThread.load(ordering: .acquiring) != thread,
                  "an engine write inside another: a commit's body reads through its context and writes nothing")
+    let queued = writerObserver.map { _ in ContinuousClock.now }
     writers.enter()
-    defer { writers.leave() }
+    let acquired = queued.map { _ in ContinuousClock.now }
+    var outcome = WriterTiming.Outcome.failure
+    defer {
+      let completed = acquired.map { _ in ContinuousClock.now }
+      writers.leave()
+      if let writerObserver, let queued, let acquired, let completed {
+        writerObserver(WriterTiming(operation: operation, queue: acquired - queued, held: completed - acquired, outcome: outcome))
+      }
+    }
     var written: (value: Value, change: StoreChange)?
     let held: Duration
     do {
@@ -469,6 +496,7 @@ final class EngineCore: Sendable {
       wakes.live.kick()
     }
     if change.released { wakes.sweeper.kick() }
+    outcome = .success
     return (value, held)
   }
 

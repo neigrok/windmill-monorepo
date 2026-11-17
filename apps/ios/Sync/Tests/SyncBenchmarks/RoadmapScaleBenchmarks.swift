@@ -6,6 +6,7 @@ import SyncModelServer
 import SyncReplica
 import SyncStore
 import SyncTesting
+import Synchronization
 import Testing
 
 extension Benchmarks {
@@ -52,8 +53,10 @@ extension Benchmarks {
       try await Bench.inDirectory { directory in
         let path = directory.appending(path: "roadmap.sqlite")
         let keys = Phone.Keys()
-        var phone = try Phone.onDisk(path, registry: registry, transport: network, keys: keys)
+        let writers = ScaleWriterSamples()
+        var phone = try Phone.onDisk(path, registry: registry, transport: network, keys: keys, writerObserver: { writers.record($0) })
         if scenario == "pending" {
+          writers.phase = "initialStart"
           await phone.engine.start()
           let file = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["SYNC_ROADMAP_SCALE_FIXTURES"]))
             .appendingPathComponent("pending-entries.json")
@@ -63,7 +66,9 @@ extension Benchmarks {
             return Planned((), ReplicaBatch(writes: entries.map { .replica(id, .putEntry($0)) }))
           }
         } else {
+          writers.phase = "initialSignIn"
           try await phone.signIn("A", token: network.server.token(for: "A"))
+          writers.phase = "firstPull"
           let started = ContinuousClock.now
           let rounds = await phone.pull()
           Bench.report("roadmap scale · \(scenario) · first pull", [
@@ -82,9 +87,11 @@ extension Benchmarks {
           }
         }
 
+        writers.phase = "open"
         let opened = ContinuousClock.now
-        phone = try Phone.onDisk(path, registry: registry, transport: network, keys: keys)
+        phone = try Phone.onDisk(path, registry: registry, transport: network, keys: keys, writerObserver: { writers.record($0) })
         let openMs = Bench.ms(ContinuousClock.now - opened)
+        writers.phase = "read"
         let read = ContinuousClock.now
         let count = try phone.engine.read(scope) { reader in
           try reader.drawn("tag").count + reader.drawn("link").count
@@ -95,16 +102,19 @@ extension Benchmarks {
           ("storage", "SQLite WAL FULL"), ("cache", "same-process reopen; OS pages may be warm"), ("sourceHead", sourceHead)])
         Bench.report("roadmap scale · \(scenario) · read", [("ms", String(readMs)), ("records", String(count)), ("sourceHead", sourceHead)])
 
+        writers.phase = "gesture"
         let edited = ContinuousClock.now
         _ = try phone.commit(Gesture(changes: [.update("tag", "step0", ["label": "Edited"])]), in: scope)
         Bench.report("roadmap scale · \(scenario) · gesture", [("ms", String(Bench.ms(ContinuousClock.now - edited))), ("sourceHead", sourceHead)])
         #expect(try phone.engine.read(scope) { try $0.drawn("tag", "step0")?.values["label"] } == "Edited")
 
+        writers.phase = "signIn"
         let signed = ContinuousClock.now
         try await phone.signIn("A", token: network.server.token(for: "A"))
         Bench.report("roadmap scale · \(scenario) · sign in", [("ms", String(Bench.ms(ContinuousClock.now - signed))), ("sourceHead", sourceHead)])
         if scenario == "pending" {
           let before = try phone.store.read { try $0.replica($0.activeReplica())?.outbox.count }
+          writers.phase = "firstPull"
           let started = ContinuousClock.now
           let rounds = await phone.pull(only: [.product("probe")])
           Bench.report("roadmap scale · \(scenario) · first pull", [
@@ -119,7 +129,48 @@ extension Benchmarks {
         #expect(try phone.engine.read(scope) { try $0.drawn("tag").count + $0.drawn("link").count } == expected)
         let pending = try phone.store.read { try $0.replica($0.activeReplica())?.outbox.count }
         #expect(pending == pendingCount + 1)
+        writers.report(scenario: scenario, sourceHead: sourceHead)
       }
+    }
+  }
+}
+
+final class ScaleWriterSamples: Sendable {
+  struct State {
+    var phase = "initialOpen"
+    var samples: [String: [WriterTiming]] = [:]
+  }
+  let state = Mutex(State())
+
+  var phase: String {
+    get { state.withLock { $0.phase } }
+    set { state.withLock { $0.phase = newValue } }
+  }
+
+  func record(_ timing: WriterTiming) {
+    state.withLock { state in
+      let key = [state.phase, timing.operation.rawValue, timing.outcome.rawValue].joined(separator: "/")
+      state.samples[key, default: []].append(timing)
+    }
+  }
+
+  func report(scenario: String, sourceHead: String) {
+    let groups = state.withLock { $0.samples }
+    #expect(groups["gesture/commit/success"]?.count == 1)
+    #expect(groups["firstPull/engine/success"]?.isEmpty == false)
+    for key in groups.keys.sorted() {
+      let labels = key.split(separator: "/").map(String.init)
+      let samples = groups[key]!
+      var held = Samples("held"), queue = Samples("queue")
+      for sample in samples { held.add(sample.held); queue.add(sample.queue) }
+      var fields = [("phase", labels[0]), ("operation", labels[1]), ("outcome", labels[2]), ("count", String(samples.count)),
+        ("sourceHead", sourceHead), ("coverage", "engine writer lock; excludes fixture loading; queue and hold timed separately")]
+      for (name, values) in [("held", held), ("queue", queue)] {
+        fields += [(name + "MaxMs", String(values.ms.max()!)), (name + "P50Ms", String(values.percentile(50))),
+                   (name + "P95Ms", String(values.percentile(95))), (name + "P99Ms", String(values.percentile(99))),
+                   (name + "SamplesMs", "[" + values.ms.map { String($0) }.joined(separator: ",") + "]")]
+      }
+      Bench.report("roadmap scale · \(scenario) · writer", fields)
     }
   }
 }

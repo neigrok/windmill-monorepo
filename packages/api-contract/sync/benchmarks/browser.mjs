@@ -69,26 +69,43 @@ try {
         const { BrowserSyncEngine } = await import('/src/platform/sync/engine.js');
         const { Registry } = await import(`/@fs${reference}core/registry.js`);
         const registry = new Registry(probe), name = `scale-${scenario}`;
-        const failures = [], events = [];
+        const failures = [], events = [], writerSamples = [];
+        let operation = 'initialOpen';
         const transport = { async request(endpoint, body) {
           const sent = { wall: Date.now(), mono: Math.floor(performance.now()), boot: 'scale' };
           const response = await (await fetch('/scale/api', { method: 'POST', body: JSON.stringify({ endpoint, body }) })).json();
           return { response, timing: { send: sent, recv: { wall: Date.now(), mono: Math.floor(performance.now()), boot: 'scale' } } };
         }, openLive() { return { readyState: 0, send() {}, close() {} }; } };
         const timers = { setTimeout: () => 1, clearTimeout() {} };
-        const options = { name, registry, transport, timers, telemetry: { failure: (name) => failures.push(name), event: (name) => events.push(name) } };
+        const options = { name, registry, transport, timers, telemetry: {
+          limit: 100,
+          failure: (name) => failures.push(name),
+          event: (name, properties) => {
+            events.push(name);
+            if (name === 'sync-writer') writerSamples.push({ operation, kind: operation === 'gesture' ? 'commit' : 'non-commit',
+              durationMs: properties.durationMs, queueMs: properties.queueMs });
+          },
+        } };
         let engine = await BrowserSyncEngine.open(options);
         const scope = tree;
         const check = (ok, message) => { if (!ok) throw new Error(message); };
         const result = { scenario, storage: 'Chromium IndexedDB', transport: 'HTTP to JS reference server; explicit engine rounds', browser: navigator.userAgent };
-        const measure = async (key, body) => { const start = performance.now(); const value = await body(); result[key] = +(performance.now() - start).toFixed(1); return value; };
+        const measure = async (key, body) => {
+          const previous = operation; operation = key.replace(/Ms$/, '');
+          const start = performance.now();
+          try { const value = await body(); result[key] = +(performance.now() - start).toFixed(1); return value; }
+          finally { operation = previous; }
+        };
         if (scenario === 'pending') {
+          operation = 'fixtureSeed';
           await engine.store.transact((device) => {
             const replica = device.activeReplica;
             replica.outbox = pendingEntries;
           });
         } else {
+          operation = 'initialSignIn';
           check((await engine.signIn('A')).complete, 'initial sign-in failed');
+          operation = 'initialStart';
           await engine.start();
           for (let n = 0; !engine.leader && n < 100; n++) await new Promise((resolve) => setTimeout(resolve, 10));
           check(engine.leader, 'leader not ready');
@@ -117,6 +134,7 @@ try {
         else await measure('signInMs', async () => check((await engine.signIn('A')).complete, 'returning sign-in failed'));
         if (scenario === 'pending') {
           const queued = engine.device.activeReplica.outbox.length;
+          operation = 'postAdoptionStart';
           await engine.start();
           for (let n = 0; !engine.leader && n < 100; n++) await new Promise((resolve) => setTimeout(resolve, 10));
           check(engine.leader, 'leader not ready after adoption');
@@ -136,6 +154,23 @@ try {
         result.pendingEntries = engine.device.activeReplica.outbox.length;
         check(result.records === expected.deviceRecords, 'records changed during adoption or pull');
         check(result.pendingEntries === expected.pendingEntries + 1, 'unexpected pending-entry count');
+        check(writerSamples.filter((sample) => sample.operation === 'gesture').length === 1, 'gesture writer was not observed exactly once');
+        check(writerSamples.some((sample) => sample.operation === 'firstPull'), 'first-pull writer was not observed');
+        const summaries = [];
+        for (const name of [...new Set(writerSamples.map((sample) => sample.operation))].sort()) {
+          const samples = writerSamples.filter((sample) => sample.operation === name);
+          const summary = { operation: name, kind: samples[0].kind, count: samples.length };
+          for (const field of ['durationMs', 'queueMs']) {
+            const values = samples.map((sample) => sample[field]).sort((a, b) => a - b);
+            const quantile = (q) => values[Math.max(0, Math.ceil(values.length * q) - 1)];
+            summary[field] = { max: values.at(-1), p50: quantile(0.5), p95: quantile(0.95), p99: quantile(0.99) };
+          }
+          summaries.push(summary);
+        }
+        result.writer = { coverage: 'delivered sync-writer events for changed transactions, grouped by benchmark API phase',
+          timing: 'duration includes queue wait through durable completion; integer milliseconds rounded up',
+          sampling: 'at most 100 telemetry events per minute per engine; duration capped at 60000 ms; samples may be censored',
+          summaries, samples: writerSamples };
         result.failures = failures; result.events = [...new Set(events)];
         engine.close(); return result;
       }, { scenario, reference, probe: JSON.parse(readFileSync(join(root, 'packages/api-contract/sync/probe.registry.json'), 'utf8')),
