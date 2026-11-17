@@ -43,9 +43,9 @@ export function selectCases({ browserType }) {
       assert.equal(await page.locator(liveSelector).textContent(), selectingAnnouncement({ count: 1 }));
       assert.equal(await page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).get('step')), null);
       assert.deepEqual(await page.getByRole('region', { name: BULK.region, exact: true }).evaluate((bar) => ({
-        heading: bar.firstElementChild.tagName,
-        headingText: bar.firstElementChild.textContent,
-        headingTabindex: bar.firstElementChild.getAttribute('tabindex'),
+        heading: bar.querySelector('h2').tagName,
+        headingText: bar.querySelector('h2').textContent,
+        headingTabindex: bar.querySelector('h2').getAttribute('tabindex'),
         buttons: [...bar.querySelectorAll('button')].filter((button) => !button.closest('[inert]')).map((button) => button.textContent),
       })), { heading: 'H2', headingText: selectedCount({ count: 1 }), headingTabindex: null,
         buttons: [BULK.done, BULK.recolor, deleteStepsAction({ count: 1 })] });

@@ -11,6 +11,7 @@ test('Graph Find hands the same query to the Board and retains field focus', () 
     const calls = [];
     const query = new BoardQuery({ search });
     const onQuery = verbs.callback('onIdentityQuery', {
+      requestNavigation: ({ run }) => run({}),
       boardActive, boardQueryRef: { current: new BoardQuery() },
       setBoardQuery: (next) => calls.push(['query', next]),
       switchView: (view, options) => calls.push(['switch', view, options.keepFocus]),
@@ -104,6 +105,7 @@ test('Activity hands desktop Board to Graph, preserves the tablet Board, and nev
   for (const breakpoint of ['desktop', 'tablet', 'phone']) {
     const calls = [];
     const scope = {
+      requestNavigation: ({ run }) => run({}),
       activityEnabled: breakpoint !== 'phone', feedVisible: false, breakpoint, boardActive: true,
       switchView: (view, options) => calls.push(['view', view, options.keepFocus]),
       setSelectedId: (id) => calls.push(['select', id]), openActivity: () => calls.push('open'),
@@ -145,6 +147,7 @@ test('Activity opens the chosen step and closes its panel, preserving the curren
     const calls = [];
     const graphStepReturnRef = { current: false };
     const open = verbs.callback('openActivityStep', {
+      requestNavigation: ({ run }) => run({}),
       closeActivity: () => calls.push(['close']), canvasView, graphStepReturnRef,
       address: { open: (id, source) => calls.push(['step', id, source]) },
     });

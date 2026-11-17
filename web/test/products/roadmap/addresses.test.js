@@ -15,16 +15,6 @@ function locationOf(address) {
   return { pathname: url.pathname, hash: url.hash, search: url.search };
 }
 
-// The route a view stands on at this location: routeOf reads the browser's own location.
-function routeAt(location) {
-  globalThis.window = { location };
-  try {
-    return routeOf();
-  } finally {
-    delete globalThis.window;
-  }
-}
-
 test('the shared vector holds every form for a roadmap you own and one you can only read', () => {
   assert.equal(VECTOR.cases.length, 24);
   assert.deepEqual(
@@ -52,7 +42,7 @@ for (const one of VECTOR.cases) {
     assert.deepEqual([view.inRoom, view.props.treeId], [true, one.treeId]);
 
     assert.equal(stepOf(at.hash), step);
-    assert.equal(routeAt(at), roadmap);
+    assert.equal(routeOf(at), roadmap);
 
     // The web writes the step as SkillTreeView does: the roadmap's hash with the step set, or the share page with a
     // hash that holds only the step.

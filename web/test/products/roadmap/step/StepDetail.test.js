@@ -729,7 +729,7 @@ for (const width of [390, 744, 1440]) {
         for (const section of ['Workspace', 'History']) {
           await page.locator('.st-step-section-links').getByRole('button', { name: new RegExp(section, 'i') }).click();
           assert.deepEqual(await page.locator('.st-step-pinned-actions').getByRole('button').allTextContents(), primary ? [primary] : []);
-          assert.equal(await page.getByRole('button', { name: 'Edit step', exact: true }).count(), 1);
+          assert.equal(await page.getByRole('button', { name: 'Edit name', exact: true }).count(), 1);
           assert.equal(await page.locator('.st-step-workspace-section').count(), 1);
           assert.equal(await page.locator('.st-step-history-section').count(), 1);
         }
@@ -772,43 +772,35 @@ for (const width of [390, 744, 1440]) {
     }
   });
 
-  test(`Chromium ${width}: Edit Save returns to its opener and Escape never closes the covered step`, async () => {
+  test(`Chromium ${width}: inline Save returns to its field and Escape cancels only the edit`, async () => {
     await start();
     const errors = [];
     const page = await openRoom({ viewport: { width, height: 960 }, editingEnabled: true }, errors);
     try {
       await card(page, 'Read the wind').click();
-      await page.getByRole('button', { name: 'Edit step', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Edit step', exact: true }).waitFor();
-      assert.equal(await page.locator('.st-board-step-layer').evaluate((layer) => !!layer.closest('[inert]')), true);
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      assert.equal(await page.locator('.st-board-step-layer').evaluate((layer) => !!layer.closest('[inert]')), false);
       await page.getByLabel('Name', { exact: true }).fill('Watch the wind');
       await page.keyboard.press('Escape');
-      await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Keep editing', exact: true }).waitFor();
       await page.keyboard.press('Escape');
-      await page.getByRole('dialog', { name: 'Discard draft?', exact: true }).waitFor({ state: 'detached' });
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
       assert.equal(await hash(page), '#/app/sail?step=wind');
-      assert.equal(await page.locator('.st-board-step-layer').count(), 1);
-      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
       await page.getByRole('article', { name: 'Watch the wind', exact: true }).waitFor();
-      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Edit step');
-      assert.equal(await activeIs(page), 'Edit step');
-      assert.deepEqual(await page.evaluate(() => window.editRequests), [{
-        id: 'wind', label: 'Watch the wind', description: 'Learn to spot shifts in wind direction.', color: 'sky', prerequisites: ['parts'],
-      }]);
+      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Edit name');
+      assert.deepEqual(await page.evaluate(() => window.editRequests), [{ id: 'wind', label: 'Watch the wind' }]);
       assert.equal(await page.locator('.st-board-card.is-arrived').count(), 0);
       assert.deepEqual(await calls(page), []);
-      await page.getByRole('button', { name: 'Edit step', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Edit step', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      await page.getByLabel('Name', { exact: true }).waitFor();
       await page.keyboard.press('Escape');
-      await page.getByRole('article', { name: 'Watch the wind', exact: true }).waitFor();
-      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Edit step');
+      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Edit name');
       assert.equal(await hash(page), '#/app/sail?step=wind');
       await page.keyboard.press('Escape');
       await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
       assert.deepEqual(errors, []);
-    } finally {
-      await page.context().close();
-    }
+    } finally { await page.context().close(); }
   });
 
   test(`Chromium ${width}: note discard traps focus and returns to the note opener`, async () => {
@@ -854,7 +846,7 @@ for (const width of [390, 744, 1440]) {
       await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
       assert.deepEqual(await page.locator('.st-step-pinned-actions button, .st-board-workspace').allTextContents(), []);
       assert.equal(await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).count(), 0);
-      assert.equal(await page.getByRole('button', { name: 'Edit step', exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: 'Edit name', exact: true }).count(), 0);
       assert.deepEqual(errors, []);
     } finally {
       await page.context().close();

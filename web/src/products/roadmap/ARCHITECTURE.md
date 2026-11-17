@@ -212,6 +212,14 @@ says whether a door can lead there. A dangling one (`Not found`) and a step that
 door on any surface: the pill has no chevron and opens the step, the Tree row is not a button, and no Open tree, swipe
 or toast action is offered. Such a step keeps its tree's mark and its loop's words.
 
+Roadmap reads only the shell's accepted location. Step addresses, same-URL selection entries and tree
+visits share its index; native Back/Forward targets do not reach room subscribers before acceptance.
+Step opening/closing, view switches, tree doors, sheet destinations and current-tree deletion enter
+through one shell navigation request before changing local state, history metadata or events. Nested
+adapters receive that request's transaction. Tree entry writes the old entry's metadata, the destination
+and its arrival metadata before publishing. Stale-step removal and a transferred local tree's identity
+remap are system replacements. The product currently registers no navigation guard.
+
 `room/useTreeVisit.js` goes in and comes back. Going in pushes `#/app/<treeId>`, or the share's `#/t/<treeId>` for a
 subtree gone into from a share; the entry of the tree gone into names the roadmap the person came from, and the entry
 they left keeps the step they went through, and whether that step owns the tree (a subtree's visit, above). Both are history state, never
@@ -279,7 +287,7 @@ each of its sentences that whoever reads the root reads them too.
 
 ### Attaching, changing and detaching
 
-The person who holds the tree makes the pointer on the step itself, never in Edit step: the same holder a tree visit
+The person who holds the tree makes the pointer through the Tree row on the step itself: the same holder a tree visit
 acts for, where the roadmap's session can take a write (loaded, and not rebaselining). The room hands the step
 `treeActs` (`{ view, trees, set, lapsed }`) for that person and null for anyone else, so a reader, and on a tree the
 server keeps its copy with nobody signed in and a lapsed session, see no control. `trees` reads the trees where the holder's lives (`place`). With it the Tree section stands on every step: *None* and a + on one
@@ -711,8 +719,11 @@ Dismissal returns focus to the original control or More. A late refusal preserve
 inherits nested modal isolation. Completion Undo and private Workspace stay intact. Expected browser
 permission refusals emit a failed outcome; unexpected failures report the static `roadmap-step-copy` operation.
 
-Edit step opens the existing `StepComposer` through `StepDraft`, `BoardActs.edit` and `EditNode`, retaining every
-field, dirty/discard handling, remote-change reconciliation, prerequisite checks, held deletes and write refusals.
+The owner's name, description, kind and prerequisite membership each open one inline shared-field editor.
+`InlineStepDraft` and `SaveFieldRequest` carry an immutable baseline, authored value and revision; only the active
+field reaches `BoardActs.edit` as a sparse `EditNode`. The final synchronous write boundary reads current session
+authority and tree state, refuses removed or unavailable steps and renews consent if the shown current value changed.
+Other peer fields update live. Load latest replaces only the active field; unchanged Save sends no write.
 My workspace and History use `StepWorkspace`: named checkboxes, the private note renderer, personal links and
 static activity rows. Completion snapshots name no actor; locally authored and server-authored events retain their
 known attribution. The note editor saves once, changed Cancel asks to discard, and system Back or remote closure
@@ -754,22 +765,29 @@ the title alone.
 
 ## Creating and editing steps
 
-New step on the identity row, the phone band, the empty state or the complete state opens `StepComposer`
-through the host; Edit step opens the same form from an owner's open detail on either view. A view change
-closes the composer, and the host keeps it mounted only while its detail still names an existing step.
-`BoardComposer` in `useBoardActs.js` shares the host's open, display and save guards.
+New step on the identity row, phone band, empty state or complete state opens the creation-only `StepComposer`.
+`StepDraft` owns its validation, dirty comparison, stable identity and placement. The picker changes draft
+prerequisites until Create; a view change or owner loss removes this composer. The host dispatches one
+`CreateNode` with all prerequisite edges stamped together. Failure retains the exact request for Retry. A
+successful create reveals the step in its derived column, clears only hiding query dimensions and offers targeted
+Undo. On the Graph it selects and reveals without changing Board filters.
 
-`StepDraft` owns validation, dirty comparison and placement, with an edited step replaced in the tree. The
-picker changes only draft prerequisites until Save; it groups the step and its descendants as unavailable,
-excludes them from match counts, and drops newly blocked selections with a notice that lasts until the next
-search or toggle. Deleted prerequisites leave silently. A clean Save closes without writing.
+Existing steps use the four field controls in `InlineStepEditor`. Prerequisite equality is order-insensitive;
+self and descendant choices are excluded. A selected deleted or newly blocked prerequisite leaves the selection
+with explicit review feedback. Save validates a trimmed nonempty name and dispatches only one field. Name
+activity reads the unchanged kind from the current step. Save and Cancel return focus to that field's trigger.
+Permission or deletion loss keeps authored content selectable and copyable, with no Save or protected refetch.
+The New step composer and private Workspace keep their separate draft lifetimes.
 
-The host dispatches one `CreateNode` with the request's stable id and all prerequisite edges stamped together.
-`BoardActs.edit` refuses missing, self or descendant prerequisites, diffs valid requests against the held
-projection, quiets regroup, dispatches one `EditNode`, and emits rename activity when the name changes; it
-returns quietly to the detail with no toast. Failure keeps the draft and exact request for Retry. A successful
-create reveals and wakes the step in its derived column, clears only hiding query dimensions and offers
-targeted Undo. On the Graph it selects and reveals the step without changing Board filters.
+`StepDraftProvider` lives above keyed routes, registered through `roadmapRoutes.session`. Its lazy Document-keyed
+`StepDraftSession` holds exactly one active or retained slot, bound to Auth's read-only scope identity, owner and
+epoch. It stores no persistent data. Dirty navigation uses the shell coordinator's one captured destination:
+Keep editing, Escape and backdrop retain caret; Discard admits that action once. Native unknown departure
+synchronously retains before route publication. A normal-flow, content-free 64px notice opens copyable recovery.
+Close preserves it; another field cannot replace it. Return navigates normally and clears recovery only after
+matching-token editor adoption, with current authority and conflict checks. Failed return retains the slot.
+Retained-only voluntary sign-out offers Keep draft or Discard; forced account cleanup synchronously fences and
+invalidates the slot. Stale clipboard, return and focus callbacks cannot affect a newer scope or draft.
 
 The composer sits inside its error boundary and portals to `document.body`, covering the viewport
 independently of the shell's containing blocks. At 1440px and wider the picker is anchored beside the form;
@@ -1039,8 +1057,8 @@ its failure: a hold must run and its Undo stay reachable, so that toast stands a
 The step document retains the notice with disabled actions while its existing Discard callback settles, then follows
 the published refusal state. A failed replacement keeps its actions available. When an activated notice leaves,
 focus returns to completion Undo if present or the step heading, respecting a later focus move and nested dialogs.
-StepComposer and TreePicker keep unresolved notices beneath their modal isolation and retain their drafts and focus
-contracts. Recovery never clears private Workspace. This follows approved
+The creation composer and TreePicker keep unresolved notices beneath their modal isolation. Inline shared-field
+edits keep the notice visible and retain their draft, caret and focus; their Save is disabled during rebaselining. Recovery never clears private Workspace. This follows approved
 [flow 43](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922).
 Progress-based completion Undo stays available during a structure-only replacement and rebaseline, its durable
 save waiting for the replacement's new epoch. Structure edits stay blocked during rebaselining, a

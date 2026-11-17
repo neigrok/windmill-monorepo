@@ -948,7 +948,7 @@ export class BrowserSyncEngine {
     }
   }
 
-  async finishSignOut({ choice, counted, deviceCleanup = false }) {
+  async finishSignOut({ choice, counted, deviceCleanup = false, beforeSignOutCommit }) {
     if (this.device.activeReplica.meta.state !== 'bound') throw new CommitError('sign-out requires a bound account');
     const account = this.device.activeReplica.meta.account;
     const handle = this.device.activeReplica.storageHandle;
@@ -960,6 +960,8 @@ export class BrowserSyncEngine {
       device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
       const result = signOut(device, ctx, { choice, counted });
       if (result.complete) {
+        const fence = beforeSignOutCommit?.();
+        if (fence?.then) throw new Error('sign-out fence must be synchronous');
         device.meta.clearCredential = account;
         if (deviceCleanup) device.meta.deviceCleanup = { previous: account, generation: device.meta.authGeneration };
         delete device.meta.signOut;

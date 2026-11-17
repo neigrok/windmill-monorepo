@@ -4,37 +4,8 @@ import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules, takesMark } from '../model/UnlockRules.js';
 import { LABELS, SAVE_FAILURE, TREE_TOAST, deleteFailedToast, openTreeLabel, treeBand } from '../copy.js';
+import { fieldValue, sameFieldValue } from '../step/InlineStepDraft.js';
 import { BoardQuery } from './Board.js';
-
-export class BoardComposer {
-  constructor({ owner, view = 'board', detailId, composer, acts, onOpen }) {
-    this.available = owner;
-    this.editable = this.available && detailId != null;
-    this.view = view;
-    this.detailId = detailId;
-    this.composer = composer;
-    this.acts = acts;
-    this.onOpen = onOpen;
-  }
-
-  get shown() {
-    if (!this.available) return null;
-    if (this.composer?.view && this.composer.view !== this.view) return null;
-    if (this.composer?.editing && !this.editable) return null;
-    if (this.composer?.editing && this.composer.editing !== this.detailId) return null;
-    return this.composer;
-  }
-
-  openEdit(id) {
-    if (!this.editable || id === null || id !== this.detailId) return;
-    this.onOpen({ door: 'detail', editing: id });
-  }
-
-  saveEdit(request) {
-    if (!this.shown?.editing || request.id !== this.detailId) return { ok: false };
-    return this.acts.edit(request);
-  }
-}
 
 export class BoardActs {
   constructor(collaborators) {
@@ -79,20 +50,28 @@ export class BoardActs {
 
   edit(request) {
     const c = this.collaborators;
-    if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
-    const tree = this.held ? this.held.projected(c.tree) : c.tree;
-    if (!tree.nodesById.has(request.id)) return { ok: false };
-    const gesture = editGesture(tree, request);
+    const authority = c.readEditAuthority?.() ?? { tree: c.tree, editable: c.owner, session: c.session };
+    if ((!c.active && !c.graphActive) || !authority.editable || !authority.tree) return { ok: false, ...(request.field ? { reason: 'unavailable' } : {}) };
+    if (request.field && authority.savingBlocked) return { ok: false, reason: 'blocked' };
+    const tree = this.held ? this.held.projected(authority.tree) : authority.tree;
+    const id = request.stepId ?? request.id;
+    const step = tree.nodesById.get(id);
+    if (!step) return { ok: false, ...(request.field ? { reason: 'unavailable' } : {}) };
+    if (request.field && !request.matches(c.readInlineDraft?.())) return { ok: false, reason: 'stale' };
+    if (request.field && sameFieldValue(request.field, request.value, fieldValue(step, request.field))) return { ok: true, changed: false };
+    if (request.field && !sameFieldValue(request.field, request.expectedCurrentValue, fieldValue(step, request.field)))
+      return { ok: false, reason: 'conflict', currentValue: fieldValue(step, request.field) };
+    const gesture = editGesture(tree, request.field ? request.sparse : request);
     if (gesture === false) return { ok: false };
     if (!gesture) return { ok: true };
-    if (!c.session) {
+    if (!authority.session) {
       c.report('roadmap-board-edit', new Error('Missing Board session'));
       return { ok: false };
     }
     let receipt;
     try {
       c.onQuiet();
-      receipt = c.session.dispatch(gesture);
+      receipt = authority.session.dispatch(gesture);
     } catch (error) {
       c.report('roadmap-board-edit', error);
       return { ok: false };
@@ -100,7 +79,7 @@ export class BoardActs {
     if (!receipt) return { ok: false };
     if ('label' in gesture) {
       try {
-        c.emit({ verb: 'renamed', nodeId: request.id, label: request.label, kind: request.color }, { silent: true });
+        c.emit({ verb: 'renamed', nodeId: id, label: gesture.label, kind: gesture.color ?? step.color }, { silent: true });
       } catch (error) {
         c.report('roadmap-board-edit', error);
       }
@@ -108,7 +87,7 @@ export class BoardActs {
     try {
       c.track('roadmap_board_edit', {
         step: 'saved', name: 'label' in gesture, description: 'description' in gesture,
-        kind: 'color' in gesture, prerequisites: gesture.addPrerequisites.length > 0 || gesture.removePrerequisites.length > 0,
+        kind: 'color' in gesture, prerequisites: (gesture.addPrerequisites?.length ?? 0) > 0 || (gesture.removePrerequisites?.length ?? 0) > 0,
       });
     } catch (error) {
       c.report('roadmap-board-edit', error);

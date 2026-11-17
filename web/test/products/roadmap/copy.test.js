@@ -65,7 +65,6 @@ import {
   sortButtonLabel,
   DELETE_CONFIRM,
   COMPOSER,
-  EDIT_STEP,
   PICKER,
   WORKSPACE,
   NOTE_EDITOR,
@@ -241,7 +240,6 @@ test('copy — the step page and modal', async () => {
     copyLink: 'Copy link',
     openInGraph: 'Open in Graph',
     deleteStep: 'Delete step',
-    editStep: 'Edit step',
     editNote: 'Edit note',
     viewBranch: 'View branch',
     subtasks: 'Subtasks',
@@ -354,7 +352,6 @@ test('copy — the tablet draft context uses lowercase for without a roadmap cou
 });
 
 test('copy — edit and workspace labels match the wave 5 contract', () => {
-  assert.deepEqual(EDIT_STEP, { title: 'Edit step', save: 'Save' });
   assert.deepEqual(WORKSPACE, {
     subtask: 'Subtask',
     subtasks: 'Subtasks',
@@ -388,7 +385,7 @@ test('copy — edit and workspace labels match the wave 5 contract', () => {
 });
 
 test('copy — bulk selection formats full counts', () => {
-  assert.deepEqual(BULK, { region: 'Selection', done: 'Done', recolor: 'Recolor' });
+  assert.deepEqual(BULK, { region: 'Selection', done: 'Done', recolor: 'Recolor', keepRoot: 'A roadmap keeps one starting step' });
   assert.equal(selectingAnnouncement({ count: 1 }), 'Selecting. 1 selected.');
   assert.deepEqual([0, 1, 3, 1200].map((count) => selectedCount({ count })), [
     '0 selected', '1 selected', '3 selected', '1,200 selected',

@@ -13,6 +13,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
   const prevAuthRef = useRef(status);
   const suspectRef = useRef(false);
   const demotedRef = useRef(false);
+  const writeDeniedRef = useRef(false);
   const claimRunRef = useRef(false);
 
   // Account authority comes from the shell; a lapse retains this document's device owner.
@@ -85,6 +86,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
     };
     const onForbidden = (event) => {
       if (isOwnershipRefusal(event.detail)) {
+        writeDeniedRef.current = true;
         if (demotedRef.current || waiting) return;
         lastActivityAt = Date.now();
         demote();
@@ -106,7 +108,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
     };
   }, [refresh]);
 
-  return { lapsed, demotion, setDemotion, claims };
+  return { lapsed, demotion, setDemotion, claims, sharedWritesAllowed: () => !writeDeniedRef.current };
 }
 
 const deviceTrees = new LocalTreeRegistry();

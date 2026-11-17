@@ -100,7 +100,6 @@ export const COMPOSER = {
   none: t('roadmap.composer.none'),
   create: t('roadmap.composer.create'),
 };
-export const EDIT_STEP = { title: t('roadmap.editStep.title'), save: t('roadmap.common.save') };
 export const PICKER = {
   title: t('roadmap.picker.title'),
   allSteps: t('roadmap.picker.allSteps'),
@@ -138,7 +137,10 @@ export const NOTE_EDITOR = {
   urlPlaceholder: t('roadmap.noteEditor.urlPlaceholder'),
   apply: t('roadmap.common.apply'),
 };
-export const BULK = { region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor };
+export const BULK = {
+  region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor,
+  keepRoot: t('roadmap.bulk.keepRoot'),
+};
 export const RECOLOR = {
   steps: t('roadmap.recolor.steps'),
   kind: (name) => t('roadmap.recolor.kind', { name }),
@@ -427,7 +429,6 @@ export const STEP_DETAIL = {
   copyLink: t('roadmap.step.copyLink'),
   openInGraph: t('roadmap.step.openInGraph'),
   deleteStep: t('roadmap.step.deleteStep'),
-  editStep: t('roadmap.step.editStep'),
   editNote: t('roadmap.step.editNote'),
   viewBranch: t('roadmap.step.viewBranch'),
   subtasks: t('roadmap.step.subtasks'),

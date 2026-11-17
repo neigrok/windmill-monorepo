@@ -9,6 +9,7 @@ import { AppearanceToggle } from './AppearanceToggle.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../auth/SignInDoor.jsx';
 import { pendingMagicLink } from '../auth/AuthClient.js';
 import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
+import { PageFrame } from '../PageFrame.jsx';
 import { PRODUCTS } from '../products.js';
 import { useAppearance } from '../useAppearance.js';
 import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
@@ -76,12 +77,13 @@ export function LandingPage({ brand = null, product = null, links = [], cta = nu
   // By day the frame carries data-brand alone and takes the hue onto the family cream; at night it adds
   // data-theme, and palettes.css keys the room's ground on the pair.
   return (
-    <div className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined} data-theme={appearance === 'dark' ? 'dark' : undefined}>
+    <PageFrame flow className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined} data-theme={appearance === 'dark' ? 'dark' : undefined} header={<>
       <a href="#content" className="skip-link">{t('shell.landing.skipToContent')}</a>
       <LandingNav product={product} links={links} cta={cta} resume={resume} resolving={resolving} seat={seat} anchored={anchored} />
+      </>}>
       <main id="content">{children}</main>
       <LandingFooter />
-    </div>
+    </PageFrame>
   );
 }
 

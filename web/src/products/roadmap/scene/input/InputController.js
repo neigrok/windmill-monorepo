@@ -24,10 +24,13 @@ export class InputController {
     this.hold = null;
     this.longPressTimer = null;
     this.longPressFired = false;
+    this.releaseGesture = null;
+    this.clickClaim = null;
   }
 
   setTool(tool) {
     this.cancelHold();
+    this.clearClickClaim();
     this.tool = tool;
     this.activePointerId = null;
     this.touches.clear();
@@ -42,10 +45,14 @@ export class InputController {
     this.canvas.addEventListener('pointerleave', this.onLeave);
     this.canvas.addEventListener('dblclick', this.onDblClick);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.canvas.ownerDocument?.addEventListener('click', this.onClick, true);
+    this.canvas.ownerDocument?.addEventListener('pointerdown', this.clearClickClaim, true);
+    this.canvas.ownerDocument?.addEventListener('keydown', this.clearClickClaim, true);
   }
 
   unbind() {
     this.cancelHold();
+    this.clearClickClaim();
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
@@ -53,7 +60,28 @@ export class InputController {
     this.canvas.removeEventListener('pointerleave', this.onLeave);
     this.canvas.removeEventListener('dblclick', this.onDblClick);
     this.canvas.removeEventListener('wheel', this.onWheel);
+    this.canvas.ownerDocument?.removeEventListener('click', this.onClick, true);
+    this.canvas.ownerDocument?.removeEventListener('pointerdown', this.clearClickClaim, true);
+    this.canvas.ownerDocument?.removeEventListener('keydown', this.clearClickClaim, true);
   }
+
+  claimActivationClick() {
+    if (!this.releaseGesture) return;
+    this.releaseGesture.claimed = true;
+    this.clickClaim = this.releaseGesture;
+  }
+
+  clearClickClaim = () => { this.clickClaim = null; };
+
+  // Opening a document can hide the canvas before its click; fresh input ends the legacy click sequence.
+  onClick = (event) => {
+    if (!this.clickClaim || event.detail === 0) return;
+    const compatibilityMouse = event.pointerType === 'mouse' && ['touch', 'pen'].includes(this.clickClaim.pointerType);
+    if (!compatibilityMouse && typeof event.pointerId === 'number' && event.pointerId !== this.clickClaim.pointerId) return;
+    this.clearClickClaim();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
 
   localPos(event) {
     const rect = this.canvas.getBoundingClientRect();
@@ -127,7 +155,12 @@ export class InputController {
     }
     if (held) return; // the long-press consumed this gesture
     const pos = this.localPos(event);
-    const zoomed = this.tool.onPointerUp(pos, event) === true;
+    const gesture = { pointerId: event.pointerId, pointerType: event.pointerType, claimed: false };
+    this.releaseGesture = gesture;
+    let zoomed;
+    try { zoomed = this.tool.onPointerUp(pos, event) === true; }
+    finally { this.releaseGesture = null; }
+    if (gesture.claimed) { this.lastTap = null; return; }
     if (zoomed) { this.lastTap = null; return; } // the tap already zoomed; no ladder step on top of it
     if (wasTouch) this.detectDoubleTap(pos);
   };

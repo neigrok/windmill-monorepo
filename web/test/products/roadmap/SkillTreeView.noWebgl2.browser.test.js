@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ACTIVITY, COMPOSER, DELETE_CONFIRM, EDIT_STEP, EMPTY_ROADMAP, GRAPH_UNAVAILABLE, LABELS, ROADMAP_SHEET, ROADMAP_VERBS, STEP_DETAIL, VIEW_SWITCH, deletedToast, progressLabel } from '../../../src/products/roadmap/copy.js';
+import { ACTIVITY, COMPOSER, DELETE_CONFIRM, EMPTY_ROADMAP, GRAPH_UNAVAILABLE, LABELS, ROADMAP_SHEET, ROADMAP_VERBS, STEP_DETAIL, VIEW_SWITCH, deletedToast, progressLabel } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 
@@ -196,9 +196,9 @@ hostTest('Chromium: a scene-less owner can complete, Undo, create and edit', asy
     await page.locator('.st-board-card-title').filter({ hasText: 'Practice knots' }).waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => window.session.lattice.toTreeData().nodes.some(({ label }) => label === 'Practice knots')), false);
     await page.locator('.st-board-card[data-step-id="wind"]').click();
-    await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
+    await page.getByRole('button', { name: 'Edit name', exact: true }).click();
     await page.getByRole('textbox', { name: COMPOSER.name, exact: true }).fill('Read gusts');
-    await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
     await page.getByRole('article', { name: 'Read gusts', exact: true }).waitFor();
     assert.deepEqual(await page.evaluate(() => window.issues), []);
     assert.deepEqual(errors, []);

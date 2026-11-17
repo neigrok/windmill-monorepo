@@ -63,3 +63,21 @@ test('composer viewport keeps the non-phone and missing-visual-viewport contract
   t.after(restore);
   assert.deepEqual(desktop.tree, { panelFits: true, keyboardVisible: false, style: undefined });
 });
+
+
+test('a contained editor intersects the keyboard viewport without moving above its Shell', (t) => {
+  const { change, restore } = viewport({});
+  const layer = { current: { offsetParent: { getBoundingClientRect: () => ({ top: 52, bottom: 844 }) } } };
+  const hook = renderHook(t, () => useComposerViewport(true, layer));
+  t.after(restore);
+  assert.deepEqual(hook.tree, { panelFits: false, keyboardVisible: false, style: undefined });
+  change({ height: 450 });
+  hook.redraw();
+  assert.deepEqual(hook.tree, { panelFits: false, keyboardVisible: true, style: { top: 0, bottom: 394 } });
+  change({ offsetTop: 90 });
+  hook.redraw();
+  assert.deepEqual(hook.tree, { panelFits: false, keyboardVisible: true, style: { top: 38, bottom: 304 } });
+  change({ scale: 2 });
+  hook.redraw();
+  assert.deepEqual(hook.tree, { panelFits: false, keyboardVisible: false, style: undefined });
+});

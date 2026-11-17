@@ -732,8 +732,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   that open it in 2 of your other trees*); a tree deleted in the open menu leaves the other rows' lines, as its steps
   went with it. The line's graph glyph is the Board / Icon component scaled to 14 px on the boards, a 1.17 px stroke;
   web draws it as every tree glyph, at 1.67 px.
-- **Section 29 · editor and Coach scope.** The shared step read document and right-side Coach placeholder are
-  delivered. Full inline editing and functional Coach remain unbuilt. A step that owns a subtree shows its progress
+- **Section 29 · editor and Coach scope.** The shared step document includes field-scoped editing from
+  [46](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1322-81073) and retained draft recovery from
+  [47](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1348-81444). Coach remains a right-side placeholder.
+  A step that owns a subtree shows its progress
   (*No steps yet*, *0 of 1 done*, *1 of 1 done*) beside Open subtree in the pinned actions, for owners and readers
   (29.16, 29.52); it has no Tree section. 29.10's *Remove step…* corresponds to Delete step in the document's menu.
 - **Section 29 · words the web keeps.** The boards say *New node*, *No nodes yet* with *Add first node*, *Mark
@@ -821,9 +823,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   lowercase *for <draft>* and carries the total in its count line. Proposed, awaiting the owner: *for Passage plan · 5,000 steps* with
   the count line reduced to *4 matches* (15.11).
 - **Board · picker without a draft name or with a removed prerequisite.** With no draft name the phone and composer-page headers show
-  only *Prerequisites*, without a For line (drawn in 25.15, 15.12). A prerequisite deleted remotely is dropped silently from the draft
-  and selection, and placement recomputes. Proposed, awaiting the owner: *Read the wind was deleted, so it left your selection.* in the
-  picker (25.16, 15.15), and the placement preview naming the loss in the form (25.17, 15.16). 10.11 Selection revalidated is Edit copy.
+  only *Prerequisites*, without a For line (drawn in 25.15, 15.12). The current composer silently drops a remotely deleted prerequisite
+  and recomputes placement. Existing-step inline editing shows **Selection updated** feedback from
+  [46.05](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1322-81750) and the reconciliation contract in
+  [46.10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1324-81414).
+  Creation-only deletion and placement notices (25.16–25.17, 15.15–15.16) still need reconciliation with the approved New step flow
+  before owner review. 10.11 Selection revalidated is Edit copy.
 - **Board · phone large-picker dark.** Phone 10.x dark uses the existing tokens with the light structure. Proposed, awaiting the owner:
   the 11 dark frames in section 539:16665, beside 10.05 dark (383:19007).
 - **Board · shared Undo.** Backspace and Delete on an owner Board card start the nine-second held delete directly; the hold is its
@@ -831,7 +836,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   a hold first, as the hold is the last act, and is refused under a covering layer and in a text field.
 - **Board · multi-select entry for keyboard and screen readers.** Phone owners enter selection through a touch hold or *Select* in
   the step menu. A polite live region announces the count and the bulk bar is a named Selection region with a count heading.
-  Proposed, awaiting the owner: *Select steps* in the roadmap sheet and a selection state with none chosen (25.18–25.22).
+  Proposed, awaiting the owner: *Select steps* in the roadmap sheet and a selection state with none chosen (25.19–25.22).
   The follow-up node is `rb-multi-select-keyboard`.
 - **Board · desktop Activity without WebGL2.** At 1024px and above Activity lives in the Graph dock, so the row's Activity offer and
   A shortcut are absent when WebGL2 is unavailable. The tablet panel and phone sheet page remain available. No approved frame draws
@@ -849,15 +854,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   A failed Board offers neither Share nor the Board/Graph switch: the Graph's load error veils its topbar.
   Proposed, awaiting the owner outside the tablet Board: a still name skeleton without a chevron (15.08) and
   *Your roadmaps* after failure (15.09). The view switch waits for an accessible Graph load-error topbar.
-- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
-  camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
-- **Graph and Board · last root.** A roadmap keeps a root on every view and band. While a selection takes every root, the phone Board's bulk bar and the desktop and
-  tablet selection bars drop Delete with nothing saying why, and the phone's Recolor sits at half width beside an empty half. Proposed, awaiting the owner: Delete keeps
-  its place, dimmed and `aria-disabled`, with *A roadmap keeps one starting step* under the count, on all three bars
-  ([25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626)). The shared step document also omits *Delete step* for a sole root.
-- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph where its destination is available. The Board shortcuts dialog does not list A.
-  Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.
-  A does nothing on phones.
+- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. The phone Graph camera
+  group already clears the measured device notice, as drawn in 25.12, and uses a solid card surface. The glass treatment in 25.11
+  remains proposed. These older drawings' selected-step bottom panel is superseded by direct node-to-editor entry in 18.02.
+- **Graph and Board · last root.** A roadmap keeps a root on every view and band. The phone Board follows approved
+  [25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626): Delete keeps its half-width place, dimmed and
+  `aria-disabled`, with *A roadmap keeps one starting step* under the count and associated through `aria-describedby`.
+  Activating the unavailable button nudges the reason without attempting deletion. Desktop and tablet Graph selection bars still
+  omit Delete; their corresponding explanations in 15.23–15.24 await owner approval. The shared step document also omits
+  *Delete step* for a sole root.
+- **Board · Bark roles.** Bulk Delete and approved dark [25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19715)
+  use Figma's `room/color-bark`, matching editing chrome's `--color-bark`: `#9C6B44` light and `#C07C43` dark.
+  Enabled and disabled source controls bind both fill and stroke to this role; disabled opacity remains 45%.
+  Scene `bark/base` remains `#6E5D49` dark for `theme.BARK` and carries no chrome CSS mapping.
+- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph where its destination is available.
+  The Board shortcuts dialog and approved 12.12 both omit A. An *Activity* row after *Board / Graph*, owner only (15.17), is a proposed
+  addition to canon and awaits owner approval before entering `BOARD_SHORTCUT_GROUPS`. A does nothing on phones.
 - **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file in the paste format, with the browser
   download as feedback; Settings retains the all-roadmaps zip. G24 copies the reader's roadmap link and uses the existing *Link copied*
   toast; a refused clipboard shows nothing. Proposed, awaiting the owner: *Learn to sail exported* and *Couldn't export this roadmap* ·
@@ -872,7 +884,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board and Graph · superseded step layouts.** List vocabulary, old phone sheets and tabbed
   Overview/Workspace/History drawings are marked Superseded development target. The [flow index](../index.md#approved-shared-step-editor)
   points to the delivered shared read document from 18/19/27/40, including completion, workspace, history,
-  relationships, deletion and subtree behavior. Inline editing, creation and functional Coach remain unbuilt.
+  relationships, deletion and subtree behavior. Approved 46/47 supplies shared-field editing, dirty-navigation protection,
+  conflict decisions and retained draft recovery. New step keeps its separate composer; creation alignment and functional
+  Coach remain unfinished.
   Link-copy proposals 15.01–15.02 and
   25.01–25.02 point to approved 37.01–37.15.
   The shared editor keeps the Shell available and presents reader content without owner controls.
