@@ -140,10 +140,16 @@ int main(int argc, char** argv) {
           intents.append(intent);
         }
       } else {
+        Json::Value born;
+        const std::string treeKey = "tree:" + manifest["tree"].asString().substr(5);
+        for (const auto& row : fixture["rows"][treeKey]) {
+          if (row["t"] == "tag" && row["id"] == "step0") born = row["born"];
+        }
+        require(!born.isNull(), "measured tag has no seeded incarnation");
         Json::Value label(Json::arrayValue);
         label.append("Edited"); label.append(std::to_string(clock.nowMs()) + ":0:r_aaaaaaaaaaaa");
         Json::Value deltas(Json::arrayValue);
-        deltas.append(object({{"t", "tag"}, {"id", "step0"}, {"f", object({{"label", label}})}}));
+        deltas.append(object({{"t", "tag"}, {"id", "step0"}, {"born", born}, {"f", object({{"label", label}})}}));
         intents.append(object({{"n", 1}, {"scope", manifest["tree"]}, {"d", deltas}, {"gestureId", "scale-edit"}}));
       }
       double pushTotal = 0;
