@@ -86,6 +86,7 @@ node --test --test-concurrency=1 --test-timeout=120000 \
   test/shell/auth/AuthProvider.test.js \
   test/products/journal/echoes/useEchoes.test.js \
   test/products/roadmap/paste/NewTreeBirth.test.js \
+  test/products/roadmap/SkillTreeView.stepInput.browser.test.js \
   test/products/roadmap/SkillTreeView.stepRead.browser.test.js
 ```
 
