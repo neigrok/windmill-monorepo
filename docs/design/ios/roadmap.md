@@ -31,7 +31,7 @@ as in the web proposal.
 
 The owner ruled on 2026-11-08 and accepted every default:
 
-1. Roadmap is the third room, with its own TabView: Board · Graph · Search.
+1. Roadmap is the third room, with its own TabView: Board · Graph · Coach, and Search (ruling 10).
 2. The Board's three groups are sections of one List, Up next first.
 3. Roadmap is fully offline through the shared sync engine and the Swift domain kit, held to the web by
    shared vectors (owner, 2026-11-17; [Roadmap on iOS](../../foundation/roadmap-ios.md)).

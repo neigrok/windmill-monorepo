@@ -48,7 +48,7 @@ itself is never edited. The card and its states follow the Gym file's approved p
    - A card never applies. It offers Reject and Review.
    - Review opens the review sheet on Graph, with Changes one tab away. Apply lives only there.
    - On desktop web, Review turns on Preview, and Apply lives only in Preview's review bar.
-5. **Apply offline.** Applying works offline, as a local write through graph sync, and always lands. Asking needs a connection.
+5. **Apply offline.** Applying works offline, as a local write through the sync engine, and always lands. Asking needs a connection.
 6. **Signed out.** Everything works signed out:
    - asking;
    - direct writes;

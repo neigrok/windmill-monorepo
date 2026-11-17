@@ -606,7 +606,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   toolbar (05.1, 05.4, 05.6, 05.7, and NOTE 05, whose title and boards disagree today). To draw new: a step that
   opens a roadmap and a subtree, going in and back, attach, change and detach, fork first; reading and editing a
   guide and the guides above; the list of what could not land; History with no connection; a link to a roadmap the
-  phone cannot read. The room's *Where to start?* door is still owed in the Shell file.
+  phone cannot read; a gesture a limit refuses on the phone; a fork in progress; and the sign-in question that
+  names roadmaps and conversations. The room's *Where to start?* door is still owed in the Shell file.
+  The page's own text that those rulings and [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md)
+  §6 leave untrue, to rewrite with the redraw: the room's three tabs, where Coach is the third; section 05's
+  commit at the foot; *never drops or refuses a person's own creation* and *no Discard*, since a change to a
+  roadmap deleted elsewhere cannot land and is listed with copy and discard; *every string is `copy.js`'s*; and
+  whether a toolbar's Save is glass or the bar's prominent capsule, as gym's is.
 - **Roadmap Coach · the engineering note against the spec.** The Figma
   [engineering note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) of 2026-11-08 and
   [Roadmap Coach](../foundation/roadmap-coach.md) disagree in every section, and the spec stands (owner, 2026-11-14).
@@ -964,7 +970,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ending, the last minute of ten, a take that ended by itself for each cause, a quiet bridge, and every access
   state. The sentence under a recording and in the microphone permission text is R-3's: Windmill keeps no audio,
   and the service that writes it down keeps it for 30 days. 03.1P's permission text and the web's *No audio is
-  kept anywhere* say otherwise today.
+  kept anywhere* say otherwise today. 03.7P's *write it down* reads as the finished recording and needs its
+  words checked. Ending a take offers Undo, which removes what it wrote; the ✕ that discarded a recording has no
+  other heir.
 - **Talk signed out against brand canon (owner, 2026-11-17).** The owner ruled that Talk's button is shown signed
   out and opens sign-in. [Brand foundations](brand-foundations.md) says Windmill One is never shown signed out;
   it takes this exception, or the rule is reworded.

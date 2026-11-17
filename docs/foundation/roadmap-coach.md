@@ -59,7 +59,8 @@ and *gate* mean what the [Coach engine](coach-engine.md) defines. This document 
   and workspace, durable and usable offline.
 - **D-2 Standing roadmap.** A roadmap as the room shows it: the steps, links, kinds and marks on the
   screen. It is the copy, less a step under a delete the person can still undo, and with the marks
-  the room shows, which for a reader are the owner's.
+  the room shows. For a reader those are the owner's, which the room read from the backend; Coach
+  reads what the room holds of them and asks for nothing.
 - **D-3 Direct write.** A change Coach makes at once, to one step, that removes nothing (§6).
 - **D-4 Receipt.** The record of a direct write: what changed, in at most eight words.
 - **D-5 Proposal.** A set of changes to one roadmap that Coach suggests and only the person applies
@@ -173,8 +174,8 @@ ability's result as data and never as instructions.
   never gives a state the screen contradicts.
 - A step's state (locked, available, complete) is the one the room shows, from the function that
   derives it today, `UnlockRules.derive`, over the graph as the room draws it.
-- A step that opens another roadmap is complete when that roadmap is. Where the room does not know
-  what the opened roadmap has come to, as offline, the step's state is `unknown`. So is the state of
+- A step that opens another roadmap is complete when that roadmap is. Where the device has not
+  finished pulling the opened roadmap, the step's state is `unknown`. So is the state of
   every step that waits on it. `find_nodes` with a state leaves unknown steps out, and counts by
   state give them a count of their own.
 - A completion has a date only where the copy holds one. A step complete through the roadmap it
@@ -219,13 +220,13 @@ or `no-change`, never success.
   the conversation is what says Coach made it. (R-7)
 - A direct write leaves a receipt and offers Undo in the room's band for 6 s. For a change to
   structure, Undo reverts that one act and spares anything written since. For a mark, Undo marks the
-  step back, and a completion's first date is not restored. The means to undo live in the tab's
-  memory.
+  step back, and a completion's first date is not restored. The means to undo live in the
+  process's memory.
 - A message's receipts are final once its turn has ended. What became of a write afterwards, that it
   was undone or that the server refused it, is a record of its own (§9), so the receipt can read
   "Undone" on every device.
-- A refusal from the server after the write was made stands as the room shows every refusal, with
-  Retry and Discard.
+- A write that could not land afterwards joins the one list the room keeps of those
+  ([Roadmap on the sync engine](roadmap-on-the-engine.md) §6).
 
 ## §7 Proposals
 
@@ -272,14 +273,15 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
    over the standing roadmap as it is now; a set that no longer validates is out of date too. An
    out-of-date proposal becomes `stale` and nothing is written.
 3. Otherwise the folded result is reduced to one write for each register and written as one act on
-   the device: the structure under one stamp through the structure door, and the marks with it
-   through the mark door. The act's stamp is written to the device's row.
+   the device: one gesture over the roadmap's scope, for the structure, and the person's overlay of
+   it, for the marks (Roadmap on the sync engine K-2). The act's stamp is written to the device's
+   row.
 4. The record becomes `applied`, and the row is removed.
 5. Undo is offered for 6 s in the room's band. It reverts the act and sets `undone`. An undone
    proposal is not offered again; the person asks Coach for another.
 
 - **INV-3.** A proposal applies whole or not at all on the device. On the wire it is the person's
-  own writes: structure and marks travel apart, and a large act travels as several frames.
+  own writes: structure and marks are separate intents, and a large act travels as several.
 - **INV-4.** An applied proposal is never set aside because the roadmap changed elsewhere. It merges
   as any two edits do, and nothing about a later sync returns it to the person for a second look.
 - A row found `applying` when the engine starts is settled by its act: the record becomes `applied`
@@ -378,7 +380,7 @@ messages' `carry`, not an ability's full result. A record holds what a person re
 ## §11 Signed out
 
 The design rules that everything works signed out: asking, direct writes, reviewing and applying.
-Coach goes live on the web only when it works signed out too. (R-6) A signed-out person's roadmap
+Coach goes live, on the web and on the iPhone, only when it works signed out too. (R-6) A signed-out person's roadmap
 already lives on the device, and the sync engine already keeps a signed-out person's records and
 carries them to the account at sign-in. The iPhone holds an installation credential already. What
 is lacking, and this build adds, is:
@@ -417,8 +419,8 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
 - Unexpected failures report to Sentry under the static names `roadmap-coach-turn`,
   `roadmap-coach-ability`, `roadmap-coach-apply` and `ai-call`. A refusal the person can act on is
   an event, not an Issue.
-- The backend logs nothing of a turn but the pass it signed and the `list_trees` read.
-- They are listed in the web observability notes when built.
+- The backend logs nothing of a turn but the pass it signed.
+- They are listed in the web's and the iPhone's observability notes when built.
 
 ## §14 What must be built beneath Coach
 
@@ -438,8 +440,7 @@ In the backend:
 - The backend stores and admits none of §9's types, and its door that deletes a roadmap deletes no
   record that names it.
 
-Not carried to the device, and so not part of Coach: the server's `outOfOrder` flag on a mark, which
-only an outside assistant's mark sets.
+Not read by Coach: the `outOfOrder` flag on a mark, which only an outside assistant's mark sets.
 
 ## §15 Rulings
 
