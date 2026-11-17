@@ -252,12 +252,13 @@ connection (R-6). A connection lost after a round was sent is asked for again as
 whose round 1 may have been admitted is never withdrawn: it ends `failed` with the code the engine
 was given, or `interrupted` when it was given none, with its question on the record.
 
-**Offline before dispatch.** Failure while obtaining a first pass or uploading a picture returns
-the unsent question and picture to the field promptly. With no refusal code this is an
-`interrupted` outcome whose records are withdrawn. Once the text transport is invoked, a
-connection error cannot prove it was unsent: the record stays and the same call is asked for again.
-A cached pass can therefore take an offline send past this boundary; the rule follows dispatch
-evidence, not the presence of a pass. No working conversation is persisted for this retry.
+**Offline before dispatch.** A turn begun while the device reports no connection sends nothing and
+is withdrawn at once: the engine asks before round 1 writes its mark, uploads a picture or fetches a
+pass (R-6). A failure while obtaining a first pass or uploading a picture likewise returns the
+unsent question and picture to the field promptly. With no refusal code this is an `interrupted`
+outcome whose records are withdrawn. Once the text transport is invoked, a connection error cannot
+prove the request was unsent: the record stays and the same call is asked for again. No working
+conversation is persisted for this retry.
 
 **Stop.** Stop takes effect before the next round or the next ability call. The round in flight is
 read to its end and paid for, as the service reads every call to its end
