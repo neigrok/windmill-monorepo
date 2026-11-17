@@ -7,6 +7,7 @@ import { latticeOf } from '../../core/rows.js';
 import { admit } from '../../server/admit.js';
 import { serverCall } from '../../server/requests.js';
 import { ServerState } from '../../server/state.js';
+import { EffectPlanProduct } from '../../vectors/effect-plan.js';
 import { Rng, overlayScope, product, productScope, registry, row, serverState, treeScope } from '../../vectors/fixtures.js';
 
 const CORPUS = new URL('../../../corpus/admit/', import.meta.url);
@@ -15,7 +16,14 @@ for (const file of readdirSync(CORPUS).filter((name) => name.endsWith('.json') &
   test(`admit/${file} replays through admit`, () => {
     for (const { name, input, expect } of JSON.parse(readFileSync(new URL(file, CORPUS), 'utf8'))) {
       const limits = { ...CONSTANTS, ...(input.limits ?? {}) };
-      const outcome = admit({ state: new ServerState(input.state), registry, product, origin: input.origin, intent: input.intent, serverNow: input.serverNow, limits });
+      const state = new ServerState(input.state);
+      const run = () => admit({ state, registry, product: input.effectPlan ? new EffectPlanProduct(input.effectPlan) : product, origin: input.origin, intent: input.intent, serverNow: input.serverNow, limits });
+      if (expect.fault) {
+        assert.throws(run, /undeclared effect target/, name);
+        assert.equal(jcs(state.toJSON()), jcs(expect.state), name);
+        continue;
+      }
+      const outcome = run();
       assert.equal(jcs(outcome.result), jcs(expect.result), name);
       assert.equal(jcs(outcome.state.toJSON()), jcs(expect.state), name);
     }

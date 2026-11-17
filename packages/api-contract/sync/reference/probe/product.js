@@ -22,6 +22,12 @@ export class ProbeProduct {
     this.revisionsKept = 1;
   }
 
+  discoverEffectScopes(ctx, cmd) {
+    if (cmd?.name !== 'probe.copy' || ownValue(ctx.productState.copies?.[ctx.scopeKey], cmd.args.dst) === cmd.args.src) return [];
+    if (ctx.idState('board', cmd.args.dst).state !== 'none') return [];
+    return [`tree:${cmd.args.dst}`];
+  }
+
   isReplay(ctx, cmd) {
     if (cmd.name === 'probe.start') return Object.hasOwn(receipts(ctx, 'receipts'), cmd.args.id);
     if (cmd.name === 'probe.copy') return ownValue(receipts(ctx, 'copies'), cmd.args.dst) === cmd.args.src;

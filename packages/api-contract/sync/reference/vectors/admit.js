@@ -8,6 +8,7 @@ import { jcs } from '../core/jcs.js';
 import { admit } from '../server/admit.js';
 import { serverCall } from '../server/requests.js';
 import { ServerState } from '../server/state.js';
+import { EffectPlanProduct } from './effect-plan.js';
 import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
 
 const NOW = 1_000_000;
@@ -25,11 +26,17 @@ const OVERLAY_B = `acct:B/overlay/${BOARD}`;
 const s = (ms, counter = 0, actor) => st(ms, counter, actor);
 const SRV = (ms, counter = 0) => `${ms}:${counter}:srv`;
 
-function admitted(name, { state, origin = A, intent, serverNow = NOW, limits }) {
-  const outcome = admit({ state: new ServerState(state), registry, product, origin, intent, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
+function admitted(name, { state, origin = A, intent, serverNow = NOW, limits, effectPlan }) {
   const input = { state, origin, intent, serverNow };
   if (limits) input.limits = limits;
-  return vector(name, input, { result: outcome.result, state: outcome.state.toJSON() });
+  if (effectPlan) input.effectPlan = effectPlan;
+  try {
+    const outcome = admit({ state: new ServerState(state), registry, product: effectPlan ? new EffectPlanProduct(effectPlan) : product, origin, intent, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
+    return vector(name, input, { result: outcome.result, state: outcome.state.toJSON() });
+  } catch (error) {
+    if (!effectPlan?.fault) throw error;
+    return vector(name, input, { fault: true, state });
+  }
 }
 
 function card(id, { born = s(1000), seq = 1, ...f }) {
@@ -987,6 +994,39 @@ function recordBound() {
   ];
 }
 
+function crossScope() {
+  const base = treeState();
+  base.scopes[TREE].seq = 17;
+  base.scopes[OVERLAY_A].seq = 8;
+  const tick = { scope: 'self/probe', cmd: { name: 'probe.tick', args: {} } };
+  const title = (text, stamp = null) => ({ t: 'meta', id: 'meta', f: { title: [text, stamp] } });
+  const memo = { t: 'mark', id: 'oak', x: { memo: { text: 'one two', base: { text: '' } } } };
+  const local = create('card', 'card0009', null, { title: 'Origin' });
+  const plan = { declared: [TREE, OVERLAY_A], command: { [PROBE_A]: [local], [TREE]: [title('Command')], [OVERLAY_A]: [memo] }, check: { [TREE]: [title('Consequence')] } };
+  const changed = structuredClone(base);
+  changed.scopes[TREE].owner = 'B';
+  const dead = structuredClone(base);
+  dead.scopes[TREE].state = 'dead';
+  dead.scopes[TREE].deadAt = 5000;
+  const missing = structuredClone(base);
+  delete missing.scopes[TREE];
+  delete missing.rows[TREE];
+  const copy = { scope: 'self/probe', cmd: { name: 'probe.copy', args: { src: BOARD, dst: 'b_00000002' } } };
+  return [
+    admitted('one command and its consequence coalesce origin and two owned targets at each own sequence and digest', { state: base, origin: SERVER_A, intent: tick, effectPlan: plan }),
+    admitted('a foreign target rolls back every scope and the command receipt', { state: changed, origin: SERVER_A, intent: copy, effectPlan: plan }),
+    admitted('a dead target rolls back origin and effects', { state: dead, origin: SERVER_A, intent: tick, effectPlan: plan }),
+    admitted('a missing target without its governing create rolls back every scope', { state: missing, origin: SERVER_A, intent: tick, effectPlan: plan }),
+    admitted('a declared scope created by this command accepts a later consequence', { state: base, intent: copy, effectPlan: { declared: ['tree:b_00000002'], check: { 'tree:b_00000002': [title('After copy')] } } }),
+    admitted('a target no-op advances neither the origin nor the target', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title('Plan', s(2000))] } } }),
+    admitted('an undeclared consequence target is a technical contract fault and rolls back the command', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title('Command')] }, check: { [OVERLAY_A]: [memo] }, fault: true } }),
+    admitted('an undeclared command target is a technical contract fault', { state: base, origin: SERVER_A, intent: tick, effectPlan: { command: { [TREE]: [title('Command')] }, fault: true } }),
+    admitted('a target delta must belong to the target scope kind', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [local] } } }),
+    admitted('a target field domain is enforced before any writes', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title(7)] } } }),
+    admitted('generated effects share the operation byte limit across targets', { state: base, origin: SERVER_A, intent: tick, effectPlan: plan, limits: { PUSH_MAX_BYTES: 150 } }),
+  ];
+}
+
 export function files() {
   return {
     'admit/shape.json': shape(),
@@ -1002,5 +1042,6 @@ export function files() {
     'admit/server-stamps.json': serverStamps(),
     'admit/requests.json': requests(),
     'admit/record-bound.json': recordBound(),
+    'admit/cross-scope.json': crossScope(),
   };
 }

@@ -71,6 +71,7 @@ class Admission {
     this.writes = [];
     this.changed = [];
     this.killed = [];
+    this.effectBytes = Buffer.byteLength(jcs(intent));
   }
 
   run() {
@@ -79,15 +80,18 @@ class Admission {
     this.lockScope();
     this.admitDeltas(this.intent.d ?? [], this.fromServer ? 'server' : 'client');
     this.checkGuards();
+    this.discoverEffectScopes();
     this.runCommand();
     this.join();
     this.checkProduct();
     this.checkParents();
     this.assignSerials();
     this.checkCaps();
+    this.validateMissingScopes();
     this.apply(this.scopeKey);
-    this.applyLifecycle();
-    this.applyCreatedScopes();
+    this.createScopes();
+    this.applyOtherScopes();
+    this.killScopes();
     return this.result();
   }
 
@@ -124,32 +128,32 @@ class Admission {
     this.clampTimes(deltas, bound);
   }
 
-  isStampHere(stamp) {
-    if (this.fromServer && stamp === null) return true;
+  isStampHere(stamp, server = this.fromServer) {
+    if (server && stamp === null) return true;
     return Stamp.isValid(stamp) && stamp !== Stamp.UNSET;
   }
 
-  checkDeltaShape(delta) {
+  checkDeltaShape(delta, scopeKind = this.scopeKind, server = this.fromServer) {
     if (!isObject(delta) || Object.keys(delta).some((key) => !DELTA_KEYS.has(key))) throw new Refusal('invalid');
     const type = this.registry.type(delta.t);
-    if (!type || type.scope !== this.scopeKind) throw new Refusal('invalid');
+    if (!type || type.scope !== scopeKind) throw new Refusal('invalid');
     if (checkId(this.registry, type, delta.id)) throw new Refusal('invalid');
     if (delta.v !== undefined) throw new Refusal('invalid');
     if (delta.life !== undefined) {
       const shaped = Array.isArray(delta.life) && delta.life.length === 2 && ['alive', 'dead'].includes(delta.life[0]);
-      if (!shaped || !this.isStampHere(delta.life[1]) || !type.life) throw new Refusal('invalid');
+      if (!shaped || !this.isStampHere(delta.life[1], server) || !type.life) throw new Refusal('invalid');
     }
-    if (delta.born !== undefined && !this.isStampHere(delta.born)) throw new Refusal('invalid');
+    if (delta.born !== undefined && !this.isStampHere(delta.born, server)) throw new Refusal('invalid');
     for (const [name, register] of Object.entries(delta.f ?? {})) {
       const field = type.field(name);
       if (!field || !Registry.isLattice(field.kind)) throw new Refusal('invalid');
-      if (!Array.isArray(register) || register.length !== 2 || !this.isStampHere(register[1])) throw new Refusal('invalid');
-      if (!this.fromServer && field.writer === 'server') throw new Refusal('invalid');
+      if (!Array.isArray(register) || register.length !== 2 || !this.isStampHere(register[1], server)) throw new Refusal('invalid');
+      if (!server && field.writer === 'server') throw new Refusal('invalid');
     }
     for (const [name, write] of Object.entries(delta.x ?? {})) {
       const field = type.field(name);
       if (!field || field.kind !== 'text' || !isObject(write) || Object.keys(write).some((key) => !TEXT_WRITE_KEYS.has(key)) || typeof write.text !== 'string' || !isObject(write.base)) throw new Refusal('invalid');
-      if (!this.fromServer && field.writer === 'server') throw new Refusal('invalid');
+      if (!server && field.writer === 'server') throw new Refusal('invalid');
       const byRev = Object.keys(write.base).length === 1 && Number.isSafeInteger(write.base.rev) && write.base.rev >= 0;
       const byText = Object.keys(write.base).length === 1 && typeof write.base.text === 'string';
       if (!byRev && !byText) throw new Refusal('invalid');
@@ -244,12 +248,69 @@ class Admission {
       deltas: this.intent.d ?? [],
       guards: this.intent.guard ?? [],
       productState: work.product,
+      intent: this.intent,
+      scope: (key) => work.scope(key),
+      scopedRows: (key, t) => {
+        if (this.declared && !this.declared.has(key)) throw new Error('undeclared effect read');
+        return work.rowsOf(key).filter((row) => row.t === t);
+      },
+      scopedChanges: (key) => [...this.records.values()].filter((record) => record.scopeKey === key),
       idState: (t, id) => this.idStateOf(scopeKey, registry.type(t), id),
       stored: (t, id) => work.stored(scopeKey, t, id),
       rowsOf: (t) => work.rowsOf(scopeKey).filter((row) => row.t === t),
       readableTree: (tree) => accessOf(registry, work, { kind: 'tree', key: `tree:${tree}`, tree }, this.origin.account).read === true,
       treeRows: (tree) => work.rowsOf(`tree:${tree}`),
     };
+  }
+
+  // Discovery is pure and declares the complete closure before commands or joined checks run.
+  discoverEffectScopes() {
+    this.declared = new Set([this.scopeKey, ...(this.product.discoverEffectScopes?.(this.context(), this.intent.cmd) ?? [])]);
+    this.targets = new Map();
+    for (const key of [...this.declared].sort()) {
+      if (key === this.scopeKey) continue;
+      let ref;
+      if (key.startsWith('tree:')) ref = `tree/${key.slice(5)}`;
+      else if (key.startsWith(`acct:${this.origin.account}/`)) ref = `self/${key.slice(`acct:${this.origin.account}/`.length)}`;
+      else {
+        if (this.work.scope(key)) throw new Refusal('forbidden');
+        throw new Refusal('not-found');
+      }
+      const target = scopeKeyOf(this.registry, ref, this.origin.account);
+      if (!target || target.key !== key) throw new Refusal('invalid');
+      const row = this.work.scope(key);
+      if (row && row.owner !== this.origin.account) throw new Refusal('forbidden');
+      if (row?.state === 'dead') throw new Refusal('scope-dead');
+      if (target.kind === 'overlay') {
+        const access = accessOf(this.registry, this.work, target, this.origin.account);
+        if (!access.write) throw new Refusal(access.refusal);
+      }
+      this.targets.set(key, { ...target, scopeKind: this.registry.scopeKindOf(ref) });
+    }
+  }
+
+  admitEffects({ byScope }, source) {
+    const keys = Object.keys(byScope).sort((a, b) => a === this.scopeKey ? -1 : b === this.scopeKey ? 1 : a < b ? -1 : a > b ? 1 : 0);
+    for (const key of keys) {
+      if (!this.declared.has(key)) throw new Error('undeclared effect target');
+      const deltas = byScope[key];
+      for (const delta of deltas) {
+        this.effectBytes += Buffer.byteLength(jcs({ scope: key, delta }));
+        if (this.effectBytes > this.limits.PUSH_MAX_BYTES) throw new Refusal('too-large');
+        const wire = structuredClone(delta);
+        delete wire.v;
+        for (const [name, write] of Object.entries(wire.x ?? {})) {
+          if (write.replace === true && source === 'command') wire.x[name] = { text: write.text, base: { rev: 0 } };
+        }
+        const kind = key === this.scopeKey ? this.scopeKind : this.targets.get(key).scopeKind;
+        this.checkDeltaShape(wire, kind, true);
+        this.checkDeltaValues(wire);
+        for (const [name, value] of Object.entries(delta.v ?? {})) {
+          if (this.registry.type(delta.t).field(name)?.kind !== 'serial' || !Number.isSafeInteger(value) || value < 1) throw new Refusal('invalid');
+        }
+      }
+      this.admitDeltas(deltas, source, key);
+    }
   }
 
   // Steps 5 and 6 for one group of deltas: the id states, §4.3, and §4.4's const and time rule.
@@ -297,8 +358,9 @@ class Admission {
     const cmd = this.intent.cmd;
     if (!cmd) return;
     const outcome = this.product.runCommand(this.context(), cmd);
-    this.admitDeltas(outcome.deltas, 'command');
-    for (const { scopeKey, deltas } of outcome.into ?? []) this.admitDeltas(deltas, 'command', scopeKey);
+    const byScope = { [this.scopeKey]: [...outcome.deltas] };
+    for (const { scopeKey, deltas } of outcome.into ?? []) (byScope[scopeKey] ??= []).push(...deltas);
+    this.admitEffects({ byScope }, 'command');
     this.write = outcome.write;
     this.detail = outcome.detail;
   }
@@ -385,9 +447,10 @@ class Admission {
   // Step 10: the product's rules on the joined records; the server deltas they append pass steps 5, 6
   // and 9 (a second pass, with its own stamp).
   checkProduct() {
-    const appended = this.product.check(this.context(), [...this.records.values()]);
-    if (appended.length === 0) return;
-    this.admitDeltas(appended, 'check');
+    const ctx = this.context();
+    const changes = [...this.records.values()];
+    const effects = this.product.effects?.(ctx, changes) ?? { byScope: { [this.scopeKey]: this.product.check(ctx, changes) } };
+    this.admitEffects(effects, 'check');
     this.join();
   }
 
@@ -517,25 +580,35 @@ class Admission {
   }
 
   // Step 14: a command's writes into scopes this intent created, each at that scope's seq and digest.
-  applyCreatedScopes() {
+  applyOtherScopes() {
     const targets = [...new Set(this.changes.map((change) => change.scopeKey).filter((key) => key !== this.scopeKey))].sort();
     for (const key of targets) {
-      if (!this.created.includes(key)) throw new Error(`a command wrote into ${key}, which this intent did not create`);
       this.apply(key);
     }
   }
 
   // Step 15: a governing record's create inserts its scope; its death kills the scope and its overlays.
-  applyLifecycle() {
-    this.created = [];
+  validateMissingScopes() {
+    this.created = new Map();
+    for (const record of this.records.values()) {
+      if (record.type.governs !== 'tree' || record.original || !isAlive(record.after)) continue;
+      const key = `tree:${record.after.id}`;
+      if (this.work.scope(key) === undefined) this.created.set(key, `${record.scopeKey}#${record.type.type}#${record.after.id}`);
+    }
+    for (const key of this.declared) {
+      if (!this.work.scope(key) && !this.created.has(key)) throw new Refusal('not-found');
+    }
+  }
+
+  createScopes() {
+    for (const [key, governedBy] of this.created) this.work.insertScope(key, { kind: 'tree', owner: this.origin.account, governedBy });
+  }
+
+  killScopes() {
     for (const record of this.changed) {
       if (record.type.governs !== 'tree') continue;
       const treeKey = `tree:${record.after.id}`;
       const wasAlive = record.original !== undefined && isAlive(record.original);
-      if (isAlive(record.after) && !wasAlive && this.work.scope(treeKey) === undefined) {
-        this.work.insertScope(treeKey, { kind: 'tree', owner: this.origin.account, governedBy: `${this.scopeKey}#${record.type.type}#${record.after.id}` });
-        this.created.push(treeKey);
-      }
       if (!isAlive(record.after) && wasAlive) {
         for (const key of Object.keys(this.work.scopes).sort()) {
           const scope = this.work.scopes[key];
