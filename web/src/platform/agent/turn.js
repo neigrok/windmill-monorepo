@@ -120,7 +120,7 @@ export class TurnRunner {
           const answer = await this.ai.text({ callId, request: { model: profile.model, system: profile.system,
             tools: profile.tools.map(({ name, description, input }) => ({ name, description, input })), messages,
             output: { ...profile.output, schema: null }, effort: profile.effort, cache: true }, pictures: opened.pictures,
-            label: profile.label, use: profile.name, version: profile.version, signal: turn.wait.signal,
+            label: profile.label, use: profile.name, version: profile.version, firstRound: round === 0, signal: turn.wait.signal,
             onText: (delta) => this.append(turn, delta) });
           if (turn.done) return turn.end;
           if (turn.seatChanged) return await this.finish(turn, 'interrupted');

@@ -20,10 +20,15 @@ every response in `finally`, including a seat change before iteration starts; th
 disposes rejected headers and completed iterators. Disposal clears the deadline, aborts the request
 and cancels an unread body.
 
-Offline behavior follows dispatch evidence. A pass or picture preparation failure before the first
-text request restores the draft promptly. An attempted text request can have reached the service
-even when the browser reports offline, so a cached pass can move the call into uncertain recovery.
-No connectivity observer or persisted conversation is required. HTTP errors without a complete,
+Before a turn's first round sends anything, `text` asks the runtime once whether the device reports
+a connection: the constructor's `connected`, by default `navigator.onLine`, and a browser that
+cannot tell counts as connected. With none the client sends nothing (no pass fetch, picture upload
+or text request) and answers a transport failure with no code and no admission, so the draft is
+restored at once. The runner marks that call `firstRound`; later rounds and recovery never ask.
+After that, offline behavior follows dispatch evidence. A pass or picture preparation failure before
+the first text request restores the draft promptly. An attempted text request can have reached the
+service whatever the browser reports, so a failed send moves the call into uncertain recovery.
+No persisted conversation is required. HTTP errors without a complete,
 known service refusal envelope with its matching HTTP status are ambiguous transport loss, including
 proxy HTML, unknown JSON and a lost error body. Pass refusals require exactly a known `code` and
 string `error`, with the matching status. Malformed successful event streams remain wire defects and keep their

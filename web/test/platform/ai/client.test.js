@@ -227,6 +227,20 @@ test('a cached pass reaches uncertain offline dispatch while preparation failure
   }
 });
 
+test('a first round with no reported connection sends nothing, and only a first round asks', async () => {
+  for (const firstRound of [true, false]) {
+    let asked = 0; const sent = []; const reports = [];
+    const client = new AiClient({ now: () => 0, connected: () => { asked++; return false; }, telemetry: { failure: (operation) => reports.push(operation) }, transport: {
+      pass: async () => { sent.push('pass'); throw new TransportFailure('offline'); },
+      request: async ({ path }) => { sent.push(path); throw new TransportFailure('offline'); },
+    } });
+    client.pass = { use: 'vector.coach', version: 1, value: 'private', until: 2000000 };
+    const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, pictures: [{ pictureId: 'PPPPPPPPPPPPPPPPPPPPPP', mediaType: 'image/png', bytes: [1] }], label: 'other', use: 'vector.coach', version: 1, firstRound, onText() {} });
+    assert.deepEqual(result, { failure: { source: 'transport', code: null, admission: 'none', allowance: null } });
+    assert.deepEqual({ asked, sent, reports }, firstRound ? { asked: 1, sent: [], reports: [] } : { asked: 0, sent: ['/v1/pictures/PPPPPPPPPPPPPPPPPPPPPP'], reports: [] });
+  }
+});
+
 test('recovery call_unknown is quiet while the live equivalent remains a defect', async () => {
   for (const recover of [false, true]) {
     const reports = [];

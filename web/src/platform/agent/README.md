@@ -7,6 +7,8 @@ transport or store. `turn.js` contains the runner, profile checks, access mappin
 
 The constructor takes `host`, `ai`, `telemetry` and `runtime`. `run(input, profile)` returns the end;
 `run(input, profile, {recover:true})` takes the lock without waiting and reads the marked call only.
+The runner marks a turn's first text call `firstRound`; the AI client sends nothing for it while the
+device reports no connection, and that turn is withdrawn.
 `stop()` interrupts retry waits but lets a live provider stream finish. The composition root must
 await `seatWillChange()` before credentials, active replica or host generation change. The barrier
 waits for pending host mutations, writes interrupted, and drops the in-memory pass immediately.
