@@ -44,7 +44,11 @@ identifies its live owner. Cancel, finish and owner death release the pause. Pen
 work uses `pendingDeviceWork`.
 The shell passes `deviceCleanup: true` to `finishSignOut` when product residue must be erased. A completed
 transition records the departing account and transition generation in `device.meta.deviceCleanup` in the
-same transaction. The shell clears that exact marker after product cleanup succeeds and replays it after reload.
+same transaction. The optional synchronous `beforeSignOutCommit` callback runs after the pure lifecycle
+accepts completion on an isolated transaction device, before persistence or publication. It is a commit-attempt
+boundary for fencing document data; counted mismatches and earlier failures never invoke it. A throwing or
+asynchronous callback aborts the transaction. A later persistence failure does not reverse the caller's fence.
+The callback cannot await or call the engine again. The shell clears that exact marker after product cleanup succeeds and replays it after reload.
 
 Each store mutation uses one strict-durability IndexedDB transaction. Indexed reads precede the
 synchronous read-and-commit callback inside that same transaction; it cannot await. Writes hydrate

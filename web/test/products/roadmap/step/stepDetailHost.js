@@ -12,7 +12,9 @@ import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { StepDetail } from '/src/products/roadmap/step/StepDetail.jsx';
-import { StepComposer } from '/src/products/roadmap/step/StepComposer.jsx';
+import { StepDraftProvider } from '/src/products/roadmap/step/StepDraftProvider.jsx';
+import { useInlineStepEditor } from '/src/products/roadmap/step/InlineStepEditor.jsx';
+import { DocumentDataScope } from '/src/shell/auth/accountChange.js';
 import { useStepAddress, stepIsStale } from '/src/products/roadmap/step/stepAddress.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { Openings } from '/src/products/roadmap/model/Opening.js';
@@ -50,7 +52,6 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     const tree = useMemo(() => (steps === null ? null : new SkillTree(Openings.fromWire(opens, steps).onto({ id: treeId, title: 'Learn to sail', nodes: steps }, { joined: true }))), [steps]);
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
-    const [editing, setEditing] = useState(null);
     const [spaces, setSpaces] = useState(workspaces);
     const [linkPrefix, setLinkPrefix] = useState(linked ? 'https://windmill.test/t/sail#?step=' : null);
     const [refusal, setRefusal] = useState(null);
@@ -65,13 +66,19 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
       window.addEventListener('resize', follow);
       return () => window.removeEventListener('resize', follow);
     }, []);
-    useEffect(() => {
-      if (editing && address.id !== editing) setEditing(null);
-    }, [editing, address.id]);
     const stale = stepIsStale({ loading: tree === null, tree, treeId, stepId: address.id });
     useEffect(() => { if (stale) address.drop(); }, [stale]);
     const mark = (id, target) => setProgress((current) => advanceProgress(current, [id], target, Date.now()));
     window.restoreSteps = () => setSteps(trees[treeId]);
+    const inlineEditor = useInlineStepEditor({ treeId, tree, owner: editable, loading: tree === null,
+      readAuthority: () => ({ tree, editable }), legend: [], completed: progress.completed, stepId: address.id,
+      acts: { edit: (request) => {
+        (window.editRequests ??= []).push(request.sparse);
+        setQuiet((current) => current + 1);
+        setSteps((current) => current.map((node) => node.id === request.stepId ? { ...node, ...request.sparse } : node));
+        return { ok: true };
+      } },
+    });
     if (tree === null) return null;
     const open = address.id !== null && tree.nodesById.has(address.id);
     return React.createElement(TreeDoor.Provider, { value: (id, door) => call('tree ' + id + ' ' + door) }, React.createElement('div', { style: { position: 'fixed', inset: 0 } },
@@ -86,7 +93,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         workspaceActions: { onToggleSubtask: (nodeId, subtaskId) => setSpaces((current) => ({ ...current, [nodeId]: toggleSubtask(current[nodeId], subtaskId) })),
           onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: (nodeId) => call('note ' + nodeId), onAddLink: noop, onDeleteLink: noop },
         history: [],
-        onEdit: editingEnabled ? (id) => setEditing(id) : undefined,
+        inlineEditor: editingEnabled ? inlineEditor : null,
         onOpenStep: (id) => address.open(id, 'step'),
         onBack: address.back,
         onClose: () => { const origin = address.trail[0]; address.close(); setSelectedId(origin); },
@@ -103,20 +110,11 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
         onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
         onDelete: (id) => { call('delete ' + id); address.close(); setSteps((current) => without(current, id)); },
         onNotify: (message) => call('notify ' + message),
-      }),
-      open && editing === address.id && React.createElement(StepComposer, {
-        tree, completed: progress.completed, legend: [], band: breakpoint, editing,
-        onCreate: noop,
-        onClose: () => setEditing(null),
-        onEdit: (request) => {
-          (window.editRequests ??= []).push(request);
-          setQuiet((current) => current + 1);
-          setSteps((current) => current.map((node) => node.id === request.id ? { ...node, ...request } : node));
-          return { ok: true };
-        },
       })));
   }
-  createRoot(document.getElementById('root')).render(React.createElement(App));
+  const scope = new DocumentDataScope();
+  scope.reconcile({ device: { meta: {}, activeReplica: { meta: { state: 'anon' } } } });
+  createRoot(document.getElementById('root')).render(React.createElement(StepDraftProvider, { dataScope: scope.read }, React.createElement(App)));
 };
 window.entryReady = true;
 `;

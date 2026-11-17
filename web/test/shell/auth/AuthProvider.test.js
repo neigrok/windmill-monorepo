@@ -533,3 +533,107 @@ test('an observed replacement account completes security cleanup without asking 
   assert.equal(state.auth().account.id, 'B');
   assert.equal(state.auth().roomChanging, false);
 });
+
+test('document scope fences before replacement publication and reuses the ticket through cleanup', async (t) => {
+  const state = await account(t);
+  const scope = state.auth().dataScope;
+  assert.deepEqual(scope.getSnapshot(), { epoch: 1, phase: 'ready', owner: { kind: 'account', id: 'A' } });
+  const previous = scope.getSnapshot();
+  const invalidations = [];
+  t.mock.method(roadmapRoutes.session, 'invalidateAccount', () => invalidations.push(scope.getSnapshot()));
+  let release;
+  const cleanup = new Promise((resolve) => { release = resolve; });
+  roadmapRoutes.forgetDevice.mock.mockImplementation(() => cleanup);
+  state.setMe({ id: 'B', name: 'Bea' });
+  const signIn = state.auth().signIn({ id: 'B', name: 'Bea' });
+  assert.deepEqual(scope.getSnapshot(), { epoch: previous.epoch + 1, phase: 'changing', owner: { kind: 'account', id: 'B' } });
+  assert.equal(state.auth().account.id, 'A');
+  await until(() => state.engine.device.meta.deviceCleanup);
+  assert.equal(invalidations.length, 1);
+  release();
+  await signIn;
+  assert.deepEqual(scope.getSnapshot(), { epoch: previous.epoch + 1, phase: 'ready', owner: { kind: 'account', id: 'B' } });
+});
+
+test('cancelled sign-out preparation and pre-commit failure preserve scope, but attempted cleanup remains fenced', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const before = state.auth().dataScope.getSnapshot();
+  const pending = state.auth().signOut();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  assert.equal(state.auth().dataScope.getSnapshot(), before);
+  await decision().props.onCancel();
+  assert.equal(await pending, false);
+  assert.equal(state.auth().dataScope.getSnapshot(), before);
+  const again = state.auth().signOut();
+  await until(() => decision().props.question);
+  const transact = state.engine.store.transact.bind(state.engine.store);
+  state.engine.store.transact = () => Promise.reject(new Error('pre-commit store failure'));
+  await decision().props.onDecision('keep');
+  assert.equal(state.auth().dataScope.getSnapshot(), before);
+  state.engine.store.transact = (change, options) => transact(change, { ...options, beforeCommit: ({ transaction }) => transaction.abort() });
+  await decision().props.onDecision('keep');
+  const fenced = state.auth().dataScope.getSnapshot();
+  assert.deepEqual(fenced, { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } });
+  state.engine.store.transact = transact;
+  await decision().props.onCancel();
+  assert.equal(await again, false);
+  assert.equal(state.auth().dataScope.getSnapshot(), fenced);
+});
+
+test('lapse preserves scope and a missed completed sign-out fences the old owner on reconciliation', async (t) => {
+  const state = await account(t);
+  const scope = state.auth().dataScope;
+  const before = scope.getSnapshot();
+  state.setMe(null);
+  await state.auth().refresh();
+  assert.equal(scope.getSnapshot(), before);
+  await state.engine.finishSignOut({ choice: 'keep' });
+  await state.engine.write(null, (device) => { delete device.meta.clearCredential; });
+  await state.auth().refresh();
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 1, phase: 'ready', owner: { kind: 'anonymous' } });
+});
+
+test('a throwing product invalidator cannot stop the scope fence, later invalidators or cleanup', async (t) => {
+  const state = await account(t);
+  const { PRODUCTS } = await import('../../../src/shell/products.js');
+  const afterRoadmap = PRODUCTS.find((product) => product.id !== 'roadmap');
+  const previous = afterRoadmap.session;
+  const observations = [];
+  afterRoadmap.session = { invalidateAccount: () => observations.push(state.auth().dataScope.getSnapshot()) };
+  t.after(() => { if (previous) afterRoadmap.session = previous; else delete afterRoadmap.session; });
+  t.mock.method(roadmapRoutes.session, 'invalidateAccount', () => { throw new Error('Private draft value must not escape'); });
+  const before = state.auth().dataScope.getSnapshot();
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.auth().signIn({ id: 'B', name: 'Bea' });
+  assert.deepEqual(observations, [{ epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'account', id: 'B' } }]);
+  assert.deepEqual(state.auth().dataScope.getSnapshot(), { epoch: before.epoch + 1, phase: 'ready', owner: { kind: 'account', id: 'B' } });
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: 'B' }]);
+});
+
+test('the same sign-out callback is idempotent and an old callback cannot fence a newer account', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const finish = state.engine.finishSignOut.bind(state.engine);
+  const callbacks = [];
+  const invalidations = [];
+  t.mock.method(roadmapRoutes.session, 'invalidateAccount', () => invalidations.push(state.auth().dataScope.getSnapshot()));
+  state.engine.finishSignOut = (options) => finish({ ...options, beforeSignOutCommit: () => {
+    callbacks.push(options.beforeSignOutCommit);
+    options.beforeSignOutCommit();
+    options.beforeSignOutCommit();
+  } });
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => decision()?.props.question);
+  await decision().props.onDecision('keep');
+  assert.equal(await departure, true);
+  assert.equal(invalidations.length, 1);
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.auth().signIn({ id: 'B', name: 'Bea' });
+  const current = state.auth().dataScope.getSnapshot();
+  assert.equal(current.owner.id, 'B');
+  assert.throws(callbacks[0], { message: 'stale document data transition' });
+  assert.equal(state.auth().dataScope.getSnapshot(), current);
+});

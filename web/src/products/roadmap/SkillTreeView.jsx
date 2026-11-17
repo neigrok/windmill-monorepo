@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './skilltree.css';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
+import { requestNavigation } from '../../shell/navigation.js';
 import { Button, ErrorBoundary } from '../../design-system';
 import { track } from '../../telemetry/beacon.js';
 import { ActivityPanel } from './activity/ActivityRows.jsx';
@@ -17,13 +18,17 @@ import { GuideEntry } from './guide/GuideEntry.jsx';
 import { GuideNote } from './guide/GuideNote.jsx';
 import { useRoomGuide } from './guide/useGuide.js';
 import { StepComposer } from './step/StepComposer.jsx';
+import { useStepDraft } from './step/StepDraftProvider.jsx';
+import { useInlineStepEditor, UnavailableStepDraft } from './step/InlineStepEditor.jsx';
+import { SkillTree } from './model/SkillTree.js';
+import { makeRenderable } from './model/renderableGraph.js';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
 import { deletable, takesEveryRoot } from './board/acts.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast } from './copy.js';
 import { t } from './i18n/index.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
-import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
+import { useBoardActs } from './board/useBoardActs.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { COACHED_NODE_ID } from './demo/demoStage.js';
 import { useDemoCoach } from './demo/useDemoCoach.js';
@@ -82,6 +87,7 @@ const leavesWithItsView = (toast) => toast.surface === 'board' || toast.surface 
 
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
+  const draftHost = useStepDraft();
   const { breakpoint, shared } = useViewMode();
   const { status, refresh, account, confirmed: accountConfirmed, lapsed: sessionLapsed } = useAuth();
   const [room] = useState(roomHandles);
@@ -94,7 +100,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // Who is looking, and what this device keeps for them.
   const knownReaderRef = useRef(false);
-  const { lapsed, demotion, setDemotion, claims } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
+  const { lapsed, demotion, setDemotion, claims, sharedWritesAllowed } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
   const placeKept = !shared && breakpoint === 'desktop';
   const desktopEditorRef = useRef(false);
   const phone = breakpoint === 'phone';
@@ -225,7 +231,14 @@ export function SkillTreeView({ treeId, demo = false }) {
     else sceneRef.current?.revealNode(id);
     setSelectedId(id);
   }, [setSelectedId]);
+  const readEditAuthority = () => {
+    const session = sessionRef.current;
+    const currentTree = session?.lattice ? new SkillTree(makeRenderable(session.lattice.toTreeData()).tree) : room.treeRef.current;
+    const editable = owner && sharedWritesAllowed() && session?.reach !== 'reader' && !session?.closed;
+    return { tree: currentTree, editable, session, savingBlocked: Boolean(session?.rebaselining || session?.discardPending) };
+  };
   const { held: boardHeld, acts: boardActs } = useBoardActs({
+    readEditAuthority, readInlineDraft: () => draftHost?.store.getSnapshot()?.draft,
     active: boardActive, graphActive: canvasView, owner, treeId, tree,
     progress, query: boardQuery, session: sessionRef.current,
     completeStep: (id, options) => progressActs.complete(id, { ...options, tree: boardTree }),
@@ -294,14 +307,15 @@ export function SkillTreeView({ treeId, demo = false }) {
     onGraphStepOpen: () => { framing.firstFrameRef.current = null; },
   });
   const { detailId, focusLayer } = stepPage;
+  const inlineEditor = useInlineStepEditor({ treeId, tree: boardTree, owner, loading, readAuthority: readEditAuthority,
+    acts: boardActs, legend, completed, stepId: stepAddress.id });
   const shownDetailId = detailId !== null && boardTree?.nodesById.has(detailId) ? detailId : null;
   const newStepFromBoard = useCallback((door = 'verbs') => {
     if (!owner) return;
     setBoardComposer({ door, view: boardActive ? 'board' : 'tree', opener: document.activeElement });
     track('roadmap_board_create', { step: 'open', door, view: boardActive ? 'board' : 'graph' });
   }, [boardActive, owner]);
-  const composerDoor = new BoardComposer({ view: canvasView ? 'tree' : 'board', owner, detailId: shownDetailId, composer: boardComposer, acts: boardActs, onOpen: setBoardComposer });
-  const shownComposer = composerDoor.shown;
+  const shownComposer = owner && boardComposer?.view === (canvasView ? 'tree' : 'board') ? boardComposer : null;
   if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
   const stepCovering = detailId !== null || boardComposer !== null;
   activationRef.current = (id) => {
@@ -758,7 +772,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {shownDetailId !== null && (
+      {inlineEditor?.unavailable && <UnavailableStepDraft editor={inlineEditor} onClose={inlineEditor.host.cancel} />}
+      {shownDetailId !== null && !inlineEditor?.unavailable && (
         <ErrorBoundary fallback={null} onCrash={stepPage.crash}>
           <StepDetail
             tree={boardTree}
@@ -771,7 +786,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             refusal={refusal}
             progressBlocked={Boolean(syncSnapshot?.progressBlocked)}
             deletable={deletable(boardTree, [detailId])}
-            onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
+            inlineEditor={owner ? inlineEditor : null}
             treeActs={treeActs}
             stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
             kindLabel={legend.find((kind) => kind.hue === boardTree.nodesById.get(detailId)?.color)?.label}
@@ -792,8 +807,14 @@ export function SkillTreeView({ treeId, demo = false }) {
             onViewBranch={stepPage.viewBranch}
             onDelete={stepPage.deleteStep}
             onDeletePrompt={(step) => boardActs.deletePrompt(step)}
-            onAddStep={tabletEditor ? (id) => { stepAddress.close(); tablet.addStepUnder(id); } : undefined}
-            onConnect={tabletEditor ? (id) => { stepAddress.close(); tablet.enterAim(id); } : undefined}
+            onAddStep={tabletEditor ? (id) => requestNavigation({ key: `step:add:${id}`, run: async (tx) => {
+              if (await stepAddress.close(tx) === false) return;
+              tablet.addStepUnder(id);
+            } }) : undefined}
+            onConnect={tabletEditor ? (id) => requestNavigation({ key: `step:connect:${id}`, run: async (tx) => {
+              if (await stepAddress.close(tx) === false) return;
+              tablet.enterAim(id);
+            } }) : undefined}
             onNotify={showToast}
           />
         </ErrorBoundary>
@@ -805,8 +826,8 @@ export function SkillTreeView({ treeId, demo = false }) {
           setBoardComposer(null);
           focusLayer();
         }}>
-          <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
-            editing={shownComposer.editing ?? null} savingBlocked={Boolean(syncSnapshot?.rebaselining)} onEdit={(request) => composerDoor.saveEdit(request)}
+          <StepComposer key="create" tree={boardTree} completed={completed} legend={legend} band={breakpoint}
+            savingBlocked={Boolean(syncSnapshot?.rebaselining)}
             onCreate={(request) => boardActs.create(request)} onClose={() => setBoardComposer(null)} />
         </ErrorBoundary>
       )}

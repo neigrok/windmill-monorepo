@@ -100,7 +100,6 @@ export const COMPOSER = {
   none: t('roadmap.composer.none'),
   create: t('roadmap.composer.create'),
 };
-export const EDIT_STEP = { title: t('roadmap.editStep.title'), save: t('roadmap.common.save') };
 export const PICKER = {
   title: t('roadmap.picker.title'),
   allSteps: t('roadmap.picker.allSteps'),
@@ -427,7 +426,6 @@ export const STEP_DETAIL = {
   copyLink: t('roadmap.step.copyLink'),
   openInGraph: t('roadmap.step.openInGraph'),
   deleteStep: t('roadmap.step.deleteStep'),
-  editStep: t('roadmap.step.editStep'),
   editNote: t('roadmap.step.editNote'),
   viewBranch: t('roadmap.step.viewBranch'),
   subtasks: t('roadmap.step.subtasks'),

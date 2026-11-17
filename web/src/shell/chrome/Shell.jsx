@@ -4,6 +4,7 @@
 import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CloudOff } from 'lucide-react';
 import { BrandMark, Tooltip } from '../../design-system';
+import { PageFrame } from '../PageFrame.jsx';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -158,7 +159,7 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
   }, [redirect?.href, redirect?.external]);
 
   return (
-    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
+    <PageFrame className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme} contentClassName="wm-room" header={<>
       <header className={`wm-head${sharedShell ? ' wm-head--shared' : ''}${roomStatus ? ' wm-head--status' : ''}`}>
         <a className="wm-head-mark" href="/" title="Windmill" aria-label={t('shell.chrome.homeMark')}><BrandMark size={30} /></a>
         <nav className="wm-switch" aria-label={t('shell.chrome.rooms')}>
@@ -185,11 +186,11 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
             />
           )}
         </div>
-      </header>
-      <main className="wm-room">
+      </header></>}>
+      <main className="wm-room-content">
         <RoomContent room={room} location={location} />
       </main>
-    </div>
+    </PageFrame>
   );
 }
 

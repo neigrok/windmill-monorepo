@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, Crosshair, Lock, PanelRightClose, PanelRightOpen, Pencil, Undo2, Users } from 'lucide-react';
+import { Clock, Crosshair, Lock, PanelRightClose, PanelRightOpen, Undo2, Users } from 'lucide-react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -22,6 +22,7 @@ import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { boardFocusTarget } from '../board/traversal.js';
 import { RefusedSync } from '../sync/SyncNotices.jsx';
 import './read.css';
+import { InlineField, InlineFieldTrigger, InlineFieldActions } from './InlineStepEditor.jsx';
 import {
   COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, TREE, checkedToast,
   DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, formatCount, lockedStatus, resetOutcome, resetPreview,
@@ -62,7 +63,7 @@ export function StepDetail({
   onViewBranch,
   onDelete,
   onDeletePrompt,
-  onEdit,
+  inlineEditor = null,
   onNotify,
   treeActs = null,
   kindLabel = null,
@@ -452,6 +453,7 @@ export function StepDetail({
     event.stopPropagation();
     if (closeTreePicker.current) { closeTreePicker.current(); return; }
     if (editingRef.current) { workspaceRef.current?.close(); return; }
+    if (inlineEditor?.active) { inlineEditor.host.cancel(); return; }
     if (copyRecovery) { dismissCopyRecovery(); return; }
     leaveRef.current();
   };
@@ -485,7 +487,9 @@ export function StepDetail({
       onDelete(id);
     },
   } : null;
-  const edit = editable && onEdit ? () => { act('edit'); onEdit(id); } : null;
+  const fieldEditor = inlineEditor?.draft?.stepId === id ? inlineEditor : null;
+  const activeField = fieldEditor?.draft?.field;
+  const fieldTrigger = (field, children, className = '') => <InlineFieldTrigger editor={editable ? inlineEditor : null} step={facts.step} field={field} className={className}>{children}</InlineFieldTrigger>;
   const previous = trail.length > 1 ? tree.nodesById.get(trail[trail.length - 2]) : null;
   const backLabel = previous ? titleOf(previous) : roadmapTitle;
   const liveChecked = checked && phone && workspace?.subtasks?.some((item) => item.id === checked.id && item.done);
@@ -503,7 +507,7 @@ export function StepDetail({
     <DetailFocusContext.Provider value={detailFocus}>
       <div ref={layerRef} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress} onKeyDown={copyRecovery ? onKeyDown : undefined}
         onPointerDownCapture={preserveInteractionFocus} onKeyDownCapture={preserveInteractionFocus} onFocusCapture={preserveInteractionFocus}>
-        <article className="st-step-document" aria-labelledby={titleId} tabIndex={-1} onKeyDown={onKeyDown}>
+        <article className={`st-step-document${activeField ? ' has-inline-editor' : ''}`} data-step-document-id={id} aria-labelledby={titleId} tabIndex={-1} onKeyDown={onKeyDown}>
           <header className="st-step-toolbar">
             <button type="button" className="st-step-breadcrumb" aria-label={backTo({ screen: backLabel })} onClick={onBack}>
               {phone || previous ? <StepIcons.back /> : <StepIcons.graph />}
@@ -522,18 +526,19 @@ export function StepDetail({
           <div ref={scrollRef} className="st-step-document-scroll" onWheel={() => cancelAnimationFrame(sectionScroll.current)} onTouchStart={() => cancelAnimationFrame(sectionScroll.current)}>
             <div className="st-step-read-heading">
               <div className="st-step-read-tags">
-                <span className="st-step-kind-label"><i style={{ background: kind.base }} />{kindLabel || facts.step.color}</span>
-                <StatusRow facts={facts} />
+                {activeField === 'color' ? <InlineField editor={fieldEditor} field="color" /> : fieldTrigger('color', <><i style={{ background: kind.base }} />{kindLabel || facts.step.color}</>, 'st-step-kind-label')}
+                {activeField !== 'color' && <StatusRow facts={facts} />}
               </div>
               <div className="st-step-read-title">
-                <h2 id={titleId} className="st-board-step-identity-title" tabIndex={-1}>{titleOf(facts.step)}</h2>
-                {edit && <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.editStep} onClick={edit}><Pencil size={16} aria-hidden /></button>}
+                {activeField === 'label' ? <><span id={titleId} className="st-step-announcement">{titleOf(facts.step)}</span><InlineField editor={fieldEditor} field="label" /></> : <h2 id={titleId} aria-label={titleOf(facts.step)} className="st-board-step-identity-title" tabIndex={-1}>{fieldTrigger('label', titleOf(facts.step))}</h2>}
               </div>
             </div>
             <div className="st-step-document-grid">
               <section className="st-step-description-section">
                 <h3 className="st-step-section-title">{t('roadmap.step.description')}</h3>
-                {description && <p className="st-board-step-description">{description}</p>}
+                {activeField === 'description' ? <InlineField editor={fieldEditor} field="description" /> : editable && inlineEditor
+                  ? fieldTrigger('description', <span className="st-board-step-description">{description || t('roadmap.inline.noDescription')}</span>, 'st-inline-description-trigger')
+                  : description && <p className="st-board-step-description">{description}</p>}
                 {links.length > 0 && <div className="st-board-step-links">{links.map((link, index) => (
                   <a key={`${index}-${link.url}`} className="st-board-step-link" href={link.url} target="_blank" rel="noopener noreferrer">
                     <StepIcons.copyLink /><span className="st-board-step-link-label">{link.label || link.url}</span><StepIcons.external />
@@ -542,6 +547,8 @@ export function StepDetail({
               </section>
               <aside className="st-step-relationships">
                 <Relationships facts={facts} onOpenStep={onOpenStep} onOpenTree={openTree} treeLink={treeLink}
+                  prerequisiteEditor={activeField === 'prerequisites' ? <InlineField editor={fieldEditor} field="prerequisites" /> : null}
+                  prerequisiteTrigger={editable && inlineEditor ? fieldTrigger('prerequisites', null, 'st-board-step-icon-button') : null}
                   onViewBranch={editable && facts.column !== 'locked' ? () => { act('viewBranch'); onViewBranch(id); } : null} />
                 <nav className="st-step-section-links" aria-label={t('roadmap.step.sectionsLabel')}>
                   {editable && <button type="button" onClick={() => jumpTo('workspace')}><Lock size={16} aria-hidden /><strong>{t('roadmap.step.myWorkspace')}</strong><span>{t('roadmap.step.private')}</span><StepIcons.chevron /></button>}
@@ -601,6 +608,7 @@ export function StepDetail({
               </div>
             </section>}
           </div>
+          {activeField && <InlineFieldActions editor={fieldEditor} />}
           <footer className="st-step-pinned-actions">
             {!(phone && outcome) && <span className="st-step-shared-label"><Users size={14} aria-hidden />{t('roadmap.step.sharedStep')}</span>}
             <p className="st-board-step-outcome" role="status">{outcome?.line ?? ''}</p>
@@ -626,17 +634,18 @@ export function StepDetail({
   );
 }
 
-function Relationships({ facts, onOpenStep, onOpenTree, treeLink, onViewBranch }) {
+function Relationships({ facts, onOpenStep, onOpenTree, treeLink, onViewBranch, prerequisiteEditor, prerequisiteTrigger }) {
   const needing = facts.column === 'locked';
   return (
     <>
-      {facts.prerequisites.length > 0 && (
+      {(facts.prerequisites.length > 0 || prerequisiteTrigger || prerequisiteEditor) && (
         <section className="st-board-step-relations">
           <h3 className="st-board-step-heading">
             <span>{t('roadmap.step.requires')}</span>
             <span className="st-board-step-heading-count">{t('roadmap.step.requiresDone', { done: formatCount(facts.prerequisitesDone), total: formatCount(facts.prerequisites.length) })}</span>
+            {!prerequisiteEditor && prerequisiteTrigger}
           </h3>
-          {facts.prerequisites.map((related) => (
+          {prerequisiteEditor || facts.prerequisites.map((related) => (
             <RelationRow key={related.id} related={related} need={needing && related.column !== 'done'} onOpen={onOpenStep} />
           ))}
         </section>

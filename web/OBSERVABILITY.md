@@ -71,7 +71,7 @@ admitted action. A late asynchronous action failure still reports `navigation-co
 fallback or disposal has revoked its navigation capability; each action reports that failure once and
 cannot revive parked writes. Applied history remains owned until reconciliation or a handoff to newer
 navigation; an error does not drop that responsibility. Admission context carries only the frozen `navigation` or
-`sign-out` kind and is not a telemetry payload. No product currently registers a navigation blocker.
+`sign-out` kind and is not a telemetry payload. Roadmap registers its shared-field draft blocker and reports its bounded decisions below.
 
 The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
 rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste
@@ -219,12 +219,13 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Add a pasted plan to the roadmap | `roadmap_board_create` | `step: saved`, `door: paste`, `view: board/graph`, `count: 0/1/2-5/6-20/21+` |
 | Composer's other outcomes | `roadmap_board_create` | `step: failed/retry/discard/cancel` |
 | Planting a new roadmap failed | `roadmap_board_create` | `step: failed`, `door: blank/import/quest` |
-| Edit saved in the composer | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
-| Edit composer's other outcomes | `roadmap_board_edit` | `step: failed/retry/discard/cancel/unchanged` |
+| Shared field saved in the step document | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
+| Shared-field editor actions and outcomes | `roadmap_step_edit` | `step: open/change/guard/keep/discard/cancel/saved/unchanged/invalid/failed/retry/conflict/load_latest/selection_updated/unavailable`, `field: label/description/color/prerequisites` |
+| Retained one-field draft and read-only recovery | `roadmap_step_draft` | `step: retained/view/close/copy/copied/copy_failed/return/return_failed/adopted/unavailable/collision/signout_prompt/discard_prompt/keep/discard/select` |
 | Rename, recolor, link, unlink, reconnect or reorder on the Graph | `roadmap_board_edit` | `step: saved`, `view: graph`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false`, `order: true/false` |
 | Change a kind in the Graph's legend | `roadmap_board_edit` | `step: saved`, `view: graph`, `legend: rename/describe/add/remove/recolor` |
-| Prerequisite picker | `roadmap_board_picker` | `step: open/cancel/more/revalidated`, `mode: create/edit` |
-| Picker applied | `roadmap_board_picker` | `step: apply`, `mode: create/edit`, `count: 0/1/2-5/6-20/21+` |
+| Prerequisite picker | `roadmap_board_picker` | `step: open/cancel/more/revalidated`, `mode: create` |
+| Picker applied | `roadmap_board_picker` | `step: apply`, `mode: create`, `count: 0/1/2-5/6-20/21+` |
 | Delete's confirmation | `roadmap_board_delete` | `step: confirm/cancel`, `view: board/graph` |
 | Delete held for nine seconds | `roadmap_board_delete` | `step: held`, `door: menu/key/bulk`, `view: board/graph` |
 | Held delete released | `roadmap_board_delete` | `step: sent`, `via: timer/replaced/left`, `view: board/graph` |
@@ -412,3 +413,11 @@ sends the labels and frames the shell's reporter above describes and no exceptio
 
 `scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer. Any Sentry attempt or
 `client_error` beacon it blocks fails its walk.
+
+Roadmap's one-field recovery reports unexpected clipboard failures as `roadmap-step-draft-copy` and failed
+return/adoption as `roadmap-step-draft-return`, through the existing sanitized Roadmap reporter. Expected
+clipboard permission refusals emit only `roadmap_step_draft` with `step: copy_failed`. Scope-invalidated or
+superseded callbacks cannot expose content, change recovery state or restore focus. Draft values, field contents,
+step and tree identifiers, account identifiers, URLs and raw exception messages are absent from these events.
+Auth reports each throwing product session invalidator as `auth-document-data-invalidate` with a static auth
+operation and sanitized stack. One invalidator cannot stop the scope fence or the remaining cleanup callbacks.

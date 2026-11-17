@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { DELETE_CONFIRM, EDIT_STEP, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
+import { DELETE_CONFIRM, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 
@@ -56,9 +56,9 @@ hostTest('Chromium: Graph document keeps the complete edit contract and held del
   const { page, errors } = await openHost({ width: 390, fixedClock: true });
   try {
     await page.evaluate(() => window.scene.activate('wind'));
-    await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
+    await page.getByRole('button', { name: 'Edit name', exact: true }).click();
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Read gusts');
-    await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
     await page.getByRole('article', { name: 'Read gusts', exact: true }).waitFor();
     await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
     await page.getByRole('menuitem', { name: STEP_DETAIL.deleteStep, exact: true }).click();
@@ -158,7 +158,7 @@ for (const options of [
       const step = page.getByRole('article', { name: 'Read the wind', exact: true });
       await step.waitFor();
       assert.equal(await step.locator('.st-board-workspace').count(), 0);
-      assert.equal(await step.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).count(), 0);
+      assert.equal(await step.getByRole('button', { name: 'Edit name', exact: true }).count(), 0);
       assert.equal(await page.getByText('Private preparation note', { exact: true }).count(), 0);
       assert.equal(await page.getByText('Private task', { exact: true }).count(), 0);
       assert.equal(await step.locator('.st-step-history-section').count(), 1);

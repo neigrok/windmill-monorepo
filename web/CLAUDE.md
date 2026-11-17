@@ -59,7 +59,8 @@ rewrite; the data or security cleanup itself remains immediate.
 
 A product can register one identity-bound guard with `blocked`, `onBlocked` and synchronous
 `onUnrestorableNavigation`. Releasing that registration cancels its unanswered decision; an admitted
-action can finish after its original view unmounts. No product currently registers one. Indexed
+action can finish after its original view unmounts. Roadmap registers its single shared-field draft through
+its persistent product session provider. Indexed
 native Back/Forward restores the accepted entry before asking, retains the first destination, and
 uses positional traversal without replacing Forward history. Every newly observed indexed
 displacement can correct the remaining distance to that immutable origin, under one deadline. Paired
@@ -269,3 +270,12 @@ cache generation before promoting it; a failed update retains the previous compl
 enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use.
 API/model responses bypass the worker, and bounded network navigation falls back to the cached shell.
 Server features name their connection requirement in the offline state.
+
+Product session contributions are static `routes.session = { Provider, Notice, invalidateAccount }` entries.
+`ProductSessions` mounts them above keyed routes, with Auth's read-only `DocumentDataScope`. A scope is pending
+until a usable engine holder resolves, ready for that owner, or changing while committed cleanup is fenced.
+Replacement and committed cleanup advance the epoch before invalidating product memory and publishing account
+changes; each invalidator is isolated. Lapse and same-owner recovery retain the epoch. Completion requires the
+current transition ticket and matching usable holder. `PageFrame` places actual header, session notices and
+contained content in normal flow; landing headers keep their responsive height. Headerless routes and fallbacks
+use the same top notice slot. Product session data never enters shell layout or navigation state.

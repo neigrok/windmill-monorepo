@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { EDIT_STEP, FORK_OFFER, OPEN_STEP, PICKER, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
+import { FORK_OFFER, OPEN_STEP, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 import { DEMO_COPY } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
@@ -19,7 +19,7 @@ for (const width of phones) {
     try {
       await page.evaluate(() => window.scene.activate('wind'));
       await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
-      assert.equal(await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).count(), 1);
+      assert.equal(await page.getByRole('button', { name: 'Edit name', exact: true }).count(), 1);
       assert.equal(await identityView(page), 'tree');
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
@@ -30,7 +30,7 @@ for (const width of phones) {
     try {
       await page.evaluate(() => window.scene.activate('wind'));
       await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
-      assert.equal(await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: 'Edit name', exact: true }).count(), 0);
       assert.equal(await page.getByRole('button', { name: STEP_DETAIL.complete, exact: true }).count(), 0);
       assert.equal(await identityView(page), 'tree');
       assert.deepEqual(errors, []);
@@ -42,12 +42,10 @@ for (const width of phones) {
     try {
       assert.deepEqual(await page.evaluate(() => [window.longPress, window.editTap]), [null, null]);
       await page.evaluate(() => window.scene.activate('dock'));
-      await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
-      await page.locator('.st-board-draft-needs').click();
+      await page.getByRole('button', { name: 'Edit prerequisites', exact: true }).click();
       await page.getByRole('checkbox', { name: /^Read the wind/ }).click();
       await page.getByRole('checkbox', { name: /^Choose a course/ }).click();
-      await page.getByRole('button', { name: PICKER.apply, exact: true }).click();
-      await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
       await page.getByRole('article', { name: 'Leave the dock', exact: true }).waitFor();
       assert.deepEqual(await page.evaluate(() => window.session.lattice.toTreeData().nodes.find(({ id }) => id === 'dock').prerequisites), ['course']);
       assert.deepEqual(errors, []);
