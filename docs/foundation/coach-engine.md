@@ -246,9 +246,9 @@ profile. The engine runs it in this order.
 **A turn that never began.** A turn is withdrawn, its records removed and its question and picture
 returned to the field, only when the engine knows the service admitted nothing for round 1: the
 pass door refused before any call was sent, the text door's refusal proves it (§4.2), or the device
-reported no connection when round 1 was to be sent, so nothing left it. A turn sent with no connection is
-therefore returned to the field at once, with or without a pass in hand, and Coach says it needs a
-connection (R-6). A connection lost after a round was sent is asked for again as §4.2 says. A turn
+reported no connection when round 1 was to be sent, so nothing left it. A turn sent with no
+connection is therefore returned to the field at once, with or without a pass in hand, and Coach
+says it needs a connection (R-6). A connection lost after a round was sent is asked for again as §4.2 says. A turn
 whose round 1 may have been admitted is never withdrawn: it ends `failed` with the code the engine
 was given, or `interrupted` when it was given none, with its question on the record.
 
