@@ -118,9 +118,12 @@ The body is `{"client": "ios" | "android" | "web", "use": "<profile name>", "ver
   as the backend's other doors that take a cookie require.
 - An installation's request first passes the limits the backend keeps for installations by network
   address. The limit on generations an address may start in an hour becomes a limit on the passes
-  it may be signed. What an address can spend in a day does not change: the installations it may be
-  issued, each with its lifetime allowance. It can be spent in fewer requests than before, since a
-  pass admits any call the allowance still covers.
+  it may be signed. What an address can spend in a day through this door is what it could spend
+  before it: the installations it may be issued, each with its lifetime allowance, in fewer requests
+  than before, since a pass admits any call the allowance still covers. The AI service keeps a ledger
+  of its own, so while the backend's signed-out Coach still runs beside this door an address can
+  spend that much on each, and the free budgets stand twice, until gym's cutover
+  ([Gym Coach on the AI service](gym-coach-on-ai-service.md) R-5).
 - The door is mounted only where a signing key is configured. The key is an Ed25519 private key the
   backend alone holds, under a `kid`; the issuer proves itself against
   `packages/api-contract/ai/passes/vectors.json`.
