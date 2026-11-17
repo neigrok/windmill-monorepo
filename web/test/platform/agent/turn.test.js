@@ -12,7 +12,7 @@ test('the seat barrier resolves when the active record has disappeared', async (
   let enter;
   const dispatched = new Promise((resolve) => { enter = resolve; });
   const runner = new TurnRunner({
-    ai: { clearPass() {}, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
+    ai: { clearPass() {}, connected: () => true, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
     telemetry: { failure: (operation) => events.push({ failure: operation }), turn: (event) => events.push(event) },
     runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
     host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, end: async () => { throw new HostUnavailable(); } },
@@ -32,7 +32,7 @@ test('an unexpected seat-barrier write failure reports immediately and once befo
   let release; let enter;
   const dispatched = new Promise((resolve) => { enter = resolve; });
   const runner = new TurnRunner({
-    ai: { clearPass() {}, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
+    ai: { clearPass() {}, connected: () => true, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
     telemetry: { failure: (operation) => reports.push(operation) },
     runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
     host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, end: async () => { throw new Error('storage failure'); } },

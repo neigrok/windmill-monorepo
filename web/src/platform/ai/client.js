@@ -79,10 +79,7 @@ export class AiClient {
     finally { if (this.passTask?.promise === promise) this.passTask = null; }
   }
 
-  async text({ firstRound = false, ...options }) {
-    if (firstRound && !this.connected()) return this.failure('transport', null, 'none');
-    return await this.operation({ ...options, recover: false });
-  }
+  text(options) { return this.operation({ ...options, recover: false }); }
   result(options) { return this.operation({ ...options, recover: true }); }
 
   async allowance({ use, version }) {

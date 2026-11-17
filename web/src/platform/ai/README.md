@@ -20,12 +20,10 @@ every response in `finally`, including a seat change before iteration starts; th
 disposes rejected headers and completed iterators. Disposal clears the deadline, aborts the request
 and cancels an unread body.
 
-Before a turn's first round sends anything, `text` asks the runtime once whether the device reports
-a connection: the constructor's `connected`, by default `navigator.onLine`, and a browser that
-cannot tell counts as connected. With none the client sends nothing (no pass fetch, picture upload
-or text request) and answers a transport failure with no code and no admission, so the draft is
-restored at once. The runner marks that call `firstRound`; later rounds and recovery never ask.
-After that, offline behavior follows dispatch evidence. A pass or picture preparation failure before
+`connected()` answers whether the device reports a connection: the constructor's `connected`, by
+default `navigator.onLine`, and a browser that cannot tell counts as connected. The runner asks it
+once, before a turn's first round, and withdraws a turn begun with none, so the client is never
+called for it. The client itself never asks: offline behavior after that follows dispatch evidence. A pass or picture preparation failure before
 the first text request restores the draft promptly. An attempted text request can have reached the
 service whatever the browser reports, so a failed send moves the call into uncertain recovery.
 No persisted conversation is required. HTTP errors without a complete,
