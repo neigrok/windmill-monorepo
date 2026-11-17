@@ -6,7 +6,9 @@ so reviews, code and roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. Roadmap syncs through a sync of its own:
+**Status:** Approved by the owner on 2026-11-17. Engine prerequisites are under development in
+[draft PR #290](https://github.com/neigrok/windmill-monorepo/pull/290), kept unmerged for review.
+Roadmap syncs through a sync of its own:
 a lattice and a socket described in [graph sync](../GRAPH_SYNC_DESIGN.md) and
 [the roadmap tree engine](../../backend/SPEC.md), on the web only. The [sync engine](engine.md)
 serves gym and journal, and its tree and overlay scopes have run only against its test product. The
