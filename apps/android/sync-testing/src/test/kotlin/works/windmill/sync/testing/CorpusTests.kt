@@ -34,8 +34,10 @@ class CoverageTests {
     @Test fun fullGateClaimsEveryClientFile() {
         assertEquals(emptyList<String>(), corpus.unclaimed(handlers, corpus.clientPaths))
         corpus.requireCoverage(handlers, corpus.clientPaths)
-        assertEquals(55, handlers.size)
-        assertEquals(880, handlers.keys.sumOf { corpus.vectors(it).size })
+        assertEquals(corpus.clientPaths.toSet(), handlers.keys)
+        val discovered = corpus.clientPaths.sorted().flatMap { corpus.vectors(it) }.map { it.file to it.name }
+        val scheduled = CorpusTests.vectors().map { it.single() as Vector }.map { it.file to it.name }
+        assertEquals(discovered, scheduled)
     }
     @Test fun supportedFileWithoutHandlerFails() {
         assertThrows(IllegalStateException::class.java) { corpus.requireCoverage(emptyMap(), listOf("stamp/order.json")) }
