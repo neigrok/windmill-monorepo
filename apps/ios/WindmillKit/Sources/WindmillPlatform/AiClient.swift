@@ -238,6 +238,11 @@ extension AiClock {
         if attemptSent && failure.source == .transport { admission = max(admission, .possible) }
         let temporaryTransport = failure.source == .transport && !["stopped", "answer-timeout"].contains(failure.code)
         let temporaryPass = failure.source == .pass && ["rate_limited", "unavailable"].contains(failure.code)
+        if temporaryTransport || temporaryPass, !attemptSent, let retryRefusal,
+           retryRefusal.deadline < budget.deadline, clock.nowMs >= retryRefusal.deadline {
+          throw AiFailure(source: retryRefusal.failure.source, code: retryRefusal.failure.code,
+            admission: admission, allowance: retryRefusal.failure.allowance)
+        }
         if !(lost || attemptSent || admission > .none) || !(temporaryTransport || temporaryPass) {
           throw AiFailure(source: failure.source, code: failure.code, admission: admission, allowance: failure.allowance)
         }

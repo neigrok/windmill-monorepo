@@ -189,6 +189,7 @@ extension JSON {
       let passes = try story.field("service").field("passes").array
       let value = passes[min(passIndex, passes.count - 1)]
       passIndex += 1
+      if value.field("elapsedMs") != .null { nowMs += try value.field("elapsedMs").integer }
       if value.field("transport") == "offline" { throw AiTransportFailure.offline }
       let status = Int((try? value.field("status").integer) ?? 200)
       let body: JSON = status == 200 ? value : ["code": value.field("code"), "error": "Pass refused"]

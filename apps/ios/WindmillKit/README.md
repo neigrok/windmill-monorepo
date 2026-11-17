@@ -17,6 +17,8 @@ only. PUT transient refusal retries stop thirty seconds after the first PUT. Aft
 rate-limited, busy and accounting-unavailable refusals use the twenty-minute deadline; the other
 transient PUT refusals keep their original thirty-second window. The twenty-minute deadline begins
 at the first PUT or recovery start and spans pass refresh, requests, streamed reads and retry waits.
+Preparation loss after an active thirty-second refusal deadline returns that refusal; it cannot
+reopen recovery.
 Pass preparation has its own bounded watchdog; expiry cancels suspended work.
 Every event, terminal, allowance and refusal is validated before delivery, including exact fields,
 nonnegative decimal money and the started event's requested call ID. Allowance validation checks

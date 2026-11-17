@@ -251,6 +251,81 @@ import SyncCore
     #expect(diagnostics.failures == [])
   }
 
+  @Test(arguments: ["busy", "paused", "accounting_unavailable", "concurrency_exhausted", "rate_limited", "provider_unavailable"])
+  func preparationLossAfterTheTransientDeadlineReturnsThePriorRefusal(_ code: String) async throws {
+    let clock = PolicyClock()
+    let diagnostics = PolicyDiagnostics()
+    let transport = RecoveryTransport([
+      .success(ValidationTransport.json(["pass": "token", "expiresIn": 60001])),
+      .success(ValidationTransport.json(["code": .string(code), "allowance": .null], status: AiWire.refusalStatus[code]!)),
+      .failure(.offline), .success(ValidationTransport.pass()), .success(Self.completed()),
+    ])
+    transport.beforeResponse = { count in if count == 3 { clock.nowMs = 31_000 } }
+    let client = ServiceAiClient(transport: transport, clock: clock, diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+    let profile = try AiPolicyTests.profile()
+    var events: [String] = []
+    do {
+      try await client.call(id: String(repeating: "A", count: 22), request: [:], profile: profile,
+        seat: Seat(kind: .anon, key: "seat"), pictures: []) { events.append($0.name) }
+      Issue.record("A late refresh failure reopened the refusal window")
+    } catch let failure as AiFailure {
+      #expect(failure.code == code)
+      #expect(failure.admission == (["busy", "accounting_unavailable"].contains(code) ? .possible : .none))
+    }
+    #expect(events == [])
+    #expect(transport.requests.map(\.method) == ["POST", "PUT", "POST"])
+    #expect(diagnostics.failures == [])
+  }
+
+  @Test func dispatchBeforeTheRefusalDeadlineCanBecomeAmbiguousAfterIt() async throws {
+    let profile = try AiPolicyTests.profile()
+    for code in ["busy", "paused"] {
+      let clock = PolicyClock()
+      let diagnostics = PolicyDiagnostics()
+      let transport = RecoveryTransport([.success(ValidationTransport.pass()),
+        .success(ValidationTransport.json(["code": .string(code), "allowance": .null], status: 503)),
+        .failure(.offline), .success(Self.completed()),
+      ])
+      transport.beforeResponse = { count in if count == 3 { clock.nowMs = 31_000 } }
+      let client = ServiceAiClient(transport: transport, clock: clock, diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+      var events: [String] = []
+      try await client.call(id: String(repeating: "A", count: 22), request: ["private": "question"], profile: profile,
+        seat: Seat(kind: .anon, key: "seat"), pictures: []) { events.append($0.name) }
+      #expect(events == ["ended"])
+      #expect(clock.nowMs == 33_000)
+      #expect(transport.requests.map(\.method) == ["POST", "PUT", "PUT", "PUT"])
+      #expect(transport.requests.dropFirst().map(\.body) == Array(repeating: transport.requests[1].body, count: 3))
+      #expect(diagnostics.failures == [])
+    }
+  }
+
+  @Test func latePreparationLossStillHonorsStopAndSeatChange() async throws {
+    let profile = try AiPolicyTests.profile()
+    for control in ["stop", "seat"] {
+      let clock = PolicyClock()
+      let diagnostics = PolicyDiagnostics()
+      let transport = RecoveryTransport([
+        .success(ValidationTransport.json(["pass": "token", "expiresIn": 60001])),
+        .success(ValidationTransport.json(["code": "busy", "allowance": .null], status: 503)), .failure(.offline),
+      ])
+      let client = ServiceAiClient(transport: transport, clock: clock, diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+      transport.beforeResponse = { count in
+        guard count == 3 else { return }
+        clock.nowMs = 31_000
+        if control == "stop" { client.stopAskingAgain() }
+        else { client.seatWillChange() }
+      }
+      do {
+        try await client.call(id: String(repeating: "A", count: 22), request: [:], profile: profile,
+          seat: Seat(kind: .anon, key: "seat"), pictures: []) { _ in Issue.record("Late event") }
+        Issue.record("Canceled preparation succeeded")
+      } catch HostFailure.staleSeat { #expect(control == "seat") }
+      catch let failure as AiFailure { #expect(control == "stop"); #expect(failure.code == "stopped"); #expect(failure.admission == .possible) }
+      #expect(transport.requests.map(\.method) == ["POST", "PUT", "POST"])
+      #expect(diagnostics.failures == [])
+    }
+  }
+
   static func completed() -> AiResponse {
     ValidationTransport.event("ended", ["stop": "completed", "message": ["role": "assistant", "parts": [], "carry": ""], "charged": "0", "allowance": .null])
   }
