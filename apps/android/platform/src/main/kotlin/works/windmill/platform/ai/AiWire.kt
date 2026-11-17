@@ -19,12 +19,32 @@ interface AiTransport {
 object AiWire {
     private val amount = Regex("(0|[1-9][0-9]*)(\\.[0-9]{1,9})?")
     private val models = setOf("large", "medium", "small")
-    private val refusalCodes = setOf("invalid_request", "provider_rejected", "pass_missing", "pass_signature", "pass_audience", "pass_malformed", "pass_expired", "funding_required", "device_bound", "call_unknown", "conflict", "result_gone", "picture_gone", "too_large", "subject_exhausted", "free_month_exhausted", "free_day_exhausted", "rate_limited", "concurrency_exhausted", "accounting_unavailable", "provider_unavailable", "provider_failed", "busy", "paused", "untrusted-origin", "unsupported-media-type")
-    fun refusal(value: Json?): Json? = try {
-        requireNotNull(value).expectKeys(listOf("code", "allowance"))
-        require(value.member("code").str() in refusalCodes)
+    private val refusalStatus = mapOf(
+        "invalid_request" to 400, "provider_rejected" to 400, "pass_missing" to 401, "pass_signature" to 401,
+        "pass_audience" to 401, "pass_malformed" to 401, "pass_expired" to 401, "funding_required" to 403,
+        "device_bound" to 403, "call_unknown" to 404, "conflict" to 409, "result_gone" to 410, "picture_gone" to 410,
+        "too_large" to 413, "subject_exhausted" to 429, "free_month_exhausted" to 429, "free_day_exhausted" to 429,
+        "concurrency_exhausted" to 429, "rate_limited" to 429, "busy" to 503, "paused" to 503,
+        "accounting_unavailable" to 503, "provider_unavailable" to 503,
+    )
+    private val passStatus = mapOf(
+        "invalid_request" to 400, "unauthenticated" to 401, "invalid_installation" to 401, "device_bound" to 409,
+        "client-update-required" to 426, "anonymous_ai_unavailable" to 503, "rate_limited" to 429,
+        "unavailable" to 503, "untrusted-origin" to 403, "unsupported-media-type" to 415,
+    )
+    fun refusal(response: AiResponse): Json? = try {
+        val value = requireNotNull(response.body)
+        value.expectKeys(listOf("code", "allowance"))
+        require(refusalStatus[value.member("code").str()] == response.status)
         value.member("allowance").orNull()?.let(::allowance)
         value
+    } catch (_: Exception) { null }
+
+    fun passRefusal(response: AiResponse): String? = try {
+        val value = requireNotNull(response.body)
+        value.expectKeys(listOf("code", "error"))
+        value.member("error").str()
+        value.member("code").str().takeIf { passStatus[it] == response.status }
     } catch (_: Exception) { null }
 
     fun allowance(value: Json) {

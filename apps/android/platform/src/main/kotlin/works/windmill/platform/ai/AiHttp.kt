@@ -4,11 +4,13 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.CookieJar
@@ -97,20 +99,27 @@ class AiHttp(private val origin: HttpUrl, private val credentials: suspend () ->
                 }.flowOn(Dispatchers.IO)
                 return AiResponse(response.code, events = events) { call.cancel(); response.close() }
             }
-            return withContext(Dispatchers.IO) { response.use {
-                val source = it.body?.source() ?: return@use AiResponse(it.code)
-                source.request(1_048_577)
-                if (source.buffer.size > 1_048_576) {
-                    if (it.code != 200) return@use AiResponse(it.code)
-                    throw AiTransportFailure("invalid-answer")
-                }
-                val bytes = source.readByteArray()
-                val body = try { Json.parse(bytes) } catch (_: Exception) {
-                    if (it.code != 200) return@use AiResponse(it.code)
-                    throw AiTransportFailure("invalid-answer")
-                }
-                AiResponse(it.code, body)
-            } }
+            return coroutineScope {
+                val result = async(Dispatchers.IO) { response.use {
+                    val source = it.body?.source() ?: return@use AiResponse(it.code)
+                    source.request(1_048_577)
+                    if (source.buffer.size > 1_048_576) {
+                        if (it.code != 200) return@use AiResponse(it.code)
+                        throw AiTransportFailure("invalid-answer")
+                    }
+                    val bytes = source.readByteArray()
+                    val body = try { Json.parse(bytes) } catch (_: Exception) {
+                        if (it.code != 200) return@use AiResponse(it.code)
+                        throw AiTransportFailure("invalid-answer")
+                    }
+                    AiResponse(it.code, body)
+                } }
+                try { result.await() }
+                catch (cancelled: CancellationException) { call.cancel(); throw cancelled }
+            }
+        } catch (cancelled: CancellationException) {
+            response.close()
+            throw cancelled
         } catch (failure: Exception) {
             response.close()
             if (failure is IOException) throw connectionFailure(failure)

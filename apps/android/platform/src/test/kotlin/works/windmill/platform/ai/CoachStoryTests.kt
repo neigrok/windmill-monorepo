@@ -88,12 +88,16 @@ class CoachStoryTests(private val file: File) {
         }
         var passIndex = 0; var exchangeIndex = 0; var repeat = 0; var pictureIndex = 0; var idIndex = 0
         val service = story.member("service")
+        val refusalStatus = Json.parse(File(System.getProperty("windmill.contract"), "ai/wire/fixtures.json").readText()).member("refusals").arr()
+            .associate { it.member("body").member("code").str() to it.member("status").long().toInt() }
         val transport = object : AiTransport {
             override suspend fun pass(body: Json): AiResponse {
                 val passes = service.member("passes").arr()
                 val value = passes[minOf(passIndex++, passes.lastIndex)]
+                now += value["elapsedMs"]?.long() ?: 0
                 value["transport"]?.let { throw AiTransportFailure(it.str()) }
-                return if (value["pass"] != null) AiResponse(200, value) else AiResponse(value.member("status").long().toInt(), Json.objectOf("code" to value.member("code")))
+                return if (value["pass"] != null) AiResponse(200, Json.objectOf("pass" to value.member("pass"), "expiresIn" to value.member("expiresIn")))
+                else AiResponse(value.member("status").long().toInt(), Json.objectOf("code" to value.member("code"), "error" to Json.of("Refused")))
             }
             override suspend fun request(request: AiRequest): AiResponse {
                 requests += Json.objectOf("method" to Json.of(request.method), "path" to Json.of(request.path), "body" to (request.bytes?.let { Json.Arr(it.map { byte -> Json.of(byte.toInt() and 255) }) } ?: request.body?.let(Json::parse) ?: Json.Null))
@@ -107,7 +111,7 @@ class CoachStoryTests(private val file: File) {
                         AiHttp(server.url("/").newBuilder().host("127.0.0.1").build(), { AiCredentials(null, null) }, allowLocalHttp = true).use { return it.request(request) }
                     }
                 }
-                if (value["refusal"]?.orNull() != null) return AiResponse(429, value.member("refusal"))
+                if (value["refusal"]?.orNull() != null) return AiResponse(refusalStatus.getValue(value.member("refusal").member("code").str()), value.member("refusal"))
                 return AiResponse(200, events = flow {
                     for (event in value.member("events").arr()) { control("event:$current:${event.member("id").long()}"); emit(event) }
                     if (value.member("broken").bool()) throw AiTransportFailure("lost")

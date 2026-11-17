@@ -37,6 +37,11 @@ class CoachBoundaryTests {
     @Test fun everySharedWireShapeAndPictureFixtureUsesTheActualClient() = runBlocking {
         val fixtures = fixture()
         fixtures.member("allowances").obj().values.forEach(AiWire::allowance)
+        fixtures.member("refusals").arr().forEach { refusal ->
+            val body = refusal.member("body")
+            assertEquals(body, AiWire.refusal(AiResponse(refusal.member("status").long().toInt(), body)))
+            assertNull(AiWire.refusal(AiResponse(502, body)))
+        }
         fixtures.member("textEvents").arr().forEachIndexed { index, value -> AiWire.event(event(index + 1, value)) }
         fixtures.member("textTerminals").obj().values.forEach { AiWire.event(event(1, it)) }
         val bytes = stream(fixtures.member("textEvents").arr()).encodeToByteArray()

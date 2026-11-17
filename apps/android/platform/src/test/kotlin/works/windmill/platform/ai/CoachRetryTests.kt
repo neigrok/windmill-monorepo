@@ -22,7 +22,10 @@ class CoachRetryTests {
     }
     private fun fixture() = Json.parse(File(System.getProperty("windmill.contract"), "ai/wire/fixtures.json").readText())
     private fun terminal() = Json.Obj(fixture().member("textEvents").arr()[3].obj().toList() + ("id" to Json.of(2)))
-    private fun refusal(code: String) = AiResponse(503, Json.objectOf("code" to Json.of(code), "allowance" to Json.Null))
+    private fun refusal(code: String): AiResponse {
+        val value = fixture().member("refusals").arr().single { it.member("body").member("code").str() == code }
+        return AiResponse(value.member("status").long().toInt(), Json.objectOf("code" to Json.of(code), "allowance" to Json.Null))
+    }
 
     @Test fun lostCallSurvivesTemporaryPassRefreshFailures() = runBlocking {
         for (failure in listOf("offline", "rate_limited", "unavailable")) {
@@ -35,7 +38,7 @@ class CoachRetryTests {
                 override suspend fun pass(body: Json): AiResponse {
                     if (++passes == 2) {
                         if (failure == "offline") throw AiTransportFailure("offline")
-                        return AiResponse(503, Json.objectOf("code" to Json.of(failure)))
+                        return AiResponse(if (failure == "rate_limited") 429 else 503, Json.objectOf("code" to Json.of(failure), "error" to Json.of("Refused")))
                     }
                     return AiResponse(200, Json.objectOf("pass" to Json.of("pass-$passes"), "expiresIn" to Json.of(60000)))
                 }
