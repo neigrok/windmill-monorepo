@@ -290,10 +290,10 @@ def stories():
     s=story('offline-before-pass'); opened(s); begin(s,0,'',[first(s)])
     s['service']['passes']=[{'transport':'offline'}]; s['expected']['requests']=[]
     finish(s,'interrupted','',withdraw=True); out.append(s)
-    for name, door in [('no-connection-pass-ready', {'pass':'vector-pass','expiresIn':600000}), ('no-connection-no-pass', {'transport':'offline'})]:
-        s=story(name); s['runtime']['connected']=False; opened(s); begin(s,0,'',[first(s)])
-        s['service']['passes']=[{**door,'elapsedMs':1000}]; s['expected']['requests']=[]
-        finish(s,'interrupted','',withdraw=True); out.append(s)
+    for name, door, pictures in [('no-connection-pass-ready', {'pass':'vector-pass','expiresIn':600000}, []), ('no-connection-no-pass', {'transport':'offline'}, []), ('no-connection-picture', {'pass':'vector-pass','expiresIn':600000}, [picture])]:
+        s=story(name); s['runtime']['connected']=False; s['input']['pictures']=pictures; s['host']['open']['pictures']=pictures
+        s['service']['passes']=[{**door,'elapsedMs':1000}]
+        opened(s); finish(s,'interrupted','',rounds=0,withdraw=True); out.append(s)
     s=story('offline-send-asked-again'); opened(s); begin(s,0,'',[first(s)])
     s['service']['exchanges']=[{**exchange(),'transport':'offline'},exchange(events())]
     s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]

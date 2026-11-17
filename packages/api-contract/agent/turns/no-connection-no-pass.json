@@ -140,15 +140,6 @@
         }
       },
       {
-        "op": "beginRound",
-        "text": "",
-        "mark": {
-          "turnId": "turn-vector",
-          "callId": "AAAAAAAAAAAAAAAAAAAAAA",
-          "textBytesBeforeRound": 0
-        }
-      },
-      {
         "op": "withdraw"
       }
     ],
@@ -157,11 +148,6 @@
       {
         "turnId": "turn-vector",
         "callId": null,
-        "textBytesBeforeRound": 0
-      },
-      {
-        "turnId": "turn-vector",
-        "callId": "AAAAAAAAAAAAAAAAAAAAAA",
         "textBytesBeforeRound": 0
       },
       null
@@ -173,7 +159,7 @@
         "state": "interrupted",
         "seat": "bound",
         "code": null,
-        "rounds": 1,
+        "rounds": 0,
         "abilityCalls": 0,
         "refusals": 0,
         "answerBytes": 0,

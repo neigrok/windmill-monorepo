@@ -7,8 +7,8 @@ with the AI wire checker. Tests compare every expected field by deep equality.
 
 `profile` and `input` are the public engine data. `runtime` supplies a zero-based millisecond
 clock, deterministic 22-character call IDs, browser-lock availability and `connected`: whether the
-device reports a connection when the turn starts. It is the switch the AI client asks before round 1
-sends anything; it decides no scripted response. The harness uses the actual engine and actual AI
+device reports a connection when the turn starts. It is the switch the engine asks before round 1
+writes its mark or sends anything; it decides no scripted response. The harness uses the actual engine and actual AI
 client; only transport, storage, time, IDs, locks and the connection report are fakes.
 
 `host.open` supplies history, ordered context and pictures. A picture has `pictureId`, `mediaType`
@@ -29,7 +29,7 @@ or `transport: "offline"` for a request that fails as a connection loss with no 
 `service.pictures` supplies upload status codes, defaulting to 204. The client owns retries.
 
 Controls execute once at a named checkpoint, before that operation commits or event is delivered:
-`open:beforeCommit`, `text:beforeCommit`, `event:<zero-based exchange>:<event id>`,
+`open:beforeCommit`, `beginRound:beforeCommit`, `text:beforeCommit`, `event:<zero-based exchange>:<event id>`,
 `wait:<zero-based wait>`, `execute:<tool id>:beforeCommit`, and `check:<tool id>:<rule>`.
 Actions are `stop`, `seat`, `delete`, `stale` and `disconnect`. `seat` begins the awaited seat-change barrier
 without waiting inside the callback (which would deadlock pending-open/write); the harness awaits
