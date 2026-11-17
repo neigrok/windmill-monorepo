@@ -26,6 +26,27 @@ test('the seat barrier resolves when the active record has disappeared', async (
   assert.deepEqual(events, [{ state: 'interrupted', seat: 'bound', code: null, rounds: 1, abilityCalls: 0, refusals: 0, answerBytes: 0, durationMs: 0 }]);
 });
 
+test('an unexpected seat-barrier write failure reports immediately and once before the provider returns', async () => {
+  const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
+  const reports = [];
+  let release; let enter;
+  const dispatched = new Promise((resolve) => { enter = resolve; });
+  const runner = new TurnRunner({
+    ai: { clearPass() {}, text: async () => { enter(); await new Promise((resolve) => { release = resolve; }); return { failure: { code: null } }; } },
+    telemetry: { failure: (operation) => reports.push(operation) },
+    runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
+    host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, end: async () => { throw new Error('storage failure'); } },
+  });
+  const task = runner.run(story.input, story.profile);
+  const settled = assert.rejects(task, /storage failure/);
+  await dispatched;
+  try {
+    await assert.rejects(runner.seatWillChange(), /storage failure/);
+    assert.deepEqual(reports, ['agent-host']);
+  } finally { release(); await settled; }
+  assert.deepEqual(reports, ['agent-host']);
+});
+
 test('the awaited seat barrier permits a new turn while the old provider finishes without late writes', async () => {
   const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
   const writes = [];

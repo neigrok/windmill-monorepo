@@ -11,6 +11,8 @@ The constructor takes `host`, `ai`, `telemetry` and `runtime`. `run(input, profi
 await `seatWillChange()` before credentials, active replica or host generation change. The barrier
 waits for pending host mutations, writes interrupted, and drops the in-memory pass immediately.
 If the active record has disappeared, the barrier resolves without writing or reporting a failure.
+An unexpected barrier write failure reports `agent-host` before rejecting. The turn reports that
+failure once even if its provider finishes later and the original run encounters it again.
 
 The host implements `open(input)`, `recover(turnId,seat)`, `beginRound(lease,text,mark)`,
 `text(lease,text)`, `check(lease,rule,call)`, `execute(lease,identity,call)`, `end(lease,end)` and

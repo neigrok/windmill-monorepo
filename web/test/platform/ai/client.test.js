@@ -460,3 +460,53 @@ test('a dispatched retry that loses its answer after thirty seconds still enters
   assert.equal(calls, 3);
   assert.equal(now, 33000);
 });
+
+test('seat changes and rejected response headers release unread HTTP bodies and deadlines', async () => {
+  for (const boundary of ['seat', 'content-type', 'redirect']) {
+    const timers = new Set(); const reports = [];
+    let canceled = false; let requestSignal; let client;
+    const transport = new HttpAiTransport({ timers: {
+      setTimeout(callback, duration) { const timer = { callback, duration }; timers.add(timer); return timer; },
+      clearTimeout(timer) { timers.delete(timer); },
+    }, fetch: async (url, options) => {
+      if (url.endsWith('/v1/ai/passes')) return new Response('{"pass":"private","expiresIn":600000}');
+      requestSignal = options.signal;
+      const body = new ReadableStream({ cancel() { canceled = true; } });
+      if (boundary === 'seat') client.clearPass();
+      return new Response(body, { status: boundary === 'redirect' ? 302 : 200, headers: { 'Content-Type': boundary === 'seat' ? 'text/event-stream' : 'text/plain' } });
+    } });
+    client = new AiClient({ transport, telemetry: { failure: (operation) => reports.push(operation) } });
+    const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} });
+    assert.deepEqual(result, { failure: { source: boundary === 'seat' ? 'pass' : boundary === 'redirect' ? 'transport' : 'wire', code: boundary === 'seat' ? null : 'invalid-answer', admission: boundary === 'seat' ? 'none' : 'possible', allowance: null } });
+    assert.deepEqual(reports, boundary === 'seat' ? [] : ['ai-call']);
+    assert.equal(timers.size, 0, boundary);
+    assert.equal(canceled, true, boundary);
+    assert.equal(requestSignal.aborted, true, boundary);
+  }
+});
+
+test('an event response can be disposed before reading or after its reader closes', async () => {
+  for (const read of [false, true]) {
+    const timers = new Set(); const events = [];
+    let cancels = 0; let requestSignal;
+    const transport = new HttpAiTransport({ timers: {
+      setTimeout(callback, duration) { const timer = { callback, duration }; timers.add(timer); return timer; },
+      clearTimeout(timer) { timers.delete(timer); },
+    }, fetch: async (url, options) => {
+      requestSignal = options.signal;
+      return new Response(new ReadableStream({
+        start(controller) { controller.enqueue(new TextEncoder().encode('id: 1\nevent: text\ndata: {"delta":"Hello"}\n\n')); },
+        cancel() { cancels++; },
+      }), { headers: { 'Content-Type': 'text/event-stream' } });
+    } });
+    const response = await transport.request({ method: 'GET', path: '/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/result', pass: 'private' });
+    assert.equal(timers.size, 1);
+    if (read) for await (const event of response.events) { events.push(event); break; }
+    await response.dispose();
+    await response.dispose();
+    assert.deepEqual(events, read ? [{ id: 1, event: 'text', data: { delta: 'Hello' } }] : []);
+    assert.equal(timers.size, 0);
+    assert.equal(cancels, 1);
+    assert.equal(requestSignal.aborted, true);
+  }
+});

@@ -122,10 +122,10 @@ export class HttpAiTransport {
     const stop = () => controller.abort();
     signal?.addEventListener('abort', stop, { once: true });
     const timer = this.timers.setTimeout(() => controller.abort(), 30_000);
+    let response;
     try {
       const installation = await this.installation();
       if (signal?.aborted) throw new TransportFailure('stopped');
-      let response;
       try {
         response = await this.fetch(`${this.base}/v1/ai/passes`, { method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'manual', signal: controller.signal,
           headers: { 'Content-Type': 'application/json', ...(installation ? { 'X-Windmill-Installation': installation } : {}) }, body: JSON.stringify(body) });
@@ -133,7 +133,12 @@ export class HttpAiTransport {
       if (response.status === 404) return { status: 404, body: null };
       try { return { status: response.status, body: await response.json() }; }
       catch { throw new TransportFailure(signal?.aborted ? 'stopped' : response.status === 200 ? 'invalid-answer' : 'lost'); }
-    } finally { signal?.removeEventListener('abort', stop); this.timers.clearTimeout(timer); }
+    } finally {
+      signal?.removeEventListener('abort', stop);
+      this.timers.clearTimeout(timer);
+      controller.abort();
+      try { await response?.body?.cancel?.(); } catch { /* A consumed body can retain its reader lock. */ }
+    }
   }
 
   async request({ method, path, body, bytes, mediaType, pass, signal, timeoutMs = 30_000 }) {
@@ -142,9 +147,17 @@ export class HttpAiTransport {
     signal?.addEventListener('abort', stop, { once: true });
     const timer = this.timers.setTimeout(() => controller.abort(), timeoutMs);
     let liveStream = false;
+    let response;
+    let disposed = false;
+    const dispose = async () => {
+      if (disposed) return;
+      disposed = true;
+      this.timers.clearTimeout(timer);
+      controller.abort();
+      try { await response?.body?.cancel?.(); } catch { /* A consumed body can retain its reader lock. */ }
+    };
     try {
       if (signal?.aborted) throw new TransportFailure('stopped');
-      let response;
       try {
         response = await this.fetch(`${this.base}${path}`, { method, credentials: 'omit', redirect: 'manual', cache: 'no-store',
           signal: controller.signal,
@@ -156,10 +169,9 @@ export class HttpAiTransport {
       if (response.status === 200 && path !== '/v1/allowance') {
         if (!response.headers.get('Content-Type')?.startsWith('text/event-stream')) throw new TransportFailure('invalid-answer');
         liveStream = true;
-        const timers = this.timers;
-        return { status: 200, events: (async function* () {
+        return { status: 200, dispose, events: (async function* () {
           try { yield* decodeEvents(response.body); }
-          finally { timers.clearTimeout(timer); }
+          finally { await dispose(); }
         })() };
       }
       if (response.status === 204) return { status: 204, body: null };
@@ -167,7 +179,7 @@ export class HttpAiTransport {
       catch { throw new TransportFailure(signal?.aborted ? 'stopped' : response.status === 200 ? 'invalid-answer' : 'lost'); }
     } finally {
       signal?.removeEventListener('abort', stop);
-      if (!liveStream) this.timers.clearTimeout(timer);
+      if (!liveStream) await dispose();
     }
   }
 }

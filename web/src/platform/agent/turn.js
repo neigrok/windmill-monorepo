@@ -70,7 +70,11 @@ export class TurnRunner {
     turn.seatChanged = true;
     turn.wait.abort();
     await this.barrier.catch(() => {});
-    if (turn.lease && !turn.done) await this.finish(turn, 'interrupted');
+    try { if (turn.lease && !turn.done) await this.finish(turn, 'interrupted'); }
+    catch (error) {
+      if (!(error instanceof HostUnavailable)) this.reportHostFailure(turn);
+      throw error;
+    }
     if (this.active === turn) this.active = null;
   }
 
@@ -85,7 +89,7 @@ export class TurnRunner {
     if (this.active) throw new Error('turn already active');
     if (!input || !['anon', 'bound'].includes(input.seat?.kind) || typeof input.seat.key !== 'string') throw new TypeError('invalid seat');
     const turn = { input, profile, text: '', start: this.runtime.now(), rounds: 0, abilities: 0, writes: 0, refusals: 0,
-      groups: new Map(), identities: new Set(), wait: new AbortController(), stop: false, seatChanged: false, done: false };
+      groups: new Map(), identities: new Set(), wait: new AbortController(), stop: false, seatChanged: false, done: false, hostFailureReported: false };
     this.active = turn;
     try {
       return await this.runtime.withLock(input.turnId, { ifAvailable: recover }, async (acquired) => {
@@ -181,7 +185,7 @@ export class TurnRunner {
         if (!turn.done) { turn.done = true; turn.end = null; this.report(turn, 'interrupted', null); }
         return null;
       }
-      this.telemetry.failure('agent-host');
+      this.reportHostFailure(turn);
       if (turn.lease && !turn.done) return await this.finish(turn, 'failed', { code: 'invalid-answer' });
       throw error;
     } finally { if (this.active === turn) this.active = null; }
@@ -216,6 +220,12 @@ export class TurnRunner {
   report(turn, state, code) {
     this.telemetry.turn({ state, seat: turn.input.seat.kind, code, rounds: turn.rounds, abilityCalls: turn.abilities,
       refusals: turn.refusals, answerBytes: bytes(turn.text), durationMs: Math.max(0, this.runtime.now() - turn.start) });
+  }
+
+  reportHostFailure(turn) {
+    if (turn.hostFailureReported) return;
+    turn.hostFailureReported = true;
+    this.telemetry.failure('agent-host');
   }
 
   async finish(turn, state, { code = null, truncated = false, withdraw = false } = {}) {

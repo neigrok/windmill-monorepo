@@ -137,6 +137,7 @@ export class AiClient {
       const expired = deadlineFailure();
       if (expired) return expired;
       let preparation = true;
+      let response;
       try {
         const pass = await untilStopped(signal, () => this.credential(use, version, generation, forcePass, signal));
         const expired = deadlineFailure();
@@ -148,7 +149,7 @@ export class AiClient {
         forcePass = false;
         for (const picture of pictures) {
           if (this.uploads.has(picture.pictureId)) continue;
-          const response = await untilStopped(signal, () => this.transport.request({ method: 'PUT', path: `/v1/pictures/${picture.pictureId}`, bytes: new Uint8Array(picture.bytes), mediaType: picture.mediaType, pass, signal }));
+          response = await untilStopped(signal, () => this.transport.request({ method: 'PUT', path: `/v1/pictures/${picture.pictureId}`, bytes: new Uint8Array(picture.bytes), mediaType: picture.mediaType, pass, signal }));
           if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission, allowance: null } };
           const expired = deadlineFailure();
           if (expired) return expired;
@@ -166,7 +167,6 @@ export class AiClient {
         const retrySignal = started === null ? undefined : signal;
         started ??= this.now();
         preparation = false;
-        let response;
         try { response = await this.transport.request({ method: read ? 'GET' : 'PUT', path, body: read ? undefined : body, pass, signal: retrySignal, timeoutMs: Math.max(1, started + 1_200_000 - this.now()) }); }
         catch (error) {
           if (error instanceof TransportFailure && error.code === 'stopped') throw error;
@@ -230,7 +230,7 @@ export class AiClient {
         uncertainDispatch = true;
         retryDeadline = started + 1_200_000;
         lastFailure = failed('result', 'answer-timeout');
-      }
+      } finally { await response?.dispose?.(); }
       const delay = Math.min(1000 * 2 ** Math.min(retry++, 3), Math.max(0, retryDeadline - this.now()));
       if (delay === 0) return lastFailure;
       if (!await this.wait(delay, signal)) return { failure: { source: 'result', code: 'stopped', admission, allowance: null } };

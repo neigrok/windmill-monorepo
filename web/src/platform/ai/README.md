@@ -15,6 +15,10 @@ repair happens once; a lost repair upload retries only when admission is already
 Stop cancels retry waits, pass and picture preparation, and repeated text/result requests waiting
 for headers or an error body. The initial in-flight text request drains. Once a successful event
 response arrives, the transport detaches Stop so the stream and awaited host callbacks finish.
+An event response exposes idempotent `dispose()` alongside its event iterator. The client disposes
+every response in `finally`, including a seat change before iteration starts; the transport also
+disposes rejected headers and completed iterators. Disposal clears the deadline, aborts the request
+and cancels an unread body.
 
 Offline behavior follows dispatch evidence. A pass or picture preparation failure before the first
 text request restores the draft promptly. An attempted text request can have reached the service

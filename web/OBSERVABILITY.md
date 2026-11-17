@@ -438,4 +438,6 @@ record at the seat barrier, and recovery `call_unknown` are quiet. A live `call_
 successful protocol replies remain defects; retrying cannot erase admission evidence. Sign-in
 refused while sign-out is pending does not report an auth failure. Stop during preparation or a
 repeated request's headers/error body reports the stopped turn outcome without a technical failure.
+Unexpected host write failures report `agent-host` once per turn. A seat-barrier write failure reports
+before the barrier rejects, without waiting for an in-flight provider to finish.
 No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.
