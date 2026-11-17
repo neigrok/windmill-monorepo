@@ -2,7 +2,8 @@
 
 An echo pairs a saved journal page with older passages from the same writer. It shows the original
 text and the time between the two pages. Echoes are automatic for signed-in writers. In production,
-where AI allowances are on, each model call draws on the writer's own AI allowance.
+where AI allowances are on, each model call draws on the writer's own AI allowance, and a free
+account's on the shared free budgets too.
 
 ## Product contract
 
@@ -106,8 +107,9 @@ and matching vectors; changed bodies or absent spans still require segmentation.
 Only `ok`, `empty_ok` and `refused` settle a page and advance its derivation stamps. Transport,
 rate-limit, truncation and schema failures leave it due. A refusal reopens only on a body edit or
 pipeline version change, not corpus movement. Version claims are recorded after the corresponding
-spans are stored. After six unsettled passes in a row a page is no longer due until its body changes; a budget
-refusal counts none and leaves the page due.
+spans are stored. `attempts` counts unsettled passes in a row, and a budget refusal counts none. Six of them stop only
+a page whose stamps and versions already matched; a page that never settled, or that a save, a moved
+corpus or a changed version reopened, stays due however many it has.
 
 ## Scheduling and limits
 
@@ -127,7 +129,7 @@ Deferred and unqueued pages remain due. A six-hour repair heartbeat scans accoun
 last 24 hours, with 40 pages per account, 20 inbound pages per changed page and ten echoes per page.
 
 With AI allowances on, as in production, `echo.segment` and `echo.curate` are admitted against the
-writer's own allowance and its one call in flight, as [USD AI allowances](../../AI_ALLOWANCES.md)
+writer's own allowance and one of its calls in flight, as [USD AI allowances](../../AI_ALLOWANCES.md)
 says of every hosted call; a refused call leaves the page due with no attempt counted. With them
 off, `Entitlements::sweepAllowanceFor` limits that spend to an internal $2 per account per rolling 30
 days, and over-budget work is skipped without advancing stamps.
