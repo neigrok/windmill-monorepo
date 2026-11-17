@@ -100,7 +100,7 @@ units (D-9).
 |---|---|---|---|---|---|
 | `tree` | self/roadmap | minted global `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | `parent` const server `{tree, step}`, null for a root | — |
 | `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `guide` lww ≤5,000 chars; `guideInherited` server; `visibility` lww server ∈ {private, unlisted, public}; `visibilitySetBy` lww server; `reach` lww server ∈ {private, unlisted, public}, which `opens` at {unlisted, public}; `root` const server `ref<tree>`; `parent` const server `{tree, step}`, null for a root; `depth` const server; `forkedFrom` const server | — |
-| `node` | tree/T | derived, ids by domain (E-2) ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord`, `status`, `description` ≤16,000 chars, `links` (at most 32 of {url ≤2,048 chars, label ≤200 chars}); `branch` const server `ref<tree>` | 10,000 |
+| `node` | tree/T | derived, ids by domain (E-2) ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord`, `status`, `description` ≤16,000 chars, `links` (at most 32 of {url ≤2,048 chars, label ≤200 chars}); `branch` lww server nullable `ref<tree>` | 10,000 |
 | `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20,000 |
 | `kind` | tree/T | derived, ids by domain ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` | 6 |
 | `progress` | self/overlay/T | keyed (`ref<node>`) | none | `mark` lww `{status: complete\|none, outOfOrder: bool}` | — |
@@ -182,6 +182,10 @@ Every gesture is an action on the domain kit, the same in each language.
   close between them lands, is read without harm, and is reported by diagnostics, as today.
 - **Undo** of an act is the kit's (K-3). A surface keeps its own stack of acts for its keyboard's
   Undo and Redo. A roadmap deletion leaves that stack when its hold ends and cannot be restored.
+- **Undo creating a subtree** conditionally clears its step's `branch` and deletes the created
+  subtree together, only while both the connection and subtree contents remain unchanged since
+  creation. Otherwise it changes neither. Redo creates a new subtree under a fresh id and
+  conditionally reconnects it; it never revives the deleted subtree. (R-8)
 - **Hidden.** A subtree that does not stand is hidden on every device, the owner's included: it is
   in no list, no count and no address.
 - **A reader** subscribes a readable roadmap when a person opens its link, signed in or not, and a
@@ -422,3 +426,4 @@ What changes is built only from boards marked ✅ Ready for dev:
 | R-5 | How the data moves | One planned cutover with a short maintenance window and a verified backup. What browsers hold is carried over at their next load. (2026-11-17) |
 | R-6 | Presence and remote cursors | They end with the move. (2026-11-17) |
 | R-7 | Undo after a roadmap's delete window | A roadmap deletion is permanent once its 9-second hold ends. Undo is available only during that hold. (2026-11-17) |
+| R-8 | Undo creating a subtree | The connection is reversible: `node.branch` is nullable server LWW. Undo clears it and deletes the created subtree together only while the connection and subtree contents remain unchanged. Redo creates a fresh subtree. Approved by the owner on 2026-11-17. |
