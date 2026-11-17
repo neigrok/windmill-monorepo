@@ -51,7 +51,8 @@ check.
   a value.
 - **D-4 Tier.** The row of the tier table (§3) a call is admitted under: `anonymous` for an
   installation; `one` for an account whose plan is `one` while a grant is in force for it, an owner
-  grant included (§3); `free` for every other account.
+  grant included (§3); `free` for every other account. A background call (§3) is admitted under
+  none of the three and is recorded as `background`.
 - **D-5 Capability.** What a call asks a provider to do: `text` or `transcription`.
 - **D-6 Model class.** The name a caller uses for a text model: `large`, `medium` or `small`. The tier
   table maps a class to a provider's model, so no caller names a provider or a model id.
@@ -88,6 +89,37 @@ tiers, so adding a tier adds a row and a plan value and no code.
 | Text classes served | `medium` (also for `large`), `small` | `large`, `medium`, `small` | `large`, `medium`, `small` |
 | Output ceiling of a text call | 2,000 tokens | 16,000 tokens | 16,000 tokens |
 | Transcription | no | no | yes |
+
+**Background work.** A call under a pass whose `client` is `server` is work nobody waits on (I-6).
+It is admitted under no tier above, whatever the account's plan, and is recorded as `background`.
+The tier table holds its values in a section of its own:
+
+| | Background |
+|---|---|
+| Own budget | `BACKGROUND_MONTH` for each account, a UTC calendar month. Windmill's own cost |
+| Shared budgets | a background month and a background day, across all accounts. Windmill's own cost |
+| Hourly ceiling | `BACKGROUND_HOUR`, below `HOURLY_FUSE`, so background work never opens the fuse people's calls depend on |
+| Calls in flight | 1 an account, counted apart from the person's |
+| Calls started and reads a minute | its own counters, apart from the person's |
+| Text classes served | `medium`, `small` |
+| Output ceiling of a text call | 16,000 tokens |
+| Transcription | no |
+
+- A background call draws on its account's background budget and the two shared background budgets
+  and on nothing else: no allowance, no grant, no free pool.
+- A server pass states `sub` as an account, `plan` `none`, and no `ownerGrant` or `installation`. Any
+  other pass whose `client` is `server` is `pass_malformed`. The service decides background before it
+  reads the plan, so such a call funds no owner grant and records no binding.
+- Its refusals carry a null `allowance`, and `GET /v1/allowance` under a server pass is
+  `invalid_request`. A person's own `GET /v1/allowance` says nothing of background work.
+- An exhausted background budget refuses as `subject_exhausted`, a shared one as
+  `background_exhausted`, and the hourly ceiling as `paused`.
+- The shared background budgets report their crossings as the free budgets do (§5.7), and the
+  operator's budgets door lists them.
+- The backend's pass door signs that `client` for no outside caller; the backend signs it for itself
+  by a path the door cannot reach.
+
+[Echoes on the AI service](echoes-on-ai-service.md) is its first caller.
 
 The amounts, the calls in flight and the anonymous row's model are the backend's policy as it stands
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)); `large` is `claude-opus-5`, `medium` is
@@ -128,7 +160,7 @@ unpadded base64url of an Ed25519 signature, verified strictly, over the ASCII by
 | `plan` | `none` or `one` (D-3). On an account's pass only, where it is required. |
 | `ownerGrant` | `true` when the account is funded as owner access is (§3). Only with `plan: one`. |
 | `installation` | On an account's pass: the installation this device was before it signed in, when the issuer holds that binding (§5.6). |
-| `client` | `ios`, `android`, `web` or `server`: who is calling, for reporting only. |
+| `client` | `ios`, `android`, `web` or `server`: who is calling. `server` makes the call background work (§3); the others are for reporting only. |
 
 The service verifies the signature before it reads the payload, and believes a pass only when all of
 these hold. Otherwise it answers 401 with the code beside the rule and admits nothing:
@@ -452,7 +484,7 @@ never on the status.
 | 409 | `conflict` |
 | 410 | `result_gone`, `picture_gone` |
 | 413 | `too_large` |
-| 429 | `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `concurrency_exhausted`, `rate_limited` |
+| 429 | `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `background_exhausted`, `concurrency_exhausted`, `rate_limited` |
 | 503 | `busy`, `paused`, `accounting_unavailable`, `provider_unavailable` |
 
 The provider codes can arrive before admission when the counting door rejects the request or its
@@ -855,7 +887,7 @@ Configuration, with the values the service ships with:
 | The database | Every new call is refused as `accounting_unavailable`. A call in flight is read to its end and settled when the database returns, or ended `assumed`. |
 | The provider's counting door | Text reservations fall back to one token a byte and grow severalfold, so a call near the end of a budget is refused that would have fitted. |
 | This service, restarted | New calls are refused as `busy` until the calls in flight finish, at most `DRAIN` (§7). Live sessions are cut. Lingering answers and held pictures are lost. |
-| This service, down | Coach and Talk stop. Sync, the journal and the log are untouched. |
+| This service, down | Coach and Talk stop, and Echoes derives nothing until it returns. Sync, the journal and the log are untouched. |
 | The network edge cutting a long answer | The call goes on; its caller asks for the `callId` again (§6.4). |
 | A live session's connection cut | The service commits what it forwarded and settles. The transcript so far lingers for the caller to fetch (§6.6). |
 | The service's clock behind the issuer's by more than `PASS_SKEW` | Every fresh pass is refused as `pass_expired`. Ahead of it, passes end early. |
@@ -886,9 +918,10 @@ designed when the service is built, one integration at a time.
   is offered, the product tells the person that their speech is sent to the provider and kept there
   for 30 days (R-11). [Journal Talk](journal-talk.md) specifies it.
 - **I-6 Work nobody waits on.** When the backend has AI work for an account with no device present,
-  it calls the same doors with a pass it signs for that account. The queue of that work stays in the
-  backend, and a refusal or an unreachable service leaves the work due. Such a call takes one of the
-  account's calls in flight, as it does in the backend's ledger.
+  it calls the same doors with a pass it signs for that account, whose `client` is `server`. The
+  queue of that work stays in the backend, and a refusal or an unreachable service leaves the work
+  due. Such a call is background work (§3): Windmill's own budget for the account pays for it, and
+  it takes the account's background slot, never one of the person's calls in flight. (R-18, R-19)
 - **I-7 Funding.** When a paid period is recorded, one grant is funded for exactly that period. When
   it is refunded the grant is closed, and when the refund is reversed it is reopened
   ([subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)). While the backend's ledger
@@ -930,6 +963,8 @@ The owner's rulings. All are settled.
 | R-15 | What raises the provider-trouble alert | The share of calls that failed in a short window, not a run of failures a single success resets. (2026-11-17) |
 | R-16 | Which ledger a paid period funds while two live | Both, until the backend's ledger retires. (2026-11-17) |
 | R-17 | The order of the moves onto this service | Coach first; Talk on the iPhone and Echoes before the iOS release; the web's Talk after it. (2026-11-15, completed 2026-11-17) |
+| R-18 | Whose budget pays for work nobody waits on | Budgets of Windmill's own: one for each account, and shared ones across all accounts, apart from the person's allowance, a grant and the free budgets. Their amounts are the tier table's and are set from a measurement of Echoes' spend. (2026-11-17) |
+| R-19 | Whether background work shares a person's calls in flight | It does not: one background call in flight an account, counted apart, with rate counters of its own. (2026-11-17) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 

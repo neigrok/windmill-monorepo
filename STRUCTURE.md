@@ -144,7 +144,8 @@ contents. Native acceptance and a same-key update check precede publication. See
   [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on them;
   [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI service; and
   [the web as a device](docs/foundation/web-device-parity.md), which makes gym and journal on the web
-  work as they do on a phone.
+  work as they do on a phone. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which
+  moves the journal's two background model calls there, is specified and not built.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.
