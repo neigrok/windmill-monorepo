@@ -11,8 +11,8 @@ Figma: separate [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-i
 Code: `web/src/products/roadmap/`. [Evidence and limits](design/roadmap-web-reconciliation.md).
 🚀 In production identifies current flows reconciled against source and available runtime evidence.
 The [reference family map](design/roadmap-web-reconciliation.md#reference-family-map) connects retained
-specimens to deployed source. Superseded drawings are labeled as such; the shared editor read view is
-delivered while inline editing and creation remain separate targets. Status does not grant new human
+specimens to deployed source. Superseded drawings are labeled as such; the shared step document
+includes field editing and recovery, while creation alignment remains unfinished. Status does not grant new human
 approval or claim every branch was exercised. Native graph lighting is a static approximation.
 
 | Flow | Web | Web Mobile | Entry → exit |

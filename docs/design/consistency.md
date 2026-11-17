@@ -824,9 +824,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the count line reduced to *4 matches* (15.11).
 - **Board · picker without a draft name or with a removed prerequisite.** With no draft name the phone and composer-page headers show
   only *Prerequisites*, without a For line (drawn in 25.15, 15.12). The current composer silently drops a remotely deleted prerequisite
-  and recomputes placement. Existing-step replacement editing has approved **Selection updated** feedback in
+  and recomputes placement. Existing-step inline editing shows **Selection updated** feedback from
   [46.05](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1322-81750) and the reconciliation contract in
-  [46.10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1324-81414); that replacement remains unbuilt.
+  [46.10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1324-81414).
   Creation-only deletion and placement notices (25.16–25.17, 15.15–15.16) still need reconciliation with the approved New step flow
   before owner review. 10.11 Selection revalidated is Edit copy.
 - **Board · phone large-picker dark.** Phone 10.x dark uses the existing tokens with the light structure. Proposed, awaiting the owner:
