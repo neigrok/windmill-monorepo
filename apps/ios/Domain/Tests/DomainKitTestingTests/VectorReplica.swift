@@ -57,6 +57,10 @@ final class VectorReplica: Replica {
     return (answer ?? .committed(receipt), value)
   }
 
+  func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T), segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
+    throw ContractError("act vectors use the real engine")
+  }
+
   func undo(_ gestureId: String) throws -> Bool { false }
 
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {

@@ -17,8 +17,8 @@ each product declares its own entities, value objects, aggregates, repositories,
 kit names no product concept. Appendices A–C illustrate it; they are not kit content.
 
 **Consumers.** Gym (iOS, Android) and journal (iOS), with the phone Coach. Roadmap is web-only and is
-not a kit consumer. An entity can bind to a product, tree or overlay scope (engine D-4); every reader,
-action and plan still addresses exactly one scope.
+not a kit consumer. An entity can bind to a product, tree or overlay scope (engine D-4). An ordinary
+reader, action and plan addresses one scope; an act composes ordered scoped plans in one local transaction (§9.5).
 
 **Outside the kit:**
 - **UI, absolutely.** No SwiftUI, UIKit, AppKit, Combine, Observation, Compose or `android.*`; no
@@ -79,9 +79,10 @@ initialiser, which runs the checks, constructs one (§4.5).
 
 **D-12 Aggregate.** A root entity and its children: value objects in the root's fields, entities whose
 registry `parent` reference names the root, or keyed entities whose key is the root's id. An aggregate
-lives in one scope and is loaded in one action's load phase. The kit guarantees the atomicity of one
-gesture only: a plan writing several of its records is admitted whole or not at all (INV-3). Records
-written by different gestures merge per field (engine §3.2). The kit has no aggregate base type.
+lives in one scope and is loaded in one action's load phase. A plan writing several of its records
+is admitted whole or not at all (INV-3). An act groups plans in one local transaction, while each
+segment retains separate remote admission (§9.5). Records written by different intents merge per
+field (engine §3.2). The kit has no aggregate base type.
 
 **D-13 Rule.** An invariant a product states about its records. Every rule is exactly one of:
 - **LOCAL**: its verdict is a function of one register's value (a value object makes coupled values
@@ -1036,8 +1037,8 @@ when:
 8. an update names no field, or a keyed create writes no field;
 9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4).
 
-So a held plan carries removals only, and `drawn` and `stored` differ only in records a held removal
-names (INV-9).
+A held ordinary plan carries removals only. When an act contains a held plan, its shared hold also
+covers the other segments; `stored` excludes every held segment until release (§9.5).
 
 ### §8.4 Server commands and predictions
 
@@ -1190,6 +1191,45 @@ product. Swift keeps the same types in `GymDomain/Coach/Catalog.swift` (`JSONSch
   `java.util.regex` read `.`, `\d`, `\w` and `\s` by different rules, so a catalog's patterns keep to explicit classes.
 
 ---
+
+### §9.5 Acts over ordered scopes
+
+`ActReader.inScope(scope, body)` lends a `Reader` over the immutable initial snapshot only for that
+body. The act reader serves `load` only. Load is pure and deterministic: the browser may replay it
+while the same IndexedDB writer transaction hydrates a previously unread scope; native storage
+loads it once. The runner calls `ActContext.finishLoad()` before decide. This closes scope reads
+and rethrows the first scope or read failure even if load caught it. Decide then runs exactly once,
+without retained readers. All requested scopes hydrate before the first segment; subsequent segment
+reads resume that segment, never decide again.
+
+`ActIDSource.mint(type, inScope: scope)` shares reservations across the act. Load must borrow every
+existing scope where decide will mint, even when no record needs reading there. Omission fails before
+randomness is drawn. A new tree or overlay needs no initial borrow when the initial snapshot has no
+cache, cursor, known state, pending entry or governing record for it; the act must create its governing
+record in an earlier segment before using its newly minted identities. An unopened existing cache
+is never treated as empty.
+
+`ActAction` loads through an `ActReader`, then decides an `ActDecision`: `write(ActPlan, result)`,
+`unchanged(result)` or `refuse(refusal)`. `ActPlan` holds an ordered list of `ScopedPlan(scope, plan)`.
+The same scope may appear more than once. Each enclosed `Plan` retains its own record uniqueness,
+guard, command and held-removal rules; records may be written again in a later segment.
+
+`ActIDSource.mint(type, inScope:)` and `opaqueID()` reserve identities without exposing a reader.
+Both enforce the end of load before drawing randomness. Every load and segment uses the same
+captured moment. IDs remain scope-free values.
+
+`ActionRunner.runAct` uses the engine's `commitAct` (§7.1), preparing the ordered scope list and
+whether any segment is held. For segment `i`, its callback checks `firstGone` and translates that
+segment against the tentative projection of segments `0..<i`, including explicit predictions.
+Creating a record before updating it, or creating a governing record before writing its tree,
+therefore uses the earlier segment's result. The original load snapshot never changes meaning.
+
+`ActOutcome.committed(result, ActReceipt)` reports the one local transaction. Its receipt keeps the
+shared gesture ID, each ordered segment's scope, stamp and local IDs, the flat retired and superseded
+gesture IDs, and the shared release deadline. A predicted refusal, engine refusal or technical
+failure leaves no segment, device write, clock tick, reservation or notice from the act durable.
+Remote admission remains separate for each intent. Existing `Action`, `Plan`, `run`, `Outcome` and
+`CommitReceipt` retain their single-scope contracts.
 
 ## §10 Drafts
 

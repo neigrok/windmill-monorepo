@@ -229,6 +229,7 @@ internal class AndroidSqliteStore(private val db: SQLiteDatabase, private val re
             buildSet { while (cursor.moveToNext()) add(ScopeRef(cursor.getString(0))) }
         }
     }
+    override fun holdsScope(replica: String, scope: ScopeRef): Boolean = guarded { rowSet(replica, scope) != null || rowSet(replica, scope, staging = true) != null }
     override fun hasRows(replica: String, scope: ScopeRef): Boolean = guarded {
         rowSet(replica, scope)?.let { scalar("SELECT 1 FROM set_row WHERE row_set=? LIMIT 1", arrayOf(it.toString())) != null } ?: false
     }

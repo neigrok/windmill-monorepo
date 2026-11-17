@@ -153,6 +153,9 @@ export class VectorReplica {
     return { outcome: this.answer ?? { receipt: { gestureId: id, localIds: [`${id}/0`], retired: [], releaseAt: null } }, value };
   }
 
+  /** @returns {never} */
+  commitAct() { throw new ContractError('act vectors use the real engine'); }
+
   /** @param {string} gestureId */
   undo(gestureId) {
     return false;

@@ -1525,6 +1525,40 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
 
 After the commit: notify tabs (§7.8), kick the sender, and schedule release timers.
 
+#### Ordered local acts
+
+`commitAct` commits ordered scope segments in one durable local transaction. Its prepare callback
+receives an initial-snapshot `ActContext` and returns `(ActRequest?, value)`. `ActRequest` names the
+ordered scopes, a hold flag and an optional gesture ID; repeated scopes are allowed. A nil request
+decides no write. The segment callback receives that value, the segment index and a `CommitContext`
+over the tentative projection through all earlier segments. It validates and produces that segment's
+gesture before the engine stages it. `ActContext.inScope` lends a reader of the immutable initial
+snapshot only during load. `finishLoad()` closes that phase and rethrows its first scope or read
+failure, including a failure the callback caught. It is idempotent; both identity methods call it
+before drawing randomness. Raw prepare callbacks call it before their pure decision, and the kit
+runner does so automatically. All reader loans expire when their bodies return.
+
+Browser storage may replay pure deterministic load after a missing-scope demand, under the same
+writer transaction and snapshot. No decision, identity draw or device write precedes successful
+`finishLoad`. Native prepare loads once. Existing scopes used for minting must be borrowed during
+load; an unborrowed new tree or overlay requires no initial cache, cursor, known state, pending
+entry or governing record, and an earlier segment must create its governor before those IDs are used.
+
+All actual entries share one gesture ID and globally flat local IDs `<gestureId>/<ordinal>`, with
+consecutive commit order. Every segment uses the captured physical time; real segment stamps increase
+strictly. A segment with no write need not have a stamp. When any segment is held, every actual entry
+is held until the same deadline from the captured device time. One Undo covers every still-held entry.
+
+The transaction publishes only after all segments succeed. Any local refusal or thrown failure rolls
+back all segments, device rows, clocks, identity reservations, retirements and supersessions. A local
+too-large refusal leaves no partial notice. `ActReceipt` contains the shared gesture ID, ordered
+segment receipts `(scope, stamp, localIds, ids)`, flat `retired` and `superseded` lists, and `releaseAt`.
+`CommitReceipt` is unchanged. There is no generic record-count or half-request-size act limit.
+
+An act is local atomicity, not server atomicity. Its intents remain separately numbered and admitted
+in order, with the existing dependent-scope rejection rules. A later remote refusal does not reverse
+an earlier admitted intent.
+
 ### §7.2 Send order
 
 Every committed gesture is sent as its own entries, in commit order: `commit` enqueues one entry per
@@ -1535,6 +1569,11 @@ Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
 restamp or a write map (§7.7), or ends before binding by a supersede (§7.1 step 4).
 
 ### §7.3 Hold, release, undo
+
+An act whose request is held gives every actual entry the same release deadline, computed from its
+captured device time. One gesture ID names the whole hold. Undo eligibility examines every entry
+of that gesture across scopes; a released entry removes the offer in every scope. No-op segments
+create neither entries nor a hold of their own.
 
 ```
 release(entry): tx: if entry.state = held → state := ready; kick the sender

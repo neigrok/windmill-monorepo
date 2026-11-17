@@ -147,10 +147,11 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
     }
 }
 
-internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, now: Long): CommitOutcome {
+internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, now: Long,
+    actOffset: Int? = null, actFirstOrder: Long? = null): CommitOutcome {
     fun malformed(label: String): Nothing = throw CommitFailure.malformed(label)
     val product = registry.product(scope) ?: malformed("scope")
-    if (gesture.gestureId?.let { device.carriesGesture(it) } == true) malformed("gesture-id-taken")
+    if (actOffset == null && gesture.gestureId?.let { device.carriesGesture(it) } == true) malformed("gesture-id-taken")
     if (gesture.hold && gesture.holdMs < 0) malformed("hold-length")
     for (write in gesture.local) if (registry.products[product]?.get("device")?.obj()?.values?.none { Pattern(it.member("keyPattern").str()).matches(write.key) } != false) malformed("device-key")
     registry.governingRecord(scope)?.let { (key, governingScope) ->
@@ -162,9 +163,10 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     val stamp = clock.tick(now, actor)
     val gestures = replica.entries().groupBy { it.gestureId }
     val named = gesture.retire.map { it.key }.toSet()
-    val retiring = gestures.values.filter { entries -> entries.all { entry -> entry.state == "held" && entry.scope == scope && entry.intent.command == null &&
+    val retiring = gestures.values.filter { entries -> entries.all { entry -> (actOffset == null || entry.gestureId != gesture.gestureId) && entry.state == "held" && entry.scope == scope && entry.intent.command == null &&
         entry.intent.deltas.isNotEmpty() && entry.intent.deltas.all { it.removes && it.key in named } } }.flatten()
     if (gesture.supersede.isNotEmpty() && (replica.state != "anon" || gesture.supersede.distinct().size != gesture.supersede.size)) malformed("supersede-anon")
+    if (actOffset != null && gesture.gestureId in gesture.supersede) malformed("act-supersedes-itself")
     val superseding = gesture.supersede.flatMap { id ->
         val entries = gestures[id] ?: malformed("supersede-missing")
         if (entries.any { it.scope != scope || it.state !in setOf("held", "ready") || it.intent.n != null }) malformed("supersede-numbered")
@@ -241,9 +243,9 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     superseding.filter { it in replica.outbox }.forEach { replica.move(it, "silent-fold", ended) }
     applySilentFold(replica, folded)
     replica.meta = replica.meta.with("hlc" to clock.json, "hlcHigh" to stamp.json)
-    val firstOrder = (replica.outbox.maxOfOrNull { it.order } ?: 0) + 1
+    val firstOrder = actFirstOrder?.plus(actOffset ?: 0) ?: ((replica.outbox.maxOfOrNull { it.order } ?: 0) + 1)
     val localIds = intents.mapIndexed { index, intent ->
-        val localId = "$gestureId/$index"
+        val localId = "$gestureId/${(actOffset ?: 0) + index}"
         val texts = intent.deltas.flatMap { d -> d.texts.keys.map { name -> Json.array(Json.of(d.key.type), d.key.id.json, Json.of(name)).jcs } }
         replica.outbox.add(Entry(Json.Obj(buildList {
             add("localId" to Json.of(localId)); add("gestureId" to Json.of(gestureId)); add("lineage" to Json.of(replica.account ?: "anon")); add("scope" to scope.json)

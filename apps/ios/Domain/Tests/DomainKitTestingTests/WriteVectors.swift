@@ -3,6 +3,8 @@ import DomainKitTesting
 import Foundation
 import SyncAPI
 import SyncCore
+import SyncTesting
+import SyncModelServer
 import Testing
 
 // The corpus handlers that write: plans and their translation, the run pipeline, drafts and their saves, and refusal
@@ -31,6 +33,60 @@ enum Plans {
       return ["outcome": outcome.form(result: { .null }, refusal: \.form)]
     } catch is PlanError {
       return ["error": true]
+    }
+  }
+
+  static func act(_ vector: Vector) throws -> JSON {
+    let registry = try vector.registry
+    let engine = SteppedEngine(registry: registry, startMs: vector.moment.now.ms, account: nil, rules: NoServerRules())
+    let runner = ActionRunner(replica: engine.replica, registry: registry, zone: vector.moment.zone)
+    if let mint = vector.input["mint"] {
+      let scope = try ScopeRef(json: mint.member("scope"))
+      let type = try mint.member("type").asString()
+      do {
+        let result = try engine.replica.commitAct({ context in
+          if mint["borrow"] == true { try context.inScope(scope) { _ in () } }
+          if let caught = mint["caughtScope"] { _ = try? context.inScope(ScopeRef(json: caught)) { _ in () } }
+          let ids = try (0..<Int(mint.member("count").asInteger())).map { _ in try context.mintID(type, in: scope) }
+          return (mint["new"] == true ? ActRequest(scopes: [Probe.scope, scope]) : nil, ids)
+        }, segment: { ids, index, _ in
+          index == 0 ? Gesture(changes: [.create("board", id: .given("b_00000001"))])
+            : Gesture(changes: [.create(type, id: .given(ids[0]), ["label": "New"])])
+        })
+        return ["count": JSON(result.value.count), "distinct": .bool(Set(result.value).count == result.value.count), "committed": .bool(result.outcome != nil)]
+      } catch let failure as CommitFailure where failure.kind == .malformed { return ["error": true] }
+    }
+    let result = try runner.runAct(VectorAct(vector: vector))
+    let outcome: JSON
+    switch result {
+    case .committed(_, let receipt):
+      outcome = ["kind": "committed", "scopes": .array(receipt.segments.map { $0.scope.json }),
+                 "counts": .array(receipt.segments.map { JSON($0.localIds.count) }), "held": .bool(receipt.releaseAt != nil)]
+      if vector.input["undo"] == true { _ = try runner.undo(receipt.gestureId) }
+    case .unchanged: outcome = ["kind": "unchanged"]
+    case .refused(let refusal): outcome = ["kind": "refused", "refusal": refusal.form]
+    }
+    let records = try vector.input.member("inspect").asArray().map { item in
+      let scope = try ScopeRef(json: item.member("scope"))
+      return JSON.array(try engine.drawn(scope, item.member("t").asString()).filter(\.isVisible).map {
+        ["id": $0.id.json, "title": $0.values["title"] ?? .null]
+      })
+    }
+    return ["outcome": outcome, "records": .array(records)]
+  }
+
+  struct VectorAct: ActAction {
+    let vector: Vector
+    func load(_ read: ActReader) throws -> Moment { read.moment }
+    func decide(_ moment: Moment, ids: ActIDSource) throws(Violation) -> ActDecision<Void, ProbeRefusal> {
+      do {
+        let segments = try vector.input.member("segments").asArray().map { input in
+          let scoped = Vector(file: vector.file, name: vector.name, input: input, expect: .null)
+          return ScopedPlan(try scoped.scope, try Plans.build(scoped, at: moment))
+        }
+        return .write(ActPlan(segments), ())
+      } catch let violation as Violation { throw violation }
+      catch { preconditionFailure("invalid act vector: \(error)") }
     }
   }
 

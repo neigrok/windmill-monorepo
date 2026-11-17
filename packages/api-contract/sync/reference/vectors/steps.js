@@ -7,6 +7,7 @@ import { scopeDigest } from '../core/digest.js';
 import { TransitionError } from '../core/machines.js';
 import { compareRecords, isAlive } from '../core/rows.js';
 import { Cursor } from '../core/wire.js';
+import { commitAct } from '../client/acts.js';
 import { CommitError, commit } from '../client/commit.js';
 import { release, releaseAll, releaseDue, undo } from '../client/hold.js';
 import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../client/lifecycle.js';
@@ -121,6 +122,12 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           if (step.changes === null) answer(commit(replica, ctx, step.scope, () => ({ gesture: null })).outcome);
           else answer(commit(replica, ctx, step.scope, step.changes ?? [], step.opts ?? {}));
           break;
+        case 'commitAct': {
+          const outcome = commitAct(replica, ctx, step.segments, step.opts ?? {});
+          if (outcome === null || outcome.refused) { queues.restore(before.queues); gestures = before.gestures; }
+          answer(outcome);
+          break;
+        }
         case 'release':
           answer(release(replica, registry, ended, replica.entry(step.localId)));
           break;

@@ -5,6 +5,7 @@
 
 import { mintId } from '../../../../packages/api-contract/sync/reference/core/derive.js';
 import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
+import { ActReader, ActIDSource, ActPrediction, ActDecision } from './acts.js';
 import { IDSource, Outcome, decision, firstGone, refusalSubject } from './actions.js';
 import { Draft, SaveDraft, SaveResult } from './drafts.js';
 import { DecodeError, Id } from './entities.js';
@@ -13,7 +14,7 @@ import { Reader, Views } from './reading.js';
 import { Refused } from './refusals.js';
 import { Instant, Moment } from './time.js';
 import { translate } from './translation.js';
-import { Fault, precondition } from './values.js';
+import { Fault, Violation, precondition } from './values.js';
 
 let insideRun = false;
 
@@ -30,10 +31,14 @@ let insideRun = false;
  * @typedef {{ receipt: CommitReceipt } | { refused: { code: string, detail: Json | null, notice: string | null } }} CommitOutcome
  */
 /**
+ * @typedef {{ receipt: import('./acts.js').ActReceipt } | { refused: { segment: number, code: string, detail: Json | null } }} ActCommitOutcome
+ */
+/**
  * The replica port (D-18, ER-2): `commit` runs its synchronous body in one local transaction and
  * answers after it; a body returning no gesture writes nothing. `EngineReplica` is the browser engine's.
  * @typedef {{
  *   commit<T>(scope: string, body: (views: CommitViews) => { gesture: Gesture | null, value: T }): Promise<{ outcome: CommitOutcome | null, value: T }> | { outcome: CommitOutcome | null, value: T },
+ *   commitAct<T>(prepare: (context: import('./acts.js').ActContext) => { request: import('./acts.js').ActRequest | null, value: T }, segment: (value: T, index: number, views: CommitViews) => Gesture): Promise<{ outcome: ActCommitOutcome | null, value: T }> | { outcome: ActCommitOutcome | null, value: T },
  *   read(scope: string): ReadViews,
  *   undo(gestureId: string): Promise<boolean> | boolean,
  *   mintId(type: string, taken: Set<string>): RecordID,
@@ -76,6 +81,67 @@ export class ActionRunner {
    */
   async run(action) {
     return this.perform(action);
+  }
+
+  /**
+   * @template L, T, R
+   * @param {import('./acts.js').ActAction<L, T, R>} action
+   * @returns {Promise<import('./acts.js').ActOutcome<T, R>>}
+   */
+  async runAct(action) {
+    precondition(!insideRun, 'a run cannot enter inside a run');
+    /** @typedef {{ done: import('./acts.js').ActOutcome<T, R> } | { writing: { plan: import('./acts.js').ActPlan, result: T } }} Step */
+    try {
+      const committed = await this.replica.commitAct(/** @returns {{ request: import('./acts.js').ActRequest | null, value: Step }} */ (context) => {
+        insideRun = true;
+        try {
+          const reader = new ActReader(context, this.registry, new Moment(new Instant(context.now), this.zone));
+          let loaded;
+          try { loaded = action.load(reader); precondition(!isThenable(loaded), 'an act loads synchronously'); }
+          finally { reader.end(); }
+          let decided;
+          try { decided = action.decide(loaded, new ActIDSource(context)); }
+          catch (error) {
+            if (!(error instanceof Violation)) throw error;
+            decided = ActDecision.refuse(action.refusals.ofViolation(error));
+          }
+          precondition(!isThenable(decided), 'an act decides synchronously');
+          if (decided.kind === 'refuse') return { request: null, value: { done: { kind: 'refused', refusal: decided.refusal } } };
+          if (decided.kind === 'unchanged') return { request: null, value: { done: { kind: 'unchanged', result: decided.result } } };
+          return { request: { scopes: decided.plan.segments.map((item) => item.scope), hold: decided.plan.segments.some((item) => item.plan.isHeld) }, value: { writing: decided } };
+        } finally { insideRun = false; }
+      }, (value, index, input) => {
+        precondition('writing' in value, 'an act segment requires a plan');
+        insideRun = true;
+        try {
+          const scoped = value.writing.plan.segments[index];
+          precondition(scoped !== undefined, 'the act segment index is in its plan');
+          const { scope, plan } = scoped;
+          const gone = firstGone(plan, this.viewsOf(scope, input), scope, this.registry);
+          if (gone) throw new ActPrediction(gone);
+          return translate(plan, scope, this.registry);
+        } finally { insideRun = false; }
+      });
+      const { outcome, value } = committed;
+      if ('done' in value) return value.done;
+      if (outcome === null) return { kind: 'unchanged', result: value.writing.result };
+      if ('receipt' in outcome) return { kind: 'committed', result: value.writing.result, receipt: outcome.receipt };
+      const { segment, code, detail } = outcome.refused;
+      const scoped = value.writing.plan.segments[segment];
+      precondition(scoped !== undefined, 'the refused segment index is in its plan');
+      const plan = scoped.plan;
+      insideRun = true;
+      try { return { kind: 'refused', refusal: action.refusals.ofRefused(new Refused(code, refusalSubject(plan, code, detail, this.registry), detail, 'predicted')) }; }
+      finally { insideRun = false; }
+    } catch (error) {
+      if (error instanceof ActPrediction) {
+        insideRun = true;
+        try { return { kind: 'refused', refusal: action.refusals.ofRefused(error.refusal) }; }
+        finally { insideRun = false; }
+      }
+      if (error instanceof Error && 'kind' in error && error.kind === 'malformed') throw new Fault(`a malformed act is a programming fault: ${error.message}`);
+      throw error;
+    }
   }
 
   // Steps 2–7 of §9.2: one commit whose body loads, decides, checks for gone records and translates.
@@ -258,6 +324,24 @@ export class EngineReplica {
     const releaseAt = entry?.state === 'held' ? entry.releaseAt : null;
     return { outcome: { receipt: { gestureId, localIds: outcome.localIds, retired: outcome.retired,
       ...(outcome.superseded?.length ? { superseded: outcome.superseded } : {}), releaseAt } }, value };
+  }
+
+  /**
+   * @template T
+   * @param {(context: import('./acts.js').ActContext) => { request: import('./acts.js').ActRequest | null, value: T }} prepare
+   * @param {(value: T, index: number, views: CommitViews) => Gesture} segment
+   * @returns {Promise<{ outcome: ActCommitOutcome | null, value: T }>}
+   */
+  async commitAct(prepare, segment) {
+    const { outcome, value } = await this.engine.commitAct(prepare, (/** @type {T} */ value, /** @type {number} */ index, /** @type {CommitViews} */ input) => {
+      const { changes, atomic, hold, guards, retire, cmd, predict, local, supersede } = segment(value, index, input);
+      const opts = { atomic, hold, guard: guards, retire, predict,
+        ...(supersede?.length ? { supersede } : {}), local: Object.fromEntries(local.map((write) => [write.key, write.value])) };
+      return { changes, opts: cmd === null ? opts : { ...opts, cmd } };
+    });
+    if (outcome === null) return { outcome: null, value };
+    if (outcome.refused !== undefined) return { outcome: { refused: { segment: outcome.segment, code: outcome.refused, detail: outcome.detail ?? null } }, value };
+    return { outcome: { receipt: outcome }, value };
   }
 
   /**

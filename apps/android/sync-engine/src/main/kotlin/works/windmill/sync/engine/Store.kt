@@ -9,6 +9,7 @@ internal interface EngineStore : AutoCloseable {
     fun rows(replica: String, scope: ScopeRef, type: String? = null): List<Row>
     fun matching(replica: String, scope: ScopeRef, type: String, field: String, value: RecordID): List<Row>
     fun scopes(replica: String): Set<ScopeRef>
+    fun holdsScope(replica: String, scope: ScopeRef): Boolean
     fun hasRows(replica: String, scope: ScopeRef): Boolean
     fun put(replica: String, scope: ScopeRef, row: Row)
     fun remove(replica: String, scope: ScopeRef, key: RecordKey)
@@ -74,6 +75,7 @@ internal class MemoryStore(private val registry: Registry, input: Json) : Engine
         return set.refs[field to value].orEmpty().filter { it.type == type }.sorted().mapNotNull { rowsRead++; set.records[it] }
     }
     override fun scopes(replica: String) = roles.filter { it.key.replica == replica && !it.key.staging && it.value.records.isNotEmpty() }.keys.map { it.scope }.toSet()
+    override fun holdsScope(replica: String, scope: ScopeRef) = roles.keys.any { it.replica == replica && it.scope == scope }
     override fun hasRows(replica: String, scope: ScopeRef) = set(replica, scope)?.records?.isNotEmpty() == true
     override fun put(replica: String, scope: ScopeRef, row: Row) = put(set(replica, scope, create = true)!!, row.key, row)
     override fun remove(replica: String, scope: ScopeRef, key: RecordKey) { set(replica, scope)?.let { put(it, key, null) } }

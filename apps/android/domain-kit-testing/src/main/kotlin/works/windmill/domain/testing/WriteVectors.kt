@@ -1,6 +1,7 @@
 package works.windmill.domain.testing
 
 import kotlinx.coroutines.runBlocking
+import works.windmill.sync.testing.SteppedEngine
 import works.windmill.domain.kit.*
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
@@ -80,6 +81,48 @@ internal object WriteVectors {
         return try { Json.objectOf("outcome" to ActionRunner(replica, registry, moment.zone, context).run(action).form({ Json.Null }, { it.form })) }
         catch (error: PlanError) { Json.objectOf("error" to Json.of(true)) }
     }
+    fun act(input: Json): Json = runBlocking { withActionContext { context ->
+        val registry = probeRegistry()
+        val moment = moment(input)
+        SteppedEngine(registry, startMs = moment.now.ms, account = null).use { engine ->
+            val runner = ActionRunner(engine.replica, registry, moment.zone, context)
+            input["mint"]?.let { mint ->
+                val scope = ScopeRef(mint.member("scope"))
+                val type = mint.member("type").str()
+                return@use try {
+                    val result = engine.replica.commitAct({ source ->
+                        if (mint["borrow"]?.bool() == true) source.inScope(scope) { }
+                        mint["caughtScope"]?.let { try { source.inScope(ScopeRef(it)) { } } catch (_: CommitFailure) { } }
+                        val ids = (0 until mint.member("count").long().toInt()).map { source.mintID(type, scope) }
+                        (if (mint["new"]?.bool() == true) ActRequest(listOf(Probe.scope, scope)) else null) to ids
+                    }, { ids, index, _ -> if (index == 0) Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001")))))
+                        else Gesture(listOf(Change.create(type, NewID.Given(ids[0]), mapOf("label" to Json.of("New"))))) })
+                    Json.objectOf("count" to Json.of(result.second.size), "distinct" to Json.of(result.second.toSet().size == result.second.size), "committed" to Json.of(result.first != null))
+                } catch (failure: CommitFailure) { if (failure.kind != CommitFailure.Kind.malformed) throw failure; Json.objectOf("error" to Json.of(true)) }
+            }
+            val action = object : ActAction<Moment, Unit, ProbeRefusal> {
+                override val refusals = ProbeRefusals
+                override fun load(read: ActReader) = read.moment
+                override fun decide(loaded: Moment, ids: ActIDSource): ActDecision<Unit, ProbeRefusal> = ActDecision.Write(
+                    ActPlan(input.member("segments").arr().map { ScopedPlan(ScopeRef(it.member("scope")), build(it, loaded)) }), Unit)
+            }
+            val result = runner.runAct(action)
+            val outcome = when (result) {
+                is ActOutcome.Committed -> {
+                    if (input["undo"]?.bool() == true) runner.undo(result.receipt.gestureId)
+                    Json.objectOf("kind" to Json.of("committed"), "scopes" to Json.Arr(result.receipt.segments.map { it.scope.json }),
+                        "counts" to Json.Arr(result.receipt.segments.map { Json.of(it.localIds.size) }), "held" to Json.of(result.receipt.releaseAt != null))
+                }
+                is ActOutcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged"))
+                is ActOutcome.Refused -> Json.objectOf("kind" to Json.of("refused"), "refusal" to result.refusal.form)
+            }
+            val records = input.member("inspect").arr().map { item ->
+                Json.Arr(engine.replica.read(ScopeRef(item.member("scope"))) { it.drawn(item.member("t").str()) }.filter { it.isVisible }
+                    .map { Json.objectOf("id" to it.id.json, "title" to (it.values["title"] ?: Json.Null)) })
+            }
+            Json.objectOf("outcome" to outcome, "records" to Json.Arr(records))
+        }
+    } }
     private fun answer(input: Json): CommitOutcome? {
         input["receipt"]?.let { receipt -> return CommitOutcome.Committed(CommitReceipt(receipt.member("gestureId").str(), Stamp.UNSET,
             names(receipt.member("localIds")), emptyList(), receipt["releaseAt"]?.orNull()?.long(), names(receipt.member("retired")))) }

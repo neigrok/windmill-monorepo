@@ -56,6 +56,19 @@ sealed interface CommitOutcome {
     data class Refused(val code: RefusalCode, val detail: Json?, val notice: String? = null) : CommitOutcome
 }
 
+data class ActRequest(val scopes: List<ScopeRef>, val hold: Boolean = false, val gestureId: String? = null,
+    val holdMs: Long = works.windmill.sync.core.Constants.HOLD_MS)
+data class ScopedGesture(val scope: ScopeRef, val gesture: Gesture)
+data class ActSegmentReceipt(val scope: ScopeRef, val stamp: Stamp?, val localIds: List<String>, val ids: List<RecordID?> = emptyList())
+data class ActReceipt(val gestureId: String, val segments: List<ActSegmentReceipt>, val retired: List<String> = emptyList(),
+    val superseded: List<String> = emptyList(), val releaseAt: Long? = null) {
+    val localIds: List<String> get() = segments.flatMap { it.localIds }
+}
+sealed interface ActCommitOutcome {
+    data class Committed(val receipt: ActReceipt) : ActCommitOutcome
+    data class Refused(val segment: Int, val code: RefusalCode, val detail: Json?) : ActCommitOutcome
+}
+
 data class CommitReceipt(val gestureId: String, val stamp: Stamp, val localIds: List<String>, val ids: List<RecordID?>,
     val releaseAt: Long?, val retired: List<String>, val superseded: List<String> = emptyList())
 enum class ViewMode { drawn, stored }

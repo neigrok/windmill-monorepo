@@ -20,10 +20,11 @@ public struct CommitPlanner: Sendable {
   // `gestureIdTaken`: an outbox entry or a notice of any replica on the device carries the gesture's given id (§2.5).
   // `draws`: the ids an earlier plan of this commit drew before it stopped at `UnreadDraws`, taken again first.
   public func commit(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw] = []) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw] = [],
+                     actOffset: Int? = nil, actFirstOrder: Int64? = nil) throws -> CommitOutcome {
     try checkWritable(replica.meta)
     return try commitGesture(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken,
-                             draws: draws)
+                             draws: draws, actOffset: actOffset, actFirstOrder: actFirstOrder)
   }
 
   // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
@@ -63,7 +64,7 @@ public struct CommitPlanner: Sendable {
   // Steps 2–11, after the checks before step 2. The retire, the supersede and their one silent fold run on a working copy,
   // which the diff reads and which the replica becomes once the commit is accepted.
   func commitGesture(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw]) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw], actOffset: Int?, actFirstOrder: Int64?) throws -> CommitOutcome {
     guard registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("\(scope) is no scope of the registry") }
     let product = try product(of: scope)
     if let taken = gesture.gestureId, gestureIdTaken { throw CommitFailure.malformed("the gesture id \(taken) is taken") }
@@ -79,7 +80,12 @@ public struct CommitPlanner: Sendable {
 
     // Step 4: the retired gestures end by retire and the superseded by silent fold, a gesture in both by retire, and the
     // dependents of all of them fold in one pass, as a replacement when any gesture is superseded.
-    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica)
+    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica).filter {
+      actOffset == nil || $0.gestureId != gesture.gestureId
+    }
+    if actOffset != nil, let id = gesture.gestureId, gesture.supersede.contains(id) {
+      throw CommitFailure.malformed("an act cannot supersede itself")
+    }
     let superseding = try supersedingEntries(gesture.supersede, in: scope, replica: replica)
     let supersedingOnly = superseding.filter { entry in !retiring.contains { $0.commitOrder == entry.commitOrder } }
     let ending = retiring.map { (entry: $0, event: IntentEvent.retire) } + supersedingOnly.map { (entry: $0, event: IntentEvent.silentFold) }
@@ -123,14 +129,14 @@ public struct CommitPlanner: Sendable {
 
     replica = retired
     let releaseAt = gesture.hold ? instance.deviceNow + limits.holdMs : 0
-    let firstOrder = replica.nextCommitOrder
+    let firstOrder = actFirstOrder.map { $0 + Int64(actOffset ?? 0) } ?? replica.nextCommitOrder
     let entries = try intents.enumerated().map { k, intent in
       guard case .state(let state) = try Machines.intent.transition(from: nil, .commit, to: .state(gesture.hold ? .held : .ready)) else {
         preconditionFailure("a commit enqueues")
       }
       let texts = Set(intent.deltas.flatMap { delta in delta.texts.keys.map { TextRef(delta.key, $0) } })
       return OutboxEntry(
-        localId: "\(gestureId)/\(k)", gestureId: gestureId, lineage: replica.meta.lineage, scope: scope, state: state,
+        localId: "\(gestureId)/\((actOffset ?? 0) + k)", gestureId: gestureId, lineage: replica.meta.lineage, scope: scope, state: state,
         commitOrder: firstOrder + Int64(k), releaseAt: releaseAt, stamp: stamp, intent: intent,
         predict: command == nil ? [] : predict, baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
     }

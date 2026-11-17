@@ -96,6 +96,8 @@ class ActionDraftTests {
             return (if (written == null) null else response) to result
         }
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = body(context)
+            override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+            error("act vectors use the real engine")
         override fun undo(gestureId: String) = true
         override fun mintID(type: String) = context.mintID(type)
         override fun physNow() = context.now

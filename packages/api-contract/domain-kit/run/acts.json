@@ -1,0 +1,494 @@
+[
+  {
+    "name": "later updates read earlier creates in the same act",
+    "input": {
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "First"
+              },
+              "below": null
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "Next"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "scopes": [
+          "self/probe",
+          "self/probe"
+        ],
+        "counts": [
+          1,
+          1
+        ],
+        "held": false
+      },
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "Next"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "one act writes separate trees and an overlay",
+    "input": {
+      "segments": [
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "update",
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": "First"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000002",
+          "plan": [
+            {
+              "op": "update",
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": "Second"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ]
+        },
+        {
+          "scope": "self/overlay/b_00000001",
+          "plan": [
+            {
+              "op": "update",
+              "t": "mark",
+              "id": "card0001",
+              "f": {
+                "done": true
+              },
+              "fields": [
+                "done"
+              ]
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "tree/b_00000001",
+          "t": "meta"
+        },
+        {
+          "scope": "tree/b_00000002",
+          "t": "meta"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "scopes": [
+          "tree/b_00000001",
+          "tree/b_00000002",
+          "self/overlay/b_00000001"
+        ],
+        "counts": [
+          1,
+          1,
+          1
+        ],
+        "held": false
+      },
+      "records": [
+        [
+          {
+            "id": "meta",
+            "title": "First"
+          }
+        ],
+        [
+          {
+            "id": "meta",
+            "title": "Second"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a later gone record refuses the whole act including the earlier create",
+    "input": {
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "First"
+              },
+              "below": null
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0404",
+              "f": {
+                "title": "Next"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "refused",
+        "refusal": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {
+              "t": "card",
+              "id": "card0404"
+            },
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      },
+      "records": [
+        []
+      ]
+    }
+  },
+  {
+    "name": "one removal holds every segment and one Undo removes the entire act",
+    "input": {
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "First"
+              },
+              "below": null
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "remove",
+              "t": "card",
+              "id": "card0001"
+            }
+          ]
+        }
+      ],
+      "undo": true,
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "scopes": [
+          "self/probe",
+          "self/probe"
+        ],
+        "counts": [
+          1,
+          1
+        ],
+        "held": true
+      },
+      "records": [
+        []
+      ]
+    }
+  },
+  {
+    "name": "an empty act is unchanged",
+    "input": {
+      "segments": [],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "unchanged"
+      },
+      "records": [
+        []
+      ]
+    }
+  },
+  {
+    "name": "a no-op segment has no local ids and preserves later ordinal order",
+    "input": {
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": []
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "First"
+              },
+              "below": null
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": []
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "scopes": [
+          "self/probe",
+          "self/probe",
+          "self/probe"
+        ],
+        "counts": [
+          0,
+          1,
+          0
+        ],
+        "held": false
+      },
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "First"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a later plan sees a command prediction from the preceding segment",
+    "input": {
+      "segments": [
+        {
+          "scope": "self/probe",
+          "cmd": {
+            "name": "probe.start",
+            "args": {
+              "id": "run00001",
+              "startedAt": 5000,
+              "join": false
+            }
+          },
+          "predict": [
+            {
+              "op": "create",
+              "t": "run",
+              "id": "run00001",
+              "f": {
+                "startedAt": 5000,
+                "label": "First"
+              }
+            }
+          ],
+          "plan": []
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "run",
+              "id": "run00001",
+              "f": {
+                "label": "Next"
+              },
+              "fields": [
+                "label"
+              ]
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "run"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "scopes": [
+          "self/probe",
+          "self/probe"
+        ],
+        "counts": [
+          1,
+          1
+        ],
+        "held": false
+      },
+      "records": [
+        [
+          {
+            "id": "run00001",
+            "title": null
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "minting an existing scope requires loading it first",
+    "input": {
+      "mint": {
+        "type": "card",
+        "scope": "self/probe",
+        "count": 1,
+        "borrow": false
+      }
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "repeated mints share one act reservation set",
+    "input": {
+      "mint": {
+        "type": "card",
+        "scope": "self/probe",
+        "count": 2,
+        "borrow": true
+      }
+    },
+    "expect": {
+      "count": 2,
+      "distinct": true,
+      "committed": false
+    }
+  },
+  {
+    "name": "a new scope may mint before its governing create",
+    "input": {
+      "mint": {
+        "type": "tag",
+        "scope": "tree/b_00000001",
+        "count": 1,
+        "borrow": false,
+        "new": true
+      }
+    },
+    "expect": {
+      "count": 1,
+      "distinct": true,
+      "committed": true
+    }
+  },
+  {
+    "name": "a caught invalid load scope still fails before minting",
+    "input": {
+      "mint": {
+        "type": "card",
+        "scope": "self/probe",
+        "count": 1,
+        "borrow": true,
+        "caughtScope": "self/missing"
+      }
+    },
+    "expect": {
+      "error": true
+    }
+  }
+]

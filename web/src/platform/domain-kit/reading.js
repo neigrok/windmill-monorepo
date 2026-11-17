@@ -22,7 +22,7 @@ import { precondition } from './values.js';
 /**
  * @typedef {{ devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
  *   commands?: QueuedCommand[], checkpoint?: ScopeCheckpoint, mintId?: (type: string) => RecordID,
- *   opaqueID?: () => string }} ViewMetadata
+ *   opaqueID?: () => string, assertOpen?: () => void }} ViewMetadata
  */
 
 export const Placement = Object.freeze({
@@ -43,7 +43,8 @@ export class Views {
    * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & ViewMetadata} source
    */
   constructor(registry, { drawn, stored, confirmed = new Map(), devices = {}, firstPullComplete = true,
-    actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID }) {
+    actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID, assertOpen = () => {} }) {
+    this.assertOpen = assertOpen;
     this.registry = registry;
     this.drawn = drawn;
     this.stored = stored;
@@ -96,6 +97,7 @@ export class Views {
    * @param {RecordID} id
    */
   record(view, type, id) {
+    this.assertOpen();
     return this[view].get(recordKey(type, id));
   }
 
@@ -105,6 +107,7 @@ export class Views {
    * @param {string} type
    */
   visible(view, type) {
+    this.assertOpen();
     return [...(this.#indexes[view].get(type)?.records ?? [])];
   }
 
@@ -115,6 +118,7 @@ export class Views {
    * @param {RecordID} id
    */
   referencing(view, type, via, id) {
+    this.assertOpen();
     const key = jcs(id);
     const index = this.#indexes[view].get(type);
     if (!index) return [];
@@ -128,16 +132,19 @@ export class Views {
 
   /** @param {string} key */
   device(key) {
+    this.assertOpen();
     return Object.hasOwn(this.devices, key) ? /** @type {Json} */ (this.devices[key]) : null;
   }
 
   /** @param {string} type */
   mint(type) {
+    this.assertOpen();
     precondition(this.mintId !== null, 'ids are minted inside a commit only');
     return this.mintId(type);
   }
 
   opaqueID() {
+    this.assertOpen();
     precondition(this.mintOpaqueId !== null, 'opaque ids are minted inside a commit only');
     return this.mintOpaqueId();
   }
@@ -158,11 +165,12 @@ export class Reader {
   }
 
   get registry() {
+    this.views.assertOpen();
     return this.views.registry;
   }
 
-  get actor() { return this.views.actor; }
-  get isAnonymous() { return this.views.isAnonymous; }
+  get actor() { this.views.assertOpen(); return this.views.actor; }
+  get isAnonymous() { this.views.assertOpen(); return this.views.isAnonymous; }
 
   /**
    * @template E
@@ -182,6 +190,7 @@ export class Reader {
 
   /** @param {string} prefix */
   devices(prefix) {
+    this.views.assertOpen();
     return Object.fromEntries(Object.entries(this.views.devices).filter(([key]) => key.startsWith(prefix)));
   }
 
@@ -191,14 +200,16 @@ export class Reader {
    * @param {import('./entities.js').Id<E>} id
    */
   confirmed(type, id) {
+    this.views.assertOpen();
     this.repository(type);
     return this.views.confirmed.get(recordKey(type.type, id.record)) ?? null;
   }
 
-  commands() { return this.views.commands; }
-  checkpoint() { return this.views.checkpoint; }
+  commands() { this.views.assertOpen(); return this.views.commands; }
+  checkpoint() { this.views.assertOpen(); return this.views.checkpoint; }
 
   firstPullComplete() {
+    this.views.assertOpen();
     return this.views.firstPullComplete;
   }
 }

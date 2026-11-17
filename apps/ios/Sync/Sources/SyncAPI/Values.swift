@@ -275,6 +275,49 @@ public enum CommitOutcome: Hashable, Sendable {
   case refused(RefusalCode, detail: JSON?, notice: String? = nil)
 }
 
+public struct ActRequest: Sendable {
+  public let scopes: [ScopeRef]
+  public let hold: Bool
+  public let gestureId: String?
+  public init(scopes: [ScopeRef], hold: Bool = false, gestureId: String? = nil) {
+    self.scopes = scopes; self.hold = hold; self.gestureId = gestureId
+  }
+}
+
+public struct ScopedGesture: Sendable {
+  public let scope: ScopeRef
+  public let gesture: Gesture
+  public init(scope: ScopeRef, gesture: Gesture) { self.scope = scope; self.gesture = gesture }
+}
+
+public struct ActSegmentReceipt: Sendable {
+  public let scope: ScopeRef
+  public let stamp: Stamp?
+  public let localIds: [String]
+  public let ids: [RecordID?]
+  public init(scope: ScopeRef, stamp: Stamp?, localIds: [String], ids: [RecordID?] = []) {
+    self.scope = scope; self.stamp = stamp; self.localIds = localIds; self.ids = ids
+  }
+}
+
+public struct ActReceipt: Sendable {
+  public let gestureId: String
+  public let segments: [ActSegmentReceipt]
+  public let retired: [String]
+  public let superseded: [String]
+  public let releaseAt: Int64?
+  public init(gestureId: String, segments: [ActSegmentReceipt], retired: [String] = [], superseded: [String] = [], releaseAt: Int64? = nil) {
+    self.gestureId = gestureId; self.segments = segments; self.retired = retired
+    self.superseded = superseded; self.releaseAt = releaseAt
+  }
+  public var localIds: [String] { segments.flatMap(\.localIds) }
+}
+
+public enum ActCommitOutcome: Sendable {
+  case committed(ActReceipt)
+  case refused(segment: Int, code: RefusalCode, detail: JSON?)
+}
+
 public struct CommitReceipt: Hashable, Sendable {
   public let gestureId: String
   public let stamp: Stamp

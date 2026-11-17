@@ -985,6 +985,7 @@ Expect: `{returns, device, ended, telemetry?, events?}`.
 
 | op | args | spec | returns |
 |---|---|---|---|
+| `commitAct` | `segments: [{scope, changes, opts?}]` or null | §7.1 | `{gestureId, segments: [{scope, stamp, localIds, ids}], retired, superseded, releaseAt}`; `{refused, segment, detail?}`; null when no segment writes |
 | `commit` | `scope, changes, opts` | §7.1 | `{localIds, retired, stamp, superseded?}`; `{refused: 'cap', detail: {type, cap}}`, `{refused: 'scope-dead'}` or `{refused: 'too-large'}`; `null` for `changes: null` |
 | `release` | `localId` | §7.3 | `true` if the entry was held |
 | `releaseAll` | — | §7.3 (leaving, engine start) | `null` |

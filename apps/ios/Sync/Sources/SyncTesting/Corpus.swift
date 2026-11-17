@@ -61,7 +61,7 @@ public enum Corpus {
 
   // The client files written in the client-step language (corpus/README.md "Client steps").
   public static let clientStepFiles = [
-    "commit/deltas.json", "commit/grouping.json", "commit/guards.json", "commit/ids.json", "commit/retire.json",
+    "commit/acts.json", "commit/deltas.json", "commit/grouping.json", "commit/guards.json", "commit/ids.json", "commit/retire.json",
     "commit/throws.json", "commit/supersede.json", "hold/release.json", "hold/undo.json", "refusal/base-unknown.json", "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json",
     "write/map.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
   ]

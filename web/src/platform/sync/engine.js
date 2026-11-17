@@ -9,6 +9,7 @@ import { bodyBytes, Cursor } from '../../../../packages/api-contract/sync/refere
 import { Stamp } from '../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { Offset } from '../../../../packages/api-contract/sync/reference/core/clock.js';
 import { CommitError, commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
+import { ActCommit } from '../../../../packages/api-contract/sync/reference/client/acts.js';
 import { release, releaseAll, releaseDue, undo, undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
@@ -107,8 +108,9 @@ export class BrowserSyncEngine {
     let answer;
     let thrown;
     try {
-      answer = await this.store.transact((device) => {
+      answer = await this.store.transact((device, ensureScope) => {
         context = this.context(device);
+        context.ensureScope = ensureScope;
         try { return change(device, context); } catch (error) { thrown = error; throw error; }
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
@@ -143,7 +145,7 @@ export class BrowserSyncEngine {
       }
       this.armHolds();
     } catch { if (!this.closed) this.telemetry.failure('storage'); }
-    if (operation) this.telemetry.event(operation, { outcome: answer.result?.refused ? 'failed' : answer.result?.complete === false ? 'pending' : 'ok' });
+    if (operation) this.telemetry.event(operation, { outcome: (answer.result?.refused || answer.result?.outcome?.refused) ? 'failed' : answer.result?.complete === false ? 'pending' : 'ok' });
     return answer.result;
   }
 
@@ -410,6 +412,37 @@ export class BrowserSyncEngine {
   async undo(gestureId) {
     const result = await this.write('sync-undo', (device, ctx) => undo(device.activeReplica, this.registry, ctx.ended, gestureId));
     this.kick();
+    return result;
+  }
+
+  async commitAct(prepare, segment) {
+    if (typeof prepare !== 'function') {
+      const segments = prepare;
+      prepare = () => ({ request: segments === null ? null : { scopes: segments.map((item) => item.scope), hold: segments.some((item) => item.opts?.hold) }, value: segments });
+      segment = (values, index) => values[index];
+    }
+    const act = new ActCommit();
+    const scopes = [];
+    const result = await this.write('sync-commit', (device, ctx) => {
+      ctx.opaqueID = () => this.newGestureId();
+      ctx.metadata = (replica, scope) => this.readMetadata(scope, replica, act.actor ?? ctx.actor);
+      const result = act.advance(device.activeReplica, ctx, (context) => {
+        try {
+          const prepared = prepare(context);
+          if (prepared?.then) throw new CommitError('an act prepare callback is synchronous');
+          return prepared;
+        } catch (error) { ctx.callerError = error; throw error; }
+      }, (value, index, context) => {
+        try {
+          const gesture = segment(value, index, context);
+          if (gesture?.then) throw new CommitError('an act segment callback is synchronous');
+          return gesture;
+        } catch (error) { ctx.callerError = error; throw error; }
+      });
+      scopes.push(...act.prepared.request?.scopes ?? []);
+      return result;
+    }, scopes);
+    this.requestPersistence(); this.kick();
     return result;
   }
 

@@ -155,6 +155,8 @@ class VectorReplica(records: VectorRecords, val now: Long, val registry: Registr
             }
         }
     }
+    override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+        error("act vectors use the real engine")
     override fun undo(gestureId: String) = false
     override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T) = body(VectorReader(scopes[scope] ?: records, now, scope = scope, registry = registry))
     override fun mintID(type: String): RecordID = throw CommitFailure.malformed("a vector mints no id")

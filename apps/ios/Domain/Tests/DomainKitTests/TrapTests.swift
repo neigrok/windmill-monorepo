@@ -187,6 +187,9 @@ enum Kit {
       return (.committed(CommitReceipt(gestureId: "g1", stamp: .unset, localIds: ["g1/0"], ids: [], releaseAt: nil, retired: [])), value)
     }
 
+    func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T), segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
+      throw CommitFailure.malformed("act vectors use the real engine")
+    }
     func undo(_ gestureId: String) throws -> Bool { false }
     func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try body(Context(records: records)) }
     func mintID(_ type: String) throws -> RecordID { throw CommitFailure.malformed("\(type) mints no id here") }

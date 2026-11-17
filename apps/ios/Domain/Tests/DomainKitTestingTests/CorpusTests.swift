@@ -21,6 +21,7 @@ struct CorpusTests {
     "capacity/count.json": Lists.capacity,
     "plan/translate.json": Plans.translate,
     "run/pipeline.json": Plans.pipeline,
+    "run/acts.json": Plans.act,
     "draft/save.json": Drafts.save,
     "scope/bindings.json": { try Drafts.script($0, trapping: false) },
     "draft/script.json": { try Drafts.script($0, trapping: false) },

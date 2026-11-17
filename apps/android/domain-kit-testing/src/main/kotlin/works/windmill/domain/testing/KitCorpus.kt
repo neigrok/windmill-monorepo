@@ -36,6 +36,7 @@ object KitCorpus {
         "capacity/count.json" to WriteVectors::capacity,
         "plan/translate.json" to WriteVectors::translate,
         "run/pipeline.json" to WriteVectors::pipeline,
+        "run/acts.json" to WriteVectors::act,
         "draft/save.json" to WriteVectors::save,
         "draft/script.json" to WriteVectors::script,
         "scope/bindings.json" to WriteVectors::script,

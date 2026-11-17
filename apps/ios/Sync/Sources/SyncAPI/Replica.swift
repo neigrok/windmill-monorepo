@@ -38,6 +38,17 @@ public protocol CommitContext: ScopeReader {
   func mintID(_ type: String) throws -> RecordID
 }
 
+public protocol ActContext {
+  var now: Int64 { get }
+  var replica: String { get }
+  var actor: String { get }
+  var isAnonymous: Bool { get }
+  func finishLoad() throws
+  func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T
+  func mintID(_ type: String, in scope: ScopeRef) throws -> RecordID
+  func opaqueID() throws -> String
+}
+
 // §7.1 a commit that throws, before its transaction commits, throws this, of one of three kinds told apart by where it
 // arises. A `Refused` outcome is a result, never a failure.
 public struct CommitFailure: Error, Hashable, Sendable, CustomStringConvertible {
@@ -76,6 +87,8 @@ public protocol Replica: Sendable {
   // §7.1 read-and-commit: the body decides a gesture from the views, or nil to write nothing and tick no clock. Throws a
   // `CommitFailure`, or the body's own error as it threw it.
   func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T)
+  func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T),
+                    segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T)
   // §7.3: true iff every entry of the gesture was still held, and so removed.
   func undo(_ gestureId: String) throws -> Bool
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T
@@ -88,6 +101,12 @@ public protocol Replica: Sendable {
 }
 
 extension Replica {
+  public func commitAct(_ segments: [ScopedGesture], gestureId: String? = nil) throws -> ActCommitOutcome? {
+    try commitAct({ _ in
+      (ActRequest(scopes: segments.map(\.scope), hold: segments.contains { $0.gesture.hold }, gestureId: gestureId), segments)
+    }, segment: { segments, index, _ in segments[index].gesture }).outcome
+  }
+
   public func commit(_ scope: ScopeRef, _ gesture: Gesture) throws -> CommitOutcome {
     let (outcome, _) = try commit(scope) { _ in (gesture, ()) }
     guard let outcome else { preconditionFailure("a commit of a gesture always has an outcome") }

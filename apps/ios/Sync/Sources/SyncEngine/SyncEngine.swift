@@ -150,6 +150,48 @@ public final class SyncEngine: Replica {
     return committed
   }
 
+  public func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T),
+                           segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
+    let committed: (outcome: ActCommitOutcome?, value: T)
+    do {
+      committed = try core.write { store, instance in
+        var newMints: Set<ScopeRef> = []
+        return try store.commitAct(instance: instance, identities: core.identities, prepare: { [core] tx in
+          let context = try TransactionActContext(tx, core: core, instance: instance)
+          defer { context.end() }
+          let prepared: (ActRequest?, T)
+          do { prepared = try prepare(context) }
+          catch { throw context.failure ?? BodyError(error: error) }
+          try context.finish()
+          newMints = context.newMints
+          return prepared
+        }, segment: { [core] value, index, scope, tx in
+          if newMints.contains(scope), let governing = core.registry.governingRecord(of: scope) {
+            let reader = try TransactionReader(tx, core: core, scope: governing.scope, deviceNow: instance.deviceNow, actor: instance.actor.text)
+            defer { reader.end() }
+            guard try reader.drawn(governing.key.type, governing.key.id)?.life?.isAlive == true else {
+              throw CommitFailure.malformed("an act must create the governing record before using identities in its new scope")
+            }
+          }
+          let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: instance.actor.text)
+          defer { context.end() }
+          let gesture: Gesture
+          do { gesture = try segment(value, index, context) }
+          catch { throw context.failure ?? BodyError(error: error) }
+          try context.finish()
+          return gesture
+        })
+      }
+    } catch let own as BodyError { throw own.error }
+    catch let failure as CommitFailure { throw failure }
+    catch { throw CommitFailure(.storeFailure, "\(error)") }
+    if case .committed(let receipt)? = committed.outcome {
+      core.wakes.sender.kick()
+      if receipt.releaseAt != nil { core.wakes.releaser.kick() }
+    }
+    return committed
+  }
+
   // An Undo's silent fold may leave sendable what the held gesture held back, so an Undo kicks the sender.
   public func undo(_ gestureId: String) throws -> Bool {
     let undone = try core.write { store, _ in try store.undo(gestureId) }

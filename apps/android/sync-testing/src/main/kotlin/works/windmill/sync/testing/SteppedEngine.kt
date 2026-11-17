@@ -92,7 +92,7 @@ class SteppedEngine private constructor(private val registry: Registry, snapshot
 
 object ClientCorpus {
     fun handlers(probe: Registry): Map<String, Handler> {
-        val paths = listOf("commit/deltas.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
+        val paths = listOf("commit/deltas.json", "commit/acts.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
         return paths.associateWith { { input: Json -> steps(probe, input) } } + mapOf(
             "view/drawn.json" to { input: Json -> view(probe, input, ViewMode.drawn) },
             "view/stored.json" to { input: Json -> view(probe, input, ViewMode.stored) })
@@ -128,6 +128,17 @@ object ClientCorpus {
         })
         is CommitOutcome.Refused -> Json.Obj(buildList { add("refused" to Json.of(result.code.text)); result.detail?.let { add("detail" to it) } })
     }
+    fun outcome(result: ActCommitOutcome): Json = when (result) {
+        is ActCommitOutcome.Refused -> Json.Obj(buildList {
+            add("refused" to Json.of(result.code.text)); add("segment" to Json.of(result.segment)); result.detail?.let { add("detail" to it) }
+        })
+        is ActCommitOutcome.Committed -> result.receipt.let { receipt -> Json.objectOf(
+            "gestureId" to Json.of(receipt.gestureId), "segments" to Json.Arr(receipt.segments.map { item -> Json.objectOf(
+                "scope" to item.scope.json, "stamp" to (item.stamp?.json ?: Json.Null), "localIds" to Json.Arr(item.localIds.map(Json::of)),
+                "ids" to Json.Arr(item.ids.map { it?.json ?: Json.Null })) }),
+            "retired" to Json.Arr(receipt.retired.map(Json::of)), "superseded" to Json.Arr(receipt.superseded.map(Json::of)),
+            "releaseAt" to (receipt.releaseAt?.let(Json::of) ?: Json.Null)) }
+    }
     fun steps(registry: Registry, input: Json): Json {
         SteppedEngine(registry, input.member("device"), input["draws"]?.arr()?.map { it.long().toInt() }.orEmpty(), input["limits"]?.get("PUSH_MAX_BYTES")?.long()?.toInt() ?: Constants.PUSH_MAX_BYTES).use { stepped ->
             val results = input.member("steps").arr().map { step ->
@@ -138,6 +149,14 @@ object ClientCorpus {
                         "commit" -> if (step["changes"] === Json.Null) {
                             stepped.engine.commit(ScopeRef(step.member("scope"))) { null to Unit }; Json.Null
                         } else outcome(stepped.engine.commit(ScopeRef(step.member("scope")), gesture(step["changes"] ?: Json.array(), step["opts"] ?: Json.objectOf())))
+                        "commitAct" -> {
+                            val segments = step["segments"]?.orNull()?.arr()?.map { item ->
+                                ScopedGesture(ScopeRef(item.member("scope")), gesture(item["changes"] ?: Json.array(), item["opts"] ?: Json.objectOf())) }
+                            val result = stepped.engine.commitAct({ (segments?.let { ActRequest(it.map { it.scope }, it.any { it.gesture.hold }) }) to segments },
+                                { values, index, _ -> values!![index].gesture }).first
+                            if (result == null || result is ActCommitOutcome.Refused) { stepped.gestures = beforeGesture; stepped.drawIndex = beforeDraw }
+                            result?.let(::outcome) ?: Json.Null
+                        }
                         "undo" -> Json.of(stepped.engine.undo(step.member("gestureId").str()))
                         "releaseAll" -> { stepped.engine.releaseHeld(true); Json.Null }
                         "releaseDue" -> { stepped.engine.releaseHeld(); Json.Null }

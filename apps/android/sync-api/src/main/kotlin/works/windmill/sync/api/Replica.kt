@@ -28,6 +28,17 @@ interface CommitContext : ScopeReader {
     fun mintID(type: String): RecordID
 }
 
+interface ActContext {
+    val now: Long
+    val replica: String
+    val actor: String
+    val isAnonymous: Boolean
+    fun finishLoad()
+    fun <T> inScope(scope: ScopeRef, body: (ScopeReader) -> T): T
+    fun mintID(type: String, scope: ScopeRef): RecordID
+    fun opaqueID(): String
+}
+
 class CommitFailure(val kind: Kind, val description: String) : Exception(description) {
     enum class Kind(val wire: String) { notWritable("not-writable"), malformed("malformed"), storeFailure("store-failure") }
     override fun equals(other: Any?): Boolean = other is CommitFailure && kind == other.kind && description == other.description
@@ -38,6 +49,7 @@ class CommitFailure(val kind: Kind, val description: String) : Exception(descrip
 
 interface Replica {
     fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T>
+    fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T>
     fun undo(gestureId: String): Boolean
     fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T
     fun mintID(type: String): RecordID
@@ -46,6 +58,10 @@ interface Replica {
     fun commit(scope: ScopeRef, gesture: Gesture): CommitOutcome = commit(scope) { gesture to Unit }.first
         ?: throw IllegalStateException("a commit of a gesture always has an outcome")
 }
+
+fun Replica.commitAct(segments: List<ScopedGesture>, gestureId: String? = null): ActCommitOutcome? = commitAct(
+    { ActRequest(segments.map { it.scope }, segments.any { it.gesture.hold }, gestureId) to segments },
+    { values, index, _ -> values[index].gesture }).first
 
 data class ScopeCheckpoint(val epoch: String? = null, val cleanSeq: Long? = null)
 data class QueuedCommand(val gestureId: String, val command: Command, val canSupersede: Boolean)

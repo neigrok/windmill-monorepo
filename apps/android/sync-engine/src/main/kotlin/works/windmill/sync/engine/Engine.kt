@@ -192,7 +192,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
                 telemetry.offer(EngineOperation.storage, EngineOutcome.failure, "store-failure")
                 throw CommitFailure(CommitFailure.Kind.storeFailure, "transaction")
             }
-            telemetry.offer(operation, EngineOutcome.failure, (failure as? CommitFailure)?.kind?.wire)
+            if (failure !is ActRefusal && failure !is ActBodyError) telemetry.offer(operation, EngineOutcome.failure, (failure as? CommitFailure)?.kind?.wire)
             throw failure
         } finally { writing = false }
     }
@@ -206,6 +206,8 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         }
         result to value
     }
+    override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>,
+        segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> = commitActTransaction(prepare, segment)
     override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = lock.withLock {
         ensureOpen()
         val reader = Reader(device.current(), scope, now(device.current()))
@@ -247,8 +249,9 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     fun undoOffers(): List<UndoOffer> = lock.withLock {
         ensureOpen()
-        device.current().entries().filter { it.state == "held" && it.json.member("releaseAt").long() > clock.now() }
-            .distinctBy { it.gestureId }.map { UndoOffer(it.gestureId, it.scope, it.json.member("releaseAt").long()) }
+        device.current().entries().groupBy { it.gestureId }.values.filter { entries ->
+            entries.all { it.state == "held" } && entries.first().json.member("releaseAt").long() > clock.now()
+        }.map { entries -> entries.first().let { UndoOffer(it.gestureId, it.scope, it.json.member("releaseAt").long()) } }
     }
     fun observe(scope: ScopeRef, type: String, field: String? = null, id: RecordID? = null, mode: ViewMode = ViewMode.drawn): Flow<List<Record>> = flow {
         require((field == null) == (id == null))
@@ -321,7 +324,8 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     internal inner class Reader(private val replicaState: ReplicaState, private val scope: ScopeRef, override val now: Long) : CommitContext {
         private var open = true
-        private var failure: Exception? = null
+        var failure: Exception? = null
+            private set
         private val minted = mutableSetOf<RecordID>()
         init { if (registry.scopeKind(scope) == null) throw CommitFailure.malformed("scope") }
         fun end() { open = false }

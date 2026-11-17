@@ -3,6 +3,89 @@ import SyncCore
 import SyncReplica
 import SyncStore
 
+final class TransactionActContext: ActContext {
+  let tx: StoreTransaction
+  let core: EngineCore
+  let instance: Instance
+  let meta: ReplicaMeta
+  var minted: [ScopeRef: TransactionReader] = [:]
+  var borrowed: Set<ScopeRef> = []
+  var loans: [TransactionReader] = []
+  var newMints: Set<ScopeRef> = []
+  var failure: (any Error)?
+  var isOpen = true
+  var loading = true
+  var now: Int64 { meta.physNow(deviceNow: instance.deviceNow) }
+  var replica: String { meta.replica }
+  var actor: String { instance.actor.text }
+  var isAnonymous: Bool { meta.state == .anon }
+
+  init(_ tx: StoreTransaction, core: EngineCore, instance: Instance) throws {
+    self.tx = tx; self.core = core; self.instance = instance
+    let active = try tx.activeReplica()
+    guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
+    self.meta = meta
+  }
+
+  func finishLoad() throws {
+    guard isOpen else { throw TransactionReader.ended }
+    if let failure { throw failure }
+    for reader in loans { try reader.finish() }
+    loading = false
+  }
+
+  func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
+    guard isOpen, loading else { failure = failure ?? TransactionReader.ended; throw TransactionReader.ended }
+    let reader: TransactionReader
+    do { reader = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: actor) }
+    catch { failure = failure ?? error; throw error }
+    borrowed.insert(scope)
+    loans.append(reader)
+    defer { reader.end() }
+    do {
+      let value = try body(reader)
+      try reader.finish()
+      return value
+    } catch {
+      failure = failure ?? reader.failure
+      throw error
+    }
+  }
+
+  func mintID(_ type: String, in scope: ScopeRef) throws -> RecordID {
+    try finishLoad()
+    do {
+      if !borrowed.contains(scope) {
+        guard let governing = core.registry.governingRecord(of: scope), !(try tx.holdsScope(scope, in: replica)) else {
+          let error = CommitFailure.malformed("load must borrow an existing scope before minting there")
+          failure = failure ?? error
+          throw error
+        }
+        let reader = try TransactionReader(tx, core: core, scope: governing.scope, deviceNow: instance.deviceNow, actor: actor)
+        defer { reader.end() }
+        guard try reader.drawn(governing.key.type, governing.key.id) == nil else {
+          let error = CommitFailure.malformed("load must borrow an existing scope before minting there")
+          failure = failure ?? error
+          throw error
+        }
+        newMints.insert(scope)
+      }
+      if minted[scope] == nil {
+        minted[scope] = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: actor)
+      }
+      return try minted[scope]!.mintID(type)
+    } catch { failure = failure ?? error; throw error }
+  }
+
+  func opaqueID() throws -> String {
+    try finishLoad()
+    return try core.identities.replicaID()
+  }
+
+  func finish() throws { try finishLoad(); for reader in minted.values { try reader.finish() } }
+  func end() { isOpen = false; for reader in minted.values { reader.end() } }
+}
+
 // What a list read and a `RecordsView` list (§7.6, ER-12): the visible records of one type, drawn or stored, every one or
 // those whose top-level ref field names an id, in id-byte order.
 struct Listing: Hashable, Sendable {

@@ -2,6 +2,12 @@ import SyncAPI
 import SyncCore
 import SyncReplica
 
+struct ActRefusal: Error {
+  let segment: Int
+  let code: RefusalCode
+  let detail: JSON?
+}
+
 // The design's §3.5 table: one Action per transaction, each an ordered load → plan → batch inside one `write`; a commit
 // that mints ids its load did not cover loads them all and plans again. The runtime calls these; a crash between any two of
 // them loses nothing.
@@ -51,6 +57,74 @@ extension Store {
   public func commit(_ gesture: Gesture, in scope: ScopeRef, instance: Instance, identities: IdentitySource) throws -> Written<CommitOutcome> {
     let written = try commit(in: scope, instance: instance, identities: identities) { _ in (gesture, ()) }
     return Written(value: written.value.outcome!, events: written.events, change: written.change)
+  }
+
+  public func commitAct<T>(instance: Instance, identities: IdentitySource,
+                           prepare: (StoreTransaction) throws -> (ActRequest?, T),
+                           segment: (T, Int, ScopeRef, StoreTransaction) throws -> Gesture) throws -> Written<(outcome: ActCommitOutcome?, value: T)> {
+    var value: T?
+    do {
+      return try transaction(.commit) { db in
+        let tx = StoreTransaction(db: db, registry: registry)
+        let active = try tx.activeReplica()
+        guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
+        try planners.commits.checkWritable(meta)
+        let (request, prepared) = try prepare(tx)
+        value = prepared
+        guard let request, !request.scopes.isEmpty else { return Written(value: (nil, prepared), events: [], change: StoreChange()) }
+        if let id = request.gestureId, try tx.carries(gestureId: id) { throw CommitFailure.malformed("the act gesture id is taken") }
+        let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
+        let gestureId = try request.gestureId ?? identities.gestureID()
+        let firstOrder = try loaded(active, in: tx).nextCommitOrder
+        var receipts: [ActSegmentReceipt] = []
+        var retired: [String] = [], superseded: [String] = []
+        var localCount = 0
+        var events: [EngineEvent] = []
+        var change = StoreChange()
+        var wrote = false
+        for (index, scope) in request.scopes.enumerated() {
+          var gesture = try segment(prepared, index, scope, tx)
+          guard gesture.gestureId == nil || gesture.gestureId == gestureId, !gesture.hold || request.hold else {
+            throw CommitFailure.malformed("a segment must use its act's identity and hold")
+          }
+          gesture.gestureId = gestureId
+          gesture.hold = request.hold
+          var reads = planners.commits.reads(of: gesture, in: scope)
+          var draws: [Draw] = []
+          while true {
+            var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
+            do {
+              let outcome = try planners.commits.commit(gesture, in: scope, to: &replica, as: instance,
+                identities: identities, gestureIdTaken: false, draws: draws, actOffset: localCount, actFirstOrder: firstOrder)
+              switch outcome {
+              case .refused(let code, let detail, _): throw ActRefusal(segment: index, code: code, detail: detail)
+              case .committed(let receipt):
+                let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
+                receipts.append(ActSegmentReceipt(scope: scope, stamp: changed ? receipt.stamp : nil, localIds: receipt.localIds, ids: receipt.ids))
+                if changed {
+                  try BatchWriter(db: db, registry: registry).apply(replica.batch)
+                  events += replica.batch.events
+                  change.merge(replica.batch.change)
+                  wrote = true
+                }
+                localCount += receipt.localIds.count
+                for id in receipt.retired where !retired.contains(id) { retired.append(id) }
+                for id in receipt.superseded where !superseded.contains(id) { superseded.append(id) }
+              }
+              break
+            } catch let unread as UnreadDraws {
+              reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
+              draws = unread.draws
+            }
+          }
+        }
+        let receipt = ActReceipt(gestureId: gestureId, segments: receipts, retired: retired, superseded: superseded,
+          releaseAt: request.hold && localCount > 0 ? instance.deviceNow + limits.holdMs : nil)
+        return Written(value: (wrote ? .committed(receipt) : nil, prepared), events: events, change: change)
+      }
+    } catch let refusal as ActRefusal {
+      return Written(value: (.refused(segment: refusal.segment, code: refusal.code, detail: refusal.detail), value!), events: [], change: StoreChange())
+    }
   }
 
   // True iff every entry of the gesture was held, and so removed.

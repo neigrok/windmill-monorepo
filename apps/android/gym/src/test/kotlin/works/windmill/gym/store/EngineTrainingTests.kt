@@ -13,7 +13,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
-import works.windmill.domain.kit.Outcome
+import works.windmill.domain.kit.*
+import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.presentation.*
 import works.windmill.sync.api.*
@@ -52,6 +53,32 @@ class EngineTrainingTests {
     }
     private fun seedRoutine(engine: Engine) = seed(engine, Gym.Types.routine, "routine1", mapOf(
         "name" to Json.of("Original"), "position" to Json.of(2), "entries" to Json.parse("""[{"exerciseId":"bench-press","sets":[{"reps":8}],"restSeconds":90},{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"exerciseId":"deadlift","restSeconds":60}]""")))
+
+    @Test fun actCommitKeepsAuthorityPinAndSharedHoldGuards() = runTest {
+        var permitted = true
+        val scope = ScopeRef(Gym.scope)
+        val action = object : ActAction<Unit, Unit, GymRefusal> {
+            override val refusals = GymRefusal
+            override fun load(read: ActReader) = Unit
+            override fun decide(loaded: Unit, ids: ActIDSource): ActDecision<Unit, GymRefusal> = ActDecision.Unchanged(Unit)
+        }
+        suspend fun refused(work: suspend () -> Unit) = try { work(); false } catch (changed: TrainingRefused) { changed.code == "account-changed" }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, writeAuthority = { permitted }).use { room ->
+            val pin = room.training.pin()
+            permitted = false
+            assertTrue(refused { room.training.pinnedOn(pin) { it.runAct(action) } })
+            assertTrue(refused { room.training.holding(1200).commitAct(emptyList()) })
+            permitted = true
+            assertTrue(refused { room.training.pinnedOn(pin.copy(anonymous = !pin.anonymous)) { it.runAct(action) } })
+            assertTrue(room.training.pinnedOn(pin) { it.runAct(action) } is ActOutcome.Unchanged)
+            val segments = (1..2).map { index -> ScopedGesture(scope, Gesture(listOf(Change.create(Gym.Types.routine,
+                NewID.Given(RecordID("routine$index")), mapOf("name" to Json.of("Routine"), "position" to Json.of(index), "entries" to Json.array()))), hold = true)) }
+            val receipt = (room.training.holding(1200).commitAct(segments) as ActCommitOutcome.Committed).receipt
+            assertEquals(room.engine.physNow() + 1200, receipt.releaseAt)
+            assertEquals(2, receipt.localIds.size)
+            assertTrue(room.engine.undo(receipt.gestureId))
+        }
+    }
 
     // A turn's door: `writable`'s one rule, and the seat it was pinned to alone. Reads cross no more than writes do.
     @Test fun aPinnedDoorHoldsToItsSeatAndTheAccountsAuthority() = runTest {

@@ -414,10 +414,10 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
 // dependents are planned first, and the diff reads views without them. A cap refusal writes nothing,
 // and a too-large refusal writes only its notice; neither retires. The clock is written back once the
 // commit is accepted.
-function commitGesture(replica, ctx, physNow, scope, changes, opts) {
+export function commitGesture(replica, ctx, physNow, scope, changes, opts, act = null) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
-  if (opts.gestureId !== undefined && ctx.device.carriesGesture(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken on the device`);
+  if (!act && opts.gestureId !== undefined && ctx.device.carriesGesture(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken on the device`);
   const product = registry.productOfRef(scope);
   for (const key of Object.keys(opts.local ?? {})) {
     const rows = Object.values(registry.products[product]?.device ?? {});
@@ -430,7 +430,8 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   clock.observe(replica.meta.hlcHigh);
   const stamp = clock.tick();
 
-  const retiring = retiringEntries(replica, scope, opts.retire ?? []);
+  const retiring = retiringEntries(replica, scope, opts.retire ?? []).filter((entry) => !act || entry.gestureId !== opts.gestureId);
+  if (act && opts.supersede?.includes(opts.gestureId)) throw new CommitError('an act cannot supersede itself');
   const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
   const ending = [...new Set([...retiring, ...superseding])];
   const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
@@ -438,7 +439,8 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const drawnView = drawn(replica, registry, scope, gone);
   const storedView = stored(replica, registry, scope, gone);
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
-  const deltas = oneDeltaPerRecord(changes.map((change) => ({ change, delta: builder.delta(change) })).filter(({ delta }) => delta !== null));
+  const built = changes.map((change) => ({ change, delta: builder.delta(change) }));
+  const deltas = oneDeltaPerRecord(built.filter(({ delta }) => delta !== null));
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
   const cmd = opts.cmd === undefined ? undefined : roundedCommand(registry, opts.cmd);
@@ -461,11 +463,11 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   for (const entry of superseding) if (replica.entry(entry.localId)) moveEntry(replica, ctx.ended, entry, 'silent-fold');
   foldSilently(replica, ctx.ended, folded);
   replica.meta.hlc = clock.pair;
-  const firstOrder = replica.nextCommitOrder();
+  const firstOrder = act ? act.firstOrder + act.offset : replica.nextCommitOrder();
   const entries = intents.map((intent, k) => {
     const state = transition(INTENT_MACHINE, null, 'commit', opts.hold ? 'held' : 'ready');
     const entry = {
-      localId: `${gestureId}/${k}`,
+      localId: `${gestureId}/${(act?.offset ?? 0) + k}`,
       gestureId,
       lineage: replica.lineage(),
       scope,
@@ -494,6 +496,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   }
   replica.meta.hlcHigh = stamp;
   const outcome = { localIds: entries.map((entry) => entry.localId), retired: [...new Set(retiring.map((entry) => entry.gestureId))], stamp };
+  if (act) outcome.ids = built.map(({ change, delta }) => delta?.id ?? change.id ?? null);
   if (superseding.length > 0) outcome.superseded = [...new Set(superseding.map((entry) => entry.gestureId))];
   return outcome;
 }

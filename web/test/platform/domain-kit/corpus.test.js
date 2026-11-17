@@ -6,13 +6,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { ActDecision, ActPlan, ScopedPlan } from '../../../src/platform/domain-kit/acts.js';
+import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { environment } from '../sync/fakes.js';
 import { Decision, IDSource, decision, refusalSubject } from '../../../src/platform/domain-kit/actions.js';
 import { Draft, SaveDraft } from '../../../src/platform/domain-kit/drafts.js';
 import { DecodeError, Fields, Id } from '../../../src/platform/domain-kit/entities.js';
 import { Plan, PlanError, Prediction } from '../../../src/platform/domain-kit/plans.js';
 import { Capacity, Reader } from '../../../src/platform/domain-kit/reading.js';
 import { DomainNotice } from '../../../src/platform/domain-kit/refusals.js';
-import { ActionRunner } from '../../../src/platform/domain-kit/runner.js';
+import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { Move, Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { Instant, LocalDay } from '../../../src/platform/domain-kit/time.js';
 import { translate } from '../../../src/platform/domain-kit/translation.js';
@@ -187,6 +190,45 @@ async function pipelineVector(input) {
 }
 
 /** @param {any} input */
+async function actVector(input) {
+  const env = environment();
+  let draws = 0;
+  const engine = await BrowserSyncEngine.open({ ...env.options, draw: (/** @type {number} */ bound) => Math.floor(draws++ / 16) % bound });
+  try {
+    const runner = new ActionRunner(new EngineReplica(engine), probeRegistry, momentOf(input).zone);
+    if (input.mint) {
+      const mint = input.mint;
+      try {
+        const result = await engine.commitAct((/** @type {import('../../../src/platform/domain-kit/acts.js').ActContext} */ context) => {
+          if (mint.borrow) context.inScope(mint.scope, () => {});
+          if (mint.caughtScope) { try { context.inScope(mint.caughtScope, () => {}); } catch { /* retained by the context */ } }
+          const ids = Array.from({ length: mint.count }, () => context.mintID(mint.type, mint.scope));
+          return { request: mint.new ? { scopes: [PROBE_SCOPE, mint.scope], hold: false } : null, value: ids };
+        }, (/** @type {string[]} */ ids, /** @type {number} */ index) => ({ changes: index === 0
+          ? [{ op: 'create', t: 'board', id: 'b_00000001' }]
+          : [{ op: 'create', t: mint.type, id: ids[0], f: { label: 'New' } }] }));
+        return { count: result.value.length, distinct: new Set(result.value).size === result.value.length, committed: result.outcome !== null };
+      } catch (error) {
+        if (error instanceof Error && 'kind' in error && error.kind === 'malformed') return { error: true };
+        throw error;
+      }
+    }
+    const result = await runner.runAct({ refusals: ProbeRefusals,
+      load: (read) => read.moment,
+      decide: (moment) => ActDecision.write(new ActPlan(input.segments.map((/** @type {any} */ item) => new ScopedPlan(item.scope, build(item, moment)))), null),
+    });
+    let outcome;
+    if (result.kind === 'committed') {
+      outcome = { kind: result.kind, scopes: result.receipt.segments.map((item) => item.scope), counts: result.receipt.segments.map((item) => item.localIds.length), held: result.receipt.releaseAt !== null };
+      if (input.undo) await runner.undo(result.receipt.gestureId);
+    } else outcome = result.kind === 'refused' ? { kind: result.kind, refusal: refusalForm(result.refusal) } : { kind: result.kind };
+    const records = input.inspect.map((/** @type {any} */ item) => runner.read(item.scope, (read) => read.repository(probeEntity(item.t)).all('drawn')
+      .map((record) => ({ id: record.id.json, title: record.fields().title ?? null }))));
+    return { outcome, records };
+  } finally { engine.close(); }
+}
+
+/** @param {any} input */
 function listVector(input) {
   const type = probeEntity(input.t);
   const views = vectorViews(input.records);
@@ -346,6 +388,7 @@ const handlers = {
   'capacity/count.json': capacityVector,
   'plan/translate.json': translateVector,
   'run/pipeline.json': pipelineVector,
+  'run/acts.json': actVector,
   'draft/save.json': saveVector,
   'draft/script.json': scriptVector,
   'scope/bindings.json': scriptVector,

@@ -128,6 +128,124 @@ class EngineTests {
         }
     }
 
+    @Test fun actReadersKeepOneInitialSnapshotAndSegmentsSeeEarlierWrites() {
+        engine().use { engine ->
+            var loads = 0
+            var loan: ScopeReader? = null
+            val result = engine.commitAct({ context ->
+                loads++
+                context.inScope(scope) { reader -> loan = reader; assertTrue(reader.drawn("card").isEmpty()) }
+                ActRequest(listOf(scope, scope), hold = true) to context.now
+            }, { now, index, reader ->
+                assertEquals(now, reader.now)
+                if (index == 0) create("card0001") else {
+                    assertNotNull(reader.drawn("card", RecordID("card0001")))
+                    Gesture(listOf(Change.update("card", RecordID("card0001"), mapOf("title" to Json.of("Next")))))
+                }
+            })
+            val receipt = (result.first as ActCommitOutcome.Committed).receipt
+            assertThrows(CommitFailure::class.java) { loan!!.drawn("card") }
+            assertEquals(1, loads)
+            assertEquals(listOf("${receipt.gestureId}/0", "${receipt.gestureId}/1"), receipt.localIds)
+            assertEquals(listOf(scope, scope), receipt.segments.map { it.scope })
+            assertTrue(receipt.segments[0].stamp!! < receipt.segments[1].stamp!!)
+            assertTrue(engine.undo(receipt.gestureId))
+            assertTrue(engine.read(scope) { it.drawn("card").isEmpty() })
+        }
+    }
+
+    @Test fun newGovernedScopeMintsBeforeItsEarlierGoverningCreate() {
+        engine().use { engine ->
+            val tree = ScopeRef.tree("b_00000001")
+            val result = engine.commitAct({ context -> ActRequest(listOf(scope, tree)) to context.mintID("tag", tree) },
+                { id, index, _ -> if (index == 0) Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001")))))
+                    else Gesture(listOf(Change.create("tag", NewID.Given(id), mapOf("label" to Json.of("New"))))) })
+            assertTrue(result.first is ActCommitOutcome.Committed)
+            assertEquals(Json.of("New"), engine.read(tree) { it.drawn("tag", result.second) }!!.values["label"])
+        }
+    }
+
+    @Test fun laterActStorageReadFailureKeepsItsBoundaryKindAndRollsBack() {
+        val initial = Json.objectOf("active" to Json.of("replica"), "replicas" to Json.array(freshReplica("replica").json()))
+        val delegate = MemoryStore(registry, initial)
+        val tree = ScopeRef.tree("b_00000001")
+        val store = object : EngineStore by delegate {
+            override fun rows(replica: String, scope: ScopeRef, type: String?): List<Row> {
+                if (scope == tree) throw StoreFailure()
+                return delegate.rows(replica, scope, type)
+            }
+        }
+        Engine(registry, store, object : EngineClock { override fun now() = 5000L }, identities, "actor").use { engine ->
+            val before = engine.snapshot()
+            val failure = assertThrows(CommitFailure::class.java) { engine.commitAct({ ActRequest(listOf(scope, tree)) to Unit },
+                { _, index, reader -> if (index == 0) create("card0001") else { reader.drawn("meta"); Gesture(emptyList()) } }) }
+            assertEquals(CommitFailure.Kind.storeFailure, failure.kind)
+            assertEquals(before, engine.snapshot())
+        }
+    }
+
+    @Test fun partialActReleaseRemovesItsUndoOffer() {
+        engine().use { engine ->
+            val result = engine.commitAct(listOf(
+                ScopedGesture(scope, Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001")))), hold = true)),
+                ScopedGesture(ScopeRef.tree("b_00000001"), Gesture(listOf(Change.write("meta", RecordID("meta"), mapOf("title" to Json.of("First"))))))
+            )) as ActCommitOutcome.Committed
+            assertTrue(engine.release(result.receipt.localIds[0]))
+            assertTrue(engine.undoOffers().isEmpty())
+            assertFalse(engine.undo(result.receipt.gestureId))
+        }
+    }
+
+    @Test fun caughtActLoadFailureAndLateReadsCannotEnterDecideOrMint() {
+        var draws = 0
+        var decisions = 0
+        Engine.memory(registry, identities = object : IdentitySource {
+            override fun opaqueID() = "phase-act"
+            override fun draw(bound: Int): Int { draws++; return 0 }
+        }, actor = "actor").use { engine ->
+            draws = 0
+            val before = engine.snapshot()
+            assertThrows(CommitFailure::class.java) { engine.commitAct({ context ->
+                context.inScope(scope) { }
+                try { context.inScope(ScopeRef.product("missing")) { } } catch (_: CommitFailure) { }
+                context.mintID("card", scope)
+                decisions++
+                null to Unit
+            }, { _, _, _ -> Gesture(emptyList()) }) }
+            assertEquals(0, decisions)
+            assertEquals(0, draws)
+            assertThrows(CommitFailure::class.java) { engine.commitAct({ context ->
+                context.finishLoad(); context.finishLoad()
+                try { context.inScope(scope) { } } catch (_: CommitFailure) { }
+                ActRequest(listOf(scope)) to Unit
+            }, { _, _, _ -> create("card0001") }) }
+            assertEquals(before, engine.snapshot())
+        }
+    }
+
+    @Test fun actMintingRequiresBorrowBeforeRandomnessAndSharesReservations() {
+        var draws = 0
+        var identities = 0
+        Engine.memory(registry, identities = object : IdentitySource {
+            override fun opaqueID() = "act-${++identities}"
+            override fun draw(bound: Int) = (draws++ / 32) % bound
+        }, actor = "actor").use { engine ->
+            draws = 0
+            val before = engine.snapshot()
+            assertThrows(CommitFailure::class.java) { engine.commitAct({ context ->
+                context.mintID("card", scope); null to Unit
+            }, { _, _, _ -> Gesture(emptyList()) }) }
+            assertEquals(0, draws)
+            assertEquals(before, engine.snapshot())
+            val result = engine.commitAct({ context ->
+                context.inScope(scope) { }
+                null to listOf(context.mintID("card", scope), context.mintID("card", scope))
+            }, { _, _, _ -> Gesture(emptyList()) })
+            assertNotEquals(result.second[0], result.second[1])
+            assertEquals(48, draws)
+        }
+    }
+
     private val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
     private val identities = object : IdentitySource {
         var number = 0

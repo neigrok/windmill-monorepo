@@ -1,5 +1,8 @@
 package works.windmill.domain.kit
 
+import works.windmill.sync.api.ActRequest
+import works.windmill.sync.api.ActCommitOutcome
+
 import works.windmill.sync.api.CommitContext
 import works.windmill.sync.api.CommitFailure
 import works.windmill.sync.api.CommitOutcome
@@ -56,6 +59,42 @@ interface ActionContext {
 class ActionRunner(private val replica: Replica, val registry: Registry, private val zone: Zone,
     private val context: ActionContext) {
     fun <L, T, R> run(action: Action<L, T, R>): Outcome<T, R> = perform(action)
+    fun <L, T, R> runAct(action: ActAction<L, T, R>): ActOutcome<T, R> {
+        check(!context.insideRun) { "a run cannot enter inside a run" }
+        context.insideRun = true
+        try {
+            val committed = replica.commitAct<ActStep<T, R>>({ source ->
+                val read = ActReader(source, registry, Moment(Instant(source.now), zone))
+                val loaded = try { action.load(read) } finally { read.open = false }
+                source.finishLoad()
+                val decision = try { action.decide(loaded, ActIDSource(source)) }
+                    catch (violation: Violation) { ActDecision.Refuse(action.refusals.of(violation)) }
+                when (decision) {
+                    is ActDecision.Refuse -> null to ActStep.Done(ActOutcome.Refused(decision.refusal))
+                    is ActDecision.Unchanged -> null to ActStep.Done(ActOutcome.Unchanged(decision.result))
+                    is ActDecision.Write -> ActRequest(decision.plan.segments.map { it.scope }, decision.plan.segments.any { it.plan.isHeld }) to ActStep.Writing(decision.plan, decision.result)
+                }
+            }, { step, index, source ->
+                check(step is ActStep.Writing)
+                val scoped = step.plan.segments[index]
+                scoped.plan.firstGone(source, scoped.scope, registry)?.let { throw ActPrediction(it) }
+                scoped.plan.gesture(scoped.scope, registry)
+            })
+            return when (val step = committed.second) {
+                is ActStep.Done -> step.outcome
+                is ActStep.Writing -> when (val outcome = committed.first) {
+                    is ActCommitOutcome.Committed -> ActOutcome.Committed(step.result, outcome.receipt)
+                    is ActCommitOutcome.Refused -> ActOutcome.Refused(action.refusals.of(Refused(outcome.code,
+                        step.plan.segments[outcome.segment].plan.subjectOfRefusal(outcome.code, outcome.detail, registry), outcome.detail, Refused.Path.predicted)))
+                    null -> ActOutcome.Unchanged(step.result)
+                }
+            }
+        } catch (prediction: ActPrediction) { return ActOutcome.Refused(action.refusals.of(prediction.refusal)) }
+        catch (failure: CommitFailure) {
+            if (failure.kind == CommitFailure.Kind.malformed) throw ProgrammingFault("a malformed act is a programming fault", failure)
+            throw failure
+        } finally { context.insideRun = false }
+    }
     fun <T> read(scope: ScopeRef, body: (Reader) -> T): T {
         val moment = moment()
         return replica.read(scope) { body(Reader(it, scope, moment, registry)) }

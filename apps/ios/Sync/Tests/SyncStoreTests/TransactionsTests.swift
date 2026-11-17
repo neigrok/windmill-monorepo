@@ -651,6 +651,14 @@ struct StoredDevice: ClientDevice {
     take(try store.commit(in: scope, instance: instance, identities: identities) { _ in (gesture, ()) }).outcome
   }
 
+  mutating func commitAct(_ segments: [ScopedGesture]?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
+    let written = try store.commitAct(instance: instance, identities: identities, prepare: { _ in
+      (segments.map { ActRequest(scopes: $0.map(\.scope), hold: $0.contains { $0.gesture.hold }) }, segments)
+    }, segment: { values, index, _, _ in values![index].gesture })
+    events += written.events
+    return written.value.outcome
+  }
+
   mutating func release(_ localId: String) throws -> Bool { take(try store.release(localId)) }
   mutating func releaseAll() throws { _ = take(try store.releaseAll()) }
   mutating func releaseDue(at deviceNow: Int64) throws { take(try store.releaseDue(at: deviceNow)) }

@@ -83,6 +83,16 @@ public struct StoreTransaction {
       isActive: try isActive(handle))
   }
 
+  public func holdsScope(_ scope: ScopeRef, in id: String) throws -> Bool {
+    guard let (handle, _) = try record(of: id) else { throw StoreError.noReplica(id) }
+    for table in ["row_set", "spent", "cursor", "known_scope", "outbox"] {
+      let active = table == "row_set" ? " AND role IS NOT NULL" : ""
+      if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM \(table) WHERE replica = ? AND scope = ?\(active))",
+                          arguments: [handle.value, scope.text]) == true { return true }
+    }
+    return false
+  }
+
   public func meta(of id: String) throws -> ReplicaMeta? {
     try record(of: id)?.meta
   }

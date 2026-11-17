@@ -18,6 +18,9 @@ nonisolated final class ClockCountingReplica: Replica {
   let clockReads = Mutex(0)
   init(_ base: any Replica) { self.base = base }
   func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (SyncAPI.Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T) { try base.commit(scope, body) }
+  func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T), segment: (T, Int, any CommitContext) throws -> SyncAPI.Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
+    try base.commitAct(prepare, segment: segment)
+  }
   func undo(_ gestureId: String) throws -> Bool { try base.undo(gestureId) }
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try base.read(scope, body) }
   func mintID(_ type: String) throws -> RecordID { try base.mintID(type) }

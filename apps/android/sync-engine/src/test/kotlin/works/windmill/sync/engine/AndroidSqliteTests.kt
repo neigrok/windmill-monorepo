@@ -27,6 +27,23 @@ class AndroidSqliteTests {
         val file = File.createTempFile("windmill-sync-", ".sqlite").also { it.delete() }
         try { return body(file) } finally { file.delete(); File(file.path + "-wal").delete(); File(file.path + "-shm").delete() }
     }
+    @Test fun laterActSegmentFailureAndRefusalRollBackSQLiteOnReopen() = database { file ->
+        val before = open(file).use { it.snapshot() }
+        val board = ScopedGesture(scope, Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001")))),
+            local = listOf(DeviceWrite("rack", Json.of(7)))))
+        open(file).use { engine ->
+            assertThrows(IllegalStateException::class.java) { engine.commitAct({ ActRequest(listOf(scope, ScopeRef.tree("b_00000001"))) to Unit },
+                { _, index, _ -> if (index == 0) board.gesture else throw IllegalStateException("late-storage-failure") }) }
+        }
+        open(file).use { engine ->
+            assertEquals(before, engine.snapshot())
+            val cards = (1..4).map { ScopedGesture(scope, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card000$it")), mapOf("title" to Json.of("Card")))))) }
+            val result = engine.commitAct(listOf(board) + cards) as ActCommitOutcome.Refused
+            assertEquals(4, result.segment); assertEquals(RefusalCode.cap, result.code)
+        }
+        open(file).use { assertEquals(before, it.snapshot()) }
+    }
+
     @Test fun heldIntentClockAndDeviceWriteSurviveReopenAtomically() = database { file ->
         val snapshot = open(file).use { engine ->
             engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0001")), mapOf("title" to Json.of("One")))),

@@ -555,6 +555,23 @@ struct TelemetryTests {
     #expect(recorder.failures == [Recorded(name: "storage_write", kind: "storage", properties: [:], durationMs: nil)])
   }
 
+  @Test func anActStorageFaultReportsOnceAndItsBodyFailureIsNotStorage() async throws {
+    let recorder = Recorder()
+    let armed = Mutex(false)
+    let rig = try Rig(crashPoints: CrashPoints { point in
+      if point == .beforeCommit(.commit), armed.withLock({ $0 }) { throw StoreError.corrupt("private stored value") }
+    }, telemetry: recorder)
+    #expect(throws: RigError.self) {
+      try rig.engine.commitAct({ _ -> (ActRequest?, Void) in throw RigError("private body") }, segment: { _, _, _ in Gesture(changes: []) })
+    }
+    armed.withLock { $0 = true }
+    #expect(throws: CommitFailure.self) {
+      try rig.engine.commitAct([ScopedGesture(scope: Rig.scope, gesture: Gesture(changes: [Rig.card("card0001", "private")]))])
+    }
+    await drain(rig.engine.core.telemetry)
+    #expect(recorder.failures == [Recorded(name: "storage_write", kind: "storage", properties: [:], durationMs: nil)])
+  }
+
   @Test func doubtAtTheBackoffCeilingReportsOnceUntilARowsPageSettlesIt() async throws {
     let recorder = Recorder()
     let rig = try Rig(account: "A", telemetry: recorder)

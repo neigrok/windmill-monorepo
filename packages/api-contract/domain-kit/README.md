@@ -222,3 +222,15 @@ a different scope traps before the repository is read.
 The declaration is dynamic for `GuardedMeta`, `Meta`, `Mark`, `Link` and `Tag`. Older vectors that omit the actual
 scope explicitly use `tree/b_00000001` or `self/overlay/b_00000001` in their fixture runner; those
 fixture defaults are not part of the entity declaration. Product entities keep `self/probe` fixed.
+
+### `run/acts.json`
+
+Each input lists ordered `segments`, each with `scope` and the `plan` language above. `inspect` lists
+scoped types to read after the act; `undo: true` performs one Undo using the shared receipt. These
+vectors run `ActionRunner.runAct` over the real local engine. The output names the outcome kind,
+per-segment scopes and local-id counts, whether the whole act is held, and inspected records as
+`{id, title}` (null when that type has no title). Identity cases instead name `mint` with its type, scope,
+count and whether load borrows the scope; `new` first creates its governing board. `caughtScope`
+attempts and catches an invalid scope read before minting, which must still fail the act. They drive the
+engine act context directly so a missing-load programming fault can be asserted without a kit trap.
+A refusal keeps the ordinary product refusal form. Repeated scopes are intentional.

@@ -38,6 +38,8 @@ class ReplicaTests {
             val (gesture, value) = body(context)
             return (if (gesture == null) null else outcome) to value
         }
+            override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+            error("act vectors use the real engine")
         override fun undo(gestureId: String) = true
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = body(context)
         override fun mintID(type: String) = context.mintID(type)

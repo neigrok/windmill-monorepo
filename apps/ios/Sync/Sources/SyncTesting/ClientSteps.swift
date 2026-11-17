@@ -11,6 +11,7 @@ import Synchronization
 public protocol ClientDevice {
   // A nil gesture is a read-and-commit that decides none: nothing is written and the outcome is nil.
   mutating func commit(_ gesture: Gesture?, in scope: ScopeRef, instance: Instance, identities: IdentitySource) throws -> CommitOutcome?
+  mutating func commitAct(_ segments: [ScopedGesture]?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome?
   mutating func release(_ localId: String) throws -> Bool
   mutating func releaseAll() throws
   mutating func releaseDue(at deviceNow: Int64) throws
@@ -78,6 +79,42 @@ public struct PlannedDevice: ClientDevice {
         return nil
       }
       return try commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken)
+    }
+  }
+
+  public mutating func commitAct(_ segments: [ScopedGesture]?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
+    let identities = UniqueGestureIDs(identities, carries: device.carries(gestureId:))
+    return try device.modify(device.active) { replica in
+      try commits.checkWritable(replica.meta)
+      guard let segments, !segments.isEmpty else { return nil }
+      var working = replica
+      let gestureId = try identities.gestureID()
+      let firstOrder = replica.nextCommitOrder
+      let held = segments.contains { $0.gesture.hold }
+      var offset = 0
+      var receipts: [ActSegmentReceipt] = []
+      var retired: [String] = [], superseded: [String] = []
+      var wrote = false
+      for (index, item) in segments.enumerated() {
+        var gesture = item.gesture
+        gesture.gestureId = gestureId; gesture.hold = held
+        let before = working
+        switch try commits.commit(gesture, in: item.scope, to: &working, as: instance, identities: identities,
+                                  gestureIdTaken: false, actOffset: offset, actFirstOrder: firstOrder) {
+        case .refused(let code, let detail, _): return .refused(segment: index, code: code, detail: detail)
+        case .committed(let receipt):
+          let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
+          if changed { wrote = true } else { working = before }
+          receipts.append(ActSegmentReceipt(scope: item.scope, stamp: changed ? receipt.stamp : nil, localIds: receipt.localIds, ids: receipt.ids))
+          offset += receipt.localIds.count
+          for id in receipt.retired where !retired.contains(id) { retired.append(id) }
+          for id in receipt.superseded where !superseded.contains(id) { superseded.append(id) }
+        }
+      }
+      guard wrote else { return nil }
+      replica = working
+      return .committed(ActReceipt(gestureId: gestureId, segments: receipts, retired: retired, superseded: superseded,
+                                  releaseAt: held && offset > 0 ? instance.deviceNow + commits.limits.holdMs : nil))
     }
   }
 
@@ -249,6 +286,15 @@ public enum ClientSteps {
     case "commit":
       let decided = step["changes"]?.isNull == true ? nil : try gesture(step)
       let outcome = try device.commit(decided, in: try ScopeRef(json: step.member("scope")), instance: instance, identities: identities)
+      return outcome.map(json) ?? .null
+    case "commitAct":
+      let before = identities.snapshot()
+      let segments = try step["segments"].flatMap { value in
+        value.isNull ? nil : try value.asArray().map { item in ScopedGesture(scope: try ScopeRef(json: item.member("scope")), gesture: try gesture(item)) }
+      }
+      let outcome = try device.commitAct(segments, instance: instance, identities: identities)
+      if outcome == nil { identities.restore(before) }
+      if case .refused? = outcome { identities.restore(before) }
       return outcome.map(json) ?? .null
     case "release": return .bool(try device.release(step.member("localId").asString()))
     case "releaseAll":
@@ -489,6 +535,21 @@ public enum ClientSteps {
   }
 
   // MARK: Answers in the corpus's form
+
+  public static func json(_ outcome: ActCommitOutcome) -> JSON {
+    switch outcome {
+    case .refused(let segment, let code, let detail):
+      var result: JSON.Object = ["refused": code.json, "segment": JSON(segment)]
+      if let detail { result["detail"] = detail }
+      return .object(result)
+    case .committed(let receipt):
+      return ["gestureId": .string(receipt.gestureId), "segments": .array(receipt.segments.map { item in
+        ["scope": item.scope.json, "stamp": item.stamp?.json ?? .null, "localIds": .array(item.localIds.map(JSON.string)),
+         "ids": .array(item.ids.map { $0?.json ?? .null })]
+      }), "retired": .array(receipt.retired.map(JSON.string)), "superseded": .array(receipt.superseded.map(JSON.string)),
+        "releaseAt": receipt.releaseAt.map(JSON.init) ?? .null]
+    }
+  }
 
   public static func json(_ outcome: CommitOutcome) -> JSON {
     switch outcome {

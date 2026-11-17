@@ -5,6 +5,10 @@ const keyOf = (...parts) => jcs(parts);
 const caches = ['confirmed', 'spentIds', 'staging'];
 const equal = (a, b) => jcs(a ?? null) === jcs(b ?? null);
 
+class ScopeDemand extends Error {
+  constructor(scope) { super('scope hydration required'); this.scope = scope; }
+}
+
 function controlsOf(device, revision) {
   const records = new Map();
   const add = (key, value) => records.set(key, structuredClone(value));
@@ -174,7 +178,10 @@ export class IndexedDBStore {
           const commit = () => {
             try {
               const previous = loaded.device.activeReplica.id;
-              const result = change(loaded.device);
+              const result = change(loaded.device, (scope) => {
+                const replica = loaded.device.activeReplica;
+                if (caches.some((kind) => Object.hasOwn(replica[kind], scope) && !replica.loadedCaches.has(`${kind}:${scope}`))) throw new ScopeDemand(scope);
+              });
               if (result?.then) throw new Error('sync transaction callback must be synchronous');
               const after = controlsOf(loaded.device, loaded.revision);
               const alive = new Set();
@@ -210,7 +217,34 @@ export class IndexedDBStore {
               }
               beforeCommit?.({ transaction, changed, records: after });
               answer = { result, device: loaded.device, revision, changed, previous, active: loaded.device.activeReplica.id };
-            } catch (error) { failure = error; transaction.abort(); }
+            } catch (error) {
+              if (error instanceof ScopeDemand) {
+                const replica = loaded.device.activeReplica;
+                let left = 1;
+                const finish = () => { if (--left === 0) commit(); };
+                for (const kind of caches) {
+                  if (!Object.hasOwn(replica[kind], error.scope) || replica.loadedCaches.has(`${kind}:${error.scope}`)) continue;
+                  const cache = replica[kind][error.scope];
+                  const map = kind === 'staging' ? cache.rows : cache;
+                  const state = tracked.get(map);
+                  if (!state) { failure = new Error('a demanded cache has no transaction pointer'); transaction.abort(); return; }
+                  left++;
+                  const read = rows.index('generation').getAll(state.generation);
+                  read.onsuccess = () => {
+                    for (const record of read.result) {
+                      if (!Object.hasOwn(map, record.key[1])) rowReads++;
+                      map[record.key[1]] = structuredClone(record.value);
+                      state.before[record.key[1]] = structuredClone(record.value);
+                    }
+                    replica.loadedCaches.add(`${kind}:${error.scope}`);
+                    finish();
+                  };
+                }
+                finish();
+                return;
+              }
+              failure = error; transaction.abort();
+            }
           };
           finishRead();
         } catch (error) { failure = error; transaction.abort(); }
