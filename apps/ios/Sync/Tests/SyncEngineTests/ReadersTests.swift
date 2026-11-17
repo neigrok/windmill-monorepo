@@ -183,6 +183,59 @@ struct ReadersTests {
     #expect(try Rig(account: "A").engine.read(Rig.scope) { try $0.firstPullComplete() } == false)
   }
 
+  @Test func aReadersTreeKeepsItsOwnOverlayUntilTheLastSubscriptionLeaves() async throws {
+    let tree = ScopeRef.tree("b_00000001")
+    let overlay = ScopeRef.overlay("b_00000001")
+    let rig = try Rig(account: "B")
+    try rig.engine.subscribe(tree)
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() } == false)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: tree, seq: 0), Rig.rows(in: overlay, seq: 0)], as: "B"))
+    _ = await rig.engine.puller.step()
+    #expect(rig.transport.pulls.last?.scopes.map(\.scope) == [Rig.scope, tree, overlay])
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() })
+    try rig.engine.subscribe(overlay)
+    try rig.engine.unsubscribe(tree)
+    #expect(try rig.active().cursors[overlay] != nil)
+    try rig.engine.unsubscribe(overlay)
+    #expect(try rig.active().cursors[overlay] == nil)
+
+    try rig.engine.commit(Rig.scope, Gesture(changes: [.create("board", id: .given("b_00000001"))]))
+    try rig.engine.subscribe(tree)
+    try rig.engine.unsubscribe(tree)
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() } == false)
+  }
+
+  @Test(arguments: ["page", "frame"])
+  func aTreeDenialForgetsItsExplicitOverlayAndResolvesOnlyAcknowledgedWork(_ door: String) async throws {
+    let rig = try Rig(account: "B")
+    let tree = ScopeRef.tree("b_00000001"), overlay = ScopeRef.overlay("b_00000001")
+    let mark = try Row(json: ["t": "mark", "id": "oak", "f": ["done": [true, "1000:0:r_server00001"]], "seq": 1, "rc": 1000, "ru": 1000])
+    try rig.engine.subscribe(tree)
+    try rig.engine.subscribe(overlay)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: tree, seq: 0), Rig.rows([mark], in: overlay, seq: 1)], as: "B"))
+    _ = await rig.engine.puller.step()
+    try rig.commit(Gesture(changes: [.write("mark", "oak", ["done": false])], gestureId: "g1"), in: overlay)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 2)], as: "B"))
+    _ = await rig.engine.sender.step()
+    try rig.commit(Gesture(changes: [.write("mark", "oak", ["done": true])], gestureId: "g2"), in: overlay)
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g2/0 ready"])
+    if door == "frame" {
+      await rig.engine.puller.enqueue(.notFound(tree, servedAs: "B"), for: try rig.meta().replica)
+    } else {
+      rig.engine.puller.wants.add([tree])
+      rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(tree, "not-found")], as: "B"))
+    }
+    _ = await rig.engine.puller.step()
+    #expect(try rig.active().known == [tree: .notFound, overlay: .notFound])
+    #expect(try rig.store.read { try $0.device(rows: true).activeReplica.confirmed[overlay]?.all ?? [] } == [])
+    #expect(try rig.active().cursors[overlay] == nil)
+    #expect(try rig.outbox() == ["g2/0 ready"])
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() })
+    try rig.engine.subscribe(tree)
+    #expect(try rig.active().known == [:])
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() } == false)
+  }
+
   // Board ids are eight hex digits: the draws are queued so the first id is one drawn already holds.
   @Test func anIdMintedInsideACommitIsNeverOneTheViewsOrTheCallHold() throws {
     let rig = try Rig()

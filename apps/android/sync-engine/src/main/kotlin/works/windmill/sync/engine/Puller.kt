@@ -27,6 +27,13 @@ fun Engine.pullRequest(scopes: Collection<ScopeRef>): Json? = write(EngineOperat
         Json.objectOf("scopes" to Json.Arr(pulled.map { Json.objectOf("scope" to Json.of(it.text), "cursor" to replica.cursorOf(it).member("cursor")) }))
     }
 }
+internal fun Engine.endScope(replica: ReplicaState, scope: ScopeRef, kind: String) {
+    val scopes = if (replica.state == "bound" && scope.kind is ScopeRef.Kind.Tree) listOf(scope, ScopeRef.overlay(scope.tree!!)) else listOf(scope)
+    for (endedScope in scopes) {
+        forgetScope(replica, endedScope)
+        if (replica.known[endedScope.text] != Json.of("gone")) replica.known[endedScope.text] = Json.of(kind)
+    }
+}
 internal fun ReplicaState.covers(entry: Entry): Boolean {
     val cursor = cursorOf(entry.scope).cursor() ?: return false
     return cursor.mode == "live" && entry.state == "acked" && entry.json["resultEpoch"] == meta["serverEpoch"] && entry.json.member("resultSeq").long() <= cursor.seq - if (cursor.key == null) 0 else 1
@@ -134,7 +141,7 @@ fun Engine.onPullResponse(request: Json, response: SyncResponse, timing: Request
             else if (replica.cursorOf(scope).member("cursor") != requested) "stale"
             else when (val kind = page.member("kind").str()) {
                 "reset" -> { replica.cursors[scope.text] = replica.cursorOf(scope).with("cursor" to Json.Null); replica.staging.remove(scope.text); store.dropStaging(replica.id, scope); left--; "reset" }
-                "gone", "not-found" -> if (ignoresEnd(replica, scope, kind)) "ignored" else { forgetScope(replica, scope); replica.known[scope.text] = Json.of(kind); left--; kind }
+                "gone", "not-found" -> if (ignoresEnd(replica, scope, kind)) "ignored" else { endScope(replica, scope, kind); left--; kind }
                 else -> null
             }
         }
@@ -198,7 +205,7 @@ fun Engine.onFrame(frame: Json, appVersion: String = "1", replicaID: String = ac
     if (scope.text in replica.known || selectedScopes?.let { scope !in it } == true) return@write "outside"
     if (op in setOf("gone", "not-found")) {
         if (ignoresEnd(replica, scope, op)) return@write "ignored"
-        forgetScope(replica, scope); replica.known[scope.text] = Json.of(op); return@write op
+        endScope(replica, scope, op); return@write op
     }
     val record = replica.cursorOf(scope); val cursor = record.cursor()
     val inline = cursor != null && cursor.mode == "live" && cursor.key == null && !record.flag("behind") && frame["epoch"] == replica.meta["serverEpoch"] && frame.member("seq").long() == cursor.seq + 1 && frame["rows"] != null

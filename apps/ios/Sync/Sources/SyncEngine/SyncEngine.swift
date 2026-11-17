@@ -232,7 +232,8 @@ public final class SyncEngine: Replica {
       if !opened.contains(scope) { opened.append(scope) }
     }
     core.publish(\.firstPulls)
-    core.pullWants.add([scope])
+    if case .tree(let id) = scope.kind { core.pullWants.add([scope, .overlay(id)]) }
+    else { core.pullWants.add([scope]) }
     core.wakes.puller.kick()
     core.wakes.live.kick()
     return outcome

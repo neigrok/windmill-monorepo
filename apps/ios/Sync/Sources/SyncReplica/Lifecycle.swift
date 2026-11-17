@@ -486,7 +486,10 @@ public struct ReplicaLifecycle: Sendable {
       subscriptions.opened.filter { if case .tree = $0.kind { true } else { false } }
     case .own(let subscriptions):
       subscriptions.products.map(ScopeRef.product) + (try governedTrees(of: replica, carrying: subscriptions.products))
-        + subscriptions.opened
+        + subscriptions.opened.flatMap { scope -> [ScopeRef] in
+          if case .tree(let id) = scope.kind, replica.known[scope] == nil { return [scope, .overlay(id)] }
+          return [scope]
+        }
     }
     var seen: Set<ScopeRef> = []
     return scopes.filter { replica.known[$0] == nil && seen.insert($0).inserted }
@@ -511,16 +514,15 @@ public struct ReplicaLifecycle: Sendable {
     return alive.sorted().compactMap(\.string).flatMap { [ScopeRef.tree($0), .overlay($0)] }
   }
 
-  // A scope the replica knows not found is known no more, so its first pull boots it; one it knows gone stays gone, since
-  // a scope's death is final (INV-13).
+  // Reopening a bound tree clears its own overlay’s not-found too; a gone tree clears neither (INV-13).
   public func subscribe(_ replica: inout LoadedReplica, to scope: ScopeRef) -> SubscribeOutcome {
-    switch replica.known[scope] {
-    case .gone?: return .gone
-    case .notFound?:
-      replica.apply(.deleteKnown(scope))
-      return .subscribed
-    case nil: return .subscribed
+    if replica.known[scope] == .gone { return .gone }
+    var scopes = [scope]
+    if replica.meta.state == .bound, case .tree(let id) = scope.kind { scopes.append(.overlay(id)) }
+    for opened in scopes where replica.known[opened] == .notFound {
+      replica.apply(.deleteKnown(opened))
     }
+    return .subscribed
   }
 
   // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not. A scope the

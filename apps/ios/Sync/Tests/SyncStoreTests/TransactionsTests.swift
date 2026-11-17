@@ -259,9 +259,9 @@ struct TransactionsTests {
     #expect(runs[0].reads == [
       [touching("card", "card0009"), touching("board", nil), covered(6), above(3)],
       [touching("card", "card0010"), touching("board", nil), covered(9), above(2)],
-      [touching("board", "b_00000001"), touching("board", nil), scope("tree/b_00000001"), above(2)],
-      [touching("board", nil), scope("tree/b_00000002"), above(3)],
-    ])
+      [touching("board", "b_00000001"), touching("board", nil), scope("tree/b_00000001"), scope("self/overlay/b_00000001"), above(2)],
+      [touching("board", nil), scope("tree/b_00000002"), scope("self/overlay/b_00000002"), above(3)],
+    ].map { $0.sorted() })
   }
 
   // A settling change, a change past a gap, a not-found whose board's create waits, a gone: their outbox reads and outcomes, the outbox after.
@@ -311,7 +311,7 @@ struct TransactionsTests {
       let applied = try #require(try store.apply(
         frame, replica: "rp_1", subscribed: .own(Subscriptions(products: ["probe"], opened: [])), settling: 32,
         instance: Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: 5000, appVersion: "1")).value)
-      reads.append(taken().filter { $0.contains("outbox") })
+      reads.append(taken().filter { $0.contains("outbox") }.sorted())
       outcomes.append(([applied.outcome.rawValue] + applied.next.map(\.text) + (applied.unsettled ? ["unsettled"] : [])).joined(separator: " "))
     }
     let left = try store.read { try $0.device(rows: true).activeReplica.outbox.map(\.localId) }

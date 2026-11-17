@@ -14,7 +14,7 @@ import { engineStart, epochChange, signIn, signOut } from '../../../../packages/
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
 import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope } from '../../../../packages/api-contract/sync/reference/client/sender.js';
-import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf } from '../../../../packages/api-contract/sync/reference/client/subscriptions.js';
+import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf, unsubscribe } from '../../../../packages/api-contract/sync/reference/client/subscriptions.js';
 import { drawn, stored, viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
 function secureDraw(bound) {
@@ -299,6 +299,7 @@ export class BrowserSyncEngine {
 
   peerMessage(message) {
     if (message.type === 'upgrade') { this.refresh().catch(() => {}); return; }
+    const previous = ['scopes', 'bye'].includes(message.type) ? this.scopes() : [];
     if (message.type === 'scopes') this.peerScopes.set(message.tab, new Set(message.scopes));
     if (message.type === 'bye') this.peerScopes.delete(message.tab);
     if (message.type === 'hello' || message.type === 'visible') this.announceScopes();
@@ -308,7 +309,15 @@ export class BrowserSyncEngine {
       this.stopNetwork();
     }
     if (['changed', 'activeReplicaChanged', 'scopes', 'bye'].includes(message.type)) {
-      this.refresh().then(() => { this.armHolds(); this.kick(); }).catch(() => this.telemetry.failure('storage'));
+      this.refresh().then(async () => {
+        if (this.closed) return;
+        if (previous.length) await this.write(null, (device, ctx) => {
+          const replica = device.activeReplica;
+          const current = this.scopes(replica);
+          for (const scope of previous) if (!current.includes(scope)) unsubscribe(replica, ctx, scope);
+        });
+        this.armHolds(); this.kick();
+      }).catch(() => { if (!this.closed) this.telemetry.failure('storage'); });
     }
   }
 
@@ -318,10 +327,8 @@ export class BrowserSyncEngine {
 
   scopes(replica = this.device.activeReplica) {
     const products = Object.keys(this.registry.products).filter((product) => this.registry.products[product].surfaces.includes('web'));
-    const scopes = new Set(subscriptionsOf(replica, this.registry, products));
-    for (const scope of [...this.openScopes, ...[...this.peerScopes.values()].flatMap((set) => [...set])])
-      if (!replica.known[scope]) scopes.add(scope);
-    return [...scopes];
+    const opened = [...this.openScopes, ...[...this.peerScopes.values()].flatMap((set) => [...set])];
+    return subscriptionsOf(replica, this.registry, products, opened);
   }
 
   async subscribe(scope) {
@@ -330,7 +337,8 @@ export class BrowserSyncEngine {
     if (result !== 'gone') this.openScopes.add(scope);
     this.announceScopes();
     for (const observation of this.views.values()) observation.refresh(this.device.activeReplica);
-    this.kickPull([scope]);
+    const overlay = `self/overlay/${scope.slice('tree/'.length)}`;
+    this.kickPull(this.scopes().filter((candidate) => candidate === scope || candidate === overlay));
     return result;
   }
 

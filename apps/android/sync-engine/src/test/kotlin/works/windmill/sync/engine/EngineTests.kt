@@ -13,6 +13,59 @@ import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class EngineTests {
+    @Test fun readerTreesPairTheBoundAccountsOverlayAndReopenBothScopes() {
+        val tree = ScopeRef.tree("b_00000001")
+        val overlay = ScopeRef.overlay("b_00000001")
+        engine().use { engine ->
+            engine.subscribe(tree)
+            assertEquals(setOf(tree), engine.subscriptions(listOf("probe")))
+            assertTrue(engine.read(overlay) { it.firstPullComplete() })
+            engine.signIn("B", emptyMap())
+            assertEquals(setOf(scope, tree, overlay), engine.subscriptions(listOf("probe")))
+            engine.reconcile(engine.subscriptions(listOf("probe")))
+            assertFalse(engine.read(overlay) { it.firstPullComplete() })
+            engine.write { replica ->
+                replica.known[tree.text] = Json.of("not-found")
+                replica.known[overlay.text] = Json.of("not-found")
+            }
+            assertEquals(setOf(scope), engine.subscriptions(listOf("probe")))
+            assertTrue(engine.read(overlay) { it.firstPullComplete() })
+            assertNull(engine.subscribe(tree))
+            assertTrue(engine.device.current().known.isEmpty())
+            assertEquals(setOf(scope, tree, overlay), engine.subscriptions(listOf("probe")))
+            engine.write { replica ->
+                replica.known[tree.text] = Json.of("gone")
+                replica.known[overlay.text] = Json.of("not-found")
+            }
+            assertEquals("gone", engine.subscribe(tree))
+            assertEquals(mapOf(tree.text to Json.of("gone"), overlay.text to Json.of("not-found")), engine.device.current().known)
+        }
+    }
+
+    @Test fun closingATreeRetainsSeparatelyOpenedAndOwnedOverlays() {
+        val tree = ScopeRef.tree("b_00000001")
+        val overlay = ScopeRef.overlay("b_00000001")
+        engine().use { engine ->
+            engine.signIn("B", emptyMap())
+            engine.subscribe(tree); engine.subscribe(overlay)
+            engine.reconcile(engine.subscriptions(listOf("probe")))
+            engine.write { replica -> replica.cursors[overlay.text] = Json.objectOf("booted" to Json.of(true), "cursor" to Json.Null) }
+            engine.unsubscribe(tree)
+            assertEquals(setOf(scope, overlay), engine.subscriptions(listOf("probe")))
+            assertNotNull(engine.device.current().cursors[overlay.text])
+            engine.unsubscribe(overlay)
+            assertEquals(setOf(scope), engine.subscriptions(listOf("probe")))
+            assertNull(engine.device.current().cursors[overlay.text])
+            engine.commit(scope, Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001"))))))
+            engine.subscribe(tree); engine.unsubscribe(tree)
+            engine.reconcile(engine.subscriptions(listOf("probe")))
+            assertEquals(setOf(scope, tree, overlay), engine.subscriptions(listOf("probe")))
+            assertFalse(engine.read(overlay) { it.firstPullComplete() })
+            engine.signOut("keep")
+            assertEquals(emptySet<ScopeRef>(), engine.subscriptions(listOf("probe")))
+        }
+    }
+
     private val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
     private val identities = object : IdentitySource {
         var number = 0

@@ -1603,7 +1603,7 @@ The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9)
 scope in doubt (§7.9), a re-authentication that clears `authPaused` (§8.2), a sign-in, a sign-out or
 a re-identify of the active replica (§7.12), and every `PULL_FALLBACK_MS` in the foreground (§7.9
 **Timers**). Each run pulls the scopes of its trigger, each until `more = false`: a live gap its
-scope, a subscribe the scope subscribed, a re-pull its scope, and every other trigger every
+scope, a subscribe its resolved scopes (§7.9), a re-pull its scope, and every other trigger every
 subscribed scope, those in doubt included. A scope with a pull in flight is not pulled again by a
 trigger; the trigger marks it, and the answer's handling pulls it once more if it is marked or
 `more`. A request names at most `PULL_MAX_SCOPES` scopes; a run over more sends several, and a run
@@ -1703,7 +1703,8 @@ engine stops on any `426`.
        whose governing record is alive in `drawn` or in `stored`, a held delete's window included
        (§7.9).
 
-     Otherwise:
+     Otherwise, apply the following to the scope and, for a bound replica's tree, to its own overlay
+     in the same transaction (§7.9):
      - delete the scope's confirmed rows, `SpentId` rows and cursor, record the scope as known with
        that kind, and unsubscribe;
      - acked entries of the scope resolve;
@@ -1953,11 +1954,27 @@ A bound replica subscribes the product scopes of the products its surface carrie
 `surfaces`), and no scope of another product. It also subscribes the tree and overlay scopes its
 product binding lists (A.1): the set holds a tree and its overlay per governing record alive in
 `drawn` or in `stored`, so a held create's tree is in it, and so is a tree inside its governing
-record's delete window, so an undo finds its rows. It also subscribes any `tree/<T>` while it is open: the engine exposes
-`subscribe(scope)` and `unsubscribe(scope)`, which a product calls when it opens and closes a tree.
-A subscribe deletes a `not-found` `KnownScope` record; the scope has no cursor, so its first pull
-boots it. A `gone` record stays, since a scope's death is final (INV-13): a subscribe to it answers
-`gone`, and nothing is pulled. An alive row of the governing type, arriving in any page or frame,
+record's delete window, so an undo finds its rows. The engine also exposes `subscribe(scope)` and
+`unsubscribe(scope)`, which a product calls when it opens and closes a tree. An explicit `tree/<T>`
+subscription on a bound replica adds both the tree and that replica's own `self/overlay/<T>`, even
+when another account owns the readable tree. It never adds the owner's overlay. An anonymous
+replica adds only the tree. The same resolved set drives pulls, live subscriptions, readers'
+`firstPullComplete`, peers and account changes; a tree subscribe schedules both bound scopes' first
+pulls. Web accepts only tree scopes at this public entry. Native clients also retain their explicit
+overlay subscription entry.
+
+The last explicit tree release (across web tabs) releases its paired overlay too, unless the tree's
+alive governing record or a separate explicit native overlay subscription still supplies it. A tree
+access denial differs from a voluntary release: an applied `gone` or `not-found` for a bound
+replica's tree atomically forgets and records that end for its own overlay as well, even if the
+overlay was explicitly opened. A prior `gone` remains final. Both scopes' acknowledged entries
+resolve; unconfirmed work remains under the ordinary scope-end rules (§7.5). Ignored ends change
+neither scope.
+
+A tree subscribe deletes `not-found` `KnownScope` records for the tree and, on a bound replica,
+its own overlay; neither has a cursor, so each first pull boots it. A `gone` record stays, since a
+scope's death is final (INV-13): a subscribe to a gone tree answers `gone`, clears neither record,
+and pulls nothing. An alive row of the governing type, arriving in any page or frame,
 deletes a `not-found` record of its `tree/<id>` and `self/overlay/<id>` alike: the tree the record
 denies exists, so the answer that wrote it is stale (a restore, then a create re-sent after it). The
 scopes rejoin the subscription set, so the next puller run pulls them (§7.5). An `anon` replica

@@ -209,7 +209,7 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // What of the outbox a step reads in `meta`'s replica: a last chunk what it settles and one more, an end its scope's, an epoch change all.
+  // What of the outbox a step reads in `meta`'s replica: a last chunk what it settles and one more, a tree end also its own overlay's, an epoch change all.
   public func entries(of step: PullStep, in meta: ReplicaMeta) -> EntrySelection {
     switch step {
     case .sample, .pauseAuth:
@@ -220,7 +220,9 @@ public struct PageApplier: Sendable {
     case .page(let page, _, let chunk):
       switch page.body {
       case .reset: return EntrySelection()
-      case .gone, .notFound: return EntrySelection(scopes: [page.scope])
+      case .gone, .notFound:
+        if case .tree(let id) = page.scope.kind { return EntrySelection(scopes: [page.scope, .overlay(id)]) }
+        return EntrySelection(scopes: [page.scope])
       case .rows(let rows):
         guard chunk.isLast, let cursor = Cursor(decoding: rows.cursor), let cleanSeq = cursor.cleanSeq else { return EntrySelection() }
         return EntrySelection(covered: CoveredEntries(scope: page.scope, epoch: cursor.epoch, cleanSeq: cleanSeq, limit: chunk.settles.onePast))
@@ -228,12 +230,13 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // What of the outbox a frame reads (§7.5 step 3): a change what it settles and one more, an end its scope's, never every entry.
+  // What of the outbox a frame reads (§7.5 step 3): a change what it settles and one more, a tree end also its own overlay's, never every entry.
   public func entries(of frame: LiveFrame, settling count: Int) -> EntrySelection {
     switch frame {
     case .change(let change):
       return EntrySelection(covered: CoveredEntries(scope: change.scope, epoch: change.epoch, cleanSeq: change.seq, limit: count.onePast))
     case .gone(let scope, _), .notFound(let scope, _):
+      if case .tree(let id) = scope.kind { return EntrySelection(scopes: [scope, .overlay(id)]) }
       return EntrySelection(scopes: [scope])
     case .pong, .other:
       return EntrySelection()
@@ -430,12 +433,16 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // Gone or not found: the scope's rows, spent ids, cursor and staging go, it is known, and its acked entries resolve.
+  // A scope end also ends a bound tree's own overlay; both forget their cache and resolve only acknowledged entries.
   // Only a tree's scopes are ever known so (§2.5); the replica's own product scope never is.
   func forget(_ scope: ScopeRef, as kind: KnownKind, in replica: inout LoadedReplica) throws {
-    replica.apply(.forgetScope(scope))
-    replica.apply(.putKnown(scope, kind))
-    for entry in replica.entries(in: scope) where entry.state == .acked { try replica.move(entry.localId, .resolve) }
+    var scopes = [scope]
+    if replica.meta.state == .bound, case .tree(let id) = scope.kind { scopes.append(.overlay(id)) }
+    for endedScope in scopes {
+      replica.apply(.forgetScope(endedScope))
+      if replica.known[endedScope] != .gone { replica.apply(.putKnown(endedScope, kind)) }
+      for entry in replica.entries(in: endedScope) where entry.state == .acked { try replica.move(entry.localId, .resolve) }
+    }
   }
 
   // MARK: Frames

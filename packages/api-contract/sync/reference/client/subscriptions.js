@@ -1,5 +1,5 @@
 // §7.9 subscriptions: product scopes, and a tree and overlay per governing record alive in drawn or in
-// stored, so a held create's tree and a tree inside its board's delete window are in the set. A subscribe
+// stored, plus explicit opens and each bound open tree's own overlay. A subscribe
 // clears a known not-found scope, so its next pull boots it, and answers `gone` for a scope known gone,
 // whose death is final; leaving the set forgets the scope and resolves its acked entries (§8.1). And
 // the scopes in doubt, with their re-pull backoff.
@@ -8,9 +8,9 @@ import { moveEntry } from '../core/machines.js';
 import { isAlive } from '../core/rows.js';
 import { drawn, stored } from './views.js';
 
-export function subscriptionsOf(replica, registry, products) {
-  if (replica.meta.state !== 'bound') return [];
-  const scopes = products.map((product) => `self/${product}`);
+export function subscriptionsOf(replica, registry, products, opened = []) {
+  const bound = replica.meta.state === 'bound';
+  const scopes = bound ? products.map((product) => `self/${product}`) : [];
   const governing = registry.governingType;
   if (governing) {
     const productScope = `self/${registry.productOfScopeKind(governing.scope)}`;
@@ -22,12 +22,22 @@ export function subscriptionsOf(replica, registry, products) {
       for (const id of [...alive].sort()) scopes.push(`tree/${id}`, `self/overlay/${id}`);
     }
   }
-  return scopes.filter((scope) => !replica.known[scope]);
+  for (const scope of opened) {
+    const tree = registry.scopeKindOf(scope) === 'tree';
+    if ((!bound && !tree) || replica.known[scope]) continue;
+    scopes.push(scope);
+    if (bound && tree) scopes.push(`self/overlay/${scope.slice('tree/'.length)}`);
+  }
+  return [...new Set(scopes.filter((scope) => !replica.known[scope]))];
 }
 
 export function subscribe(replica, scope) {
   if (replica.known[scope] === 'gone') return 'gone';
   delete replica.known[scope];
+  if (replica.meta.state === 'bound' && scope.startsWith('tree/')) {
+    const overlay = `self/overlay/${scope.slice('tree/'.length)}`;
+    if (replica.known[overlay] === 'not-found') delete replica.known[overlay];
+  }
   return null;
 }
 

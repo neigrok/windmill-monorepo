@@ -108,9 +108,13 @@ function checkDigest(replica, ctx, scope, received, seq) {
 }
 
 function forget(replica, ctx, scope, kind) {
-  replica.forgetScope(scope);
-  replica.known[scope] = kind;
-  for (const entry of replica.entries(scope)) if (entry.state === 'acked') moveEntry(replica, ctx.ended, entry, 'resolve');
+  const scopes = replica.meta.state === 'bound' && scope.startsWith('tree/')
+    ? [scope, `self/overlay/${scope.slice('tree/'.length)}`] : [scope];
+  for (const endedScope of scopes) {
+    replica.forgetScope(endedScope);
+    if (replica.known[endedScope] !== 'gone') replica.known[endedScope] = kind;
+    for (const entry of replica.entries(endedScope)) if (entry.state === 'acked') moveEntry(replica, ctx.ended, entry, 'resolve');
+  }
 }
 
 // A row into a set of rows (confirmed, or a boot's staging) with its digest: replace by seq (§3.4),

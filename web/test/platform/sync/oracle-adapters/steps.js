@@ -89,6 +89,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
   let lastPull = null;
   let pulledFor = null;
   let reconciled = null;
+  const opened = new Set();
   for (const step of structuredClone(steps)) {
     const before = { device: device.toJSON(), ended: ended.length, telemetry: telemetry.length, events: events.length, queues: queues.snapshot(), gestures, current };
     const stepActor = step.actor ?? current;
@@ -150,7 +151,11 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(null);
           break;
         case 'pull':
-          lastPull = pullRequest(replica, registry, step.scopes);
+          if (step.scopes === undefined) {
+            reconciled = subscriptionsOf(replica, registry, ['probe'], opened);
+            reconcile(replica, ctx, reconciled);
+          }
+          lastPull = pullRequest(replica, registry, step.scopes ?? reconciled);
           pulledFor = replica;
           answer(lastPull);
           break;
@@ -170,13 +175,27 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(onFrame(replica, ctx, step.frame, reconciled === null ? undefined : (scope) => reconciled.includes(scope)));
           break;
         case 'reconcile':
-          reconciled = step.scopes === undefined ? subscriptionsOf(replica, registry, ['probe']) : [...step.scopes];
+          reconciled = step.scopes === undefined ? subscriptionsOf(replica, registry, ['probe'], opened) : [...step.scopes];
           reconcile(replica, ctx, reconciled);
           answer(null);
           break;
-        case 'subscribe':
-          if (reconciled !== null && !reconciled.includes(step.scope)) reconciled.push(step.scope);
-          answer(subscribe(replica, step.scope));
+        case 'subscribe': {
+          const outcome = subscribe(replica, step.scope);
+          if (outcome !== 'gone') {
+            opened.add(step.scope);
+            if (reconciled !== null) reconciled = [...new Set([...reconciled, ...subscriptionsOf(replica, registry, [], [step.scope])])];
+          }
+          answer(outcome);
+          break;
+        }
+        case 'unsubscribe':
+          opened.delete(step.scope);
+          reconciled = subscriptionsOf(replica, registry, ['probe'], opened);
+          reconcile(replica, ctx, reconciled);
+          answer(null);
+          break;
+        case 'subscriptions':
+          answer(subscriptionsOf(replica, registry, ['probe'], opened));
           break;
         case 'signIn':
           answer(signIn(device, ctx, { account: step.account, holdsRecords: step.holdsRecords, decisions: step.decisions, counted: step.counted }));

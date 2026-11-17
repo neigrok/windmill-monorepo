@@ -12,6 +12,30 @@ struct LifecycleTests {
 
   static func bytes(_ text: String?) -> [UInt8]? { text.map { Array($0.utf8) } }
 
+  @Test func openedTreesPairOnlyTheBoundAccountsOwnOverlayAndReopenBothScopes() throws {
+    let lifecycle = ReplicaLifecycle(registry: Self.probe)
+    let tree = ScopeRef.tree("b_00000001")
+    let overlay = ScopeRef.overlay("b_00000001")
+    let set = SubscriptionSet.own(Subscriptions(products: ["probe"], opened: [tree]))
+    var device = LoadedDevice(meta: DeviceMeta(), active: "rp_reader", replicas: [
+      .fresh(ReplicaMeta(replica: "rp_reader", state: .anon)),
+    ])
+    #expect(try lifecycle.subscriptionSet(of: device.activeReplica, set) == [tree])
+    _ = try lifecycle.signIn(&device, account: "B", holdsRecords: [:], decisions: [:], counted: [:], identities: try QueuedIdentities(["ids": ["rp_bound"]]))
+    #expect(try lifecycle.subscriptionSet(of: device.activeReplica, set) == [.product("probe"), tree, overlay])
+    var replica = device.activeReplica
+    replica.apply(.putKnown(tree, .notFound))
+    replica.apply(.putKnown(overlay, .notFound))
+    #expect(try lifecycle.subscriptionSet(of: replica, set) == [.product("probe")])
+    #expect(lifecycle.subscribe(&replica, to: tree) == .subscribed)
+    #expect(replica.known == [:])
+    #expect(try lifecycle.subscriptionSet(of: replica, set) == [.product("probe"), tree, overlay])
+    replica.apply(.putKnown(tree, .gone))
+    replica.apply(.putKnown(overlay, .notFound))
+    #expect(lifecycle.subscribe(&replica, to: tree) == .gone)
+    #expect(replica.known == [tree: .gone, overlay: .notFound])
+  }
+
   // A dormant replica of "caf\u{E9}" is another account's: signing in as "cafe\u{301}" binds a replica of its own.
   @Test func aLookAlikeAccountSignsIntoAReplicaOfItsOwn() throws {
     var device = LoadedDevice(meta: DeviceMeta(), active: "rp_anon", replicas: [

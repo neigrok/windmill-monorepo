@@ -194,6 +194,7 @@ public struct StepContext {
   var lastPush: PushRequest?
   var lastPull: (request: PullRequest?, replica: String)?
   var subscribed: [ScopeRef]?
+  var opened: [ScopeRef] = []
 
   public init(registry: Registry, identities: QueuedIdentities, actor: Stamp.Actor) {
     self.registry = registry
@@ -275,7 +276,13 @@ public enum ClientSteps {
       let backup: BackupCopy = try step["backupGuard"].map { $0.isNull ? .missing : .held(try $0.asString()) } ?? .notKept
       return json(try device.start(backup: backup, instance: &instance, identities: identities))
     case "pull":
-      let request = try device.pullRequest(try step.member("scopes").asArray().map { try ScopeRef(json: $0) })
+      let scopes: [ScopeRef]
+      if let given = step["scopes"] { scopes = try given.asArray().map { try ScopeRef(json: $0) } }
+      else {
+        scopes = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened)))
+        context.subscribed = scopes
+      }
+      let request = try device.pullRequest(scopes)
       context.lastPull = (request, try device.activeReplica().id)
       return request?.json ?? .null
     case "pullResponse":
@@ -290,16 +297,31 @@ public enum ClientSteps {
       return .string(try device.apply(frame, subscribed: subscribed, instance: instance).rawValue)
     case "subscribe":
       let scope = try ScopeRef(json: step.member("scope"))
-      if let subscribed = context.subscribed, !subscribed.contains(scope) { context.subscribed = subscribed + [scope] }
       let outcome = try device.subscribe(scope)
+      if outcome == .subscribed {
+        if !context.opened.contains(scope) { context.opened.append(scope) }
+        if let subscribed = context.subscribed {
+          let added = try ReplicaLifecycle(registry: context.registry).subscriptionSet(
+            of: device.activeReplica(), .own(Subscriptions(products: [], opened: [scope])))
+          context.subscribed = subscribed + added.filter { !subscribed.contains($0) }
+        }
+      }
       return outcome == .gone ? .string(outcome.rawValue) : .null
+    case "unsubscribe":
+      let scope = try ScopeRef(json: step.member("scope"))
+      context.opened.removeAll { $0 == scope }
+      context.subscribed = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened)))
+      return .null
+    case "subscriptions":
+      return .array(try ReplicaLifecycle(registry: context.registry).subscriptionSet(
+        of: device.activeReplica(), .own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened))).map(\.json))
     case "reconcile":
       if let scopes = step["scopes"] {
         let given = try scopes.asArray().map { try ScopeRef(json: $0) }
         _ = try device.reconcile(.given(given))
         context.subscribed = given
       } else {
-        context.subscribed = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: [])))
+        context.subscribed = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened)))
       }
       return .null
     case "signIn":

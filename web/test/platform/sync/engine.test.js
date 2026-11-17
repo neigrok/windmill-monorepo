@@ -12,6 +12,7 @@ import { hashText } from '../../../src/platform/sync/core/encoding.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { environment, until, tick } from './fakes.js';
+import { overlayScope, productScope, row, serverState, st, treeScope } from './oracle-adapters/fixtures.js';
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { Device } from '../../../../packages/api-contract/sync/reference/client/replica.js';
 
@@ -994,4 +995,98 @@ test('stale sign-out cannot finish against another account after a missed invali
   assert.equal(device.activeReplica.meta.account, 'B');
   assert.equal(device.meta.clearCredential, 'A');
   stale.close(); peerEngine.close();
+});
+
+test('a bound reader opening a foreign tree follows its own overlay and schedules both first pulls', async () => {
+  const env = environment(), engine = await open(env);
+  try {
+    env.transport.account = 'B';
+    await engine.signIn('B');
+    await until(() => engine.leader);
+    await engine.subscribe('tree/b_00000001');
+    assert.deepEqual(engine.scopes(), ['self/probe', 'tree/b_00000001', 'self/overlay/b_00000001']);
+    assert.equal(engine.pullDirty.has('self/overlay/b_00000001'), true);
+    assert.equal(engine.readMetadata('self/overlay/b_00000001').firstPullComplete, false);
+  } finally { engine.close(); }
+});
+
+for (const denial of ['page', 'frame']) test(`a reader overlay survives ack and pull, leaves with the last tab, and clears on a ${denial} denial`, async () => {
+  const env = environment(), tree = 'tree/b_00000001', overlay = 'self/overlay/b_00000001';
+  const ownerMark = row({ t: 'mark', id: 'oak', f: { done: [true, st(1)] }, seq: 1 });
+  env.state = new ServerState(serverState({ scopes: {
+    'acct:A/probe': productScope('A'), 'acct:B/probe': productScope('B'),
+    'tree:b_00000001': treeScope('A', 'b_00000001'),
+    'acct:A/overlay/b_00000001': overlayScope('A', 'b_00000001'),
+  }, rows: {
+    'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+    'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 }),
+      row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 2 })],
+    'acct:A/overlay/b_00000001': [ownerMark],
+  } }));
+  const engine = await open(env);
+  let other;
+  try {
+    env.transport.account = 'B'; await engine.signIn('B'); await until(() => engine.leader);
+    await engine.subscribe(tree); await engine.pull();
+    const view = engine.observe(overlay);
+    assert.deepEqual(view.getSnapshot().drawn, []);
+    assert.equal(engine.readMetadata(overlay).firstPullComplete, true);
+    await engine.commit(overlay, [{ op: 'write', t: 'mark', id: 'oak', f: { done: false } }]);
+    await engine.send(); await until(() => !engine.sending);
+    assert.deepEqual(engine.device.activeReplica.entries().map(({ state }) => state), ['acked']);
+    const ownMark = view.getSnapshot().drawn.map((record) => ({ ...record, seq: 1, rc: env.timers.time, ru: env.timers.time }));
+    engine.kickPull(); await engine.pull();
+    assert.deepEqual(engine.device.activeReplica.entries(), []);
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    assert.deepEqual(env.state.toJSON().rows['acct:A/overlay/b_00000001'], [ownerMark]);
+    other = await peer(env); await other.subscribe(tree);
+    await until(() => [...engine.peerScopes.values()].some((scopes) => scopes.has(tree)));
+    await engine.unsubscribe(tree);
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    await until(() => [...other.peerScopes.values()].every((scopes) => !scopes.has(tree)));
+    if (denial === 'page') await other.unsubscribe(tree);
+    else {
+      engine.setOnline(false);
+      other.close(); other = null;
+    }
+    await until(() => engine.scopes().length === 1);
+    await engine.refresh();
+    assert.deepEqual(view.getSnapshot().drawn, []);
+    other?.close(); other = null;
+    engine.setOnline(true);
+    await engine.subscribe(tree); await engine.pull();
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    if (denial === 'frame') await engine.receiveFrame({ op: 'not-found', scope: tree, as: 'B' });
+    else await engine.storePage(engine.device.activeReplica.storageHandle, engine.device.activeReplica.cursorOf(tree).cursor, { scope: tree, kind: 'not-found' });
+    assert.deepEqual(engine.device.activeReplica.known, { [tree]: 'not-found', [overlay]: 'not-found' });
+    assert.deepEqual(engine.scopes(), ['self/probe']);
+    assert.deepEqual(view.getSnapshot().drawn, []);
+    await engine.subscribe(tree);
+    assert.deepEqual(engine.device.activeReplica.known, {});
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    assert.equal(engine.readMetadata(overlay).firstPullComplete, false);
+    await engine.pull();
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    assert.deepEqual(env.failures, []);
+  } finally { other?.close(); engine.close(); }
+});
+
+test('an open anonymous tree resolves its overlay separately for each bound account', async () => {
+  const env = environment(), engine = await open(env);
+  const tree = 'tree/b_00000001', overlay = 'self/overlay/b_00000001';
+  try {
+    await engine.subscribe(tree);
+    assert.deepEqual(engine.scopes(), [tree]);
+    await assert.rejects(engine.subscribe(overlay), /tree/);
+    env.transport.account = 'B'; await engine.signIn('B');
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    engine.setOnline(false);
+    await engine.beginSignOut(); await engine.finishSignOut({ choice: 'keep' });
+    assert.deepEqual(engine.scopes(), [tree]);
+    assert.deepEqual(engine.observe(overlay).getSnapshot().drawn, []);
+    env.transport.account = 'A'; engine.setOnline(true); await engine.signIn('A');
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    assert.deepEqual(engine.observe(overlay).getSnapshot().drawn, []);
+  } finally { engine.close(); }
 });

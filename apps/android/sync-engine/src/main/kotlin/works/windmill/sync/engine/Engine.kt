@@ -356,7 +356,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         }
         override fun device(key: String): Json? = checked { registry.product(scope)?.let { replicaState.device[it]?.get(key) } }
         override fun devices(prefix: String): Map<String, Json> = checked { registry.product(scope)?.let { replicaState.device[it]?.obj()?.filterKeys { key -> key.startsWith(prefix) } }.orEmpty() }
-        override fun firstPullComplete() = checked { scope !in (selectedScopes ?: (subscriptionsOf(replicaState) + openedScopes)) || replicaState.cursors[scope.text]?.flag("booted") == true }
+        override fun firstPullComplete() = checked { scope.text in replicaState.known || scope !in (selectedScopes ?: subscriptionsOf(replicaState)) || replicaState.cursors[scope.text]?.flag("booted") == true }
         override fun serverSchema(): Long? = checked { if (isAnonymous) null else replicaState.meta["serverSchema"]?.long() }
         override fun checkpoint(): ScopeCheckpoint = checked {
             val state = replicaState.cursors[scope.text]

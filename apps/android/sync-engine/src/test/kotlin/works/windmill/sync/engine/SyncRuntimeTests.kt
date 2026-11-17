@@ -1128,13 +1128,13 @@ class SyncRuntimeTests {
         }
     }
 
-    @Test fun boundReplicaRetainsExplicitTreeAlongsideItsProductSubscriptions() = runBlocking {
+    @Test fun boundReplicaPairsAnExplicitTreeWithItsOwnOverlay() = runBlocking {
         Fixture().use { fixture ->
             val tree = ScopeRef.tree("b_00000001")
             fixture.transport.controlPulls = true
             fixture.engine.subscribe(tree); fixture.runtime.enter()
             val request = fixture.pull()
-            assertEquals(setOf(product.text, tree.text), request.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
+            assertEquals(setOf(product.text, tree.text, "self/overlay/b_00000001"), request.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
             request.answer.complete(Reply.Unreachable)
             Unit
         }
@@ -1158,7 +1158,7 @@ class SyncRuntimeTests {
             fixture.clock.wall += 10_000
             val due = async { fixture.runtime.pullerStep() }
             val next = fixture.pull()
-            assertEquals(setOf(product.text, "tree/b_00000001"), next.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
+            assertEquals(setOf(product.text, "tree/b_00000001", "self/overlay/b_00000001"), next.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
             next.answer.complete(Reply.Unreachable); due.await(); Unit
         }
     }
@@ -2380,7 +2380,7 @@ class SyncRuntimeTests {
             fixture.transport.controlPulls = true
             fixture.runtime.enter()
             val ordinary = fixture.pull()
-            assertEquals(listOf(product.text), ordinary.request.member("scopes").arr().map { it.member("scope").str() })
+            assertEquals(listOf("self/overlay/b_00000001", product.text), ordinary.request.member("scopes").arr().map { it.member("scope").str() })
             ordinary.answer.complete(Reply.Unreachable)
             val repull = fixture.pull()
             assertEquals(listOf(tree.text), repull.request.member("scopes").arr().map { it.member("scope").str() })
