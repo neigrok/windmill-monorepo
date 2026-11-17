@@ -732,8 +732,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   that open it in 2 of your other trees*); a tree deleted in the open menu leaves the other rows' lines, as its steps
   went with it. The line's graph glyph is the Board / Icon component scaled to 14 px on the boards, a 1.17 px stroke;
   web draws it as every tree glyph, at 1.67 px.
-- **Section 29 · editor and Coach scope.** The shared step read document and right-side Coach placeholder are
-  delivered. Full inline editing and functional Coach remain unbuilt. A step that owns a subtree shows its progress
+- **Section 29 · editor and Coach scope.** The shared step document includes field-scoped editing from
+  [46](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1322-81073) and retained draft recovery from
+  [47](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1348-81444). Coach remains a right-side placeholder.
+  A step that owns a subtree shows its progress
   (*No steps yet*, *0 of 1 done*, *1 of 1 done*) beside Open subtree in the pinned actions, for owners and readers
   (29.16, 29.52); it has no Tree section. 29.10's *Remove step…* corresponds to Delete step in the document's menu.
 - **Section 29 · words the web keeps.** The boards say *New node*, *No nodes yet* with *Add first node*, *Mark
@@ -881,7 +883,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board and Graph · superseded step layouts.** List vocabulary, old phone sheets and tabbed
   Overview/Workspace/History drawings are marked Superseded development target. The [flow index](../index.md#approved-shared-step-editor)
   points to the delivered shared read document from 18/19/27/40, including completion, workspace, history,
-  relationships, deletion and subtree behavior. Inline editing, creation and functional Coach remain unbuilt.
+  relationships, deletion and subtree behavior. Approved 46/47 supplies shared-field editing, dirty-navigation protection,
+  conflict decisions and retained draft recovery. New step keeps its separate composer; creation alignment and functional
+  Coach remain unfinished.
   Link-copy proposals 15.01–15.02 and
   25.01–25.02 point to approved 37.01–37.15.
   The shared editor keeps the Shell available and presents reader content without owner controls.
