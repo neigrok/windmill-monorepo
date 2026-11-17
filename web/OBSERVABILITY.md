@@ -327,7 +327,7 @@ A step is a thing a reader did or was told. These emit nothing:
 - The read that follows a pointer set or changed while the roadmap is open, when it succeeds or is cut off at its
   ten-second limit: a read cut off reports nothing and leaves the step with nothing said of its tree until a reload.
 - Dismissing a menu, a sheet, Fork or Ask AI; re-picking the order or the shared kind in force; a recolor the session refused;
-  a clean Save, which writes nothing and emits `unchanged` from the edit composer and the guide alone.
+  a clean Save, which writes nothing and emits `unchanged` from the inline field editor and the guide alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
 - The unavailable Graph option's reason opening on hover or focus.
@@ -361,6 +361,8 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-board-composer` | The composer's render | The composer closes |
 | `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface | The draft and its Retry stay; the failed Undo's toast closes |
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
+| `roadmap-step-draft-copy` | An unexpected clipboard exception; browser permission and security refusals emit only the failed attempt | The draft stays selectable with Select text and Try again |
+| `roadmap-step-draft-return` | Navigation or matching-editor adoption failed | The retained draft stays available with Try again; nothing is saved |
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
 | `roadmap-step-copy` | An unexpected clipboard exception. Browser permission and security refusals (`NotAllowedError`, `SecurityError`) emit the failed attempt without an Issue; other failures report only the static operation and sanitized stack | *Couldn’t copy link*, Try again and Show link; a failed retry keeps the card, and success uses *Link copied*. Copy and Try again stay disabled while a write is pending, including across step navigation. A newer interaction keeps its focus when failure arrives; nested modal boundaries cover the recovery. A step or link change, dismissal or unmount makes a late result silent |
@@ -421,4 +423,4 @@ clipboard permission refusals emit only `roadmap_step_draft` with `step: copy_fa
 superseded callbacks cannot expose content, change recovery state or restore focus. Draft values, field contents,
 step and tree identifiers, account identifiers, URLs and raw exception messages are absent from these events.
 Auth reports each throwing product session invalidator as `auth-document-data-invalidate` with a static auth
-operation and sanitized stack. One invalidator cannot stop the scope fence or the remaining cleanup callbacks.
+operation and no exception stack or message. One invalidator cannot stop the scope fence or the remaining cleanup callbacks.

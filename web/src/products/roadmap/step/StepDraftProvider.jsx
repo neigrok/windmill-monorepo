@@ -9,7 +9,7 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { t } from '../i18n/index.js';
 import { InlineStepDraft, fieldValue } from './InlineStepDraft.js';
 import { stepDraftSession } from './StepDraftSession.js';
-import { coverBeneath } from './composerFocus.js';
+import { coverBeneath, useComposerViewport } from './composerFocus.js';
 import './inline-edit.css';
 
 const DraftContext = createContext(null);
@@ -38,7 +38,10 @@ export function StepDraftProvider({ dataScope, store: suppliedStore, children })
   const returnTimer = useRef(null);
   const copyAttempt = useRef(0);
   const current = () => store.getSnapshot();
-  const event = (step, field = current()?.draft.field) => track('roadmap_step_edit', { step, ...(field ? { field } : {}) });
+  const event = (step, field = current()?.draft.field) => {
+    if (!field) return;
+    track('roadmap_step_edit', { step, field });
+  };
   const recoverEvent = (step) => track('roadmap_step_draft', { step });
   const focusRoute = () => {
     const heading = document.querySelector('main h1, main h2, [role="main"] h1, .wm-page-content h1, .wm-page-content h2, main');
@@ -287,12 +290,13 @@ export function StepDraftNotice() {
 function DraftDecision({ theme, retained, onKeep, onDiscard }) {
   const layer = useRef(null);
   const keep = useRef(null);
+  const viewport = useComposerViewport();
   useLayoutEffect(() => {
     const release = coverBeneath(layer.current);
     keep.current?.querySelector('button')?.focus();
     return release;
   }, []);
-  return createPortal(<div ref={layer} data-theme={theme} className="st-draft-modal-layer st-draft-modal-layer--decision" onKeyDown={(event) => {
+  return createPortal(<div ref={layer} style={viewport.style} data-theme={theme} className="st-draft-modal-layer st-draft-modal-layer--decision" onKeyDown={(event) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onKeep(); return; }
     wrapTab(event, layer.current);
   }}>
@@ -310,8 +314,9 @@ function DraftRecovery({ theme, slot, copyState, returnState, onClose, onCopy, o
   const layer = useRef(null);
   const heading = useRef(null);
   const content = useRef(null);
+  const viewport = useComposerViewport();
   useLayoutEffect(() => { const release = coverBeneath(layer.current); heading.current.focus(); return release; }, []);
-  return createPortal(<div ref={layer} data-theme={theme} className="st-draft-modal-layer" inert={covered ? '' : undefined} onKeyDown={(event) => {
+  return createPortal(<div ref={layer} style={viewport.style} data-theme={theme} className="st-draft-modal-layer" inert={covered ? '' : undefined} onKeyDown={(event) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
     wrapTab(event, layer.current);
   }}>

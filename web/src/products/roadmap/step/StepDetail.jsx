@@ -17,7 +17,7 @@ import { StepIcons } from './StepIcons.jsx';
 import { TreePicker } from './TreePicker.jsx';
 import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
 import { useTreeDoor } from '../room/useTreeVisit.js';
-import { DetailFocusContext } from './composerFocus.js';
+import { DetailFocusContext, useComposerViewport } from './composerFocus.js';
 import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { boardFocusTarget } from '../board/traversal.js';
 import { RefusedSync } from '../sync/SyncNotices.jsx';
@@ -76,6 +76,7 @@ export function StepDetail({
   const facts = useMemo(() => new StepFacts(tree, { completed, completedAt }, id), [tree, completed, completedAt, id]);
   const openTree = useTreeDoor(facts.step, 'step');
   const layerRef = useRef(null);
+  const viewport = useComposerViewport(phone && Boolean(inlineEditor?.active), layerRef);
   const refusalRef = useRef(null);
   const refusalFocus = useRef(null);
   const originRef = useRef(null);
@@ -489,6 +490,18 @@ export function StepDetail({
   } : null;
   const fieldEditor = inlineEditor?.draft?.stepId === id ? inlineEditor : null;
   const activeField = fieldEditor?.draft?.field;
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (!viewport.keyboardVisible || !activeField || !scroll) return;
+    scroll.style.setProperty('--st-inline-text-height', `${scroll.clientHeight}px`);
+    const control = inlineEditor.host.input.current;
+    if (scroll.contains(control)) {
+      const bounds = scroll.getBoundingClientRect();
+      const field = control.getBoundingClientRect();
+      if (field.top < bounds.top || field.bottom > bounds.bottom) scroll.scrollTop += field.top - bounds.top;
+    }
+    return () => scroll.style.removeProperty('--st-inline-text-height');
+  }, [activeField, viewport.keyboardVisible, viewport.style?.top, viewport.style?.bottom, refusalShown]);
   const fieldTrigger = (field, children, className = '') => <InlineFieldTrigger editor={editable ? inlineEditor : null} step={facts.step} field={field} className={className}>{children}</InlineFieldTrigger>;
   const previous = trail.length > 1 ? tree.nodesById.get(trail[trail.length - 2]) : null;
   const backLabel = previous ? titleOf(previous) : roadmapTitle;
@@ -505,7 +518,7 @@ export function StepDetail({
   const preserveInteractionFocus = () => { if (copyAttempt.current) copyAttempt.current.focusOnFailure = false; };
   return (
     <DetailFocusContext.Provider value={detailFocus}>
-      <div ref={layerRef} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress} onKeyDown={copyRecovery ? onKeyDown : undefined}
+      <div ref={layerRef} style={viewport.style} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress} onKeyDown={copyRecovery ? onKeyDown : undefined}
         onPointerDownCapture={preserveInteractionFocus} onKeyDownCapture={preserveInteractionFocus} onFocusCapture={preserveInteractionFocus}>
         <article className={`st-step-document${activeField ? ' has-inline-editor' : ''}`} data-step-document-id={id} aria-labelledby={titleId} tabIndex={-1} onKeyDown={onKeyDown}>
           <header className="st-step-toolbar">

@@ -9,6 +9,7 @@ import { PrerequisiteChoices } from './StepDraft.js';
 import { PickerSearch } from './PrerequisitePicker.jsx';
 import { fieldValue, sameFieldValue } from './InlineStepDraft.js';
 import { fieldLabel, useStepDraft } from './StepDraftProvider.jsx';
+import { useComposerViewport } from './composerFocus.js';
 
 export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthority, acts, legend, completed, stepId }) {
   const host = useStepDraft();
@@ -79,7 +80,7 @@ export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthorit
     if (!request.matches(host.store.getSnapshot()?.draft)) return;
     if (result.ok) { host.event('saved'); host.finish(held.token); return; }
     if (result.reason === 'unavailable') { host.store.update(held.token, { unavailable: true }); host.event('unavailable'); return; }
-    if (result.reason === 'conflict') { setFailure({ token: held.token, revision: draft.draftRevision, kind: 'conflict' }); host.event('conflict'); return; }
+    if (result.reason === 'conflict') { setFailure({ token: held.token, revision: draft.draftRevision, kind: 'conflict' }); return; }
     if (result.reason === 'stale') return;
     setFailure({ token: held.token, revision: draft.draftRevision, kind: 'save' });
     host.event('failed');
@@ -102,9 +103,10 @@ export function useInlineStepEditor({ treeId, tree, owner, loading, readAuthorit
 export function InlineFieldTrigger({ editor, step, field, children, className = '' }) {
   if (!editor) return <span className={className}>{children}</span>;
   const labels = { label: t('roadmap.inline.editName'), description: t('roadmap.inline.editDescription'), color: t('roadmap.inline.editKind'), prerequisites: t('roadmap.inline.editPrerequisites') };
-  return <button type="button" data-step-field={field} className={`st-inline-trigger ${className}`} aria-label={labels[field]}
-    onClick={(event) => editor.start(step, field, event.currentTarget)}>{children}
-    {field === 'label' ? <Pencil size={16} aria-hidden /> : field === 'color' ? <ChevronDown size={12} aria-hidden /> : field === 'prerequisites' ? <Plus size={16} aria-hidden /> : null}
+  return <button type="button" data-step-field={field} className={`st-inline-trigger ${field === 'color' ? '' : className}`} aria-label={labels[field]}
+    onClick={(event) => editor.start(step, field, event.currentTarget)}>
+    {field === 'color' ? <span className={className}>{children}<ChevronDown size={12} aria-hidden /></span> : children}
+    {field === 'label' ? <Pencil size={16} aria-hidden /> : field === 'prerequisites' ? <Plus size={16} aria-hidden /> : null}
   </button>;
 }
 
@@ -112,6 +114,7 @@ export function InlineField({ editor, field }) {
   const id = useId();
   const root = useRef(null);
   const search = useRef(null);
+  const shownConflict = useRef(null);
   const [query, setQuery] = useState('');
   const { draft, host } = editor;
   const shown = draft?.field === field;
@@ -120,14 +123,21 @@ export function InlineField({ editor, field }) {
     const element = root.current?.querySelector('input, textarea, [role="radio"][aria-checked="true"], button');
     host.input.current = element;
     element?.focus({ preventScroll: true });
-    return () => { if (host.input.current === element) host.input.current = null; };
+    const container = root.current;
+    return () => { if (container?.contains(host.input.current)) host.input.current = null; };
   }, [shown, draft?.editId]);
   useEffect(() => {
-    if (shown && editor.conflict) host.event('conflict');
-  }, [shown, editor.conflict]);
+    if (!shown || !editor.conflict) { shownConflict.current = null; return; }
+    const previous = shownConflict.current;
+    if (previous?.editId === draft.editId && sameFieldValue(field, previous.value, editor.currentValue)) return;
+    shownConflict.current = { editId: draft.editId, value: editor.currentValue };
+    host.event('conflict');
+  }, [shown, editor.conflict, editor.currentValue, draft?.editId]);
   if (!shown) return null;
   const choices = field === 'prerequisites' ? new PrerequisiteChoices(editor.tree, editor.completed, { selected: draft.draftValue, query, editing: draft.stepId, limit: Infinity }) : null;
-  return <div ref={root} className={`st-inline-field st-inline-field--${field}`} onKeyDown={(event) => {
+  return <div ref={root} className={`st-inline-field st-inline-field--${field}`} onFocusCapture={(event) => {
+    if (event.target.matches('input, textarea, [role="radio"], [role="checkbox"]')) host.input.current = event.target;
+  }} onKeyDown={(event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
     event.preventDefault(); event.stopPropagation(); host.cancel();
   }}>
@@ -159,7 +169,17 @@ export function InlineFieldActions({ editor, inline = false }) {
 
 export function UnavailableStepDraft({ editor, onClose }) {
   const field = useRef(null);
-  return <section className="st-board-step-layer st-unavailable-draft" aria-label={t('roadmap.draft.title')}>
+  const layer = useRef(null);
+  const viewport = useComposerViewport(undefined, layer);
+  useLayoutEffect(() => {
+    const element = field.current;
+    editor.host.input.current = element;
+    return () => { if (editor.host.input.current === element) editor.host.input.current = null; };
+  }, [editor.draft.editId]);
+  return <section ref={layer} style={viewport.style} className="st-board-step-layer st-unavailable-draft" aria-label={t('roadmap.draft.title')} onKeyDown={(event) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.currentTarget.closest('[inert]')) return;
+    event.preventDefault(); event.stopPropagation(); onClose();
+  }}>
     <header><h2>{t('roadmap.draft.title')}</h2><Button variant="secondary" onClick={onClose}>{t('roadmap.draft.close')}</Button></header>
     <div className="st-draft-recovery-body"><strong className="st-draft-meta">{t('roadmap.draft.fieldStatus', { field: fieldLabel(editor.draft.field) })}</strong>
       <p>{t('roadmap.inline.unavailable')}</p><textarea ref={field} readOnly aria-label={fieldLabel(editor.draft.field)} value={editor.active.displayValue} />

@@ -8,6 +8,8 @@ for (const width of [320, 390, 744, 1024, 1440]) {
     const { page, errors } = await openHost({ width, shell: true });
     try {
       await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('button', { name: 'Edit name', exact: true }).waitFor();
+      assert.deepEqual(await page.locator('[data-step-field]').evaluateAll((nodes) => nodes.map((node) => ({ field: node.dataset.stepField, target: node.getBoundingClientRect().width >= 44 && node.getBoundingClientRect().height >= 44 }))), ['color', 'label', 'description', 'prerequisites'].map((field) => ({ field, target: true })));
       await page.getByRole('button', { name: 'Edit name', exact: true }).click();
       await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Read gusts');
       if (process.env.WM_INLINE_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_INLINE_SCREENSHOTS}/inline-light-${width}-name.png` });
@@ -197,3 +199,119 @@ for (const action of ['Add step', 'Connect']) {
     } finally { await page.close(); }
   });
 }
+
+
+for (const field of ['kind', 'prerequisites']) {
+  hostTest(`Keep editing restores the current choice in ${field}`, async () => {
+    const { page, errors } = await openHost({ width: 744, shell: true });
+    try {
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('button', { name: `Edit ${field}`, exact: true }).click();
+      const choice = field === 'kind' ? page.getByRole('radio', { name: 'Sky', exact: true }) : page.getByRole('checkbox', { name: /Choose a course/ });
+      await choice.click();
+      const before = await page.evaluate(() => window.draftStore.getSnapshot().draft.draftValue);
+      await page.evaluate(() => { window.fixtureSignOut(); });
+      await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('.st-draft-decision'));
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      assert.equal(await choice.evaluate((node) => document.activeElement === node), true);
+      assert.deepEqual(await page.evaluate(() => window.draftStore.getSnapshot().draft.draftValue), before);
+      assert.equal(await page.evaluate(() => window.signOuts ?? 0), 0);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+hostTest('one conflict event describes each newly displayed peer value, including a synchronous save refusal', async () => {
+  const { page, errors } = await openHost({ width: 390, shell: true });
+  try {
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Description', exact: true }).fill('Local content');
+    await page.evaluate(() => {
+      const save = [...document.querySelectorAll('button')].find((node) => node.textContent === 'Save' && node.getClientRects().length);
+      window.session.dispatch({ kind: 'EditNode', id: 'wind', description: 'Peer one' });
+      save.click();
+    });
+    await page.getByText('Latest: Peer one', { exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_step_edit' && props.step === 'conflict')), [{ name: 'roadmap_step_edit', props: { step: 'conflict', field: 'description' } }]);
+    await page.evaluate(() => {
+      const save = [...document.querySelectorAll('button')].find((node) => node.textContent === 'Save anyway' && node.getClientRects().length);
+      window.session.dispatch({ kind: 'EditNode', id: 'wind', description: 'Peer two' });
+      save.click();
+    });
+    await page.getByText('Latest: Peer two', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Load latest', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Description', exact: true }).fill('New local content');
+    await page.evaluate(() => window.session.dispatch({ kind: 'EditNode', id: 'wind', description: 'Peer three' }));
+    await page.getByText('Latest: Peer three', { exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_step_edit' && props.step === 'conflict')), Array.from({ length: 3 }, () => ({ name: 'roadmap_step_edit', props: { step: 'conflict', field: 'description' } })));
+    assert.equal(await page.getByRole('textbox', { name: 'Description', exact: true }).inputValue(), 'New local content');
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('phone field actions intersect the keyboard viewport while preserving Shell, refusal and selection', async () => {
+  const { page, errors } = await openHost({ width: 390, height: 844, shell: true });
+  try {
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+    const field = page.getByRole('textbox', { name: 'Description', exact: true });
+    await field.fill('Typing with a keyboard');
+    await field.evaluate((node) => node.setSelectionRange(3, 8));
+    await page.evaluate(() => {
+      window.session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Peer name' });
+      window.session.inFlight.set('keyboard-refusal', window.session.lattice.toFrame());
+      window.session.receiveReject({ frameId: 'keyboard-refusal', code: 'server-error' });
+    });
+    await page.getByRole('alert').waitFor();
+    const before = await page.locator('.st-step-read-shell').boundingBox();
+    await page.evaluate(() => {
+      Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => 450 });
+      visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const geometry = await page.locator('.st-step-document').evaluate((node) => {
+      const box = (selector) => node.querySelector(selector).getBoundingClientRect();
+      const toolbar = box('.st-step-toolbar'); const refusal = box('[role="alert"]');
+      const scroll = box('.st-step-document-scroll'); const actions = box('.st-inline-actions--pinned');
+      return { top: toolbar.top, ordered: toolbar.bottom <= refusal.top && refusal.bottom <= scroll.top && scroll.bottom <= actions.top, saveVisible: actions.bottom <= visualViewport.offsetTop + visualViewport.height, scrollable: scroll.height > 0 };
+    });
+    assert.deepEqual(geometry, { top: before.y, ordered: true, saveVisible: true, scrollable: true });
+    assert.equal(await field.evaluate((node) => {
+      const field = node.getBoundingClientRect(); const scroll = node.closest('.st-step-document-scroll').getBoundingClientRect();
+      return field.top >= scroll.top && field.bottom <= scroll.bottom;
+    }), true);
+    assert.deepEqual(await field.evaluate((node) => [node.value, node.selectionStart, node.selectionEnd]), ['Typing with a keyboard', 3, 8]);
+    if (process.env.WM_INLINE_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_INLINE_SCREENSHOTS}/fix-keyboard-inline.png` });
+    await page.evaluate(() => {
+      Object.defineProperty(visualViewport, 'scale', { configurable: true, get: () => 2 });
+      visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.deepEqual(await page.locator('.st-step-read-shell').boundingBox(), before);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+hostTest('nested link recovery and private note Escape leave the dirty shared field intact', async () => {
+  const { page, errors } = await openHost({ width: 390, shell: true, clipboardRefused: true });
+  try {
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Description', exact: true }).fill('Keep this shared field');
+    await page.getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click();
+    await page.locator('.st-step-copy-recovery').waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.st-step-copy-recovery').count(), 0);
+    assert.equal(await page.locator('.st-draft-decision').count(), 0);
+    await page.getByRole('button', { name: /My workspace/ }).click();
+    await page.getByRole('button', { name: /note/i }).first().click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.st-draft-decision').count(), 0);
+    assert.equal(await page.evaluate(() => window.draftStore.getSnapshot().draft.draftValue), 'Keep this shared field');
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

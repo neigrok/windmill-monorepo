@@ -79,7 +79,7 @@ export function useComposerFocus(ref, active = true, { restore = true, preserveO
   };
 }
 
-export function useComposerViewport(phone) {
+export function useComposerViewport(phone, layerRef = null) {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     layoutHeight: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -114,10 +114,18 @@ export function useComposerViewport(phone) {
       visible?.removeEventListener('scroll', resize);
     };
   }, []);
-  return {
+  const isPhone = phone ?? viewport.width < 600;
+  const keyboardVisible = Boolean(isPhone && viewport.visible && viewport.scale === 1
+    && viewport.visible.top + viewport.visible.height < viewport.layoutHeight);
+  const result = {
     panelFits: viewport.width >= 1440,
-    keyboardVisible: Boolean(phone && viewport.visible && viewport.scale === 1
-      && viewport.visible.top + viewport.visible.height < viewport.layoutHeight),
-    style: phone && viewport.visible ? { position: 'fixed', ...viewport.visible } : undefined,
+    keyboardVisible,
+    style: isPhone && viewport.visible ? { position: 'fixed', ...viewport.visible } : undefined,
   };
+  if (!layerRef) return result;
+  const bounds = layerRef.current?.offsetParent?.getBoundingClientRect();
+  return { ...result, style: keyboardVisible && bounds ? {
+    top: Math.max(0, viewport.visible.top - bounds.top),
+    bottom: Math.max(0, bounds.bottom - viewport.visible.top - viewport.visible.height),
+  } : undefined };
 }

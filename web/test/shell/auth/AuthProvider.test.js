@@ -637,3 +637,83 @@ test('the same sign-out callback is idempotent and an old callback cannot fence 
   assert.throws(callbacks[0], { message: 'stale document data transition' });
   assert.equal(state.auth().dataScope.getSnapshot(), current);
 });
+
+
+test('online sign-out completes its anonymous scope and accepts a new draft after a 401 refresh', async (t) => {
+  const state = await account(t);
+  const scope = state.auth().dataScope;
+  const before = scope.getSnapshot();
+  const transitions = [];
+  t.after(scope.subscribe(() => transitions.push(scope.getSnapshot())));
+  let loggedOut = false;
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/auth/logout')) {
+      loggedOut = true; state.setMe(null);
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+    return { ok: !loggedOut, status: loggedOut ? 401 : 200,
+      json: async () => ({ user: loggedOut ? null : { id: 'A', name: 'Ada' } }) };
+  });
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => state.engine.signoutTimer !== undefined);
+  state.env.timers.advance(state.engine.limits.SIGNOUT_FLUSH_MS + 1);
+  await until(() => decision()?.props.question);
+  await decision().props.onDecision('keep');
+  assert.equal(await departure, true);
+  await state.auth().refresh();
+  assert.equal(state.engine.device.activeReplica.meta.state, 'anon');
+  assert.equal(state.engine.device.meta.clearCredential, undefined);
+  assert.equal(state.engine.device.meta.deviceCleanup, undefined);
+  assert.equal(state.auth().status, 'ghost');
+  assert.deepEqual(transitions, [
+    { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } },
+    { epoch: before.epoch + 1, phase: 'ready', owner: { kind: 'anonymous' } },
+  ]);
+  const { StepDraftSession } = await import('../../../src/products/roadmap/step/StepDraftSession.js');
+  const drafts = new StepDraftSession();
+  drafts.bindScope(scope);
+  assert.notEqual(drafts.start({ draft: { field: 'label' }, displayValue: 'Anonymous edit' }), null);
+});
+
+test('a different cookie owner during committed sign-out fences its own scope before cleanup continues', async (t) => {
+  const state = await account(t);
+  const scope = state.auth().dataScope;
+  const before = scope.getSnapshot();
+  const transitions = [];
+  t.after(scope.subscribe(() => transitions.push(scope.getSnapshot())));
+  const cleanupScopes = [];
+  roadmapRoutes.forgetDevice.mock.mockImplementation(() => cleanupScopes.push(scope.getSnapshot()));
+  let answer;
+  const cookie = new Promise((resolve) => { answer = resolve; });
+  let reads = 0;
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    assert.equal(String(url).endsWith('/auth/logout'), false);
+    reads++;
+    if (reads === 1) return cookie;
+    return { ok: true, status: 200, json: async () => ({ user: { id: 'B', name: 'Bea' } }) };
+  });
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => state.engine.signoutTimer !== undefined);
+  state.env.timers.advance(state.engine.limits.SIGNOUT_FLUSH_MS + 1);
+  await until(() => decision()?.props.question);
+  const finish = decision().props.onDecision('keep');
+  await until(() => reads === 1);
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } });
+  state.setMe({ id: 'B', name: 'Bea' });
+  answer({ ok: true, status: 200, json: async () => ({ user: { id: 'B', name: 'Bea' } }) });
+  await finish;
+  assert.equal(await departure, true);
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } });
+  assert.deepEqual(cleanupScopes, [{ epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } }]);
+  await state.auth().refresh();
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.engine.device.activeReplica.meta.account, 'B');
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 2, phase: 'ready', owner: { kind: 'account', id: 'B' } });
+  assert.deepEqual(transitions, [
+    { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } },
+    { epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } },
+    { epoch: before.epoch + 2, phase: 'ready', owner: { kind: 'account', id: 'B' } },
+  ]);
+});

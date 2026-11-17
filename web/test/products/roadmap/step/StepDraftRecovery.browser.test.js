@@ -247,3 +247,67 @@ hostTest('cancelling recovery discard restores focus to its surviving button', a
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+
+for (const loss of ['permission', 'deletion']) {
+  hostTest(`unavailable Escape guards ${loss} draft text and restores its selection`, async () => {
+    const { page, errors, requests } = await openHost({ width: 390, height: 844, shell: true });
+    try {
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Keep unavailable text');
+      await page.evaluate((loss) => {
+        if (loss === 'deletion') window.session.dispatch({ kind: 'BulkDelete', nodeIds: ['wind'] });
+        else window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } }));
+      }, loss);
+      await page.getByText('Editing is unavailable. Copy your draft or discard it.', { exact: true }).waitFor();
+      const field = page.getByRole('textbox', { name: 'Name', exact: true });
+      await field.focus();
+      await field.evaluate((node) => node.setSelectionRange(2, 7));
+      const before = requests.length;
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('.st-draft-decision').count(), 1);
+      await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+      await page.waitForFunction(() => document.activeElement?.matches('.st-unavailable-draft textarea'));
+      assert.deepEqual(await field.evaluate((node) => [node.value, node.selectionStart, node.selectionEnd]), ['Keep unavailable text', 2, 7]);
+      await page.evaluate(() => {
+        Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => 450 });
+        visualViewport.dispatchEvent(new Event('resize'));
+      });
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      assert.equal(await page.locator('.st-unavailable-draft footer').evaluate((node) => node.getBoundingClientRect().bottom <= visualViewport.height), true);
+      if (process.env.WM_INLINE_SCREENSHOTS && loss === 'deletion') await page.screenshot({ path: `${process.env.WM_INLINE_SCREENSHOTS}/fix-keyboard-unavailable.png` });
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Discard', exact: true }).click();
+      await page.waitForFunction(() => window.draftStore.getSnapshot() === null);
+      assert.equal(await page.locator('.st-unavailable-draft').count(), 0);
+      assert.equal(requests.length, before);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+hostTest('retained recovery follows the phone keyboard viewport and keeps its footer visible', async () => {
+  const { page, errors } = await openHost({ width: 390, height: 844, shell: true, draftNavigation: true });
+  try {
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Description', exact: true }).fill('Recover this text');
+    await page.evaluate(() => { history.pushState({}, '', '/draft-destination'); history.pushState({}, '', '/transient'); history.back(); });
+    await page.getByRole('button', { name: 'View draft', exact: true }).click();
+    await page.evaluate(() => {
+      Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => 450 });
+      Object.defineProperty(visualViewport, 'offsetTop', { configurable: true, get: () => 24 });
+      visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.deepEqual(await page.locator('.st-draft-recovery').evaluate((node) => {
+      const head = node.querySelector('header').getBoundingClientRect();
+      const foot = node.querySelector('footer').getBoundingClientRect();
+      return { top: head.top >= visualViewport.offsetTop, bottom: foot.bottom <= visualViewport.offsetTop + visualViewport.height };
+    }), { top: true, bottom: true });
+    assert.equal(await page.getByRole('textbox', { name: 'Description', exact: true }).inputValue(), 'Recover this text');
+    if (process.env.WM_INLINE_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_INLINE_SCREENSHOTS}/fix-keyboard-recovery.png` });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

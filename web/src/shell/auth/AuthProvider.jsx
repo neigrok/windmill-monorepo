@@ -381,9 +381,8 @@ export default function AuthProvider({ children }) {
       const revision = roomOwnership.current.revision;
       const current = await fetchMe();
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
-      confirmRoom(current);
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
-      if (current?.id !== account) return;
+      if (current?.id !== account) { confirmRoom(current); return; }
       const closure = syncSession.engine.device.meta.closingAccount;
       if (closure?.account === account) {
         const session = (await listSessions()).find((session) => session.current);
