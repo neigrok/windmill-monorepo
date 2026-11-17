@@ -3389,7 +3389,7 @@
     }
   },
   {
-    "name": "generated effects share the operation byte limit across targets",
+    "name": "generated effects share their byte limit across targets independently of input size",
     "input": {
       "state": {
         "epoch": "ep-1",
@@ -3543,7 +3543,7 @@
       },
       "serverNow": 1000000,
       "limits": {
-        "PUSH_MAX_BYTES": 150
+        "EFFECT_MAX_BYTES": 150
       },
       "effectPlan": {
         "declared": [
@@ -3656,6 +3656,2348 @@
             "counters": {},
             "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
             "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a check from a tree uses the target product counter and rolls back the origin at cap",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 3
+            },
+            "digest": "67a075e90a211476ccbcb2c07de7421b3f541b05c0e12046b476ec5bcdbf9044"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Full",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Full",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Full",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "tree/b_00000001",
+        "d": [
+          {
+            "t": "meta",
+            "id": "meta",
+            "f": {
+              "title": [
+                "Changed",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000,
+      "effectPlan": {
+        "declared": [
+          "acct:A/probe"
+        ],
+        "check": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "born": null,
+              "life": [
+                "alive",
+                null
+              ],
+              "f": {
+                "title": [
+                  "Origin",
+                  null
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "cap",
+        "detail": {
+          "type": "card",
+          "cap": 3
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 3
+            },
+            "digest": "67a075e90a211476ccbcb2c07de7421b3f541b05c0e12046b476ec5bcdbf9044"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Full",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Full",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Full",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "overlapping command effects join before the later consequence and advance once",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.tick",
+          "args": {}
+        }
+      },
+      "serverNow": 1000000,
+      "effectPlan": {
+        "declared": [
+          "tree:b_00000001"
+        ],
+        "command": {
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "First",
+                  null
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Second",
+                  null
+                ]
+              }
+            }
+          ]
+        },
+        "check": {
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Last",
+                  null
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1,
+        "write": []
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 1
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 18,
+            "counters": {},
+            "digest": "ad8f172d9e8bdab2936779f790e8e5ab76808c90d076e0243dc0555ec52547e0",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Last",
+                  "1000000:1:srv"
+                ]
+              },
+              "seq": 18,
+              "rc": 1000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a target text resolves its own revision and keeps its own superseded head",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "987fd8de3040f2ae50ab52e21bd868886a696cb3a28efc156143eaf2946e3828",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "x": {
+                "memo": {
+                  "text": "one",
+                  "rev": 7,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.tick",
+          "args": {}
+        }
+      },
+      "serverNow": 1000000,
+      "effectPlan": {
+        "declared": [
+          "acct:A/overlay/b_00000001"
+        ],
+        "command": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "x": {
+                "memo": {
+                  "text": "one two",
+                  "base": {
+                    "rev": 7
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1,
+        "write": []
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 9,
+            "counters": {},
+            "digest": "7a0caeb6c0bdb717ad968ef89a571e71a6ced75d3485ff3886f35a381add103d",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "x": {
+                "memo": {
+                  "text": "one two",
+                  "rev": 9,
+                  "merged": false
+                }
+              },
+              "seq": 9,
+              "rc": 1000,
+              "ru": 1000000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        },
+        "revisions": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "field": "memo",
+              "rev": 7,
+              "text": "one"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a replayed command with a declared existing target advances neither scope",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "5f6000171ef0f2ff0e98243a947431963c6a8a11117f2463d71a08d38e4c4617"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "c9db70946f6a5f4c237055edda550ff20013bdbcd057cf4d7ca40a4539907ce2",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 2,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_00000001",
+            "dst": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000,
+      "effectPlan": {
+        "declared": [
+          "tree:b_00000002"
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 2,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": "1000000:0:srv"
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "5f6000171ef0f2ff0e98243a947431963c6a8a11117f2463d71a08d38e4c4617"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "c9db70946f6a5f4c237055edda550ff20013bdbcd057cf4d7ca40a4539907ce2",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 2,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a target parent refusal rolls back a command receipt and every scope",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_00000001",
+            "dst": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000,
+      "effectPlan": {
+        "declared": [
+          "acct:A/probe"
+        ],
+        "command": {
+          "acct:A/probe": [
+            {
+              "t": "lap",
+              "id": "lap00009",
+              "born": null,
+              "life": [
+                "alive",
+                null
+              ],
+              "f": {
+                "runId": [
+                  "run00009",
+                  null
+                ],
+                "at": [
+                  1000,
+                  null
+                ],
+                "weight": [
+                  10,
+                  null
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "parent-dead"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a local adapter spanning two relevant scopes is a technical contract fault",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "governedBy": "acct:A/probe#board#b_00000002",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.tick",
+          "args": {}
+        }
+      },
+      "serverNow": 1000000,
+      "effectPlan": {
+        "declared": [
+          "tree:b_00000001",
+          "tree:b_00000002"
+        ],
+        "command": {
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "cedar",
+              "born": null,
+              "life": [
+                "alive",
+                null
+              ],
+              "f": {
+                "label": [
+                  "Cedar",
+                  null
+                ]
+              }
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "tag",
+              "id": "cedar",
+              "born": null,
+              "life": [
+                "alive",
+                null
+              ],
+              "f": {
+                "label": [
+                  "Cedar",
+                  null
+                ]
+              }
+            }
+          ]
+        },
+        "legacyTypes": [
+          "tag"
+        ],
+        "fault": true
+      }
+    },
+    "expect": {
+      "fault": true,
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 17,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "governedBy": "acct:A/probe#board#b_00000002",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
           }
         },
         "rows": {

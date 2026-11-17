@@ -32,9 +32,10 @@ function admitted(name, { state, origin = A, intent, serverNow = NOW, limits, ef
   if (effectPlan) input.effectPlan = effectPlan;
   try {
     const outcome = admit({ state: new ServerState(state), registry, product: effectPlan ? new EffectPlanProduct(effectPlan) : product, origin, intent, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
+    if (effectPlan?.fault) throw new Error('the fixture expected a technical contract fault');
     return vector(name, input, { result: outcome.result, state: outcome.state.toJSON() });
   } catch (error) {
-    if (!effectPlan?.fault) throw error;
+    if (!effectPlan?.fault || !['undeclared effect target', 'local check spans multiple scopes'].includes(error.message)) throw error;
     return vector(name, input, { fault: true, state });
   }
 }
@@ -1012,6 +1013,17 @@ function crossScope() {
   delete missing.scopes[TREE];
   delete missing.rows[TREE];
   const copy = { scope: 'self/probe', cmd: { name: 'probe.copy', args: { src: BOARD, dst: 'b_00000002' } } };
+  const full = structuredClone(base);
+  full.rows[PROBE_A].push(...['card0001', 'card0002', 'card0003'].map((id) => card(id, { title: 'Full' })));
+  full.scopes[PROBE_A].counters.card = 3;
+  const capped = serverState({ scopes: full.scopes, rows: full.rows });
+  const memoBase = structuredClone(base);
+  memoBase.rows[OVERLAY_A][0].x = { memo: { text: 'one', rev: 7, merged: false } };
+  const textBase = serverState({ scopes: memoBase.scopes, rows: memoBase.rows });
+  const copied = admit({ state: new ServerState(base), registry, product, origin: SERVER_A, intent: copy, serverNow: NOW }).state.toJSON();
+  const twoTrees = structuredClone(base);
+  twoTrees.scopes['tree:b_00000002'] = { ...treeScope('A', 'b_00000002'), state: 'alive', seq: 0, counters: {}, digest: '0'.repeat(64) };
+  const tag = create('tag', 'cedar', null, { label: 'Cedar' });
   return [
     admitted('one command and its consequence coalesce origin and two owned targets at each own sequence and digest', { state: base, origin: SERVER_A, intent: tick, effectPlan: plan }),
     admitted('a foreign target rolls back every scope and the command receipt', { state: changed, origin: SERVER_A, intent: copy, effectPlan: plan }),
@@ -1023,7 +1035,13 @@ function crossScope() {
     admitted('an undeclared command target is a technical contract fault', { state: base, origin: SERVER_A, intent: tick, effectPlan: { command: { [TREE]: [title('Command')] }, fault: true } }),
     admitted('a target delta must belong to the target scope kind', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [local] } } }),
     admitted('a target field domain is enforced before any writes', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title(7)] } } }),
-    admitted('generated effects share the operation byte limit across targets', { state: base, origin: SERVER_A, intent: tick, effectPlan: plan, limits: { PUSH_MAX_BYTES: 150 } }),
+    admitted('generated effects share their byte limit across targets independently of input size', { state: base, origin: SERVER_A, intent: tick, effectPlan: plan, limits: { EFFECT_MAX_BYTES: 150 } }),
+    admitted('a check from a tree uses the target product counter and rolls back the origin at cap', { state: capped, origin: SERVER_A, intent: { scope: `tree/${BOARD}`, d: [title('Changed')] }, effectPlan: { declared: [PROBE_A], check: { [PROBE_A]: [local] } } }),
+    admitted('overlapping command effects join before the later consequence and advance once', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title('First'), title('Second')] }, check: { [TREE]: [title('Last')] } } }),
+    admitted('a target text resolves its own revision and keeps its own superseded head', { state: textBase, origin: SERVER_A, intent: tick, effectPlan: { declared: [OVERLAY_A], command: { [OVERLAY_A]: [{ t: 'mark', id: 'oak', x: { memo: { text: 'one two', base: { rev: 7 } } } }] } } }),
+    admitted('a replayed command with a declared existing target advances neither scope', { state: copied, origin: SERVER_A, intent: copy, effectPlan: { declared: ['tree:b_00000002'] } }),
+    admitted('a target parent refusal rolls back a command receipt and every scope', { state: base, origin: SERVER_A, intent: copy, effectPlan: { declared: [PROBE_A], command: { [PROBE_A]: [create('lap', 'lap00009', null, { runId: 'run00009', at: 1000, weight: 10 })] } } }),
+    admitted('a local adapter spanning two relevant scopes is a technical contract fault', { state: twoTrees, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE, 'tree:b_00000002'], command: { [TREE]: [tag], 'tree:b_00000002': [tag] }, legacyTypes: ['tag'], fault: true } }),
   ];
 }
 

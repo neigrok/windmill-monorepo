@@ -20,6 +20,7 @@ function receipts(ctx, book) {
 export class ProbeProduct {
   constructor() {
     this.revisionsKept = 1;
+    this.localCheckTypes = ['run'];
   }
 
   discoverEffectScopes(ctx, cmd) {

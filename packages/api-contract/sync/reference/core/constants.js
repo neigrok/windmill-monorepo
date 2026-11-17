@@ -24,6 +24,8 @@ export const CONSTANTS = Object.freeze({
   MAX_RECORD_BYTES: 1_048_576,
   PUSH_MAX_INTENTS: 64,
   PUSH_MAX_BYTES: 2_097_152,
+  // Generated effects share this byte budget across scopes; maximal-id bulk changes exceed input size.
+  EFFECT_MAX_BYTES: 67_108_864,
   PUSH_WORK_MS: 50,
   PULL_PAGE_BYTES: 1_048_576,
   PULL_MAX_SCOPES: 64,

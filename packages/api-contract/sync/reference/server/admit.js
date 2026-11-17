@@ -32,6 +32,15 @@ export function replacementText(text, { archiveNonempty = false, archive = {} } 
   return { text, replace: true, archiveNonempty, archive };
 }
 
+export function localEffects(product, ctx, changes) {
+  const matches = (type) => !product.localCheckTypes || product.localCheckTypes.includes(type);
+  const scopes = new Set(changes.filter((change) => matches(change.type.type)).map((change) => change.scopeKey));
+  if (ctx.deltas.some((delta) => matches(delta.t))) scopes.add(ctx.scopeKey);
+  if (scopes.size > 1) throw new Error('local check spans multiple scopes');
+  const key = scopes.values().next().value ?? ctx.scopeKey;
+  return { byScope: { [key]: product.check(ctx.inScope(key), changes) } };
+}
+
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -48,7 +57,7 @@ function isWholeDelta(type, delta) {
 }
 
 // Answers {result, state, writes, killed}: `writes` lists each changed scope's applied rows, the
-// intent's scope first, then scopes it created (§6.1 step 14); `killed` the scopes a death killed.
+// intent's scope first, then other changed scopes by key; `killed` the scopes a death killed.
 export function admit({ state, registry, product, origin, intent, serverNow, limits = CONSTANTS }) {
   const admission = new Admission({ work: state.clone(), registry, product, origin, intent: structuredClone(intent), serverNow, limits });
   try {
@@ -71,7 +80,7 @@ class Admission {
     this.writes = [];
     this.changed = [];
     this.killed = [];
-    this.effectBytes = Buffer.byteLength(jcs(intent));
+    this.effectBytes = 0;
   }
 
   run() {
@@ -238,10 +247,12 @@ class Admission {
   // What a product's commands and checks read: the origin's kind, the intent's own deltas, the intent
   // scope's rows, and another tree's rows when its scope is readable by the origin (a command that reads
   // another scope, INV-7(e)).
-  context() {
-    const { work, registry, scopeKey } = this;
+  context(scopeKey = this.scopeKey) {
+    const { work, registry } = this;
     return {
       scopeKey,
+      originScopeKey: this.scopeKey,
+      inScope: (key) => this.context(key),
       serverNow: this.serverNow,
       account: this.origin.account,
       origin: this.fromServer ? 'server' : 'replica',
@@ -273,8 +284,7 @@ class Admission {
       if (key.startsWith('tree:')) ref = `tree/${key.slice(5)}`;
       else if (key.startsWith(`acct:${this.origin.account}/`)) ref = `self/${key.slice(`acct:${this.origin.account}/`.length)}`;
       else {
-        if (this.work.scope(key)) throw new Refusal('forbidden');
-        throw new Refusal('not-found');
+        throw new Refusal('forbidden');
       }
       const target = scopeKeyOf(this.registry, ref, this.origin.account);
       if (!target || target.key !== key) throw new Refusal('invalid');
@@ -295,8 +305,6 @@ class Admission {
       if (!this.declared.has(key)) throw new Error('undeclared effect target');
       const deltas = byScope[key];
       for (const delta of deltas) {
-        this.effectBytes += Buffer.byteLength(jcs({ scope: key, delta }));
-        if (this.effectBytes > this.limits.PUSH_MAX_BYTES) throw new Refusal('too-large');
         const wire = structuredClone(delta);
         delete wire.v;
         for (const [name, write] of Object.entries(wire.x ?? {})) {
@@ -308,6 +316,8 @@ class Admission {
         for (const [name, value] of Object.entries(delta.v ?? {})) {
           if (this.registry.type(delta.t).field(name)?.kind !== 'serial' || !Number.isSafeInteger(value) || value < 1) throw new Refusal('invalid');
         }
+        this.effectBytes += Buffer.byteLength(jcs({ scope: key, delta }));
+        if (this.effectBytes > Math.min(this.limits.EFFECT_MAX_BYTES, CONSTANTS.EFFECT_MAX_BYTES)) throw new Refusal('too-large');
       }
       this.admitDeltas(deltas, source, key);
     }
@@ -353,7 +363,7 @@ class Admission {
     }
   }
 
-  // Step 8. A command's writes into a scope the same intent creates (`into`) wait for step 14.
+  // Step 8. Local and declared target deltas share one atomic effects map.
   runCommand() {
     const cmd = this.intent.cmd;
     if (!cmd) return;
@@ -449,7 +459,7 @@ class Admission {
   checkProduct() {
     const ctx = this.context();
     const changes = [...this.records.values()];
-    const effects = this.product.effects?.(ctx, changes) ?? { byScope: { [this.scopeKey]: this.product.check(ctx, changes) } };
+    const effects = this.product.effects?.(ctx, changes) ?? localEffects(this.product, ctx, changes);
     this.admitEffects(effects, 'check');
     this.join();
   }
@@ -579,7 +589,7 @@ class Admission {
     }
   }
 
-  // Step 14: a command's writes into scopes this intent created, each at that scope's seq and digest.
+  // Step 14: every remaining scope, each at that scope's own seq and digest.
   applyOtherScopes() {
     const targets = [...new Set(this.changes.map((change) => change.scopeKey).filter((key) => key !== this.scopeKey))].sort();
     for (const key of targets) {
@@ -618,6 +628,7 @@ class Admission {
         }
       }
     }
+    this.killed = [...new Set(this.killed)].sort();
   }
 
   // Step 16.

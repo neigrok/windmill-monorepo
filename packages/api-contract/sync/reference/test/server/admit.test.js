@@ -12,6 +12,21 @@ import { Rng, overlayScope, product, productScope, registry, row, serverState, t
 
 const CORPUS = new URL('../../../corpus/admit/', import.meta.url);
 
+test('the effect encoding budget accommodates ten thousand maximal Unicode node ids', () => {
+  const prefix = '\u{1f332}'.repeat(127);
+  const born = `9007199254740991:4294967295:r_${'a'.repeat(32)}`;
+  let bytes = 0;
+  for (let i = 0; i < 10_000; i += 1) {
+    const id = prefix + String.fromCodePoint(0x10000 + i);
+    assert.equal([...id].length, 128);
+    assert.equal(Buffer.byteLength(id), 512);
+    bytes += Buffer.byteLength(jcs({ scope: 'tree:t_0000000000000001', delta: { t: 'node', id, born, f: { color: ['#ff0088', null] } } }));
+  }
+  assert.equal(bytes, 6_790_000);
+  assert.ok(bytes > CONSTANTS.PUSH_MAX_BYTES);
+  assert.ok(bytes < CONSTANTS.EFFECT_MAX_BYTES);
+});
+
 for (const file of readdirSync(CORPUS).filter((name) => name.endsWith('.json') && name !== 'requests.json').sort()) {
   test(`admit/${file} replays through admit`, () => {
     for (const { name, input, expect } of JSON.parse(readFileSync(new URL(file, CORPUS), 'utf8'))) {
@@ -19,7 +34,7 @@ for (const file of readdirSync(CORPUS).filter((name) => name.endsWith('.json') &
       const state = new ServerState(input.state);
       const run = () => admit({ state, registry, product: input.effectPlan ? new EffectPlanProduct(input.effectPlan) : product, origin: input.origin, intent: input.intent, serverNow: input.serverNow, limits });
       if (expect.fault) {
-        assert.throws(run, /undeclared effect target/, name);
+        assert.throws(run, /undeclared effect target|local check spans multiple scopes/, name);
         assert.equal(jcs(state.toJSON()), jcs(expect.state), name);
         continue;
       }

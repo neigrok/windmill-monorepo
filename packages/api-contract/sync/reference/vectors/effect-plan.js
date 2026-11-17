@@ -1,10 +1,12 @@
 import { ProbeProduct } from '../probe/product.js';
+import { localEffects } from '../server/admit.js';
 
 // Corpus-only hooks: the fixture declares targets separately from the effects it produces.
 export class EffectPlanProduct extends ProbeProduct {
   constructor(plan) {
     super();
     this.plan = plan;
+    if (plan.legacyTypes) this.localCheckTypes = plan.legacyTypes;
   }
 
   discoverEffectScopes(ctx, cmd) {
@@ -17,8 +19,9 @@ export class EffectPlanProduct extends ProbeProduct {
   }
 
   effects(ctx, changes) {
+    const local = localEffects(this, ctx, changes);
     const byScope = structuredClone(this.plan.check ?? {});
-    byScope[ctx.scopeKey] = [...super.check(ctx, changes), ...(byScope[ctx.scopeKey] ?? [])];
+    for (const [key, deltas] of Object.entries(local.byScope)) byScope[key] = [...deltas, ...(byScope[key] ?? [])];
     return { byScope };
   }
 }
