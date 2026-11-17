@@ -70,7 +70,7 @@ extension JSON {
     nowMs = try story.field("runtime").field("nowMs").integer
     connected = try story.field("runtime").field("connected").asBool()
     client = ServiceAiClient(transport: self, clock: self, diagnostics: self, credentials: { _ in AiCredentials(session: "session", installation: "installation") },
-      connected: { [unowned self] in self.connected })
+      connection: { [unowned self] in self.connected })
     turn = Turn(host: self, client: client, telemetry: self, runtime: self)
   }
 

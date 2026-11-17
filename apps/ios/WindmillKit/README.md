@@ -30,12 +30,11 @@ Admission certainty never moves backward. A pass-expired or picture-gone repair 
 the same ID. A seat change cancels local transport, clears cached allowance and cannot authorize
 late replies to publish under another seat.
 
-Before a turn sends anything, `ServiceAiClient` asks `connected` once whether the device reports a
-connection: when the turn's pictures are uploaded, or in the `firstRound` call of a turn that has
-none. With no connection it sends nothing and throws a transport failure with no code and no
-admission, so the draft is restored at once. The integrating application passes what its path
-monitor says (`SyncEngine.PathConnectivity.isOnline`); a client given no answer counts the device as
-connected. Later rounds, picture repair and recovery never ask.
+`ServiceAiClient.connected` answers whether the device reports a connection. The integrating
+application passes what its path monitor says (`SyncEngine.PathConnectivity.isOnline`) as
+`connection`; a client given none counts the device as connected. The engine asks once, before a
+turn's first round, and withdraws a turn begun with no connection, so the client is never called
+for it. The client itself never asks.
 
 After that, offline policy follows dispatch evidence. A pass or picture failure before text dispatch
 restores the draft promptly. A text attempt that fails is uncertain whatever the device reports and

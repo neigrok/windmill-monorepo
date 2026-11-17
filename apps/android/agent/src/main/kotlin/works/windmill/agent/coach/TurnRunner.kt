@@ -75,7 +75,7 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                     val request = Json.objectOf("model" to Json.of(profile.model), "system" to Json.Arr(profile.system.map(Json::of)),
                         "tools" to Json.Arr(profile.tools.map { it.wire }), "messages" to Json.Arr(messages),
                         "output" to Json.Obj(profile.output.obj().toList() + ("schema" to Json.Null)), "effort" to Json.of(profile.effort), "cache" to Json.of(true))
-                    val answer = ai.text(callId, request, opened.pictures, profile.label, profile.name, profile.version, turn.wait, round == 1L) { append(turn, it) }
+                    val answer = ai.text(callId, request, opened.pictures, profile.label, profile.name, profile.version, turn.wait) { append(turn, it) }
                     if (turn.done) return@withLease turn.end
                     if (turn.seatChanged) return@withLease finish(turn, EndState.interrupted)
                     if (answer is AiAnswer.Failure) {

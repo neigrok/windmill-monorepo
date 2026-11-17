@@ -59,7 +59,7 @@ import SyncCore
   func secondStarted() async { if secondPause != nil { return }; await withCheckedContinuation { secondSignal = $0 } }
   func releaseSecond() { secondPause?.resume(); secondPause = nil }
   func releaseOld() { pause?.resume(); pause = nil }
-  func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture], firstRound: Bool, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
+  func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture], receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
     calls += 1
     let ordinal = calls
     if ordinal == 2 && pauseSecond { await withCheckedContinuation { secondPause = $0; secondSignal?.resume(); secondSignal = nil } }
@@ -70,6 +70,7 @@ import SyncCore
   func recover(id: String, profile: Profile, seat: Seat, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {}
   func allowance(profile: Profile, seat: Seat) async throws -> JSON { .null }
   func upload(_ pictures: [Picture], profile: Profile, seat: Seat) async throws {}
+  var connected: Bool { true }
   func stopAskingAgain() {}
   func seatWillChange() {}
   func invalidAnswer() {}

@@ -97,6 +97,7 @@ public struct Recovery: Sendable {
       }
       try checkSeat()
       if stopRequested { return await finish(.stopped) }
+      if !client.connected { return await finish(.interrupted, withdraw: true) }
       try await client.upload(open.pictures, profile: profile, seat: input.seat)
       try checkSeat()
       var messages = [try profile.firstMessage(input: input, open: open)]
@@ -114,7 +115,7 @@ public struct Recovery: Sendable {
         rounds += 1
         var terminal: AiEvent?
         try await client.call(id: callId, request: profile.request(messages: messages), profile: profile,
-          seat: input.seat, pictures: open.pictures, firstRound: rounds == 1) { [self] event in
+          seat: input.seat, pictures: open.pictures) { [self] event in
           try checkSeat()
           if event.name == "text" {
             text += try event.data.asObject().member("delta").asString()

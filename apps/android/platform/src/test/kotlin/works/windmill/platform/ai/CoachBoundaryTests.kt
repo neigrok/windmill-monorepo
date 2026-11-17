@@ -239,7 +239,7 @@ class CoachBoundaryTests {
             val ai = object : AiClient {
                 override fun clearPass() {}
                 override suspend fun result(callId: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer = error("unexpected-result")
-                override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, firstRound: Boolean, onText: suspend (String) -> Unit): AiAnswer {
+                override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer {
                     val terminal = story.member("service").member("exchanges").arr().first().member("events").arr().last()
                     return AiAnswer.Terminal("ended", terminal.member("data"))
                 }
@@ -343,9 +343,9 @@ class CoachBoundaryTests {
                 }
             }, reports)
             val boundary = object : AiClient by client {
-                override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, firstRound: Boolean, onText: suspend (String) -> Unit): AiAnswer {
+                override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer {
                     entered.complete(Unit); release.await()
-                    return client.text(callId, request, pictures, label, use, version, stop, firstRound, onText)
+                    return client.text(callId, request, pictures, label, use, version, stop, onText)
                 }
             }
             val host = ProbeHost(Json.objectOf(), null, mutableListOf(), mutableListOf())

@@ -52,7 +52,7 @@ extension AiClock {
   let clock: any AiClock
   let diagnostics: any AiDiagnostics
   let credentials: @MainActor (Seat) throws -> AiCredentials
-  let connected: @MainActor () -> Bool
+  let connection: @MainActor () -> Bool
   var pass: Pass?
   var generation: UInt64 = 0
   var stop = false
@@ -62,10 +62,12 @@ extension AiClock {
 
   public init(transport: any AiTransport, clock: any AiClock, diagnostics: any AiDiagnostics,
               credentials: @escaping @MainActor (Seat) throws -> AiCredentials,
-              connected: @escaping @MainActor () -> Bool = { true }) {
+              connection: @escaping @MainActor () -> Bool = { true }) {
     self.transport = transport; self.clock = clock; self.diagnostics = diagnostics; self.credentials = credentials
-    self.connected = connected
+    self.connection = connection
   }
+
+  public var connected: Bool { connection() }
 
   public func seatWillChange() {
     generation &+= 1; pass = nil; lastAllowance = nil; stop = true; waitTask?.cancel()
@@ -86,11 +88,6 @@ extension AiClock {
   }
 
   public func upload(_ pictures: [Picture], profile: Profile, seat: Seat) async throws {
-    if !pictures.isEmpty && !connected() { throw AiFailure(source: .transport, code: nil) }
-    try await put(pictures, profile: profile, seat: seat)
-  }
-
-  func put(_ pictures: [Picture], profile: Profile, seat: Seat) async throws {
     let epoch = generation
     for picture in pictures {
       guard Self.validID(picture.pictureId), ["image/png", "image/jpeg"].contains(picture.mediaType) else {
@@ -103,10 +100,8 @@ extension AiClock {
     }
   }
 
-  public func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture], firstRound: Bool = false,
+  public func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture],
                    receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
-    // A turn with pictures asked when it uploaded them, before this round.
-    if firstRound && pictures.isEmpty && !connected() { throw AiFailure(source: .transport, code: nil) }
     try await round(id: id, body: request.jcs, profile: profile, seat: seat, pictures: pictures, recover: false, receive: receive)
   }
 
@@ -192,7 +187,7 @@ extension AiClock {
           if failure.code == "pass_expired" && !passRefresh { passRefresh = true; pass = nil; continue }
           if failure.code == "picture_gone" && !pictureRefresh && !pictures.isEmpty && method == "PUT" {
             try await prepare(retry: askAgain, epoch: epoch) { [self] in
-              try await put(pictures, profile: profile, seat: seat)
+              try await upload(pictures, profile: profile, seat: seat)
             }
             pictureRefresh = true
             continue

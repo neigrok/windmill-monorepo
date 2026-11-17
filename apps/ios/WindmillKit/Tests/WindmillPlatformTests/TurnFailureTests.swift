@@ -143,7 +143,7 @@ private enum StorageFault: Error { case disk }
   var defects = 0
   var tools = false
   var recoveries = 0
-  func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture], firstRound: Bool, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
+  func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture], receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
     try await receive(AiEvent(id: 1, name: "text", data: ["delta": "Answer"]))
     if tools {
       try await receive(AiEvent(id: 2, name: "ended", data: ["stop": "tool_calls", "message": ["role": "assistant", "parts": [["toolCall": ["id": "tool", "name": "read", "input": ["value": 1]]]], "carry": ""], "charged": "0", "allowance": .null]))
@@ -154,6 +154,7 @@ private enum StorageFault: Error { case disk }
   func recover(id: String, profile: Profile, seat: Seat, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws { recoveries += 1 }
   func allowance(profile: Profile, seat: Seat) async throws -> JSON { .null }
   func upload(_ pictures: [Picture], profile: Profile, seat: Seat) async throws {}
+  var connected: Bool { true }
   func stopAskingAgain() {}
   func seatWillChange() {}
   func invalidAnswer() { defects += 1 }
