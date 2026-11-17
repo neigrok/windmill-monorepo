@@ -297,9 +297,9 @@ identity-token/nonce exchange.
 #### A server that requires an update (426)
 
 Hello, push, pull and the live upgrade answer `426 upgrade-required` to a registry version below the
-server's minimum. `SyncApi` takes that minimum from the `minVersion` of the gym and journal
+server's minimum. `SyncApi` takes that minimum from the `minVersion` of the composed
 registries embedded at build time; no environment variable changes it. To drive the app's update
-path, build a second binary from a copy of the contract whose two registries both stand one version
+path, build a second binary from a copy of the contract whose composed registries all stand one version
 ahead, with `minVersion` equal to `version`:
 
 ```sh
@@ -307,7 +307,7 @@ WM_426_CONTRACT=$(mktemp -d)/api-contract
 cp -R ../packages/api-contract "$WM_426_CONTRACT"
 python3 - "$WM_426_CONTRACT/sync" <<'PY'
 import json, sys
-for name in ("gym.registry.json", "journal.registry.json"):
+for name in json.load(open(sys.argv[1] + "/composition.json"))["registries"]:
     path = f"{sys.argv[1]}/{name}"
     with open(path) as file:
         registry = json.load(file)
@@ -320,10 +320,10 @@ cmake --build build-426 --target windmill_server
 ```
 
 Stop the engine server by its port and serve `./build-426/windmill_server` with the same command and
-database. A hello at version 9 answers `"schema":9,"minSchema":9`, and the app's version 8 is refused:
+database. The copied registries now require version 13; the app's version 12 is refused:
 
 ```sh
-curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 8'
+curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 12'
 # HTTP/1.1 426 Upgrade Required … {"epoch":"…","error":"upgrade-required","serverTime":…}
 ```
 
@@ -406,11 +406,12 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and nine script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and ten script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
-`domain`, `mcp`, `sync` and `adapters` are the C++ suites. `deploy` checks that the production
+`domain`, `mcp`, `sync` and `adapters` are the C++ suites. `sync_composition` checks that the manifest
+and explicit server bindings name the same registries without duplicates. `deploy` checks that the production
 Caddyfile forwards every credential line as received, `deploy_stop_grace` that the time the compose
 file gives the server to stop covers the server's own deadline and exit flush, `deploy_production` runs
 `deploy/deploy-production.sh` against a modeled Docker host, `auth_differential` tests the
