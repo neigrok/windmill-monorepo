@@ -139,6 +139,7 @@ async function mount() {
   scope.reconcile({ device: { meta: {}, activeReplica: { meta: { state: 'bound', account: 'u_fixture' } } } });
   window.draftScope = scope;
   window.draftStore = stepDraftSession(document);
+  window.fixtureRegistry = new LocalTreeRegistry();
   window.fixtureNavigate = navigate;
   window.fixtureTheme = setAppearance;
   window.fixtureSignOut = () => requestNavigation({ key: 'fixture:signout', context: { kind: 'sign-out' }, run: () => { window.signOuts = (window.signOuts ?? 0) + 1; } });

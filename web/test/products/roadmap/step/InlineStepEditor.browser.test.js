@@ -347,3 +347,100 @@ hostTest('an active draft blocks a stale Save while authority is unready and sti
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const code of ['no-such-tree', 'sign-in-required']) {
+  hostTest(`an anonymous device owner can save a local field after ${code} without acquiring server reach`, async () => {
+    const { page, errors } = await openHost({ width: 390, shell: true, auth: 'ghost', deviceTrees: true });
+    try {
+      await page.evaluate((code) => {
+        const ticket = window.draftScope.begin({ kind: 'anonymous' });
+        window.draftScope.reconcile({ device: { meta: {}, activeReplica: { meta: { state: 'anon' } } } }, ticket);
+        window.session.registry = window.fixtureRegistry;
+        window.session.receiveReject({ code });
+        window.deviceWrites = [];
+        const dispatch = window.session.dispatch.bind(window.session);
+        window.session.dispatch = (gesture) => { window.deviceWrites.push(gesture); return dispatch(gesture); };
+        window.scene.activate('wind');
+      }, code);
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      const input = page.getByRole('textbox', { name: 'Name', exact: true });
+      await input.waitFor();
+      assert.deepEqual(await page.evaluate(() => ({ owner: window.draftScope.read.getSnapshot().owner, reach: window.session.reach,
+        claimed: window.fixtureRegistry.get('t_sail').claimed, writes: window.deviceWrites })),
+      { owner: { kind: 'anonymous' }, reach: 'reader', claimed: false, writes: [] });
+      await input.fill('Read local gusts');
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
+      await page.getByRole('article', { name: 'Read local gusts', exact: true }).waitFor();
+      assert.deepEqual(await page.evaluate(async () => {
+        await window.session.persistNow();
+        const saved = await window.session.store.load('t_sail');
+        return { label: window.session.lattice.toTreeData().nodes.find((node) => node.id === 'wind').label,
+          savedLabel: saved.frame.nodes.find((node) => node.id === 'wind').label, reach: window.session.reach,
+          claimed: window.fixtureRegistry.get('t_sail').claimed, slot: window.draftStore.getSnapshot(), writes: window.deviceWrites };
+      }), { label: 'Read local gusts', savedLabel: 'Read local gusts', reach: 'reader', claimed: false, slot: null,
+        writes: [{ kind: 'EditNode', id: 'wind', label: 'Read local gusts' }] });
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_step_edit').map(({ props }) => props)),
+        [{ step: 'open', field: 'label' }, { step: 'saved', field: 'label' }]);
+      assert.deepEqual(await page.evaluate(() => window.issues), []);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const loss of ['claim', 'device owner', 'permission']) {
+  hostTest(`an anonymous device draft refuses a stale Save after a same-task ${loss} change`, async () => {
+    const { page, errors } = await openHost({ width: 390, shell: true, auth: 'ghost', deviceTrees: true });
+    try {
+      await page.evaluate(() => {
+        const ticket = window.draftScope.begin({ kind: 'anonymous' });
+        window.draftScope.reconcile({ device: { meta: {}, activeReplica: { meta: { state: 'anon' } } } }, ticket);
+        window.session.receiveReject({ code: 'no-such-tree' });
+        window.scene.activate('wind');
+      });
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Keep this refused local name');
+      await page.evaluate((loss) => {
+        window.deviceWrites = [];
+        const dispatch = window.session.dispatch.bind(window.session);
+        window.session.dispatch = (gesture) => { window.deviceWrites.push(gesture); return dispatch(gesture); };
+        if (loss === 'claim') window.fixtureRegistry.attribute(['t_sail'], 'u_fixture');
+        if (loss === 'device owner') window.fixtureRegistry.record('t_sail', 'Learn to sail', 'u_other');
+        if (loss === 'permission') window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } }));
+        const save = [...document.querySelectorAll('button')].find((node) => node.textContent === 'Save' && node.getClientRects().length);
+        save.click();
+      }, loss);
+      await page.getByText('Editing is unavailable. Copy your draft or discard it.', { exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.deviceWrites), []);
+      assert.equal(await page.evaluate(() => window.session.lattice.toTreeData().nodes.find((node) => node.id === 'wind').label), 'Read the wind');
+      await page.getByRole('button', { name: 'Copy draft', exact: true }).click();
+      await page.waitForFunction(() => window.copied.length === 1);
+      assert.deepEqual(await page.evaluate(() => window.copied), ['Keep this refused local name']);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const kind of ['claimed', 'reader', 'shared']) {
+  hostTest(`device index presence does not grant inline editing to a ${kind} roadmap with reader reach`, async () => {
+    const { page, errors } = await openHost({ width: 390, shell: true, auth: 'ghost', deviceTrees: true,
+      role: kind === 'reader' ? 'reader' : 'owner', ...(kind === 'shared' ? { address: '#/t/' } : {}) });
+    try {
+      await page.evaluate((kind) => {
+        if (kind === 'claimed') {
+          window.fixtureRegistry.attribute(['t_sail'], 'u_fixture');
+          window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 't_sail' } }));
+        }
+        window.session.receiveReject({ code: 'no-such-tree' });
+        window.scene.activate('wind');
+      }, kind);
+      await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
+      if (kind === 'claimed') await page.getByRole('button', { name: 'Edit name', exact: true }).click();
+      else assert.equal(await page.getByRole('button', { name: 'Edit name', exact: true }).count(), 0);
+      assert.equal(await page.getByRole('textbox', { name: 'Name', exact: true }).count(), 0);
+      assert.equal(await page.evaluate(() => window.draftStore.getSnapshot()), null);
+      assert.equal(await page.evaluate(() => window.session.lattice.toTreeData().nodes.find((node) => node.id === 'wind').label), 'Read the wind');
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
