@@ -52,7 +52,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install PostgreSQL command-line tools
         run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client-16
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
           echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
       - name: Install the pinned toolchain
         run: rustup toolchain install
