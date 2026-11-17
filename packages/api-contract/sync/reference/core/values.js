@@ -132,7 +132,15 @@ export function checkId(registry, type, id) {
     return null;
   }
   if (type.key?.ref) return checkId(registry, registry.type(type.key.ref), id);
+  return checkScalarId(type, id);
+}
+
+export function checkScalarId(type, id) {
   if (typeof id !== 'string') return 'not a string id';
+  if (type.idDomain) {
+    if (id.includes('\0') || /[\uD800-\uDFFF]/u.test(id)) return 'not Unicode without NUL';
+    return checkDomain(type.idDomain, id);
+  }
   return new RegExp(type.idPattern, 'u').test(id) ? null : `does not match ${type.idPattern}`;
 }
 

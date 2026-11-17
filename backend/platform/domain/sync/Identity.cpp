@@ -9,7 +9,8 @@
 
 namespace wm::sync {
 
-std::string deriveId(std::string_view label, std::string_view fallback, const std::set<std::string>& taken) {
+std::string deriveId(std::string_view label, std::string_view fallback, const std::set<std::string>& taken,
+                     std::optional<std::size_t> maxChars) {
   constexpr std::size_t kBaseLimit = 40;
   std::string base;
   for (const char c : label) {
@@ -21,8 +22,25 @@ std::string deriveId(std::string_view label, std::string_view fallback, const st
   while (!base.empty() && base.back() == '-') base.pop_back();
   if (base.empty()) base = fallback;
 
+  const auto stemOf = [](std::string_view text, std::size_t limit) {
+    std::size_t end = 0;
+    for (std::size_t points = 0; end < text.size() && points < limit; ++points) {
+      ++end;
+      while (end < text.size() && (static_cast<unsigned char>(text[end]) & 0xC0) == 0x80) ++end;
+    }
+    std::string stem{text.substr(0, end)};
+    while (!stem.empty() && stem.back() == '-') stem.pop_back();
+    if (stem.empty()) throw std::invalid_argument("a derived id has a nonempty stem");
+    return stem;
+  };
+  if (maxChars) base = stemOf(base, *maxChars);
   std::string id = base;
-  for (int suffix = 2; taken.contains(id); ++suffix) id = base + "-" + std::to_string(suffix);
+  for (int ordinal = 2; taken.contains(id); ++ordinal) {
+    const std::string suffix = "-" + std::to_string(ordinal);
+    if (!maxChars) { id = base + suffix; continue; }
+    if (suffix.size() >= *maxChars) throw std::invalid_argument("a derived id has no room for its collision suffix");
+    id = stemOf(base, *maxChars - suffix.size()) + suffix;
+  }
   return id;
 }
 

@@ -208,6 +208,7 @@ public struct TypeDef: Sendable {
   public let identity: IdentityClass
   public let idSpace: IDSpace?
   public let idPattern: Pattern?
+  public let idDomain: Domain?
   public let key: Key?
   public let singletonId: String?
   public let deriveFallback: String?
@@ -242,7 +243,7 @@ public struct TypeDef: Sendable {
       let object = try json.asObject()
       try object.expectKeys(
         required: ["type", "scope", "identity", "life", "origins", "fields"],
-        optional: ["idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows",
+        optional: ["idSpace", "idPattern", "idDomain", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows",
                    "governs", "cap", "visibleWhen", "primary", "headline"])
       name = try object.member("type").asString()
       guard RegistryName.isTypeOrField(name) else { throw RegistryError("\(name) is not a type name") }
@@ -250,6 +251,17 @@ public struct TypeDef: Sendable {
       identity = try IdentityClass(decoding: object.member("identity").asString())
       idSpace = try object["idSpace"].map { try IDSpace(decoding: $0.asString()) }
       idPattern = try object["idPattern"].map { try Pattern($0.asString()) }
+      idDomain = try object["idDomain"].map { value in
+        let definition = try value.asObject()
+        try definition.expectKeys(required: ["type", "unit", "min", "max"])
+        guard try definition.member("type").asString() == "string",
+              try definition.member("unit").asString() == "chars",
+              try definition.member("min").asInteger() == 1 else {
+          throw RegistryError("idDomain is a nonempty bounded string in chars")
+        }
+        _ = try definition.member("max").asInteger(atLeast: 1)
+        return try Domain(json: value)
+      }
       key = try object["key"].map { try Key(json: $0) }
       singletonId = try object["singletonId"]?.asString()
       deriveFallback = try object["derive"].map { derive in
@@ -294,8 +306,8 @@ public struct TypeDef: Sendable {
   func checkRules() throws(RegistryError) {
     switch identity {
     case .minted, .derived:
-      guard idSpace != nil, idPattern != nil, revivable != nil, deadRows != nil, mint != nil, life else {
-        throw RegistryError("a minted or derived type has idSpace, idPattern, revivable, deadRows, mint and life")
+      guard idSpace != nil, idPattern != nil || idDomain != nil, revivable != nil, deadRows != nil, mint != nil, life else {
+        throw RegistryError("a minted or derived type has idSpace, an ID definition, revivable, deadRows, mint and life")
       }
       guard identity == .minted || deriveFallback != nil else { throw RegistryError("a derived type has derive") }
     case .singleton:
@@ -305,7 +317,16 @@ public struct TypeDef: Sendable {
     case .keyed:
       guard !life || deadRows != nil else { throw RegistryError("a keyed type with life has deadRows") }
     }
-    guard key != nil || idPattern != nil else { throw RegistryError("a type without a key has an idPattern") }
+    guard [key != nil, idPattern != nil, idDomain != nil].filter({ $0 }).count == 1 else {
+      throw RegistryError("exactly one idPattern, idDomain or key defines ids")
+    }
+    guard singletonId == nil || identity == .singleton else { throw RegistryError("only a singleton has singletonId") }
+    if idDomain != nil {
+      guard (identity == .derived || identity == .keyed), idSpace == nil || idSpace == .scope else {
+        throw RegistryError("idDomain is for scope-local derived or keyed ids")
+      }
+      if let deriveFallback, !isScalarID(.string(deriveFallback)) { throw RegistryError("derive fallback is outside idDomain") }
+    }
     guard deriveFallback == nil || identity == .derived else { throw RegistryError("only a derived type has derive") }
     guard seeded == nil || identity == .minted else { throw RegistryError("only a minted type is seeded") }
     guard mint == nil || hasBorn else { throw RegistryError("only a minted or derived type has mint") }
@@ -347,10 +368,17 @@ public struct TypeDef: Sendable {
         throw RegistryError("field \(field.name): opens the value \(value) outside its domain")
       }
     }
-    if let mint, let idPattern {
-      for symbol in mint.alphabet.unicodeScalars {
-        guard idPattern.matches(mint.prefix + String(repeating: String(symbol), count: mint.length)) else {
-          throw RegistryError("a minted id of \(symbol) does not match \(idPattern.source)")
+    if let mint {
+      if let idMaxChars {
+        guard !mint.prefix.unicodeScalars.contains("\0"), !mint.alphabet.unicodeScalars.contains("\0"),
+              mint.length <= idMaxChars - mint.prefix.unicodeScalars.count else {
+          throw RegistryError("mint is outside idDomain")
+        }
+      } else if let idPattern {
+        for symbol in mint.alphabet.unicodeScalars {
+          guard idPattern.matches(mint.prefix + String(repeating: String(symbol), count: mint.length)) else {
+            throw RegistryError("a minted id of \(symbol) does not match \(idPattern.source)")
+          }
         }
       }
     }
@@ -367,6 +395,7 @@ public struct TypeDef: Sendable {
     ]
     object["idSpace"] = idSpace.map { .string($0.rawValue) }
     object["idPattern"] = idPattern.map { .string($0.source) }
+    object["idDomain"] = idDomain?.json
     object["key"] = key?.json
     object["singletonId"] = singletonId.map { .string($0) }
     object["derive"] = deriveFallback.map { ["fallback": .string($0)] }

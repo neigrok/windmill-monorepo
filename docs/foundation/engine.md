@@ -232,7 +232,7 @@ views (§7.6).
   its stored place. A member moved below itself is its own anchor: it takes a key between its
   drawn key and the first greater `stored` key, and keeps its place.
 
-**D-26 Derived id.** `derive(label, fallback, taken)`:
+**D-26 Derived id.** `derive(label, fallback, taken, maxChars?)`:
 
 ```
 base := ""
@@ -242,10 +242,26 @@ for each byte c of UTF-8(label):
   else if base ≠ "" and last(base) ≠ '-': append '-'
 remove trailing '-' from base
 if base = "": base := fallback
+if maxChars is present:
+  base := first maxChars Unicode scalars of base, with trailing '-' removed
+  if base = "": fail
 id := base; k := 2
-while id ∈ taken: id := base + "-" + decimal(k); k := k + 1
+while id ∈ taken:
+  suffix := "-" + decimal(k); k := k + 1
+  stem := base
+  if maxChars is present:
+    room := maxChars - |suffix|
+    if room < 1: fail
+    stem := first room Unicode scalars of base, with trailing '-' removed
+    if stem = "": fail
+  id := stem + suffix
 return id
 ```
+
+`maxChars` is the type's `idDomain.max` when it declares an ID domain, and absent for a pattern.
+A bounded derivation keeps the spelling of every retained Unicode scalar; it never normalizes.
+A bound with no room for a nonempty stem and a collision suffix fails as a malformed commit, before
+anything is saved.
 
 `taken` is every alive, spent and pending id of the type in the scope, plus ids already chosen in
 the same gesture.
@@ -364,7 +380,7 @@ client of version 11 never writes and reads as before, and the session's `planRe
 `routineRevision`, the `workoutProposal` type, its two commands and the `plan-logged` code are additive.
 The journal registry carries version 12 with it, since the composed registries declare one version.
 
-- **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
+- **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern` or `idDomain`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
   the types their own keys name in turn, never lead back to the keyed type), `singletonId`,
   `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `wholePut`, `revivable`, `deadRows`,
@@ -376,6 +392,16 @@ The journal registry carries version 12 with it, since the composed registries d
   (`items`, `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds
   are domain bounds, checked at §6.1 step 2. A string domain's `min` or `max` states its `unit`, as a
   field's bound does (D-9).
+- **IDs:** a scalar type declares exactly one `idPattern` or `idDomain`; a ref or tuple key
+  declares `key` instead and inherits every referenced type's ID validation. A singleton keeps
+  `singletonId` and its `idPattern`. Only a scope-local `derived` or `keyed` type MAY use
+  `idDomain: {type: "string", unit: "chars", min: 1, max: N}`, with no other domain members and
+  positive safe-integer `N`. It admits valid Unicode without NUL, counted in Unicode scalar values
+  (code points), including one for a non-BMP character. Empty ids, unpaired surrogates, malformed
+  UTF-8 and values above the bound are refused. Identity preserves the UTF-8 bytes without
+  normalization: composed and decomposed spellings remain distinct. The mint's prefix and every
+  scalar it draws from its alphabet MUST produce ids within the domain; `derive.fallback` MUST
+  satisfy it too. Minted and global ids, including every governing tree id, retain their patterns.
 - **Patterns** (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`) are printable
   ASCII, in a portable subset of ECMAScript regular expressions. A value matches a pattern iff the
   pattern matches the whole value. A pattern is `^`, a body, then `$`. The body holds only literal

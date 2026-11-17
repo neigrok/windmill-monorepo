@@ -306,8 +306,8 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
 // §2.4's rules that tie one type's parts together, once each part has its own shape.
 void checkType(const Reader& reader, const TypeDef& type) {
   const bool mintedOrDerived = type.identity == Identity::minted || type.identity == Identity::derived;
-  if (mintedOrDerived && !(type.idSpace && type.idPattern && reader.has("revivable") && type.deadRows && type.mint))
-    reader.fail("is minted or derived without \"idSpace\", \"idPattern\", \"revivable\", \"deadRows\" and \"mint\"");
+  if (mintedOrDerived && !(type.idSpace && (type.idPattern || type.idDomain) && reader.has("revivable") && type.deadRows && type.mint))
+    reader.fail("is minted or derived without \"idSpace\", an ID definition, \"revivable\", \"deadRows\" and \"mint\"");
   if (type.mint && type.idPattern) {
     for (const char c : type.mint->alphabet) {
       if (!type.idPattern->matches(type.mint->prefix + std::string(static_cast<std::size_t>(type.mint->length), c)))
@@ -322,7 +322,27 @@ void checkType(const Reader& reader, const TypeDef& type) {
     reader.fail("has a singletonId its idPattern refuses");
   if (type.identity == Identity::keyed && type.life && !type.deadRows) reader.fail("is keyed with life without \"deadRows\"");
   if (type.wholePut && (type.identity != Identity::keyed || !type.life)) reader.fail("is wholePut without being keyed with life");
-  if (!reader.has("key") && !type.idPattern) reader.fail("has neither a \"key\" nor an \"idPattern\"");
+  const int definitions = static_cast<int>(type.idPattern.has_value()) + static_cast<int>(type.idDomain.has_value()) + static_cast<int>(reader.has("key"));
+  if (definitions != 1) reader.fail("requires exactly one idPattern, idDomain or key");
+  if (reader.has("key") && type.identity != Identity::keyed) reader.fail("has a key without being keyed");
+  if (type.singletonId && type.identity != Identity::singleton) reader.fail("has singletonId without being a singleton");
+  if (type.idDomain) {
+    if ((type.identity != Identity::derived && type.identity != Identity::keyed) || (type.idSpace && type.idSpace != IdSpace::scope))
+      reader.fail("has idDomain without scope-local derived or keyed identity");
+    if (type.deriveFallback && !type.isScalarId(*type.deriveFallback)) reader.fail("has a derive fallback outside idDomain");
+    if (type.mint) {
+      try {
+        jcs(type.mint->prefix);
+        jcs(type.mint->alphabet);
+      } catch (const JsonError&) {
+        reader.fail("has a mint outside Unicode");
+      }
+      if (type.mint->prefix.find('\0') != std::string::npos || type.mint->alphabet.find('\0') != std::string::npos ||
+          lengthIn(Unit::chars, type.mint->alphabet) < 2 ||
+          static_cast<std::uint64_t>(type.mint->length) + lengthIn(Unit::chars, type.mint->prefix) > static_cast<std::uint64_t>(*type.idDomain->bounds->max))
+        reader.fail("mints ids outside idDomain");
+    }
+  }
   if (type.seeded && type.identity != Identity::minted) reader.fail("seeds ids without being minted");
   if (type.revivable && type.deadRows != DeadRows::keep) reader.fail("is revivable without keeping its dead rows");
   if (type.governsTree && (type.identity != Identity::minted || type.revivable || type.scope.kind != ScopeKind::product ||
@@ -350,7 +370,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
 
 TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
   const Reader element(json, elementPath,
-                       {"type", "scope", "identity", "idSpace", "idPattern", "key", "singletonId", "derive", "mint", "seeded",
+                       {"type", "scope", "identity", "idSpace", "idPattern", "idDomain", "key", "singletonId", "derive", "mint", "seeded",
                         "life", "wholePut", "revivable", "deadRows", "governs", "origins", "fields", "cap", "visibleWhen", "primary", "headline"});
   const std::string name = element.name("type", memberNames());
   const Reader reader = element.under("registry.types." + name);
@@ -372,6 +392,13 @@ TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
   };
   if (reader.has("idSpace")) type.idSpace = reader.oneOf<IdSpace>("idSpace", {{"scope", IdSpace::scope}, {"global", IdSpace::global}});
   if (reader.has("idPattern")) type.idPattern = reader.pattern("idPattern");
+  if (reader.has("idDomain")) {
+    const Reader domain(reader.value("idDomain"), reader.at("idDomain"), {"type", "unit", "min", "max"});
+    if (domain.string("type") != "string" || domain.string("unit") != "chars" || domain.integer("min", 1) != 1 ||
+        !isSafeInteger(domain.value("max")) || domain.integer("max", 1) < 1)
+      domain.fail("is not a nonempty bounded string in chars");
+    type.idDomain = domainOf(reader.value("idDomain"), reader.at("idDomain"));
+  }
   if (reader.has("deadRows")) type.deadRows = reader.oneOf<DeadRows>("deadRows", {{"keep", DeadRows::keep}, {"spent", DeadRows::spent}});
   if (reader.has("governs")) type.governsTree = reader.oneOf<bool>("governs", {{"tree", true}});
   if (reader.has("visibleWhen")) type.visibleWhen = reader.names("visibleWhen", &memberNames(), true);
@@ -687,6 +714,19 @@ const CommandDef* Registry::command(std::string_view commandName) const {
   return found == commands_.end() ? nullptr : &*found;
 }
 
+bool TypeDef::isScalarId(const Json::Value& id) const {
+  if (!id.isString()) return false;
+  if (!idDomain) return idPattern && idPattern->matches(id.asString());
+  if (id.asString().find('\0') != std::string::npos) return false;
+  try {
+    // The shared JSON encoder rejects malformed UTF-8, including encoded surrogates.
+    jcs(id);
+  } catch (const JsonError&) {
+    return false;
+  }
+  return idDomain->admits(id);
+}
+
 bool Registry::isIdOf(const TypeDef& type, const Json::Value& id) const {
   if (type.identity == Identity::singleton) return id.isString() && id.asString() == *type.singletonId;
   if (!type.keyTuple.empty()) {
@@ -697,7 +737,7 @@ bool Registry::isIdOf(const TypeDef& type, const Json::Value& id) const {
     return true;
   }
   if (type.keyRef) return isIdOf(*this->type(*type.keyRef), id);
-  return id.isString() && type.idPattern && type.idPattern->matches(id.asString());
+  return type.isScalarId(id);
 }
 
 bool Registry::admitsValue(const FieldDef& field, const Json::Value& value) const {

@@ -6,7 +6,7 @@ const ALPHANUMERIC = /^[A-Za-z0-9]$/;
 const ORDINAL = /^[1-9][0-9]*$/;
 const BASE_LIMIT = 40;
 
-export function derive(label, fallback, taken) {
+export function derive(label, fallback, taken, maxChars) {
   let base = '';
   for (const byte of utf8(label)) {
     if (base.length === BASE_LIMIT) break;
@@ -16,8 +16,20 @@ export function derive(label, fallback, taken) {
   }
   base = base.replace(/-+$/, '');
   if (base === '') base = fallback;
+  if (maxChars !== undefined) {
+    if (!Number.isSafeInteger(maxChars) || maxChars < 1) throw new RangeError('a derived id bound is positive');
+    base = [...base].slice(0, maxChars).join('').replace(/-+$/, '');
+    if (base === '') throw new RangeError('a derived id has a nonempty stem');
+  }
   let id = base;
-  for (let k = 2; taken.has(id); k += 1) id = `${base}-${k}`;
+  for (let k = 2; taken.has(id); k += 1) {
+    const suffix = `-${k}`;
+    if (maxChars === undefined) { id = base + suffix; continue; }
+    if (suffix.length >= maxChars) throw new RangeError('a derived id has no room for its collision suffix');
+    const stem = [...base].slice(0, maxChars - suffix.length).join('').replace(/-+$/, '');
+    if (stem === '') throw new RangeError('a derived id has a nonempty stem');
+    id = stem + suffix;
+  }
   return id;
 }
 
@@ -47,7 +59,8 @@ export function parseSeeded(id) {
 // D-8 a CSPRNG id by the type's mint: the prefix, then `length` characters of the alphabet, each
 // `alphabet[draw(alphabet.length)]`, where draw answers a uniform integer below its argument.
 export function mintId(type, draw) {
-  const { prefix, alphabet, length } = type.mint;
+  const { prefix, length } = type.mint;
+  const alphabet = [...type.mint.alphabet];
   let id = prefix;
   for (let k = 0; k < length; k += 1) {
     const index = draw(alphabet.length);

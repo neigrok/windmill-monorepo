@@ -1,0 +1,160 @@
+[
+  {
+    "name": "a long label fits the declared maximum",
+    "input": {
+      "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fallback": "node",
+      "taken": [],
+      "maxChars": 8
+    },
+    "expect": {
+      "id": "aaaaaaaa"
+    }
+  },
+  {
+    "name": "a maximum-length fallback reserves collision suffix room",
+    "input": {
+      "label": "",
+      "fallback": "abcdefgh",
+      "taken": [
+        "abcdefgh"
+      ],
+      "maxChars": 8
+    },
+    "expect": {
+      "id": "abcdef-2"
+    }
+  },
+  {
+    "name": "bounded collision suffixes skip taken ids",
+    "input": {
+      "label": "abcdefgh",
+      "fallback": "node",
+      "taken": [
+        "abcdefgh",
+        "abcdef-2",
+        "abcdef-3"
+      ],
+      "maxChars": 8
+    },
+    "expect": {
+      "id": "abcdef-4"
+    }
+  },
+  {
+    "name": "suffix growth reserves another code point",
+    "input": {
+      "label": "",
+      "fallback": "node",
+      "taken": [
+        "node",
+        "no-2",
+        "no-3",
+        "no-4",
+        "no-5",
+        "no-6",
+        "no-7",
+        "no-8",
+        "no-9"
+      ],
+      "maxChars": 4
+    },
+    "expect": {
+      "id": "n-10"
+    }
+  },
+  {
+    "name": "composed fallback keeps its scalar spelling",
+    "input": {
+      "label": "",
+      "fallback": "éééé",
+      "taken": [
+        "éééé"
+      ],
+      "maxChars": 4
+    },
+    "expect": {
+      "id": "éé-2"
+    }
+  },
+  {
+    "name": "decomposed fallback counts each scalar",
+    "input": {
+      "label": "",
+      "fallback": "éé",
+      "taken": [
+        "éé"
+      ],
+      "maxChars": 4
+    },
+    "expect": {
+      "id": "é-2"
+    }
+  },
+  {
+    "name": "non-BMP fallback counts one scalar per character",
+    "input": {
+      "label": "",
+      "fallback": "😀😀😀😀",
+      "taken": [
+        "😀😀😀😀"
+      ],
+      "maxChars": 4
+    },
+    "expect": {
+      "id": "😀😀-2"
+    }
+  },
+  {
+    "name": "bounded truncation removes a trailing separator",
+    "input": {
+      "label": "a bc",
+      "fallback": "node",
+      "taken": [],
+      "maxChars": 2
+    },
+    "expect": {
+      "id": "a"
+    }
+  },
+  {
+    "name": "a tiny bound permits a free stem",
+    "input": {
+      "label": "abc",
+      "fallback": "a",
+      "taken": [],
+      "maxChars": 1
+    },
+    "expect": {
+      "id": "a"
+    }
+  },
+  {
+    "name": "an exhausted tiny bound cannot fit a stem and suffix",
+    "input": {
+      "label": "abc",
+      "fallback": "a",
+      "taken": [
+        "a"
+      ],
+      "maxChars": 1
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a suffix alone is not an id",
+    "input": {
+      "label": "ab",
+      "fallback": "a",
+      "taken": [
+        "ab"
+      ],
+      "maxChars": 2
+    },
+    "expect": {
+      "error": true
+    }
+  }
+]

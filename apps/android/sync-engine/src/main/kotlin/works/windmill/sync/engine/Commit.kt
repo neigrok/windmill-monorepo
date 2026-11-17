@@ -18,7 +18,11 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
         is NewID.Seeded -> RecordID(SeededId.make(new.seed, new.ordinal, type).id)
         is NewID.Derived -> {
             if (type.identity != "derived") malformed("not-derived")
-            RecordID(DerivedId.from(new.label, type.json.member("derive").member("fallback").str(), taken(type)))
+            try {
+                RecordID(DerivedId.from(new.label, type.json.member("derive").member("fallback").str(), taken(type), type.idMaxChars))
+            } catch (_: IdentityError) {
+                malformed("derived-id-bound")
+            }
         }
         NewID.Minted -> {
             val mint = type.mint ?: malformed("not-minted")

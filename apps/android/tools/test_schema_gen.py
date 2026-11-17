@@ -112,6 +112,22 @@ class SchemaGeneratorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gen.load(source)
 
+    def test_generator_preserves_the_id_domain_in_its_registry_literal(self):
+        vectors = gen.load(gen.CONTRACT / "corpus/registry/refusals.json")
+        registry = next(v["input"]["registry"] for v in vectors if v["name"] == "a derived type declares a Unicode id domain")
+        registry["products"] = {"p": {}}
+        with tempfile.TemporaryDirectory() as directory:
+            contract = Path(directory)
+            (contract / "composition.json").write_text(gen.json.dumps({"composition": "windmill", "registries": ["mini.registry.json"]}))
+            (contract / "mini.registry.json").write_text(gen.json.dumps(registry))
+            sources = gen.generate(contract)
+        lines = sources["Mini.generated.kt"].splitlines()
+        start = lines.index("        listOf(") + 1
+        end = lines.index('        ).joinToString("\\n"),')
+        literal = "\n".join(gen.json.loads(line.strip().removesuffix(",")) for line in lines[start:end])
+        self.assertEqual(gen.json.dumps(registry, ensure_ascii=True, indent=2), literal)
+        self.assertEqual(registry, gen.json.loads(literal))
+
 
 if __name__ == "__main__":
     unittest.main()

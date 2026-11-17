@@ -15,13 +15,13 @@ extension Registry {
       switch key {
       case .ref(let target):
         guard let target = self.type(target) else { return false }
-        return isID(id, of: target) && (type.idPattern.map { Registry.matches(id, $0) } ?? true)
+        return isID(id, of: target)
       case .tuple(let parts):
         guard case .array(let items) = id, items.count == parts.count else { return false }
         return zip(items, parts).allSatisfy { item, part in self.type(part.ref).map { isID(item, of: $0) } ?? false }
       }
     }
-    guard let pattern = type.idPattern, Registry.matches(id, pattern) else { return false }
+    guard type.isScalarID(id) else { return false }
     guard type.identity == .singleton, let singleton = type.singletonId else { return true }
     return id == .string(singleton)
   }
@@ -60,13 +60,21 @@ extension Registry {
     return Command(name: command.name, args: .object(JSON.Object(uniqueKeysWithValues: rounded)))
   }
 
-  static func matches(_ id: JSON, _ pattern: Pattern) -> Bool {
-    guard case .string(let text) = id else { return false }
-    return pattern.matches(text)
-  }
-
   static func isEpochMs(_ value: JSON) -> Bool {
     (try? value.asInteger(atLeast: 0)) != nil
+  }
+}
+
+extension TypeDef {
+  public var idMaxChars: Int? {
+    guard case .string(_, _, let bounds)? = idDomain?.shape else { return nil }
+    return bounds?.max
+  }
+
+  public func isScalarID(_ id: JSON) -> Bool {
+    guard case .string(let text) = id else { return false }
+    guard let idDomain else { return idPattern?.matches(text) ?? false }
+    return !text.unicodeScalars.contains("\0") && idDomain.admits(id)
   }
 }
 

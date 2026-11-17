@@ -73,6 +73,33 @@
       "type": "string",
       "pattern": "^\\^[ -~]*\\$$"
     },
+    "idDomain": {
+      "description": "A scope-local scalar derived or keyed ID: valid Unicode without NUL, no normalization, counted in Unicode code points.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "unit",
+        "min",
+        "max"
+      ],
+      "properties": {
+        "type": {
+          "const": "string"
+        },
+        "unit": {
+          "const": "chars"
+        },
+        "min": {
+          "const": 1
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 1,
+          "exclusiveMaximum": 9007199254740992
+        }
+      }
+    },
     "scope": {
       "description": "The scope kind a type or command lives in (D-4): a product scope `product:<name>`, a governed `tree` scope, or an account's `overlay` of a tree.",
       "type": "string",
@@ -147,7 +174,7 @@
       }
     },
     "key": {
-      "description": "A keyed type's natural key (D-8): an id of another type, or an array of such ids whose JCS is the identity (§9.1). Without `key`, the key is a string matching idPattern.",
+      "description": "A keyed type's natural key (D-8): an id of another type, or an array of such ids whose JCS is the identity (§9.1). Without `key`, the key is a string matching idPattern or idDomain.",
       "oneOf": [
         {
           "type": "object",
@@ -227,8 +254,11 @@
           ]
         },
         "idPattern": {
-          "description": "Every id of the type matches it (§6.1 step 2). A tuple-keyed type has none: each part matches its referenced type's pattern.",
+          "description": "Every scalar id matches this pattern. A key inherits each referenced type's pattern or domain.",
           "$ref": "#/$defs/regex"
+        },
+        "idDomain": {
+          "$ref": "#/$defs/idDomain"
         },
         "key": {
           "$ref": "#/$defs/key"
@@ -328,7 +358,7 @@
           "const": true
         },
         "mint": {
-          "description": "How a CSPRNG id of a minted or derived type is minted (D-8): the prefix, then `length` characters drawn uniformly from `alphabet`. Every minted id matches idPattern.",
+          "description": "How a CSPRNG id of a minted or derived type is minted (D-8): the prefix, then `length` characters drawn uniformly from `alphabet`. Each alphabet symbol is a Unicode scalar. Every minted id satisfies the type's idPattern or idDomain.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -366,7 +396,6 @@
           "then": {
             "required": [
               "idSpace",
-              "idPattern",
               "revivable",
               "deadRows",
               "mint"
@@ -430,18 +459,23 @@
           }
         },
         {
-          "if": {
-            "not": {
+          "oneOf": [
+            {
+              "required": [
+                "idPattern"
+              ]
+            },
+            {
+              "required": [
+                "idDomain"
+              ]
+            },
+            {
               "required": [
                 "key"
               ]
             }
-          },
-          "then": {
-            "required": [
-              "idPattern"
-            ]
-          }
+          ]
         },
         {
           "description": "A governing type's ids are global: a tree scope is keyed by the id alone (D-5).",
@@ -540,6 +574,59 @@
             "required": [
               "life"
             ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "idDomain"
+            ]
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "enum": [
+                  "derived",
+                  "keyed"
+                ]
+              },
+              "idSpace": {
+                "const": "scope"
+              }
+            },
+            "not": {
+              "required": [
+                "singletonId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "key"
+            ]
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "const": "keyed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "singletonId"
+            ]
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "const": "singleton"
+              }
+            }
           }
         }
       ]

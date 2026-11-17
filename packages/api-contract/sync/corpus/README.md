@@ -452,12 +452,27 @@ side, is kept as it is. Parts absent from both sides stay absent.
 `label`. Every byte outside `[A-Za-z0-9]` is a separator; the base stops at 40 characters before its
 trailing dash is removed; suffixes are `-2`, `-3`, … appended to the base.
 
+### `derive/bounded.json` — all
+
+`input: {label, fallback, taken, maxChars}` · `expect: {id}` or `{error: true}`: D-26 with the
+ID domain's maximum. Truncation counts Unicode scalars and preserves spelling, including composed,
+decomposed and non-BMP fallbacks. Collisions reserve room for the suffix and refuse a bound that
+cannot hold it beside a nonempty stem.
+
 ### `registry/refusals.json` — all
 
 `input: {registry}` · `expect: {admitted}`: whether an implementation loads `registry`, a whole registry
 document, or refuses it as it loads (engine.md §2.4). Each refused document breaks one rule beside an
-admitted one; the rules are `headline`'s: true or absent, on a primary type of a product scope, at most
-one per product.
+admitted one. It covers headline placement and uniqueness, ID-definition exclusivity, Unicode ID
+domain grammar, identity classes, and mint and fallback bounds.
+
+### `registry/ids.json` — all
+
+`input: {registry, type, idJson}` · `expect: {id, field, argument, key}`: whether the JSON-encoded ID
+is valid as a direct ID, a field reference and a command reference. Ref and tuple keys inherit
+their targets' domains. `key` is the admitted ID's storage identity, its JCS without normalization,
+or null on refusal. Vectors cover Unicode code-point bounds, NUL and malformed surrogates;
+`idJson` keeps malformed Unicode out of the corpus document itself.
 
 ### `identity/seeded.json` — all
 

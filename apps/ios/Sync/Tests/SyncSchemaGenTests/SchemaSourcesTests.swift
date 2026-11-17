@@ -137,6 +137,22 @@ struct SchemaSourcesTests {
       """#)
   }
 
+  @Test func anIDDomainRoundTripsThroughTheGenerator() throws {
+    var source = try Self.tiny.asObject()
+    var type = try source.member("types").asArray()[0].asObject()
+    type["idPattern"] = nil
+    type["idDomain"] = ["type": "string", "unit": "chars", "min": 1, "max": 128]
+    source["types"] = [.object(type)]
+    let files = try Self.generated([RegistryFile(name: "tiny.registry.json", json: .object(source))])
+    let expected = try Self.generated([RegistryFile(name: "tiny.registry.json", json: Self.tiny)]).map { file in
+      GeneratedFile(name: file.name, text: file.text.replacingOccurrences(
+        of: #""idPattern": "^a\\.b$""#,
+        with: #""idDomain": ["max": 128, "min": 1, "type": "string", "unit": "chars"]"#))
+    }
+    #expect(files == expected)
+    #expect(try Registry(json: .object(source)).json["types"] == source["types"])
+  }
+
   @Test func aStringLiteralHoldsExactlyTheTextsScalars() {
     #expect(SwiftLiteral.string("a\"b\\c\n\u{0}\u{7F} e\u{301}\u{1F44D}\\(x)") == #""a\"b\\c\u{A}\u{0}\u{7F} e\u{301}\u{1F44D}\\(x)""#)
   }

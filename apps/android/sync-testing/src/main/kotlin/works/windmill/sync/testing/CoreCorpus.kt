@@ -2,6 +2,8 @@ package works.windmill.sync.testing
 
 import java.io.File
 import works.windmill.sync.core.*
+import works.windmill.sync.modelserver.IntentShape
+import works.windmill.sync.modelserver.with
 
 object CoreCorpus {
     fun handlers(probe: Registry): Map<String, Handler> = linkedMapOf(
@@ -64,8 +66,27 @@ object CoreCorpus {
             check(result == Join.record(type, b, a))
             Json.objectOf("join" to result.json)
         },
+        "derive/bounded.json" to { input -> Json.objectOf("id" to Json.of(DerivedId.from(input.member("label").str(), input.member("fallback").str(), input.member("taken").arr().map { it.str() }, input.member("maxChars").long()))) },
         "derive/slug.json" to { input -> Json.objectOf("id" to Json.of(DerivedId.from(input.member("label").str(), input.member("fallback").str(), input.member("taken").arr().map { it.str() }))) },
         "registry/refusals.json" to { input -> Json.objectOf("admitted" to Json.of(runCatching { Registry(input.member("registry")) }.isSuccess)) },
+        "registry/ids.json" to { input ->
+            val registry = Registry(input.member("registry"))
+            val name = input.member("type").str()
+            val id = runCatching { Json.parse(input.member("idJson").str()) }.getOrNull()
+            val field = FieldDef("target", Json.objectOf("kind" to Json.of("lww"), "writer" to Json.of("client"), "ref" to Json.of(name)))
+            val command = Json.objectOf("name" to Json.of("p.check"), "scope" to Json.of("product:p"),
+                "origins" to Json.array(Json.of("replica")), "serverInternal" to Json.of(false),
+                "args" to Json.objectOf("target" to Json.objectOf("type" to Json.of("ref<$name>"))))
+            val commandRegistry = Registry(registry.json.with("commands" to Json.array(command)))
+            val argument = id != null && runCatching {
+                IntentShape.check(Json.objectOf("scope" to Json.of("self/p"), "cmd" to Json.objectOf(
+                    "name" to Json.of("p.check"), "args" to Json.objectOf("target" to id))), true, commandRegistry, 1000)
+            }.isSuccess
+            Json.objectOf("id" to Json.of(id != null && registry.isId(id, registry.type(name)!!)),
+                "field" to Json.of(id != null && registry.admits(id, field)),
+                "argument" to Json.of(argument),
+                "key" to if (id != null && registry.isId(id, registry.type(name)!!)) Json.of(RecordID(id).json.jcs) else Json.Null)
+        },
         "identity/seeded.json" to { input ->
             if (input.member("op").str() == "make") {
                 Json.objectOf("id" to Json.of(SeededId.make(input.member("seed").str(), input.member("n").long(), probe.type(input.member("type").str())!!).id))

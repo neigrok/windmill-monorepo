@@ -399,5 +399,3668 @@
     "expect": {
       "admitted": false
     }
+  },
+  {
+    "name": "a derived type declares a Unicode id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a mint draws Unicode scalars within the id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "界",
+              "alphabet": "😀🚀",
+              "length": 127
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a domain mint validates its length without constructing an id",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 2147483647
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 2147483647
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a mint alphabet needs two Unicode scalars",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "😀",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain and a pattern cannot coexist",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            },
+            "idPattern": "^a+$"
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain and a key cannot coexist",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            },
+            "key": {
+              "ref": "kind"
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a scalar id needs a domain or a pattern",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain is a string",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "number",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain is non-nullable",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128,
+              "nullable": true
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain has only its declared bounds",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128,
+              "enum": [
+                "node"
+              ]
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain counts code points",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "bytes",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain declares a lower bound",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain excludes empty ids",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 0,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain starts at one",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 2,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain declares an upper bound",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain upper bound is positive",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 0
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain upper bound is integral",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 1.5
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "an id domain upper bound is safe",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 9007199254740992
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a derived id domain declares scope-local identity",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a derived id domain declares its fallback",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "global ids retain their pattern",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "global",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "minted ids retain their pattern",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a domain type cannot carry singletonId",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            },
+            "singletonId": "node"
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a mint must fit the id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 129
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a mint prefix must fit the id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a mint prefix is a string",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": 123,
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a mint cannot contain NUL",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "\u0000",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a fallback must fit the id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a singleton cannot take an id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a reference key cannot add an id pattern",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idPattern": "^a+$"
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a tuple key cannot add an id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            },
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a governing type cannot take an id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
   }
 ]

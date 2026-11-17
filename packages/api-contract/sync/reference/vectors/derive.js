@@ -1,5 +1,6 @@
 // derive/slug.json: D-26 derived ids.
 
+import assert from 'node:assert/strict';
 import { derive } from '../core/derive.js';
 import { vector } from './fixtures.js';
 
@@ -29,6 +30,25 @@ const CASES = [
 
 export function files() {
   return {
+    'derive/bounded.json': [
+      ['a long label fits the declared maximum', 'a'.repeat(200), 'node', [], 8, { id: 'aaaaaaaa' }],
+      ['a maximum-length fallback reserves collision suffix room', '', 'abcdefgh', ['abcdefgh'], 8, { id: 'abcdef-2' }],
+      ['bounded collision suffixes skip taken ids', 'abcdefgh', 'node', ['abcdefgh', 'abcdef-2', 'abcdef-3'], 8, { id: 'abcdef-4' }],
+      ['suffix growth reserves another code point', '', 'node', ['node', ...Array.from({ length: 8 }, (_, i) => `no-${i + 2}`)], 4, { id: 'n-10' }],
+      ['composed fallback keeps its scalar spelling', '', 'éééé', ['éééé'], 4, { id: 'éé-2' }],
+      ['decomposed fallback counts each scalar', '', 'e\u0301e\u0301', ['e\u0301e\u0301'], 4, { id: 'e\u0301-2' }],
+      ['non-BMP fallback counts one scalar per character', '', '😀😀😀😀', ['😀😀😀😀'], 4, { id: '😀😀-2' }],
+      ['bounded truncation removes a trailing separator', 'a bc', 'node', [], 2, { id: 'a' }],
+      ['a tiny bound permits a free stem', 'abc', 'a', [], 1, { id: 'a' }],
+      ['an exhausted tiny bound cannot fit a stem and suffix', 'abc', 'a', ['a'], 1, { error: true }],
+      ['a suffix alone is not an id', 'ab', 'a', ['ab'], 2, { error: true }],
+    ].map(([name, label, fallback, taken, maxChars, expect]) => {
+      let actual;
+      try { actual = { id: derive(label, fallback, new Set(taken), maxChars) }; }
+      catch { actual = { error: true }; }
+      assert.deepEqual(actual, expect, name);
+      return vector(name, { label, fallback, taken, maxChars }, expect);
+    }),
     'derive/slug.json': CASES.map(([name, label, fallback, taken]) => vector(name, { label, fallback, taken }, { id: derive(label, fallback, new Set(taken)) })),
   };
 }

@@ -238,6 +238,8 @@ class TypeDef(val json: Json) {
     val identity = json.member("identity").str()
     val life = json.member("life").bool()
     val idPattern = json["idPattern"]?.str()?.let(::Pattern)
+    val idDomain = json["idDomain"]?.let(::Domain)
+    val idMaxChars: Long? get() = idDomain?.bounds?.max
     val fields = json.member("fields").obj().mapValues { FieldDef(it.key, it.value) }
     val seeded = json["seeded"]
     val mint = json["mint"]?.let(::Mint)
@@ -248,7 +250,7 @@ class TypeDef(val json: Json) {
     init {
         require(name.matches(Regex("[a-z][A-Za-z0-9]*")))
         require(scope == "tree" || scope == "overlay" || scope.matches(Regex("product:[a-z][a-z0-9]*")))
-        json.expectKeys(listOf("type", "scope", "identity", "life", "origins", "fields"), listOf("idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows", "governs", "cap", "visibleWhen", "primary", "headline"))
+        json.expectKeys(listOf("type", "scope", "identity", "life", "origins", "fields"), listOf("idSpace", "idPattern", "idDomain", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows", "governs", "cap", "visibleWhen", "primary", "headline"))
         require(identity in listOf("minted", "derived", "keyed", "singleton"))
         val origins = json.member("origins").distinctStrings()
         require("replica" in origins && origins.all { it in listOf("replica", "server") })
@@ -261,8 +263,16 @@ class TypeDef(val json: Json) {
             it.expectKeys(listOf("fallback"))
             require(it.member("fallback").str().matches(Regex("[a-z0-9]+(-[a-z0-9]+)*")))
         }
-        require(idPattern != null || json["key"] != null)
-        if (hasBorn) require(life && mint != null && json["idSpace"] != null && idPattern != null && json["revivable"] != null && json["deadRows"] != null)
+        require(listOf(idPattern != null, idDomain != null, json["key"] != null).count { it } == 1)
+        require(json["singletonId"] == null || identity == "singleton")
+        if (idDomain != null) {
+            idDomain.json.expectKeys(listOf("type", "unit", "min", "max"))
+            require(idDomain.type == "string" && idDomain.json.member("unit").str() == "chars" &&
+                idDomain.json.member("min").long() == 1L && idDomain.json.member("max").long(1) >= 1)
+            require(identity in listOf("derived", "keyed") && (json["idSpace"] == null || json["idSpace"]!!.str() == "scope"))
+            json["derive"]?.let { require(isScalarId(it.member("fallback"))) }
+        }
+        if (hasBorn) require(life && mint != null && json["idSpace"] != null && (idPattern != null || idDomain != null) && json["revivable"] != null && json["deadRows"] != null)
         if (identity == "derived") require(json["derive"] != null)
         if (identity == "singleton") require(!life && json["singletonId"] != null && idPattern != null)
         if (identity == "keyed" && life) require(json["deadRows"] != null)
@@ -284,7 +294,15 @@ class TypeDef(val json: Json) {
                 require(allowed == null || field.json["opens"]!!.distinctStrings().all { it in allowed })
             }
         }
-        if (mint != null && idPattern != null) require(mint.alphabet.all { idPattern.matches(mint.prefix + it.toString().repeat(mint.length)) })
+        if (mint != null) {
+            val maxChars = idMaxChars
+            if (maxChars != null) {
+                require('\u0000' !in mint.prefix && '\u0000' !in mint.alphabet &&
+                    mint.length <= maxChars - MeasureUnit.chars.length(mint.prefix))
+            } else if (idPattern != null) {
+                require(mint.symbols.all { idPattern.matches(mint.prefix + it.repeat(mint.length)) })
+            }
+        }
         seeded?.expectKeys(listOf("seedMax", "ordinalMax"))
         seeded?.member("seedMax")?.long(1); seeded?.member("ordinalMax")?.long(1)
         json["key"]?.let { key ->
@@ -302,6 +320,11 @@ class TypeDef(val json: Json) {
                 }
             }
         }
+    }
+    fun isScalarId(id: Json): Boolean {
+        if (id !is Json.Str) return false
+        if (idDomain == null) return idPattern?.matches(id.value) == true
+        return '\u0000' !in id.value && idDomain.admits(id)
     }
 }
 
@@ -381,15 +404,15 @@ class Registry(input: Json) {
         if (key != null) {
             if (key["ref"] != null) {
                 val target = type(key.member("ref").str()) ?: return false
-                return isId(id, target) && (type.idPattern?.let { id is Json.Str && it.matches(id.value) } != false)
+                return isId(id, target)
             }
             val parts = key.member("tuple").arr()
             return id is Json.Arr && id.values.size == parts.size && parts.indices.all { i ->
                 type(parts[i].member("ref").str())?.let { isId(id.values[i], it) } == true
             }
         }
-        if (id !is Json.Str || type.idPattern?.matches(id.value) != true) return false
-        return type.identity != "singleton" || id.value == type.json.member("singletonId").str()
+        if (!type.isScalarId(id)) return false
+        return type.identity != "singleton" || id.str() == type.json.member("singletonId").str()
     }
     fun admits(value: Json, field: FieldDef): Boolean {
         if (field.kind == "ranked" && (value as? Json.Str)?.value !in field.rank) return false

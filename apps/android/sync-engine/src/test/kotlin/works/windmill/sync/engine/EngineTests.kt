@@ -77,6 +77,28 @@ class EngineTests {
     private val scope = ScopeRef.product("probe")
     private fun engine(telemetry: EngineTelemetry = NoEngineTelemetry) = Engine.memory(registry, clock = object : EngineClock { override fun now() = 5_000L }, identities = identities, actor = "actor", telemetry = telemetry)
     private fun create(id: String) = Gesture(listOf(Change.create("card", NewID.Given(RecordID(id)), mapOf("title" to Json.of(id)))))
+    @Test fun derivedCommitsFitTheirIdDomainOrLeaveTheStoreUnchanged() {
+        for (max in listOf(8, 1)) {
+            val custom = Registry(Json.parse("""{
+                "registry":"bounded","version":1,"minVersion":1,"products":{"p":{}},"commands":[],
+                "types":[{"type":"node","scope":"product:p","identity":"derived","idSpace":"scope",
+                "idDomain":{"type":"string","unit":"chars","min":1,"max":$max},
+                "derive":{"fallback":"${"a".repeat(max)}"},"mint":{"prefix":"","alphabet":"ab","length":1},
+                "life":true,"revivable":true,"deadRows":"keep","origins":["replica"],"fields":{}}]
+            }"""))
+            Engine.memory(custom, identities = identities, actor = "actor").use { engine ->
+                val before = engine.snapshot()
+                val gesture = Gesture(listOf("abcdefgh".repeat(25), "", "").map { Change.create("node", NewID.Derived(it)) })
+                if (max == 1) {
+                    assertThrows(CommitFailure::class.java) { engine.commit(ScopeRef.product("p"), gesture) }
+                    assertEquals(before, engine.snapshot())
+                } else {
+                    val outcome = engine.commit(ScopeRef.product("p"), gesture) as CommitOutcome.Committed
+                    assertEquals(listOf("abcdefgh", "aaaaaaaa", "aaaaaa-2"), outcome.receipt.ids.map { it?.string })
+                }
+            }
+        }
+    }
     @Test fun advertisedServerSchemaIsDurableAccountLocalAndPublished() = runBlocking {
         engine().use { engine ->
             assertNull(engine.read(scope) { it.serverSchema() })

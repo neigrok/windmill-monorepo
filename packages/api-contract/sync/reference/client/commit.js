@@ -120,7 +120,13 @@ class DeltaBuilder {
   idOf(type, change) {
     if (change.id !== undefined) return change.id;
     const taken = this.takenIds(type);
-    if (type.identity === 'derived' && change.label !== undefined) return derive(change.label, type.derive.fallback, taken);
+    if (type.identity === 'derived' && change.label !== undefined) {
+      try { return derive(change.label, type.derive.fallback, taken, type.idDomain?.max); }
+      catch (error) {
+        if (error instanceof RangeError) throw new CommitError('a derived id cannot fit its domain');
+        throw error;
+      }
+    }
     let id = mintId(type, this.draw);
     while (taken.has(id)) id = mintId(type, this.draw);
     return id;

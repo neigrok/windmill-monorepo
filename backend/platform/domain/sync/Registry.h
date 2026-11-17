@@ -175,6 +175,7 @@ struct TypeDef {
   Identity identity = Identity::minted;
   std::optional<IdSpace> idSpace;
   std::optional<Pattern> idPattern;
+  std::optional<Domain> idDomain;
   std::optional<std::string> keyRef;  // a keyed type whose key is one id of this type
   std::vector<KeyPart> keyTuple;      // a keyed type whose key is an array of ids, its JCS the identity
   std::optional<std::string> singletonId;
@@ -194,6 +195,7 @@ struct TypeDef {
   bool headline = false;  // §9.2 holdings: the one primary type a product's records are tallied by
 
   const FieldDef* field(std::string_view fieldName) const;
+  bool isScalarId(const Json::Value& id) const;
 };
 
 enum class ArgType { json, time, instant, ref };
@@ -252,7 +254,7 @@ public:
   // registry declares no tree.
   const TypeDef* governingType() const;
 
-  // A type's id: its singleton id, its tuple of ref ids, the id of the type its key names, or its pattern.
+  // A type's id: its singleton id, its tuple of ref ids, the id of the type its key names, or its pattern or domain.
   bool isIdOf(const TypeDef& type, const Json::Value& id) const;
   // A register's value for its field: kind, ref, domain, and bounds in the field's unit.
   bool admitsValue(const FieldDef& field, const Json::Value& value) const;

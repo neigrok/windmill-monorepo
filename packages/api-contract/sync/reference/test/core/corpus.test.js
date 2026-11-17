@@ -14,6 +14,7 @@ import { jcs } from '../../core/jcs.js';
 import { INTENT_MACHINE, REPLICA_MACHINE, SCOPE_MACHINE, transition } from '../../core/machines.js';
 import { joinBorn, joinFww, joinLife, joinLww, joinRanked, joinRecord } from '../../core/merge.js';
 import { Registry } from '../../core/registry.js';
+import { checkArgument, checkFieldValue, checkId } from '../../core/values.js';
 import { Stamp } from '../../core/stamp.js';
 import { decide, opOf } from '../../server/identity.js';
 import { diff3, editScript, mergeText, mergedFlag, tokenize } from '../../server/textmerge.js';
@@ -74,6 +75,7 @@ const RUNNERS = {
   'join/life.json': ({ a, b }) => ({ join: orNull(joinLife(orAbsent(a), orAbsent(b))) }),
   'join/born.json': ({ a, b }) => ({ join: orNull(joinBorn(orAbsent(a), orAbsent(b))) }),
   'join/record.json': ({ type, a, b }) => ({ join: joinRecord(registry.type(type), a, b) }),
+  'derive/bounded.json': ({ label, fallback, taken, maxChars }) => attempt(() => ({ id: derive(label, fallback, new Set(taken), maxChars) })),
   'derive/slug.json': ({ label, fallback, taken }) => ({ id: derive(label, fallback, new Set(taken)) }),
   'registry/refusals.json': ({ registry: document }) => {
     try {
@@ -82,6 +84,16 @@ const RUNNERS = {
     } catch {
       return { admitted: false };
     }
+  },
+  'registry/ids.json': ({ registry: document, type, idJson }) => {
+    const registry = new Registry(document);
+    const id = JSON.parse(idJson);
+    return {
+      id: checkId(registry, registry.type(type), id) === null,
+      field: checkFieldValue(registry, { kind: 'lww', writer: 'client', ref: type }, id) === null,
+      argument: checkArgument(registry, { type: `ref<${type}>` }, id) === null,
+      key: checkId(registry, registry.type(type), id) === null ? jcs(id) : null,
+    };
   },
   'identity/seeded.json': (input) => (input.op === 'parse'
     ? { parsed: parseSeeded(input.id) }

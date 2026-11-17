@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { seededId } from '../../core/derive.js';
+import { mintId, seededId } from '../../core/derive.js';
 import { Registry, RegistryError, isPortablePattern } from '../../core/registry.js';
 
 const CONTRACT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -275,5 +275,25 @@ test('every minted gym type is seeded, its widest seeded id in its pattern', () 
   assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
   for (const type of seeded) {
     assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
+  }
+});
+
+test('Unicode ID domains round-trip and mint whole scalar values', () => {
+  const document = read('corpus/registry/refusals.json').find((v) => v.name === 'a mint draws Unicode scalars within the id domain').input.registry;
+  assert.deepEqual(errorsOf(SCHEMA, document), []);
+  const registry = new Registry(document);
+  const type = registry.type('node');
+  assert.equal(mintId(type, (size) => { assert.equal(size, 2); return 1; }), '界' + '🚀'.repeat(127));
+  for (const change of [
+    (t) => { t.idDomain.nullable = false; }, (t) => { t.idDomain.unit = 'bytes'; },
+    (t) => { delete t.idDomain.max; }, (t) => { t.idDomain.min = 0; },
+    (t) => { t.idDomain.max = 2 ** 53; }, (t) => { t.idPattern = '^a+$'; },
+    (t) => { t.key = { ref: 'kind' }; }, (t) => { t.identity = 'minted'; },
+    (t) => { t.idSpace = 'global'; }, (t) => { t.singletonId = 'node'; },
+  ]) {
+    const invalid = structuredClone(document);
+    change(invalid.types[0]);
+    assert.notDeepEqual(errorsOf(SCHEMA, invalid), []);
+    assert.throws(() => new Registry(invalid), RegistryError);
   }
 });

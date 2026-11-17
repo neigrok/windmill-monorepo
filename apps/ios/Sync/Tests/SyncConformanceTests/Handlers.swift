@@ -115,10 +115,16 @@ enum Handlers {
       return ["join": joined.json]
     },
 
+    "derive/bounded.json": { input in
+      let id = try DerivedID.from(label: input.member("label").asString(), fallback: input.member("fallback").asString(),
+                                  taken: input.member("taken").asArray().map { try $0.asString() },
+                                  maxChars: Int(input.member("maxChars").asInteger()))
+      return ["id": .string(id)]
+    },
     "derive/slug.json": { input in
       let taken = try input.member("taken").asArray().map { try $0.asString() }
       let label = try input.member("label").asString()
-      let id = DerivedID.from(label: label, fallback: try input.member("fallback").asString(), taken: taken)
+      let id = try DerivedID.from(label: label, fallback: try input.member("fallback").asString(), taken: taken)
       return ["id": .string(id)]
     },
     "registry/refusals.json": { input in
@@ -128,6 +134,27 @@ enum Handlers {
       } catch {
         return ["admitted": false]
       }
+    },
+    "registry/ids.json": { input in
+      let registry = try Registry(json: input.member("registry"))
+      let name = try input.member("type").asString()
+      guard let type = registry.type(name) else { throw VectorError("no such ID type") }
+      guard let id = try? JSON(parsing: input.member("idJson").asString()) else {
+        return ["id": false, "field": false, "argument": false, "key": .null]
+      }
+      let refs = try Registry(json: [
+        "registry": "refs", "version": 1, "minVersion": 1, "products": ["p": [:]],
+        "types": .array(try input.member("registry").member("types").asArray() + [[
+          "type": "holder", "scope": "tree", "identity": "keyed", "idPattern": "^holder$", "life": false,
+          "origins": ["replica"], "fields": ["target": ["kind": "lww", "writer": "client", "ref": .string(name)]],
+        ]]),
+        "commands": [["name": "p.check", "scope": "tree", "origins": ["replica"], "serverInternal": false,
+                      "args": ["target": ["type": .string("ref<\(name)>")]]]],
+      ])
+      return ["id": .bool(registry.isID(id, of: type)),
+              "field": .bool(refs.admits(id, for: refs.type("holder")!.field("target")!)),
+              "argument": .bool(refs.admits(id, for: refs.command("p.check")!.args[0])),
+              "key": registry.isID(id, of: type) ? .string(try RecordID(json: id).text) : .null]
     },
     "identity/seeded.json": { input in
       guard try input.member("op").asString() == "make" else {

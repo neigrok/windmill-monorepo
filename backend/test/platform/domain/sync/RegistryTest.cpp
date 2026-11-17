@@ -1,6 +1,7 @@
 #include "platform/domain/sync/Registry.h"
 
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/Record.h"
 
 #include "products/probe/ProbeRegistry.h"
 #include "products/gym/sync/GymProduct.h"
@@ -280,7 +281,7 @@ TEST(a_registry_refuses_what_section_2_4_forbids) {
   CHECK_EQ(refusalOf([](Json::Value& r) { r["commands"][0]["serverInternal"] = false; r["commands"][0]["beforePull"] = true; }),
            std::string("registry.commands.p.sweep runs before pulls without being server-internal"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0].removeMember("mint"); }),
-           std::string("registry.types.item is minted or derived without \"idSpace\", \"idPattern\", \"revivable\", \"deadRows\" and \"mint\""));
+           std::string("registry.types.item is minted or derived without \"idSpace\", an ID definition, \"revivable\", \"deadRows\" and \"mint\""));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["mint"]["alphabet"] = "0123456789abcdef"; }),
            std::string("registry.types.item mints ids its idPattern refuses"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["seen"] = parseJson(R"({"kind":"lww","writer":"server","opens":["yes"]})"); }),
@@ -626,4 +627,23 @@ TEST(a_quantum_is_an_integer_or_the_inverse_of_one) {
     }
     CHECK(refused);
   }
+}
+
+TEST(unicode_id_domains_refuse_invalid_utf8_and_keep_distinct_storage_keys) {
+  const Registry registry{parseJson(R"({
+    "registry":"unicode", "version":1, "minVersion":1, "products":{"p":{}}, "commands":[],
+    "types":[{"type":"node","scope":"tree","identity":"keyed","life":false,"origins":["replica"],
+              "fields":{},"idDomain":{"type":"string","unit":"chars","min":1,"max":128}}]
+  })")};
+  const TypeDef& type = *registry.type("node");
+  for (const std::string& id : {std::string("\xc0\xaf"), std::string("\xed\xa0\x80"), std::string("\xf4\x90\x80\x80"), std::string("\xf0\x9f\x98")}) {
+    CHECK(!registry.isIdOf(type, id));
+    CHECK(!registry.admitsValue(FieldDef{.name = "target", .ref = "node"}, id));
+  }
+  const RecordId composed{std::string("é")};
+  const RecordId decomposed{std::string("e\xcc\x81")};
+  CHECK(composed != decomposed);
+  CHECK(RecordId::fromColumn(composed.column(), false) == composed);
+  CHECK(RecordId::fromColumn(decomposed.column(), false) == decomposed);
+  CHECK_EQ(std::set<RecordId>({composed, decomposed}).size(), 2U);
 }

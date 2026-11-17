@@ -197,7 +197,12 @@ Json::Value digestScope(const Json::Value& input) {
 Json::Value derivedId(const Json::Value& input) {
   std::set<std::string> taken;
   for (const Json::Value& id : input["taken"]) taken.insert(id.asString());
-  return object({{"id", deriveId(input["label"].asString(), input["fallback"].asString(), taken)}});
+  try {
+    const std::optional<std::size_t> maxChars = input.isMember("maxChars") ? std::optional<std::size_t>(input["maxChars"].asUInt64()) : std::nullopt;
+    return object({{"id", deriveId(input["label"].asString(), input["fallback"].asString(), taken, maxChars)}});
+  } catch (const std::invalid_argument&) {
+    return object({{"error", true}});
+  }
 }
 
 Json::Value registryLoads(const Json::Value& input) {
@@ -207,6 +212,20 @@ Json::Value registryLoads(const Json::Value& input) {
     return object({{"admitted", false}});
   }
   return object({{"admitted", true}});
+}
+
+Json::Value registryIds(const Json::Value& input) {
+  const Registry registry{input["registry"]};
+  const std::string name = input["type"].asString();
+  try {
+    const Json::Value id = parseJson(input["idJson"].asString());
+    return object({{"id", registry.isIdOf(*registry.type(name), id)},
+                   {"field", registry.admitsValue(FieldDef{.name = "ref", .ref = name}, id)},
+                   {"argument", registry.admitsArgument(ArgDef{.name = "ref", .type = ArgType::ref, .ref = name}, id)},
+                   {"key", registry.isIdOf(*registry.type(name), id) ? Json::Value(RecordId(id).key()) : Json::Value(Json::nullValue)}});
+  } catch (const JsonError&) {
+    return object({{"id", false}, {"field", false}, {"argument", false}, {"key", Json::Value(Json::nullValue)}});
+  }
 }
 
 Json::Value seededId(const Json::Value& input) {
@@ -376,7 +395,9 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"digest/row.json", digestRow},
       {"digest/scope.json", digestScope},
       {"derive/slug.json", derivedId},
+      {"derive/bounded.json", derivedId},
       {"registry/refusals.json", registryLoads},
+      {"registry/ids.json", registryIds},
       {"identity/seeded.json", seededId},
       {"text/tokens.json", textTokens},
       {"text/script.json", textScript},

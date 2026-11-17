@@ -440,7 +440,12 @@ struct DeltaBuilder {
       }
     case .derived(let label):
       guard type.identity == .derived, let fallback = type.deriveFallback else { throw CommitFailure.malformed("\(type.name) does not derive ids") }
-      return RecordID(DerivedID.from(label: label, fallback: fallback, taken: takenIDs(of: type).compactMap(\.string)))
+      do {
+        return RecordID(try DerivedID.from(label: label, fallback: fallback,
+                                          taken: takenIDs(of: type).compactMap(\.string), maxChars: type.idMaxChars))
+      } catch {
+        throw CommitFailure.malformed("a derived id cannot fit its domain")
+      }
     case .minted:
       guard let mint = type.mint else { throw CommitFailure.malformed("\(type.name) does not mint ids") }
       while true {

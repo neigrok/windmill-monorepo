@@ -34,11 +34,23 @@ class CoverageTests {
     @Test fun fullGateClaimsEveryClientFile() {
         assertEquals(emptyList<String>(), corpus.unclaimed(handlers, corpus.clientPaths))
         corpus.requireCoverage(handlers, corpus.clientPaths)
-        assertEquals(53, handlers.size)
-        assertEquals(804, handlers.keys.sumOf { corpus.vectors(it).size })
+        assertEquals(55, handlers.size)
+        assertEquals(871, handlers.keys.sumOf { corpus.vectors(it).size })
     }
     @Test fun supportedFileWithoutHandlerFails() {
         assertThrows(IllegalStateException::class.java) { corpus.requireCoverage(emptyMap(), listOf("stamp/order.json")) }
+    }
+    @Test fun unicodeDomainMintsWholeScalarsAndKeepsByteIdentities() {
+        val vector = corpus.vectors("registry/refusals.json").first { it.name == "a mint draws Unicode scalars within the id domain" }
+        val registry = Registry(vector.input.member("registry"))
+        val type = registry.type("node")!!
+        val id = type.mint!!.id { size -> assertEquals(2, size); 1 }
+        assertEquals("界" + "🚀".repeat(127), id)
+        assertTrue(registry.isId(Json.of(id), type))
+        assertEquals(registry.json, Registry(registry.json).json)
+        val ids = listOf(RecordID("é"), RecordID("e\u0301"))
+        assertEquals(2, ids.toSet().size)
+        assertEquals(ids, ids.map { RecordID(Json.parse(it.json.jcs)) })
     }
     @Test fun generatedSchemaMatchesCompositionLosslessly() {
         val contract = File(System.getProperty("windmill.contract"), "sync")
