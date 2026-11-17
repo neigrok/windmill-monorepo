@@ -785,10 +785,21 @@ that owner's overlay, and `{op: 'not-found', as, scope}` to everyone else, `as` 
 ### Limits knobs
 
 A vector may carry `input.limits`, overriding constants for that call only. A runner that cannot
-configure a limit skips those vectors.
+configure a named limit fails those vectors.
 - `pull/serve.json`: `PULL_PAGE_BYTES` and `PULL_MAX_BYTES`.
 - `push/serve.json`: `PUSH_MAX_INTENTS` and `PUSH_MAX_BYTES`.
 - `admit/record-bound.json`: `MAX_RECORD_BYTES`.
+- `admit/cross-scope-effects.json`: `EFFECT_MAX_BYTES`.
+- `admit/scoped-receipts.json`: `RECEIPT_MAX_BYTES` and `SCOPED_RESPONSE_MAX_BYTES`.
+- `write/scoped-predictions.json`: `EFFECT_MAX_BYTES` for the canonical grouped prediction bytes.
+
+The three effect/receipt limits are positive and shrink-only. `admit/scoped-receipts.json` covers
+platform capture, actual changed-slot versions, owned lifecycle watermarks, serial-only rows and
+atomic receipt/response budget refusals. Its effect-plan fixture may supply internal serial `v`
+values: remove them before ordinary wire shaping, then restore them to the internal delta for
+normal generated-effect validation. `write/scoped-predictions.json` uses ordinary client steps to
+assert persisted projections, per-scope coverage, replay batching, scoped maps and dependencies.
+Probe command metadata and receipt shapes are specified in engine.md §§2.4, 6.4 and 7.1.
 
 ### pull/serve.json and pull/hello.json (server)
 
@@ -937,7 +948,7 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
   - `forkGuards`: the next `DeviceMeta.forkGuard` that `engineStart` mints;
   - `draws`: CSPRNG draws, each an index below the alphabet's length (§7.1 step 5, D-8).
 - `limits` (optional): constants overriding `constants.json` for the vector, e.g. `{PUSH_MAX_BYTES: 150}`.
-  A runner that cannot shrink a limit skips the vector.
+  A runner that cannot shrink a named limit fails the vector.
 - Every input device is **reachable**: no dead confirmed row (a dead row deletes it, §7.5); every scope
   with confirmed rows has a cursor record; every cursor record's `digest` is the §6.12 sum of its
   scope's confirmed rows, and every staging digest the sum of its staged rows. The JS runner checks

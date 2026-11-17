@@ -6,8 +6,10 @@ import { Clock, maxPair } from '../core/clock.js';
 import { sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { Stamp } from '../core/stamp.js';
+import { remappedScope } from '../core/receipts.js';
 import { baseTextKey } from './commit.js';
 import { Dependents, commandRefs, deltasOf, isEmpty, removeDependent } from './dependents.js';
+import { effectsOf, mergePredictions, predictionsOf } from './projections.js';
 
 function isQueued(entry) {
   return entry.state === 'held' || entry.state === 'ready';
@@ -19,7 +21,7 @@ function laterUnacked(replica, entry) {
 
 // `register`: 'life' or a field name. A create's born moves with its life; a later delta carrying the
 // life register unchanged (a keyed put that keeps presence, §7.1 step 4) follows it.
-function moveRegister(replica, entry, delta, register, n) {
+function moveRegister(replica, entry, delta, register, n, scope = entry.scope, queuedOnly = false) {
   const current = register === 'life' ? delta.life : delta.f?.[register];
   if (!current || current[1] === n) return;
   const o = current[1];
@@ -28,7 +30,8 @@ function moveRegister(replica, entry, delta, register, n) {
     delta.life = [delta.life[0], n];
     if (createsRecord) delta.born = n;
     for (const later of laterUnacked(replica, entry)) {
-      for (const other of deltasOf(later)) {
+      if ((queuedOnly || entry.predictions) && !isQueued(later)) continue;
+      for (const other of effectsOf(later).filter((effect) => effect.scope === scope).flatMap(({ d }) => d)) {
         if (other.t !== delta.t || !sameJson(other.id, delta.id)) continue;
         if (createsRecord && other.born === o) other.born = n;
         if (other.life?.[1] === o) other.life = [other.life[0], n];
@@ -38,6 +41,7 @@ function moveRegister(replica, entry, delta, register, n) {
   }
   delta.f[register] = [delta.f[register][0], n];
   for (const later of laterUnacked(replica, entry)) {
+    if (later.scope !== scope || ((queuedOnly || entry.predictions) && !isQueued(later))) continue;
     for (const guard of later.intent.guard ?? []) {
       if (guard.t === delta.t && sameJson(guard.id, delta.id) && guard.field === register && guard.stamp === o) guard.stamp = n;
     }
@@ -55,7 +59,7 @@ function ownRegisters(entry) {
   return own;
 }
 
-const lifeKey = (t, id, stamp) => `${t}|${JSON.stringify(id)}|${stamp}`;
+const lifeKey = (scope, t, id, stamp) => `${scope}|${t}|${JSON.stringify(id)}|${stamp}`;
 
 // The borns and carried life registers of queued entries above admittedHigh whose source no unacked
 // entry holds: no held, ready or sent entry wrote that life register, by a delta or a prediction. Such a
@@ -64,15 +68,15 @@ function unsourced(replica) {
   const unadmitted = (stamp) => Stamp.less(replica.meta.admittedHigh, stamp);
   const written = new Set();
   for (const entry of replica.entries().filter((other) => isQueued(other) || other.state === 'sent')) {
-    for (const [delta, register] of ownRegisters(entry)) if (register === 'life') written.add(lifeKey(delta.t, delta.id, delta.life[1]));
-    for (const delta of entry.predict ?? []) if (delta.life) written.add(lifeKey(delta.t, delta.id, delta.life[1]));
+    for (const [delta, register] of ownRegisters(entry)) if (register === 'life') written.add(lifeKey(entry.scope, delta.t, delta.id, delta.life[1]));
+    for (const { scope, d } of predictionsOf(entry)) for (const delta of d) if (delta.life) written.add(lifeKey(scope, delta.t, delta.id, delta.life[1]));
   }
   const carried = [];
   for (const entry of replica.entries().filter(isQueued)) {
     for (const delta of entry.intent.d ?? []) {
       const creates = delta.life?.[0] === 'alive' && delta.life[1] === delta.born;
-      if (delta.born !== undefined && !creates && unadmitted(delta.born) && !written.has(lifeKey(delta.t, delta.id, delta.born))) carried.push({ delta, key: 'born' });
-      if (delta.life && Stamp.less(delta.life[1], entry.stamp) && unadmitted(delta.life[1]) && !written.has(lifeKey(delta.t, delta.id, delta.life[1]))) {
+      if (delta.born !== undefined && !creates && unadmitted(delta.born) && !written.has(lifeKey(entry.scope, delta.t, delta.id, delta.born))) carried.push({ delta, key: 'born' });
+      if (delta.life && Stamp.less(delta.life[1], entry.stamp) && unadmitted(delta.life[1]) && !written.has(lifeKey(entry.scope, delta.t, delta.id, delta.life[1]))) {
         carried.push({ delta, key: 'life' });
       }
     }
@@ -125,19 +129,20 @@ function recoverBase(replica, ctx, refused) {
 // its own dependents are held back (§7.4) until its result, and fold only when it is refused.
 function foldDependents(replica, ctx, source, origin) {
   const dependents = new Dependents(ctx.registry);
-  dependents.absorb(source.scope, deltasOf(source), source.stamp);
+  dependents.absorbEntry(source);
   const folded = [];
   for (const entry of replica.entries().filter((other) => other.commitOrder > source.commitOrder)) {
     const part = dependents.of(entry);
     if (!part.any) continue;
     if (entry.state === 'sent') {
-      folded.push(contentOf(entry));
+      folded.push({ ...contentOf(entry), ...(source.predictions || entry.predictions ? { scope: entry.scope } : {}) });
       entry.orphanOf = origin;
       continue;
     }
     if (!isQueued(entry)) continue;
     dependents.absorbPart(entry, part);
-    folded.push(removeDependent(entry, part));
+    const scoped = source.predictions || entry.predictions;
+    folded.push({ ...removeDependent(entry, part), ...(scoped ? { scope: entry.scope } : {}) });
     if (isEmpty(entry)) {
       entry.orphanOf = origin;
       moveEntry(replica, ctx.ended, entry, 'fold');
@@ -152,6 +157,7 @@ function contentOf(entry) {
   const content = {};
   if (entry.intent.d?.length) content.d = structuredClone(entry.intent.d);
   if (entry.intent.cmd) content.cmd = structuredClone(entry.intent.cmd);
+  if (entry.predictions) content.predictions = structuredClone(entry.predictions);
   return content;
 }
 
@@ -185,6 +191,28 @@ export function dismiss(replica, noticeId) {
   notice.dismissed = true;
 }
 
+// Observed-scope copy only; the durable notice retains its origin and complete content for discard/copy.
+export function noticesInScope(replica, scope) {
+  const project = (content, origin) => {
+    const here = content.scope ?? origin;
+    const d = [...(here === scope ? content.d ?? [] : []), ...(content.predictions ?? []).filter((item) => item.scope === scope).flatMap(({ d }) => d)];
+    const dependents = (content.dependents ?? []).map((child) => project(child, here)).filter(Boolean);
+    if (here !== scope && d.length === 0 && dependents.length === 0) return null;
+    const out = {};
+    if (d.length) out.d = structuredClone(d);
+    // Command argument references belong to the origin, never a target's repeated singleton id.
+    if (here === scope && content.cmd) out.cmd = structuredClone(content.cmd);
+    if (dependents.length) out.dependents = dependents;
+    return out;
+  };
+  return replica.notices.flatMap((notice) => {
+    const scoped = notice.content.predictions || notice.content.dependents?.some((content) => content.scope || content.predictions);
+    if (!scoped) return notice.scope === scope ? [notice] : [];
+    const content = project(notice.content, notice.scope);
+    return content ? [{ ...notice, content }] : [];
+  });
+}
+
 // §7.4: a ready entry that grew after commit past a request alone ends too-large before it is numbered,
 // with its notice, or, an orphan, with none of its own, as a one-intent 413 would end it.
 export function refuseOutgrown(replica, ctx, entry) {
@@ -210,8 +238,10 @@ function rewriteId(registry, delta, w) {
   }
 }
 
-function rewriteEntry(registry, entry, w, replay = false) {
-  if (replay && entry.intent.cmd) {
+function rewriteEntry(registry, entry, w, { replay = false, scope = entry.scope, predictionOnly = false } = {}) {
+  const global = registry.type(w.t)?.idSpace === 'global';
+  const origin = global || entry.scope === scope;
+  if (!predictionOnly && origin && replay && entry.intent.cmd) {
     for (const target of entry.writeTargets ?? []) {
       if (target.t !== w.t || !sameJson(target.id, w.from)) continue;
       const refs = commandRefs(registry, entry.intent.cmd).filter((ref) => ref.t === w.t && sameJson(ref.id, target.from));
@@ -219,20 +249,31 @@ function rewriteEntry(registry, entry, w, replay = false) {
       if (refs.length) target.from = w.id;
     }
   }
-  for (const delta of deltasOf(entry)) rewriteId(registry, delta, w);
-  for (const guard of entry.intent.guard ?? []) if (guard.t === w.t && sameJson(guard.id, w.from)) guard.id = w.id;
-  if (entry.intent.cmd) {
-    for (const ref of commandRefs(registry, entry.intent.cmd)) if (ref.t === w.t && ref.id === w.from) entry.intent.cmd.args[ref.name] = w.id;
+  for (const group of predictionOnly ? predictionsOf(entry) : effectsOf(entry)) {
+    if (global || group.scope === scope) for (const delta of group.d) rewriteId(registry, delta, w);
   }
-  for (const target of entry.writeTargets ?? []) {
-    if (target.t !== w.t) continue;
-    if (sameJson(target.from, w.from)) target.from = w.id;
-    if (sameJson(target.id, w.from)) target.id = w.id;
+  if (!predictionOnly && origin) {
+    for (const guard of entry.intent.guard ?? []) if (guard.t === w.t && sameJson(guard.id, w.from)) guard.id = w.id;
+    for (const ref of entry.intent.cmd ? commandRefs(registry, entry.intent.cmd) : []) {
+      if (ref.t === w.t && sameJson(ref.id, w.from)) entry.intent.cmd.args[ref.name] = w.id;
+    }
+    for (const target of entry.writeTargets ?? []) {
+      if (target.t !== w.t) continue;
+      if (sameJson(target.from, w.from)) target.from = w.id;
+      if (sameJson(target.id, w.from)) target.id = w.id;
+    }
+  }
+  if (global && registry.type(w.t)?.governs === 'tree') {
+    if (!predictionOnly) entry.intent.scope = entry.scope = remappedScope(registry, entry.scope, [w]);
+    for (const projection of entry.predictions ?? []) projection.scope = remappedScope(registry, projection.scope, [w]);
+    for (const effect of entry.acceptedEffects ?? []) effect.scope = remappedScope(registry, effect.scope, [w]);
+    mergePredictions(entry);
   }
 }
 
 // §7.7 write map: an ok result's map applies in the result's transaction.
 export function applyWriteMap(replica, ctx, command, write) {
+  if (command.predictions) return applyScopedWriteMap(replica, ctx, command, write);
   const { registry } = ctx;
   const retained = command.writeTargets !== undefined;
   const targets = command.writeTargets ??= [];
@@ -241,13 +282,13 @@ export function applyWriteMap(replica, ctx, command, write) {
     const previous = targets.find((target) => target.t === w.t && sameJson(target.from, source));
     if (previous) {
       const remap = { ...w, from: previous.id };
-      for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, remap, true);
+      for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, remap, { replay: true, scope: command.scope });
       if (!sameJson(previous.id, w.id)) {
         for (const delta of command.predict ?? []) rewriteId(registry, delta, remap);
       }
       if (previous.born !== undefined && w.born !== undefined && previous.born !== w.born) {
         for (const entry of laterUnacked(replica, command)) {
-          for (const delta of deltasOf(entry)) {
+          for (const delta of effectsOf(entry).filter(({ scope }) => scope === command.scope).flatMap(({ d }) => d)) {
             if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
             if (delta.born === previous.born) delta.born = w.born;
             if (delta.life?.[1] === previous.born) delta.life[1] = w.born;
@@ -272,7 +313,7 @@ export function applyWriteMap(replica, ctx, command, write) {
           refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
           continue;
         }
-        rewriteEntry(registry, entry, w);
+        rewriteEntry(registry, entry, w, { scope: command.scope });
       }
       for (const delta of command.predict ?? []) rewriteId(registry, delta, w);
     }
@@ -294,7 +335,7 @@ export function applyWriteMap(replica, ctx, command, write) {
   const clock = new Clock(replica.meta.hlc, ctx.actor, () => physNow);
   for (const entry of replica.entries().filter(isQueued)) {
     const named = [];
-    for (const delta of deltasOf(entry)) {
+    for (const delta of effectsOf(entry).filter(({ scope }) => scope === command.scope).flatMap(({ d }) => d)) {
       for (const w of write) {
         if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
         for (const name of Object.keys(w.f ?? {})) if (delta.f?.[name]) named.push([delta, name]);
@@ -305,6 +346,77 @@ export function applyWriteMap(replica, ctx, command, write) {
     const n = clock.tick();
     for (const [delta, register] of named) moveRegister(replica, entry, delta, register, n);
     replica.meta.hlcHigh = Stamp.max(replica.meta.hlcHigh, n);
+  }
+  replica.meta.hlc = clock.pair;
+}
+
+function applyScopedWriteMap(replica, ctx, command, write) {
+  const { registry } = ctx;
+  const retained = command.writeTargets !== undefined;
+  const targets = command.writeTargets ??= [];
+  for (const item of write) {
+    const source = item.from ?? item.id;
+    const previous = targets.find((target) => target.t === item.t && sameJson(target.from, source));
+    const from = previous?.id ?? source;
+    const mapping = { ...item, from };
+    for (const entry of laterUnacked(replica, command).filter(isQueued)) {
+      if (!replica.entry(entry.localId)) continue;
+      const deletes = entry.scope === command.scope && (entry.intent.d ?? []).some((delta) => delta.t === item.t && delta.life?.[0] === 'dead'
+        && (!previous && item.from !== undefined && sameJson(delta.id, from)
+          || retained && !previous && item.born !== undefined && !sameJson(delta.id, source) && !sameJson(delta.id, item.id)));
+      if (deletes) { refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' }); continue; }
+      if (!sameJson(from, item.id)) rewriteEntry(registry, entry, mapping, { replay: !!previous, scope: command.scope });
+    }
+    if (!sameJson(from, item.id)) rewriteEntry(registry, command, mapping, { scope: command.scope, predictionOnly: true });
+    const target = previous ?? { t: item.t, from: structuredClone(source), id: structuredClone(item.id) };
+    target.id = structuredClone(item.id);
+    if (item.born !== undefined) target.born = item.born;
+    if (!previous) targets.push(target);
+  }
+}
+
+export function applyAcceptedVersions(replica, ctx, command, effects) {
+  const stamps = effects.flatMap(({ rows }) => rows.flatMap(({ slots }) => slots.filter(({ version }) => version.kind === 'stamp').map(({ version }) => version.stamp)));
+  replica.observe(stamps);
+  replica.raiseAdmittedHigh(stamps);
+  const later = laterUnacked(replica, command).filter(isQueued);
+  const own = new Map(later.map((entry) => [entry, effectsOf(entry).flatMap(({ scope, d }) => d.flatMap((delta) => {
+    const row = effects.find((effect) => effect.scope === scope)?.rows.find((row) => row.t === delta.t && sameJson(row.id, delta.id));
+    return (row?.slots ?? []).flatMap(({ slot }) => {
+      const register = slot.kind === 'life' ? 'life' : slot.kind === 'field' ? slot.name : null;
+      const stamp = register === 'life' ? delta.life?.[1] : delta.f?.[register]?.[1];
+      return stamp !== undefined && Stamp.compare(stamp, entry.stamp) >= 0 ? [{ delta, register, scope }] : [];
+    });
+  }))]));
+  for (const { scope, rows } of effects) for (const row of rows) {
+    const matches = (delta) => delta.t === row.t && sameJson(delta.id, row.id);
+    const predicted = predictionsOf(command).filter((group) => group.scope === scope).flatMap(({ d }) => d).filter(matches);
+    for (const { slot, version } of row.slots) {
+      if (version.kind !== 'stamp') continue;
+      for (const delta of predicted) {
+        if (slot.kind === 'born' && delta.born !== undefined) {
+          const old = delta.born;
+          delta.born = version.stamp;
+          if (delta.life?.[0] === 'alive' && delta.life[1] === old) delta.life[1] = version.stamp;
+          for (const entry of later) for (const group of effectsOf(entry)) {
+            if (group.scope !== scope) continue;
+            for (const other of group.d.filter(matches)) {
+              if (other.born === old) other.born = version.stamp;
+              if (other.life?.[1] === old) other.life[1] = version.stamp;
+            }
+          }
+        }
+        if (slot.kind === 'life' || slot.kind === 'field') moveRegister(replica, command, delta, slot.kind === 'life' ? 'life' : slot.name, version.stamp, scope, true);
+      }
+    }
+  }
+  const clock = new Clock(replica.meta.hlc, ctx.actor, () => ctx.deviceNow + replica.meta.serverOffsetMs);
+  for (const entry of later) {
+    const named = own.get(entry);
+    if (!named.length) continue;
+    const stamp = clock.tick();
+    for (const { delta, register, scope } of named) moveRegister(replica, entry, delta, register, stamp, scope, true);
+    replica.meta.hlcHigh = Stamp.max(replica.meta.hlcHigh, stamp);
   }
   replica.meta.hlc = clock.pair;
 }

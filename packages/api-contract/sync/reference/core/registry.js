@@ -336,6 +336,9 @@ export class Registry {
       }
     }
     for (const command of this.commands.values()) {
+      if (command.scopedEffects !== undefined && command.scopedEffects !== true) fail(`${command.name}: scopedEffects is true or absent`);
+      if (command.engine !== undefined && (command.engine !== 'capture' || !command.scopedEffects || Object.keys(command.args).length)) fail(`${command.name}: engine capture requires scopedEffects and empty args`);
+      for (const t of command.predicts ?? []) if (!this.types.has(t)) fail(`${command.name}: predicts unknown ${t}`);
       if (command.serverInternal && command.origins.includes('replica')) fail(`${command.name}: server-internal commands have server origin only`);
       if (command.beforePull && !command.serverInternal) fail(`${command.name}: a beforePull command is server-internal`);
       for (const t of command.predicts ?? []) if (this.types.get(t)?.wholePut) fail(`${command.name}: no command writes the wholePut type ${t}`);

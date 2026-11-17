@@ -1,13 +1,15 @@
 import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { utf8 } from '../../../../packages/api-contract/sync/reference/core/encoding.js';
 
 const LIVE_QUEUE_FRAMES = 64;
 const LIVE_QUEUE_BYTES = 1_048_576;
 
 export class HttpTransport {
   constructor({ schema, base = '', fetch = globalThis.fetch, socket = (url) => new WebSocket(url),
-    origin = globalThis.location?.origin, reading, timers = globalThis, limits = CONSTANTS }) {
+    origin = globalThis.location?.origin, reading, timers = globalThis, limits = CONSTANTS, scopedCommands = [] }) {
     Object.assign(this, { schema, base, fetch: fetch.bind(globalThis), socketFactory: socket, origin, reading, timers, limits });
+    this.scopedCommands = new Set(scopedCommands);
   }
 
   async request(endpoint, body, { signal, keepalive = false, anonymous = false } = {}) {
@@ -28,7 +30,9 @@ export class HttpTransport {
         cache: 'no-store',
       });
       const text = await response.text();
-      if (text.length > 2 * this.limits.PULL_PAGE_BYTES * this.limits.PULL_MAX_SCOPES) throw new Error('sync response too large');
+      const scoped = endpoint === 'push' && body?.intents?.some((intent) => this.scopedCommands.has(intent.cmd?.name));
+      const max = scoped ? Math.min(this.limits.SCOPED_RESPONSE_MAX_BYTES ?? CONSTANTS.SCOPED_RESPONSE_MAX_BYTES, CONSTANTS.SCOPED_RESPONSE_MAX_BYTES) : 2 * this.limits.PULL_PAGE_BYTES * this.limits.PULL_MAX_SCOPES;
+      if (utf8(text).length > max) throw new Error('sync response too large');
       let parsed = null;
       if (text) {
         try { parsed = JSON.parse(text); }

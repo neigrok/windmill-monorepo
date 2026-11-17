@@ -1043,12 +1043,24 @@
           },
           "uniqueItems": true
         },
+        "scopedEffects": {
+          "description": "Captures scope-qualified committed versions and accepts scoped local predictions.",
+          "const": true
+        },
+        "engine": { "const": "capture" },
         "beforePull": {
           "description": "A server-internal command that runs before every pull of its scope, in its own admission (§6.7).",
           "type": "boolean"
         }
       },
       "allOf": [
+        {
+          "if": { "required": ["engine"] },
+          "then": {
+            "required": ["scopedEffects"],
+            "properties": { "scopedEffects": { "const": true }, "args": { "maxProperties": 0 } }
+          }
+        },
         {
           "if": {
             "properties": {
