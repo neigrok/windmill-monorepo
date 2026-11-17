@@ -8,6 +8,7 @@ import { TransitionError } from '../../../../../packages/api-contract/sync/refer
 import { compareRecords, isAlive } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Cursor } from '../../../../../packages/api-contract/sync/reference/core/wire.js';
 import { CommitError, commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { commitAct } from '../../../../../packages/api-contract/sync/reference/client/acts.js';
 import { release, releaseAll, releaseDue, undo } from '../../../../../packages/api-contract/sync/reference/client/hold.js';
 import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
@@ -121,6 +122,12 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           if (step.changes === null) answer(commit(replica, ctx, step.scope, () => ({ gesture: null })).outcome);
           else answer(commit(replica, ctx, step.scope, step.changes ?? [], step.opts ?? {}));
           break;
+        case 'commitAct': {
+          const outcome = commitAct(replica, ctx, step.segments, step.opts ?? {});
+          if (outcome === null || outcome.refused) { queues.restore(before.queues); gestures = before.gestures; }
+          answer(outcome);
+          break;
+        }
         case 'release':
           answer(release(replica, registry, ended, replica.entry(step.localId)));
           break;

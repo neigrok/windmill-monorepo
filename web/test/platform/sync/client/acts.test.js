@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { ActCommit } from '../../../../../packages/api-contract/sync/reference/client/acts.js';
-import { runSteps } from '../../../../../packages/api-contract/sync/reference/vectors/steps.js';
+import { runSteps } from '../oracle-adapters/steps.js';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { ActDecision, ActPlan, ScopedPlan } from '../../../../src/platform/domain-kit/acts.js';
 import { Valid } from '../../../../src/platform/domain-kit/validation.js';

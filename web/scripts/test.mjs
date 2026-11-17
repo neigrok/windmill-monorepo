@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { availableParallelism } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { run } from 'node:test';
 import { spec } from 'node:test/reporters';
 
@@ -22,7 +22,9 @@ function discover(directory) {
     else if (/\.test\.(js|mjs)$/.test(entry.name)) files.push(path);
   }
 }
-discover(process.argv[2] ?? 'test');
+const selected = process.argv[2] ?? 'test';
+discover(selected);
+if (resolve(selected).startsWith(resolve('test/platform/sync') + sep)) files.push('test/platform/sync/corpus.test.js');
 const performanceFiles = files.filter((file) => /\.perf\.test\.(js|mjs)$/.test(file)).sort();
 const runtimeFuzzFiles = files.filter((file) => file.endsWith('platform/sync/fuzz/runtime.test.js'));
 const ordinaryFiles = files.filter((file) => !performanceFiles.includes(file) && !runtimeFuzzFiles.includes(file)).sort();
