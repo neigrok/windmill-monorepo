@@ -76,10 +76,16 @@ void SyncLive::unsubscribe(const LiveSocket& socket, const Json::Value& scopeRef
 void SyncLive::publish(const CommittedChange& change) {
   std::lock_guard lock(mutex_);
   const std::vector<ScopeKey> flipped = learn(change);
-  for (const ScopeKey& tree : flipped) {
-    for (auto& [socket, subscriber] : sockets_) endUnreadable(subscriber, [&tree](const ScopeKey& key) { return governedBy(key, tree); });
+  std::set<ScopeKey> changedScopes;
+  for (const ScopeChange& changed : change.changed) {
+    changedScopes.insert(changed.key);
+    sendChange(change.epoch, changed, std::find(change.killed.begin(), change.killed.end(), changed.key) != change.killed.end());
   }
-  for (const ScopeChange& changed : change.changed) sendChange(change.epoch, changed);
+  for (auto& [socket, subscriber] : sockets_) {
+    endUnreadable(subscriber, [&](const ScopeKey& key) {
+      return changedScopes.contains(key) || std::any_of(flipped.begin(), flipped.end(), [&](const ScopeKey& tree) { return governedBy(key, tree); });
+    });
+  }
   for (const ScopeKey& killed : change.killed) answerDeath(killed);
 }
 
@@ -154,19 +160,17 @@ std::vector<ScopeKey> SyncLive::learn(const CommittedChange& change) {
   return flipped;
 }
 
-// §6.8: {op: change} to every subscriber still holding read access, with its socket's `as`; one who lost it gets
-// not-found and ends.
-void SyncLive::sendChange(const std::string& epoch, const ScopeChange& changed) {
+// Only this event's authoritative owner may see its final changed rows before gone. Other unreadable
+// subscriptions end after all eligible frames, without receiving a payload.
+void SyncLive::sendChange(const std::string& epoch, const ScopeChange& changed, bool killedHere) {
   const auto subscribed = subscribers_.find(changed.key);
   if (subscribed == subscribers_.end()) return;
   Json::Value frame = changeFrame(epoch, changed.key, changed.seq, changed.digest, changed.rows, limits_.liveInlineBytes);
   for (const LiveSocket* socket : std::vector(subscribed->second.begin(), subscribed->second.end())) {
     Subscriber& subscriber = sockets_.at(socket);
     const Access access = accessTo(changed.key, subscriber.principal);
-    if (!access.read) {
-      end(subscriber, changed.key, access);
-      continue;
-    }
+    const bool finalOwnerChange = killedHere && subscriber.principal == changed.owner && access.gone;
+    if (!access.read && !finalOwnerChange) continue;
     frame["as"] = servedAsJson(subscriber.principal);
     subscriber.socket->send(frame);
   }

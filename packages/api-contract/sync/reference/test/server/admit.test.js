@@ -12,6 +12,34 @@ import { Rng, overlayScope, product, productScope, registry, row, serverState, t
 
 const CORPUS = new URL('../../../corpus/admit/', import.meta.url);
 
+test('generated effects reject NUL in text and its base', () => {
+  const { input } = JSON.parse(readFileSync(new URL('cross-scope.json', CORPUS), 'utf8'))[0];
+  const scope = 'acct:A/overlay/b_00000001';
+  const results = ['command', 'check'].flatMap((phase) => [
+    { text: 'a\u0000b', base: { text: '' } }, { text: 'text', base: { text: 'a\u0000b' } },
+  ].map((memo) => {
+    const effectPlan = { declared: [scope], command: { 'acct:A/probe': input.effectPlan.command['acct:A/probe'] } };
+    effectPlan[phase] = { ...effectPlan[phase], [scope]: [{ t: 'mark', id: 'oak', x: { memo } }] };
+    const outcome = admit({ ...input, state: new ServerState(input.state), registry, product: new EffectPlanProduct(effectPlan) });
+    return { result: outcome.result, unchanged: jcs(outcome.state.toJSON()) === jcs(input.state) };
+  }));
+  assert.deepEqual(results, Array.from({ length: 4 }, () => ({ result: { s: 'refused', code: 'invalid' }, unchanged: true })));
+});
+
+test('raw and normalized replacements share the exact canonical effect budget', () => {
+  const { input } = JSON.parse(readFileSync(new URL('cross-scope.json', CORPUS), 'utf8'))[0];
+  const scope = 'acct:A/overlay/b_00000001';
+  const raw = { t: 'mark', id: 'oak', x: { memo: { text: 'one two', replace: true } } };
+  const normalized = structuredClone(raw);
+  Object.assign(normalized.x.memo, { archiveNonempty: false, archive: {} });
+  const results = [raw, normalized].map((delta) => [116, 152, 153].map((bytes) => {
+    const product = new EffectPlanProduct({ declared: [scope], command: { [scope]: [delta] } });
+    const outcome = admit({ ...input, state: new ServerState(input.state), registry, product, limits: { ...CONSTANTS, EFFECT_MAX_BYTES: bytes } });
+    return outcome.result.code ?? outcome.result.s;
+  }));
+  assert.deepEqual(results, [['too-large', 'too-large', 'ok'], ['too-large', 'too-large', 'ok']]);
+});
+
 test('the effect encoding budget accommodates ten thousand maximal Unicode node ids', () => {
   const prefix = '\u{1f332}'.repeat(127);
   const born = `9007199254740991:4294967295:r_${'a'.repeat(32)}`;

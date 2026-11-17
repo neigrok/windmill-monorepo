@@ -1000,8 +1000,9 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    otherwise the whole intent is `not-found`. A dead scope is never recreated. Run the command
    once, normalize its local deltas and `into` into `Effects`, and load target records only after
    these locks. Generated deltas pass target registration, domain, writer, identity and life rules,
-   then steps 5, 6 and 9. All generated `{scope, delta}` JCS bytes share `EFFECT_MAX_BYTES`
-   (§9.7), independent of the input's `PUSH_MAX_BYTES`; maximal Unicode ids can make a bulk
+   then steps 5, 6 and 9. Generated text and text bases reject NUL.
+   All generated `{scope, delta}` JCS bytes, with internal replacements normalized (§6.4), share
+   `EFFECT_MAX_BYTES` (§9.7), independent of the input's `PUSH_MAX_BYTES`; maximal Unicode ids can make a bulk
    effect larger than its command. Tests may shrink this budget. Dividing effects among targets
    never increases it. An effect outside the declared set is a technical contract failure (§6.6), not a new lock pass or a user refusal.
 9. **Join.**
@@ -1158,6 +1159,7 @@ MCP tools, REST writes, tending and server-internal commands call
 - A command MAY replace a text head: its internal text write is `{text, replace: true,
   archiveNonempty: boolean, archive: metadata}`. This is a handler output, never an intent's wire
   delta; a wire text write has only `text` and `base`, and any other member is refused `invalid`.
+  Omitted metadata normalizes to `archiveNonempty: false` and `archive: {}` before byte accounting.
   Replacement passes the field and
   record bounds, writes `merged = false` and a new head rev at the admitting seq, and keeps the
   previous head when that head has a rev, except an empty head when `archiveNonempty` is true.
@@ -1240,6 +1242,9 @@ subscribed to the scope that still holds read access. Frames of one scope so lea
 `digest` is the scope digest committed with `seq`.
 - One intent's origin frame comes first, then the other changed scopes in key order. Its lifecycle
   death frames follow; a terminal `gone` can never be followed by a valid live frame for that scope.
+  When the same intent changes and kills a scope, its authoritative owner receives the final change
+  before `gone`. Former readers receive only `not-found`, including when the final change makes
+  the tree private. This exception never admits a delayed change from another intent.
 - `rows` is omitted when the `jcs` of the rows array exceeds `LIVE_INLINE_BYTES`.
 - A scope that dies sends each subscriber the page kind a pull of it would answer (§6.7 step 1):
   `gone` to the tree's owner, for the tree and for that owner's overlay, and `not-found` to

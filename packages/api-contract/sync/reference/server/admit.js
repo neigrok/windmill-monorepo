@@ -303,8 +303,15 @@ class Admission {
     const keys = Object.keys(byScope).sort((a, b) => a === this.scopeKey ? -1 : b === this.scopeKey ? 1 : a < b ? -1 : a > b ? 1 : 0);
     for (const key of keys) {
       if (!this.declared.has(key)) throw new Error('undeclared effect target');
-      const deltas = byScope[key];
-      for (const delta of deltas) {
+      const deltas = [];
+      for (const effect of byScope[key]) {
+        if (holdsNul(effect)) throw new Refusal('invalid');
+        const delta = structuredClone(effect);
+        for (const [name, write] of Object.entries(delta.x ?? {})) {
+          if (write.replace !== true || source !== 'command') continue;
+          if (write.archive !== undefined && !isObject(write.archive)) throw new Refusal('invalid');
+          delta.x[name] = replacementText(write.text, { archiveNonempty: write.archiveNonempty === true, archive: write.archive });
+        }
         const wire = structuredClone(delta);
         delete wire.v;
         for (const [name, write] of Object.entries(wire.x ?? {})) {
@@ -318,6 +325,7 @@ class Admission {
         }
         this.effectBytes += Buffer.byteLength(jcs({ scope: key, delta }));
         if (this.effectBytes > Math.min(this.limits.EFFECT_MAX_BYTES, CONSTANTS.EFFECT_MAX_BYTES)) throw new Refusal('too-large');
+        deltas.push(delta);
       }
       this.admitDeltas(deltas, source, key);
     }

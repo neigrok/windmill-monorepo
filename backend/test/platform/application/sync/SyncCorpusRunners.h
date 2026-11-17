@@ -115,7 +115,18 @@ public:
         Json::Value wire(Json::objectValue);
         wire["scope"] = scope.ref();
         wire["d"].append(delta);
+        std::map<std::string, TextWrite> replacements;
+        for (const std::string& name : delta["x"].getMemberNames()) {
+          const auto& text = delta["x"][name];
+          if (text["replace"] != Json::Value(true)) continue;
+          const auto archive = text.get("archive", Json::Value(Json::objectValue));
+          if (phase != "command" || !text["text"].isString() || !archive.isObject()) throw Refusal(code::invalid);
+          replacements.emplace(name, TextWrite{.text = text["text"].asString(), .replacement = true,
+            .archiveNonempty = text["archiveNonempty"] == Json::Value(true), .archive = archive});
+          wire["d"][0]["x"][name] = object({{"text", text["text"]}, {"base", object({{"rev", 0}})}});
+        }
         auto shaped = shapeIntent(world_.catalog().registry(), wire, Sender{account, true}, now, 300'000);
+        for (auto& [name, text] : replacements) shaped.intent.d.front().x[name] = std::move(text);
         result.byScope[scope].push_back(std::move(shaped.intent.d.front()));
       }
     }

@@ -203,6 +203,62 @@ TEST(sync_live_answers_a_board_death_with_gone_to_its_owner_and_not_found_to_a_s
       {"op": "not-found", "as": "B", "scope": "tree/b_00000001"}, {"op": "not-found", "as": "B", "scope": "self/overlay/b_00000001"}])")));
 }
 
+TEST(sync_live_sends_same_admission_final_owner_changes_before_death_without_disclosing_private_rows) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  const auto before = boardState("public");
+  world.seed(before);
+  struct FinalTree final : TypeRules {
+    std::set<ScopeKey> discoverEffectScopes(const CheckCtx&) override { return {ScopeKey::tree("b_00000001")}; }
+    Effects effects(const CheckCtx&, const std::vector<Change>&) override {
+      Delta meta{.t = "meta", .id = RecordId(std::string("meta"))};
+      meta.lattice.f.emplace("title", Reg("Final", Stamp{}));
+      meta.lattice.f.emplace("visibility", Reg("private", Stamp{}));
+      return Effects{{{ScopeKey::tree("b_00000001"), {meta}}}};
+    }
+  } rules;
+  SyncCatalog catalog(world.catalog().registry());
+  for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "board" ? &rules : world.catalog().rules(type.name));
+  for (const auto& command : catalog.registry().commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  catalog.seal();
+  SyncLive live(catalog, world.store(), Limits{});
+  struct RecordedFeed final : ChangeFeed {
+    explicit RecordedFeed(SyncLive& live) : live(live) {}
+    SyncLive& live;
+    CommittedChange committed;
+    void publish(const CommittedChange& change) override { committed = change; live.publish(change); }
+  } feed(live);
+  Admission admission(catalog, world.store(), feed, world.clock(), world.failures);
+  const auto ann = std::make_shared<fake::RecordingSocket>();
+  const auto bob = std::make_shared<fake::RecordingSocket>();
+  live.open(ann, world.account("A"));
+  live.open(bob, world.account("B"));
+  live.subscribe(*ann, parseJson(R"(["self/probe","tree/b_00000001"])"));
+  live.subscribe(*bob, parseJson(R"(["tree/b_00000001"])"));
+
+  admitAsServer(admission, world.account("A"), R"({"scope":"self/probe","d":[{"t":"board","id":"b_00000001","born":"2000:0:r_aaaaaaaaaaaa","life":["dead",null]}]})");
+
+  const auto board = parseJson(R"({"t":"board","id":"b_00000001","life":["dead","1000000:0:srv"],"born":"2000:0:r_aaaaaaaaaaaa","seq":2})");
+  const auto meta = parseJson(R"({"t":"meta","id":"meta","f":{"title":["Final","1000000:1:srv"],"visibility":["private","1000000:1:srv"]},"seq":2,"rc":1000,"ru":1000000})");
+  auto expected = parseJson(R"([{"op":"change","as":"A","scope":"self/probe","epoch":"ep-1","seq":2,"rows":[]},{"op":"change","as":"A","scope":"tree/b_00000001","epoch":"ep-1","seq":2,"rows":[]},{"op":"gone","as":"A","scope":"tree/b_00000001"}])");
+  expected[0]["rows"].append(board);
+  expected[0]["digest"] = Digest256{}.hex();
+  expected[1]["rows"].append(meta);
+  expected[1]["digest"] = scopeDigest({meta}).hex();
+  CHECK_EQ(jcs(ann->frames), jcs(expected));
+  const auto hidden = parseJson(R"([{"op":"not-found","as":"B","scope":"tree/b_00000001"}])");
+  CHECK_EQ(jcs(bob->frames), jcs(hidden));
+  REQUIRE_EQ(feed.committed.changed.size(), 2u);
+
+  CommittedChange delayed{.epoch = "ep-1", .changed = {ScopeChange{.key = ScopeKey::tree("b_00000001"), .owner = world.account("A"), .open = true,
+    .seq = 1, .digest = scopeDigest({before["rows"]["tree:b_00000001"][0]}), .rows = {before["rows"]["tree:b_00000001"][0]}}}};
+  live.publish(delayed);
+  live.publish(CommittedChange{.epoch = "ep-1", .changed = {feed.committed.changed[1]}, .killed = {ScopeKey::tree("b_00000001")}});
+  CHECK_EQ(jcs(ann->frames), jcs(expected));
+  CHECK_EQ(jcs(bob->frames), jcs(hidden));
+  CHECK(world.failures.reports.empty());
+}
+
 TEST(sync_live_sends_one_scopes_frames_in_seq_order_while_its_writes_race) {
   BlockingThread::Mark blocking;
   test::FakeWorld world;
