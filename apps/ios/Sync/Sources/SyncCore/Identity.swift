@@ -34,7 +34,7 @@ public enum DerivedID {
     if let maxChars {
       guard maxChars > 0 else { throw IdentityError("a derived id bound is positive") }
       stem = String(stem.unicodeScalars.prefix(maxChars))
-      while stem.utf8.last == UInt8(ascii: "-") { stem.removeLast() }
+      while stem.unicodeScalars.last == "-" { stem.unicodeScalars.removeLast() }
       guard !stem.isEmpty else { throw IdentityError("a derived id has a nonempty stem") }
     }
     var id = stem
@@ -46,7 +46,7 @@ public enum DerivedID {
       let room = maxChars - suffix.utf8.count
       guard room > 0 else { throw IdentityError("a derived id has no room for its collision suffix") }
       var prefix = String(stem.unicodeScalars.prefix(room))
-      while prefix.utf8.last == UInt8(ascii: "-") { prefix.removeLast() }
+      while prefix.unicodeScalars.last == "-" { prefix.unicodeScalars.removeLast() }
       guard !prefix.isEmpty else { throw IdentityError("a derived id has a nonempty stem") }
       id = prefix + suffix
     }

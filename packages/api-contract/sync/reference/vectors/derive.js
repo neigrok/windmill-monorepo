@@ -38,6 +38,8 @@ export function files() {
       ['composed fallback keeps its scalar spelling', '', 'éééé', ['éééé'], 4, { id: 'éé-2' }],
       ['decomposed fallback counts each scalar', '', 'e\u0301e\u0301', ['e\u0301e\u0301'], 4, { id: 'e\u0301-2' }],
       ['non-BMP fallback counts one scalar per character', '', '😀😀😀😀', ['😀😀😀😀'], 4, { id: '😀😀-2' }],
+      ['bounded fallback trims only the separator scalar', '', '\u0600-', [], 2, { id: '\u0600' }],
+      ['collision stems trim only the separator scalar', '', '\u0600-ab', ['\u0600-ab'], 4, { id: '\u0600-2' }],
       ['bounded truncation removes a trailing separator', 'a bc', 'node', [], 2, { id: 'a' }],
       ['a tiny bound permits a free stem', 'abc', 'a', [], 1, { id: 'a' }],
       ['an exhausted tiny bound cannot fit a stem and suffix', 'abc', 'a', ['a'], 1, { error: true }],

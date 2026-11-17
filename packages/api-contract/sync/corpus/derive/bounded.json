@@ -106,6 +106,32 @@
     }
   },
   {
+    "name": "bounded fallback trims only the separator scalar",
+    "input": {
+      "label": "",
+      "fallback": "؀-",
+      "taken": [],
+      "maxChars": 2
+    },
+    "expect": {
+      "id": "؀"
+    }
+  },
+  {
+    "name": "collision stems trim only the separator scalar",
+    "input": {
+      "label": "",
+      "fallback": "؀-ab",
+      "taken": [
+        "؀-ab"
+      ],
+      "maxChars": 4
+    },
+    "expect": {
+      "id": "؀-2"
+    }
+  },
+  {
     "name": "bounded truncation removes a trailing separator",
     "input": {
       "label": "a bc",

@@ -35,7 +35,7 @@ class CoverageTests {
         assertEquals(emptyList<String>(), corpus.unclaimed(handlers, corpus.clientPaths))
         corpus.requireCoverage(handlers, corpus.clientPaths)
         assertEquals(55, handlers.size)
-        assertEquals(871, handlers.keys.sumOf { corpus.vectors(it).size })
+        assertEquals(873, handlers.keys.sumOf { corpus.vectors(it).size })
     }
     @Test fun supportedFileWithoutHandlerFails() {
         assertThrows(IllegalStateException::class.java) { corpus.requireCoverage(emptyMap(), listOf("stamp/order.json")) }
