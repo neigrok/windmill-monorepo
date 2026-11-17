@@ -119,6 +119,8 @@ public:
   // One wire intent at `serverNow`, which a push reads once for all its intents (§6.1 step 2). Runs only
   // on a blocking thread (§6).
   AdmitOutcome admit(const Origin& origin, const Json::Value& intent, Ms serverNow);
+  // §6.3: builds after scope access and replay checks; the result keeps the scope and adds no tree
+  // argument outside scopeIntent's ordered lock pass.
   AdmitOutcome admitBuilt(const ServerOrigin&, const Json::Value& scopeIntent, Ms serverNow, const ServerBuilder&);
 
   const Limits& limits() const { return limits_; }

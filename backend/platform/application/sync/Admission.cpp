@@ -229,11 +229,13 @@ private:
         Shaped shaped = shapeIntent(registry_, *builtWire_, Sender{caller_.account, true}, now_, a_.limits_.maxSkewMs);
         if (shaped.scope != scope()) throw Refusal(code::invalid);
         shaped_ = std::move(shaped);
+        for (const ScopeKey& tree : argumentTrees()) {
+          if (!lockedTrees_.contains(tree)) throw Refusal(code::invalid);
+        }
       } else {
         // Reservation-only builders have no wire delta or command to shape.
         shaped_->intent = Intent{.scope = intent().scope, .gestureId = intent().gestureId};
       }
-      if (scope().kind() == ScopeKind::tree || scope().kind() == ScopeKind::overlay) throw Refusal(code::invalid);
       lockFreshIds();
       checkAccess();
     }
@@ -281,6 +283,7 @@ private:
     for (const ScopeKey& tree : argumentTrees()) pass.emplace(tree, RowLock::share);
     for (const auto& [key, mode] : pass) {
       std::optional<ScopeRow> row = store().scope(*txn_, key, mode);
+      if (key.kind() == ScopeKind::tree) lockedTrees_.insert(key);
       if (key == scope()) scopeRow_ = std::move(row);
       else if (row) scopes_.emplace(key, std::move(*row));
     }
@@ -731,6 +734,7 @@ private:
   std::optional<ScopeRow> tree_;
   std::optional<ScopeRow> scopeRow_;
   std::map<ScopeKey, ScopeRow> scopes_;
+  std::set<ScopeKey> lockedTrees_;
   std::set<std::pair<std::string, std::string>> lockedIds_;
   std::map<RecordRef, Locked> records_;
   std::optional<ChangeSet> changes_;

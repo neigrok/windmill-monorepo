@@ -347,6 +347,22 @@ function access() {
     admitted('a server-internal command from a replica is forbidden', { state: baseState(), intent: { scope: 'self/probe', cmd: { name: 'probe.tick', args: {} } } }),
     admitted('a server origin writing a type whose origins exclude it is forbidden', { state: tree, origin: SERVER_A, intent: intent(`self/overlay/${BOARD}`, [{ t: 'mark', id: 'oak', f: { done: [false, null] } }]) }),
     admitted('a server origin writes the owner tree with a minted stamp', { state: tree, origin: SERVER_A, intent: intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { visibility: ['public', null] } }]) }),
+    ...[
+      ['the owner server writes its private tree', tree, SERVER_A, tagWrite(null)],
+      ['the owner server writes its public tree', open, SERVER_A, tagWrite(null)],
+      ['the owner server writes its unlisted tree', unlisted, SERVER_A, tagWrite(null)],
+      ['another account server writing a public tree is forbidden', open, SERVER_B, tagWrite(null)],
+      ['another account server writing an unlisted tree is forbidden', unlisted, SERVER_B, tagWrite(null)],
+      ['another account server writing a private tree is not-found', tree, SERVER_B, tagWrite(null)],
+      ['another account server writing an absent tree is not-found', tree, SERVER_B, intent('tree/b_0000000f', [create('tag', 'oak', null, { label: 'Oak' })])],
+      ['the owner server writing its dead tree is scope-dead', dead, SERVER_A, tagWrite(null)],
+      ['another account server writing a dead tree is not-found', dead, SERVER_B, tagWrite(null)],
+      ['a reader server cannot bypass the overlay type origins', open, SERVER_B, markWrite(null)],
+      ['another account server writing its overlay of a private tree is not-found', tree, SERVER_B, markWrite(null)],
+      ['another account server writing its overlay of a dead tree is not-found', dead, SERVER_B, markWrite(null)],
+      ['the owner server writing its overlay of a dead tree is scope-dead', dead, SERVER_A, markWrite(null)],
+      ['a server cannot address another accounts overlay', open, SERVER_B, intent(`acct:A/overlay/${BOARD}`, [{ t: 'mark', id: 'oak', f: { done: [false, null] } }])],
+    ].map(([name, state, origin, intent]) => admitted(name, { state, origin, intent })),
   ];
 }
 
@@ -849,6 +865,11 @@ function serverStamps() {
       origin: SERVER_A,
       intent: probe([{ t: 'card', id: 'card0009', born: null, life: ['alive', null], f: { title: ['Srv', null], tier: ['draft', null] } }]),
     }),
+    admitted('a server tree edit stamps its new tag and link together and advances only the tree', {
+      state: treeState(),
+      origin: SERVER_A,
+      intent: intent(`tree/${BOARD}`, [create('tag', 'elm', null, { label: 'Elm' }), { t: 'link', id: ['oak', 'elm'], life: ['alive', null] }]),
+    }),
     admitted('a server delta observes a same-intent client delta on its register, so the server delta wins', {
       state: serverState({ clock: { ms: 1300, counter: 0 }, scopes: { [PROBE_A]: productScope('A') }, rows: { [PROBE_A]: [run('run00001', {}), lap('lap00001', {})] } }),
       intent: probe([
@@ -872,6 +893,7 @@ function requests() {
   const base = serverState({ scopes: { [PROBE_A]: productScope('A') } });
   const createCard = (id, title) => probe([{ t: 'card', id, born: null, life: ['alive', null], f: { title: [title, null] } }]);
   const call = (extra) => ({ account: 'A', requestId: 'req-1', tool: 'cards.add', args: { titles: ['One', 'Two'] }, intents: [createCard('card0001', 'One'), createCard('card0002', 'Two')], serverNow: NOW, ...extra });
+  const treeCall = (extra) => ({ account: 'A', requestId: 'req-tree', tool: 'tree.rename', args: { title: 'Next' }, intents: [intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { title: ['Next', null] } }])], serverNow: NOW, ...extra });
   const sequence = (name, state, calls) => {
     let current = new ServerState(state);
     const results = [];
@@ -889,6 +911,9 @@ function requests() {
     ]),
     sequence('a fresh call runs every admit and stores its final result', base, [call({})]),
     sequence('a replay with the same digest answers the stored result', base, [call({}), call({ serverNow: NOW + 5000 })]),
+    sequence('a server tree call replays its result without changing the tree or its overlays', treeState(), [treeCall({}), treeCall({ serverNow: NOW + 5000 })]),
+    sequence('a server tree call resumes its stored part after the lease without another stamp', treeState(), [treeCall({ crashAfter: 1 }), treeCall({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),
+    sequence('a server tree refusal is replayed without changing another accounts tree', treeState({ visibility: 'public' }), [treeCall({ account: 'B' }), treeCall({ account: 'B', serverNow: NOW + 5000 })]),
     sequence('a replay with other arguments is request-conflict', base, [call({}), call({ args: { titles: ['One', 'Three'] }, intents: [createCard('card0001', 'One'), createCard('card0003', 'Three')] })]),
     sequence('a call running within its lease answers request-running', base, [call({ crashAfter: 1 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS - 1 })]),
     sequence('a call running past its lease is taken over and resumes after its stored parts', base, [call({ crashAfter: 1 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),

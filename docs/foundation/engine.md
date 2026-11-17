@@ -1071,8 +1071,16 @@ MCP tools, REST writes, tending and server-internal commands call
   store it rolls back. A transient failure of a later admit leaves the row `running`, so a retry
   within `REQUEST_LEASE_MS` answers `request-running`.
 - **Builders** that read records (sibling order, derived ids, whole-graph edits) read under the
-  scope lock, from rows or from a cache whose seq equals `scope.seq`. A builder that finds nothing
-  to write admits nothing, and its call answers from what it read.
+  scope lock, from rows or from a cache whose seq equals `scope.seq`, in product, tree or overlay
+  scopes. Admission checks the origin's access and the call's replay before invoking the builder;
+  a server origin gains no access beyond its account. `self/overlay/<T>` always names that account's
+  own overlay of a readable tree. The built intent MUST resolve to the initial intent's scope,
+  otherwise `invalid`. Any tree named by a built command's governing-type argument MUST already
+  belong to the initial intent's §6.1 step 3.5 lock pass (including the intent's own tree scope),
+  otherwise `invalid`; a builder cannot add tree locks after that pass. An initial argument whose
+  tree is absent still declares that key. The built intent passes shape, origin and admission
+  checks in the same transaction. A builder that finds nothing to write advances neither seq nor
+  digest, publishes nothing, and its call answers from what it read.
 - **Server-built bulk writes** classify each incoming id as create, update or spent before building
   deltas, and report spent ids to the caller.
 
