@@ -62,11 +62,13 @@ int main(int argc, char** argv) {
     }
     const std::filesystem::path directory(argv[1]);
     const auto manifest = read(directory / "manifest.json");
+    const char* selected = std::getenv("SYNC_ROADMAP_SCALE_SCENARIO");
+    require(!selected || manifest["scenarios"].isMember(selected), "unknown scale scenario");
     const auto pending = read(directory / "pending-entries.json");
     std::ofstream report(argv[2], std::ios::app);
     require(report.good(), "report could not be opened");
     for (const auto& scenario : manifest["scenarios"].getMemberNames()) {
-      if (const char* selected = std::getenv("SYNC_ROADMAP_SCALE_SCENARIO"); selected && scenario != selected) continue;
+      if (selected && scenario != selected) continue;
       const auto fixture = read(directory / (scenario + ".json"));
       world.seed(fixture);
       world.failures.reports.clear();

@@ -28,6 +28,9 @@ class RoadmapScaleBenchmarks {
         assumeTrue("opt-in scale fixture directory", fixtures != null)
         val directory = File(fixtures!!)
         val manifest = Json.parse(File(directory, "manifest.json").readBytes())
+        val scenarios = manifest.member("scenarios").obj()
+        val selected = System.getenv("SYNC_ROADMAP_SCALE_SCENARIO")
+        require(selected == null || selected in scenarios) { "unknown scale scenario" }
         val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
         val scope = ScopeRef(manifest.member("tree"))
         val clock = object : EngineClock {
@@ -38,8 +41,8 @@ class RoadmapScaleBenchmarks {
             override fun opaqueID() = UUID.randomUUID().toString()
             override fun draw(bound: Int) = java.util.concurrent.ThreadLocalRandom.current().nextInt(bound)
         }
-        for ((scenario, expected) in manifest.member("scenarios").obj()) {
-            if (System.getenv("SYNC_ROADMAP_SCALE_SCENARIO")?.let { it != scenario } == true) continue
+        for ((scenario, expected) in scenarios) {
+            if (selected != null && selected != scenario) continue
             val server = ModelServer(registry, ProbeServerRules(), ServerState(Json.parse(File(directory, "$scenario.json").readBytes())))
             val transport = object : SyncTransport {
                 override suspend fun hello(token: String?): Reply<SyncResponse> {
