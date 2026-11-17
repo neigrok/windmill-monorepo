@@ -89,6 +89,15 @@ tiers, so adding a tier adds a row and a plan value and no code.
 | Output ceiling of a text call | 2,000 tokens | 16,000 tokens | 16,000 tokens |
 | Transcription | no | no | yes |
 
+**Background work.** A call under a pass whose `client` is `server` is work nobody waits on (I-6).
+It belongs to no tier above. Every account, whatever its plan, has a *background budget* of
+`BACKGROUND_MONTH` a UTC calendar month, which is Windmill's own cost and which only such a call
+draws on; it draws on no allowance, no grant and no shared budget. It counts toward one *background
+call in flight* an account and toward none of the person's. An exhausted background budget refuses
+as `subject_exhausted`, and `GET /v1/allowance` says nothing of it. The backend's pass door signs
+that `client` for no outside caller. [Echoes on the AI service](echoes-on-ai-service.md) is its
+first caller.
+
 The amounts, the calls in flight and the anonymous row's model are the backend's policy as it stands
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)); `large` is `claude-opus-5`, `medium` is
 `claude-sonnet-5` and `small` is `claude-haiku-4-5`, the models the backend calls. The output
@@ -886,9 +895,10 @@ designed when the service is built, one integration at a time.
   is offered, the product tells the person that their speech is sent to the provider and kept there
   for 30 days (R-11). [Journal Talk](journal-talk.md) specifies it.
 - **I-6 Work nobody waits on.** When the backend has AI work for an account with no device present,
-  it calls the same doors with a pass it signs for that account. The queue of that work stays in the
-  backend, and a refusal or an unreachable service leaves the work due. Such a call takes one of the
-  account's calls in flight, as it does in the backend's ledger.
+  it calls the same doors with a pass it signs for that account, whose `client` is `server`. The
+  queue of that work stays in the backend, and a refusal or an unreachable service leaves the work
+  due. Such a call is background work (§3): Windmill's own budget for the account pays for it, and
+  it takes the account's background slot, never one of the person's calls in flight. (R-18, R-19)
 - **I-7 Funding.** When a paid period is recorded, one grant is funded for exactly that period. When
   it is refunded the grant is closed, and when the refund is reversed it is reopened
   ([subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)). While the backend's ledger
@@ -930,6 +940,8 @@ The owner's rulings. All are settled.
 | R-15 | What raises the provider-trouble alert | The share of calls that failed in a short window, not a run of failures a single success resets. (2026-11-17) |
 | R-16 | Which ledger a paid period funds while two live | Both, until the backend's ledger retires. (2026-11-17) |
 | R-17 | The order of the moves onto this service | Coach first; Talk on the iPhone and Echoes before the iOS release; the web's Talk after it. (2026-11-15, completed 2026-11-17) |
+| R-18 | Whose budget pays for work nobody waits on | A background budget of Windmill's own for each account, $2 a UTC calendar month, apart from the person's allowance, a grant and the shared budgets. (2026-11-17) |
+| R-19 | Whether background work shares a person's calls in flight | It does not: one background call in flight an account, counted apart. (2026-11-17) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 
