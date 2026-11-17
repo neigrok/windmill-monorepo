@@ -2,20 +2,31 @@ export class TransportFailure extends Error {
   constructor(code) { super(code); this.code = code; }
 }
 
-const refusalCodes = new Set(['busy', 'paused', 'rate_limited', 'concurrency_exhausted', 'accounting_unavailable', 'provider_unavailable',
-  'invalid_request', 'too_large', 'provider_rejected', 'funding_required', 'conflict', 'call_unknown', 'untrusted-origin', 'unsupported-media-type',
-  'subject_exhausted', 'free_day_exhausted', 'free_month_exhausted', 'device_bound', 'result_gone', 'pass_missing', 'pass_signature', 'pass_audience',
-  'pass_malformed', 'pass_expired', 'picture_gone', 'provider_failed']);
+const refusalStatus = { invalid_request: 400, provider_rejected: 400, pass_missing: 401, pass_signature: 401,
+  pass_audience: 401, pass_malformed: 401, pass_expired: 401, funding_required: 403, device_bound: 403,
+  call_unknown: 404, conflict: 409, result_gone: 410, picture_gone: 410, too_large: 413,
+  subject_exhausted: 429, free_month_exhausted: 429, free_day_exhausted: 429, concurrency_exhausted: 429,
+  rate_limited: 429, busy: 503, paused: 503, accounting_unavailable: 503, provider_unavailable: 503 };
+const passRefusalStatus = { invalid_request: 400, unauthenticated: 401, invalid_installation: 401, device_bound: 409,
+  'client-update-required': 426, anonymous_ai_unavailable: 503, rate_limited: 429, unavailable: 503,
+  'untrusted-origin': 403, 'unsupported-media-type': 415 };
 
 function object(value, fields) {
   if (!value || Array.isArray(value) || typeof value !== 'object' || Object.keys(value).sort().join(' ') !== fields.split(' ').sort().join(' ')) throw new TransportFailure('invalid-answer');
 }
 
-export function validateRefusal(value) {
+export function validateRefusal(value, status) {
   try {
     object(value, 'code allowance');
-    if (!refusalCodes.has(value.code)) throw new TransportFailure('invalid-answer');
+    if (typeof value.code !== 'string' || !Object.hasOwn(refusalStatus, value.code) || refusalStatus[value.code] !== status) throw new TransportFailure('invalid-answer');
     if (value.allowance !== null) validateAllowance(value.allowance);
+  } catch { throw new TransportFailure('lost'); }
+}
+
+export function validatePassRefusal(value, status) {
+  try {
+    object(value, 'code error');
+    if (typeof value.code !== 'string' || !Object.hasOwn(passRefusalStatus, value.code) || passRefusalStatus[value.code] !== status || typeof value.error !== 'string') throw new TransportFailure('invalid-answer');
   } catch { throw new TransportFailure('lost'); }
 }
 
@@ -106,46 +117,57 @@ export class HttpAiTransport {
     Object.assign(this, { base, fetch: fetch.bind(globalThis), installation, timers });
   }
 
-  async pass(body) {
-    const installation = await this.installation();
+  async pass(body, { signal } = {}) {
     const controller = new AbortController();
+    const stop = () => controller.abort();
+    signal?.addEventListener('abort', stop, { once: true });
     const timer = this.timers.setTimeout(() => controller.abort(), 30_000);
     try {
+      const installation = await this.installation();
+      if (signal?.aborted) throw new TransportFailure('stopped');
       let response;
       try {
         response = await this.fetch(`${this.base}/v1/ai/passes`, { method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'manual', signal: controller.signal,
           headers: { 'Content-Type': 'application/json', ...(installation ? { 'X-Windmill-Installation': installation } : {}) }, body: JSON.stringify(body) });
-      } catch { throw new TransportFailure(globalThis.navigator?.onLine === false ? 'offline' : 'lost'); }
+      } catch { throw new TransportFailure(signal?.aborted ? 'stopped' : globalThis.navigator?.onLine === false ? 'offline' : 'lost'); }
       if (response.status === 404) return { status: 404, body: null };
       try { return { status: response.status, body: await response.json() }; }
-      catch { throw new TransportFailure(response.status === 200 ? 'invalid-answer' : 'lost'); }
-    } finally { this.timers.clearTimeout(timer); }
+      catch { throw new TransportFailure(signal?.aborted ? 'stopped' : response.status === 200 ? 'invalid-answer' : 'lost'); }
+    } finally { signal?.removeEventListener('abort', stop); this.timers.clearTimeout(timer); }
   }
 
-  async request({ method, path, body, bytes, mediaType, pass, timeoutMs = 30_000 }) {
-    let response;
+  async request({ method, path, body, bytes, mediaType, pass, signal, timeoutMs = 30_000 }) {
     const controller = new AbortController();
+    const stop = () => controller.abort();
+    signal?.addEventListener('abort', stop, { once: true });
     const timer = this.timers.setTimeout(() => controller.abort(), timeoutMs);
+    let liveStream = false;
     try {
-      response = await this.fetch(`${this.base}${path}`, { method, credentials: 'omit', redirect: 'manual', cache: 'no-store',
-        signal: controller.signal,
-        headers: { Authorization: `Bearer ${pass}`, ...(body ? { 'Content-Type': 'application/json' } : bytes ? { 'Content-Type': mediaType } : {}) },
-        ...(body !== undefined || bytes ? { body: body ?? bytes } : {}) });
-    } catch { this.timers.clearTimeout(timer); throw new TransportFailure(globalThis.navigator?.onLine === false ? 'offline' : 'lost'); }
-    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
-      this.timers.clearTimeout(timer); throw new TransportFailure('redirect');
+      if (signal?.aborted) throw new TransportFailure('stopped');
+      let response;
+      try {
+        response = await this.fetch(`${this.base}${path}`, { method, credentials: 'omit', redirect: 'manual', cache: 'no-store',
+          signal: controller.signal,
+          headers: { Authorization: `Bearer ${pass}`, ...(body ? { 'Content-Type': 'application/json' } : bytes ? { 'Content-Type': mediaType } : {}) },
+          ...(body !== undefined || bytes ? { body: body ?? bytes } : {}) });
+      } catch { throw new TransportFailure(signal?.aborted ? 'stopped' : globalThis.navigator?.onLine === false ? 'offline' : 'lost'); }
+      if (signal?.aborted) throw new TransportFailure('stopped');
+      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) throw new TransportFailure('redirect');
+      if (response.status === 200 && path !== '/v1/allowance') {
+        if (!response.headers.get('Content-Type')?.startsWith('text/event-stream')) throw new TransportFailure('invalid-answer');
+        liveStream = true;
+        const timers = this.timers;
+        return { status: 200, events: (async function* () {
+          try { yield* decodeEvents(response.body); }
+          finally { timers.clearTimeout(timer); }
+        })() };
+      }
+      if (response.status === 204) return { status: 204, body: null };
+      try { return { status: response.status, body: await response.json() }; }
+      catch { throw new TransportFailure(signal?.aborted ? 'stopped' : response.status === 200 ? 'invalid-answer' : 'lost'); }
+    } finally {
+      signal?.removeEventListener('abort', stop);
+      if (!liveStream) this.timers.clearTimeout(timer);
     }
-    if (response.status === 200 && path !== '/v1/allowance') {
-      if (!response.headers.get('Content-Type')?.startsWith('text/event-stream')) { this.timers.clearTimeout(timer); throw new TransportFailure('invalid-answer'); }
-      const timers = this.timers;
-      return { status: 200, events: (async function* () {
-        try { yield* decodeEvents(response.body); }
-        finally { timers.clearTimeout(timer); }
-      })() };
-    }
-    if (response.status === 204) { this.timers.clearTimeout(timer); return { status: 204, body: null }; }
-    try { return { status: response.status, body: await response.json() }; }
-    catch { throw new TransportFailure(response.status === 200 ? 'invalid-answer' : 'lost'); }
-    finally { this.timers.clearTimeout(timer); }
   }
 }

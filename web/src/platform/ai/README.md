@@ -6,16 +6,23 @@ identical body. Event IDs deduplicate replay; the first observed event changes l
 result GET. Admission certainty only rises. Initial and resent PUTs retry transient refusals for
 30 seconds from the first PUT. After an ambiguous dispatch, lost transport, temporary pass refresh
 failures, busy, rate-limited and accounting-unavailable replies keep asking for 20 minutes from
-the first PUT, or from recovery start. Other transient PUT refusals retain the 30-second deadline;
-they do not restart it. No retry begins at the deadline.
-Stop only cancels the wait between attempts. A pass-expired or picture-gone repair happens once.
+the first PUT, or from recovery start. Temporary preparation loss also enters that recovery window
+when a prior busy or accounting-unavailable refusal left admission possible. Other transient PUT
+refusals retain the 30-second deadline; they do not restart it. A preparation result or failure
+observed after the active deadline cannot extend it or dispatch text. A pass-expired or picture-gone
+repair happens once; a lost repair upload retries only when admission is already possible.
+
+Stop cancels retry waits, pass and picture preparation, and repeated text/result requests waiting
+for headers or an error body. The initial in-flight text request drains. Once a successful event
+response arrives, the transport detaches Stop so the stream and awaited host callbacks finish.
 
 Offline behavior follows dispatch evidence. A pass or picture preparation failure before the first
 text request restores the draft promptly. An attempted text request can have reached the service
 even when the browser reports offline, so a cached pass can move the call into uncertain recovery.
 No connectivity observer or persisted conversation is required. HTTP errors without a complete,
-known service refusal envelope are ambiguous transport loss, including proxy HTML, unknown JSON
-and a lost error body. Malformed successful event streams remain wire defects and keep their
+known service refusal envelope with its matching HTTP status are ambiguous transport loss, including
+proxy HTML, unknown JSON and a lost error body. Pass refusals require exactly a known `code` and
+string `error`, with the matching status. Malformed successful event streams remain wire defects and keep their
 admission evidence. Recovery `call_unknown` interrupts quietly; the live equivalent is a defect.
 
 Passes are in-memory and cached by use/version with a 60-second refresh margin. A generation fence

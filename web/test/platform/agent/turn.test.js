@@ -68,6 +68,7 @@ test('the awaited seat barrier permits a new turn while the old provider finishe
 for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/turns/', import.meta.url)).filter((name) => name.endsWith('.json')).sort()) {
   test(`Coach shared story: ${file}`, async () => {
     const story = JSON.parse(readFileSync(new URL(`../../../../packages/api-contract/agent/turns/${file}`, import.meta.url), 'utf8'));
+    const refusals = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/ai/wire/fixtures.json', import.meta.url))).refusals;
     const trace = { requests: [], hostCalls: [], gateRefusals: [], marks: [], waitsMs: [], telemetry: [], end: null };
     let now = story.runtime.nowMs;
     let generation = 0;
@@ -124,8 +125,9 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
     const transport = {
       async pass() {
         const value = story.service.passes[Math.min(passIndex++, story.service.passes.length - 1)];
+        now += value.elapsedMs ?? 0;
         if (value.transport) throw new TransportFailure(value.transport);
-        return value.pass ? { status: 200, body: value } : { status: value.status, body: { code: value.code } };
+        return value.pass ? { status: 200, body: value } : { status: value.status, body: { code: value.code, error: 'AI access could not be started.' } };
       },
       async request({ method, path, body, bytes }) {
         trace.requests.push({ method, path, body: bytes ? Array.from(bytes) : body ? JSON.parse(body) : null });
@@ -135,7 +137,11 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
         assert.ok(value, `unexpected service request ${path}`);
         if (++repeat >= value.repeat) { exchangeIndex++; repeat = 0; }
         if (value.http) throw new TransportFailure('lost');
-        if (value.refusal) return { status: 429, body: value.refusal };
+        if (value.refusal) {
+          const fixture = refusals.find(({ body }) => body.code === value.refusal.code);
+          assert.ok(fixture, `missing refusal status for ${value.refusal.code}`);
+          return { status: fixture.status, body: value.refusal };
+        }
         return { status: 200, events: (async function* () {
           for (const event of value.events) { control(`event:${current}:${event.id}`); yield event; }
           if (value.broken) throw new TransportFailure('lost');
