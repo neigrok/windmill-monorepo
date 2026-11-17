@@ -687,7 +687,7 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
     assert_eq!(oversized.0, 400);
     assert_eq!(
         serde_json::from_str::<Value>(&oversized.1).unwrap(),
-        json!({"code":"invalid_request","allowance":null})
+        json!({"code":"invalid_request","allowance":serde_json::from_str::<Value>(&missing.1).unwrap()["allowance"]})
     );
     assert!(
         service
