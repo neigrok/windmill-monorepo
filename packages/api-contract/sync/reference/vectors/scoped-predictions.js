@@ -245,7 +245,34 @@ export function scopedReconciliation() {
   });
   assert.deepEqual(deletion.expect.device.replicas[0].notices.map(({ code }) => code), ['target-merged']);
   assert.equal(deletion.expect.device.replicas[0].outbox.length, 1);
-  return [mapped, replay, deletion];
+  const coveredOrigin = structuredClone(mapped.expect.device);
+  coveredOrigin.replicas[0].outbox = [coveredOrigin.replicas[0].outbox[0]];
+  coveredOrigin.replicas[0].outbox[0].predictions[0] = { scope: origin, d: [], resultSeq: 2, covered: true };
+  coveredOrigin.replicas[0].confirmed[origin].push(row({ t: 'board', id: actual, born: st(9000), life: ['alive', st(9000)], seq: 2 }));
+  coveredOrigin.replicas[0].cursors[origin] = { cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 2 }),
+    digest: scopeDigest(coveredOrigin.replicas[0].confirmed[origin]), booted: true };
+  const withoutPrediction = stepsVector('epoch replay carries a resolved born into queued work even without an origin prediction', {
+    device: coveredOrigin, ids: ['rp_00000000000000000000000000000002'], actors: ['r_bbbbbbbbbbbb'],
+    steps: [{ op: 'commit', scope: origin, deviceNow: 10000, changes: [{ op: 'delete', t: 'board', id: actual }] },
+      { op: 'epochChange', epoch: 'ep-2' }, { op: 'push' }, replayAck],
+  });
+  const dependent = withoutPrediction.expect.device.replicas[0].outbox[1];
+  assert.equal(dependent.intent.d[0].id, nextId);
+  assert.equal(dependent.intent.d[0].born, st(12000));
+  assert.equal(withoutPrediction.expect.device.replicas[0].notices, undefined);
+  const coveredTarget = structuredClone(mapped.expect.device);
+  coveredTarget.replicas[0].outbox = [coveredTarget.replicas[0].outbox[0]];
+  coveredTarget.replicas[0].outbox[0].predictions[1] = { scope: `tree/${parent}`, d: [], resultSeq: 6, covered: true };
+  coveredTarget.replicas[0].confirmed[`tree/${parent}`] = [row({ t: 'meta', id: 'meta', f: { title: ['Branch', st(9000)] }, seq: 6 })];
+  coveredTarget.replicas[0].cursors[`tree/${parent}`] = { cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 6 }),
+    digest: scopeDigest(coveredTarget.replicas[0].confirmed[`tree/${parent}`]), booted: true };
+  const guarded = later(parent, 10000); guarded.opts = { guard: [{ t: 'meta', id: 'meta', field: 'title' }] };
+  const receiptOnly = stepsVector('prior scoped accepted versions rebase a later guard even when the target had no predicted row', {
+    device: coveredTarget, ids: ['rp_00000000000000000000000000000002'], actors: ['r_bbbbbbbbbbbb'],
+    steps: [guarded, { op: 'epochChange', epoch: 'ep-2' }, { op: 'push' }, replayAck],
+  });
+  assert.equal(receiptOnly.expect.device.replicas[0].outbox[1].intent.guard[0].stamp, st(12000));
+  return [mapped, replay, deletion, withoutPrediction, receiptOnly];
 }
 
 export function scopedReplay() {

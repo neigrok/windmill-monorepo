@@ -263,6 +263,9 @@ function rewriteEntry(registry, entry, w, { replay = false, scope = entry.scope,
       if (sameJson(target.id, w.from)) target.id = w.id;
     }
   }
+  for (const effect of entry.acceptedEffects ?? []) {
+    if (global || effect.scope === scope) for (const row of effect.rows) rewriteId(registry, row, w);
+  }
   if (global && registry.type(w.t)?.governs === 'tree') {
     if (!predictionOnly) entry.intent.scope = entry.scope = remappedScope(registry, entry.scope, [w]);
     for (const projection of entry.predictions ?? []) projection.scope = remappedScope(registry, projection.scope, [w]);
@@ -368,6 +371,16 @@ function applyScopedWriteMap(replica, ctx, command, write) {
       if (!sameJson(from, item.id)) rewriteEntry(registry, entry, mapping, { replay: !!previous, scope: command.scope });
     }
     if (!sameJson(from, item.id)) rewriteEntry(registry, command, mapping, { scope: command.scope, predictionOnly: true });
+    if (previous?.born !== undefined && item.born !== undefined && previous.born !== item.born) {
+      for (const entry of laterUnacked(replica, command).filter(isQueued)) for (const group of effectsOf(entry)) {
+        if (group.scope !== command.scope) continue;
+        for (const delta of group.d) {
+          if (delta.t !== item.t || !sameJson(delta.id, item.id)) continue;
+          if (delta.born === previous.born) delta.born = item.born;
+          if (delta.life?.[1] === previous.born) delta.life[1] = item.born;
+        }
+      }
+    }
     const target = previous ?? { t: item.t, from: structuredClone(source), id: structuredClone(item.id) };
     target.id = structuredClone(item.id);
     if (item.born !== undefined) target.born = item.born;
@@ -375,7 +388,7 @@ function applyScopedWriteMap(replica, ctx, command, write) {
   }
 }
 
-export function applyAcceptedVersions(replica, ctx, command, effects) {
+export function applyAcceptedVersions(replica, ctx, command, effects, previous = []) {
   const stamps = effects.flatMap(({ rows }) => rows.flatMap(({ slots }) => slots.filter(({ version }) => version.kind === 'stamp').map(({ version }) => version.stamp)));
   replica.observe(stamps);
   replica.raiseAdmittedHigh(stamps);
@@ -393,6 +406,20 @@ export function applyAcceptedVersions(replica, ctx, command, effects) {
     const predicted = predictionsOf(command).filter((group) => group.scope === scope).flatMap(({ d }) => d).filter(matches);
     for (const { slot, version } of row.slots) {
       if (version.kind !== 'stamp') continue;
+      const prior = previous.find((effect) => effect.scope === scope)?.rows.find(matches)?.slots
+        .find((item) => item.slot.kind === slot.kind && item.slot.name === slot.name)?.version;
+      if (prior?.kind === 'stamp' && prior.stamp !== version.stamp) for (const entry of later) {
+        for (const group of effectsOf(entry)) {
+          if (group.scope !== scope) continue;
+          for (const delta of group.d.filter(matches)) {
+            if (slot.kind === 'born' && delta.born === prior.stamp) delta.born = version.stamp;
+            if ((slot.kind === 'born' || slot.kind === 'life') && delta.life?.[1] === prior.stamp) delta.life[1] = version.stamp;
+          }
+        }
+        if (slot.kind === 'field' && entry.scope === scope) for (const guard of entry.intent.guard ?? []) {
+          if (matches(guard) && guard.field === slot.name && guard.stamp === prior.stamp) guard.stamp = version.stamp;
+        }
+      }
       for (const delta of predicted) {
         if (slot.kind === 'born' && delta.born !== undefined) {
           const old = delta.born;
