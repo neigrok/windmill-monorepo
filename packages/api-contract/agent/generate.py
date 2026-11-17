@@ -278,7 +278,7 @@ def stories():
         out.append(s)
     s=story('offline-before-pass'); opened(s); begin(s,0,'',[first(s)])
     s['service']['passes']=[{'transport':'offline'}]; s['expected']['requests']=[]
-    finish(s,'failed','',withdraw=True); out.append(s)
+    finish(s,'interrupted','',withdraw=True); out.append(s)
     return out
 
 if __name__ == '__main__':

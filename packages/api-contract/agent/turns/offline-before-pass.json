@@ -168,7 +168,7 @@
     "telemetry": [
       {
         "kind": "turn",
-        "state": "failed",
+        "state": "interrupted",
         "seat": "bound",
         "code": null,
         "rounds": 1,
@@ -179,7 +179,7 @@
       }
     ],
     "end": {
-      "state": "failed",
+      "state": "interrupted",
       "text": "",
       "truncated": false,
       "code": null

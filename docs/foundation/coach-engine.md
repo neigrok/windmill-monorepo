@@ -247,7 +247,8 @@ whose round 1 may have been admitted is never withdrawn: it ends `failed` with t
 was given, or `interrupted` when it was given none, with its question on the record.
 
 **Offline before dispatch.** Failure while obtaining a first pass or uploading a picture returns
-the unsent question and picture to the field promptly. Once the text transport is invoked, a
+the unsent question and picture to the field promptly. With no refusal code this is an
+`interrupted` outcome whose records are withdrawn. Once the text transport is invoked, a
 connection error cannot prove it was unsent: the record stays and the same call is asked for again.
 A cached pass can therefore take an offline send past this boundary; the rule follows dispatch
 evidence, not the presence of a pass. No working conversation is persisted for this retry.

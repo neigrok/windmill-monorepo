@@ -12,6 +12,9 @@ def check(story):
     wire.fields(story, 'format name profile input runtime host service controls expected')
     wire.require(story['format'] == 'coach-turn/v1', 'unknown story format')
     wire.fields(story['expected'], 'requests hostCalls gateRefusals marks waitsMs telemetry end')
+    end = story['expected']['end']
+    if end is not None and end['state'] == 'failed':
+        wire.require(isinstance(end['code'], str) and bool(end['code']), 'failed end requires a code; an unknown outcome is interrupted')
     for exchange in story['service']['exchanges']:
         wire.fields({key: value for key, value in exchange.items() if key != 'http'}, 'events refusal broken repeat')
         if 'http' in exchange:

@@ -444,7 +444,9 @@ from AI wire defects.
 
 `AiDiagnostics` receives only static operation `ai-call` or `ai-pass` and kind `wire`, `refusal` or
 `transport`. It reports malformed answers, unexpected transport failures and defect refusal codes.
-Offline connections and actionable refusals create no Issue. A pass-expired answer refreshes once;
+Offline connections, proxy responses without a valid service refusal, recognized temporary pass
+refusals and actionable refusals create no Issue. Recovery `call_unknown` is quiet because its mark
+may precede dispatch; a live `call_unknown` remains a defect. A pass-expired answer refreshes once;
 a second reports a defect. Picture repair follows the same once-only rule. Passes, installation and
 session credentials, seat keys, call IDs, prompts, questions, text deltas, assistant carry and tool
 inputs/results never enter these ports. The shared-story tests assert complete telemetry traces;
