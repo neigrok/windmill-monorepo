@@ -8,23 +8,25 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 **Status:** The C++ server (`backend/platform/**/sync*`) carries the engine, with clients in JS
 (`packages/api-contract/sync/reference/core` and `client`, shared with the JS reference, with browser
 I/O in `web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin (`apps/android/sync-*`).
-`windmill_server` serves the gym and
-journal composition on `/v1/sync`, and the engine is the only writer of their records: web (gym,
+`windmill_server` serves gym and journal
+on `/v1/sync`, and the engine is the only writer of their records: web (gym,
 journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's Coach among them, and MCP,
 the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
-(Appendices C and D). `windmill_server_probe` carries the test-only contract.
+(Appendices C and D). `windmill_server_probe` carries the test-only contract. The source composition also
+names roadmap (A.1), whose rules the JS reference model server carries; `windmill_server`'s build refuses that
+composition until roadmap's binding is registered beside gym's and journal's.
 
-**Registry contract:** The composed source registry is version 12 with minimum version 11. Gym's
+**Registry contract:** The composed source registry is version 13 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
 last time. Derived volume and estimates are explicit null when unavailable. Older clients must
 upgrade. The explicit `other` equipment value remains supported. All legacy
 equipment values and load counts remain stored without migration. `other` counts one external load,
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
-records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym and journal,
-whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
+records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym, journal and
+roadmap, whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
 schema 12 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
-holds the receipts. Every other product
-starts from empty stores.
+holds the receipts. Roadmap's rows are to be adopted by
+[Roadmap on the sync engine](roadmap-on-the-engine.md) §8.1. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
@@ -43,13 +45,11 @@ echoes and nudges stay REST. `/v1/sync` has its own `426 upgrade-required` minim
 - the replica lifecycle (claim, sign-out) and conformance.
 
 **Outside the engine** (none of these is a synced record):
-- Presence and remote cursors, carried as ephemeral live-socket messages (§9.5).
 - The global gym exercise seed catalog.
 - The server Coach's legacy gym conversations (`gym_ask_*`, A.2).
 - Gym session shares and log shares; the roadmap share page, images and gallery; the roadmap
   home-list done/total read.
 - Journal echoes, spans, nudges, voice and curation.
-- The roadmap per-node workspace, which is device-only.
 - Auth, billing, entitlements and reminders.
 - Account deletion and export, which remove every scope an account owns.
 
@@ -395,7 +395,9 @@ equipment rows and overrides are not migrated. The open workout's editable plan 
 (A.2): `session.plan` turns from a const server register into a guarded client `lww` register, which a
 client of version 11 never writes and reads as before, and the session's `planRevision` and
 `routineRevision`, the `workoutProposal` type, its two commands and the `plan-logged` code are additive.
-The journal registry carries version 12 with it, since the composed registries declare one version.
+Roadmap's registry joins the composition at version 13, minimum 11 (A.1): its product, types and commands are
+additive, and gym's and journal's registries carry version 13 with it, since the composed registries declare one
+version.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern` or `idDomain`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -2947,7 +2949,7 @@ S→C: { op: 'change', as, scope, epoch, seq, digest: string, rows?: Row[] }
 `as` is the principal the socket's upgrade was served as (§9.1), the same on every frame of the
 socket.
 
-Other `op` values carry ephemeral product messages, such as presence, and the engine ignores them.
+The engine ignores any other `op` value.
 Frames are at most `LIVE_FRAME_BYTES`.
 
 ### §9.6 Codes: the closed list
@@ -3178,9 +3180,115 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 ### A.1 Roadmap
 
-Not bound. Roadmap syncs through a sync of its own, and no registry of it is in the composition.
-[Roadmap on the sync engine](roadmap-on-the-engine.md) §3 specifies its registry, commands and
-consequences, which join this appendix in the change that binds them.
+**Scopes:** `self/roadmap` (the person's roadmaps and Roadmap Coach's records), `tree/<T>` (one roadmap) and
+`self/overlay/<T>` (a person's marks; the owner's pointers and workspace). **Device scope** `device/roadmap`,
+with rows `landing:<T>` (`{nodes, edges, revived}`: the device's own new steps and links, and the steps its
+own changes revived, until the person has been told, [Roadmap on the sync engine](roadmap-on-the-engine.md)
+§6), `runningTurn:<turnId>`, `applying:<proposalId>` (`{stamp}`) and `picture:<id>` (`localOnly`), as
+[Roadmap Coach](roadmap-coach.md) §7–§9 use them.
+**Surfaces:** web, iOS. Roadmap's server-origin doors (MCP, tending, the fork) are Roadmap on the sync engine
+§7's. **Subscriptions** (§7.9): a tree and its overlay for each `tree` record the replica holds; a reader's
+roadmap and its subtrees are subscribed explicitly as the person opens them (Roadmap on the sync engine §5).
+**Adoption:** the cutover of Roadmap on the sync engine §8.1. **Binding:** the JS reference model server
+(`packages/api-contract/sync/reference/roadmap/`); the C++ binding is not built.
+
+`tree` mints `t_` and 16 of `0-9a-f`. `node` and `kind` take ids by `idDomain`, 1–128 chars (§2.4), mint 16 of `0-9a-z` and derive with the fallbacks `step` and `kind` (D-26). `subtask` and
+`stepLink` mint 16 base-62 characters in their overlay's id space, matching `^[A-Za-z0-9_-]{8,64}$`; Coach's
+four types mint the same, globally, seeded (D-8: a seed of at most 58 characters, `n ≤ 99 999`). A
+roadmap's *place* is its `tree.parent`; a *subtree* has one and a *root* does not; *the subtrees under* a
+roadmap are those whose places lead up to it. A step is *present* while its `node` is alive. **Primary
+type** (§9.2): `tree`. No type is the headline.
+
+| Type | Scope | Identity | Life | Fields | Rules |
+|---|---|---|---|---|---|
+| `tree` | self/roadmap | minted g, governs `tree:<id>` | terminal, keep | const server: `parent` `{tree, step}` or null (default null), whose `tree` is a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | A replica-origin delete of a subtree's record → `not-a-root`. Its death kills every subtree under it; a root's also kills each step of the owner's other roadmaps whose alive pointer opens it. |
+| `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars, `visibility` ∈ {private, unlisted, public} (private); lww server: `guideInherited` (false), `reach` ∈ {private, unlisted, public}, which `opens` at {unlisted, public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A delta writing `visibility` on a subtree's `meta` → `not-a-root`. A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
+| `node` | tree | derived, by domain | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color` a hue (terracotta), `ord`, `status` null or ∈ {none, complete} (null), `description` ≤16 000 chars, `links` (`maxItems` 32 of {`url` ≤2 048 chars, `label` ≤200 chars}); lww server: `branch` `ref<tree>` or null (null) | Cap 10 000. A change carrying an alive life that joins dead is revived. A change of its presence writes the reach of the subtrees it owns. |
+| `edge` | tree | keyed `[from, to]`, `ref<node>` each | yes, keep | — | Cap 20 000. A loop is admitted. |
+| `kind` | tree | derived, by domain | revivable, keep | lww: `hue` a hue (terracotta), `label` ≤24 chars, `description` ≤80 chars, `ord` | Cap 6. Two kinds of one hue are admitted. A change carrying an alive life that joins dead is revived. |
+| `progress` | overlay | keyed `ref<node>` | none | lww: `mark` {`status` ∈ {complete, none}, `outOfOrder`} ({none, false}) | A reader's own marks. |
+| `pointer` | overlay | keyed `ref<node>` | yes, keep | lww: `opens` `ref<tree>` | The owner's only (below). |
+| `subtask` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `label` ≤200 chars, `done` (false), `ord` | Cap 20 000. The owner's only. Replica origin. |
+| `stepLink` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `url` ≤2 048 chars, `title` ≤200 chars, `ord` | Cap 20 000. The owner's only. Replica origin. |
+| `stepNote` | overlay | keyed `ref<node>` | none; `visibleWhen [text]` | text: `text` ≤16 000 chars | The owner's only. Replica origin. |
+| `coachThread` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>` or null (all roadmaps); const: `stepId` ≤128 chars or null, `title` 1–8 000 bytes | Its death kills its messages, their write fates, and its proposals. Replica origin; not a primary type. |
+| `coachMessage` | self/roadmap | minted g | terminal, spent | const: `threadId` `ref<coachThread>` parent, `role` ∈ {person, coach}, `replica`, `pictures` (`maxItems` 1), `at`; lww: `text` ≤131 072 bytes, `truncated` (false), `refusal` a code or null, `calls` ≤32 768 bytes, `receipts` ≤16 384 bytes, `proposalId` `ref<coachProposal>` or null; ranked `state` (running 0; interrupted 1; completed, declined, failed, stopped 2) | Once the stored `state` is completed, declined, failed or stopped, a delta writing `state`, `text`, `calls` or `receipts` → `turn-final`. Its death kills its write fates. |
+| `coachProposal` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>`; const: `threadId` `ref<coachThread>`, `messageId` `ref<coachMessage>`, `base` ≤262 144 bytes of JSON, `changes` (`maxItems` 100 of JSON, ≤65 536 bytes); ranked `state` (pending 0; rejected, stale, replaced 1; applied 2); fww `undone` (false) | Roadmap Coach §7. |
+| `coachWriteFate` | self/roadmap | minted g | terminal, spent | const: `messageId` `ref<coachMessage>` parent, `receipt` 0–5, `fate` ∈ {undone, refused}, `code` or null | Roadmap Coach §9. |
+
+**The owner's records.** A `pointer`, `subtask`, `stepLink` or `stepNote` in an overlay whose owner is not
+its tree's owner → `forbidden`, so a reader's overlay holds their marks alone (R-3).
+
+**Revival.** An intent's delta of a `node` or a `kind` carrying an alive life, whose record is still dead once
+joined (the delete is newer), takes `life := alive` at the server stamp of step 9's next pass. So a step or
+kind a person changed is present, whichever of the change and the delete came first.
+
+**Visibility.** A root's `visibility` is the owner's field, written under the gesture's stamp, so the newest
+choice stands whenever it arrives. When an intent changes its value, by a delta or a restore, the root's `reach`
+takes it and every subtree under the root takes *reach* as below; a restamp of the same value writes no reach.
+Discovery declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes or
+restores `visibility`.
+
+**Reach.** For every `node` whose presence an intent changes, whatever changes it, each subtree the step owns,
+and each under those, in order of depth, takes its place's roadmap's `reach` while it and its owning step are
+present, and `private` otherwise; a `meta.reach` that differs is written at the server stamp. Discovery
+declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes a node's life.
+
+**A roadmap's death** (in `self/roadmap`) kills every alive subtree under it. A root's death also kills every
+alive step of the owner's other alive roadmaps whose alive `pointer` in the owner's overlay `opens` the root;
+discovery reads the owner's overlays and declares those that hold one, with their trees, and the subtrees the
+steps own.
+
+**Commands.** None names a stamp; each writes at the server stamp.
+
+- **`roadmap.createSubtree {tree, root, step, subtree}`** in `self/roadmap`, replica and server origin,
+  `scopedEffects`, predicts `tree`, `meta`, `node`, `kind`. Its arguments are typed leaves (E-8): `tree` and
+  `root` trees of `self/roadmap`, `step` a node of `tree/<tree>`, `subtree` a proposed tree.
+  1. An alive `tree` of the scope placed at `{tree, step}` (the least id when several) answers: ok, the step
+     revived when dead, write `[{t: tree, id, from?: subtree, born}]`. This is the replay rule.
+  2. No `node` `step` in `tree/<tree>`, alive or dead → `unknown-record`.
+  3. An alive owner's `pointer` on the step with `opens` set → `step-opens-a-tree`.
+  4. `tree`'s `depth` (0 unset) + 1 > `MAX_DEPTH` (8) → `depth-limit`.
+  5. `root` not `tree`'s `root` (its id unset) → `invalid`; `subtree` not `none` → `id-taken`.
+  6. Create `tree` `subtree` placed at `{tree, step}`, which creates its scope; into it `meta` `{root, parent,
+     depth: tree's depth + 1, reach: tree's reach}` and the genesis kinds `build` (terracotta, `Build`,
+     `Things you make`, `a0`), `learn` (olive, `Learn`, `Things you figure out`, `a1`) and `milestone` (gold,
+     `Milestone`, `Moments that matter`, `a2`); the step's `branch := subtree`, reviving it when dead. Write
+     `[{t: tree, id: subtree, born, f: {parent}}]`.
+- **`roadmap.recolourKind {kind: ref<kind>, hue}`** in `tree/<T>`, replica and server origin, `scopedEffects`,
+  predicts `kind`, `node`. No such kind → `unknown-record`; its hue (terracotta unset) → ok, no change.
+  Otherwise the kind's `hue := hue`, reviving it when dead, and every `node`, alive or dead, whose `color`
+  (terracotta unset) was the kind's hue takes `color := hue` with its stored life: no step revives. Write `[]`.
+- **Capture and restore** (replica origin, §6.4): `roadmap.capture`, `roadmap.captureTree` (predicts `meta`,
+  so a visibility's write predicts the branch's reach), `roadmap.captureOverlay`; `roadmap.restore` (restores `coachThread`, `coachMessage`, `coachProposal`,
+  `coachWriteFate`), `roadmap.restoreTree` (`meta`, `node`, `edge`, `kind`) and `roadmap.restoreOverlay`
+  (`progress`, `pointer`, `subtask`, `stepLink`, `stepNote`). A restored node life counts for *reach*, and a
+  restored `visibility` for *Visibility*: Undo of a visibility is this generic restore.
+- **Product inverses** (replica origin, `scopedEffects`, `inverse: true`, §6.4). Evidence that does not name
+  what each lists → `invalid`; evidence that no longer holds, a row of a scope not declared or not alive
+  reading absent, skips whole.
+  - `roadmap.undoCreateRoadmap {input: {tree}}` (`self/roadmap`, predicts `tree`): evidence proves the created
+    record `tree` and the created scope `tree/<tree>`. A place → `not-a-root`; the owner's overlay of it past
+    seq 0 → skipped `scope-changed`. Then `tree` dies, as a root dies.
+  - `roadmap.undoCreateSubtree {input: {tree, step, subtree}}` (`self/roadmap`, predicts `tree`, `node`):
+    evidence owns the step's `branch` and proves the created record `subtree` and its scope. `subtree` not
+    placed at `{tree, step}` → `invalid`; the owner's overlay of it past seq 0 → skipped `scope-changed`. Then
+    `subtree` dies and the step's `branch := null`, together (R-8).
+  - `roadmap.redoCreateSubtree {input: {tree, root, step, subtree}}` (`self/roadmap`, predicts `tree`, `meta`,
+    `node`, `kind`; `subtree` proposed): evidence owns the step's `branch` the Undo wrote. Then as
+    `createSubtree` steps 5 and 6.
+
+**What admission does not refuse:** a loop among links, two kinds of one hue, a pointer on a step that owns
+a subtree (reading prefers the subtree). A device checks each before the gesture
+(Roadmap on the sync engine §5).
+
+**Gestures:** **Held** (9 s): delete a step, delete a roadmap; a roadmap's deletion is not undone once its
+hold ends. A reorder writes the moved step's or kind's `ord`, a key the product computes among one trunk
+parent's steps or one roadmap's kinds.
+
+**Codes** (§9.6), the registry's `codes`: `step-opens-a-tree` and `depth-limit` (`roadmap.createSubtree`),
+`not-a-root` (a `visibility` written on a subtree, `roadmap.undoCreateRoadmap`, a person's delete of a
+subtree's record), `turn-final` (a write of a Coach message the writer has ended).
 
 ### A.2 Gym
 

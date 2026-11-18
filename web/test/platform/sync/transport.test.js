@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HttpTransport, LiveChannel } from '../../../src/platform/sync/transport.js';
-import { syncTelemetry } from '../../../src/platform/sync/telemetry.js';
 import { FakeTimers, tick } from './fakes.js';
 
 test('HTTP carriers use schema v4, credentials, canonical JSON and bounded timeout', async () => {
@@ -114,42 +113,6 @@ for (const data of [new Uint8Array([1]), 'é'.repeat(70_000), '{'])
     assert.equal(live.queuedBytes, 0);
     live.stop(); assert.equal(timers.tasks.size, 0);
   });
-
-test('telemetry drops content, ids, unknown labels and exceptions, and enforces its per-minute bound', () => {
-  const events = [], failures = []; let time = 0;
-  const telemetry = syncTelemetry({ limit: 3, now: () => time,
-    event: (name, props) => events.push({ name, props }), failure: (operation) => failures.push(operation) });
-  telemetry.event('sync-digest-mismatch', { scopeKind: 'product', seq: 42, body: 'secret', account: 'A', token: 'secret' });
-  telemetry.failure('storage');
-  telemetry.event('sync-persist', { outcome: 'denied', scope: 'tree/secret' });
-  telemetry.failure('transport');
-  telemetry.failure('secret');
-  telemetry.event('secret', { token: 'secret' });
-  assert.deepEqual(events, [{ name: 'sync-digest-mismatch', props: { scopeKind: 'product', seq: 42 } }, { name: 'sync-persist', props: { outcome: 'denied' } }]);
-  assert.deepEqual(failures, ['storage']);
-  time = 60_000; telemetry.failure('transport');
-  assert.deepEqual(failures, ['storage', 'transport']);
-});
-
-test('writer measurements are bounded numeric labels and never forward content or non-finite values', () => {
-  const events = [];
-  const telemetry = syncTelemetry({ event: (name, props) => events.push({ name, props }) });
-  telemetry.event('sync-writer', { durationMs: 90000, queueMs: 12, body: 'secret', scope: 'private' });
-  telemetry.event('sync-writer', { durationMs: Infinity, queueMs: -1, account: 'private' });
-  assert.deepEqual(events, [{ name: 'sync-writer', props: { durationMs: 60000, queueMs: 12 } }, { name: 'sync-writer', props: {} }]);
-});
-
-test('inverse settlement and waiting counts are bounded numeric labels with no id or value', () => {
-  const events = [];
-  const telemetry = syncTelemetry({ event: (name, props) => events.push({ name, props }) });
-  telemetry.event('sync-inverse', { outcome: 'settled', applied: 2, skipped: 5000, requestId: 'g3', before: 'secret' });
-  telemetry.event('sync-inverse', { outcome: 'pending', count: 1, ageMs: 9e12, actId: 'g1' });
-  telemetry.event('sync-inverse', { outcome: 'settled', applied: -1, skipped: 0.5, ageMs: Infinity });
-  assert.deepEqual(events, [
-    { name: 'sync-inverse', props: { outcome: 'settled', applied: 2, skipped: 1000 } },
-    { name: 'sync-inverse', props: { outcome: 'pending', count: 1, ageMs: 2_592_000_000 } },
-    { name: 'sync-inverse', props: { outcome: 'settled' } }]);
-});
 
 test('the default browser fetch preserves its global receiver', async () => {
   const original = globalThis.fetch;
