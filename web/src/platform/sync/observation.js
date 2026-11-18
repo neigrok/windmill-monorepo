@@ -11,6 +11,7 @@ const ENVELOPE = ['seq', 'rc', 'ru'];
 
 class FoldedEntry {
   constructor(entry, signature) {
+    this.source = entry;
     this.signature = signature;
     this.order = entry.commitOrder;
     this.held = entry.state === 'held';
@@ -103,9 +104,14 @@ export class ScopeObservation {
     let moved = false;
     for (const entry of replica.outbox) {
       if (entry.scope !== this.scope || !(entry.state === 'held' || PENDING.has(entry.state))) continue;
-      const signature = FoldedEntry.signatureOf(entry);
       const previous = this.entries.get(entry.localId);
-      if (previous?.signature === signature) { entries.set(entry.localId, previous); continue; }
+      if (previous?.source === entry) { entries.set(entry.localId, previous); continue; }
+      const signature = FoldedEntry.signatureOf(entry);
+      if (previous?.signature === signature) {
+        previous.source = entry;
+        entries.set(entry.localId, previous);
+        continue;
+      }
       const folded = new FoldedEntry(entry, signature);
       for (const key of [...folded.keys, ...previous?.keys ?? []]) changed.add(key);
       entries.set(entry.localId, folded);
