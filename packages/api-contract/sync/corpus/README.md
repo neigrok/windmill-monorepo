@@ -420,14 +420,12 @@ server state's `product`: a command's replay is read from the records.
 roadmap with a place; *the subtrees under* a roadmap are those whose places lead up to it. A step is *present*
 while its `node` is alive.
 
+**A root's visibility** is the owner's client `lww` field `meta.visibility`, so the newest gesture's choice
+stands. Its change writes reach (check 4 below). Discovery declares `self/roadmap` and every alive subtree under
+`T` for an intent of `tree/<T>` whose delta writes `meta.visibility`, or whose `roadmap.restoreTree` restores it.
+
 **Commands:**
 
-- `roadmap.setVisibility {visibility}` (`tree/<T>`, replica and server origin; `scopedEffects`, predicts
-  `meta`). Discovery declares `self/roadmap` and every alive subtree under `T`.
-  1. `T`'s `tree` record has a place → `not-a-root`.
-  2. `meta.visibility` (unset reads `private`) is `visibility` → `ok`, no change, write `[]`.
-  3. Otherwise `T`'s `meta.visibility := visibility` and `meta.reach := visibility`, and *reach* (below) over
-     the subtrees under `T`, at the server stamp; write `[]`.
 - `roadmap.createSubtree {tree, root, step, subtree}` (`self/roadmap`, replica and server origin;
   `scopedEffects`, predicts `tree`, `meta`, `node`, `kind`). Its four arguments are typed leaves (E-8): `tree`
   and `root` trees of `self/roadmap`, `step` a node of `tree/<tree>`, `subtree` a proposed tree (`role:
@@ -453,8 +451,8 @@ while its `node` is alive.
   `hue` → `ok`, no change. Otherwise, at the server stamp, the kind's `hue := hue`, reviving it when dead, and
   every `node` whose `color` (unset reads `terracotta`) is the kind's former hue, alive or dead, takes
   `color := hue`; a dead one keeps its stored life, so no step revives. Write `[]`.
-- `roadmap.capture {}`, `roadmap.captureTree {}`, `roadmap.captureOverlay {}` (replica origin): `engine:
-  "capture"`, as the probe's.
+- `roadmap.capture {}`, `roadmap.captureTree {}` (predicts `meta`), `roadmap.captureOverlay {}` (replica origin):
+  `engine: "capture"`, as the probe's.
 - `roadmap.restore {}` (`self/roadmap`, restores `coachThread`, `coachMessage`, `coachProposal`,
   `coachWriteFate`), `roadmap.restoreTree {}` (`tree/<T>`, restores `meta`, `node`, `edge`, `kind`) and
   `roadmap.restoreOverlay {}` (`self/overlay/<T>`, restores `progress`, `pointer`, `subtask`, `stepLink`,
@@ -466,8 +464,6 @@ Each answers `{inverse: {outcomes: [{index: 0, s}]}}` in the scoped detail's `co
 name what the command lists → `invalid`. Evidence that no longer holds (engine.md §6.4, a row of a scope that
 is not alive or not declared reading absent) → `ok`, no change, write `[]`, `s: "skipped"` with its `code`.
 
-- `roadmap.revertVisibility {input: {visibility}}` (`tree/<T>`, predicts `meta`): evidence owns `tree/<T>`'s
-  `meta.visibility`. A place on `T` → `not-a-root`. Otherwise as `roadmap.setVisibility` step 3; `applied`.
 - `roadmap.undoCreateRoadmap {input: {tree}}` (`self/roadmap`, predicts `tree`): evidence proves the created
   record `self/roadmap` `tree` `tree` and the created scope `tree/<tree>`. A place on it → `not-a-root`. The
   owner's overlay of `tree` at a seq above 0 → skipped `scope-changed`. Otherwise `tree` dies at the server
@@ -484,7 +480,8 @@ is not alive or not declared reading absent) → `ok`, no change, write `[]`, `s
 
 **Checks** (§6.1 step 10, on the joined records, in this order):
 
-1. **Types.** A replica-origin intent delta killing a `tree` record that has a place → `not-a-root`. A
+1. **Types.** A replica-origin intent delta killing a `tree` record that has a place → `not-a-root`; an
+   intent delta writing `meta.visibility` in a tree whose `tree` record has a place → `not-a-root`. A
    `pointer`, `subtask`, `stepLink` or `stepNote` in an overlay whose owner is not its tree's owner →
    `forbidden`. A `meta` whose `guide` register the intent changed, while its joined `guideInherited` is true
    and no intent delta writes `guideInherited`, takes `guideInherited := false`. A `coachThread` that dies
@@ -498,7 +495,10 @@ is not alive or not declared reading absent) → `ok`, no change, write `[]`, `s
    subtree under it. Each that had no place (a root) also kills every alive `node` of the owner's other alive
    roadmaps whose alive `pointer` in the owner's overlay `opens` it. Discovery declares those overlays and
    trees, and every alive scope of the subtrees the killed steps own and those under them.
-4. **Reach.** For every `node` whose presence the intent changes (deltas, commands, restores and the checks
+4. **Visibility.** When the intent changes the value of its tree's `meta.visibility` (unset reads `private`),
+   by a delta or a restore, the tree's `meta.reach` takes that value and *reach* runs over the subtrees under it.
+   A restamp of the value it holds writes no reach.
+5. **Reach.** For every `node` whose presence the intent changes (deltas, commands, restores and the checks
    above), *reach* over the subtrees it owns and those under them: in order of depth, each takes its place's
    roadmap's reach when it and its owning step are present, and `private` otherwise; a `meta.reach` that
    differs is written at the server stamp. Discovery declares `self/roadmap` and those subtrees' scopes for an

@@ -45,15 +45,17 @@ test('a refusal leaves the state as it was', () => {
   for (const { name, input, expect } of admissions.filter((sample) => sample.expect.result.s === 'refused')) assert.equal(jcs(expect.state), jcs(input.state), name);
 });
 
-test('setVisibility reaches every standing subtree of the branch and leaves one that does not stand private', () => {
-  const { expect } = named('setVisibility writes the root\'s visibility and reach and the reach of every standing subtree of its branch');
-  assert.deepEqual([valueAt(expect.state, `tree:${R}`, 'meta', 'meta', 'visibility'), ...[R, S, S2, H].map((tree) => reachOf(expect.state, tree))],
-    ['unlisted', 'unlisted', 'unlisted', 'unlisted', 'private']);
-  assert.deepEqual(expect.result.write, []);
-  assert.deepEqual(expect.result.detail.windmillKit.effects.map(({ scope, rows }) => [scope, rows.map(({ t, id }) => `${t}/${id}`)]),
-    [[`tree/${R}`, ['meta/meta']], ['self/roadmap', []], [`tree/${S}`, ['meta/meta']], [`tree/${S2}`, ['meta/meta']], [`tree/${H}`, []]]);
-  const same = named('setVisibility to the visibility the root holds writes nothing');
-  assert.equal(same.expect.state.scopes[`tree:${R}`].seq, same.input.state.scopes[`tree:${R}`].seq);
+test('a root\'s visibility is the owner\'s field, ordered by its stamp, and its change reaches the standing branch', () => {
+  const { expect } = named('the owner\'s visibility of a root writes its reach and the reach of every standing subtree of its branch');
+  assert.deepEqual([rowOf(expect.state, `tree:${R}`, 'meta', 'meta').f.visibility, ...[R, S, S2, H].map((tree) => reachOf(expect.state, tree))],
+    [['unlisted', '5000:0:r_aaaaaaaaaaaa'], 'unlisted', 'unlisted', 'unlisted', 'private']);
+  const stale = named('a visibility older than the root\'s changes nothing: a stale public never overrides a newer private');
+  assert.equal(jcs(stale.expect.state.rows), jcs(stale.input.state.rows));
+  const restamped = named('a visibility restamped with the value the root holds writes no reach');
+  assert.deepEqual([S, S2].map((tree) => rowOf(restamped.expect.state, `tree:${tree}`, 'meta', 'meta').seq), [1, 1]);
+  const undone = named('an Undo restoring the earlier visibility writes the branch\'s reach back').expect.state;
+  assert.deepEqual([valueAt(undone, `tree:${R}`, 'meta', 'meta', 'visibility'), ...[R, S, S2].map((tree) => reachOf(undone, tree))], ['private', 'private', 'private', 'private']);
+  assert.deepEqual(named('a visibility written on a subtree is refused not-a-root').expect.result, { s: 'refused', code: 'not-a-root' });
 });
 
 test('createSubtree plants the record, the meta, the genesis kinds and the branch, and a retry answers what the step owns', () => {
@@ -91,15 +93,13 @@ test('the inverses hold all or nothing on their evidence', () => {
     ['undoCreateSubtree after the owner marked the subtree skips scope-changed', 'scope-changed'],
     ['undoCreateSubtree after the branch moved skips version-changed', 'version-changed'],
     ['redoCreateSubtree after the step took another subtree skips version-changed', 'version-changed'],
-    ['revertVisibility after another write of the visibility skips version-changed', 'version-changed'],
+    ['an Undo after another write of the visibility skips it and writes no reach', 'version-changed'],
     ['undoCreateRoadmap after the owner marked a step of it skips scope-changed', 'scope-changed']]) {
     assert.deepEqual(outcome(name), [{ index: 0, s: 'skipped', code }], name);
     assert.equal(jcs(named(name).expect.state.rows), jcs(named(name).input.state.rows), name);
   }
   const redone = named('redoCreateSubtree while the Undo\'s branch stands plants a new subtree under a fresh id').expect.state;
   assert.deepEqual([valueAt(redone, `tree:${R}`, 'node', 'basics', 'branch'), lifeOf(redone, 'acct:A/roadmap', 'tree', NEW)], ['t_00000000000000a2', 'dead']);
-  const reverted = named('revertVisibility while the act\'s visibility stands takes the root and its standing branch back').expect.state;
-  assert.deepEqual([R, S, S2, H].map((tree) => reachOf(reverted, tree)), ['private', 'private', 'private', 'private']);
 });
 
 test('a step\'s presence decides the reach of the branch under it, and a root\'s death ends its branch', () => {

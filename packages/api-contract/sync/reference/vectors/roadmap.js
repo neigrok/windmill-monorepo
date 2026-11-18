@@ -73,7 +73,7 @@ function world() {
     [`tree:${R}`]: {
       scope: tree(R),
       rows: [
-        rec('meta', 'meta', 3, { f: { title: ['Learn Rust', a(1000)], visibility: ['public', srv(1100)], reach: ['public', srv(1100)] } }),
+        rec('meta', 'meta', 3, { f: { title: ['Learn Rust', a(1000)], visibility: ['public', a(1100)], reach: ['public', srv(1100)] } }),
         node('basics', 1, { ord: ['a0', a(1000)] }),
         node('ownership', 2, { ord: ['a1', a(1000)], color: ['olive', a(1000)], branch: [S, srv(2000)] }),
         node('macros', 4, { ord: ['a2', a(1000)], color: ['olive', a(1000)], branch: [H, srv(2500)] }, ['dead', a(2600)]),
@@ -152,13 +152,6 @@ function commands() {
   const deadKind = stateWith((scopes) => replaceIn(scopes, `tree:${R}`, kind('milestone', 'gold', 'a2', 2, ['dead', a(2000)])));
   const deadStep = stateWith((scopes) => replaceIn(scopes, `tree:${R}`, node('basics', 2, { ord: ['a0', a(1000)] }, ['dead', a(2000)])));
   return [
-    admitted('setVisibility writes the root\'s visibility and reach and the reach of every standing subtree of its branch', base,
-      command(`tree/${R}`, 'roadmap.setVisibility', { visibility: 'unlisted' })),
-    admitted('setVisibility to the visibility the root holds writes nothing', base, command(`tree/${R}`, 'roadmap.setVisibility', { visibility: 'public' })),
-    admitted('setVisibility of a private root opens its standing subtrees', base, command(`tree/${Y}`, 'roadmap.setVisibility', { visibility: 'public' })),
-    admitted('setVisibility of a subtree is refused not-a-root', base, command(`tree/${S}`, 'roadmap.setVisibility', { visibility: 'private' })),
-    admitted('setVisibility by a reader is refused forbidden', base, command(`tree/${R}`, 'roadmap.setVisibility', { visibility: 'private' }), READER),
-    admitted('setVisibility through the server\'s door writes as the owner\'s does', base, command(`tree/${R}`, 'roadmap.setVisibility', { visibility: 'private' }), DOOR),
     admitted('createSubtree plants a subtree: its record and place, its meta one deeper with the reach above, the genesis kinds and the step\'s branch', base,
       subtree({ tree: R, root: R, step: 'basics', subtree: NEW })),
     admitted('createSubtree under a subtree takes its root and the depth below it', base, subtree({ tree: S, root: R, step: 'borrowing', subtree: NEW })),
@@ -199,8 +192,6 @@ const stampOf = (state, key, t, id, name) => state.rows[key].find((r) => r.t ===
 
 function inverses() {
   const base = stateOf(world());
-  const visibility = owned({ scope: `tree/${R}`, t: 'meta', id: 'meta', slot: field('visibility') }, srv(1100));
-  const revert = (proof) => inverse(`tree/${R}`, 'roadmap.revertVisibility', { visibility: 'private' }, proof);
 
   const planted = after(base, subtree({ tree: R, root: R, step: 'basics', subtree: NEW }));
   const branch = (state) => owned({ scope: `tree/${R}`, t: 'node', id: 'basics', slot: field('branch') }, stampOf(state, `tree:${R}`, 'node', 'basics', 'branch'));
@@ -220,11 +211,6 @@ function inverses() {
   const markedRoot = after(made, { scope: `self/overlay/${F}`, d: [{ t: 'progress', id: 'first', f: { mark: [MARK, a(6000)] } }] });
 
   return [
-    admitted('revertVisibility while the act\'s visibility stands takes the root and its standing branch back', base, revert(evidence({ ownedFields: [visibility] }))),
-    admitted('revertVisibility after another write of the visibility skips version-changed', base,
-      revert(evidence({ ownedFields: [owned(visibility.target, srv(1000))] }))),
-    admitted('revertVisibility from another epoch skips epoch-changed', base, revert(evidence({ ownedFields: [visibility], expectedEpoch: 'ep-0' }))),
-    admitted('revertVisibility without the visibility it owns is invalid', base, revert(evidence({}))),
     admitted('undoCreateSubtree while the connection and the subtree are unchanged kills the subtree and clears the step\'s branch together', planted, undo({})),
     admitted('undoCreateSubtree after a step was added in the subtree skips scope-changed', grown, undo({})),
     admitted('undoCreateSubtree after the owner marked the subtree skips scope-changed', marked, undo({})),
@@ -237,6 +223,30 @@ function inverses() {
     admitted('undoCreateRoadmap while the roadmap is as its creation left it kills it', made, uncreate(rootProof(made))),
     admitted('undoCreateRoadmap after the owner marked a step of it skips scope-changed', markedRoot, uncreate(rootProof(made))),
     admitted('undoCreateRoadmap without proof of its scope is invalid', made, uncreate(evidence({ unchangedCreatedRecords: rootProof(made).unchangedCreatedRecords }))),
+  ];
+}
+
+// Decision 17: a root's visibility is the owner's field, ordered by gesture time; its change writes the branch's reach.
+function visibilities() {
+  const base = stateOf(world());
+  const hidden = stateWith((scopes) => {
+    replaceIn(scopes, `tree:${R}`, rec('meta', 'meta', 3, { f: { title: ['Learn Rust', a(1000)], visibility: ['private', a(3000)], reach: ['private', srv(3000)] } }));
+    replaceIn(scopes, `tree:${S}`, subtreeMeta(R, R, 'ownership', 1, 'private', srv(2000), srv(3000)));
+    replaceIn(scopes, `tree:${S2}`, subtreeMeta(R, S, 'lifetimes', 2, 'private', srv(3000)));
+  });
+  const visibility = (tree, value, stamp) => inTree(tree, [{ t: 'meta', id: 'meta', f: { visibility: [value, stamp] } }]);
+  const restore = (stamp) => command(`tree/${R}`, 'roadmap.restoreTree', { expectedEpoch: 'ep-1', operations: [
+    { kind: 'field', t: 'meta', id: 'meta', slot: { kind: 'field', name: 'visibility' }, expected: { kind: 'stamp', stamp }, before: 'private' }] });
+  return [
+    admitted('the owner\'s visibility of a root writes its reach and the reach of every standing subtree of its branch', base, visibility(R, 'unlisted', a(5000))),
+    admitted('a visibility older than the root\'s changes nothing: a stale public never overrides a newer private', hidden, visibility(R, 'public', a(2000))),
+    admitted('a visibility restamped with the value the root holds writes no reach', base, visibility(R, 'public', a(5000))),
+    admitted('a root with no subtree takes its visibility as its reach', base, visibility(Y, 'public', a(5000))),
+    admitted('a visibility written on a subtree is refused not-a-root', base, visibility(S, 'private', a(5000))),
+    admitted('a reader\'s visibility is refused forbidden', base, visibility(R, 'private', b(5000)), READER),
+    admitted('the server\'s door writes a root\'s visibility as the owner does', base, visibility(R, 'private', null), DOOR),
+    admitted('an Undo restoring the earlier visibility writes the branch\'s reach back', base, restore(a(1100))),
+    admitted('an Undo after another write of the visibility skips it and writes no reach', base, restore(a(1000))),
   ];
 }
 
@@ -306,7 +316,7 @@ function access() {
 
 function guides() {
   const inherited = stateWith((scopes) => replaceIn(scopes, `tree:${R}`, rec('meta', 'meta', 3, {
-    f: { title: ['Learn Rust', a(1000)], guide: ['Their guide', srv(1100)], guideInherited: [true, srv(1100)], visibility: ['public', srv(1100)], reach: ['public', srv(1100)] },
+    f: { title: ['Learn Rust', a(1000)], guide: ['Their guide', srv(1100)], guideInherited: [true, srv(1100)], visibility: ['public', a(1100)], reach: ['public', srv(1100)] },
   })));
   const meta = (f) => inTree(R, [{ t: 'meta', id: 'meta', f }]);
   return [
@@ -424,7 +434,7 @@ function clientVectors() {
 
 export function files() {
   return {
-    'roadmap/admit.json': [...commands(), ...inverses(), ...consequences(), ...revivals(), ...access(), ...guides(), ...limits(), ...coach()],
+    'roadmap/admit.json': [...commands(), ...visibilities(), ...inverses(), ...consequences(), ...revivals(), ...access(), ...guides(), ...limits(), ...coach()],
     'roadmap/client.json': clientVectors(),
   };
 }

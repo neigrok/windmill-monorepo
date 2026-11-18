@@ -1,5 +1,6 @@
 // Roadmap's server rules (engine.md Appendix A.1): its commands and their inverses, the life a change to a step or a
-// kind carries, the reach of a branch, the end of a root, the owner's workspace and Coach's records.
+// kind carries, a root's visibility and the reach of its branch, the end of a root, the owner's workspace and Coach's
+// records.
 // corpus/README.md states the same rules.
 
 import { DEFAULT_KINDS } from '../../../genesis.js';
@@ -137,8 +138,9 @@ export class RoadmapProduct {
   }
 
   // Discovery reads the owner's roadmaps and declares every scope a command or a consequence reads or writes: the
-  // branch under a step whose life the intent touches, the branch of a root whose visibility it sets, the scopes a
-  // subtree command plants or uproots, and, for a dying root, the overlays and trees of the steps whose pointer opens it.
+  // branch under a step whose life the intent touches, the branch under a roadmap whose visibility it writes, the scopes
+  // a subtree command plants or uproots, and, for a dying root, the overlays and trees of the steps whose pointer opens
+  // it.
   discoverEffectScopes(ctx, cmd) {
     const account = accountOf(ctx);
     const roadmaps = new Roadmaps(ctx.scopedRows(account, 'tree'));
@@ -148,11 +150,14 @@ export class RoadmapProduct {
     const branch = (tree, step) => { for (const id of roadmaps.branchOf(tree, step)) declare(id); };
     if (ctx.scopeKey.startsWith('tree:')) {
       const tree = ctx.scopeKey.slice('tree:'.length);
-      if (cmd?.name === 'roadmap.setVisibility' || cmd?.name === 'roadmap.revertVisibility') {
+      const operations = cmd?.name === 'roadmap.restoreTree' ? cmd.args.operations : [];
+      const visible = ctx.deltas.some((delta) => delta.t === 'meta' && Object.hasOwn(delta.f ?? {}, 'visibility'))
+        || operations.some((op) => op.t === 'meta' && op.slot?.name === 'visibility');
+      if (visible) {
         keys.add(account);
         for (const id of roadmaps.under(tree)) declare(id);
       }
-      const restored = cmd?.name === 'roadmap.restoreTree' ? cmd.args.operations.filter((op) => op.t === 'node' && (op.kind !== 'field' || op.slot.kind === 'life')) : [];
+      const restored = operations.filter((op) => op.t === 'node' && (op.kind !== 'field' || op.slot.kind === 'life'));
       const touched = [...ctx.deltas.filter((delta) => delta.t === 'node' && delta.life !== undefined), ...restored];
       if (touched.length) keys.add(account);
       for (const { id } of touched) branch(tree, id);
@@ -198,14 +203,10 @@ export class RoadmapProduct {
 
   runCommand(ctx, cmd) {
     switch (cmd.name) {
-      case 'roadmap.setVisibility':
-        return this.setVisibility(ctx, cmd.args);
       case 'roadmap.createSubtree':
         return this.createSubtree(ctx, cmd.args);
       case 'roadmap.recolourKind':
         return this.recolourKind(ctx, cmd.args);
-      case 'roadmap.revertVisibility':
-        return this.revertVisibility(ctx, cmd.args);
       case 'roadmap.undoCreateRoadmap':
         return this.undoCreateRoadmap(ctx, cmd.args);
       case 'roadmap.undoCreateSubtree':
@@ -215,30 +216,6 @@ export class RoadmapProduct {
       default:
         throw new Refusal('invalid');
     }
-  }
-
-  // §4: a root's visibility and reach, and the reach of every subtree of its branch, standing ones taking the
-  // visibility. The visibility the root holds writes nothing; otherwise the choice admitted last stands.
-  setVisibility(ctx, { visibility }) {
-    this.refuseSubtree(ctx);
-    if ((valueOf(ctx.stored('meta', 'meta'), 'visibility') ?? 'private') === visibility) return { deltas: [], write: [] };
-    return { ...this.visible(ctx, visibility), write: [] };
-  }
-
-  // An intent of a tree scope that only a root takes is refused `not-a-root` in a subtree.
-  refuseSubtree(ctx) {
-    if (valueOf(ctx.storedIn(accountOf(ctx), 'tree', ctx.scopeKey.slice('tree:'.length)), 'parent') != null) throw new Refusal('not-a-root');
-  }
-
-  visible(ctx, visibility) {
-    const tree = ctx.scopeKey.slice('tree:'.length);
-    const roadmaps = new Roadmaps(ctx.scopedRows(accountOf(ctx), 'tree'));
-    const reachOf = (id) => (id === tree ? visibility : valueOf(ctx.storedIn(`tree:${id}`, 'meta', 'meta'), 'reach') ?? 'private');
-    const changed = reaches(roadmaps, roadmaps.under(tree), { reachOf, row: (scopeKey, t, id) => ctx.storedIn(scopeKey, t, id) });
-    return {
-      deltas: [{ t: 'meta', id: 'meta', f: { visibility: [visibility, null], reach: [visibility, null] } }],
-      into: changed.map(({ tree: id, reach }) => ({ scopeKey: `tree:${id}`, deltas: [metaReach(reach)] })),
-    };
   }
 
   // §4 a subtree under a step: its `tree` record with its place, its meta and genesis kinds, and the step's `branch`.
@@ -311,17 +288,6 @@ export class RoadmapProduct {
     }, evidence);
   }
 
-  // K-3: Undo and Redo of a visibility. While the act's own visibility stands, the root takes the one named, as a
-  // setVisibility writes it.
-  revertVisibility(ctx, { input: { visibility }, evidence }) {
-    const tree = ctx.scopeKey.slice('tree:'.length);
-    if (!evidence.ownedFields.some(({ target }) => sameJson(target, { scope: `tree/${tree}`, t: 'meta', id: 'meta', slot: { kind: 'field', name: 'visibility' } }))) throw new Refusal('invalid');
-    const skip = this.evidenceSkipOf(ctx, evidence);
-    if (skip) return skipped(skip);
-    this.refuseSubtree(ctx);
-    return { ...this.visible(ctx, visibility), write: [], detail: inverseDetail('applied') };
-  }
-
   // K-3: Undo of creating a roadmap. While its record, its tree scope and its owner's overlay of it are as the creation
   // left them, the roadmap dies as any root dies (§4's consequences).
   undoCreateRoadmap(ctx, { input: { tree }, evidence }) {
@@ -371,6 +337,7 @@ export class RoadmapProduct {
     for (const record of changes) RULES[record.type.type]?.(ctx, record, outcome);
     this.revive(ctx, outcome);
     if (ctx.originScopeKey === accountOf(ctx)) this.endBranches(ctx, changes, outcome);
+    this.settleVisibility(ctx, changes, outcome);
     this.settleReach(ctx, changes, outcome);
     return { byScope: outcome.byScope };
   }
@@ -408,6 +375,22 @@ export class RoadmapProduct {
     }
   }
 
+  // §4: a root's reach is its visibility, so a change of the visibility, by the owner's write or an Undo's restore,
+  // writes the root's reach and the reach of every subtree under it, standing ones taking the visibility.
+  settleVisibility(ctx, changes, outcome) {
+    if (!ctx.originScopeKey.startsWith('tree:')) return;
+    const record = changes.find((change) => change.scopeKey === ctx.originScopeKey && change.type.type === 'meta');
+    const visibility = valueOf(record?.after, 'visibility') ?? 'private';
+    if (!record || visibility === (valueOf(record.original, 'visibility') ?? 'private')) return;
+    const tree = ctx.originScopeKey.slice('tree:'.length);
+    if ((valueOf(record.after, 'reach') ?? 'private') !== visibility) outcome.append(record.scopeKey, metaReach(visibility));
+    const roadmaps = new Roadmaps(outcome.rows(accountOf(ctx), 'tree'));
+    const reachOf = (id) => valueOf(outcome.row(`tree:${id}`, 'meta', 'meta'), 'reach') ?? 'private';
+    for (const { tree: id, reach } of reaches(roadmaps, roadmaps.under(tree), { reachOf, row: (scopeKey, t, id) => outcome.row(scopeKey, t, id) })) {
+      outcome.append(`tree:${id}`, metaReach(reach));
+    }
+  }
+
   // §4: a step's death that ends a subtree's standing writes `reach` private on every subtree under it, and its revival
   // writes the reach of the roadmap above back.
   settleReach(ctx, changes, outcome) {
@@ -434,8 +417,11 @@ const RULES = {
     if (ctx.deltas.some((delta) => delta.t === 'tree' && delta.id === record.after.id && delta.life?.[0] === 'dead')) throw new Refusal('not-a-root');
   },
 
-  // The owner's guide replaces one a fork inherited, unless the same intent says it is inherited.
+  // Only a root has a visibility; the owner's guide replaces one a fork inherited, unless the same intent says it is
+  // inherited.
   meta(ctx, record, outcome) {
+    const visible = record.scopeKey === ctx.originScopeKey && ctx.deltas.some((delta) => delta.t === 'meta' && Object.hasOwn(delta.f ?? {}, 'visibility'));
+    if (visible && valueOf(ctx.storedIn(accountOf(ctx), 'tree', record.scopeKey.slice('tree:'.length)), 'parent') != null) throw new Refusal('not-a-root');
     if (sameJson(record.original?.f?.guide ?? null, record.after.f?.guide ?? null) || valueOf(record.after, 'guideInherited') !== true) return;
     if (ctx.deltas.some((delta) => delta.t === 'meta' && Object.hasOwn(delta.f ?? {}, 'guideInherited'))) return;
     outcome.append(record.scopeKey, { t: 'meta', id: 'meta', f: { guideInherited: [false, null] } });

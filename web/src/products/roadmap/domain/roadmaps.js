@@ -41,7 +41,7 @@ export const Roadmap = new EntityType({
   },
 });
 
-// A roadmap's own words, the singleton of its tree scope. Its place, visibility and reach are the server's.
+// A roadmap's own words and a root's visibility, the singleton of its tree scope. Its place and reach are the server's.
 export class RoadmapMetaValue {
   /**
    * @param {Id<RoadmapMetaValue>} id
@@ -58,13 +58,13 @@ export class RoadmapMetaValue {
     Object.freeze(this);
   }
 
-  /** @param {{ title?: string, guide?: string }} changes */
+  /** @param {{ title?: string, guide?: string, visibility?: string }} changes */
   with(changes) {
     return new RoadmapMetaValue(this.id, { title: this.title, guide: this.guide, root: this.root, depth: this.depth,
       visibility: this.visibility, reach: this.reach, ...changes });
   }
 
-  fields() { return { title: this.title, guide: this.guide }; }
+  fields() { return { title: this.title, guide: this.guide, visibility: this.visibility }; }
 
   static blank() { return new RoadmapMetaValue(new Id('meta', RoadmapMeta)); }
 }
@@ -79,6 +79,7 @@ export const RoadmapMeta = new EntityType({
   checks: [
     new Check('title', (value) => value.with({ title: RoadmapSpecs.title.apply(value.title, new Path('title')) })),
     new Check('guide', (value) => value.with({ guide: RoadmapSpecs.guide.apply(value.guide, new Path('guide')) })),
+    new Check('visibility', (value) => value.with({ visibility: RoadmapSpecs.visibility.apply(value.visibility, new Path('visibility')) })),
   ],
 });
 
@@ -236,8 +237,9 @@ class Branches {
   }
 }
 
-// §4 `roadmap.setVisibility`: a root's visibility, predicted as its reach and the reach of every standing subtree of
-// its branch. The binding takes the intent's stamp as the gesture's.
+// §4 a root's visibility: the owner's field, written under the gesture's stamp, so the newest choice stands. The
+// server writes the reach of the root and of every standing subtree of its branch, predicted here under the tree's
+// capture command.
 export class SetVisibility {
   /**
    * @param {string} tree
@@ -254,18 +256,21 @@ export class SetVisibility {
   load(read) {
     const branches = new Branches(read, this.tree);
     const meta = read.inScope(RoadmapScopes.tree(this.tree), (tree) => tree.repository(RoadmapMeta).find(META, 'drawn') ?? RoadmapMetaValue.blank());
-    return { roadmap: branches.roadmaps.get(this.tree) ?? null, subtrees: branches.standing(), meta };
+    return { roadmap: branches.roadmaps.get(this.tree) ?? null, subtrees: branches.standing(), meta, moment: read.moment };
   }
 
   /** @param {ReturnType<SetVisibility['load']>} loaded */
-  decide({ roadmap, subtrees, meta }) {
+  decide({ roadmap, subtrees, meta, moment }) {
     if (roadmap === null) return gone(Roadmap.type, this.tree);
     if (roadmap.parent !== null) return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('not-a-root', roadmap.id.ref, null, 'predicted')));
-    if (meta.visibility === this.visibility) return ActDecision.unchanged(null);
-    const plan = Plan.running({ name: 'roadmap.setVisibility', specs: [RoadmapSpecs.visibility], args: { visibility: this.visibility } }, [
-      Prediction.write(META, { visibility: this.visibility, reach: this.visibility }),
-      ...subtrees.map((subtree) => Prediction.write(META, { reach: this.visibility }, {}, RoadmapScopes.tree(subtree))),
+    const valid = new Valid(meta.with({ visibility: this.visibility }), moment, ['visibility']);
+    const { visibility } = valid.value;
+    if (meta.visibility === visibility) return ActDecision.unchanged(null);
+    const plan = Plan.running({ name: 'roadmap.captureTree', specs: [], args: {} }, [
+      Prediction.write(META, { reach: visibility }),
+      ...subtrees.map((subtree) => Prediction.write(META, { reach: visibility }, {}, RoadmapScopes.tree(subtree))),
     ]);
+    plan.update(valid, { fields: ['visibility'] });
     return writeIn(RoadmapScopes.tree(this.tree), plan, null);
   }
 }

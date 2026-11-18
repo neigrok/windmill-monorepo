@@ -158,3 +158,27 @@ test('a step deleted on another device ends its subtree\'s standing, and a chang
     a.close();
   }
 });
+
+test('a stale public sent after a newer private loses on the server and on both devices, the branch staying private', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
+    const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics' }))).result;
+    const subtree = committed(await a.runner.runAct(new CreateSubtree(tree, basics))).result.subtree;
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree), RoadmapScopes.tree(subtree)]) a.observe(scope);
+    committed(await a.runner.runAct(new SetVisibility(tree, 'unlisted')));
+    await a.sync();
+    const b = await a.device();
+    await a.sync();
+    committed(await a.runner.runAct(new SetVisibility(tree, 'public')));
+    await a.advance(1000);
+    committed(await b.runner.runAct(new SetVisibility(tree, 'private')));
+    await b.senderStep();
+    await a.sync();
+    const meta = (/** @type {Harness} */ phone, /** @type {string} */ id) => phone.drawn(RoadmapMeta, RoadmapScopes.tree(id)).map((value) => [value.visibility, value.reach]);
+    for (const phone of [a, b]) assert.deepEqual([meta(phone, tree), meta(phone, subtree)], [[['private', 'private']], [['private', 'private']]]);
+    assert.deepEqual([a.server.row(`tree:${tree}`, 'meta', 'meta').f.reach[0], a.server.row(`tree:${subtree}`, 'meta', 'meta').f.reach[0]], ['private', 'private']);
+  } finally {
+    a.close();
+  }
+});

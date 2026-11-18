@@ -78,7 +78,7 @@
         "guideInherited": { "kind": "lww", "writer": "server", "domain": { "type": "boolean" }, "default": false },
         "visibility": {
           "kind": "lww",
-          "writer": "server",
+          "writer": "client",
           "domain": { "type": "string", "enum": ["private", "unlisted", "public"] },
           "default": "private"
         },
@@ -412,17 +412,6 @@
   ],
   "commands": [
     {
-      "name": "roadmap.setVisibility",
-      "scope": "tree",
-      "origins": ["replica", "server"],
-      "serverInternal": false,
-      "scopedEffects": true,
-      "args": {
-        "visibility": { "type": "json", "domain": { "type": "string", "enum": ["private", "unlisted", "public"] } }
-      },
-      "predicts": ["meta"]
-    },
-    {
       "name": "roadmap.createSubtree",
       "scope": "product:roadmap",
       "origins": ["replica", "server"],
@@ -453,25 +442,6 @@
         "hue": { "type": "json", "domain": { "type": "string", "enum": ["terracotta", "olive", "gold", "brick", "sky", "plum"] } }
       },
       "predicts": ["kind", "node"]
-    },
-    {
-      "name": "roadmap.revertVisibility",
-      "scope": "tree",
-      "origins": ["replica"],
-      "serverInternal": false,
-      "scopedEffects": true,
-      "inverse": true,
-      "args": {
-        "input": {
-          "type": "json",
-          "domain": {
-            "type": "object",
-            "required": ["visibility"],
-            "properties": { "visibility": { "type": "string", "enum": ["private", "unlisted", "public"] } }
-          }
-        }
-      },
-      "predicts": ["meta"]
     },
     {
       "name": "roadmap.undoCreateRoadmap",
@@ -536,7 +506,10 @@
       "predicts": ["tree", "meta", "node", "kind"]
     },
     { "name": "roadmap.capture", "scope": "product:roadmap", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
-    { "name": "roadmap.captureTree", "scope": "tree", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
+    {
+      "name": "roadmap.captureTree", "scope": "tree", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {},
+      "predicts": ["meta"]
+    },
     { "name": "roadmap.captureOverlay", "scope": "overlay", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
     {
       "name": "roadmap.restore", "scope": "product:roadmap", "origins": ["replica"], "serverInternal": false, "engine": "restore", "scopedEffects": true, "args": {},

@@ -3151,7 +3151,7 @@ type** (§9.2): `tree`. No type is the headline.
 | Type | Scope | Identity | Life | Fields | Rules |
 |---|---|---|---|---|---|
 | `tree` | self/roadmap | minted g, governs `tree:<id>` | terminal, keep | const server: `parent` `{tree, step}` or null (default null), whose `tree` is a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | A replica-origin delete of a subtree's record → `not-a-root`. Its death kills every subtree under it; a root's also kills each step of the owner's other roadmaps whose alive pointer opens it. |
-| `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars; lww server: `guideInherited` (false), `visibility` ∈ {private, unlisted, public} (private), `reach` the same, which `opens` at {unlisted, public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
+| `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars, `visibility` ∈ {private, unlisted, public} (private); lww server: `guideInherited` (false), `reach` ∈ {private, unlisted, public}, which `opens` at {unlisted, public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A delta writing `visibility` on a subtree's `meta` → `not-a-root`. A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
 | `node` | tree | derived, by domain | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color` a hue (terracotta), `ord`, `status` null or ∈ {none, complete} (null), `description` ≤16 000 chars, `links` (`maxItems` 32 of {`url` ≤2 048 chars, `label` ≤200 chars}); lww server: `branch` `ref<tree>` or null (null) | Cap 10 000. A change carrying an alive life that joins dead is revived. A change of its presence writes the reach of the subtrees it owns. |
 | `edge` | tree | keyed `[from, to]`, `ref<node>` each | yes, keep | — | Cap 20 000. A loop is admitted. |
 | `kind` | tree | derived, by domain | revivable, keep | lww: `hue` a hue (terracotta), `label` ≤24 chars, `description` ≤80 chars, `ord` | Cap 6. Two kinds of one hue are admitted. A change carrying an alive life that joins dead is revived. |
@@ -3172,6 +3172,12 @@ its tree's owner → `forbidden`, so a reader's overlay holds their marks alone 
 joined (the delete is newer), takes `life := alive` at the server stamp of step 9's next pass. So a step or
 kind a person changed is present, whichever of the change and the delete came first.
 
+**Visibility.** A root's `visibility` is the owner's field, written under the gesture's stamp, so the newest
+choice stands whenever it arrives. When an intent changes its value, by a delta or a restore, the root's `reach`
+takes it and every subtree under the root takes *reach* as below; a restamp of the same value writes no reach.
+Discovery declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes or
+restores `visibility`.
+
 **Reach.** For every `node` whose presence an intent changes, whatever changes it, each subtree the step owns,
 and each under those, in order of depth, takes its place's roadmap's `reach` while it and its owning step are
 present, and `private` otherwise; a `meta.reach` that differs is written at the server stamp. Discovery
@@ -3184,10 +3190,6 @@ steps own.
 
 **Commands.** None names a stamp; each writes at the server stamp.
 
-- **`roadmap.setVisibility {visibility}`** in a root's `tree/<T>`, replica and server origin, `scopedEffects`,
-  predicts `meta`. A place on `T` → `not-a-root`. The visibility `T` holds (unset reads private) → ok, no
-  change. Otherwise `T`'s `visibility := reach := visibility`, and *reach* over the subtrees under `T`; the
-  choice admitted last stands. Write `[]`.
 - **`roadmap.createSubtree {tree, root, step, subtree}`** in `self/roadmap`, replica and server origin,
   `scopedEffects`, predicts `tree`, `meta`, `node`, `kind`. Its arguments are typed leaves (E-8): `tree` and
   `root` trees of `self/roadmap`, `step` a node of `tree/<tree>`, `subtree` a proposed tree.
@@ -3206,15 +3208,14 @@ steps own.
   predicts `kind`, `node`. No such kind → `unknown-record`; its hue (terracotta unset) → ok, no change.
   Otherwise the kind's `hue := hue`, reviving it when dead, and every `node`, alive or dead, whose `color`
   (terracotta unset) was the kind's hue takes `color := hue` with its stored life: no step revives. Write `[]`.
-- **Capture and restore** (replica origin, §6.4): `roadmap.capture`, `roadmap.captureTree`,
-  `roadmap.captureOverlay`; `roadmap.restore` (restores `coachThread`, `coachMessage`, `coachProposal`,
+- **Capture and restore** (replica origin, §6.4): `roadmap.capture`, `roadmap.captureTree` (predicts `meta`,
+  so a visibility's write predicts the branch's reach), `roadmap.captureOverlay`; `roadmap.restore` (restores `coachThread`, `coachMessage`, `coachProposal`,
   `coachWriteFate`), `roadmap.restoreTree` (`meta`, `node`, `edge`, `kind`) and `roadmap.restoreOverlay`
-  (`progress`, `pointer`, `subtask`, `stepLink`, `stepNote`). A restored node life counts for *reach*.
+  (`progress`, `pointer`, `subtask`, `stepLink`, `stepNote`). A restored node life counts for *reach*, and a
+  restored `visibility` for *Visibility*: Undo of a visibility is this generic restore.
 - **Product inverses** (replica origin, `scopedEffects`, `inverse: true`, §6.4). Evidence that does not name
   what each lists → `invalid`; evidence that no longer holds, a row of a scope not declared or not alive
   reading absent, skips whole.
-  - `roadmap.revertVisibility {input: {visibility}}` (`tree/<T>`, predicts `meta`): evidence owns `T`'s
-    `meta.visibility`. Then as `setVisibility` writes. Undo and Redo of a visibility.
   - `roadmap.undoCreateRoadmap {input: {tree}}` (`self/roadmap`, predicts `tree`): evidence proves the created
     record `tree` and the created scope `tree/<tree>`. A place → `not-a-root`; the owner's overlay of it past
     seq 0 → skipped `scope-changed`. Then `tree` dies, as a root dies.
@@ -3235,8 +3236,8 @@ hold ends. A reorder writes the moved step's or kind's `ord`, a key the product 
 parent's steps or one roadmap's kinds.
 
 **Codes** (§9.6), the registry's `codes`: `step-opens-a-tree` and `depth-limit` (`roadmap.createSubtree`),
-`not-a-root` (`roadmap.setVisibility`, `roadmap.revertVisibility`, `roadmap.undoCreateRoadmap`, a person's
-delete of a subtree's record), `turn-final` (a write of a Coach message the writer has ended).
+`not-a-root` (a `visibility` written on a subtree, `roadmap.undoCreateRoadmap`, a person's delete of a
+subtree's record), `turn-final` (a write of a Coach message the writer has ended).
 
 ### A.2 Gym
 
