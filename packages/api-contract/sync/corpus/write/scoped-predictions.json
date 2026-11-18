@@ -17088,7 +17088,7 @@
       "returns": [
         {
           "localIds": [
-            "g1/0"
+            "g2/0"
           ],
           "retired": [],
           "stamp": "10000:0:r_aaaaaaaaaaaa"
@@ -17399,8 +17399,8 @@
                 "resultEpoch": "ep-2"
               },
               {
-                "localId": "g1/0",
-                "gestureId": "g1",
+                "localId": "g2/0",
+                "gestureId": "g2",
                 "lineage": "A",
                 "scope": "self/probe",
                 "state": "ready",
@@ -17420,7 +17420,7 @@
                       ]
                     }
                   ],
-                  "gestureId": "g1"
+                  "gestureId": "g2"
                 }
               }
             ]
@@ -17872,7 +17872,7 @@
       "returns": [
         {
           "localIds": [
-            "g1/0"
+            "g2/0"
           ],
           "retired": [],
           "stamp": "10000:0:r_aaaaaaaaaaaa"
@@ -18170,8 +18170,8 @@
                 "resultEpoch": "ep-2"
               },
               {
-                "localId": "g1/0",
-                "gestureId": "g1",
+                "localId": "g2/0",
+                "gestureId": "g2",
                 "lineage": "A",
                 "scope": "tree/b_00000001",
                 "state": "ready",
@@ -18200,7 +18200,7 @@
                       "stamp": "12000:0:r_aaaaaaaaaaaa"
                     }
                   ],
-                  "gestureId": "g1"
+                  "gestureId": "g2"
                 }
               }
             ]

@@ -1112,9 +1112,11 @@ A gesture any string of whose intents (scope, deltas, guards, command, `opts.ges
 value at any depth, holds U+0000 throws, before the cap check.
 
 **Ids and order.**
-- A gesture's id is `opts.gestureId`. Otherwise it is `g1`, `g2` and so on, counting within the
-  vector every commit that passes the cap check (a too-large refusal takes one; `changes: null`, a
-  throw, and a `scope-dead` or `cap` refusal take none).
+- A gesture's id is `opts.gestureId`. Otherwise it is the next of `g1`, `g2` and so on, counting
+  within the vector every commit that passes the cap check (a too-large refusal takes one;
+  `changes: null`, a throw, and a `scope-dead` or `cap` refusal take none), passing over every id an
+  outbox entry or a notice of any replica on the device already carries: a device never holds one
+  gesture id twice (engine.md §2.5). No input device holds two entries under one local id.
 - An entry's `localId` is `<gestureId>/<k>`, where `k` is the index of its intent in the gesture. A
   runner whose engine mints its own local ids maps them by gesture and index.
 - `commitOrder` is 1 plus the greatest in the outbox (1 when the outbox is empty). Sign-in appends
