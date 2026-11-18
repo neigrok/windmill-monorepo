@@ -440,7 +440,7 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   if (act && opts.supersede?.includes(opts.gestureId)) throw new CommitError('an act cannot supersede itself');
   const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
   const ending = [...new Set([...retiring, ...superseding])];
-  const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
+  const folded = ending.length === 0 ? [] : silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
   const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? predictionsOf(entry).flatMap(({ d }) => d) : [])])]);
   const drawnView = drawn(replica, registry, scope, gone);
   const storedView = stored(replica, registry, scope, gone);

@@ -1,9 +1,9 @@
 import { Device, Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
+import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 
 const keyOf = (...parts) => jcs(parts);
 const HEAD = keyOf('head');
-const WRITER_SLICE_MS = 25;
 const caches = ['confirmed', 'spentIds', 'staging'];
 const json = (value) => ({ text: JSON.stringify(value), value });
 const equal = (left, right) => left.text === right.text || (left.text.length === right.text.length && jcs(left.value) === jcs(right.value));
@@ -19,11 +19,14 @@ export function frozen(value) {
 // at most twice the offer and below it only past the aim, half of WRITER_SLICE_MS. An IndexedDB transaction's
 // own cost can pass the aim with a handful of rows, so a step never shrinks below the size it started at.
 export class WriterSlice {
-  constructor(size) { this.start = this.size = size; }
+  constructor(size, sliceMs = CONSTANTS.WRITER_SLICE_MS) {
+    this.start = this.size = size;
+    this.aim = sliceMs / 2;
+  }
 
   record(taken, heldMs) {
     if (taken === 0) return;
-    const aim = WRITER_SLICE_MS / 2, upper = Math.min(2 * this.size, 4096);
+    const aim = this.aim, upper = Math.min(2 * this.size, 4096);
     if (heldMs <= 0) { this.size = upper; return; }
     const fitting = Math.min(upper, Math.floor(taken * aim / heldMs));
     this.size = heldMs > aim ? Math.max(this.start, fitting) : Math.max(this.size, fitting);

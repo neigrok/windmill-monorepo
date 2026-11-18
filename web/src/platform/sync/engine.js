@@ -61,7 +61,7 @@ export class BrowserSyncEngine {
     this.repullSolo = new Set();
     this.pullInFlight = new Set();
     this.deferredFrames = new Map();
-    this.pullChunk = new WriterSlice(64);
+    this.pullChunk = new WriterSlice(64, this.limits.WRITER_SLICE_MS);
     this.inFlight = new Set();
     this.live = new LiveChannel({ transport: this.transport, timers, now: monotonic, draw,
       limits: this.limits, onFrame: (frame) => this.receiveFrame(frame),
