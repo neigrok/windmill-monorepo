@@ -25,8 +25,13 @@ class SteppedEngine private constructor(private val registry: Registry, snapshot
     var drawIndex = 0
     private var closed = false
     private val random = java.util.Random(seed)
-    val engine = Engine.memory(registry, snapshot, clock, object : IdentitySource {
-        override fun opaqueID() = if (legacyDraws) "g${++gestures}" else "seed-$seed-g${++gestures}"
+    val engine: Engine = Engine.memory(registry, snapshot, clock, object : IdentitySource {
+        override fun opaqueID(): String {
+            if (!legacyDraws) return "seed-$seed-g${++gestures}"
+            var id: String
+            do id = "g${++gestures}" while (ClientCorpus.carriesGesture(engine.snapshot(), id))
+            return id
+        }
         override fun draw(bound: Int): Int {
             val index = drawIndex++
             val value = if (draws.isEmpty()) { if (legacyDraws) java.util.Random(seed + index).nextInt(bound) else random.nextInt(bound) }
@@ -92,6 +97,11 @@ class SteppedEngine private constructor(private val registry: Registry, snapshot
 }
 
 object ClientCorpus {
+    // A vector's next gesture id passes over every id an outbox entry or notice of the device already carries (corpus/README.md).
+    fun carriesGesture(device: Json, gestureId: String): Boolean = device.member("replicas").arr().any { replica ->
+        replica["outbox"]?.arr().orEmpty().any { it.member("gestureId").str() == gestureId } ||
+            replica["notices"]?.arr().orEmpty().any { it.member("id").str().removePrefix("notice:").substringBeforeLast('/') == gestureId }
+    }
     fun handlers(probe: Registry): Map<String, Handler> {
         val paths = listOf("commit/deltas.json", "commit/acts.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
         return paths.associateWith { { input: Json -> steps(probe, input) } } + mapOf(

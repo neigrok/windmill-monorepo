@@ -27,15 +27,20 @@ object NetworkCorpus {
             override fun now() = wall
             override fun reading() = ClockReading(wall, wall, "boot-1")
         }
+        var opened: Engine? = null
         val identities = object : IdentitySource {
-            override fun opaqueID() = "g${++gestures}"
+            override fun opaqueID(): String {
+                var id: String
+                do id = "g${++gestures}" while (opened?.let { ClientCorpus.carriesGesture(it.snapshot(), id) } == true)
+                return id
+            }
             override fun draw(bound: Int) = take("draws").long(0).toInt().also { check(it in 0 until bound) }
             override fun replicaID() = take("ids").str()
             override fun actorID() = take("actors").str()
             override fun forkGuard() = take("forkGuards").str()
         }
         val limits = ClientCorpus.limits(input)
-        Engine.memory(registry, input.member("device"), clock, identities, current, limits.pushMaxBytes, effectMaxBytes = limits.effectMaxBytes).use { engine ->
+        Engine.memory(registry, input.member("device"), clock, identities, current, limits.pushMaxBytes, effectMaxBytes = limits.effectMaxBytes).also { opened = it }.use { engine ->
             var lastPush: Json? = null
             var lastPull: Json? = null
             var pulledFor: String? = null
