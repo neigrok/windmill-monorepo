@@ -4,7 +4,9 @@
 #include "platform/domain/sync/Wire.h"
 #include "products/probe/domain/ProbeRules.h"
 
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace wm::probe {
 
@@ -14,6 +16,37 @@ namespace {
 
 Delta runDelta(const std::string& id) {
   return Delta{.t = "run", .id = RecordId(id)};
+}
+
+// The alive row `holds` picks, the least id first: the subtree a step owns, or the tag a label names.
+template <typename Holds>
+std::optional<Row> aliveWhere(const std::vector<Row>& rows, Holds holds) {
+  std::optional<Row> picked;
+  for (const Row& row : rows) {
+    if (row.alive() && holds(row) && (!picked || row.id.column() < picked->id.column())) picked = row;
+  }
+  return picked;
+}
+
+bool holdsField(const Row& row, const std::string& field, const Json::Value& value) {
+  const auto found = row.lattice.f.find(field);
+  return found != row.lattice.f.end() && found->second.value == value;
+}
+
+// A resolution to a record that exists already: `from` the called id when it differs.
+CommandOutcome resolvedTo(const std::string& type, const Row& row, const std::string& called) {
+  WriteEntry entry{.t = type, .id = row.id, .born = row.lattice.born};
+  if (row.id.column() != called) entry.from = RecordId(called);
+  return CommandOutcome{.write = {entry}};
+}
+
+// A record the command creates at the server stamp, with one field.
+CommandOutcome createdWith(const std::string& type, const std::string& id, const std::string& field, const Json::Value& value) {
+  Delta created{.t = type, .id = RecordId(id)};
+  created.lattice.life = Life(LifeState::alive, Stamp{});
+  created.lattice.born = Stamp{};
+  created.lattice.f.emplace(field, Reg(value, Stamp{}));
+  return CommandOutcome{.deltas = {created}, .write = {WriteEntry{.t = type, .id = RecordId(id), .born = Stamp{}, .f = {{field, Stamp{}}}}}};
 }
 
 }
@@ -197,13 +230,63 @@ private:
   ProbeReceipts& receipts_;
 };
 
+// probe.sprout {board, tag, child}: creates board child owned by the step {board, tag}, its parent, or answers
+// the board the step already owns, so a retry or another device's sprout resolves to that subtree. Neither the
+// board nor the tag need exist (E-8).
+class ProbeProduct::Sprout final : public SyncCommand {
+public:
+  bool isReplay(CommandCtx& ctx) override { return owned(ctx).has_value(); }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const std::string child = ctx.args["child"].asString();
+    if (const std::optional<Row> board = owned(ctx)) return resolvedTo("board", *board, child);
+    if (ctx.read.lock("board", RecordId(child)).state.kind != IdState::Kind::none) throw Refusal(code::idTaken);
+    return createdWith("board", child, "parent", stepOf(ctx));
+  }
+
+private:
+  static Json::Value stepOf(const CommandCtx& ctx) {
+    Json::Value step(Json::objectValue);
+    step["board"] = ctx.args["board"];
+    step["tag"] = ctx.args["tag"];
+    return step;
+  }
+
+  static std::optional<Row> owned(CommandCtx& ctx) {
+    const Json::Value step = stepOf(ctx);
+    return aliveWhere(ctx.read.scan("board"), [&step](const Row& row) { return holdsField(row, "parent", step); });
+  }
+};
+
+// probe.adopt {tag, label}: answers the tree's alive tag labelled `label`, a map of a scope-local id, or
+// creates tag `tag` with that label.
+class ProbeProduct::Adopt final : public SyncCommand {
+public:
+  bool isReplay(CommandCtx& ctx) override { return labelled(ctx).has_value(); }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const std::string tag = ctx.args["tag"].asString();
+    if (const std::optional<Row> named = labelled(ctx)) return resolvedTo("tag", *named, tag);
+    if (ctx.read.lock("tag", RecordId(tag)).state.kind != IdState::Kind::none) throw Refusal(code::idTaken);
+    return createdWith("tag", tag, "label", ctx.args["label"]);
+  }
+
+private:
+  static std::optional<Row> labelled(CommandCtx& ctx) {
+    const Json::Value label = ctx.args["label"];
+    return aliveWhere(ctx.read.scan("tag"), [&label](const Row& row) { return holdsField(row, "label", label); });
+  }
+};
+
 ProbeProduct::ProbeProduct(ProbeReceipts& receipts)
     : runRules_(std::make_unique<RunRules>()),
       start_(std::make_unique<Start>(receipts)),
       end_(std::make_unique<End>()),
       copy_(std::make_unique<Copy>(receipts)),
       tick_(std::make_unique<Tick>()),
-      branch_(std::make_unique<Branch>(receipts)) {}
+      branch_(std::make_unique<Branch>(receipts)),
+      sprout_(std::make_unique<Sprout>()),
+      adopt_(std::make_unique<Adopt>()) {}
 
 ProbeProduct::~ProbeProduct() = default;
 
@@ -214,6 +297,8 @@ void ProbeProduct::bindTo(SyncCatalog& catalog, const std::map<std::string, Type
   catalog.bindCommand("probe.copy", *copy_);
   catalog.bindCommand("probe.tick", *tick_);
   catalog.bindCommand("probe.branch", *branch_);
+  catalog.bindCommand("probe.sprout", *sprout_);
+  catalog.bindCommand("probe.adopt", *adopt_);
 }
 
 }

@@ -27,6 +27,8 @@ private:
   class Copy;
   class Tick;
   class Branch;
+  class Sprout;
+  class Adopt;
 
   std::unique_ptr<RunRules> runRules_;
   std::unique_ptr<Start> start_;
@@ -34,6 +36,8 @@ private:
   std::unique_ptr<Copy> copy_;
   std::unique_ptr<Tick> tick_;
   std::unique_ptr<Branch> branch_;
+  std::unique_ptr<Sprout> sprout_;
+  std::unique_ptr<Adopt> adopt_;
 };
 
 }

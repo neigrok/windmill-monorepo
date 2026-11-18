@@ -2,6 +2,7 @@
 
 #include "platform/application/OAuthService.h"
 #include "platform/domain/sync/Jcs.h"
+#include "products/probe/ProbeRegistry.h"
 #include "test/DrogonLoopback.h"
 #include "test/platform/Fakes.h"
 #include "test/platform/application/sync/SyncWorld.h"
@@ -25,6 +26,13 @@ using namespace wm;
 using namespace wm::fake;
 
 namespace {
+
+// The hello bodies the probe's composition answers, at the probe registry's own version, anonymous or signed in as u1.
+std::string helloBody(bool signedIn) {
+  const std::string account = signedIn ? R"("u1","epoch":"ep-1","holdings":{"probe":{"count":0,"lastWrittenAt":null}},"holdsRecords":{"probe":false})"
+                                       : R"(null,"epoch":"ep-1")";
+  return R"({"as":)" + account + R"(,"minSchema":2,"schema":)" + std::to_string(probe::registry().version()) + R"(,"serverTime":1700000000000})";
+}
 
 // The request an exchange handed over; every request these tests send is one Drogon hands over.
 drogon::HttpRequestPtr parsed(const wm::test::DrogonLoopback::Exchange& exchange) {
@@ -187,12 +195,11 @@ TEST(sync_api_answers_401_to_credentials_sent_that_do_not_resolve_whatever_their
     CHECK_EQ(push(fields), unauthenticated);
   }
 
-  CHECK_EQ(hello({}), (std::pair<int, std::string>{200, R"({"as":null,"epoch":"ep-1","minSchema":2,"schema":3,"serverTime":1700000000000})"}));
+  CHECK_EQ(hello({}), (std::pair<int, std::string>{200, helloBody(false)}));
   CHECK_EQ(pull({}), (std::pair<int, std::string>{200, R"({"as":null,"epoch":"ep-1","pages":[{"kind":"not-found","scope":"self/probe"}],"serverTime":1700000000000})"}));
   CHECK_EQ(push({}), unauthenticated);
   CHECK_EQ(hello({{"Cookie", "theme=dark"}}), hello({}));
-  const std::pair<int, std::string> annHello{
-      200, R"({"as":"u1","epoch":"ep-1","holdings":{"probe":{"count":0,"lastWrittenAt":null}},"holdsRecords":{"probe":false},"minSchema":2,"schema":3,"serverTime":1700000000000})"};
+  const std::pair<int, std::string> annHello{200, helloBody(true)};
   CHECK_EQ(hello({{"Cookie", "wm_session=" + ann}}), annHello);
   CHECK_EQ(hello({{"Authorization", "Bearer " + ann}}), annHello);
   CHECK_EQ(hello({{"authorization", "bEaReR " + ann}}), annHello);
@@ -203,9 +210,8 @@ TEST(each_request_on_a_keep_alive_connection_is_read_with_its_own_header_lines_a
   Harness harness;
   sync::SyncApi api = harness.api(8);
   const std::string ann = harness.signIn("ann");
-  const std::pair<int, std::string> annHello{
-      200, R"({"as":"u1","epoch":"ep-1","holdings":{"probe":{"count":0,"lastWrittenAt":null}},"holdsRecords":{"probe":false},"minSchema":2,"schema":3,"serverTime":1700000000000})"};
-  const std::pair<int, std::string> anonymousHello{200, R"({"as":null,"epoch":"ep-1","minSchema":2,"schema":3,"serverTime":1700000000000})"};
+  const std::pair<int, std::string> annHello{200, helloBody(true)};
+  const std::pair<int, std::string> anonymousHello{200, helloBody(false)};
   // Drogon hands a finished request's object to a later request on the connection, so a list it failed to clear would
   // carry one request's credentials into the next.
   wm::test::DrogonLoopback::Connection connection;
