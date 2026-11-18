@@ -457,7 +457,7 @@ test('Chromium: persisted lifecycle events close and reopen real Web Locks and I
   } finally { await context.close(); }
 });
 
-test('Chromium: default telemetry beacons use intake-compatible names and bounded content-free properties', async () => {
+test('Chromium: default telemetry beacons use intake-compatible names, bounded content-free properties and the writer sample', async () => {
   const context = await freshContext();
   try {
     const page = await open(context, 'beacon');
@@ -470,14 +470,14 @@ test('Chromium: default telemetry beacons use intake-compatible names and bounde
     await page.evaluate(async () => {
       const { syncTelemetry } = await import('/src/platform/sync/telemetry.js');
       const telemetry = syncTelemetry();
-      for (let i = 0; i < 20; i++) telemetry.event('sync-writer', { durationMs: 80000, queueMs: 1, body: 'private', account: 'private' });
+      for (let i = 0; i < 12; i++) telemetry.event('sync-writer', { durationMs: 80000, queueMs: 1, body: 'private', account: 'private' });
+      for (let i = 0; i < 10; i++) telemetry.event('sync-commit', { outcome: 'ok', scope: 'tree/private', body: 'private' });
     });
     const batch = await Promise.race([delivery, new Promise((_, reject) => setTimeout(() => reject(new Error('beacon delivery stalled')), 5000).unref())]);
-    assert.equal(batch.events.length, 20);
-    for (const event of batch.events) {
-      assert.equal(event.name, 'sync_writer');
-      assert.deepEqual(event.props, { durationMs: 60000, queueMs: 1 });
-    }
+    assert.deepEqual(batch.events.map(({ name, props }) => ({ name, props })), [
+      ...Array.from({ length: 10 }, () => ({ name: 'sync_writer', props: { durationMs: 60000, queueMs: 1 } })),
+      ...Array.from({ length: 10 }, () => ({ name: 'sync_commit', props: { outcome: 'ok' } })),
+    ]);
   } finally { await context.close(); }
 });
 
