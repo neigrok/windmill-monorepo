@@ -7,7 +7,7 @@ import works.windmill.sync.engine.*
 object NetworkCorpus {
     val paths = listOf("commit/grouping.json", "commit/retire.json", "commit/throws.json", "hold/release.json", "hold/undo.json",
         "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json", "refusal/base-unknown.json",
-        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json")
+        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json", "write/references.json")
 
     fun handlers(registry: Registry): Map<String, Handler> = paths.associateWith { { input: Json -> run(registry, input) } }
 
@@ -71,7 +71,8 @@ object NetworkCorpus {
                         "undo" -> Json.of(engine.undo(step.member("gestureId").str()))
                         "dismiss" -> { engine.dismissNotice(step.member("id").str()); Json.Null }
                         "push" -> engine.nextPush(step["limit"]?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS).also { lastPush = it } ?: Json.Null
-                        "pushResponse" -> engine.onPushResponse(checkNotNull(lastPush) { "response without push" }, response(), timing,
+                        // A response with no push in the vector answers one its device sent before a restart, from the active replica.
+                        "pushResponse" -> engine.onPushResponse(lastPush ?: Json.objectOf("replica" to Json.of(engine.activeReplica()), "intents" to Json.array()), response(), timing,
                             step["dieAfter"]?.long(0)?.toInt() ?: Int.MAX_VALUE) ?: Json.Null
                         "hello" -> { engine.onHello(response(), timing); Json.Null }
                         "engineStart" -> engine.start(step["backupGuard"])

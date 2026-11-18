@@ -92,7 +92,8 @@ struct SchemaTests {
       }
       let migrated = try Store(path: path, registry: Self.probe)
       #expect(try migrated.read { try $0.device(rows: true).json } == before)
-      #expect(try migrated.settle(scope, replica: device.active, count: 1).value.map { [$0.resolved] } == [1])
+      let settled: (resolved: Int, left: Bool)? = try migrated.settle(scope, replica: device.active, count: 1).value
+      #expect(settled?.resolved == 1)
       let branch = Gesture(changes: [], command: Command(name: "probe.branch", args: ["parent": "b_00000001", "child": "b_00000002", "title": "Branch"]),
         scopedPredict: [ScopedPrediction(scope: .tree("b_00000002"), changes: [.write("meta", "meta", ["title": "Branch"])])])
       guard case .committed(let receipt) = try migrated.commit(branch, in: scope, instance: StoreTests.at(5000), identities: StoreTests.none()).value else {
@@ -104,7 +105,8 @@ struct SchemaTests {
       #expect(replica.outbox.first?.predictions?.map(\.scope) == [scope, .tree("b_00000002")])
       let index = try migrated.read { try $0.touchIndex() }
       #expect(index.stored == index.expected)
-      #expect(index.stored.contains([.string(receipt.localIds[0]), "tree/b_00000002", .null, false]))
+      let projection: JSON = [.string(receipt.localIds[0]), "tree/b_00000002", .null, false]
+      #expect(index.stored.contains(projection))
     }
   }
 

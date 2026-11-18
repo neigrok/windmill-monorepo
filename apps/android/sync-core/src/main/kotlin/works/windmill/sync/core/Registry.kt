@@ -218,7 +218,7 @@ class FieldDef(val name: String, val json: Json) {
     val isLattice: Boolean get() = kind != "text" && kind != "serial"
     init {
         require(name.matches(Regex("[a-z][A-Za-z0-9]*")))
-        json.expectKeys(listOf("kind", "writer"), listOf("ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens"))
+        json.expectKeys(listOf("kind", "writer"), listOf("ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens", "refPaths"))
         require(kind in listOf("lww", "ranked", "fww", "const", "time", "serial", "text"))
         require(writer in listOf("client", "server"))
         require((json["rank"] != null) == (kind == "ranked") && (json["serialNext"] != null) == (kind == "serial"))
@@ -341,6 +341,8 @@ class Registry(input: Json) {
     val products = json.member("products").obj()
     val types = json.member("types").arr().map(::TypeDef)
     val commands = json.member("commands").arr()
+    // E-8: every identity the registry declares inside a value, compiled once.
+    val references: References
     init {
         require(name.matches(Regex("[a-z][a-z0-9-]*")))
         require(types.map { it.name }.distinct().size == types.size)
@@ -373,13 +375,10 @@ class Registry(input: Json) {
                 if (seen.add(target)) pending.addAll(refs(definition))
             }
             if (type.scope.startsWith("product:")) require(type.scope.drop(8) in products)
-            for (field in type.fields.values) {
-                require(field.ref == null || type(field.ref) != null)
-                require(field.default == null || admits(field.default, field))
-            }
+            for (field in type.fields.values) require(field.ref == null || type(field.ref) != null)
         }
         for (command in commands) {
-            command.expectKeys(listOf("name", "scope", "origins", "serverInternal", "args"), listOf("predicts", "beforePull", "scopedEffects", "engine"))
+            command.expectKeys(listOf("name", "scope", "origins", "serverInternal", "args"), listOf("predicts", "beforePull", "scopedEffects", "engine", "refPaths"))
             require(command.member("name").str().matches(Regex("[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*")))
             val origins = command.member("origins").distinctStrings()
             require(origins.isNotEmpty() && origins.all { it in listOf("replica", "server") })
@@ -398,6 +397,8 @@ class Registry(input: Json) {
             }
             require(command["predicts"]?.distinctStrings()?.all { name -> type(name)?.json?.get("wholePut")?.bool() != true && type(name) != null } != false)
         }
+        references = References(this)
+        for (type in types) for (field in type.fields.values) require(field.default == null || admits(field.default, field))
     }
     fun type(name: String): TypeDef? = types.firstOrNull { it.name == name }
     fun command(name: String): CommandDef? = commands.firstOrNull { it.member("name").str() == name }?.let(::CommandDef)
@@ -422,7 +423,13 @@ class Registry(input: Json) {
         if (field.domain?.admits(value) == false) return false
         if (value === Json.Null) return field.domain?.nullable ?: (field.ref == null)
         if (field.ref != null && type(field.ref)?.let { isId(value, it) } != true) return false
-        return field.bounds?.admits(value) != false
+        return field.bounds?.admits(value) != false && references.checkValue(field, value)
+    }
+    // An argument value by its declared type: an epoch time, an id of the referenced type, or a value of its domain.
+    fun admits(value: Json, arg: ArgumentDef): Boolean = when {
+        arg.type == "time" || arg.type == "instant" -> value is Json.Num && value.value >= 0 && value.value <= Json.MAX_SAFE_INTEGER && value.value == value.value.toLong().toDouble()
+        arg.ref != null -> type(arg.ref!!)?.let { isId(value, it) } == true
+        else -> arg.domain?.admits(value) != false
     }
     companion object {
         val engineCodes = setOf("not-found", "scope-dead", "forbidden", "invalid", "too-large", "clock-skew", "id-taken", "id-spent", "unknown-record", "record-dead", "parent-dead", "stale", "cap", "base-unknown", "request-conflict", "request-running", "internal", "target-merged")
