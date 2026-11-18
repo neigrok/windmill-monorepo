@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "probe",
-  "version": 3,
+  "version": 4,
   "minVersion": 2,
   "products": {
     "probe": {
@@ -26,7 +26,22 @@
       "governs": "tree",
       "origins": ["replica", "server"],
       "primary": true,
-      "fields": {}
+      "fields": {
+        "parent": {
+          "kind": "const",
+          "writer": "server",
+          "domain": {
+            "type": "object",
+            "nullable": true,
+            "properties": { "board": { "type": "string" }, "tag": { "type": "string" } },
+            "required": ["board", "tag"]
+          },
+          "refPaths": [
+            { "path": ["board"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } },
+            { "path": ["tag"], "type": "tag", "scope": { "kind": "treeFrom", "path": ["board"] } }
+          ]
+        }
+      }
     },
     {
       "type": "card",
@@ -217,6 +232,30 @@
         "title": { "type": "json", "domain": { "type": "string", "unit": "chars", "max": 12 } }
       },
       "predicts": ["board", "meta"]
+    },
+    {
+      "name": "probe.sprout", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false,
+      "args": {
+        "board": { "type": "json", "domain": { "type": "string" } },
+        "tag": { "type": "json", "domain": { "type": "string" } },
+        "child": { "type": "json", "domain": { "type": "string" } }
+      },
+      "refPaths": [
+        { "path": ["board"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } },
+        { "path": ["tag"], "type": "tag", "scope": { "kind": "treeFrom", "path": ["board"] } },
+        { "path": ["child"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" }, "role": "creation" }
+      ],
+      "predicts": ["board"]
+    },
+    {
+      "name": "probe.adopt", "scope": "tree", "origins": ["replica", "server"],
+      "serverInternal": false,
+      "args": {
+        "tag": { "type": "ref<tag>" },
+        "label": { "type": "json", "domain": { "type": "string", "unit": "chars", "max": 24 } }
+      },
+      "predicts": ["tag"]
     },
     {
       "name": "probe.start",

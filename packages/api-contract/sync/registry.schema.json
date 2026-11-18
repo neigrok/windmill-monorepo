@@ -711,6 +711,14 @@
         },
         "default": {
           "description": "On a lattice field: the value a reader takes while the register is unset (§2.4). It is on the field's domain; the engine never stores or sends it."
+        },
+        "refPaths": {
+          "description": "E-8: the record identities inside the field's object value, each at a literal property path (§2.4 References).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/refPath"
+          }
         }
       },
       "allOf": [
@@ -1054,6 +1062,14 @@
         "beforePull": {
           "description": "A server-internal command that runs before every pull of its scope, in its own admission (§6.7).",
           "type": "boolean"
+        },
+        "refPaths": {
+          "description": "E-8: the record identities inside the command's json arguments, each at a literal property path from the arguments object (§2.4 References).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/commandRefPath"
+          }
         }
       },
       "allOf": [
@@ -1102,6 +1118,115 @@
         },
         "domain": {
           "$ref": "#/$defs/domain"
+        }
+      }
+    },
+    "propertyPath": {
+      "description": "Literal object property names, outermost first: no array index, wildcard or expression.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/fieldName"
+      }
+    },
+    "refScope": {
+      "description": "The scope the identity names: `origin`, the scope its type lives in seen from the holder's scope (D-10); `fixed`, one product scope; `treeFrom`, the tree, or the caller's overlay of it, whose governing id the leaf at `path` holds.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "origin"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "fixed"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^self/[a-z][a-z0-9]*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "path"
+          ],
+          "properties": {
+            "kind": {
+              "const": "treeFrom"
+            },
+            "path": {
+              "$ref": "#/$defs/propertyPath"
+            }
+          }
+        }
+      ]
+    },
+    "refPath": {
+      "description": "One typed leaf: a string id of `type` at `path`, in the scope `scope` names; null only when `nullable`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type",
+        "scope"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/propertyPath"
+        },
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "scope": {
+          "$ref": "#/$defs/refScope"
+        },
+        "nullable": {
+          "const": true
+        }
+      }
+    },
+    "commandRefPath": {
+      "description": "A command's typed leaf. `role: creation` proposes the identity of a record the command creates: it is admitted as the command's own create and names no existing record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type",
+        "scope"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/propertyPath"
+        },
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "scope": {
+          "$ref": "#/$defs/refScope"
+        },
+        "nullable": {
+          "const": true
+        },
+        "role": {
+          "const": "creation"
         }
       }
     }
