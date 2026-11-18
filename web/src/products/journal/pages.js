@@ -45,7 +45,7 @@ function journalRunner(engine, expectedReplica = engine.activeReplica(), snapsho
     mintId: (type, taken) => port.mintId(type, taken),
     opaqueID: () => port.opaqueID(),
     physNow: () => port.physNow(),
-    undo: (id) => port.undo(id),
+    cancelHeld: (id) => port.cancelHeld(id),
     dismissNotice: (id) => port.dismissNotice(id),
   }, engine.registry, deviceZone);
 }

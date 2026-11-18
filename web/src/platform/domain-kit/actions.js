@@ -27,7 +27,7 @@ import { Violation } from './values.js';
  * A decider: its stored properties are its input; `load` reads through the reader only; `decide` is pure.
  * An action is a decider the runner runs.
  * @template L, T, R
- * @typedef {{ scope: string, refusals: import('./refusals.js').Refusals<R>, load(read: Reader): L, decide(loaded: L, ids: IDSource): Decision<T, R> }} Decider
+ * @typedef {{ scope: string, refusals: import('./refusals.js').Refusals<R>, reversible?: boolean, load(read: Reader): L, decide(loaded: L, ids: IDSource): Decision<T, R> }} Decider
  */
 
 export const Decision = Object.freeze({

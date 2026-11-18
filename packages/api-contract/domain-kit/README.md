@@ -241,7 +241,7 @@ the probe refusal form.
 ### `run/acts.json`
 
 Each input lists ordered `segments`, each with `scope` and the `plan` language above. `inspect` lists
-scoped types to read after the act; `undo: true` performs one Undo using the shared receipt. These
+scoped types to read after the act; `undo: true` cancels the held act once (`cancelHeld`) by its shared receipt. These
 vectors run `ActionRunner.runAct` over the real local engine. The output names the outcome kind,
 per-segment scopes and local-id counts, whether the whole act is held, and inspected records as
 `{id, title}` (null when that type has no title). An inspected type with `detail: true` also returns
@@ -250,3 +250,17 @@ count and whether load borrows the scope; `new` first creates its governing boar
 attempts and catches an invalid scope read before minting, which must still fail the act. They drive the
 engine act context directly so a missing-load programming fault can be asserted without a kit trap.
 A refusal keeps the ordinary product refusal form. Repeated scopes are intentional.
+
+### `run/undo.json`
+
+K-3, Undo of an act (domain-kit §9.6, engine §7.3). Each input lists `before`, acts committed and synced first,
+and the act's `segments`, each with `scope`, the `plan` language above and `undo`, its Undo recipes:
+`{kind: fields, restoreCommand, targets: [{t, id, slot, scope?, defaultValue?}]}`, `{kind: createdRecord,
+restoreCommand, t, id}` or `{kind: command, command, input, evidence: {ownedFields, unchangedCreatedRecords,
+unchangedCreatedScopes}}`, a target or record without `scope` living in its segment's. `reversible` (true or
+false) runs the one segment as a single action through `ActionRunner.run`, with or without the action's
+`reversible` declaration; without it the act runs through `runAct`. `observe` names scopes every device follows.
+`steps` run in order over the real local engine and the reference server: `sync`, `undo` (of the act),
+`redo` (of the last request) and `read` (the last request's result). The output names the act's outcome, each
+step's `InverseResult` without its engine-drawn ids, and inspected records as `{id, title}`. A plan that opts
+into Undo outside a reversible action is a programming fault, `{error: true}`.

@@ -157,7 +157,7 @@ export class VectorReplica {
   commitAct() { throw new ContractError('act vectors use the real engine'); }
 
   /** @param {string} gestureId */
-  undo(gestureId) {
+  cancelHeld(gestureId) {
     return false;
   }
 

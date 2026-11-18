@@ -181,7 +181,7 @@ test('successive routine edits preserve local former names and count while no-op
   const refused = await a.runner.run(new SaveRoutinePlan(base, base, false, [{ base: next, current: custom }]));
   assert.deepEqual(refused.kind === 'refused' && refusalForm(refused.refusal), { gone: { subject: base.id.ref, path: 'predicted' } });
   assert.deepEqual((await a.engine.store.read()).device.toJSON(), beforeRefusal);
-  if (removed.kind === 'committed') assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  if (removed.kind === 'committed') assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.deepEqual(fields(a), [{ id: 'routine1', ...base.fields() }]);
 });
 
@@ -204,7 +204,7 @@ test('routine reordering counts held deletions until Undo restores them', async 
   });
   await a.sync();
   assert.equal(b.drawn(Routine).length, 2);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.equal((await a.runner.run(ReorderRoutines([second.id, first.id]))).kind, 'committed');
   await a.sync();
   const expected = [

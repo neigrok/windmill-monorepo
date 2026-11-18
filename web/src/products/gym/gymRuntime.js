@@ -241,7 +241,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       return body(views);
     }),
     read: (scope) => { checkOwner(); return port.read(scope); },
-    undo: (id) => port.undo(id),
+    cancelHeld: (id) => port.cancelHeld(id),
     mintId: (type, taken) => port.mintId(type, taken),
     physNow: () => port.physNow(),
     dismissNotice: (id) => port.dismissNotice(id),
@@ -425,7 +425,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
     },
     undoDeath: (gestureId) => boundary('undo', async () => {
       checkOwner();
-      const undone = await runner.undo(gestureId);
+      const undone = await runner.cancelHeld(gestureId);
       event('delete', undone ? 'undone' : 'closed');
       return undone;
     }),

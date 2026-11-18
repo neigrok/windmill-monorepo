@@ -1,0 +1,574 @@
+[
+  {
+    "name": "an opted act's Undo restores both of its scopes, and its Redo takes the act's values back",
+    "input": {
+      "observe": [
+        "tree/b_00000001"
+      ],
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000001"
+              },
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          },
+          {
+            "scope": "tree/b_00000001",
+            "plan": [
+              {
+                "op": "create",
+                "t": "meta",
+                "id": "meta",
+                "f": {
+                  "title": "Root"
+                },
+                "fields": [
+                  "title"
+                ]
+              }
+            ]
+          }
+        ]
+      ],
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "New"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ],
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restore",
+              "targets": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "slot": {
+                    "kind": "field",
+                    "name": "title"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "update",
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": "Grown"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ],
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restoreTree",
+              "targets": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "slot": {
+                    "kind": "field",
+                    "name": "title"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo",
+        "sync",
+        "read",
+        "redo",
+        "sync",
+        "read"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        },
+        {
+          "scope": "tree/b_00000001",
+          "t": "meta"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "counts": [
+          1,
+          1
+        ],
+        "held": false
+      },
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "kind": "settled",
+          "changed": true,
+          "appliedCount": 2,
+          "skippedCount": 0
+        },
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "kind": "settled",
+          "changed": true,
+          "appliedCount": 2,
+          "skippedCount": 0
+        }
+      ],
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "New"
+          }
+        ],
+        [
+          {
+            "id": "meta",
+            "title": "Grown"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a reversible single action runs the one-segment act path, and its Undo settles",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "reversible": true,
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "New"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ],
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restore",
+              "targets": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "slot": {
+                    "kind": "field",
+                    "name": "title"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo",
+        "sync",
+        "read"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "count": 1
+      },
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "kind": "settled",
+          "changed": true,
+          "appliedCount": 1,
+          "skippedCount": 0
+        }
+      ],
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "Old"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a created record's Undo deletes it while its own writes are all that changed it",
+    "input": {
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0002",
+              "f": {
+                "title": "Made",
+                "claim": ""
+              },
+              "below": null
+            }
+          ],
+          "undo": [
+            {
+              "kind": "createdRecord",
+              "restoreCommand": "probe.restore",
+              "t": "card",
+              "id": "card0002"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo",
+        "sync",
+        "read",
+        "redo"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "counts": [
+          1
+        ],
+        "held": false
+      },
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "kind": "settled",
+          "changed": true,
+          "appliedCount": 1,
+          "skippedCount": 0
+        },
+        {
+          "kind": "settled",
+          "changed": false,
+          "appliedCount": 0,
+          "skippedCount": 0
+        }
+      ],
+      "records": [
+        []
+      ]
+    }
+  },
+  {
+    "name": "the Undo of an act still held cancels it in place",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "remove",
+              "t": "card",
+              "id": "card0001"
+            }
+          ],
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restore",
+              "targets": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "slot": {
+                    "kind": "field",
+                    "name": "title"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "undo"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "counts": [
+          1
+        ],
+        "held": true
+      },
+      "results": [
+        {
+          "kind": "cancelled",
+          "changed": true
+        }
+      ],
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "Old"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "an act that did not opt into Undo has no inverse",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "New"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "counts": [
+          1
+        ],
+        "held": false
+      },
+      "results": [
+        {
+          "kind": "unavailable",
+          "reason": "not-reversible"
+        }
+      ],
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "New"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a plan opting into Undo outside a reversible action is a programming fault",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "reversible": false,
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "New"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ],
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restore",
+              "targets": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "slot": {
+                    "kind": "field",
+                    "name": "title"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [],
+      "inspect": []
+    },
+    "expect": {
+      "error": true
+    }
+  }
+]

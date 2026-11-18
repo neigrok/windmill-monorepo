@@ -74,7 +74,7 @@ test('a held delete keeps stored stance and remote records until Undo or release
   assert.equal(a.runner.read(WeighIn.scope, (read) => new Bodyweight(read).stance), 'holding');
   await a.sync();
   assert.deepEqual(fields(b), [{ id: '2027-01-15', kg: 82.4, recordedAt: DEFAULT_NOW }]);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.deepEqual(fields(a), fields(b));
   assert.deepEqual(a.undoOffers(), []);
   const again = await a.runner.run(DeleteWeighIn(id));
@@ -84,7 +84,7 @@ test('a held delete keeps stored stance and remote records until Undo or release
   assert.equal(a.undoOffers().length, 1);
   await a.advance(1);
   assert.deepEqual(a.undoOffers(), []);
-  assert.equal(await a.runner.undo(again.receipt.gestureId), false);
+  assert.equal(await a.runner.cancelHeld(again.receipt.gestureId), false);
   await a.sync();
   assert.deepEqual(fields(a), []);
   assert.deepEqual(fields(b), []);
@@ -105,7 +105,7 @@ test('a whole save retires the held delete and its obsolete Undo cannot erase th
   if (saved.result.kind !== 'saved') return;
   assert.deepEqual(saved.result.receipt?.retired, [removed.receipt.gestureId]);
   assert.deepEqual(a.undoOffers(), []);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), false);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), false);
   await a.advance(CONSTANTS.HOLD_MS);
   await a.sync();
   assert.deepEqual(fields(a), [{ id: '2027-01-15', kg: 83.46, recordedAt: DEFAULT_NOW + 1_000 }]);
@@ -163,7 +163,7 @@ test('a process restart retains the committed save and releases its durable held
   if (removed.kind !== 'committed') return;
   await a.restart();
   assert.deepEqual(a.undoOffers(), []);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), false);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), false);
   await a.sync();
   assert.deepEqual(fields(a), []);
   assert.deepEqual(fields(b), []);
