@@ -215,8 +215,11 @@ public struct PushPlanner: Sendable {
     var back: Set<Int64> = []
     for entry in replica.outbox {
       if entry.state == .ready {
-        let records = entry.effects().flatMap { effect in effect.deltas.map { ScopedKey(scope: effect.scope, key: $0.key) } }
-          + entry.intent.guards.map { ScopedKey(scope: entry.scope, key: $0.key) }
+        let written: [ScopedKey] = entry.effects().flatMap { (effect: ScopedDeltas) -> [ScopedKey] in
+          effect.deltas.map { ScopedKey(scope: effect.scope, key: $0.key) }
+        }
+        let guarded: [ScopedKey] = entry.intent.guards.map { ScopedKey(scope: entry.scope, key: $0.key) }
+        let records: [ScopedKey] = written + guarded
         if sources.part(of: entry).any || records.contains(where: touched.contains) {
           back.insert(entry.commitOrder)
           touched.formUnion(records)
@@ -537,8 +540,10 @@ public struct PushPlanner: Sendable {
     }
     var versions = effects.flatMap { effect in effect.rows.map { AcceptedVersion(scope: effect.scope, key: $0.key, slots: $0.slots) } }
     for w in write {
-      let slots = (w.born.map { [EffectSlot(.born, .stamp($0)), EffectSlot(.life, .stamp($0))] } ?? [])
-        + w.fields.sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }.map { EffectSlot(.field($0.key), .stamp($0.value)) }
+      let lives: [EffectSlot] = w.born.map { (born: Stamp) -> [EffectSlot] in [EffectSlot(.born, .stamp(born)), EffectSlot(.life, .stamp(born))] } ?? []
+      let fields: [EffectSlot] = w.fields.sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+        .map { (field: (key: String, value: Stamp)) -> EffectSlot in EffectSlot(.field(field.key), .stamp(field.value)) }
+      let slots: [EffectSlot] = lives + fields
       let index = versions.firstIndex { $0.scope == command.scope && $0.key == w.key } ?? {
         versions.append(AcceptedVersion(scope: command.scope, key: w.key, slots: []))
         return versions.count - 1
@@ -582,7 +587,7 @@ public struct PushPlanner: Sendable {
       for slot in version.slots {
         guard case .stamp(let n) = slot.version else { continue }
         let register: Restamp.Register.Name = if case .field(let name) = slot.slot { .field(name) } else { .life }
-        let carried = [earlier?.stamp(of: slot.slot)] + ordinary.map { $0.stamp(of: slot.slot) }
+        let carried: [Stamp?] = [earlier?.stamp(of: slot.slot)] + ordinary.map { (delta: Delta) -> Stamp? in delta.stamp(of: slot.slot) }
         for o in carried.compactMap({ $0 }) {
           Restamp.follow(register, of: version.key, in: version.scope, after: commandId, from: o, to: n, createsRecord: slot.slot == .born,
                          queuedOnly: true, in: &replica)
@@ -614,6 +619,28 @@ public struct PushPlanner: Sendable {
 
   // MARK: The write map
 
+  // One record a write map names, as its command retained it (§7.7 step 0): the stable source the command was called
+  // with, the target it last resolved that source to, and the id the queue names the record by now.
+  struct MappedRecord {
+    let w: WriteMapEntry
+    let source: RecordID
+    let previous: WriteTarget?
+
+    init(_ w: WriteMapEntry, of command: OutboxEntry) {
+      let source: RecordID = w.from ?? w.key.id
+      self.w = w
+      self.source = source
+      previous = command.writeTargets?.first { (target: WriteTarget) -> Bool in target.key.type == w.key.type && target.from == source }
+    }
+
+    var named: RecordID { previous?.key.id ?? source }
+
+    // The rename this record makes in the command's `scope`: from the id the queue names it by to the map's id.
+    func mapping(in scope: ScopeRef) -> RecordMap.Mapping {
+      RecordMap.Mapping(type: w.key.type, from: named, to: w.key.id, scope: scope)
+    }
+  }
+
   // §7.7 a legacy command's write map, in the result's transaction. Its target-merged refusals are read first, from the
   // queue as it stood: a queued delete of an id a join merged. Then the map renames every queued entry at once through its
   // compiled leaves (E-8): a join everywhere, a replayed target's move in the later entries, a scope-local id in the
@@ -624,46 +651,43 @@ public struct PushPlanner: Sendable {
     let scope = original.scope
     let retained = original.writeTargets != nil
     if !retained { replica.update(entry: commandId) { $0.writeTargets = [] } }
-    let items = write.map { w in
-      let source = w.from ?? w.key.id
-      return (w: w, source: source, previous: original.writeTargets?.first { $0.key.type == w.key.type && $0.from == source })
-    }
-    for (w, source, previous) in items where previous == nil && retained && w.born != nil {
-      let predicted = original.predict.filter { $0.key.type == w.key.type }
+    let records: [MappedRecord] = write.map { (w: WriteMapEntry) -> MappedRecord in MappedRecord(w, of: original) }
+    for record in records where record.previous == nil && retained && record.w.born != nil {
+      let w = record.w
+      let predicted: [Delta] = original.predict.filter { (delta: Delta) -> Bool in delta.key.type == w.key.type }
       for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
         guard let entry = replica.entry(later.localId) else { continue }
-        let unmapped = entry.intent.deltas.contains { delta in
-          delta.key.type == w.key.type && delta.removes && delta.key.id != source && delta.key.id != w.key.id
+        let unmapped = entry.intent.deltas.contains { (delta: Delta) -> Bool in
+          delta.key.type == w.key.type && delta.removes && delta.key.id != record.source && delta.key.id != w.key.id
             && (predicted.isEmpty || predicted.contains { $0.key.id == delta.key.id })
         }
         if unmapped { try refuseMerged(entry, in: &replica, at: instance.deviceNow) }
       }
     }
-    for (w, _, previous) in items where previous == nil {
-      guard let from = w.from else { continue }
+    for record in records where record.previous == nil {
+      guard let from = record.w.from else { continue }
+      let merged = RecordKey(record.w.key.type, from)
       for queued in replica.outbox where queued.isQueued {
-        guard let entry = replica.entry(queued.localId),
-              entry.intent.deltas.contains(where: { $0.key == RecordKey(w.key.type, from) && $0.removes }) else { continue }
+        guard let entry = replica.entry(queued.localId), entry.intent.deltas.contains(where: { $0.key == merged && $0.removes }) else { continue }
         try refuseMerged(entry, in: &replica, at: instance.deviceNow)
       }
     }
-    let joins = items.compactMap { item in
-      item.previous == nil ? item.w.from.map { RecordMap.Mapping(type: item.w.key.type, from: $0, to: item.w.key.id, scope: scope) } : nil
-    }
-    let replayed = items.compactMap { item in
-      item.previous.map { RecordMap.Mapping(type: item.w.key.type, from: $0.key.id, to: item.w.key.id, scope: scope) }
-    }
+    let joins: [RecordMap.Mapping] = records.filter { $0.previous == nil && $0.w.from != nil }.map { $0.mapping(in: scope) }
+    let replayed: [RecordMap.Mapping] = records.filter { $0.previous != nil }.map { $0.mapping(in: scope) }
     for queued in replica.outbox where queued.isQueued {
       let later = queued.commitOrder > original.commitOrder
-      let mappings = later ? joins + replayed : joins
+      let mappings: [RecordMap.Mapping] = later ? joins + replayed : joins
       guard !mappings.isEmpty else { continue }
-      replica.update(entry: queued.localId) { rewrite(&$0, by: RecordMap(registry: registry, mappings: mappings), replayed: later ? replayed : []) }
+      let map = RecordMap(registry: registry, mappings: mappings)
+      replica.update(entry: queued.localId) { rewrite(&$0, by: map, replayed: later ? replayed : []) }
     }
-    let moved = joins + replayed.filter { $0.from != $0.to }
-    replica.update(entry: commandId) { rewrite(&$0, by: RecordMap(registry: registry, mappings: moved), predictionsOnly: true) }
+    let moved: [RecordMap.Mapping] = joins + replayed.filter { $0.from != $0.to }
+    let own = RecordMap(registry: registry, mappings: moved)
+    replica.update(entry: commandId) { rewrite(&$0, by: own, predictionsOnly: true) }
     for mapping in moved { rewriteDeviceRows(of: commandId, type: mapping.type, from: mapping.from, to: mapping.to, in: &replica) }
-    for (w, source, previous) in items {
-      if let old = previous?.born, let born = w.born, old != born {
+    for record in records {
+      let w = record.w
+      if let old = record.previous?.born, let born = w.born, old != born {
         for later in replica.outbox where later.commitOrder > original.commitOrder && (later.isQueued || later.state == .sent) {
           replica.update(entry: later.localId) { Restamp.follow(&$0, in: scope, key: w.key, from: old, to: born, born: true) }
         }
@@ -674,7 +698,7 @@ public struct PushPlanner: Sendable {
           if let born = w.born { Restamp.move(.init(part: .predict(index), register: .life), of: commandId, to: born, in: &replica) }
         }
       }
-      retarget(commandId, by: w, from: source, previous: previous, in: &replica)
+      retarget(commandId, to: record, in: &replica)
     }
 
     let mapped = write.flatMap(\.stamps)
@@ -704,25 +728,24 @@ public struct PushPlanner: Sendable {
     let scope = original.scope
     let retained = original.writeTargets != nil
     if !retained { replica.update(entry: commandId) { $0.writeTargets = [] } }
-    let items = write.map { w in
-      let source = w.from ?? w.key.id
-      let previous = original.writeTargets?.first { $0.key.type == w.key.type && $0.from == source }
-      return (w: w, source: source, previous: previous, from: previous?.key.id ?? source)
-    }
-    for (w, source, previous, from) in items {
+    let records: [MappedRecord] = write.map { (w: WriteMapEntry) -> MappedRecord in MappedRecord(w, of: original) }
+    for record in records {
+      let w = record.w
+      let joined = record.previous == nil && w.from != nil
+      let unmapped = retained && record.previous == nil && w.born != nil
       for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
         guard let entry = replica.entry(later.localId), entry.scope == scope else { continue }
-        let deletes = entry.intent.deltas.contains { delta in
-          delta.key.type == w.key.type && delta.removes
-            && (previous == nil && w.from != nil && delta.key.id == from
-              || retained && previous == nil && w.born != nil && delta.key.id != source && delta.key.id != w.key.id)
+        let deletes = entry.intent.deltas.contains { (delta: Delta) -> Bool in
+          guard delta.key.type == w.key.type, delta.removes else { return false }
+          if joined && delta.key.id == record.named { return true }
+          return unmapped && delta.key.id != record.source && delta.key.id != w.key.id
         }
         if deletes { try refuseMerged(entry, in: &replica, at: instance.deviceNow) }
       }
     }
-    let moved = items.filter { $0.from != $0.w.key.id }
-    let mappings = moved.map { RecordMap.Mapping(type: $0.w.key.type, from: $0.from, to: $0.w.key.id, scope: scope) }
-    let replayed = moved.filter { $0.previous != nil }.map { RecordMap.Mapping(type: $0.w.key.type, from: $0.from, to: $0.w.key.id, scope: scope) }
+    let moved: [MappedRecord] = records.filter { $0.named != $0.w.key.id }
+    let mappings: [RecordMap.Mapping] = moved.map { $0.mapping(in: scope) }
+    let replayed: [RecordMap.Mapping] = moved.filter { $0.previous != nil }.map { $0.mapping(in: scope) }
     if !mappings.isEmpty {
       let map = RecordMap(registry: registry, mappings: mappings)
       for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
@@ -730,13 +753,14 @@ public struct PushPlanner: Sendable {
       }
       replica.update(entry: commandId) { rewrite(&$0, by: map, predictionsOnly: true) }
     }
-    for (w, source, previous, _) in items {
-      if let old = previous?.born, let born = w.born, old != born {
+    for record in records {
+      let w = record.w
+      if let old = record.previous?.born, let born = w.born, old != born {
         for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
           replica.update(entry: later.localId) { Restamp.follow(&$0, in: scope, key: w.key, from: old, to: born, born: true) }
         }
       }
-      retarget(commandId, by: w, from: source, previous: previous, in: &replica)
+      retarget(commandId, to: record, in: &replica)
     }
   }
 
@@ -747,12 +771,13 @@ public struct PushPlanner: Sendable {
   }
 
   // The command's retained target for the write map's record: its original identity and where it resolved now.
-  func retarget(_ commandId: String, by w: WriteMapEntry, from source: RecordID, previous: WriteTarget?, in replica: inout LoadedReplica) {
+  func retarget(_ commandId: String, to record: MappedRecord, in replica: inout LoadedReplica) {
+    let w = record.w
     replica.update(entry: commandId) { command in
-      var target = previous ?? WriteTarget(key: w.key, from: source)
+      var target = record.previous ?? WriteTarget(key: w.key, from: record.source)
       target.key = w.key
       if let born = w.born { target.born = born }
-      if let index = command.writeTargets?.firstIndex(where: { $0.key.type == w.key.type && $0.from == source }) {
+      if let index = command.writeTargets?.firstIndex(where: { $0.key.type == w.key.type && $0.from == record.source }) {
         command.writeTargets?[index] = target
       } else {
         command.writeTargets?.append(target)
@@ -774,9 +799,10 @@ public struct PushPlanner: Sendable {
         moves[RecordKey(target.key.type, target.from)] = mapping.to
       }
     }
-    let named = predictionsOnly ? [] : entry.intent.command.map { command in
-      registry.references(of: command, in: scope) + registry.references(of: command, in: scope, role: .creation)
-    } ?? []
+    var named: [ResolvedReference] = []
+    if !predictionsOnly, let command = entry.intent.command {
+      named = registry.references(of: command, in: scope) + registry.references(of: command, in: scope, role: .creation)
+    }
     if !predictionsOnly {
       for index in entry.intent.deltas.indices { registry.remap(&entry.intent.deltas[index], in: scope, by: map) }
     }
@@ -802,10 +828,14 @@ public struct PushPlanner: Sendable {
       }
       for index in entry.writeTargets?.indices ?? 0..<0 {
         let target = entry.writeTargets![index]
-        let moved = moves[RecordKey(target.key.type, target.from)]
-        let argued = moved != nil && named.contains { $0.key == RecordKey(target.key.type, target.from) }
-        entry.writeTargets![index].from = argued ? moved! : map.target(of: RecordKey(target.key.type, target.from), in: scope) ?? target.from
-        entry.writeTargets![index].key = RecordKey(target.key.type, map.target(of: target.key, in: scope) ?? target.key.id)
+        let source = RecordKey(target.key.type, target.from)
+        let resolved: RecordID = map.target(of: target.key, in: scope) ?? target.key.id
+        entry.writeTargets![index].key = RecordKey(target.key.type, resolved)
+        if let moved = moves[source], named.contains(where: { $0.key == source }) {
+          entry.writeTargets![index].from = moved
+        } else {
+          entry.writeTargets![index].from = map.target(of: source, in: scope) ?? target.from
+        }
       }
     }
     guard map.movesGovernors else { return }

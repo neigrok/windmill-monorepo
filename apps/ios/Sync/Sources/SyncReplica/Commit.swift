@@ -155,7 +155,8 @@ public struct CommitPlanner: Sendable {
     }
     // E-8: a typed leaf of a value the gesture writes or predicts, or of its command's arguments, that breaks admission's
     // leaf rule throws, since dependents and id maps read every leaf of a queued entry.
-    let written = deltas + predict + (predictions ?? []).flatMap(\.deltas)
+    let predicted: [Delta] = (predictions ?? []).flatMap(\.deltas)
+    let written: [Delta] = deltas + predict + predicted
     for delta in written {
       guard let type = registry.type(delta.key.type) else { continue }
       for (name, register) in delta.lattice.fields {

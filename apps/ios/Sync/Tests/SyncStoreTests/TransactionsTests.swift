@@ -244,33 +244,49 @@ struct TransactionsTests {
     let runs = try [0, 40].map(Self.framesBeside)
     #expect(runs[0].reads == runs[1].reads)
     #expect(runs.map(\.outcomes) == Array(repeating: ["applied", "pull self/probe", "ignored tree/b_00000001", "gone"], count: 2))
-    #expect(runs.map(\.outbox) == [["b/0"], ["b/0"] + (0..<40).map { "u\($0)/0" }])
-    let touching = { (type: String, id: String?) in
-      "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
-        + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '"# + type + "'"
-        + (id.map { #" AND outbox_touch.id = '""# + $0 + #""'"# } ?? "") + " AND outbox.replica = 1"
+    let unsent: [String] = (0..<40).map { (index: Int) -> String in "u\(index)/0" }
+    let besideUnsent: [String] = ["b/0"] + unsent
+    #expect(runs.map(\.outbox) == [["b/0"], besideUnsent])
+    let touching: (String, String?) -> String = { type, id in
+      let record: String = id.map { (id: String) -> String in " AND outbox_touch.id = '\"\(id)\"'" } ?? ""
+      return """
+        SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
+        WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '\(type)'\(record) AND outbox.replica = 1
+        """
     }
-    let covered = { (seq: Int) in [
-      "SELECT * FROM outbox WHERE replica = 1 AND scope = 'self/probe' AND state = 'acked' AND result_epoch = 'ep-1' AND result_seq <= \(seq)\n"
-        + "  AND predictions IS NULL\nORDER BY commit_order LIMIT 33",
-      "SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id)\n"
-        + "WHERE outbox_projection.scope = 'self/probe' AND outbox_projection.covered = 0 AND outbox_projection.result_seq <= \(seq)\n"
-        + "  AND outbox.replica = 1 AND outbox.state = 'acked' AND outbox.result_epoch = 'ep-1'\nORDER BY outbox.commit_order LIMIT 33",
-    ] }
-    let scope = { (scope: String) in [
-      "SELECT * FROM outbox WHERE replica = 1 AND scope = '\(scope)'",
-      "SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id) WHERE outbox_projection.scope = '\(scope)' AND outbox.replica = 1",
-    ] }
-    let targets = "SELECT outbox_projection.scope FROM outbox_projection JOIN outbox USING (local_id)\n"
-      + "WHERE outbox_projection.covered = 0 AND outbox.replica = 1\n"
-      + "ORDER BY outbox.commit_order, outbox_projection.scope <> outbox.scope, outbox_projection.scope"
-    let above = { (count: Int) in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
-    #expect(runs[0].reads == [
-      [touching("card", "card0009"), touching("board", nil), targets, above(3)] + covered(6),
-      [touching("card", "card0010"), touching("board", nil), targets, above(2)] + covered(9),
-      [touching("board", "b_00000001"), touching("board", nil), targets, above(2)] + scope("tree/b_00000001") + scope("self/overlay/b_00000001"),
-      [touching("board", nil), targets, above(3)] + scope("tree/b_00000002") + scope("self/overlay/b_00000002"),
-    ].map { $0.sorted() })
+    let covered: (Int) -> [String] = { seq in
+      let unprojected: String = """
+        SELECT * FROM outbox WHERE replica = 1 AND scope = 'self/probe' AND state = 'acked' AND result_epoch = 'ep-1' AND result_seq <= \(seq)
+          AND predictions IS NULL
+        ORDER BY commit_order LIMIT 33
+        """
+      let projected: String = """
+        SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id)
+        WHERE outbox_projection.scope = 'self/probe' AND outbox_projection.covered = 0 AND outbox_projection.result_seq <= \(seq)
+          AND outbox.replica = 1 AND outbox.state = 'acked' AND outbox.result_epoch = 'ep-1'
+        ORDER BY outbox.commit_order LIMIT 33
+        """
+      return [unprojected, projected]
+    }
+    let scope: (String) -> [String] = { scope in
+      let entries: String = "SELECT * FROM outbox WHERE replica = 1 AND scope = '\(scope)'"
+      let projections: String =
+        "SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id) WHERE outbox_projection.scope = '\(scope)' AND outbox.replica = 1"
+      return [entries, projections]
+    }
+    let targets: String = """
+      SELECT outbox_projection.scope FROM outbox_projection JOIN outbox USING (local_id)
+      WHERE outbox_projection.covered = 0 AND outbox.replica = 1
+      ORDER BY outbox.commit_order, outbox_projection.scope <> outbox.scope, outbox_projection.scope
+      """
+    let above: (Int) -> String = { count in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
+    let settling: [String] = [touching("card", "card0009"), touching("board", nil), targets, above(3)] + covered(6)
+    let pastAGap: [String] = [touching("card", "card0010"), touching("board", nil), targets, above(2)] + covered(9)
+    let notFound: [String] = [touching("board", "b_00000001"), touching("board", nil), targets, above(2)]
+      + scope("tree/b_00000001") + scope("self/overlay/b_00000001")
+    let gone: [String] = [touching("board", nil), targets, above(3)] + scope("tree/b_00000002") + scope("self/overlay/b_00000002")
+    let expected: [[String]] = [settling, pastAGap, notFound, gone].map { (reads: [String]) -> [String] in reads.sorted() }
+    #expect(runs[0].reads == expected)
   }
 
   // A settling change, a change past a gap, a not-found whose board's create waits, a gone: their outbox reads and outcomes, the outbox after.
@@ -336,8 +352,8 @@ struct TransactionsTests {
     #expect(runs[0].reads == runs[1].reads)
     #expect(runs.map(\.settled) == [[1, 0], [1, 0]])
     let tree = ScopeRef.tree("b_00000001")
-    #expect(runs.map(\.projections) == Array(repeating: [Projection(scope: .product("probe"), resultSeq: 1, covered: true),
-                                                          Projection(scope: tree, resultSeq: 9)], count: 2))
+    let projections: [Projection] = [Projection(scope: .product("probe"), resultSeq: 1, covered: true), Projection(scope: tree, resultSeq: 9)]
+    #expect(runs.map(\.projections) == [projections, projections])
   }
 
   // Two slices of `self/probe` beside `covered` acked opted entries covered there already, then the entry whose projection
@@ -357,7 +373,8 @@ struct TransactionsTests {
       entry.resultEpoch = "ep-1"
       return entry
     }
-    let outbox = (0..<covered).map { entry("c\($0)/0", Int64($0 + 1), true) } + [entry("x/0", Int64(covered + 1), false)]
+    let coveredEntries: [OutboxEntry] = (0..<covered).map { (index: Int) -> OutboxEntry in entry("c\(index)/0", Int64(index + 1), true) }
+    let outbox: [OutboxEntry] = coveredEntries + [entry("x/0", Int64(covered + 1), false)]
     let store = try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [
       LoadedReplica(meta: meta, outbox: outbox, cursors: [product: CursorRecord(cursor: Cursor(epoch: "ep-1", mode: .live, seq: 1).text, booted: true)],
                     wholeScopes: true),

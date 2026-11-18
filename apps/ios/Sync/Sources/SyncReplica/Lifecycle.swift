@@ -163,9 +163,9 @@ public struct ReplicaLifecycle: Sendable {
         let proposed = registry.references(of: command, in: entry.scope, role: .creation)
         let named = registry.references(of: command, in: entry.scope)
         replica.update(entry: entry.localId) { stored in
-          stored.writeTargets = entry.predict.compactMap { delta in
-            let creations = proposed.filter { $0.key.type == delta.key.type }
-            let sources = creations.isEmpty ? named.filter { $0.key.type == delta.key.type } : creations
+          stored.writeTargets = entry.predict.compactMap { (delta: Delta) -> WriteTarget? in
+            let creations: [ResolvedReference] = proposed.filter { $0.key.type == delta.key.type }
+            let sources: [ResolvedReference] = creations.isEmpty ? named.filter { $0.key.type == delta.key.type } : creations
             guard sources.count == 1, entry.predict.filter({ $0.key.type == delta.key.type }).count == 1 else { return nil }
             return WriteTarget(key: delta.key, from: sources[0].key.id, born: delta.lattice.born)
           }
@@ -274,7 +274,10 @@ public struct ReplicaLifecycle: Sendable {
     }
     device.modify(target) { target in
       target.updateEntries { $0.lineage = account }
-      let stamps = target.outbox.flatMap { [$0.stamp] + $0.effects().flatMap(\.deltas).flatMap(\.lattice.stamps) }
+      let stamps: [Stamp] = target.outbox.flatMap { (entry: OutboxEntry) -> [Stamp] in
+        let written: [Stamp] = entry.effects().flatMap(\.deltas).flatMap(\.lattice.stamps)
+        return [entry.stamp] + written
+      }
       target.update { meta in
         meta.observe(stamps)
         meta.authPaused = false
@@ -494,12 +497,15 @@ public struct ReplicaLifecycle: Sendable {
     case .own(let subscriptions) where replica.meta.state != .bound:
       subscriptions.opened.filter { if case .tree = $0.kind { true } else { false } }
     case .own(let subscriptions):
-      subscriptions.products.map(ScopeRef.product) + (try governedTrees(of: replica, carrying: subscriptions.products))
-        + subscriptions.opened.flatMap { scope -> [ScopeRef] in
+      Array([
+        subscriptions.products.map(ScopeRef.product),
+        try governedTrees(of: replica, carrying: subscriptions.products),
+        subscriptions.opened.flatMap { (scope: ScopeRef) -> [ScopeRef] in
           if case .tree(let id) = scope.kind, replica.known[scope] == nil { return [scope, .overlay(id)] }
           return [scope]
-        }
-        + replica.projectionTargets
+        },
+        replica.projectionTargets,
+      ].joined())
     }
     var seen: Set<ScopeRef> = []
     return scopes.filter { replica.known[$0] == nil && seen.insert($0).inserted }

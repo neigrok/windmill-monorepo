@@ -249,8 +249,9 @@ public struct References: Sendable {
   }
 
   static func leaves(of command: CommandDef, in registry: Registry) throws(RegistryError) -> [ReferenceLeaf] {
-    let shorthands = command.args.compactMap { arg in
-      arg.type.ref.map { ReferenceLeaf(name: arg.name, base: .args, path: [arg.name], type: $0) }
+    let shorthands: [ReferenceLeaf] = command.args.compactMap { (arg: ArgumentDef) -> ReferenceLeaf? in
+      guard let target = arg.type.ref else { return nil }
+      return ReferenceLeaf(name: arg.name, base: .args, path: [arg.name], type: target)
     }
     guard let refPaths = command.refPaths else { return shorthands }
     let place = command.name
@@ -300,14 +301,19 @@ public struct References: Sendable {
       case .none: throw RegistryError("\(name): a typed leaf's domain holds a string")
       }
       let scope = try scopeFamily(object["scope"], at: name, of: target, holder: holder, registry: registry)
+      let role: ReferenceLeaf.Role = object["role"] == nil ? .ordinary : .creation
       leaves.append(ReferenceLeaf(
         name: path.joined(separator: "."), base: base, path: path, type: target.name, scope: scope, nullable: object["nullable"] != nil,
-        role: object["role"] != nil ? .creation : .ordinary, annotated: true))
+        role: role, annotated: true))
     }
-    let declared = shorthands + leaves
+    let declared: [ReferenceLeaf] = shorthands + leaves
     for (index, leaf) in leaves.enumerated() {
-      let others = shorthands + leaves.enumerated().filter { $0.offset != index }.map(\.element)
-      guard !others.contains(where: { $0.path == leaf.path || isPrefix($0.path, of: leaf.path) || isPrefix(leaf.path, of: $0.path) }) else {
+      var others: [ReferenceLeaf] = declared
+      others.remove(at: shorthands.count + index)
+      let overlaps = { (other: ReferenceLeaf) -> Bool in
+        other.path == leaf.path || isPrefix(other.path, of: leaf.path) || isPrefix(leaf.path, of: other.path)
+      }
+      guard !others.contains(where: overlaps) else {
         throw RegistryError("\(place).\(leaf.name): a leaf is declared once and never inside another")
       }
       guard case .treeFrom(let sourcePath) = leaf.scope else { continue }
@@ -350,7 +356,10 @@ public struct References: Sendable {
 
   static func isPath(_ json: JSON?) -> [String]? {
     guard case .array(let parts)? = json, !parts.isEmpty else { return nil }
-    let names = parts.compactMap { if case .string(let name) = $0, name.wholeMatch(of: #/[a-z][A-Za-z0-9]*/#) != nil { name } else { nil } }
+    let names: [String] = parts.compactMap { (part: JSON) -> String? in
+      guard case .string(let name) = part, name.wholeMatch(of: #/[a-z][A-Za-z0-9]*/#) != nil else { return nil }
+      return name
+    }
     return names.count == parts.count ? names : nil
   }
 
@@ -402,7 +411,7 @@ extension Registry {
 
   // Every resolved identity of `leaves` in a holder of `holderScope`.
   public func resolve(_ leaves: [ReferenceLeaf], in holder: ReferenceHolder, holderScope: ScopeRef) -> [ResolvedReference] {
-    leaves.compactMap { leaf in
+    leaves.compactMap { (leaf: ReferenceLeaf) -> ResolvedReference? in
       guard case .value(let value) = leaf.find(in: holder), leaf.role == .identity || value.isString,
             let id = try? RecordID(json: value), let scope = scope(of: leaf, in: holder, holderScope: holderScope) else { return nil }
       return ResolvedReference(leaf: leaf, scope: scope, key: RecordKey(leaf.type, id))
@@ -436,7 +445,8 @@ extension Registry {
   public func remapped(_ key: RecordKey, in scope: ScopeRef, by map: RecordMap) -> RecordKey {
     var holder = ReferenceHolder(id: key.id.json)
     remap(references.leaves(ofType: key.type), in: &holder, scope: scope, by: map)
-    return holder.id.flatMap { try? RecordID(json: $0) }.map { RecordKey(key.type, $0) } ?? key
+    guard let id = holder.id, let renamed = try? RecordID(json: id) else { return key }
+    return RecordKey(key.type, renamed)
   }
 
   // A command's arguments renamed by `map`, except its creations, which only `moves` (its own retained source-to-target
@@ -452,18 +462,24 @@ extension Registry {
   func remap(_ leaves: [ReferenceLeaf], in holder: inout ReferenceHolder, scope: ScopeRef, by map: RecordMap,
              moves: [RecordKey: RecordID] = [:]) {
     var written: Set<ReferenceLeaf.Place> = []
-    let rename = { (holder: inout ReferenceHolder, renames: [(leaf: ReferenceLeaf, id: RecordID)]) in
+    let rename = { (holder: inout ReferenceHolder, renames: [(leaf: ReferenceLeaf, id: RecordID)]) -> Void in
       for (leaf, id) in renames where written.insert(leaf.place).inserted { leaf.assign(id.json, in: &holder) }
     }
-    let isGlobal = { (leaf: ReferenceLeaf) in self.type(leaf.type)?.idSpace == .global }
-    rename(&holder, resolve(leaves, in: holder, holderScope: scope).compactMap { reference in
-      let target = moves[reference.key] ?? (reference.leaf.role != .creation && isGlobal(reference.leaf) ? map.global[reference.key] : nil)
-      return target.map { (reference.leaf, $0) }
-    })
-    let local = leaves.filter { $0.role != .creation && !isGlobal($0) }
-    rename(&holder, resolve(local, in: holder, holderScope: map.scope(scope)).compactMap { reference in
-      map.scoped[reference.record].map { (reference.leaf, $0) }
-    })
+    let isGlobal = { (leaf: ReferenceLeaf) -> Bool in self.type(leaf.type)?.idSpace == .global }
+    let global: [(leaf: ReferenceLeaf, id: RecordID)] = resolve(leaves, in: holder, holderScope: scope).compactMap {
+      (reference: ResolvedReference) -> (leaf: ReferenceLeaf, id: RecordID)? in
+      if let moved = moves[reference.key] { return (reference.leaf, moved) }
+      guard reference.leaf.role != .creation, isGlobal(reference.leaf), let target = map.global[reference.key] else { return nil }
+      return (reference.leaf, target)
+    }
+    rename(&holder, global)
+    let local = leaves.filter { (leaf: ReferenceLeaf) -> Bool in leaf.role != .creation && !isGlobal(leaf) }
+    let scoped: [(leaf: ReferenceLeaf, id: RecordID)] = resolve(local, in: holder, holderScope: map.scope(scope)).compactMap {
+      (reference: ResolvedReference) -> (leaf: ReferenceLeaf, id: RecordID)? in
+      guard let target = map.scoped[reference.record] else { return nil }
+      return (reference.leaf, target)
+    }
+    rename(&holder, scoped)
   }
 
   // §6.1 step 2 for one field value: each annotated leaf present holds an id of its type, E-2's bounds included, null

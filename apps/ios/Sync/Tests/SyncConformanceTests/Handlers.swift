@@ -270,16 +270,20 @@ enum Handlers {
   // its JCS, and the holder once each map applied in order.
   static func traversal(_ input: JSON) throws -> JSON {
     let scope = try ScopeRef(json: input.member("scope"))
-    let maps = try input.member("maps").asArray().map { mappings in
-      RecordMap(registry: probe, mappings: try mappings.asArray().map { mapping in
-        RecordMap.Mapping(
-          type: try mapping.member("t").asString(), from: try RecordID(json: mapping.member("from")), to: try RecordID(json: mapping.member("id")),
-          scope: try mapping["scope"].map { try ScopeRef(json: $0) })
-      })
+    let mappingOf = { (mapping: JSON) throws -> RecordMap.Mapping in
+      let scope: ScopeRef? = try mapping["scope"].map { (scope: JSON) throws -> ScopeRef in try ScopeRef(json: scope) }
+      return RecordMap.Mapping(
+        type: try mapping.member("t").asString(), from: try RecordID(json: mapping.member("from")), to: try RecordID(json: mapping.member("id")),
+        scope: scope)
+    }
+    let maps: [RecordMap] = try input.member("maps").asArray().map { (mappings: JSON) throws -> RecordMap in
+      RecordMap(registry: probe, mappings: try mappings.asArray().map(mappingOf))
     }
     let shown = { (references: [ResolvedReference]) -> JSON in
-      .array(references.map { ["role": .string($0.leaf.role.rawValue), "scope": $0.scope.json, "t": .string($0.key.type), "id": $0.key.id.json] }
-        .sorted { $0.jcsPrecedes($1) })
+      let rows: [JSON] = references.map { (reference: ResolvedReference) -> JSON in
+        ["role": .string(reference.leaf.role.rawValue), "scope": reference.scope.json, "t": .string(reference.key.type), "id": reference.key.id.json]
+      }
+      return .array(rows.sorted { (left: JSON, right: JSON) -> Bool in left.jcsPrecedes(right) })
     }
     if let record = input["record"] {
       var delta = try Delta(json: record)

@@ -523,15 +523,17 @@ struct TelemetryTests {
     let rig = try Rig(account: "A", telemetry: recorder)
     try rig.commit(Gesture(changes: [], command: Command(name: "probe.capture", args: [:]), gestureId: "secret-id"))
     let receipt: JSON = ["windmillKit": ["v": 1, "effects": [["scope": "self/probe", "beforeSeq": 1, "seq": 1, "rows": [], "private": "x"]]]]
-    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [["n": 1, "s": "ok", "seq": 1, "write": [], "detail": receipt]], serverTime: Rig.startMs + 5_000))
+    let result: JSON = ["n": 1, "s": "ok", "seq": 1, "write": [], "detail": receipt]
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [result], serverTime: Rig.startMs + 5_000))
     #expect(await rig.engine.sender.step() != .again)
     await drain(rig.engine.core.telemetry)
     let after = try rig.store.read { try $0.device(rows: true) }
     #expect(after.activeReplica.outbox.map(\.state) == [.sent])
-    #expect(after.activeReplica.meta.offset.samples.map(\.offset).allSatisfy { $0 == 0 })
-    #expect(recorder.events == [Recorded(name: "sync_push_outcome", kind: nil,
-      properties: ["outcome": "failed", "failure_kind": "decode"], durationMs: 0)])
-    #expect(recorder.failures == [Recorded(name: "sync_push", kind: "decode", properties: [:], durationMs: nil)])
+    #expect(after.activeReplica.meta.offset.samples.map(\.offset).allSatisfy { (offset: Int64) -> Bool in offset == 0 })
+    let outcome = Recorded(name: "sync_push_outcome", kind: nil, properties: ["outcome": "failed", "failure_kind": "decode"], durationMs: 0)
+    let failure = Recorded(name: "sync_push", kind: "decode", properties: [:], durationMs: nil)
+    #expect(recorder.events == [outcome])
+    #expect(recorder.failures == [failure])
   }
 
   @Test func corruptStoreReadEnqueuesAStaticDiagnosticAndPropagatesTheFailure() async throws {

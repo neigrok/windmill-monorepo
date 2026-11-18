@@ -193,7 +193,9 @@ public struct ProbeServerRules: ServerRules {
   }
 
   func step(_ command: CheckedCommand) -> JSON {
-    ["board": command.args["board"] ?? .null, "tag": command.args["tag"] ?? .null]
+    let board: JSON = command.args["board"] ?? .null
+    let tag: JSON = command.args["tag"] ?? .null
+    return ["board": board, "tag": tag]
   }
 
   // The alive board a step owns, the least id first.
@@ -208,9 +210,9 @@ public struct ProbeServerRules: ServerRules {
 
   // A resolution to a record that already exists, from the called id when it differs.
   func resolved(_ row: Row, called: RecordKey, in context: RuleContext) -> CommandOutcome {
-    CommandOutcome(
-      write: [WriteClaim(key: row.key, from: row.key == called ? nil : called.id, born: row.lattice.born.map(WriteClaim.Born.stored))],
-      product: context.product)
+    let from: RecordID? = row.key == called ? nil : called.id
+    let born: WriteClaim.Born? = row.lattice.born.map(WriteClaim.Born.stored)
+    return CommandOutcome(write: [WriteClaim(key: row.key, from: from, born: born)], product: context.product)
   }
 
   func tick(in context: RuleContext) -> CommandOutcome {
