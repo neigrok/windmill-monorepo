@@ -405,4 +405,12 @@ Json::Value inverseDetail(const std::optional<std::string>& skip) {
   return detail;
 }
 
+bool reportsInverseOutcome(const Json::Value& detail) {
+  if (!detail.isObject() || !detail["inverse"].isObject() || !detail["inverse"]["outcomes"].isArray() || detail["inverse"]["outcomes"].size() != 1) return false;
+  const Json::Value& outcome = detail["inverse"]["outcomes"][0];
+  if (!outcome.isObject() || !outcome["index"].isIntegral() || outcome["index"].asInt64() != 0 || !outcome["s"].isString()) return false;
+  if (outcome["s"].asString() == "applied") return outcome.size() == 2;
+  return outcome["s"].asString() == "skipped" && outcome.size() == 3 && outcome["code"].isString();
+}
+
 }

@@ -5,6 +5,7 @@
 
 #include "platform/domain/sync/Admit.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/Restore.h"
 #include "platform/domain/sync/Shape.h"
 
 #include <algorithm>
@@ -447,6 +448,7 @@ private:
     if (!intent().cmd) return;
     CommandCtx ctx = commandCtx();
     CommandOutcome outcome = a_.catalog_.command(intent().cmd->name).run(ctx);
+    if (registry_.command(intent().cmd->name)->inverse && !reportsInverseOutcome(outcome.detail)) throw std::logic_error("an inverse command reports no outcome");
     changes_->setWriteMap(std::move(outcome.write));
     detail_ = std::move(outcome.detail);
     Effects effects{{{scope(), std::move(outcome.deltas)}}};

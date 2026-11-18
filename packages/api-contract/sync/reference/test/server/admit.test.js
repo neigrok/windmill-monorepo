@@ -62,7 +62,7 @@ for (const file of readdirSync(CORPUS).filter((name) => name.endsWith('.json') &
       const state = new ServerState(input.state);
       const run = () => admit({ state, registry, product: input.effectPlan ? new EffectPlanProduct(input.effectPlan) : product, origin: input.origin, intent: input.intent, serverNow: input.serverNow, limits });
       if (expect.fault) {
-        assert.throws(run, /undeclared effect target|local check spans multiple scopes/, name);
+        assert.throws(run, /undeclared effect target|local check spans multiple scopes|an inverse command reports no outcome/, name);
         assert.equal(jcs(state.toJSON()), jcs(expect.state), name);
         continue;
       }
