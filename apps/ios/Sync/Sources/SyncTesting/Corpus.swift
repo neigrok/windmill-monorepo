@@ -66,13 +66,6 @@ public enum Corpus {
     "write/map.json", "write/references.json", "write/scoped-predictions.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
   ]
 
-  // Vectors the reference generated wrong, by `file · name`, each with its fault. A runner expects each to fail, and fails
-  // once it passes, so an entry leaves with the corpus's fix.
-  public static let knownIssues: [String: String] = [
-    "refs/traversal.json · a tuple key's parts resolve into the link's own tree":
-      "the reference resolves the link's own id as its holder's tuple array and then renames that array in place, so the id reported before any map reads [oak, oak]",
-  ]
-
   public static func role(of path: String) -> CorpusRole? {
     roles.first { $0.entry == path }?.role ?? roles.first { $0.entry.hasSuffix("/") && path.hasPrefix($0.entry) }?.role
   }

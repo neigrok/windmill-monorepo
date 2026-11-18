@@ -34,7 +34,7 @@ enum Handlers {
         "MAX_RECORD_BYTES": JSON(Constants.maxRecordBytes), "PUSH_MAX_INTENTS": JSON(Constants.pushMaxIntents),
         "PUSH_MAX_BYTES": JSON(Constants.pushMaxBytes), "EFFECT_MAX_BYTES": JSON(Constants.effectMaxBytes),
         "RECEIPT_MAX_BYTES": JSON(Constants.receiptMaxBytes), "SCOPED_RESPONSE_MAX_BYTES": JSON(Constants.scopedResponseMaxBytes),
-        "PUSH_WORK_MS": JSON(Constants.pushWorkMs),
+        "PUSH_WORK_MS": JSON(Constants.pushWorkMs), "WRITER_SLICE_MS": JSON(Constants.writerSliceMs),
         "PULL_PAGE_BYTES": JSON(Constants.pullPageBytes), "LIVE_FRAME_BYTES": JSON(Constants.liveFrameBytes),
         "LIVE_INLINE_BYTES": JSON(Constants.liveInlineBytes), "KEEPALIVE_BYTES": JSON(Constants.keepaliveBytes),
         "MERGE_WORK_CELLS": JSON(Constants.mergeWorkCells), "ACCOUNT_ID_BYTES": JSON(Constants.accountIdBytes),
