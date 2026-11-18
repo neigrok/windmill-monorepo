@@ -7,7 +7,7 @@ WORKDIR /app
 # Prune onnxruntime to the target arch in the SAME step as the install: a `rm` in a later layer
 # only writes a whiteout and the bytes still ship.
 ARG TARGETARCH
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN set -eu; \
     npm ci --omit=dev; \
     case "${TARGETARCH:-amd64}" in \
