@@ -35,9 +35,16 @@ export function settle(deviceJson, epoch = 'ep-1') {
   return out;
 }
 
-// An input device must be one a client can reach: no dead confirmed row (a dead row deletes), no
-// confirmed rows without their scope's cursor record, and every digest the sum of its rows.
+// A gesture id, and so a local id, names one gesture of the device (§2.5): no two outbox entries of its replicas share one.
+function assertDistinctLocalIds(deviceJson, what) {
+  const localIds = deviceJson.replicas.flatMap((replica) => (replica.outbox ?? []).map(({ localId }) => localId));
+  if (new Set(localIds).size !== localIds.length) throw new Error(`${what}: two outbox entries share a local id`);
+}
+
+// An input device must be one a client can reach: distinct local ids, no dead confirmed row (a dead row deletes),
+// no confirmed rows without their scope's cursor record, and every digest the sum of its rows.
 export function assertReachable(deviceJson) {
+  assertDistinctLocalIds(deviceJson, 'unreachable input');
   for (const replica of deviceJson.replicas) {
     const where = (scope) => `${replica.meta.replica} ${scope}`;
     for (const [scope, rows] of Object.entries(replica.confirmed ?? {})) {
@@ -103,7 +110,11 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
       events,
       appVersion: step.appVersion ?? '1',
       device,
-      nextGestureId: () => `g${(gestures += 1)}`,
+      nextGestureId: () => {
+        let gestureId;
+        do gestureId = `g${(gestures += 1)}`; while (device.carriesGesture(gestureId));
+        return gestureId;
+      },
       newReplicaId: () => queues.take('ids'),
       newActor: () => queues.take('actors'),
       newForkGuard: () => queues.take('forkGuards'),
@@ -266,6 +277,7 @@ export function stepsVector(name, input) {
     if (input[key] === undefined || (Array.isArray(input[key]) && input[key].length === 0)) delete input[key];
   }
   const out = runSteps(input);
+  assertDistinctLocalIds(out.device, `${name} expects a device`);
   const expect = { returns: out.returns, device: out.device, ended: out.ended };
   if (out.telemetry.length) expect.telemetry = out.telemetry;
   if (out.events.length) expect.events = out.events;

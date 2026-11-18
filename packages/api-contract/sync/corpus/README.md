@@ -101,10 +101,11 @@ characters; `tag` is 12 of `0-9a-z`.
   `self/probe` (§6.7). Every open run whose `startedAt ≤ serverNow − 600000` gets
   `endedAt := serverNow` at the server stamp; write `[]`.
 - `probe.capture {}` (`self/probe`, predicts `board`, `card`, `run`, `lap`, `day`),
-  `probe.captureTree {}` (`tree/<T>`, predicts `meta`, `tag`, `link`) and `probe.captureOverlay {}`
-  (`self/overlay/<T>`, predicts `mark`) — replica and server origin; `scopedEffects` and
-  `engine: "capture"` (engine.md §2.4): the platform runs the intent's ordinary deltas, checks and
-  consequences with no product command, write `[]`, and the result carries the scoped receipt (§6.4).
+  `probe.captureTree {}` (`tree/<T>`, predicts `meta`, `tag`, `link`, and `run` in the product scope)
+  and `probe.captureOverlay {}` (`self/overlay/<T>`, predicts `mark`) — replica and server origin;
+  `scopedEffects` and `engine: "capture"` (engine.md §2.4): the platform runs the intent's ordinary
+  deltas, checks and consequences with no product command, write `[]`, and the result carries the
+  scoped receipt (§6.4).
 - `probe.branch {parent: ref<board>, child: ref<board>, title}` — replica and server origin;
   `scopedEffects`, predicts `board` and `meta`. Discovery declares `tree:parent` and `tree:child`,
   replay or not.
@@ -1112,9 +1113,11 @@ A gesture any string of whose intents (scope, deltas, guards, command, `opts.ges
 value at any depth, holds U+0000 throws, before the cap check.
 
 **Ids and order.**
-- A gesture's id is `opts.gestureId`. Otherwise it is `g1`, `g2` and so on, counting within the
-  vector every commit that passes the cap check (a too-large refusal takes one; `changes: null`, a
-  throw, and a `scope-dead` or `cap` refusal take none).
+- A gesture's id is `opts.gestureId`. Otherwise it is the next of `g1`, `g2` and so on, counting
+  within the vector every commit that passes the cap check (a too-large refusal takes one;
+  `changes: null`, a throw, and a `scope-dead` or `cap` refusal take none), passing over every id an
+  outbox entry or a notice of any replica on the device already carries: a device never holds one
+  gesture id twice (engine.md §2.5). No input device holds two entries under one local id.
 - An entry's `localId` is `<gestureId>/<k>`, where `k` is the index of its intent in the gesture. A
   runner whose engine mints its own local ids maps them by gesture and index.
 - `commitOrder` is 1 plus the greatest in the outbox (1 when the outbox is empty). Sign-in appends

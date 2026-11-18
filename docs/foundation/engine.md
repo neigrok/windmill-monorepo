@@ -2125,7 +2125,9 @@ by recovery's lowering (step 1.5). The registers
 each entry wrote are determined for every entry before any register moves in a pass. Each restamped
 entry takes one new stamp `n`: a fresh tick of the recovering instance's clock, in commit order, or
 the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's `stamp`; a write-map
-restamp leaves the entry's `stamp` unchanged. For each register that moves from `o` to `n`:
+restamp leaves the entry's `stamp` unchanged. A register belongs to the scope its delta writes: an
+opted entry's projection is its own scope's, and steps 2–4 look in that scope, whatever the entry's
+origin. For each register that moves from `o` to `n`:
 1. the register takes `n`;
 2. if it is a create's life, the entry's `born` also becomes `n`, and every later held, ready or
    sent delta on the same `(t, id)` carrying `born = o` takes `n`;

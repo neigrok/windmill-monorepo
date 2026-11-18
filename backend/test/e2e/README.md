@@ -7,6 +7,7 @@
 | `deployment_conformance.mjs` | what engine.md asks of a deployment, directly and through the production Caddyfile |
 | `deploy_auth_env_test.py` | that `deploy.yml` forwards the native-auth settings |
 | `sync_probe.sh` | the sync engine against `windmill_server_probe` |
+| `sync_probe_scoped.mjs` | scoped predictions and receipts against `windmill_server_probe`, driven by the production browser engine: lost replies retried by the same replica and replayed by a new one, the three capture commands, a guarded write, and convergence of every scope |
 | `sync_epoch_restore.mjs` | real dump/restore and epoch rotation in both reconnect orders; production-server replicas replay independent/dependent work and retain wrong-incarnation notices; the test-clock composition also covers two starts that joined one session, their shared delete, and applied removals with and without an older acknowledgement |
 | `coach_live.py` | opt-in real-provider text setup and independent free/One photo flows on disposable accounts, including USD settlement, ownership, replay and telemetry; `backend/RUNNING.md` names the paid-run controls |
 | `anonymous_coach.py` | installation-scoped goal/program/photo, immutable replay, account isolation, bind attribution, individual/global USD pools, first-party events and privacy; supports a local deterministic provider or the manual paid verification below |
