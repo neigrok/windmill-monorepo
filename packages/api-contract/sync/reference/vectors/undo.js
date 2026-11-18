@@ -16,8 +16,9 @@ export const CARD = 'cardAAAA0001';
 
 export const target = (scope, t, id, kind, name) => ({ scope, t, id, slot: name === undefined ? { kind } : { kind, name } });
 
-// A bound replica and its server holding one board, one card and the board's tree.
-export function world({ rows = {} } = {}) {
+// A bound replica and its server holding one board, one card and the board's tree, and, given its rows, the
+// account's overlay of that tree.
+export function world({ rows = {}, overlay } = {}) {
   const confirmed = {
     'self/probe': [
       row({ t: 'board', id: BOARD, born: st(1000), life: ['alive', st(1000)], seq: 1 }),
@@ -30,10 +31,11 @@ export function world({ rows = {} } = {}) {
       ...(rows[TREE] ?? []),
     ],
   };
+  if (overlay) confirmed[`self/overlay/${BOARD}`] = overlay;
   const device = settle({ active: REPLICA, replicas: [{ meta: freshMeta(REPLICA, 'bound', 'A'), confirmed }] });
   const state = new ServerState(serverState({
-    scopes: { 'acct:A/probe': productScope('A'), [`tree:${BOARD}`]: treeScope('A', BOARD) },
-    rows: { 'acct:A/probe': confirmed['self/probe'], [`tree:${BOARD}`]: confirmed[TREE] },
+    scopes: { 'acct:A/probe': productScope('A'), [`tree:${BOARD}`]: treeScope('A', BOARD), ...(overlay ? { [`acct:A/overlay/${BOARD}`]: overlayScope('A', BOARD) } : {}) },
+    rows: { 'acct:A/probe': confirmed['self/probe'], [`tree:${BOARD}`]: confirmed[TREE], ...(overlay ? { [`acct:A/overlay/${BOARD}`]: overlay } : {}) },
   }));
   return { device, state };
 }
@@ -780,11 +782,121 @@ function revival() {
   return [offline, redrawn];
 }
 
+// A write map that redirects a governor moves the journal with the queue: an Undo requested, or a held act
+// cancelled, in the tree of a child board the server redirects follows it into the redirected tree.
+function redirected() {
+  const child = 'b_00000002';
+  const owned = 'b_00000009';
+  const sprout = { op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [], opts: {
+    cmd: { name: 'probe.sprout', args: { board: BOARD, tag: 'oak', child } },
+    predict: [{ op: 'create', t: 'board', id: child, f: { parent: { board: BOARD, tag: 'oak' } } }] } };
+  const ownedElsewhere = (session) => session.elsewhere({ scope: 'self/probe', cmd: { name: 'probe.sprout', args: { board: BOARD, tag: 'oak', child: owned } } });
+
+  const titled = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: `tree/${child}`, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Mine' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree',
+      targets: [{ target: target(`tree/${child}`, 'meta', 'meta', 'field', 'title'), defaultValue: '' }] }] }] } } };
+  const undone = ownedElsewhere(new Session(world())).local(sprout, titled, requestStep('g2', 5200));
+  undone.flush();
+  undone.pull([`tree/${owned}`]);
+  const followed = undone.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('an Undo requested before a write map redirects its act\'s tree follows the act into the redirected tree');
+  assert.deepEqual(followed.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(serverValue(undone, `tree:${owned}`, 'meta', 'meta', (r) => r.f.title[0]), '');
+  assert.ok(!JSON.stringify(activeOf(followed).inverses).includes(`tree/${child}`));
+
+  const created = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: `tree/${child}`, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }], opts: { hold: true } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: `tree/${child}`, t: 'tag', id: 'elm' } }] }] } } };
+  const redone = ownedElsewhere(new Session(world())).local(sprout, created, requestStep('g2', 5200));
+  redone.flush();
+  redone.local(requestStep('g3', 9500));
+  redone.flush();
+  redone.pull([`tree/${owned}`]);
+  const moved = redone.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a cancellation of a held act in a tree a write map then redirects keeps its Redo in the redirected tree');
+  assert.deepEqual(moved.expect.returns.at(-1), { kind: 'settled', requestId: 'g6', inverseActId: 'g5', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(serverValue(redone, `tree:${owned}`, 'tag', 'elm', (r) => r.f.label[0]), 'Elm');
+  assert.ok(!JSON.stringify(activeOf(moved).cancellations).includes(`tree/${child}`));
+  return [followed, moved];
+}
+
+// A recorded value that holds a typed reference follows the write map like the record that holds it: a mark's
+// `opens` (a ref<board>, as roadmap's pointer.opens is a ref<tree>) restored, written back or redone after the
+// server redirects the board it names, and a cancelled lap's runId after the server joins its run.
+function typedValues() {
+  const child = 'b_00000002';
+  const owned = 'b_00000009';
+  const overlay = `self/overlay/${BOARD}`;
+  const key = `acct:A/overlay/${BOARD}`;
+  const marked = () => world({ overlay: [row({ t: 'mark', id: 'oak', f: { done: [true, st(1400)], opens: [BOARD, st(1400)] }, seq: 1 })] });
+  const sprout = { op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [], opts: {
+    cmd: { name: 'probe.sprout', args: { board: BOARD, tag: 'oak', child } },
+    predict: [{ op: 'create', t: 'board', id: child, f: { parent: { board: BOARD, tag: 'oak' } } }] } };
+  const opens = (value, deviceNow, opts = {}) => ({ op: 'commitAct', deviceNow, segments: [{ scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'oak', f: { opens: value } }], opts }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreOverlay', targets: [{ target: target(overlay, 'mark', 'oak', 'field', 'opens') }] }] }] } } });
+  const session = () => new Session(marked()).elsewhere({ scope: 'self/probe', cmd: { name: 'probe.sprout', args: { board: BOARD, tag: 'oak', child: owned } } });
+  const opensOn = (run) => serverValue(run, key, 'mark', 'oak', (r) => r.f.opens[0]);
+  const settled = (requestId, inverseActId) => ({ kind: 'settled', requestId, inverseActId, changed: true, appliedCount: 1, skippedCount: 0 });
+
+  const restored = (early) => {
+    const run = session().local(sprout, opens(child, 5100), opens('b_00000003', 5200));
+    if (early) run.local(requestStep('g3', 5300));
+    run.flush();
+    if (!early) run.local(requestStep('g3', 9000));
+    run.flush();
+    return run;
+  };
+  const late = restored(false);
+  const preimage = late.local({ op: 'readInverseResult', requestId: 'g5' })
+    .vector('an Undo after a write map redirects the board its preimage names restores the redirected id');
+  assert.deepEqual(preimage.expect.returns.at(-1), settled('g5', 'g4'));
+  assert.equal(opensOn(late), owned);
+  const early = restored(true);
+  const reserved = early.local({ op: 'readInverseResult', requestId: 'g5' })
+    .vector('an Undo reserved before a write map redirects the board its operation names restores the redirected id');
+  assert.deepEqual(reserved.expect.returns.at(-1), settled('g5', 'g4'));
+  assert.equal(opensOn(early), owned);
+
+  const redone = session().local(sprout, opens(child, 5100));
+  redone.flush();
+  redone.local(requestStep('g2', 9000));
+  redone.flush();
+  redone.local(requestStep('g3', 9500));
+  redone.flush();
+  const written = redone.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a Redo after a write map redirects the board its act wrote writes back the redirected id');
+  assert.deepEqual(written.expect.returns.at(-1), settled('g6', 'g5'));
+  assert.equal(opensOn(redone), owned);
+
+  const cancelled = session().local(sprout, opens(child, 5100, { hold: true }), requestStep('g2', 5200));
+  cancelled.flush();
+  cancelled.local(requestStep('g3', 9500));
+  cancelled.flush();
+  const unit = cancelled.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a Redo of a held act cancelled before a write map redirects the board it wrote writes the redirected id');
+  assert.deepEqual(unit.expect.returns.at(-1), settled('g6', 'g5'));
+  assert.equal(opensOn(cancelled), owned);
+
+  const joined = new Session(world()).elsewhere({ scope: 'self/probe', cmd: { name: 'probe.start', args: { id: 'run00009', startedAt: 1500, join: false } } })
+    .local({ op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [], opts: { cmd: { name: 'probe.start', args: { id: 'run00002', startedAt: 5000, join: true } },
+      predict: [{ op: 'create', t: 'run', id: 'run00002', f: { startedAt: 5000 } }] } },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'create', t: 'lap', id: 'lap00001', f: { runId: 'run00002', at: 5100, weight: 40 } }], opts: { hold: true } }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restore', record: { scope: 'self/probe', t: 'lap', id: 'lap00001' } }] }] } } },
+    requestStep('g2', 5200));
+  joined.flush();
+  joined.local(requestStep('g3', 9500));
+  joined.flush();
+  const created = joined.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a Redo of a held creation cancelled before a write map joins the run it named creates it in the joined run');
+  assert.deepEqual(created.expect.returns.at(-1), settled('g6', 'g5'));
+  assert.equal(serverValue(joined, 'acct:A/probe', 'lap', 'lap00001', (r) => r.f.runId[0]), 'run00009');
+  return [preimage, reserved, written, unit, created];
+}
+
 export function files() {
   return {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...redirected(), ...typedValues()],
   };
 }

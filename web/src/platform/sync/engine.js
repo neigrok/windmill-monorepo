@@ -274,11 +274,11 @@ export class BrowserSyncEngine {
     this.installLifecycle();
     this.requestPersistence();
     this.telemetry.event('sync-start', { outcome: 'ok' });
-    // Requests still waiting at engine start stay visible: their count and the oldest one's age.
-    const waiting = this.device.activeReplica.inverses.filter(({ state }) => state !== 'settled');
-    if (first && waiting.length) {
-      this.telemetry.event('sync-inverse', { outcome: 'pending', count: waiting.length,
-        ageMs: Math.max(0, this.now() - Math.min(...waiting.map(({ requestedAt }) => requestedAt))) });
+    // Requests still waiting at engine start stay visible: how many wait, and the oldest one's age.
+    const unsettled = this.device.activeReplica.inverses.filter(({ state }) => state !== 'settled');
+    if (first && unsettled.length) {
+      this.telemetry.event('sync-inverse', { outcome: 'pending', waiting: unsettled.length,
+        ageMs: Math.max(0, this.now() - Math.min(...unsettled.map(({ requestedAt }) => requestedAt))) });
     }
     this.armHolds();
     await this.cleanupCredentials();
