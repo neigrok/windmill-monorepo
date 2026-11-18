@@ -1301,14 +1301,18 @@ public struct ProductSlot: Sendable { public let index: Int; public let scope: S
 - **Undo** is `undo(actId)`, `actId` the act's gesture id: an act whose entries are all still held is
   cancelled in place (`cancelled`); otherwise the engine reserves the inverse at once (`pending`, with whether
   the device's view changed) and it settles as the act's sources do (`settled`, with whether accepted effects
-  changed anything and how many operations applied and skipped). An act that did not opt in is
-  `unavailable`. `inverseResult(requestId)` reads the result as it stands.
-- **Redo** is `redo(requestId)`: the inverse of the Undo, which takes back only what the Undo applied, and
-  re-creates no terminal record. `productSlots` replaces the stored recipes whole, by the inverse act's source
-  ordinal, each with the scope that source wrote: a product's Redo of a creation names its own command and a
-  fresh id.
+  changed anything and how many operations applied and skipped). An Undo never erases a write the device had
+  not seen when it acted: such an operation skips, and counts. An act that did not opt in is `unavailable`.
+  `inverseResult(requestId)` reads the result as it stands.
+- **Redo** is `redo(requestId)`: the inverse of the Undo, which writes back the values the act wrote, only
+  where the Undo applied, and re-creates no terminal record. `productSlots` replaces the stored recipes whole,
+  by the inverse act's source ordinal, each with the scope that source wrote: a product's Redo of a creation
+  names its own command and a fresh id. A field target there must be one the act journaled. The Redo of a
+  held act cancelled in place writes back what the act's own writes took out; one whose act ran a product
+  command is `unavailable` (`product-redo-required`) without `productSlots`.
 - `release(actId)` tells the engine the product's stack no longer holds the act, so its journal and values go.
-  A product keeps its own stack of acts for its Undo and Redo keys; the engine keeps no stack.
+  A product keeps its own stack of acts for its Undo and Redo keys; the engine keeps no stack, and at its start
+  releases every act no unsettled request reads, since no product stack outlives its process.
 - The kit corpus's `run/undo.json` holds these results over the real engine and the reference server.
 
 ## §10 Drafts

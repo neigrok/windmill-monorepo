@@ -12,7 +12,7 @@
 //
 // Prereqs: npm ci --prefix web, psql "$WM_E2E_DB" -f db/schema.sql -f db/probe.sql, and the probe server running on it:
 //   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=8089 ./build/windmill_server_probe
-// Run:  WM_E2E_DB=<database name or postgresql:// URL> PORT=8089 node test/e2e/sync_probe_scoped.mjs
+// Run:  WM_E2E_DB=<database name or postgresql:// URL> PORT=8089 node test/e2e/sync_probe_undo.mjs
 
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';

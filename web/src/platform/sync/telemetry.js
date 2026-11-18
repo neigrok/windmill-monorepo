@@ -5,7 +5,7 @@ const EVENTS = new Set(['sync-start', 'sync-commit', 'sync-release', 'sync-undo'
   'sync-signout', 'sync-auth-paused', 'sync-upgrade', 'sync-persist', 'sync-leader',
   'sync-digest-mismatch', 'sync-push-malformed', 'sync-refused', 'sync-writer']);
 const OPERATIONS = new Set(['storage', 'transport', 'live', 'leadership', 'observer', 'auth']);
-const OUTCOMES = new Set(['ok', 'denied', 'unavailable', 'pending', 'paused', 'failed', 'acquired', 'released']);
+const OUTCOMES = new Set(['ok', 'denied', 'unavailable', 'pending', 'settled', 'paused', 'failed', 'acquired', 'released']);
 
 export function syncTelemetry({ event = (name, props) => track(name.replaceAll('-', '_'), props), failure = (operation) => captureError('sync', `sync-${operation}`, '', '/sync'),
   now = Date.now, limit = 30 } = {}) {
@@ -21,6 +21,8 @@ export function syncTelemetry({ event = (name, props) => track(name.replaceAll('
       const safe = {};
       if (['product', 'tree', 'overlay', 'device'].includes(props.scopeKind)) safe.scopeKind = props.scopeKind;
       for (const key of ['durationMs', 'queueMs']) if (Number.isSafeInteger(props[key]) && props[key] >= 0) safe[key] = Math.min(60_000, props[key]);
+      for (const key of ['applied', 'skipped', 'count']) if (Number.isSafeInteger(props[key]) && props[key] >= 0) safe[key] = Math.min(1_000, props[key]);
+      if (Number.isSafeInteger(props.ageMs) && props.ageMs >= 0) safe.ageMs = Math.min(2_592_000_000, props.ageMs);
       if (OUTCOMES.has(props.outcome)) safe.outcome = props.outcome;
       if (Number.isSafeInteger(props.seq) && props.seq >= 0) safe.seq = props.seq;
       try { event(name, safe); } catch { /* telemetry must not stop sync */ }

@@ -36,7 +36,7 @@ function admitted(name, { state, origin = A, intent, serverNow = NOW, limits, ef
     if (effectPlan?.fault) throw new Error('the fixture expected a technical contract fault');
     return vector(name, input, { result: outcome.result, state: outcome.state.toJSON() });
   } catch (error) {
-    if (!effectPlan?.fault || !['undeclared effect target', 'local check spans multiple scopes'].includes(error.message)) throw error;
+    if (!effectPlan?.fault || !['undeclared effect target', 'local check spans multiple scopes', 'an inverse command reports no outcome'].includes(error.message)) throw error;
     return vector(name, input, { fault: true, state });
   }
 }

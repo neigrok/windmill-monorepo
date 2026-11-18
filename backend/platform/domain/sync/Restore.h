@@ -54,5 +54,7 @@ std::optional<std::string> evidenceSkip(const EvidenceReader& read, const Json::
 
 // The command detail an inverse command answers with one outcome: applied, or skipped with its code.
 Json::Value inverseDetail(const std::optional<std::string>& skip);
+// Whether a command detail reports an inverse command's one outcome, as inverseDetail writes it.
+bool reportsInverseOutcome(const Json::Value& detail);
 
 }

@@ -4,7 +4,6 @@ import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { nextPush } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
 import { row, st } from '../oracle-adapters/fixtures.js';
 import { environment, until } from '../fakes.js';
-import { Device } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
 
 for (const act of [false, true]) test(`${act ? 'act segment' : 'raw commit'} runs once when scoped predictions require later target hydration`, async () => {
   const env = environment();
@@ -79,26 +78,26 @@ test('target observers receive scoped failures while retained notice content kee
   } finally { engine.close(); }
 });
 
-test('a malformed private scoped receipt reports one static transport failure before any ACK-side mutation', async () => {
+test('a malformed private scoped receipt acknowledges its entry with no receipt and reports it with no content', async () => {
   const env = environment(), engine = await BrowserSyncEngine.open(env.options);
   try {
     await engine.start(); await until(() => engine.leader);
     env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
     await engine.commit('self/probe', [], { cmd: { name: 'probe.capture', args: {} } });
     await engine.write(null, (device, ctx) => nextPush(device.activeReplica, ctx));
-    const expected = new Device(engine.device.toJSON());
     const reading = { wall: 1000, mono: 1000, boot: 'test' };
     const hello = { response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 1000,
       schema: 3, minSchema: 2 } }, timing: { send: reading, recv: reading } };
-    expected.activeReplica.takeOffsetSample(1000, hello.timing);
     env.transport.response = (endpoint) => endpoint === 'hello' ? hello : ({ response: { status: 200, body: {
       as: 'A', epoch: 'ep-1', serverTime: 9000, lastN: 1, results: [{ n: 1, s: 'ok', seq: 0, write: [],
         detail: { windmillKit: { v: 1, effects: [{ scope: 'tree/private-record-name', beforeSeq: null, seq: null, rows: [] }] } } }],
     } }, timing: { send: reading, recv: reading } });
     await engine.send();
-    assert.deepEqual(engine.device.toJSON(), expected.toJSON());
-    assert.deepEqual((await engine.store.read()).device.toJSON(), expected.toJSON());
-    assert.deepEqual(env.failures, ['transport']);
+    assert.deepEqual(engine.device.activeReplica.outbox, []);
+    assert.equal(engine.device.activeReplica.meta.ackThrough, 1);
+    assert.deepEqual((await engine.store.read()).device.toJSON(), engine.device.toJSON());
+    assert.deepEqual(env.failures, []);
+    assert.deepEqual(env.events.filter(({ name }) => name === 'sync-push-malformed'), [{ name: 'sync-push-malformed', props: {} }]);
     assert.equal(JSON.stringify(env.events).includes('private-record-name'), false);
   } finally { engine.close(); }
 });
