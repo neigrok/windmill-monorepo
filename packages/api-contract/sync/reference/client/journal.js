@@ -161,9 +161,19 @@ export function settleEnded(replica, code) {
 
 // §7.7 write map and E-8: the journal, its inverse requests and its cancellations follow the same logical map as
 // the queue. Each record a holder names is renamed in the scope it names, and a command input in the scope its
-// holder had, before that scope moves.
+// holder had, before that scope moves. A value recorded for a field (a preimage, a written value, a default, an
+// operation's earlier value, a redo value, a revival's registers) is renamed as that record's field would be,
+// so a typed reference it holds follows the map too.
 export function remapJournal(registry, replica, map) {
   const { references } = registry;
+  const registers = (address, f) => {
+    const holder = { t: address.t, id: structuredClone(address.id), f: structuredClone(f) };
+    references.remapRecord(address.scope, holder, map);
+    return holder.f;
+  };
+  const valueOf = (address, value) => (address.slot.kind === 'field' ? registers(address, { [address.slot.name]: [value, null] })[address.slot.name][0] : value);
+  const valuesOf = (address, values) => Object.fromEntries(Object.entries(registers(address,
+    Object.fromEntries(Object.entries(values).map(([name, value]) => [name, [value, null]])))).map(([name, [value]]) => [name, value]));
   const target = (holder) => {
     references.remapRecord(holder.scope, holder, map);
     holder.scope = map.scope(holder.scope);
@@ -173,10 +183,20 @@ export function remapJournal(registry, replica, map) {
     if (named?.kind === 'fieldAbsent') reference(named.recordBirth);
   };
   const recipe = (scope, item) => {
-    if (item.kind === 'fields') item.targets.forEach((each) => target(each.target));
+    if (item.kind === 'fields') {
+      for (const each of item.targets) {
+        if (Object.hasOwn(each, 'defaultValue')) each.defaultValue = valueOf(each.target, each.defaultValue);
+        target(each.target);
+      }
+    }
     if (item.kind === 'createdRecord') target(item.record);
     if (item.kind === 'restore') {
       for (const op of item.operations) {
+        if (op.kind === 'field') {
+          op.before = valueOf(op.target, op.before);
+          if (op.record?.f) op.record.f = registers(op.target, op.record.f);
+        }
+        if (op.kind === 'createRecord' && op.values.f) op.values.f = valuesOf(op.record, op.values.f);
         target(op.kind === 'field' ? op.target : op.record);
         reference(op.reference);
       }
@@ -194,8 +214,15 @@ export function remapJournal(registry, replica, map) {
     for (const source of act.sourceEntries) {
       for (const item of source.recipes) recipe(source.originScope, item);
       source.originScope = map.scope(source.originScope);
-      source.preimages.forEach((preimage) => target(preimage.target));
-      (source.written ?? []).forEach((item) => target(item.target));
+      for (const preimage of source.preimages) {
+        preimage.value = valueOf(preimage.target, preimage.value);
+        if (preimage.record?.f) preimage.record.f = registers(preimage.target, preimage.record.f);
+        target(preimage.target);
+      }
+      for (const item of source.written ?? []) {
+        item.value = valueOf(item.target, item.value);
+        target(item.target);
+      }
       for (const attempt of source.attempts) {
         for (const effect of attempt.acceptedEffects ?? []) {
           for (const row of effect.rows) references.remapRecord(effect.scope, row, map);
@@ -213,6 +240,10 @@ export function remapJournal(registry, replica, map) {
   for (const cancellation of replica.cancellations) {
     for (const source of cancellation.sourceEntries) source.originScope = map.scope(source.originScope);
     for (const unit of cancellation.units) {
+      if (unit.kind === 'field') {
+        unit.redoValue = valueOf(unit.target, unit.redoValue);
+        if (unit.restoredValue !== undefined) unit.restoredValue = valueOf(unit.target, unit.restoredValue);
+      } else if (unit.redoValues.f) unit.redoValues.f = valuesOf(unit.record, unit.redoValues.f);
       target(unit.kind === 'field' ? unit.target : unit.record);
       reference(unit.restored);
     }
