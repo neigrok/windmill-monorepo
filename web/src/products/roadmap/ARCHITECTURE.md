@@ -182,9 +182,11 @@ on, every room but the demo reads through `ReplicaReading`:
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
 - **Writes.** None reaches the replica yet; the room's gestures move onto the domain's actions in the next build. The
   room shows the owner's screens, and a gesture writes nothing and shows nothing it did not write: `RoomProgress.mark`
-  and the workspace's edits do nothing while `replicaRef` holds the reading, the legend's edits find no session and
-  write and say nothing, and the step document's Tree section offers no control (`treeActs` is null while nothing can
-  take a write).
+  and the workspace's edits do nothing while `replicaRef` holds the reading (a workspace control still emits its
+  `roadmap_board_workspace` step as the person acts), the legend's edits find no session and write and say nothing, a new
+  step's composer says *Couldn’t save. Your draft is kept.* (`BoardActs` reports no missing session where `readsReplica`
+  says there is none to find), and the step document's Tree section offers no control: `treeActs` is null while nothing
+  can take a write, the one way the owner's screens differ from today's (`SkillTreeView.replica.browser.test.js`).
 
 ## A step that opens a tree
 

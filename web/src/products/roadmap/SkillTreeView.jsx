@@ -244,7 +244,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   };
   const { held: boardHeld, acts: boardActs } = useBoardActs({
     readEditAuthority, readInlineDraft: () => draftHost?.store.getSnapshot()?.draft,
-    active: boardActive, graphActive: canvasView, owner, treeId, tree,
+    active: boardActive, graphActive: canvasView, owner, treeId, tree, readsReplica: replica && !demo,
     progress, query: boardQuery, session: sessionRef.current,
     completeStep: (id, options) => progressActs.complete(id, { ...options, tree: boardTree }),
     restoreStep: (id, snapshot) => progressActs.restore(id, snapshot),
