@@ -349,12 +349,12 @@ test('Chromium: scoped writer latency and pointer swaps stay independent of cach
   try {
     const page = await open(context, 'latency');
     const measurements = await page.evaluate(async () => {
-      const store = engine.store;
-      await store.transact((device) => {
+      await engine.store.transact((device) => {
         for (let n = 0; n < 4096; n++) device.activeReplica.putConfirmed('tree/b_00000001', { t: 'tag', id: `tag${n}`, seq: 1 });
       });
+      const store = await engine.store.reopen();
       const control = await store.transact((device) => { device.activeReplica.meta.authPaused = true; });
-      const scoped = await store.transact((device) => { device.activeReplica.confirmedRows('tree/b_00000001')[0].seq = 2; },
+      const scoped = await store.transact((device) => { device.activeReplica.putConfirmed('tree/b_00000001', { t: 'tag', id: 'tag0', seq: 2 }); },
         { scopes: [{ scope: 'tree/b_00000001', keys: ['["tag","tag0"]'] }] });
       await store.transact((device) => { device.activeReplica.staging['tree/b_00000001'] = { digest: 'replacement', rows: { replacement: { t: 'tag', id: 'replacement', seq: 3 } } }; });
       const swap = await store.transact((device) => {
@@ -362,6 +362,7 @@ test('Chromium: scoped writer latency and pointer swaps stay independent of cach
         delete device.activeReplica.staging['tree/b_00000001'];
       });
       const read = await store.read(['tree/b_00000001']);
+      store.close();
       return { control: control.measurement, scoped: scoped.measurement, swap: swap.measurement, rows: read.device.activeReplica.confirmedRows('tree/b_00000001') };
     });
     assert.equal(measurements.control.rowReads, 0);
