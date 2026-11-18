@@ -7,7 +7,7 @@ import works.windmill.sync.engine.*
 object NetworkCorpus {
     val paths = listOf("commit/grouping.json", "commit/retire.json", "commit/throws.json", "hold/release.json", "hold/undo.json",
         "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json", "refusal/base-unknown.json",
-        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json", "write/references.json")
+        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json", "write/references.json", "undo/journal.json", "undo/restore.json")
 
     fun handlers(registry: Registry): Map<String, Handler> = paths.associateWith { { input: Json -> run(registry, input) } }
 
@@ -68,7 +68,12 @@ object NetworkCorpus {
                         "release" -> Json.of(engine.release(step.member("localId").str()))
                         "releaseAll" -> { engine.releaseHeld(true); Json.Null }
                         "releaseDue" -> { engine.releaseHeld(); Json.Null }
+                        "commitAct" -> ClientCorpus.act(engine, step).also { if (it == null || it is ActCommitOutcome.Refused) { gestures = beforeGestures; consumed.putAll(beforeConsumed) } }
+                            ?.let(ClientCorpus::outcome) ?: Json.Null
                         "undo" -> Json.of(engine.undo(step.member("gestureId").str()))
+                        "requestInverse" -> engine.requestInverse(step.member("actId").str(), step["slots"]?.let(ClientCorpus::undoSegments)).json
+                        "readInverseResult" -> engine.readInverseResult(step.member("requestId").str()).json
+                        "releaseReversibleAct" -> Json.of(engine.releaseReversibleAct(step.member("actId").str()))
                         "dismiss" -> { engine.dismissNotice(step.member("id").str()); Json.Null }
                         "push" -> engine.nextPush(step["limit"]?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS).also { lastPush = it } ?: Json.Null
                         // A response with no push in the vector answers one its device sent before a restart, from the active replica.

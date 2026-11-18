@@ -39,6 +39,11 @@ fun Engine.nextPush(limit: Int = Constants.PUSH_MAX_INTENTS): Json? = write(Engi
         var back = heldBack(replica)
         for (entry in replica.entries().filter { it.state == "ready" }) {
             if (entry !in replica.outbox || entry.state != "ready") continue
+            if (entry.inverseOf != null) {
+                if (!passesBarrier(replica, entry)) break
+                back = heldBack(replica)
+                if (entry !in replica.outbox) continue
+            }
             if (entry in back) { if (entry.intent.command != null) break; continue }
             val n = replica.meta.member("nextN").long()
             val intent = entry.intent.copy(n = n)
@@ -122,8 +127,11 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
             for (result in results.subList(from, to)) {
                 val entry = replica.entries().firstOrNull { it.state == "sent" && it.json.member("n") == result.member("n") } ?: continue
                 if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
-                if (result.member("s").str() == "refused") onRefused(replica, entry, result, body)
-                else {
+                if (result.member("s").str() == "refused") {
+                    onRefused(replica, entry, result, body)
+                    if (entry !in replica.outbox) replica.retainOutcome(entry.id, Attempt(body.member("epoch").str(), result.member("n").long(), ok = false))
+                    replica.applyInverseResult(entry, result)
+                } else {
                     acceptPushResult(replica, entry, result, body.member("epoch"))
                     resolveIfCovered(replica, entry)
                 }
@@ -161,6 +169,7 @@ private fun Engine.validateAcknowledgement(replica: ReplicaState, body: Json) {
     for (result in body.items("results")) {
         val entry = replica.entries().firstOrNull { it.state == "sent" && it.json["n"] == result["n"] } ?: continue
         if (result.member("s").str() != "ok") continue
+        replica.checkInverseResult(entry, result)
         if (entry.predictions == null) { if (result["detail"]?.get("windmillKit") != null) throw JsonError("scoped-receipt"); continue }
         receipts(entry, result)
         if (body.jcs.encodeToByteArray().size > Constants.SCOPED_RESPONSE_MAX_BYTES) throw JsonError("scoped-response")
@@ -175,6 +184,8 @@ private fun Engine.acceptPushResult(replica: ReplicaState, entry: Entry, result:
     raiseAdmittedHigh(replica, entry.intent.deltas.flatMap { it.lattice.stamps })
     result["write"]?.let { applyWriteMap(replica, entry, it.arr()) }
     if (effects != null) applyReceipt(replica, entry, effects, result.items("write"))
+    replica.retainOutcome(entry.id, Attempt(epoch.str(), result.member("n").long(), ok = true, entry.acceptedEffects))
+    replica.applyInverseResult(entry, result)
 }
 
 private fun Engine.recoverPushEpoch(replica: ReplicaState, body: Json) {

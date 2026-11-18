@@ -258,11 +258,27 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     override fun undo(gestureId: String): Boolean = write(EngineOperation.undo) { replica ->
         val entries = replica.entries().filter { it.gestureId == gestureId }
         if (entries.isEmpty() || entries.any { it.state != "held" }) return@write false
+        undoHeld(replica, entries)
+        true
+    }
+    // A wholly held gesture never reached the server: its entries end undone, their dependents folded silently.
+    internal fun undoHeld(replica: ReplicaState, entries: List<Entry>) {
         val folded = silentFold(replica, entries)
         entries.forEach { replica.move(it, "undo", ended) }
         applySilentFold(replica, folded)
-        true
+        replica.settleEnded("undone")
     }
+    // §7.3 Undo of an act: cancels a wholly held act, or reserves, projects and, once its sources are authoritative, materializes its
+    // inverse slots. `inverseSlots`, by source ordinal, replaces the stored recipes whole (a product's Redo).
+    fun requestInverse(sourceActId: String, inverseSlots: List<UndoSegment>? = null): InverseResult = write(EngineOperation.undo) { replica ->
+        if (replica.state !in setOf("anon", "bound")) throw CommitFailure(CommitFailure.Kind.notWritable, replica.state)
+        requestInverse(replica, sourceActId, inverseSlots)
+    }
+    fun readInverseResult(requestId: String): InverseResult = lock.withLock { ensureOpen(); device.current().readInverseResult(requestId) }
+    // The product's stack no longer needs the act: its journal record and values go, once no unsettled inverse request reads them.
+    fun releaseReversibleAct(actId: String): Boolean = write(EngineOperation.undo) { it.releaseReversibleAct(actId) }
+    // A gesture id no entry, notice or journal record of the device carries yet.
+    internal fun freshGestureId(): String = generateSequence { opaqueID() }.first { !device.carriesGesture(it) }
     override fun dismissNotice(id: String) { write(EngineOperation.dismiss) { replica ->
         val at = replica.notices.indexOfFirst { it.member("id").str() == id }
         if (at < 0) throw CommitFailure.malformed("unknown-notice")
@@ -421,19 +437,23 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     fun materialized(scope: ScopeRef, mode: ViewMode): Json = lock.withLock {
         ensureOpen()
-        val replica = device.current()
+        val records = viewRecords(device.current(), scope, mode).values
+        Json.objectOf("records" to Json.Arr(records.map { it.first }), "visible" to Json.Arr(records.filter { it.second.isVisible }.map { it.first.recordKey.json }))
+    }
+    // A scope's records as a view shows them, by key: each in its view form (the lattice with its stamps, texts as their text, serials)
+    // beside the record a reader sees.
+    internal fun viewRecords(replica: ReplicaState, scope: ScopeRef, mode: ViewMode): Map<RecordKey, Pair<Json, Record>> {
         val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().flatMap { it.activeDeltas(scope) }.map { it.key }
         val outbox = outboxDeltas(replica, scope)
-        val records = allKeys.sorted().mapNotNull { key ->
+        return allKeys.sorted().mapNotNull { key ->
             val record = view(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: return@mapNotNull null
             val lattice = latticeView(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: Lattice()
-            Json.Obj(buildList {
+            key to (Json.Obj(buildList {
                 add("t" to Json.of(key.type)); add("id" to key.id.json); addAll(lattice.json.obj().toList())
                 if (record.texts.isNotEmpty()) add("x" to Json.Obj(record.texts.map { it.key to Json.of(it.value.text) }))
                 if (record.serials.isNotEmpty()) add("v" to Json.Obj(record.serials.toList()))
-            }) to record.isVisible
-        }
-        Json.objectOf("records" to Json.Arr(records.map { it.first }), "visible" to Json.Arr(records.filter { it.second }.map { it.first.recordKey.json }))
+            }) to record)
+        }.toMap()
     }
     fun sweepReleased(limit: Int = 128): Boolean = write(EngineOperation.storage) { store.sweepReleased(limit) }
     fun ended(): List<Json> = lock.withLock { ended.toList() }

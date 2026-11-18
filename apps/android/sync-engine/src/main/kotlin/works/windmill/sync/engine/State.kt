@@ -34,6 +34,8 @@ internal class Entry(var json: Json) {
     val scope get() = ScopeRef(json.member("scope"))
     val stamp get() = Stamp(json.member("stamp").str())
     val order get() = json.member("commitOrder").long()
+    // The inverse request whose slot this entry is (§7.3 Undo of an act), or null.
+    val inverseOf: String? get() = json["inverseOf"]?.str()
     var state: String
         get() = json.member("state").str()
         set(value) { json = json.with("state" to Json.of(value)) }
@@ -105,7 +107,17 @@ internal class ReplicaState(input: Json) {
     val spent = input.fields("spentIds").toMutableMap()
     val staging = input.fields("staging").toMutableMap()
     val device = input.fields("device").toMutableMap()
+    // K-3: the acts opted into Undo, the inverse requests that read them and the held cancellations' receipts (Journal.kt).
+    val journal = input.items("journal").map(::ReversibleAct).toMutableList()
+    val inverses = input.items("inverses").map(::InverseRequest).toMutableList()
+    val cancellations = input.items("cancellations").map(::CancellationReceipt).toMutableList()
     fun entries() = outbox.sortedBy { it.order }
+    fun entry(localId: String): Entry? = outbox.firstOrNull { it.id == localId }
+    // A gesture id an outbox entry, a notice (`notice:<gestureId>/<k>`), a reversible act, an inverse request or a cancellation carries.
+    fun carriesGesture(gestureId: String) = outbox.any { it.gestureId == gestureId } ||
+        notices.any { notice -> notice.member("id").str().removePrefix("notice:").substringBeforeLast('/') == gestureId } ||
+        journal.any { it.actId == gestureId } || inverses.any { it.requestId == gestureId || it.inverseActId == gestureId } ||
+        cancellations.any { it.inverseActId == gestureId }
     fun copy() = ReplicaState(json())
     fun json(): Json = Json.Obj(buildList {
         add("meta" to meta)
@@ -114,6 +126,9 @@ internal class ReplicaState(input: Json) {
         for ((key, values) in listOf("cursors" to cursors, "known" to known, "spentIds" to spent, "staging" to staging, "device" to device)) {
             if (values.isNotEmpty()) add(key to Json.Obj(values.toList()))
         }
+        if (journal.isNotEmpty()) add("journal" to Json.Arr(journal.sortedWith { a, b -> compareBytes(a.actId, b.actId) }.map { it.json }))
+        if (inverses.isNotEmpty()) add("inverses" to Json.Arr(inverses.sortedWith { a, b -> compareBytes(a.requestId, b.requestId) }.map { it.json }))
+        if (cancellations.isNotEmpty()) add("cancellations" to Json.Arr(cancellations.sortedWith { a, b -> compareBytes(a.inverseActId, b.inverseActId) }.map { it.json }))
     })
     fun move(entry: Entry, event: String, ended: MutableList<Json>, orphan: String? = null) {
         val next = Machines.intent.transition(entry.state, event)
@@ -145,8 +160,7 @@ internal class DeviceState(input: Json) {
         add("active" to (active?.let(Json::of) ?: Json.Null))
         add("replicas" to Json.Arr(replicas.sortedWith { a, b -> compareBytes(a.id, b.id) }.map { it.json() }))
     })
-    fun carriesGesture(id: String) = replicas.any { replica -> replica.outbox.any { it.gestureId == id } ||
-        replica.notices.any { notice -> notice.member("id").str().removePrefix("notice:").substringBeforeLast('/') == id } }
+    fun carriesGesture(id: String) = replicas.any { it.carriesGesture(id) }
 }
 
 internal fun freshReplica(id: String, account: String? = null) = ReplicaState(Json.objectOf("meta" to Json.Obj(buildList {

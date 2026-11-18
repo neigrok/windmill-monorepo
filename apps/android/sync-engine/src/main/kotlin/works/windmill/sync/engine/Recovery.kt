@@ -188,6 +188,7 @@ internal fun Engine.refuse(replica: ReplicaState, entry: Entry, event: String, c
     val orphan = entry.json["orphanOf"]?.str()
     replica.move(entry, event, ended, orphan)
     val folded = foldDependents(replica, entry, orphan ?: entry.id)
+    replica.settleEnded(if (orphan != null) "refused" else code)
     if (orphan != null) {
         if (folded.isEmpty()) return
         val index = replica.notices.indexOfFirst { it.member("id").str() == "notice:$orphan" }
@@ -349,6 +350,7 @@ internal fun Engine.applyWriteMap(replica: ReplicaState, command: Entry, write: 
         val mappings = if (entry in later) joins + replayed else joins
         if (mappings.isNotEmpty()) registry.rewriteEntry(entry, RecordMap(registry, mappings), replayed = if (entry in later) replayed else emptyList())
     }
+    if (joins.isNotEmpty() || replayed.isNotEmpty()) registry.remapJournal(replica, RecordMap(registry, joins + replayed))
     val own = joins + replayed.filter { it.from != it.id }
     val ownMap = RecordMap(registry, own)
     for (slot in command.slots().filter { it.prediction }) slot.delta = registry.references.remapRecord(command.scope, slot.delta, ownMap)
@@ -408,6 +410,7 @@ private fun Engine.applyScopedWriteMap(replica: ReplicaState, command: Entry, wr
         val replayed = moved.filter { it.first.previous != null }.map { it.second }
         for (entry in replica.laterUnacked(command).filter { it.queued() }) registry.rewriteEntry(entry, map, replayed = replayed)
         registry.rewriteEntry(command, map, predictionOnly = true)
+        registry.remapJournal(replica, map)
         rewriteDeviceValues(replica, command, mappings)
     }
     for (item in items) {

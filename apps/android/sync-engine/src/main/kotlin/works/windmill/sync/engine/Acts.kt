@@ -21,8 +21,8 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
             if (request == null || request.scopes.isEmpty()) return@write null to value
             if (request.holdMs < 0) throw CommitFailure.malformed("hold-length")
             if (request.gestureId?.let { device.carriesGesture(it) } == true) throw CommitFailure.malformed("gesture-id-taken")
-            var gestureId = request.gestureId ?: opaqueID()
-            while (request.gestureId == null && device.carriesGesture(gestureId)) gestureId = opaqueID()
+            val undo = planUndo(replica, request)
+            val gestureId = request.gestureId ?: freshGestureId()
             val firstOrder = (replica.outbox.maxOfOrNull { it.order } ?: 0) + 1
             val receipts = mutableListOf<ActSegmentReceipt>()
             val retired = mutableSetOf<String>()
@@ -41,8 +41,13 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
                 if (given.gestureId != null && given.gestureId != gestureId || given.hold && !request.hold)
                     throw CommitFailure.malformed("act-segment-identity-or-hold")
                 val gesture = given.copy(gestureId = gestureId, hold = request.hold, holdMs = request.holdMs)
+                // An opted segment runs as one scoped intent: under its own scopedEffects command, or else its scope kind's one capture command.
+                val opted = index in undo.orEmpty()
+                if (opted && gesture.command?.let { registry.command(it.name)?.scopedEffects != true } == true) throw CommitFailure.malformed("undo-command-scoped-effects")
+                val capture = if (opted && gesture.command == null) registry.commands.map(::CommandDef)
+                    .singleOrNull { it.engine == "capture" && it.scope == registry.scopeKind(scope) }?.name ?: throw CommitFailure.malformed("undo-capture-command") else null
                 val before = replica.meta
-                val outcome = try { commitGesture(replica, scope, gesture, at, localCount, firstOrder) }
+                val outcome = try { commitGesture(replica, scope, gesture, at, localCount, firstOrder, capture) }
                     catch (_: IllegalArgumentException) { throw CommitFailure.malformed("invalid-value") }
                 when (outcome) {
                     is CommitOutcome.Refused -> throw ActRefusal(ActCommitOutcome.Refused(index, outcome.code, outcome.detail))
@@ -56,6 +61,7 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
                     }
                 }
             }
+            if (wrote && undo != null) recordAct(replica, gestureId, undo, receipts)
             val receipt = ActReceipt(gestureId, receipts, retired.toList(), superseded.toList(),
                 if (request.hold && localCount > 0) at - replica.meta.member("serverOffsetMs").long() + request.holdMs else null)
             (if (wrote) ActCommitOutcome.Committed(receipt) else null) to value
@@ -64,6 +70,40 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
         report(EngineOperation.commit, EngineOutcome.refused, refusal.refusal.code.text)
         return refusal.refusal to prepared!!.second
     } catch (body: ActBodyError) { throw body.error }
+}
+
+// One act segment opted into Undo: its recipes and the first local preimages its field targets read before the act.
+private class UndoPlan(val scope: ScopeRef, val recipes: List<UndoRecipe>, val preimages: List<Preimage>)
+
+// ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's initial snapshot (§7.3 Undo of
+// an act). A slot unset there takes the target's explicit default; with none, the act fails before anything changes. By segment index.
+private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int, UndoPlan>? {
+    val segments = request.undo ?: return null
+    val plan = linkedMapOf<Int, UndoPlan>()
+    for (segment in segments) {
+        if (segment.index !in request.scopes.indices || segment.index in plan || segment.recipes.isEmpty()) throw CommitFailure.malformed("undo-segment")
+        val scope = request.scopes[segment.index]
+        val view = drawn(replica, scope)
+        for (recipe in segment.recipes) {
+            try { recipe.check(registry, scope) } catch (_: IllegalArgumentException) { throw CommitFailure.malformed("undo-recipe") }
+            if (recipe is UndoRecipe.CreatedRecord && recipe.record.key in view) throw CommitFailure.malformed("undo-created-record-exists")
+        }
+        val preimages = segment.recipes.filterIsInstance<UndoRecipe.Fields>().flatMap { it.targets }.map { (target, defaultValue) ->
+            Preimage(target, view[target.key]?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"))
+        }
+        plan[segment.index] = UndoPlan(scope, segment.recipes, preimages)
+    }
+    return plan
+}
+
+// The act's journal record, from the segments that left an entry: one source entry each, in commit order. An act that left none records nothing.
+private fun recordAct(replica: ReplicaState, actId: String, plan: Map<Int, UndoPlan>, receipts: List<ActSegmentReceipt>) {
+    val sources = plan.toSortedMap().mapNotNull { (index, segment) ->
+        val localIds = receipts[index].localIds
+        if (localIds.size > 1) throw CommitFailure.malformed("undo-segment-intents")
+        localIds.singleOrNull()?.let { SourceEntry(it, segment.scope, segment.recipes, segment.preimages) }
+    }
+    if (sources.isNotEmpty()) replica.journal.add(ReversibleAct(actId, true, sources))
 }
 
 internal class ActReadContext(private val engine: Engine, private val state: ReplicaState, override val now: Long) : ActContext {

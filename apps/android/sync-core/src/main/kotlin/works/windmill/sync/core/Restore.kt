@@ -24,16 +24,16 @@ data class RecordAddress(val scope: ScopeRef, val key: RecordKey) {
 }
 
 // A register of a record: the unit an Undo writes back.
-data class Target(val record: RecordAddress, val slot: Slot) {
+data class RecordSlot(val record: RecordAddress, val slot: Slot) {
     constructor(json: Json) : this(RecordAddress(json), Slot(json.member("slot")))
     val scope: ScopeRef get() = record.scope
     val key: RecordKey get() = record.key
     val json: Json get() = record.json.with("slot" to slot.json)
 
     companion object {
-        fun read(json: Json): Target {
+        fun read(json: Json): RecordSlot {
             json.expectKeys(listOf("scope", "t", "id", "slot"))
-            return Target(RecordAddress(json), Slot.read(json.member("slot")))
+            return RecordSlot(RecordAddress(json), Slot.read(json.member("slot")))
         }
     }
 }
@@ -87,7 +87,7 @@ sealed interface UndoRecipe {
         override val json: Json get() = Json.objectOf("kind" to Json.of("fields"), "restoreCommand" to Json.of(restoreCommand), "targets" to Json.Arr(targets.map(FieldTarget::json)))
     }
     // A target and the product's value equivalent to unset; null stands for no default, Json.Null for the value null.
-    data class FieldTarget(val target: Target, val defaultValue: Json? = null) {
+    data class FieldTarget(val target: RecordSlot, val defaultValue: Json? = null) {
         val json: Json get() = Json.objectOf("target" to target.json).with("defaultValue" to defaultValue)
     }
     // A record the act creates, deleted again while its own receipts prove it unchanged.
@@ -137,7 +137,7 @@ sealed interface UndoRecipe {
                 json.expectKeys(listOf("kind", "restoreCommand", "targets"))
                 Fields(json.member("restoreCommand").str(), json.member("targets").arr().map { item ->
                     item.expectKeys(listOf("target"), listOf("defaultValue"))
-                    FieldTarget(Target.read(item.member("target")), item["defaultValue"])
+                    FieldTarget(RecordSlot.read(item.member("target")), item["defaultValue"])
                 })
             }
             "createdRecord" -> {
@@ -154,14 +154,14 @@ sealed interface UndoRecipe {
 }
 
 // The evidence a product inverse recipe selects: the owned fields, created records and created scopes its command needs proven.
-data class EvidenceSelection(val ownedFields: List<Target>, val unchangedCreatedRecords: List<RecordAddress>, val unchangedCreatedScopes: List<ScopeRef>) {
-    val json: Json get() = Json.objectOf("ownedFields" to Json.Arr(ownedFields.map(Target::json)),
+data class EvidenceSelection(val ownedFields: List<RecordSlot>, val unchangedCreatedRecords: List<RecordAddress>, val unchangedCreatedScopes: List<ScopeRef>) {
+    val json: Json get() = Json.objectOf("ownedFields" to Json.Arr(ownedFields.map(RecordSlot::json)),
         "unchangedCreatedRecords" to Json.Arr(unchangedCreatedRecords.map(RecordAddress::json)), "unchangedCreatedScopes" to Json.Arr(unchangedCreatedScopes.map(ScopeRef::json)))
 
     companion object {
         fun read(json: Json): EvidenceSelection {
             json.expectKeys(listOf("ownedFields", "unchangedCreatedRecords", "unchangedCreatedScopes"))
-            return EvidenceSelection(json.member("ownedFields").arr().map(Target::read), json.member("unchangedCreatedRecords").arr().map(RecordAddress::read),
+            return EvidenceSelection(json.member("ownedFields").arr().map(RecordSlot::read), json.member("unchangedCreatedRecords").arr().map(RecordAddress::read),
                 json.member("unchangedCreatedScopes").arr().map(::ScopeRef))
         }
     }
@@ -338,7 +338,7 @@ data class RestoreArguments(val expectedEpoch: String, val operations: List<Rest
 // prove its created records and scopes unchanged since.
 data class Evidence(val expectedEpoch: String, val ownedFields: List<OwnedField>, val unchangedCreatedRecords: List<CreatedRecordProof>,
     val unchangedCreatedScopes: List<CreatedScopeProof>) {
-    data class OwnedField(val target: Target, val version: SlotVersion) {
+    data class OwnedField(val target: RecordSlot, val version: SlotVersion) {
         val json: Json get() = Json.objectOf("target" to target.json, "version" to version.json)
     }
     data class CreatedRecordProof(val record: RecordAddress, val rowSeq: Long, val footprint: List<EffectSlot>) {
@@ -368,7 +368,7 @@ data class Evidence(val expectedEpoch: String, val ownedFields: List<OwnedField>
             return Evidence(json.member("expectedEpoch").epoch(),
                 json.member("ownedFields").arr().map { item ->
                     item.expectKeys(listOf("target", "version"))
-                    val target = Target.read(item.member("target")).also { it.record.check(registry) }
+                    val target = RecordSlot.read(item.member("target")).also { it.record.check(registry) }
                     OwnedField(target, SlotVersion.read(target.slot, item.member("version")))
                 },
                 json.member("unchangedCreatedRecords").arr().map { item ->
