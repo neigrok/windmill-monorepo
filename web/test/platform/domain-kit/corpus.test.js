@@ -12,7 +12,7 @@ import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { environment } from '../sync/fakes.js';
 import { Decision, IDSource, decision, refusalSubject } from '../../../src/platform/domain-kit/actions.js';
 import { Draft, SaveDraft } from '../../../src/platform/domain-kit/drafts.js';
-import { DecodeError, Fields, Id } from '../../../src/platform/domain-kit/entities.js';
+import { DecodeError, Id } from '../../../src/platform/domain-kit/entities.js';
 import { Plan, PlanError, Prediction, UndoRecipe, UndoTarget } from '../../../src/platform/domain-kit/plans.js';
 import { ProbeProduct } from '../../../../packages/api-contract/sync/reference/probe/product.js';
 import { Harness } from './harness.js';
@@ -280,7 +280,8 @@ async function undoVector(input) {
     for (const scope of input.observe ?? []) phone.observe(scope);
     const plans = (/** @type {any[]} */ segments) => segments.map((item) => {
       const plan = build(item, phone.runner.moment());
-      if (item.undo) plan.undoBy(...item.undo.map(undoRecipeOf));
+      if (item.undo?.length) plan.undoBy(...item.undo.map(undoRecipeOf));
+      else if (item.undo) plan.evidenceForUndo();
       return new ScopedPlan(item.scope, plan);
     });
     for (const setup of input.before ?? []) {
@@ -291,7 +292,14 @@ async function undoVector(input) {
     let actId = null;
     let outcome;
     try {
-      if (input.reversible !== undefined) {
+      if (input.save) {
+        const type = probeEntity(input.save.t);
+        const opened = phone.runner.open(type, new Id(input.save.id, type), input.save.scope ?? probeScope(type));
+        if (opened === null) throw new ContractError('a save opens a record the phone holds');
+        const saved = await phone.runner.save(opened.edit(() => probeValue(type, input.save.id, input.save.current)), ProbeRefusals);
+        outcome = { kind: saved.result.kind };
+        if (saved.result.kind === 'saved' && saved.result.receipt !== null) actId = saved.result.receipt.gestureId;
+      } else if (input.reversible !== undefined) {
         const segment = plans(input.segments)[0];
         if (segment === undefined) throw new ContractError('a single action names one segment');
         const ran = await phone.runner.run({ scope: segment.scope, refusals: ProbeRefusals, reversible: input.reversible,
@@ -320,7 +328,7 @@ async function undoVector(input) {
       }
     }
     const records = input.inspect.map((/** @type {any} */ item) => phone.runner.read(item.scope, (read) => read.repository(probeEntity(item.t)).all('drawn')
-      .map((record) => ({ id: record.id.json, title: record.fields().title ?? null }))));
+      .map((record) => ({ id: record.id.json, [item.field ?? 'title']: record.fields()[item.field ?? 'title'] ?? null }))));
     return { outcome, results, records };
   } finally { for (const each of phone.world.phones) each.engine.close(); }
 }
@@ -368,16 +376,7 @@ function saveVector(input) {
       .edit(() => probeValue(type, form.id, form.current ?? {})), ProbeRefusals)
     : SaveDraft.creating(probeValue(type, form.id, form.f ?? {}), ProbeRefusals, placementOf(form.placement), probeScope(type));
   const views = vectorViews({ drawn: input.drawn, stored: input.stored });
-  const repository = new Reader(views, probeScope(type), momentOf(input)).repository(type);
-  const folded = repository.record(form.id, 'stored');
-  const loaded = {
-    drawn: repository.find(save.id, 'drawn'),
-    stored: repository.find(save.id, 'stored'),
-    folded: folded ? type.decode(Fields.record(folded)) : null,
-    anchor: recordID(input.anchor),
-    moment: momentOf(input),
-    definition: /** @type {NonNullable<ReturnType<typeof probeRegistry.type>>} */ (probeRegistry.type(type.type)),
-  };
+  const loaded = { ...save.load(new Reader(views, probeScope(type), momentOf(input))), anchor: recordID(input.anchor) };
   return { decision: decisionForm(decision(save, loaded, new IDSource(views)), probeScope(type), savedForm, refusalForm) };
 }
 

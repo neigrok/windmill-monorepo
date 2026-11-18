@@ -226,6 +226,7 @@ export class Plan {
     this.supersededGestures = [];
     /** @type {UndoRecipe[]} */
     this.undoRecipes = [];
+    this.undoEvidence = false;
   }
 
   // §8.4: a plan running a command, its string arguments normalised by the command's specs; a
@@ -334,9 +335,17 @@ export class Plan {
     this.undoRecipes.push(...recipes);
   }
 
+  // K-3: names the plan's segment for its act's Undo with no recipe of its own. The engine journals the segment's
+  // receipts, which prove what another segment's command recipe names as evidence, such as a scope the act created
+  // and this segment wrote.
+  evidenceForUndo() {
+    this.undoEvidence = true;
+  }
+
   /** @returns {{ version: 1, recipes: readonly UndoRecipe[] } | null} */
   get undo() {
-    return this.undoRecipes.length ? Object.freeze({ version: 1, recipes: Object.freeze([...this.undoRecipes]) }) : null;
+    if (this.undoRecipes.length === 0 && !this.undoEvidence) return null;
+    return Object.freeze({ version: 1, recipes: Object.freeze([...this.undoRecipes]) });
   }
 
   /**
