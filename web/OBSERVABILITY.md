@@ -26,7 +26,7 @@ refusal text never enter telemetry properties.
 | Events | Meaning |
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
-| `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with their `count` and the oldest one's `ageMs` |
+| `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with how many are `waiting` and the oldest one's `ageMs` |
 | `sync-signin`, `sync-signout`, `sync-auth-paused` | Lineage decisions and authentication transitions |
 | `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
 | `sync-refused`, `sync-push-malformed` | Terminal refusals, and malformed push responses or receipts: a 400, or a `200` whose receipt or inverse outcomes the replica cannot read, which still acknowledges its entry |
@@ -34,7 +34,7 @@ refusal text never enter telemetry properties.
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
 
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
-integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `count` (capped at
+integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
 1,000), `ageMs` (capped at 30 days), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `settled`,
 `paused`, `failed`, `acquired`, `released`). No id or value of an act, request or record enters them.
 Failures use only the static operations `storage`, `transport`, `live`, `leadership`,

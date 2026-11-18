@@ -21,7 +21,7 @@ export function syncTelemetry({ event = (name, props) => track(name.replaceAll('
       const safe = {};
       if (['product', 'tree', 'overlay', 'device'].includes(props.scopeKind)) safe.scopeKind = props.scopeKind;
       for (const key of ['durationMs', 'queueMs']) if (Number.isSafeInteger(props[key]) && props[key] >= 0) safe[key] = Math.min(60_000, props[key]);
-      for (const key of ['applied', 'skipped', 'count']) if (Number.isSafeInteger(props[key]) && props[key] >= 0) safe[key] = Math.min(1_000, props[key]);
+      for (const key of ['applied', 'skipped', 'waiting']) if (Number.isSafeInteger(props[key]) && props[key] >= 0) safe[key] = Math.min(1_000, props[key]);
       if (Number.isSafeInteger(props.ageMs) && props.ageMs >= 0) safe.ageMs = Math.min(2_592_000_000, props.ageMs);
       if (OUTCOMES.has(props.outcome)) safe.outcome = props.outcome;
       if (Number.isSafeInteger(props.seq) && props.seq >= 0) safe.seq = props.seq;
