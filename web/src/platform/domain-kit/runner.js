@@ -347,7 +347,8 @@ export class ActionRunner {
     return this.open(type, id, actual) ?? Draft.new(blank, null, actual);
   }
 
-  // The draft's one door (INV-14): its save as one commit, answering the result and the draft after it.
+  // The draft's one door (INV-14): its save as one commit, answering the result and the draft after it. A type
+  // that saves reversibly saves through the act path, so the receipt's gesture id is the act an Undo names.
   /**
    * @template {import('./entities.js').Writable<any>} E
    * @template R
@@ -361,7 +362,7 @@ export class ActionRunner {
     /** @type {import('./actions.js').Outcome<import('./drafts.js').Saved, R>} */
     let outcome;
     try {
-      outcome = await this.perform(save);
+      outcome = await this.run(save);
     } catch (error) {
       if (error instanceof Fault || error instanceof PlanError || error instanceof DecodeError) throw error;
       return { result: SaveResult.failed(error), draft };

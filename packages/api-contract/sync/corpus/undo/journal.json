@@ -8074,7 +8074,16 @@
                         },
                         "value": "alive",
                         "rowSeq": 2,
-                        "epoch": "ep-1"
+                        "epoch": "ep-1",
+                        "record": {
+                          "born": "1300:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "label": [
+                              "Oak",
+                              "1300:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
                       }
                     ],
                     "written": [

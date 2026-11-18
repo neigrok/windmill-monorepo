@@ -1,6 +1,6 @@
 import { CONSTANTS } from '../core/constants.js';
 import { mintId } from '../core/derive.js';
-import { recipeFault, valueIn } from '../core/restore.js';
+import { recipeFault, recordValues, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError, commitGesture } from './commit.js';
 import { drawn, stored } from './views.js';
@@ -18,9 +18,10 @@ function captureCommandOf(registry, scope) {
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
 // initial snapshot (§7.1 Ordered local acts), each with the sequence of the confirmed row it was read over (null
-// where none is confirmed) and the server epoch that sequence counts in. A slot unset there takes the recipe's
-// explicit default; with none, the act fails before anything changes. Answers the plan by segment index, or
-// null.
+// where none is confirmed) and the server epoch that sequence counts in; a life's preimage also keeps the record
+// as read, which a revival draws. A slot unset there takes the recipe's explicit default; with none, the act
+// fails before anything changes. A segment named with no recipes is journaled for its receipts alone, as
+// evidence, and an act names at least one recipe. Answers the plan by segment index, or null.
 function planUndo(replica, registry, request) {
   const { undo } = request;
   if (undo === undefined || undo === null) return null;
@@ -30,7 +31,7 @@ function planUndo(replica, registry, request) {
   for (const segment of undo.segments) {
     if (!isObject(segment) || Object.keys(segment).sort().join() !== 'index,recipes' || !Number.isSafeInteger(segment.index)
       || segment.index < 0 || segment.index >= request.scopes.length || plan.has(segment.index)
-      || !Array.isArray(segment.recipes) || segment.recipes.length === 0) throw new CommitError('an undo segment names one act segment and its recipes');
+      || !Array.isArray(segment.recipes)) throw new CommitError('an undo segment names one act segment and its recipes');
     const scope = request.scopes[segment.index];
     const view = drawn(replica, registry, scope);
     const preimages = [];
@@ -40,14 +41,17 @@ function planUndo(replica, registry, request) {
       if (recipe.kind === 'createdRecord' && view.has(recordKey(recipe.record.t, recipe.record.id))) throw new CommitError('a created record exists before its act');
       if (recipe.kind !== 'fields') continue;
       for (const { target, defaultValue } of recipe.targets) {
-        const value = valueIn(view.get(recordKey(target.t, target.id)), target.slot);
+        const read = view.get(recordKey(target.t, target.id));
+        const value = valueIn(read, target.slot);
         if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
         preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue),
-          rowSeq: replica.confirmedRow(target.scope, target.t, target.id)?.seq ?? null, epoch: replica.meta.serverEpoch });
+          rowSeq: replica.confirmedRow(target.scope, target.t, target.id)?.seq ?? null, epoch: replica.meta.serverEpoch,
+          ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) });
       }
     }
     plan.set(segment.index, { scope, recipes: structuredClone(segment.recipes), preimages });
   }
+  if (undo.segments.every((segment) => segment.recipes.length === 0)) throw new CommitError('an act opts into Undo with at least one recipe');
   return plan;
 }
 

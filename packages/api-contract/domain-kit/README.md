@@ -177,6 +177,14 @@ A present-again create (§10.2 step 5) edits a text field from the base's text (
 `wholePut` type (`fact`) is saved whole (§10.2 step 1): every field, its timestamp at the vector's `now` as `Valid` gives
 it, whatever it touched and whatever the records hold.
 
+A `write` decision whose plan opts into Undo also names `undo`, the plan's recipes as `translateUndo` gives them.
+`ReversibleCard` (`t: "reversibleCard"`), `ReversibleDay` (`t: "reversibleDay"`) and `ReversibleMark`
+(`t: "reversibleMark"`) are `Card`, `Day` and `Mark` with `savesReversibly: true` (`ReversibleCard` unguarded and
+checking `title` and `body` only): a reversible save names `createdRecord` for a record it creates where no record
+was and a delete can take it back, and otherwise `fields` over what it writes, a text by its `text` slot, each
+defaulting to the draft base's value, with the life (default `dead`) of a record it brings back to life
+(§10.2 Reversible).
+
 ### `draft/script.json`
 
 `{t, drawn, stored, now?, offsetSeconds?, ops}` → `{steps}`, one per operation: `{draft}` (null when
@@ -260,7 +268,11 @@ restoreCommand, t, id}` or `{kind: command, command, input, evidence: {ownedFiel
 unchangedCreatedScopes}}`, a target or record without `scope` living in its segment's. `reversible` (true or
 false) runs the one segment as a single action through `ActionRunner.run`, with or without the action's
 `reversible` declaration; without it the act runs through `runAct`. `observe` names scopes every device follows.
+A segment whose `undo` is `[]` is named for evidence alone (`evidenceForUndo`). `save: {t, id, scope?, current}`
+replaces `segments`: the phone opens the record's draft, edits `current` over it and saves it through
+`ActionRunner.save`, the act being the save's; its outcome is `{kind}` of the `SaveResult`.
 `steps` run in order over the real local engine and the reference server: `sync`, `undo` (of the act),
 `redo` (of the last request) and `read` (the last request's result). The output names the act's outcome, each
-step's `InverseResult` without its engine-drawn ids, and inspected records as `{id, title}`. A plan that opts
-into Undo outside a reversible action is a programming fault, `{error: true}`.
+step's `InverseResult` without its engine-drawn ids, and inspected records as `{id, <field>}`, `field` an
+inspect item's (default `title`). A plan that opts into Undo outside a reversible action is a programming fault,
+`{error: true}`.

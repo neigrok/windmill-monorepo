@@ -1404,5 +1404,584 @@
     "expect": {
       "decision": {"refuse": {"violation": {"rule": "fact.value", "path": "value", "reason": "above", "max": 500}}}
     }
+  },
+  {
+    "name": "reversible: an edited mark's save opts into Undo of the text it changed, back to the draft base's value",
+    "input": {
+      "draft": {
+        "t": "reversibleMark",
+        "id": "oak",
+        "base": {
+          "done": null,
+          "memo": "buy milk"
+        },
+        "current": {
+          "done": null,
+          "memo": "buy milk and eggs"
+        },
+        "isNew": false
+      },
+      "drawn": [
+        {
+          "t": "mark",
+          "id": "oak",
+          "seq": 1,
+          "f": {
+            "done": [
+              null,
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "x": {
+            "memo": {
+              "text": "buy milk",
+              "rev": 1,
+              "merged": false
+            }
+          }
+        }
+      ],
+      "stored": [
+        {
+          "t": "mark",
+          "id": "oak",
+          "seq": 1,
+          "f": {
+            "done": [
+              null,
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "x": {
+            "memo": {
+              "text": "buy milk",
+              "rev": 1,
+              "merged": false
+            }
+          }
+        }
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "write",
+                "t": "mark",
+                "id": "oak",
+                "x": {
+                  "memo": {
+                    "text": "buy milk and eggs",
+                    "from": "buy milk"
+                  }
+                }
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restoreOverlay",
+              "targets": [
+                {
+                  "target": {
+                    "scope": "self/overlay/b_00000001",
+                    "t": "mark",
+                    "id": "oak",
+                    "slot": {
+                      "kind": "text",
+                      "name": "memo"
+                    }
+                  },
+                  "defaultValue": "buy milk"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "values": {
+              "memo": "buy milk and eggs"
+            },
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "reversible: a new mark with no record opts into Undo of each field it writes, an unset one taking the blank's value",
+    "input": {
+      "draft": {
+        "t": "reversibleMark",
+        "id": "oak",
+        "base": {},
+        "current": {
+          "done": true,
+          "memo": "hello"
+        },
+        "isNew": true
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "write",
+                "t": "mark",
+                "id": "oak",
+                "f": {
+                  "done": true
+                },
+                "x": {
+                  "memo": {
+                    "text": "hello",
+                    "from": ""
+                  }
+                }
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restoreOverlay",
+              "targets": [
+                {
+                  "target": {
+                    "scope": "self/overlay/b_00000001",
+                    "t": "mark",
+                    "id": "oak",
+                    "slot": {
+                      "kind": "field",
+                      "name": "done"
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "target": {
+                    "scope": "self/overlay/b_00000001",
+                    "t": "mark",
+                    "id": "oak",
+                    "slot": {
+                      "kind": "text",
+                      "name": "memo"
+                    }
+                  },
+                  "defaultValue": ""
+                }
+              ]
+            }
+          ],
+          "result": {
+            "values": {
+              "done": true,
+              "memo": "hello"
+            },
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "reversible: a new card's save opts into Undo by deleting the record it creates",
+    "input": {
+      "draft": {
+        "t": "reversibleCard",
+        "id": "cardN001",
+        "base": {},
+        "current": {
+          "title": "Plan"
+        },
+        "isNew": true,
+        "placement": "bottom"
+      },
+      "drawn": [
+        {
+          "t": "card",
+          "id": "cardA001",
+          "seq": 1,
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a0",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Alpha",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "body": [
+              "x",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "tier": [
+              "draft",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ],
+      "stored": [
+        {
+          "t": "card",
+          "id": "cardA001",
+          "seq": 1,
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a0",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Alpha",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "body": [
+              "x",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "tier": [
+              "draft",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ],
+      "anchor": "cardA001"
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "create",
+                "t": "card",
+                "id": "cardN001",
+                "f": {
+                  "body": "",
+                  "claim": null,
+                  "size": null,
+                  "tier": "draft",
+                  "title": "Plan"
+                },
+                "anchor": {
+                  "field": "ord",
+                  "below": "cardA001"
+                }
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "undo": [
+            {
+              "kind": "createdRecord",
+              "restoreCommand": "probe.restore",
+              "record": {
+                "scope": "self/probe",
+                "t": "card",
+                "id": "cardN001"
+              }
+            }
+          ],
+          "result": {
+            "values": {
+              "title": "Plan",
+              "body": "",
+              "size": null,
+              "claim": null,
+              "tier": "draft"
+            },
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "reversible: an untouched draft writes nothing, so nothing opts into Undo",
+    "input": {
+      "draft": {
+        "t": "reversibleMark",
+        "id": "oak",
+        "base": {
+          "done": null,
+          "memo": "buy milk"
+        },
+        "current": {
+          "done": null,
+          "memo": "buy milk"
+        },
+        "isNew": false
+      },
+      "drawn": [
+        {
+          "t": "mark",
+          "id": "oak",
+          "seq": 1,
+          "f": {
+            "done": [
+              null,
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "x": {
+            "memo": {
+              "text": "buy milk",
+              "rev": 1,
+              "merged": false
+            }
+          }
+        }
+      ],
+      "stored": [
+        {
+          "t": "mark",
+          "id": "oak",
+          "seq": 1,
+          "f": {
+            "done": [
+              null,
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "x": {
+            "memo": {
+              "text": "buy milk",
+              "rev": 1,
+              "merged": false
+            }
+          }
+        }
+      ]
+    },
+    "expect": {
+      "decision": {
+        "unchanged": {
+          "result": {
+            "values": {},
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "reversible: a new day with no record opts into Undo by deleting the record it creates",
+    "input": {
+      "draft": {
+        "t": "reversibleDay",
+        "id": "2027-01-10",
+        "base": {},
+        "current": {
+          "score": 7
+        },
+        "isNew": true
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "put",
+                "t": "day",
+                "id": "2027-01-10",
+                "present": true,
+                "f": {
+                  "score": 7
+                }
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [
+              {
+                "t": "day",
+                "id": "2027-01-10"
+              }
+            ],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "undo": [
+            {
+              "kind": "createdRecord",
+              "restoreCommand": "probe.restore",
+              "record": {
+                "scope": "self/probe",
+                "t": "day",
+                "id": "2027-01-10"
+              }
+            }
+          ],
+          "result": {
+            "values": {
+              "score": 7
+            },
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "reversible: a day present again inside this device's delete window opts into Undo of its life, dead, and of the field it writes",
+    "input": {
+      "draft": {
+        "t": "reversibleDay",
+        "id": "2027-01-10",
+        "base": {
+          "score": 4
+        },
+        "current": {
+          "score": 5
+        },
+        "isNew": false
+      },
+      "drawn": [
+        {
+          "t": "day",
+          "id": "2027-01-10",
+          "seq": 1,
+          "life": [
+            "dead",
+            "3000:0:r_aaaaaaaaaaaa"
+          ],
+          "f": {
+            "score": [
+              5,
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ],
+      "stored": [
+        {
+          "t": "day",
+          "id": "2027-01-10",
+          "seq": 1,
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "f": {
+            "score": [
+              5,
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "put",
+                "t": "day",
+                "id": "2027-01-10",
+                "present": true,
+                "f": {
+                  "score": 5
+                }
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [
+              {
+                "t": "day",
+                "id": "2027-01-10"
+              }
+            ],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restore",
+              "targets": [
+                {
+                  "target": {
+                    "scope": "self/probe",
+                    "t": "day",
+                    "id": "2027-01-10",
+                    "slot": {
+                      "kind": "life"
+                    }
+                  },
+                  "defaultValue": "dead"
+                },
+                {
+                  "target": {
+                    "scope": "self/probe",
+                    "t": "day",
+                    "id": "2027-01-10",
+                    "slot": {
+                      "kind": "field",
+                      "name": "score"
+                    }
+                  },
+                  "defaultValue": 4
+                }
+              ]
+            }
+          ],
+          "result": {
+            "values": {
+              "score": 5
+            },
+            "exists": true
+          }
+        }
+      }
+    }
   }
 ]

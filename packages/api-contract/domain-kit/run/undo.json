@@ -570,5 +570,394 @@
     "expect": {
       "error": true
     }
+  },
+  {
+    "name": "a segment named for evidence alone journals its receipts, which prove the tree its act created to the act's Undo",
+    "input": {
+      "observe": [
+        "tree/b_00000002"
+      ],
+      "segments": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "create",
+              "t": "board",
+              "id": "b_00000002"
+            }
+          ],
+          "undo": [
+            {
+              "kind": "command",
+              "command": "probe.unbranch",
+              "input": {
+                "parent": "b_00000001",
+                "child": "b_00000002",
+                "title": "Root"
+              },
+              "evidence": {
+                "ownedFields": [],
+                "unchangedCreatedRecords": [
+                  {
+                    "t": "board",
+                    "id": "b_00000002"
+                  }
+                ],
+                "unchangedCreatedScopes": [
+                  "tree/b_00000002"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000002",
+          "plan": [
+            {
+              "op": "create",
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": "Child"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ],
+          "undo": []
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo",
+        "sync",
+        "read"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "board"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "counts": [
+          1,
+          1
+        ],
+        "held": false,
+        "kind": "committed"
+      },
+      "records": [
+        []
+      ],
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": false
+        },
+        {
+          "appliedCount": 1,
+          "changed": true,
+          "kind": "settled",
+          "skippedCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "an Undo of a delete the phone already synced draws the record back at once, with its fields, before any sync",
+    "input": {
+      "observe": [
+        "tree/b_00000001"
+      ],
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000001"
+              }
+            ]
+          },
+          {
+            "scope": "tree/b_00000001",
+            "plan": [
+              {
+                "op": "create",
+                "t": "tag",
+                "id": "tagm0001",
+                "f": {
+                  "label": "Oak"
+                }
+              }
+            ]
+          }
+        ]
+      ],
+      "segments": [
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "remove",
+              "t": "tag",
+              "id": "tagm0001"
+            }
+          ],
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restoreTree",
+              "targets": [
+                {
+                  "t": "tag",
+                  "id": "tagm0001",
+                  "slot": {
+                    "kind": "life"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo"
+      ],
+      "inspect": [
+        {
+          "scope": "tree/b_00000001",
+          "t": "tag",
+          "field": "label"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "counts": [
+          1
+        ],
+        "held": false,
+        "kind": "committed"
+      },
+      "records": [
+        [
+          {
+            "id": "tagm0001",
+            "label": "Oak"
+          }
+        ]
+      ],
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "a Redo of a created record's Undo draws the record back at once, with its fields, before any sync",
+    "input": {
+      "observe": [
+        "tree/b_00000001"
+      ],
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000001"
+              }
+            ]
+          }
+        ]
+      ],
+      "segments": [
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "create",
+              "t": "tag",
+              "id": "tagm0002",
+              "f": {
+                "label": "Elm"
+              }
+            }
+          ],
+          "undo": [
+            {
+              "kind": "createdRecord",
+              "restoreCommand": "probe.restoreTree",
+              "t": "tag",
+              "id": "tagm0002"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo",
+        "sync",
+        "redo"
+      ],
+      "inspect": [
+        {
+          "scope": "tree/b_00000001",
+          "t": "tag",
+          "field": "label"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "counts": [
+          1
+        ],
+        "held": false,
+        "kind": "committed"
+      },
+      "records": [
+        [
+          {
+            "id": "tagm0002",
+            "label": "Elm"
+          }
+        ]
+      ],
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "kind": "pending",
+          "localChanged": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "a draft's save of a type that saves reversibly is an act: its Undo takes the text back, and its Redo writes it again",
+    "input": {
+      "observe": [
+        "tree/b_00000001",
+        "self/overlay/b_00000001"
+      ],
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000001"
+              }
+            ]
+          },
+          {
+            "scope": "tree/b_00000001",
+            "plan": [
+              {
+                "op": "create",
+                "t": "tag",
+                "id": "tagm0001",
+                "f": {
+                  "label": "Oak"
+                }
+              }
+            ]
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "plan": [
+              {
+                "op": "create",
+                "t": "mark",
+                "id": "tagm0001",
+                "f": {
+                  "memo": "buy milk"
+                },
+                "fields": [
+                  "memo"
+                ]
+              }
+            ]
+          }
+        ]
+      ],
+      "save": {
+        "t": "reversibleMark",
+        "id": "tagm0001",
+        "current": {
+          "done": null,
+          "memo": "buy milk and eggs"
+        }
+      },
+      "steps": [
+        "sync",
+        "undo",
+        "sync",
+        "read",
+        "redo",
+        "sync",
+        "read"
+      ],
+      "inspect": [
+        {
+          "scope": "self/overlay/b_00000001",
+          "t": "reversibleMark",
+          "field": "memo"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "saved"
+      },
+      "records": [
+        [
+          {
+            "id": "tagm0001",
+            "memo": "buy milk and eggs"
+          }
+        ]
+      ],
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "appliedCount": 1,
+          "changed": true,
+          "kind": "settled",
+          "skippedCount": 0
+        },
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "appliedCount": 1,
+          "changed": true,
+          "kind": "settled",
+          "skippedCount": 0
+        }
+      ]
+    }
   }
 ]
