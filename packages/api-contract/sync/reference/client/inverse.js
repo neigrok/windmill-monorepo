@@ -9,7 +9,7 @@
 import { Clock } from '../core/clock.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
-import { compareSlots, creatableFault, inverseOutcomes, recipeFault, restorableSlotFault, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
+import { compareSlots, creatableFault, inverseOutcomes, recipeFault, recordValues, restorableSlotFault, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError } from './commit.js';
 import { undo } from './hold.js';
@@ -31,13 +31,13 @@ function slotOf(replica, entry) {
 const addressOf = (op) => (op.kind === 'field' ? op.target : op.record);
 
 // A slot's planned recipe, from the act's own recipes: one restore slot a source entry for its generic recipes,
-// a target restored once from its first preimage, and one slot each product command recipe. Undo runs the act
-// backwards: the last source's slots come first.
+// a target restored once from its first preimage, a revived life with the record that preimage read, and one slot
+// each product command recipe. Undo runs the act backwards: the last source's slots come first.
 function plannedSlots(sources) {
   const named = new Set();
   const firstOf = new Map();
   for (const source of sources) {
-    for (const preimage of source.preimages) if (!firstOf.has(jcs(preimage.target))) firstOf.set(jcs(preimage.target), preimage.value);
+    for (const preimage of source.preimages) if (!firstOf.has(jcs(preimage.target))) firstOf.set(jcs(preimage.target), preimage);
   }
   const slots = [];
   for (const source of [...sources].reverse()) {
@@ -50,7 +50,12 @@ function plannedSlots(sources) {
       }
       command = recipe.restoreCommand;
       if (recipe.kind === 'createdRecord') operations.push({ kind: 'createdRecord', record: structuredClone(recipe.record) });
-      else for (const { target } of recipe.targets) operations.push({ kind: 'field', target: structuredClone(target), before: structuredClone(firstOf.get(jcs(target))) });
+      else {
+        for (const { target } of recipe.targets) {
+          const { value, record } = firstOf.get(jcs(target));
+          operations.push({ kind: 'field', target: structuredClone(target), before: structuredClone(value), ...(record ? { record: structuredClone(record) } : {}) });
+        }
+      }
     }
     const unique = operations.filter((op) => {
       const key = jcs(addressOf(op));
@@ -83,9 +88,12 @@ function sourcesOf(registry, sourceEntries, replacement) {
 }
 
 // The optimistic projection of a restore slot over `view`, at `stamp`: each operation as the restore would
-// write it, one delta a record. An operation whose record the view lacks projects nothing.
+// write it, one delta a record. A record the view lacks is drawn only where a life operation revives it, with
+// the values its preimage read; any other operation on it projects nothing.
 function projectionOf(registry, view, operations, stamp) {
   const deltas = new Map();
+  const revived = new Map(operations.filter((op) => op.kind === 'field' && op.target.slot.kind === 'life' && op.record)
+    .map((op) => [recordKey(op.target.t, op.target.id), { t: op.target.t, id: op.target.id, ...op.record }]));
   for (const op of operations) {
     const address = addressOf(op);
     const key = recordKey(address.t, address.id);
@@ -97,9 +105,12 @@ function projectionOf(registry, view, operations, stamp) {
       deltas.set(key, created);
       continue;
     }
-    const current = view.get(key);
+    const absent = !view.has(key);
+    const current = view.get(key) ?? revived.get(key);
     if (!current) continue;
-    const delta = deltas.get(key) ?? { t: address.t, id: address.id, ...(registry.type(address.t).hasBorn ? { born: current.born } : {}) };
+    const delta = deltas.get(key) ?? { t: address.t, id: address.id, ...(registry.type(address.t).hasBorn ? { born: current.born } : {}),
+      ...(absent && current.f ? { f: structuredClone(current.f) } : {}),
+      ...(absent && current.x ? { x: Object.fromEntries(Object.entries(current.x).map(([name, text]) => [name, { text, base: { text: '' } }])) } : {}) };
     deltas.set(key, delta);
     if (op.kind === 'createdRecord') delta.life = ['dead', stamp];
     else if (op.target.slot.kind === 'life') delta.life = [op.before, stamp];
@@ -111,10 +122,11 @@ function projectionOf(registry, view, operations, stamp) {
 
 // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces,
 // the values the inverted act wrote (`forward`), never what a later local edit shows. A created record comes
-// back by its life only where a write can bring it back, and one the inverse creates goes again by its strict
-// recipe; a product slot has no generic recipe, and its Redo is the product's. A preimage's row sequence is
-// the row its restore wrote over, which the restore's version check proved held it (`anchorPreimages`).
-function inverseJournal(registry, inverseActId, slots, forward) {
+// back by its life only where a write can bring it back, with the record as `before` drew it, and one the
+// inverse creates goes again by its strict recipe; a product slot has no generic recipe, and its Redo is the
+// product's. A preimage's row sequence is the row its restore wrote over, which the restore's version check
+// proved held it (`anchorPreimages`).
+function inverseJournal(registry, inverseActId, slots, forward, before) {
   const sourceEntries = slots.map(({ localId, scope, recipe }) => {
     const empty = { localId, originScope: scope, recipes: [], preimages: [], written: [], attempts: [] };
     if (recipe.kind !== 'restore') return empty;
@@ -131,7 +143,8 @@ function inverseJournal(registry, inverseActId, slots, forward) {
       const target = op.kind === 'field' ? structuredClone(op.target) : { ...structuredClone(op.record), slot: { kind: 'life' } };
       const value = op.kind === 'field' ? forward.get(jcs(target)) : 'alive';
       if (value === undefined) continue;
-      preimages.push({ target, value: structuredClone(value), rowSeq: null, epoch: null });
+      const drew = op.kind === 'createdRecord' ? before.get(scope).get(recordKey(target.t, target.id)) : undefined;
+      preimages.push({ target, value: structuredClone(value), rowSeq: null, epoch: null, ...(drew ? { record: recordValues(drew) } : {}) });
       written.push({ target: structuredClone(target), value: op.kind === 'field' ? structuredClone(op.before) : 'dead' });
     }
     const recipes = [...(preimages.length ? [{ kind: 'fields', restoreCommand: recipe.command, targets: preimages.map(({ target }) => ({ target: structuredClone(target) })) }] : []), ...recreated];
@@ -186,7 +199,7 @@ export function requestInverse(replica, ctx, sourceActId, replacement) {
   const touched = new Map();
   const slots = planned.map(({ scope, recipe }, k) => ({ localId: `${inverseActId}/${k}`, commitOrder: firstOrder + k, scope, recipe, state: 'waiting' }));
   const before = new Map(slots.map(({ scope }) => [scope, drawn(replica, registry, scope)]));
-  const journal = inverseJournal(registry, inverseActId, slots, act ? forwardOfAct(act) : forwardOfCancellation(cancellation));
+  const journal = inverseJournal(registry, inverseActId, slots, act ? forwardOfAct(act) : forwardOfCancellation(cancellation), before);
   for (const slot of slots) {
     const d = slot.recipe.kind === 'restore' ? projectionOf(registry, before.get(slot.scope), slot.recipe.operations, stamp) : [];
     for (const delta of d) touched.set(`${slot.scope}|${recordKey(delta.t, delta.id)}`, { scope: slot.scope, key: recordKey(delta.t, delta.id) });
@@ -197,7 +210,7 @@ export function requestInverse(replica, ctx, sourceActId, replacement) {
       predictions: [{ scope: slot.scope, d }],
     });
   }
-  const localChanged = [...touched.values()].some(({ scope, key }) => !sameJson(before.get(scope).get(key), drawn(replica, registry, scope).get(key)));
+  const localChanged = [...touched.values()].some(({ scope, key }) => !sameJson(before.get(scope).get(key) ?? null, drawn(replica, registry, scope).get(key) ?? null));
   replica.inverses.push({ version: 1, requestId, sourceActId, inverseActId, state: 'waiting', requestedAt: ctx.deviceNow, localChanged,
     slots: slots.map(({ localId, commitOrder, scope, recipe, state }) => ({ localId, commitOrder, originScope: scope, recipe, state })) });
   replica.journal.push(journal);
@@ -553,6 +566,7 @@ function keepProjection(entry, operations) {
       const next = { t: delta.t, id: delta.id };
       if (delta.born !== undefined) next.born = delta.born;
       for (const op of kept) {
+        if (op.kind === 'field' && op.record) Object.assign(next, delta.f ? { f: { ...delta.f, ...next.f } } : {}, delta.x ? { x: { ...delta.x, ...next.x } } : {});
         if (op.kind === 'createdRecord' || op.target.slot.kind === 'life') next.life = delta.life;
         else if (op.target.slot.kind === 'field') next.f = { ...next.f, [op.target.slot.name]: delta.f[op.target.slot.name] };
         else next.x = { ...next.x, [op.target.slot.name]: delta.x[op.target.slot.name] };

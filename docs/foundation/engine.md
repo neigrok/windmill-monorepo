@@ -542,7 +542,7 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 type ReversibleAct = { version: 1, replica, actId: string /* its gesture id */, retained: boolean,
                        sourceEntries: { localId, originScope: ScopeRef, recipes: UndoRecipe[],
                                         preimages: { target: Target, value: Json, rowSeq: number | null,
-                                                     epoch: string | null }[],
+                                                     epoch: string | null, record?: { born?, f?, x? } }[],
                                         written: { target: Target, value: Json }[],
                                         attempts: { epoch, n, outcome: 'ok' | 'refused',
                                                     acceptedEffects?: EffectReceipt[] }[],
@@ -555,7 +555,8 @@ type InverseRequest = { version: 1, replica, requestId, sourceActId, inverseActI
                                  outcomes?: { index, s: 'applied' | 'skipped', code? }[], changed?: boolean }[],
                         result?: InverseResult }
 type SlotRecipe = { kind: 'restore', command, operations: (
-                      | { kind: 'field', target: Target, before: Json, reference?: VersionReference }
+                      | { kind: 'field', target: Target, before: Json, reference?: VersionReference,
+                          record?: { born?, f?, x? } }
                       | { kind: 'createdRecord', record: RecordAddress }
                       | { kind: 'createRecord', record: RecordAddress, values: { f?, x? },
                           reference: { kind: 'recordAbsent', epoch: string | null } })[] }
@@ -605,7 +606,9 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
   namespace, never shared across replicas. Its preimages and written values are local user data and its
   ids private sync data: neither enters telemetry, logs or reports. A preimage's `rowSeq` is the confirmed
   row it was read over (null where none was), counted in `epoch`; an inverse act's is the row its restore
-  wrote over. `written` is the value the act left in each target, which a Redo writes back. `unavailable`
+  wrote over. A life's preimage keeps the record it read (`record`), which a revival draws. `written` is the
+  value the act left in each target, which a Redo writes back. A source with no recipes was named for
+  evidence only. `unavailable`
   marks a source whose history is lost: an epoch change took it, its `ok` came without a readable receipt,
   or its scope ended, which also empties its recipes, preimages and written values. `InverseRequest`: one
   Undo or Redo of an act; its slots are outbox entries (`OutboxEntry.inverseOf` names the request) whose
@@ -1824,11 +1827,16 @@ type UndoRecipe =
   `lww` field, a client text, or the life of a keyed type with life or a revivable type; never born. A
   created record's type has life, governs no tree and is not whole-put, and the record is absent from
   `drawn` before the act. A `command` recipe names an `inverse: true` command of the segment's scope kind;
-  its evidence may name any scope. Anything else throws malformed before the act changes anything.
+  its evidence may name any scope. A segment named with no recipes (`recipes: []`) is named for evidence
+  only: it is journaled like any other, so its receipts join the act's history and can prove what another
+  segment's `command` recipe names, a scope the act created and this segment wrote among them. An act names at
+  least one recipe. Anything else throws malformed before the act changes anything.
 - **Capture.** Before any segment changes a projection, the act reads each field target's value in
   `drawn`: its *first local preimage*, with the sequence of the confirmed row it was read over (null where
-  none is confirmed) and the epoch that sequence counts in. An unset slot takes the target's `defaultValue`, the product's value
-  equivalent to unset (`null` is a value); without one the act throws malformed. A named segment runs as one
+  none is confirmed) and the epoch that sequence counts in. A life's preimage also keeps the record as read
+  (`record`: its birth, field registers and texts), which a revival draws. An unset slot takes the target's
+  `defaultValue`, the product's value equivalent to unset (`null` is a value); without one the act throws
+  malformed. A named segment runs as one
   scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
   one `engine: "capture"` command when it writes a delta (none, or several, throws malformed). A capture
   command does not stop a retire (§7.1 step 4) from matching its removal.
@@ -1876,10 +1884,12 @@ holds no field recipe. Asking again for the same act answers its existing reques
    target in one slot only, restored to its first preimage; each `command` recipe becomes a slot of its own.
    Each slot is an outbox entry at the next commit position, `ready`, its command's arguments still unbound,
    carrying the optimistic projection of its restore (each value at the request's stamp, a created record
-   dead) as its origin prediction. The inverse act journals each restore slot as a source whose recipes put
-   back the values the act wrote (`written`), never a later local edit's, and a created record's life only
-   where a write can bring it back. Its preimages are read at the row each restore writes over, which the
-   restore's ACK names.
+   dead) as its origin prediction. A revived life draws its record even where `drawn` no longer holds it (its
+   death already pulled): with the values its preimage's `record` kept, so an Undo of a delete, or a Redo of a
+   creation, draws at once and offline. The inverse act journals each restore slot as a source whose recipes
+   put back the values the act wrote (`written`), never a later local edit's, and a created record's life
+   only where a write can bring it back, with the record as `drawn` held it. Its preimages are read at the
+   row each restore writes over, which the restore's ACK names.
 3. **Barrier.** The sender stops at a slot still waiting (§7.4); later entries keep their positions, and a
    restart changes nothing.
 4. **Materialize.** Once every source of the act is authoritative (ended, or `acked` with this epoch's

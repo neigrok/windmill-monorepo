@@ -94,6 +94,12 @@ export function valueIn(row, slot) {
   return typeof text === 'string' ? text : text?.text;
 }
 
+// A record as a view reads it, kept for a revival to draw: its birth, field registers and texts, never its life.
+export function recordValues(record) {
+  return { ...(record.born === undefined ? {} : { born: record.born }), ...(record.f ? { f: structuredClone(record.f) } : {}),
+    ...(record.x ? { x: structuredClone(record.x) } : {}) };
+}
+
 export function compareSlots(a, b) {
   return compareBytes(utf8(slotOrderKey(a)), utf8(slotOrderKey(b)));
 }
