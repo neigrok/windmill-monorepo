@@ -542,7 +542,18 @@ type ReversibleAct = { version: 1, replica, actId: string /* its gesture id */, 
                        sourceEntries: { localId, originScope: ScopeRef, recipes: UndoRecipe[],
                                         preimages: { target: Target, value: Json }[],
                                         attempts: { epoch, n, outcome: 'ok' | 'refused',
-                                                    acceptedEffects?: EffectReceipt[] }[] }[] }
+                                                    acceptedEffects?: EffectReceipt[] }[],
+                                        unavailable?: true }[] }
+type InverseRequest = { version: 1, replica, requestId, sourceActId, inverseActId,
+                        state: 'waiting' | 'materialized' | 'settled', localChanged?: boolean,
+                        slots: { localId, commitOrder, recipe: SlotRecipe,
+                                 state: 'waiting' | 'materialized' | 'settled',
+                                 outcomes?: { index, s: 'applied' | 'skipped', code? }[], changed?: boolean }[],
+                        result?: InverseResult }
+type SlotRecipe = { kind: 'restore', command, operations: ({ kind: 'field', target: Target, before: Json }
+                                                         | { kind: 'createdRecord', record: RecordAddress })[] }
+                | { kind: 'command', command, input: Json, evidence: EvidenceSelection }
+                | { kind: 'withdrawn', command }
 ```
 
 - `replica`, in every record above but `ReplicaMeta`, names the replica by the store's handle, which
@@ -575,7 +586,9 @@ type ReversibleAct = { version: 1, replica, actId: string /* its gesture id */, 
   (Appendix A).
 - `ReversibleAct`: the journal of an act opted into Undo (§7.3 Undo of an act), in its replica's
   namespace, never shared across replicas. Its preimages are local user data and its ids private sync data:
-  neither enters telemetry, logs or reports.
+  neither enters telemetry, logs or reports. `unavailable` marks a source whose history an epoch change
+  took. `InverseRequest`: one Undo or Redo of an act; its slots are outbox entries (`OutboxEntry.inverseOf`
+  names the request) whose recipes hold the same private values.
 
 **The writer.** The store runs one writing transaction at a time. A commit (§7.1) waits for the
 writer, and the person waits for the commit, so the engine's other transactions are short. This is a
@@ -1809,7 +1822,47 @@ type UndoRecipe =
 - **Maps.** A write map's logical map (§7.7) renames the journal's scopes, targets, records, typed inputs and
   receipts with the queue.
 - **Release.** `releaseReversibleAct(actId)` says the product's stack no longer needs the act: its record and
-  values go.
+  values go, once no unsettled inverse request reads it.
+
+`requestInverse(sourceActId, inverseSlots?)` asks for the inverse of a journaled act, in one transaction.
+`inverseSlots`, a complete `[{index, recipes}]` by source ordinal, replaces the stored recipes (a product's
+Redo); there are no callbacks. Asking again for the same act answers its existing request.
+1. **Held cancel.** An act every entry of which is still held is cancelled at once, as `undo` cancels it,
+   its dependents folded silently. The request settles `cancelled`, whether anything drawn changed, and the
+   act leaves the journal.
+2. **Reserve.** Otherwise the request takes an inverse act id and a request id, and one stamp. Walking the
+   act's sources backwards, each source's generic recipes become one restore slot in its origin scope, each
+   target in one slot only, restored to its first preimage; each `command` recipe becomes a slot of its own.
+   Each slot is an outbox entry at the next commit position, `ready`, its command's arguments still unbound,
+   carrying the optimistic projection of its restore (each value at the request's stamp, a created record
+   dead) as its origin prediction. The inverse act journals each slot as a source whose recipes put back the
+   values its targets show now, a created record's life only where a write can bring it back.
+3. **Barrier.** The sender stops at a slot still waiting (§7.4); later entries keep their positions, and a
+   restart changes nothing.
+4. **Materialize.** Once every source of the act is authoritative (ended, or `acked` with this epoch's
+   attempt), in the request transaction or the numbering transaction: each `field` operation takes the latest
+   version the act's current-epoch receipts own of its target, and is dropped when none owns it (a refused or
+   collected source owns nothing). A `createdRecord` is proven by its own receipts alone: its creation
+   (`beforeRowSeq: null`) and each later own write continuing it (`beforeRowSeq` the previous `rowSeq`); a gap,
+   or a source whose history is `unavailable`, drops it. A `command` slot gets its evidence: the latest owned
+   version of each selected field that has one, each created record proven so, and each created scope proven
+   by its own receipts (`beforeSeq: null`, then each next `beforeSeq` the previous `seq`); a created record or
+   scope it cannot prove drops the whole slot. `expectedEpoch` is the replica's epoch. The arguments bind
+   atomically; a dropped operation's projection is withdrawn; a slot left with nothing ends `resolved`
+   unnumbered. Numbered arguments never change: an epoch change replays the entry as it is, and the server
+   skips it.
+5. **Results.** A slot's `ok` records its outcomes, withdraws a skipped operation's projection and notes
+   whether its receipt changed a row; a refusal, or an entry that ends without a result, settles it skipped by
+   that code. The request settles with its last slot: `changed` from accepted effects, `appliedCount` and
+   `skippedCount` over every operation, an atomic product slot counting one. The restore's ACK reclocks every
+   later queued write of a register it restored, so an edit queued after the Undo stays the newest.
+
+`readInverseResult(requestId)` answers `{kind: 'cancelled', requestId, inverseActId, changed}`,
+`{kind: 'pending', requestId, inverseActId, localChanged}`, `{kind: 'settled', requestId, inverseActId,
+changed, appliedCount, skippedCount}`, or `{kind: 'unavailable', requestId, reason}`. A transport failure
+stays pending. A Redo is `requestInverse(inverseActId)`: it restores only what the Undo actually applied, since
+it owns nothing else. Sign-in's Discard of a product settles that product's waiting slots skipped
+`discarded` and withdraws their values; slots stay counted as unsent work until then.
 
 ### §7.4 Sender (one per replica: the web leader tab, or an app-scoped worker)
 
@@ -1817,7 +1870,8 @@ type UndoRecipe =
 loop while state = bound ∧ ¬authPaused ∧ online:
   tx: number ready entries in commitOrder, up to PUSH_MAX_INTENTS, and while the request body stays
       within PUSH_MAX_BYTES (the first entry of a request always goes), passing over held-back
-      entries, and stopping after the first command entry or at a held-back command entry:
+      entries, and stopping after the first command entry, at a held-back command entry, or at an
+      inverse slot still waiting once it is offered materialization (§7.3 Undo of an act):
       n := nextN++, digest, state := sent
           (no entry is numbered while a command entry is `sent`)
       an entry whose one-intent body, at that n and the current ackThrough, exceeds PUSH_MAX_BYTES
@@ -2561,6 +2615,7 @@ doubt (§7.9), whether or not its id changed.
 | `ready` | at numbering, its one-intent body over `PUSH_MAX_BYTES` (grown since commit, §7.4) | `refused` (`too-large`, a notice, or none for an orphan) |
 | `held`, `ready` | anonymous gesture superseded (§7.1 step 4), or emptied by the silent fold of an undo, retire or supersede (§7.3) | `undone` (no notice) |
 | `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
+| `ready` | an inverse slot materialized with nothing left to restore (§7.3 Undo of an act) | `resolved` (vacated, never numbered) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |
 | `sent` | `ok` | `acked` |
 | `sent` | `clock-skew`, `base-unknown` | `ready` (recovered, same position) |

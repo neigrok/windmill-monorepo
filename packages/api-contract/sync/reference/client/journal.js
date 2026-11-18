@@ -96,10 +96,14 @@ export function retainOutcome(replica, localId, { epoch, n, outcome, acceptedEff
 }
 
 // §7.5 step 1: a restored server invalidates each source's proofs from another epoch. A source still in the
-// outbox replays and earns its own; a collected one has none left.
+// outbox replays and earns its own; a collected one has none left, and its history is `unavailable`.
 export function invalidateEpochs(replica, epoch) {
   for (const act of replica.journal) {
-    for (const source of act.sourceEntries) source.attempts = source.attempts.filter((attempt) => attempt.epoch === epoch);
+    for (const source of act.sourceEntries) {
+      const lost = !replica.entry(source.localId) && source.attempts.some((attempt) => attempt.outcome === 'ok' && attempt.epoch !== epoch);
+      source.attempts = source.attempts.filter((attempt) => attempt.epoch === epoch);
+      if (lost) source.unavailable = true;
+    }
   }
 }
 

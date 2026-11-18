@@ -5905,7 +5905,7 @@
     }
   },
   {
-    "name": "an epoch change drops each source's other-epoch proof: the requeued source replays into the new epoch, the collected one has none",
+    "name": "an epoch change drops each source's other-epoch proof: the requeued source replays into the new epoch, the collected one's history is unavailable",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -6701,7 +6701,8 @@
                         "value": "Old"
                       }
                     ],
-                    "attempts": []
+                    "attempts": [],
+                    "unavailable": true
                   },
                   {
                     "localId": "g1/1",

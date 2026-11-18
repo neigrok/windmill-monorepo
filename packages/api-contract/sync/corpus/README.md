@@ -1003,6 +1003,7 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
   - `device`: `{product: {key: value}}`.
   - `journal`: `[ReversibleAct]` (engine.md §2.5, §7.3 Undo of an act), sorted by the UTF-8 bytes of
     `actId`.
+  - `inverses`: `[InverseRequest]`, sorted by the UTF-8 bytes of `requestId`.
 
   Absent parts are empty. Rows sort by `t`, then by the UTF-8 bytes of `jcs(id)`. The outbox sorts by
   `commitOrder`.
@@ -1075,6 +1076,8 @@ Expect: `{returns, device, ended, telemetry?, events?}`.
 | `subscriptions` | | resolves the replica's product, owner-derived and explicit scopes, including bound trees' own overlays | the scope list |
 | `dismiss` | `id` | D-17: the notice `id` of the active replica takes `dismissed: true` | `null` |
 | `releaseReversibleAct` | `actId` | §7.3 Undo of an act: the act's journal record goes | `true` if the replica held it |
+| `requestInverse` | `actId`, `slots?` | §7.3 Undo of an act: cancels a wholly held act, or reserves, projects and, when its sources are authoritative, materializes its inverse slots | an `InverseResult` |
+| `readInverseResult` | `requestId` | §7.3 Undo of an act | an `InverseResult` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
 | `pushResponse` | `response`, `dieAfter?` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1); a malformed authenticated conflict throws | `{throws: true}` for a malformed conflict; `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
 | `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
@@ -1278,6 +1281,16 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   replays into the new epoch, a collected one keeps none; a changed-epoch answer that records its
   results first keeps them. A retire matches an opted removal. `releaseReversibleAct` removes the record.
   Sign-in's Add carries the journal; Discard removes the product's whole source entries.
+- `restore.json`: inverse requests end to end against the reference server. An Undo after its act settled
+  restores each field and settles with its counts; one requested before every segment settles waits for
+  each source, a refused source owning nothing and its slot vacating unnumbered; a slot whose source is
+  still held stops numbering across a restart; an edit queued after the Undo wins once the restore's ACK
+  reclocks it; a field written away and back skips alone, and the Redo restores only what the Undo
+  applied; a masking local edit that the server refuses leaves the restore to apply; a materialized slot
+  replays after an epoch change with its own `expectedEpoch` and skips; a foreign edit between a creation
+  and the act's later write of the record keeps the record, while an unbroken history deletes it; a wholly
+  held act is cancelled in place and asking again answers the same request; a Discard at sign-in settles a
+  pending inverse skipped with its values withdrawn.
 
 ### refusal/*.json
 

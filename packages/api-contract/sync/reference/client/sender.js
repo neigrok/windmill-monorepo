@@ -8,6 +8,7 @@ import { receiptEffects } from '../core/receipts.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
+import { applyInverseResult, checkInverseResult, passesBarrier, settleEnded } from './inverse.js';
 import { retainOutcome } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
@@ -54,6 +55,11 @@ export function nextPush(replica, ctx, { limit } = {}) {
     let back = heldBack(replica, ctx.registry);
     for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
       if (replica.entry(entry.localId) !== entry || entry.state !== 'ready') continue;
+      if (entry.inverseOf !== undefined) {
+        if (!passesBarrier(replica, ctx, entry)) break;
+        back = heldBack(replica, ctx.registry);
+        if (replica.entry(entry.localId) !== entry) continue;
+      }
       if (back.has(entry)) {
         if (entry.intent.cmd !== undefined) break;
         continue;
@@ -114,6 +120,7 @@ export function validatePushReceipts(replica, registry, body) {
     for (const result of body.results) {
       const entry = replica.entries().find((candidate) => ['sent', 'acked'].includes(candidate.state) && candidate.n === result.n);
       if (!entry || result.s !== 'ok') continue;
+      checkInverseResult(replica, entry, result);
       if (entry.predictions) {
         receiptEffects(registry, entry, result);
         if (bodyBytes(body) > CONSTANTS.SCOPED_RESPONSE_MAX_BYTES) throw new ResponseError('scoped response too large');
@@ -187,6 +194,8 @@ export function applyPushResult(replica, ctx, result, body) {
   if (result.s === 'refused') {
     onRefused(replica, ctx, entry, result, body);
     if (replica.entry(entry.localId) !== entry) retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'refused' });
+    applyInverseResult(replica, entry, result);
+    settleEnded(replica, 'refused');
     return;
   }
   moveEntry(replica, ctx.ended, entry, 'ok');
@@ -196,6 +205,7 @@ export function applyPushResult(replica, ctx, result, body) {
   if (result.write) applyWriteMap(replica, ctx, entry, result.write);
   if (effects) applyReceipt(replica, ctx, entry, effects, result.write ?? []);
   retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'ok', acceptedEffects: entry.acceptedEffects });
+  applyInverseResult(replica, entry, result);
   resolveIfCovered(replica, ctx, entry);
 }
 

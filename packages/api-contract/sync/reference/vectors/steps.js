@@ -17,6 +17,7 @@ import { Device } from '../client/replica.js';
 import { nextPush, onHello, onPushResponse, ResponseError } from '../client/sender.js';
 import { reconcile, subscribe, subscriptionsOf } from '../client/subscriptions.js';
 import { capCount, view } from '../client/views.js';
+import { readInverseResult, requestInverse } from '../client/inverse.js';
 import { releaseReversibleAct } from '../client/journal.js';
 import { ACTOR, registry } from './fixtures.js';
 
@@ -153,6 +154,12 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           break;
         case 'undo':
           answer(undo(replica, registry, ended, step.gestureId));
+          break;
+        case 'requestInverse':
+          answer(requestInverse(replica, ctx, step.actId, step.slots));
+          break;
+        case 'readInverseResult':
+          answer(readInverseResult(replica, step.requestId));
           break;
         case 'releaseReversibleAct':
           answer(releaseReversibleAct(replica, step.actId));
