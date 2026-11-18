@@ -121,6 +121,27 @@ struct RegistryScope {
   bool operator==(const RegistryScope&) const = default;
 };
 
+// E-8: one typed leaf, a string id of `type` at a literal property path of a field's object value or of a
+// command's arguments, naming the scope `scope` gives: the scope its type lives in seen from the holder
+// (`origin`), one product scope (`fixed`, `value`), or the tree, or the caller's overlay of it, whose
+// governing id the leaf at `path` holds (`treeFrom`). A creation proposes the id of a record the command
+// creates and names no existing one.
+struct RefScope {
+  enum class Kind { origin, fixed, treeFrom };
+
+  Kind kind = Kind::origin;
+  std::string value;              // fixed: `self/<product>`
+  std::vector<std::string> path;  // treeFrom: the source leaf
+};
+
+struct RefPath {
+  std::vector<std::string> path;
+  std::string type;
+  RefScope scope;
+  bool nullable = false;
+  bool creation = false;
+};
+
 // D-23: who may write a type by a delta outside a command, or call a command.
 struct Origins {
   bool replica = false;
@@ -142,6 +163,7 @@ struct FieldDef {
   std::vector<std::string> serialNext;
   std::map<std::string, std::int64_t> rank;  // a ranked field's values and their ranks
   std::vector<std::string> opens;            // D-4: values of a tree singleton's server field that open the tree to every reader
+  std::vector<RefPath> refPaths;             // E-8: the typed leaves of the field's object value
 
   // Life, born and these kinds are the lattice fields (§3.2); serial and text are server-sequenced.
   bool isLattice() const;
@@ -220,6 +242,7 @@ struct CommandDef {
   std::optional<EngineCommand> engine;
   std::map<std::string, ArgDef> args;
   std::vector<std::string> predicts;
+  std::vector<RefPath> refPaths;  // E-8: the typed leaves of its json arguments
 };
 
 // A row of a product's device scope `device/<product>`: never sent, never merged.
@@ -260,12 +283,21 @@ public:
 
   // A type's id: its singleton id, its tuple of ref ids, the id of the type its key names, or its pattern or domain.
   bool isIdOf(const TypeDef& type, const Json::Value& id) const;
-  // A register's value for its field: kind, ref, domain, and bounds in the field's unit.
+  // A register's value for its field: kind, ref, domain, bounds in the field's unit, and its typed leaves.
   bool admitsValue(const FieldDef& field, const Json::Value& value) const;
   // A command argument: an epoch ms for `time` and `instant`, an id for `ref<t>`, else its domain.
   bool admitsArgument(const ArgDef& arg, const Json::Value& value) const;
+  // E-8: every typed leaf of a command's arguments, which may derive a leaf's tree from another argument.
+  bool admitsArguments(const CommandDef& command, const Json::Value& args) const;
 
 private:
+  // §2.4's load rules for one declaration's typed leaves (E-8).
+  void checkRefPaths(const std::string& where, const std::vector<RefPath>& leaves, const RegistryScope& holder,
+                     const std::vector<RefPath>& shorthands) const;
+  // E-8: each typed leaf present in `root` holds an id of its type, null only where nullable, under objects
+  // all the way down; a present treeFrom leaf's source is present too.
+  bool admitsLeaves(const std::vector<RefPath>& leaves, const Json::Value& root) const;
+
   std::string name_;
   std::int64_t version_ = 0;
   std::int64_t minVersion_ = 0;

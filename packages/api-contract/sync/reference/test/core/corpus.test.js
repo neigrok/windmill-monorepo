@@ -14,6 +14,7 @@ import { jcs } from '../../core/jcs.js';
 import { INTENT_MACHINE, REPLICA_MACHINE, SCOPE_MACHINE, transition } from '../../core/machines.js';
 import { joinBorn, joinFww, joinLife, joinLww, joinRanked, joinRecord } from '../../core/merge.js';
 import { Registry } from '../../core/registry.js';
+import { RecordMap } from '../../core/references.js';
 import { checkArgument, checkFieldValue, checkId } from '../../core/values.js';
 import { Stamp } from '../../core/stamp.js';
 import { decide, opOf } from '../../server/identity.js';
@@ -94,6 +95,34 @@ const RUNNERS = {
       argument: checkArgument(registry, { type: `ref<${type}>` }, id) === null,
       key: checkId(registry, registry.type(type), id) === null ? jcs(id) : null,
     };
+  },
+  'registry/references.json': ({ registry: document, field, command }) => {
+    let loaded;
+    try {
+      loaded = new Registry(document);
+    } catch {
+      return { admitted: false };
+    }
+    if (field) return { admitted: checkFieldValue(loaded, loaded.type(field.type).field(field.name), field.value) === null };
+    if (!command) return { admitted: true };
+    const def = loaded.command(command.name);
+    const named = Object.keys(command.args).every((name) => Object.hasOwn(def.args, name));
+    const present = Object.entries(def.args).every(([name, arg]) => arg.optional || Object.hasOwn(command.args, name));
+    const each = Object.entries(command.args).every(([name, value]) => !Object.hasOwn(def.args, name) || checkArgument(loaded, def.args[name], value) === null);
+    return { admitted: named && present && each && loaded.references.checkArguments(def, command.args) === null };
+  },
+  'refs/traversal.json': ({ scope, record, cmd, maps }) => {
+    const { references } = registry;
+    const holder = record ?? cmd;
+    const leaves = record ? references.recordLeaves(record.t) : references.commandLeaves(cmd.name);
+    const found = references.resolve(leaves, holder, scope).map(({ leaf, scope: named, t, id }) => ({ role: leaf.role, scope: named, t, id }))
+      .sort((a, b) => (jcs(a) < jcs(b) ? -1 : 1));
+    for (const mappings of maps) {
+      const map = new RecordMap(registry, mappings);
+      if (record) references.remapRecord(scope, holder, map);
+      else references.remapCommand(scope, holder, map);
+    }
+    return { references: found, after: holder };
   },
   'identity/seeded.json': (input) => (input.op === 'parse'
     ? { parsed: parseSeeded(input.id) }

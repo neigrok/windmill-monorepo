@@ -202,6 +202,7 @@ class Admission {
       if (checkArgument(this.registry, arg, value)) throw new Refusal('invalid');
       if (arg.type === 'instant' && value > this.serverNow + this.limits.MAX_SKEW_MS) throw new Refusal('invalid');
     }
+    if (this.registry.references.checkArguments(def, cmd.args)) throw new Refusal('invalid');
   }
 
   clampTimes(deltas, bound) {

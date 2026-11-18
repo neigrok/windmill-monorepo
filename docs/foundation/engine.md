@@ -151,8 +151,12 @@ Every field also has:
 `lww`, `ranked`, `fww`, `const` and `time` fields, life and born are **lattice fields**. `text` and
 `serial` are **server-sequenced**.
 
-**D-10 Reference.** A field or command argument typed `ref<type>` holds an id of that type, or null
-where its domain is nullable. It drives dependent folding and the write map (§7.7).
+**D-10 Reference.** A record identity a registry declares inside a value: a key part of a keyed type, a
+field or command argument typed `ref<type>`, or a typed leaf that a `refPaths` entry names (§2.4
+References). It holds an id of its type, or null where it is nullable, and names the record
+`(scope, t, id)` in the scope it declares. It drives dependent folding and the write map (§7.7). Beyond
+the `parent` rule (§6.1 step 10), a reference requires no record to exist; it grants no access and adds
+no scope to admission's locks or effects.
 
 **D-11 Spent id.** An id whose record is dead, for a type whose death is terminal. A spent id is
 never alive again (INV-2).
@@ -398,7 +402,7 @@ The journal registry carries version 12 with it, since the composed registries d
   `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `wholePut`, `revivable`, `deadRows`,
   `governs`, `origins`, `fields`, `cap`, `visibleWhen`, `primary` and `headline`.
 - **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `default`,
-  `serialNext`, `rank` and `opens`.
+  `serialNext`, `rank`, `opens` and `refPaths`.
 - **Domains** are structured: `string` (`enum`, `pattern`, `unit`, `min`, `max`), `number`
   (`integer`, `min`, `max`, `quantum`), `boolean`, `fracKey` (D-25), `stamp`, `id`, `json`, `array`
   (`items`, `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds
@@ -429,10 +433,36 @@ The journal registry carries version 12 with it, since the composed registries d
   dialects lets `$` match before a final line terminator.
 - **Commands:** `name`, `scope`, `origins`, `serverInternal`, `beforePull`, `args` (each of type
   `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`), `predicts`, optional
-  `scopedEffects: true` and optional `engine: "capture"`. The engine tag requires `scopedEffects`
-  and empty `args`. Capture is bound by the platform and runs the ordinary intent deltas, checks and
-  consequences without a product command mutation. An opted command may predict registered types
-  outside its origin scope; whole-put types remain excluded.
+  `scopedEffects: true`, optional `engine: "capture"` and optional `refPaths`. The engine tag requires
+  `scopedEffects` and empty `args`. Capture is bound by the platform and runs the ordinary intent deltas,
+  checks and consequences without a product command mutation. An opted command may predict registered
+  types outside its origin scope; whole-put types remain excluded.
+- **References** (E-8). A field of kind `lww`, `fww` or `const` without a scalar `ref`, and a command,
+  MAY declare `refPaths`: typed leaves `{path, type, scope, nullable?, role?}`. `path` is literal object
+  property names, relative to the field's value or to the command's `args`, whose first name is a `json`
+  argument; it holds no array index, wildcard or expression. A leaf holds a string id of `type`, a type
+  whose ids are not tuples, or null when `nullable: true`. `scope` names where the identity lives:
+  - `{kind: "origin"}`: where its type lives, seen from the holder's scope: its product scope, or the
+    tree or overlay of the holder's own tree; a holder in a product scope names no tree or overlay type
+    so. Every key part, `ref` field and `ref<t>` argument is a leaf of this kind;
+  - `{kind: "fixed", value: "self/<product>"}`: that declared product's scope, which holds `type`;
+  - `{kind: "treeFrom", path}`: `tree/<id>`, or the caller's `self/overlay/<id>` for an overlay type,
+    where `<id>` is what the leaf at `path` holds: an ordinary leaf of the same declaration (a
+    `ref<t>` argument included) whose type governs trees. `type` lives in a tree or an overlay.
+
+  `role: "creation"`, on a command's leaf only, proposes the id of a record the command creates, of a
+  minted or derived type it predicts. It is admitted as the command's own create, names no existing
+  record, is never a dependency and is renamed by no map but its own command's retained target (§7.7
+  step 0). A leaf is declared once and never inside another leaf, a scalar `ref` argument and a path to
+  the same name included. A path through an `object` domain names declared properties and ends at a
+  `string`, `id` or `json` domain; a `json` domain leaves the rest open. A registry that breaks any of
+  these is refused as it loads.
+
+  Each implementation compiles every leaf of a registry once, and that one traversal serves admission's
+  checks (§6.1 step 2), the commit's (§7.1 step 4), dependents (§7.7 step 3) and every id map (§7.7 write
+  map). A leaf is found by walking its path from the holder's value: absent, null under a null object on
+  the way (which names nothing), null, a value, or malformed where something other than an object stands
+  where the path continues. Unannotated JSON and text are never read.
 
 The engine applies:
 - `parent: true` marks the one `ref` field whose target must be alive (§6.1 step 10).
@@ -944,6 +974,10 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
      a losing delete plants nothing (§2.4).
    - The `<T>` of a `tree/<T>` or `self/overlay/<T>` reference matches the governing type's
      `idPattern`.
+   - Every typed leaf of a field value or of a command's arguments (§2.4 References) that is present
+     holds an id of its type, its pattern or domain and so E-2's bounds included; it is null only where
+     `nullable`, and lies under objects all the way down. A present `treeFrom` leaf's source is present
+     and not null.
    - No string of the intent, a key or a value at any depth, holds U+0000.
 
    Failure → `invalid`. Then a stamp with `ms > serverNow + MAX_SKEW_MS` in any delta's life, born
@@ -977,7 +1011,8 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
       scope row and, for each command argument typed `ref<t>` where `t` governs `tree`,
       `tree:<value>`, each row once in the stronger mode it needs: the scope row `FOR NO KEY
       UPDATE`, an argument tree `FOR SHARE`. A tree-scope intent's own row so takes its key's place
-      among its argument trees. An id that no scope has yet locks nothing.
+      among its argument trees. An id that no scope has yet locks nothing. A typed leaf of `refPaths`
+      locks nothing (D-10).
    6. Each fresh id of a global id space that the intent creates or deletes is locked by `(type, id)` (§4.2).
       An id that only a command's arguments or `check` reveal is locked on demand, just before its
       lookup.
@@ -1526,6 +1561,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    - A text change names the text it was edited from. The entry keeps that text in `baseTexts`.
      The delta's base is `{rev}` when that text is the confirmed text at that rev; otherwise
      `{text}`.
+   - A typed leaf (§2.4 References) of a field value the gesture writes or predicts, or of its
+     command's arguments, that breaks §6.1 step 2's leaf rule throws: dependents and id maps read
+     every leaf of a queued entry. A scalar `ref` and a `ref<t>` argument are left for admission.
    - A command prediction MAY include server-written lattice fields, text and serial values.
      Predicted serials name declared serial fields and MUST be positive safe integers; otherwise
      the commit throws. Predictions fold locally, never entering wire deltas or the digest.
@@ -2036,11 +2074,11 @@ notice of its own, as step 3 states):
    - `base-unknown`: every text delta of `e` switches to `base: {text: baseTexts[…]}`.
 2. **Remove `e`.**
 3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
-   `ref` fields, `ref` arguments or key parts name, a record created in `e` (by a delta or by
-   `predict`), that carries unchanged a life register `e` wrote (a keyed put or a command's
-   prediction, §7.1 step 4), or that
-   targets a scope whose governing record `e` creates. A reference names a record in the scope its
-   type lives in: a product scope, or the tree and overlay scopes of the same tree. Folding is
+   ordinary references (D-10) name, a record created in `e` (by a delta or by `predict`), that
+   carries unchanged a life register `e` wrote (a keyed put or a command's prediction, §7.1 step 4),
+   or that targets a scope whose governing record `e` creates. A reference names `(scope, t, id)` in
+   the scope it declares (§2.4 References): a step `treeFrom` its tree argument names a record of that
+   tree, and the same id in another tree is another record. A proposed creation names none. Folding is
    transitive: a record a dependent creates, and a life register it writes, make their own
    dependents. A guard makes nothing dependent, so a fold keeps a guard on a record `e` creates in
    an entry with no dependent delta on that record. After this refusal the server refuses that entry
@@ -2067,7 +2105,15 @@ notice of its own, as step 3 states):
 
 **Write map.** An `ok` result's write map applies in the result's batch (§7.4). Let `s` be the
 command entry's stamp, which every register it predicted carries. Steps 0–2 run for each map
-entry `w`, then step 3 once for the map:
+entry `w`, then step 3 once for the map. The `target-merged` refusals of every entry are read first,
+from the queue as it stood. The renames of steps 0 and 1 are then one logical map, applied to each
+entry at once through its compiled leaves (§2.4 References): no mapping feeds another. A mapping of a
+global type renames its id in every scope; a mapping of a scope-local type renames it only in the
+command's scope, keyed by that scope as the map's governor mappings leave it, so an overlay's key
+names the record of its own tree and the same id in a sibling tree stays. Each entry takes two passes,
+each reading every leaf before writing one: the global leaves and governed ScopeRefs, then the
+scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. A creation leaf
+moves only with its own command's retained target.
 0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
    first move its previous resolved id to `w.id` in the command's prediction and its later held or
    ready dependents, including deletes, references, key parts and guards, and in device rows through
@@ -2087,7 +2133,7 @@ entry `w`, then step 3 once for the map:
 1. If this source had no retained target, apply its initial join: `w.from` is present only when the
    resolved id differs from the id the command was called with,
    which means the record existed before the command (a join). It is replaced by `w.id` in every
-   held and ready entry (delta ids, key parts, `ref<w.t>` fields and arguments), in `predict`, and
+   held and ready entry (delta ids and every reference to the record), in `predict`, and
    in device rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`:
    it is not rewritten, and is refused `target-merged` by steps 2–4 above.
 2. The command's own `predict` is restamped by the restamp rule, with `n` given by the map:

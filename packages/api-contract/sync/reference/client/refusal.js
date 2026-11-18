@@ -3,12 +3,12 @@
 // Clock-skew recovery also lowers the stamps no unacked entry is the source of (step 1.5).
 
 import { Clock, maxPair } from '../core/clock.js';
-import { sameJson } from '../core/jcs.js';
+import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { Stamp } from '../core/stamp.js';
-import { remappedScope } from '../core/receipts.js';
+import { RecordMap } from '../core/references.js';
 import { baseTextKey } from './commit.js';
-import { Dependents, commandRefs, deltasOf, isEmpty, removeDependent } from './dependents.js';
+import { Dependents, deltasOf, isEmpty, removeDependent } from './dependents.js';
 import { effectsOf, mergePredictions, predictionsOf } from './projections.js';
 
 function isQueued(entry) {
@@ -230,97 +230,97 @@ export function onRefused(replica, ctx, entry, result, response) {
   refuse(replica, ctx, entry, 'refuse', result);
 }
 
-function rewriteId(registry, delta, w) {
-  if (delta.t === w.t && sameJson(delta.id, w.from)) delta.id = w.id;
-  const type = registry.type(delta.t);
-  if (type.key?.ref === w.t && sameJson(delta.id, w.from)) delta.id = w.id;
-  if (type.key?.tuple) delta.id = delta.id.map((part, index) => (type.key.tuple[index].ref === w.t && part === w.from ? w.id : part));
-  for (const [name, register] of Object.entries(delta.f ?? {})) {
-    if (type.field(name)?.ref === w.t && register[0] === w.from) delta.f[name] = [w.id, register[1]];
-  }
-}
-
-function rewriteEntry(registry, entry, w, { replay = false, scope = entry.scope, predictionOnly = false } = {}) {
-  const global = registry.type(w.t)?.idSpace === 'global';
-  const origin = global || entry.scope === scope;
-  if (!predictionOnly && origin && replay && entry.intent.cmd) {
+// §7.7 write map and E-8: one queued entry renamed by one logical map, atomically. Every delta, guard,
+// receipt row and argument is renamed by its compiled leaves, global mappings first and then scoped ones
+// in the scopes the governor mappings leave; then its ScopeRefs follow the governors. `replayed` are
+// the mappings that re-address a retained command (step 0): an argument naming its own source moves to
+// the record that source now resolves to, even a proposed creation.
+function rewriteEntry(registry, entry, map, { predictionOnly = false, replayed = [] } = {}) {
+  const { references } = registry;
+  const scope = entry.scope;
+  const moves = new Map();
+  for (const mapping of predictionOnly ? [] : replayed) {
+    if (registry.type(mapping.t)?.idSpace !== 'global' && map.scope(mapping.scope) !== map.scope(scope)) continue;
     for (const target of entry.writeTargets ?? []) {
-      if (target.t !== w.t || !sameJson(target.id, w.from)) continue;
-      const refs = commandRefs(registry, entry.intent.cmd).filter((ref) => ref.t === w.t && sameJson(ref.id, target.from));
-      for (const ref of refs) entry.intent.cmd.args[ref.name] = w.id;
-      if (refs.length) target.from = w.id;
+      if (target.t === mapping.t && sameJson(target.id, mapping.from)) moves.set(`${target.t}|${jcs(target.from)}`, mapping.id);
     }
   }
+  const named = predictionOnly || !entry.intent.cmd ? []
+    : [...references.ofCommand(scope, entry.intent.cmd), ...references.ofCommand(scope, entry.intent.cmd, 'creation')];
   for (const group of predictionOnly ? predictionsOf(entry) : effectsOf(entry)) {
-    if (global || group.scope === scope) for (const delta of group.d) rewriteId(registry, delta, w);
+    for (const delta of group.d) references.remapRecord(group.scope, delta, map);
   }
-  if (!predictionOnly && origin) {
-    for (const guard of entry.intent.guard ?? []) if (guard.t === w.t && sameJson(guard.id, w.from)) guard.id = w.id;
-    for (const ref of entry.intent.cmd ? commandRefs(registry, entry.intent.cmd) : []) {
-      if (ref.t === w.t && sameJson(ref.id, w.from)) entry.intent.cmd.args[ref.name] = w.id;
-    }
+  for (const effect of entry.acceptedEffects ?? []) for (const row of effect.rows) references.remapRecord(effect.scope, row, map);
+  if (!predictionOnly) {
+    for (const guard of entry.intent.guard ?? []) references.remapRecord(scope, guard, map);
+    if (entry.intent.cmd) references.remapCommand(scope, entry.intent.cmd, map, moves);
+    const renamed = (t, id) => (registry.type(t)?.idSpace === 'global' ? map.globalTarget(t, id) : map.scopedTarget(map.scope(scope), t, id)) ?? id;
     for (const target of entry.writeTargets ?? []) {
-      if (target.t !== w.t) continue;
-      if (sameJson(target.from, w.from)) target.from = w.id;
-      if (sameJson(target.id, w.from)) target.id = w.id;
+      const moved = moves.get(`${target.t}|${jcs(target.from)}`);
+      const argued = moved !== undefined && named.some((ref) => ref.t === target.t && sameJson(ref.id, target.from));
+      target.from = argued ? structuredClone(moved) : structuredClone(renamed(target.t, target.from));
+      target.id = structuredClone(renamed(target.t, target.id));
     }
   }
-  for (const effect of entry.acceptedEffects ?? []) {
-    if (global || effect.scope === scope) for (const row of effect.rows) rewriteId(registry, row, w);
-  }
-  if (global && registry.type(w.t)?.governs === 'tree') {
-    if (!predictionOnly) entry.intent.scope = entry.scope = remappedScope(registry, entry.scope, [w]);
-    for (const projection of entry.predictions ?? []) projection.scope = remappedScope(registry, projection.scope, [w]);
-    for (const effect of entry.acceptedEffects ?? []) effect.scope = remappedScope(registry, effect.scope, [w]);
-    mergePredictions(entry);
-  }
+  if (map.governors.size === 0) return;
+  if (!predictionOnly) entry.intent.scope = entry.scope = map.scope(entry.scope);
+  for (const projection of entry.predictions ?? []) projection.scope = map.scope(projection.scope);
+  for (const effect of entry.acceptedEffects ?? []) effect.scope = map.scope(effect.scope);
+  mergePredictions(entry);
 }
 
-// §7.7 write map: an ok result's map applies in the result's transaction.
+const isEnded = (replica, entry) => replica.entry(entry.localId) !== entry;
+
+// §7.7 write map: an ok result's map applies in the result's transaction. Its target-merged refusals are
+// read first, from the queue as it stood; then the map renames every queued entry at once; then each
+// mapped record's born, predicted registers and retained target follow.
 export function applyWriteMap(replica, ctx, command, write) {
   if (command.predictions) return applyScopedWriteMap(replica, ctx, command, write);
   const { registry } = ctx;
   const retained = command.writeTargets !== undefined;
   const targets = command.writeTargets ??= [];
-  for (const w of write) {
+  const items = write.map((w) => {
     const source = w.from ?? w.id;
-    const previous = targets.find((target) => target.t === w.t && sameJson(target.from, source));
-    if (previous) {
-      const remap = { ...w, from: previous.id };
-      for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, remap, { replay: true, scope: command.scope });
-      if (!sameJson(previous.id, w.id)) {
-        for (const delta of command.predict ?? []) rewriteId(registry, delta, remap);
-      }
-      if (previous.born !== undefined && w.born !== undefined && previous.born !== w.born) {
-        for (const entry of laterUnacked(replica, command)) {
-          for (const delta of effectsOf(entry).filter(({ scope }) => scope === command.scope).flatMap(({ d }) => d)) {
-            if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
-            if (delta.born === previous.born) delta.born = w.born;
-            if (delta.life?.[1] === previous.born) delta.life[1] = w.born;
-          }
-        }
-      }
-    } else if (retained && w.born !== undefined) {
-      const predicted = (command.predict ?? []).filter((delta) => delta.t === w.t);
-      for (const entry of laterUnacked(replica, command).filter(isQueued)) {
-        if (!replica.entry(entry.localId)) continue;
-        const unmapped = (entry.intent.d ?? []).some((delta) => delta.t === w.t && delta.life?.[0] === 'dead'
-          && !sameJson(delta.id, source) && !sameJson(delta.id, w.id)
-          && (predicted.length === 0 || predicted.some((known) => sameJson(known.id, delta.id))));
-        if (unmapped) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
-      }
+    return { w, source, previous: targets.find((target) => target.t === w.t && sameJson(target.from, source)) };
+  });
+  for (const { w, source, previous } of items) {
+    if (previous || !retained || w.born === undefined) continue;
+    const predicted = (command.predict ?? []).filter((delta) => delta.t === w.t);
+    for (const entry of laterUnacked(replica, command).filter(isQueued)) {
+      if (isEnded(replica, entry)) continue;
+      const unmapped = (entry.intent.d ?? []).some((delta) => delta.t === w.t && delta.life?.[0] === 'dead'
+        && !sameJson(delta.id, source) && !sameJson(delta.id, w.id)
+        && (predicted.length === 0 || predicted.some((known) => sameJson(known.id, delta.id))));
+      if (unmapped) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
     }
-    if (!previous && w.from !== undefined) {
-      for (const entry of replica.entries().filter(isQueued)) {
-        if (replica.entry(entry.localId) !== entry) continue; // ended by an earlier target-merged fold
-        const deletesTarget = (entry.intent.d ?? []).some((delta) => delta.t === w.t && sameJson(delta.id, w.from) && delta.life?.[0] === 'dead');
-        if (deletesTarget) {
-          refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
-          continue;
+  }
+  for (const { w, previous } of items) {
+    if (previous || w.from === undefined) continue;
+    for (const entry of replica.entries().filter(isQueued)) {
+      if (isEnded(replica, entry)) continue;
+      const deletesTarget = (entry.intent.d ?? []).some((delta) => delta.t === w.t && sameJson(delta.id, w.from) && delta.life?.[0] === 'dead');
+      if (deletesTarget) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
+    }
+  }
+  const joins = items.filter(({ w, previous }) => !previous && w.from !== undefined).map(({ w }) => ({ t: w.t, from: w.from, id: w.id, scope: command.scope }));
+  const replayed = items.filter(({ previous }) => previous).map(({ w, previous }) => ({ t: w.t, from: previous.id, id: w.id, scope: command.scope }));
+  const later = new Set(laterUnacked(replica, command));
+  for (const entry of replica.entries().filter(isQueued)) {
+    const mappings = later.has(entry) ? [...joins, ...replayed] : joins;
+    if (mappings.length) rewriteEntry(registry, entry, new RecordMap(registry, mappings), { replayed: later.has(entry) ? replayed : [] });
+  }
+  const own = new RecordMap(registry, [...joins, ...replayed.filter(({ from, id }) => !sameJson(from, id))]);
+  for (const delta of command.predict ?? []) registry.references.remapRecord(command.scope, delta, own);
+
+  for (const { w, source, previous } of items) {
+    if (previous?.born !== undefined && w.born !== undefined && previous.born !== w.born) {
+      for (const entry of laterUnacked(replica, command)) {
+        for (const delta of effectsOf(entry).filter(({ scope }) => scope === command.scope).flatMap(({ d }) => d)) {
+          if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
+          if (delta.born === previous.born) delta.born = w.born;
+          if (delta.life?.[1] === previous.born) delta.life[1] = w.born;
         }
-        rewriteEntry(registry, entry, w, { scope: command.scope });
       }
-      for (const delta of command.predict ?? []) rewriteId(registry, delta, w);
     }
     for (const delta of command.predict ?? []) {
       if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
@@ -359,20 +359,29 @@ function applyScopedWriteMap(replica, ctx, command, write) {
   const { registry } = ctx;
   const retained = command.writeTargets !== undefined;
   const targets = command.writeTargets ??= [];
-  for (const item of write) {
+  const items = write.map((item) => {
     const source = item.from ?? item.id;
     const previous = targets.find((target) => target.t === item.t && sameJson(target.from, source));
-    const from = previous?.id ?? source;
-    const mapping = { ...item, from };
+    return { item, source, previous, from: previous?.id ?? source };
+  });
+  for (const { item, source, previous, from } of items) {
     for (const entry of laterUnacked(replica, command).filter(isQueued)) {
-      if (!replica.entry(entry.localId)) continue;
+      if (isEnded(replica, entry)) continue;
       const deletes = entry.scope === command.scope && (entry.intent.d ?? []).some((delta) => delta.t === item.t && delta.life?.[0] === 'dead'
         && (!previous && item.from !== undefined && sameJson(delta.id, from)
           || retained && !previous && item.born !== undefined && !sameJson(delta.id, source) && !sameJson(delta.id, item.id)));
-      if (deletes) { refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' }); continue; }
-      if (!sameJson(from, item.id)) rewriteEntry(registry, entry, mapping, { replay: !!previous, scope: command.scope });
+      if (deletes) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
     }
-    if (!sameJson(from, item.id)) rewriteEntry(registry, command, mapping, { scope: command.scope, predictionOnly: true });
+  }
+  const moved = items.filter(({ item, from }) => !sameJson(from, item.id));
+  const mappings = moved.map(({ item, from }) => ({ t: item.t, from, id: item.id, scope: command.scope }));
+  const replayed = moved.filter(({ previous }) => previous).map(({ item, from }) => ({ t: item.t, from, id: item.id, scope: command.scope }));
+  if (mappings.length) {
+    const map = new RecordMap(registry, mappings);
+    for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, map, { replayed });
+    rewriteEntry(registry, command, map, { predictionOnly: true });
+  }
+  for (const { item, source, previous } of items) {
     if (previous?.born !== undefined && item.born !== undefined && previous.born !== item.born) {
       for (const entry of laterUnacked(replica, command).filter(isQueued)) for (const group of effectsOf(entry)) {
         if (group.scope !== command.scope) continue;

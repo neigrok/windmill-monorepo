@@ -171,7 +171,7 @@ export function checkFieldValue(registry, field, value) {
     const reason = checkBounds(field, value);
     if (reason) return reason;
   }
-  return null;
+  return registry.references?.checkValue(field, value) ?? null;
 }
 
 export function checkArgument(registry, arg, value) {
