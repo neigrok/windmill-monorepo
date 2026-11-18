@@ -1,7 +1,8 @@
 // §7.7 step 3 dependents: later deltas and commands that touch or name a record a source created, that
 // carry a life register a source wrote, or that target a scope its governing record creates; by
-// (scope, t, id), and transitive through absorb(). The refusal fold (§7.7), the silent fold of an undo,
-// a retire and a supersede (§7.3), and held-back numbering (§7.4) all use it.
+// (scope, t, id), and transitive through absorb(). A reference names the record its compiled leaf
+// resolves to (E-8), and a command's proposed creation names none. The refusal fold (§7.7), the silent
+// fold of an undo, a retire and a supersede (§7.3), and held-back numbering (§7.4) all use it.
 
 import { moveEntry } from '../core/machines.js';
 import { recordKey } from '../core/rows.js';
@@ -18,30 +19,6 @@ export function scopedKey(scope, t, id) {
 
 function lifeKey(scope, delta) {
   return `${scopedKey(scope, delta.t, delta.id)}|${delta.life.join('@')}`;
-}
-
-// A reference names a record in the scope its type lives in: a product scope, or the tree and overlay
-// scopes of the referencing scope's tree.
-function scopeOfType(registry, fromScope, t) {
-  const kind = registry.type(t)?.scope;
-  if (kind?.startsWith('product:')) return `self/${kind.slice('product:'.length)}`;
-  const tree = fromScope.split('/').pop();
-  return kind === 'tree' ? `tree/${tree}` : `self/overlay/${tree}`;
-}
-
-function refsOf(registry, delta) {
-  const values = Object.fromEntries(Object.entries(delta.f ?? {}).map(([name, register]) => [name, register[0]]));
-  return registry.type(delta.t).referencesOf(delta.id, values);
-}
-
-export function commandRefs(registry, cmd) {
-  const def = registry.command(cmd.name);
-  const refs = [];
-  for (const [name, arg] of Object.entries(def?.args ?? {})) {
-    const t = /^ref<(.+)>$/.exec(arg.type)?.[1];
-    if (t && typeof cmd.args[name] === 'string') refs.push({ t, id: cmd.args[name], name });
-  }
-  return refs;
 }
 
 export class Dependents {
@@ -67,8 +44,8 @@ export class Dependents {
     }
   }
 
-  names(fromScope, t, id) {
-    return this.created.has(scopedKey(scopeOfType(this.registry, fromScope, t), t, id));
+  names(references) {
+    return references.some(({ scope, t, id }) => this.created.has(scopedKey(scope, t, id)));
   }
 
   absorbEntry(entry, selected) {
@@ -80,18 +57,19 @@ export class Dependents {
   // they created: a replacement is numbered after the entry, so the record it read is not there yet.
   of(entry, { replaced = false } = {}) {
     const deltas = entry.intent.d ?? [];
+    const { references } = this.registry;
     const removed = deltas.filter((delta) => this.governed.has(entry.scope)
       || this.created.has(scopedKey(entry.scope, delta.t, delta.id))
       || (delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta)))
-      || refsOf(this.registry, delta).some((ref) => this.names(entry.scope, ref.t, ref.id)));
+      || this.names(references.ofRecord(entry.scope, delta)));
     const cmd = entry.intent.cmd;
     const cmdGone = cmd !== undefined
       && (this.governed.has(entry.scope)
-        || commandRefs(this.registry, cmd).some((ref) => this.names(entry.scope, ref.t, ref.id))
+        || this.names(references.ofCommand(entry.scope, cmd))
         || (entry.predictions && predictionsOf(entry).some(({ scope, d }) => this.governed.has(scope)
           || d.some((delta) => this.created.has(scopedKey(scope, delta.t, delta.id))
             || (delta.life && this.lives.has(lifeKey(scope, delta)))
-            || refsOf(this.registry, delta).some((ref) => this.names(scope, ref.t, ref.id)))))
+            || this.names(references.ofRecord(scope, delta)))))
         || (entry.predict ?? []).some((delta) => delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta))));
     const guards = replaced ? (entry.intent.guard ?? []).filter((guard) => this.created.has(scopedKey(entry.scope, guard.t, guard.id))) : [];
     return { removed, cmdGone, guards, any: removed.length > 0 || cmdGone || guards.length > 0, whole: removed.length === deltas.length && (cmd === undefined || cmdGone) };

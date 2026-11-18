@@ -14,7 +14,7 @@ namespace {
 
 TableMap tableOf(const std::string& type) {
   static const std::map<std::string, TableMap> tables{
-      {"board", {"probe_boards", {}}},
+      {"board", {"probe_boards", {{"parent", SqlType::jsonb}}}},
       {"card",
        {"probe_cards",
         {{"title", SqlType::text},

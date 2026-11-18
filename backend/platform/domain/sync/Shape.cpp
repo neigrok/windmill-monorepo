@@ -155,6 +155,7 @@ Cmd commandOf(const Registry& registry, const ScopeKey& scope, const Json::Value
     if (!registry.admitsArgument(arg, args[name])) invalid();
     if (arg.type == ArgType::instant && args[name].asDouble() > static_cast<double>(bound)) invalid();
   }
+  if (!registry.admitsArguments(*def, args)) invalid();
   return Cmd{def->name, args};
 }
 

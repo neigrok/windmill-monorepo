@@ -82,10 +82,18 @@ const Domain& propertyOf(const Domain& object, const std::string& name) {
 TEST(the_probe_registry_loads_its_types_and_commands_in_order) {
   const Registry& probe = probe::registry();
   CHECK_EQ(probe.name(), std::string("probe"));
-  CHECK_EQ(probe.version(), 3);
+  CHECK_EQ(probe.version(), 4);
   CHECK_EQ(probe.minVersion(), 2);
   CHECK_EQ(namesOf(probe.types()), (std::vector<std::string>{"board", "card", "run", "lap", "day", "fact", "meta", "tag", "link", "mark"}));
-  CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.capture", "probe.captureTree", "probe.captureOverlay", "probe.branch", "probe.start", "probe.end", "probe.copy", "probe.tick"}));
+  CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.capture", "probe.captureTree", "probe.captureOverlay", "probe.branch",
+                                                                "probe.sprout", "probe.adopt", "probe.start", "probe.end", "probe.copy", "probe.tick"}));
+  const std::vector<RefPath>& parent = probe.type("board")->field("parent")->refPaths;
+  REQUIRE(parent.size() == 2);
+  CHECK(parent[1].path == std::vector<std::string>{"tag"} && parent[1].type == "tag" && parent[1].scope.kind == RefScope::Kind::treeFrom &&
+        parent[1].scope.path == std::vector<std::string>{"board"});
+  const std::vector<RefPath>& sprout = probe.command("probe.sprout")->refPaths;
+  REQUIRE(sprout.size() == 3);
+  CHECK(sprout[2].creation && sprout[2].scope.kind == RefScope::Kind::fixed && sprout[2].scope.value == "self/probe");
   REQUIRE(probe.products().contains("probe"));
   CHECK_EQ(probe.products().at("probe").surfaces, (std::vector<std::string>{"web", "ios", "android"}));
   CHECK(probe.products().at("probe").device.at("picture").localOnly);

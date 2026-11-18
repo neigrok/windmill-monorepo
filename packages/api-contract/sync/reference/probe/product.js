@@ -17,6 +17,20 @@ function isBranchReplay(ctx, { parent, child, title }) {
   return receipt !== undefined && sameJson(receipt, { parent, title });
 }
 
+// The alive record of type `t` that `holds` picks, the least id first: the subtree a step owns, or the
+// tag a label names.
+function aliveWhere(ctx, t, holds) {
+  return ctx.rowsOf(t).filter((row) => isAlive(row) && holds(row)).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
+}
+
+const ownedBy = (step) => (row) => row.f?.parent !== undefined && sameJson(row.f.parent[0], step);
+const labelled = (label) => (row) => row.f?.label?.[0] === label;
+
+// A resolution to a record that already exists: `from` the called id when it differs.
+function resolvedTo(t, row, called) {
+  return { deltas: [], write: [{ t, id: row.id, ...(row.id === called ? {} : { from: called }), born: row.born }] };
+}
+
 function receipts(ctx, book) {
   ctx.productState[book] ??= {};
   ctx.productState[book][ctx.scopeKey] ??= {};
@@ -40,6 +54,8 @@ export class ProbeProduct {
     if (cmd.name === 'probe.start') return Object.hasOwn(receipts(ctx, 'receipts'), cmd.args.id);
     if (cmd.name === 'probe.copy') return ownValue(receipts(ctx, 'copies'), cmd.args.dst) === cmd.args.src;
     if (cmd.name === 'probe.branch') return isBranchReplay(ctx, cmd.args);
+    if (cmd.name === 'probe.sprout') return aliveWhere(ctx, 'board', ownedBy({ board: cmd.args.board, tag: cmd.args.tag })) !== undefined;
+    if (cmd.name === 'probe.adopt') return aliveWhere(ctx, 'tag', labelled(cmd.args.label)) !== undefined;
     return false;
   }
 
@@ -53,6 +69,10 @@ export class ProbeProduct {
         return this.copy(ctx, cmd.args);
       case 'probe.branch':
         return this.branch(ctx, cmd.args);
+      case 'probe.sprout':
+        return this.sprout(ctx, cmd.args);
+      case 'probe.adopt':
+        return this.adopt(ctx, cmd.args);
       case 'probe.tick':
         return this.tick(ctx);
       default:
@@ -75,6 +95,31 @@ export class ProbeProduct {
     const meta = { t: 'meta', id: 'meta', f: { title: [title, null] } };
     return { deltas: [board], into: [parent, child].map((id) => ({ scopeKey: `tree:${id}`, deltas: [meta] })),
       write: [{ t: 'board', id: child, born: null }], detail: { created: true } };
+  }
+
+  // Creates board `child` owned by the step `{board, tag}`, its `parent`. A step that already owns an
+  // alive board answers that board, so a retry, or another device's sprout of the same step, resolves
+  // to the subtree the step owns. Neither the board nor the tag need exist (E-8).
+  sprout(ctx, { board, tag, child }) {
+    const owned = aliveWhere(ctx, 'board', ownedBy({ board, tag }));
+    if (owned) return resolvedTo('board', owned, child);
+    if (ctx.idState('board', child).state !== 'none') throw new Refusal('id-taken');
+    return {
+      deltas: [{ t: 'board', id: child, life: ['alive', null], born: null, f: { parent: [{ board, tag }, null] } }],
+      write: [{ t: 'board', id: child, born: null, f: { parent: null } }],
+    };
+  }
+
+  // Answers the tree's alive tag labelled `label`, else creates tag `tag` with that label: a command
+  // whose write map renames a scope-local id.
+  adopt(ctx, { tag, label }) {
+    const named = aliveWhere(ctx, 'tag', labelled(label));
+    if (named) return resolvedTo('tag', named, tag);
+    if (ctx.idState('tag', tag).state !== 'none') throw new Refusal('id-taken');
+    return {
+      deltas: [{ t: 'tag', id: tag, life: ['alive', null], born: null, f: { label: [label, null] } }],
+      write: [{ t: 'tag', id: tag, born: null, f: { label: null } }],
+    };
   }
 
   start(ctx, args) {

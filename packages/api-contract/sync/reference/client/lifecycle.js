@@ -7,7 +7,6 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
-import { commandRefs } from './dependents.js';
 import { Replica } from './replica.js';
 import { effectsOf } from './projections.js';
 
@@ -38,9 +37,12 @@ export function epochChange(replica, ctx, epoch) {
   for (const entry of replica.entries()) {
     if (entry.state !== 'acked' || entry.resultEpoch === epoch) continue;
     if (entry.intent.cmd && entry.writeTargets === undefined) {
-      const refs = commandRefs(ctx.registry, entry.intent.cmd);
+      const { references } = ctx.registry;
+      const proposed = references.ofCommand(entry.scope, entry.intent.cmd, 'creation');
+      const named = references.ofCommand(entry.scope, entry.intent.cmd);
       entry.writeTargets = (entry.predict ?? []).flatMap((delta) => {
-        const sources = refs.filter((ref) => ref.t === delta.t);
+        const creations = proposed.filter((ref) => ref.t === delta.t);
+        const sources = creations.length ? creations : named.filter((ref) => ref.t === delta.t);
         if (sources.length !== 1 || entry.predict.filter((other) => other.t === delta.t).length !== 1) return [];
         return [{ t: delta.t, from: sources[0].id, id: delta.id, ...(delta.born === undefined ? {} : { born: delta.born }) }];
       });
