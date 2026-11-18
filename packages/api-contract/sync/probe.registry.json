@@ -202,7 +202,7 @@
     {
       "name": "probe.captureTree", "scope": "tree", "origins": ["replica", "server"],
       "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {},
-      "predicts": ["meta", "tag", "link"]
+      "predicts": ["meta", "tag", "link", "run"]
     },
     {
       "name": "probe.captureOverlay", "scope": "overlay", "origins": ["replica", "server"],

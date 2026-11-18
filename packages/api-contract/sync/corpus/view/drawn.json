@@ -3263,8 +3263,8 @@
             }
           },
           {
-            "localId": "g1/0",
-            "gestureId": "g1",
+            "localId": "g3/0",
+            "gestureId": "g3",
             "lineage": "A",
             "scope": "self/probe",
             "state": "held",
@@ -3280,7 +3280,7 @@
                   "endedAt": 5002
                 }
               },
-              "gestureId": "g1"
+              "gestureId": "g3"
             },
             "predict": [
               {
