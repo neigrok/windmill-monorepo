@@ -22,7 +22,8 @@ import { PlanError } from './plans.js';
  */
 /**
  * @typedef {{ changes: Change[], atomic: boolean, hold: boolean, guards: RegisterRef[], retire: RecordRef[],
- *   cmd: import('./plans.js').Command | null, predict: Change[], local: import('./plans.js').DeviceWrite[], supersede?: string[] }} Gesture
+ *   cmd: import('./plans.js').Command | null, predict: Change[], scopedPredict?: { scope: string, changes: Change[] }[],
+ *   local: import('./plans.js').DeviceWrite[], supersede?: string[] }} Gesture
  */
 /** @typedef {import('./entities.js').Definition} Definition */
 
@@ -105,7 +106,8 @@ function creation(operation, definition, names, anchor, base, registry) {
   const { values, texts } = split(operation, names, definition, base);
   const hasBorn = definition.hasBorn;
   if (anchor !== null && !hasBorn) throw new PlanError(0, 'an anchored create names a type without a birth identity');
-  if (!hasBorn && names.length === 0) throw new PlanError(8, 'a keyed create writes no field');
+  const presenceOnly = definition.identity === 'keyed' && definition.life === true && Object.keys(definition.fields).length === 0;
+  if (!hasBorn && names.length === 0 && !presenceOnly) throw new PlanError(8, 'a keyed create writes no field');
   if (hasBorn) {
     // §5.3: a nil time field is left to the engine, which stamps it with the commit's now.
     const written = Object.fromEntries(Object.entries(values).filter(([name, value]) => value !== null || definition.fields[name]?.kind !== 'time'));
@@ -199,29 +201,52 @@ function guardsOf(operations, registry) {
   return [...guards.values()].sort((a, b) => compareText(a.t, b.t) || compareJcs(a.id, b.id) || compareText(a.field, b.field));
 }
 
+// Rule 5: the command predicts the type, in a scope that holds it; a scope other than the plan's needs a command
+// with scoped effects. Predictions of other scopes go in groups, the plan's scope first, then by bytes.
 /**
  * @param {Plan} plan
+ * @param {string} scope
  * @param {Registry} registry
- * @returns {Change[]}
+ * @returns {{ predict: Change[], scopedPredict?: { scope: string, changes: Change[] }[] }}
  */
-function predictionsOf(plan, registry) {
-  return plan.predictions.map((prediction) => {
-    const predicts = plan.command ? registry.command(plan.command.name)?.predicts ?? [] : [];
-    if (!predicts.includes(prediction.type)) throw new PlanError(5, `the command does not predict ${prediction.type}`);
-    const texts = Object.fromEntries(Object.entries(prediction.texts).map(([name, text]) => [name, { text, from: null }]));
-    switch (prediction.kind) {
-      case 'create':
-        return withParts({ op: 'create', t: prediction.type, id: prediction.id }, prediction.values, {});
-      case 'update':
-        return withParts({ op: 'update', t: prediction.type, id: prediction.id }, prediction.values, {});
-      case 'write':
-        return withParts({ op: 'write', t: prediction.type, id: prediction.id }, prediction.values, texts);
-      default:
-        return registry.type(prediction.type)?.identity === 'keyed'
-          ? { op: 'put', t: prediction.type, id: prediction.id, present: false }
-          : { op: 'delete', t: prediction.type, id: prediction.id };
-    }
-  });
+function predictionsOf(plan, scope, registry) {
+  const command = plan.command ? registry.command(plan.command.name) : undefined;
+  /** @type {Map<string, Change[]>} */
+  const groups = new Map([[scope, []]]);
+  for (const prediction of plan.predictions) {
+    const target = prediction.scope ?? scope;
+    if (registry.type(prediction.type)?.scope !== registry.scopeKindOf(target)) throw new PlanError(5, `${prediction.type} is predicted outside its scope`);
+    if (target !== scope && command?.scopedEffects !== true) throw new PlanError(5, `${plan.command?.name ?? 'a plan'} predicts no other scope`);
+    if (!groups.has(target)) groups.set(target, []);
+    groups.get(target)?.push(changeOfPrediction(prediction, command?.predicts ?? [], registry));
+  }
+  const origin = groups.get(scope) ?? [];
+  if (groups.size === 1) return { predict: origin };
+  const others = [...groups.keys()].filter((key) => key !== scope).sort(compareText);
+  return { predict: [], scopedPredict: [...(origin.length ? [{ scope, changes: origin }] : []), ...others.map((key) => ({ scope: key, changes: groups.get(key) ?? [] }))] };
+}
+
+/**
+ * @param {import('./plans.js').Prediction} prediction
+ * @param {string[]} predicts
+ * @param {Registry} registry
+ * @returns {Change}
+ */
+function changeOfPrediction(prediction, predicts, registry) {
+  if (!predicts.includes(prediction.type)) throw new PlanError(5, `the command does not predict ${prediction.type}`);
+  const texts = Object.fromEntries(Object.entries(prediction.texts).map(([name, text]) => [name, { text, from: null }]));
+  switch (prediction.kind) {
+    case 'create':
+      return withParts({ op: 'create', t: prediction.type, id: prediction.id }, prediction.values, {});
+    case 'update':
+      return withParts({ op: 'update', t: prediction.type, id: prediction.id }, prediction.values, {});
+    case 'write':
+      return withParts({ op: 'write', t: prediction.type, id: prediction.id }, prediction.values, texts);
+    default:
+      return registry.type(prediction.type)?.identity === 'keyed'
+        ? { op: 'put', t: prediction.type, id: prediction.id, present: false }
+        : { op: 'delete', t: prediction.type, id: prediction.id };
+  }
 }
 
 /**
@@ -251,7 +276,7 @@ export function translate(plan, scope, registry) {
     guards: guardsOf(operations, registry),
     retire,
     cmd: plan.command,
-    predict: predictionsOf(plan, registry),
+    ...predictionsOf(plan, scope, registry),
     local: plan.deviceWrites.map((write) => ({ key: write.key, value: write.value })),
     ...(plan.supersededGestures.length ? { supersede: [...plan.supersededGestures] } : {}),
   };

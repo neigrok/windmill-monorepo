@@ -1,0 +1,448 @@
+{
+  "$schema": "./registry.schema.json",
+  "registry": "roadmap",
+  "version": 13,
+  "minVersion": 11,
+  "products": {
+    "roadmap": {
+      "surfaces": ["web", "ios"],
+      "device": {
+        "landing": {
+          "keyPattern": "^landing:t_[0-9a-f]{16}$",
+          "value": {
+            "type": "object",
+            "required": ["nodes", "edges", "revived"],
+            "properties": {
+              "nodes": { "type": "array", "items": { "type": "string", "unit": "chars", "min": 1, "max": 128 } },
+              "edges": { "type": "array", "items": { "type": "array", "maxItems": 2, "items": { "type": "string", "unit": "chars", "min": 1, "max": 128 } } },
+              "revived": { "type": "array", "items": { "type": "string", "unit": "chars", "min": 1, "max": 128 } }
+            }
+          }
+        },
+        "runningTurn": { "keyPattern": "^runningTurn:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } },
+        "applying": {
+          "keyPattern": "^applying:[A-Za-z0-9_-]{8,64}$",
+          "value": { "type": "object", "required": ["stamp"], "properties": { "stamp": { "type": "stamp", "nullable": true } } }
+        },
+        "picture": { "keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": { "type": "json" } }
+      },
+      "codes": ["step-opens-a-tree", "depth-limit", "not-a-root", "turn-final"]
+    }
+  },
+  "types": [
+    {
+      "type": "tree",
+      "scope": "product:roadmap",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^t_[0-9a-f]{16}$",
+      "mint": { "prefix": "t_", "alphabet": "0123456789abcdef", "length": 16 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "keep",
+      "governs": "tree",
+      "origins": ["replica", "server"],
+      "primary": true,
+      "fields": {
+        "parent": {
+          "kind": "const",
+          "writer": "server",
+          "domain": {
+            "type": "object",
+            "nullable": true,
+            "required": ["tree", "step"],
+            "properties": {
+              "tree": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" },
+              "step": { "type": "string", "unit": "chars", "min": 1, "max": 128 }
+            }
+          },
+          "default": null
+        }
+      }
+    },
+    {
+      "type": "meta",
+      "scope": "tree",
+      "identity": "singleton",
+      "singletonId": "meta",
+      "idPattern": "^meta$",
+      "life": false,
+      "origins": ["replica", "server"],
+      "fields": {
+        "title": { "kind": "lww", "writer": "client", "unit": "chars", "max": 200, "domain": { "type": "string" }, "default": "" },
+        "guide": { "kind": "lww", "writer": "client", "unit": "chars", "max": 5000, "domain": { "type": "string" }, "default": "" },
+        "guideInherited": { "kind": "lww", "writer": "server", "domain": { "type": "boolean" }, "default": false },
+        "visibility": {
+          "kind": "lww",
+          "writer": "server",
+          "domain": { "type": "string", "enum": ["private", "unlisted", "public"] },
+          "default": "private"
+        },
+        "visibilitySetBy": { "kind": "lww", "writer": "server", "domain": { "type": "stamp" } },
+        "reach": {
+          "kind": "lww",
+          "writer": "server",
+          "domain": { "type": "string", "enum": ["private", "unlisted", "public"] },
+          "opens": ["unlisted", "public"],
+          "default": "private"
+        },
+        "root": { "kind": "const", "writer": "server", "ref": "tree" },
+        "parent": {
+          "kind": "const",
+          "writer": "server",
+          "domain": {
+            "type": "object",
+            "nullable": true,
+            "required": ["tree", "step"],
+            "properties": {
+              "tree": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" },
+              "step": { "type": "string", "unit": "chars", "min": 1, "max": 128 }
+            }
+          },
+          "default": null
+        },
+        "depth": { "kind": "const", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0, "max": 8 }, "default": 0 },
+        "forkedFrom": { "kind": "const", "writer": "server", "domain": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" } }
+      }
+    },
+    {
+      "type": "node",
+      "scope": "tree",
+      "identity": "derived",
+      "derive": { "fallback": "step" },
+      "idSpace": "scope",
+      "idDomain": { "type": "string", "unit": "chars", "min": 1, "max": 128 },
+      "mint": { "prefix": "", "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "life": true,
+      "revivable": true,
+      "deadRows": "keep",
+      "origins": ["replica", "server"],
+      "cap": 10000,
+      "fields": {
+        "label": { "kind": "lww", "writer": "client", "unit": "chars", "max": 200, "domain": { "type": "string" }, "default": "" },
+        "icon": { "kind": "lww", "writer": "client", "unit": "chars", "max": 64, "domain": { "type": "string" }, "default": "" },
+        "color": {
+          "kind": "lww",
+          "writer": "client",
+          "domain": { "type": "string", "enum": ["terracotta", "olive", "gold", "brick", "sky", "plum"] },
+          "default": "terracotta"
+        },
+        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } },
+        "status": { "kind": "lww", "writer": "client", "domain": { "type": "string", "nullable": true }, "default": null },
+        "description": { "kind": "lww", "writer": "client", "unit": "chars", "max": 16000, "domain": { "type": "string" }, "default": "" },
+        "links": {
+          "kind": "lww",
+          "writer": "client",
+          "domain": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "required": ["url", "label"],
+              "properties": {
+                "url": { "type": "string", "unit": "chars", "max": 2048 },
+                "label": { "type": "string", "unit": "chars", "max": 200 }
+              }
+            }
+          },
+          "default": []
+        },
+        "branch": { "kind": "lww", "writer": "server", "ref": "tree", "domain": { "type": "string", "nullable": true }, "default": null }
+      }
+    },
+    {
+      "type": "edge",
+      "scope": "tree",
+      "identity": "keyed",
+      "key": { "tuple": [{ "name": "from", "ref": "node" }, { "name": "to", "ref": "node" }] },
+      "life": true,
+      "deadRows": "keep",
+      "origins": ["replica", "server"],
+      "cap": 20000,
+      "fields": {}
+    },
+    {
+      "type": "kind",
+      "scope": "tree",
+      "identity": "derived",
+      "derive": { "fallback": "kind" },
+      "idSpace": "scope",
+      "idDomain": { "type": "string", "unit": "chars", "min": 1, "max": 128 },
+      "mint": { "prefix": "", "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "life": true,
+      "revivable": true,
+      "deadRows": "keep",
+      "origins": ["replica", "server"],
+      "cap": 6,
+      "fields": {
+        "hue": {
+          "kind": "lww",
+          "writer": "client",
+          "domain": { "type": "string", "enum": ["terracotta", "olive", "gold", "brick", "sky", "plum"] },
+          "default": "terracotta"
+        },
+        "label": { "kind": "lww", "writer": "client", "unit": "chars", "max": 24, "domain": { "type": "string" }, "default": "" },
+        "description": { "kind": "lww", "writer": "client", "unit": "chars", "max": 80, "domain": { "type": "string" }, "default": "" },
+        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } }
+      }
+    },
+    {
+      "type": "progress",
+      "scope": "overlay",
+      "identity": "keyed",
+      "key": { "ref": "node" },
+      "life": false,
+      "origins": ["replica", "server"],
+      "fields": {
+        "mark": {
+          "kind": "lww",
+          "writer": "client",
+          "domain": {
+            "type": "object",
+            "required": ["status", "outOfOrder"],
+            "properties": {
+              "status": { "type": "string", "enum": ["complete", "none"] },
+              "outOfOrder": { "type": "boolean" }
+            }
+          },
+          "default": { "status": "none", "outOfOrder": false }
+        }
+      }
+    },
+    {
+      "type": "pointer",
+      "scope": "overlay",
+      "identity": "keyed",
+      "key": { "ref": "node" },
+      "life": true,
+      "deadRows": "keep",
+      "origins": ["replica", "server"],
+      "fields": {
+        "opens": { "kind": "lww", "writer": "client", "ref": "tree" }
+      }
+    },
+    {
+      "type": "subtask",
+      "scope": "overlay",
+      "identity": "minted",
+      "idSpace": "scope",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica"],
+      "cap": 20000,
+      "fields": {
+        "step": { "kind": "const", "writer": "client", "ref": "node" },
+        "label": { "kind": "lww", "writer": "client", "unit": "chars", "max": 200, "domain": { "type": "string" }, "default": "" },
+        "done": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" }, "default": false },
+        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } }
+      }
+    },
+    {
+      "type": "stepLink",
+      "scope": "overlay",
+      "identity": "minted",
+      "idSpace": "scope",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica"],
+      "cap": 20000,
+      "fields": {
+        "step": { "kind": "const", "writer": "client", "ref": "node" },
+        "url": { "kind": "lww", "writer": "client", "unit": "chars", "max": 2048, "domain": { "type": "string" } },
+        "title": { "kind": "lww", "writer": "client", "unit": "chars", "max": 200, "domain": { "type": "string" }, "default": "" },
+        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } }
+      }
+    },
+    {
+      "type": "stepNote",
+      "scope": "overlay",
+      "identity": "keyed",
+      "key": { "ref": "node" },
+      "life": false,
+      "visibleWhen": ["text"],
+      "origins": ["replica"],
+      "fields": {
+        "text": { "kind": "text", "writer": "client", "unit": "chars", "max": 16000 }
+      }
+    },
+    {
+      "type": "coachThread",
+      "scope": "product:roadmap",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica"],
+      "fields": {
+        "treeId": { "kind": "lww", "writer": "client", "ref": "tree", "domain": { "type": "string", "nullable": true } },
+        "stepId": { "kind": "const", "writer": "client", "unit": "chars", "min": 1, "max": 128, "domain": { "type": "string", "nullable": true } },
+        "title": { "kind": "const", "writer": "client", "unit": "bytes", "min": 1, "max": 8000, "domain": { "type": "string" } }
+      }
+    },
+    {
+      "type": "coachMessage",
+      "scope": "product:roadmap",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica"],
+      "fields": {
+        "threadId": { "kind": "const", "writer": "client", "ref": "coachThread", "parent": true },
+        "role": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["person", "coach"] } },
+        "replica": { "kind": "const", "writer": "client", "domain": { "type": "string", "pattern": "^rp_[0-9a-f]{32}$" } },
+        "text": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 131072, "domain": { "type": "string" } },
+        "state": {
+          "kind": "ranked",
+          "writer": "client",
+          "rank": { "running": 0, "interrupted": 1, "completed": 2, "declined": 2, "failed": 2, "stopped": 2 },
+          "default": "running"
+        },
+        "truncated": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" }, "default": false },
+        "refusal": {
+          "kind": "lww",
+          "writer": "client",
+          "unit": "chars",
+          "max": 64,
+          "domain": { "type": "string", "nullable": true, "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
+          "default": null
+        },
+        "calls": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 32768, "domain": { "type": "json" } },
+        "receipts": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 16384, "domain": { "type": "json" } },
+        "proposalId": { "kind": "lww", "writer": "client", "ref": "coachProposal", "domain": { "type": "string", "nullable": true }, "default": null },
+        "pictures": {
+          "kind": "const",
+          "writer": "client",
+          "domain": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
+                "mediaType": { "type": "string", "unit": "bytes", "min": 1, "max": 255 },
+                "localOnly": { "type": "boolean" }
+              },
+              "required": ["id", "mediaType"]
+            }
+          }
+        },
+        "at": { "kind": "const", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0 } }
+      }
+    },
+    {
+      "type": "coachProposal",
+      "scope": "product:roadmap",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica"],
+      "fields": {
+        "treeId": { "kind": "lww", "writer": "client", "ref": "tree" },
+        "threadId": { "kind": "const", "writer": "client", "ref": "coachThread" },
+        "messageId": { "kind": "const", "writer": "client", "ref": "coachMessage" },
+        "base": { "kind": "const", "writer": "client", "unit": "bytes", "max": 262144, "domain": { "type": "json" } },
+        "changes": {
+          "kind": "const",
+          "writer": "client",
+          "unit": "bytes",
+          "max": 65536,
+          "domain": { "type": "array", "maxItems": 100, "items": { "type": "json" } }
+        },
+        "state": {
+          "kind": "ranked",
+          "writer": "client",
+          "rank": { "pending": 0, "rejected": 1, "stale": 1, "replaced": 1, "applied": 2 },
+          "default": "pending"
+        },
+        "undone": { "kind": "fww", "writer": "client", "domain": { "type": "boolean" }, "default": false }
+      }
+    },
+    {
+      "type": "coachWriteFate",
+      "scope": "product:roadmap",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica"],
+      "fields": {
+        "messageId": { "kind": "const", "writer": "client", "ref": "coachMessage", "parent": true },
+        "receipt": { "kind": "const", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0, "max": 5 } },
+        "fate": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["undone", "refused"] } },
+        "code": {
+          "kind": "const",
+          "writer": "client",
+          "unit": "chars",
+          "max": 64,
+          "domain": { "type": "string", "nullable": true, "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" }
+        }
+      }
+    }
+  ],
+  "commands": [
+    {
+      "name": "roadmap.setVisibility",
+      "scope": "tree",
+      "origins": ["replica", "server"],
+      "serverInternal": false,
+      "scopedEffects": true,
+      "args": {
+        "visibility": { "type": "json", "domain": { "type": "string", "enum": ["private", "unlisted", "public"] } }
+      },
+      "predicts": ["meta"]
+    },
+    {
+      "name": "roadmap.createSubtree",
+      "scope": "product:roadmap",
+      "origins": ["replica", "server"],
+      "serverInternal": false,
+      "scopedEffects": true,
+      "args": {
+        "tree": { "type": "json", "domain": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" } },
+        "root": { "type": "json", "domain": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" } },
+        "step": { "type": "json", "domain": { "type": "string", "unit": "chars", "min": 1, "max": 128 } },
+        "subtree": { "type": "json", "domain": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" } }
+      },
+      "predicts": ["tree", "meta", "node", "kind"]
+    },
+    {
+      "name": "roadmap.recolourKind",
+      "scope": "tree",
+      "origins": ["replica", "server"],
+      "serverInternal": false,
+      "scopedEffects": true,
+      "args": {
+        "kind": { "type": "ref<kind>" },
+        "hue": { "type": "json", "domain": { "type": "string", "enum": ["terracotta", "olive", "gold", "brick", "sky", "plum"] } }
+      },
+      "predicts": ["kind", "node"]
+    },
+    { "name": "roadmap.capture", "scope": "product:roadmap", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
+    { "name": "roadmap.captureTree", "scope": "tree", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
+    { "name": "roadmap.captureOverlay", "scope": "overlay", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} }
+  ]
+}

@@ -39,7 +39,9 @@ export class PlanError extends Error {
   }
 }
 
-// §8.4: the values a product expects a command to write, server-written fields included, unvalidated.
+// §8.4: the values a product expects a command to write, server-written fields included, unvalidated. A
+// prediction names the scope it writes when that is not the plan's own: a command with scoped effects (E-7) may
+// predict records in every scope it changes.
 export class Prediction {
   /**
    * @param {'create' | 'update' | 'write' | 'remove'} kind
@@ -47,44 +49,52 @@ export class Prediction {
    * @param {RecordID} id
    * @param {Record<string, Json>} values
    * @param {Record<string, string>} texts
+   * @param {string | null} scope
    */
-  constructor(kind, type, id, values, texts) {
+  constructor(kind, type, id, values, texts, scope = null) {
     this.kind = kind;
     this.type = type;
     this.id = id;
     this.values = values;
     this.texts = texts;
+    this.scope = scope;
     Object.freeze(this);
   }
 
   /**
    * @param {AnyId} id
    * @param {Record<string, Json>} values
+   * @param {string | null} [scope]
    */
-  static create(id, values) {
-    return new Prediction('create', id.entity.type, id.record, values, {});
+  static create(id, values, scope = null) {
+    return new Prediction('create', id.entity.type, id.record, values, {}, scope);
   }
 
   /**
    * @param {AnyId} id
    * @param {Record<string, Json>} values
+   * @param {string | null} [scope]
    */
-  static update(id, values) {
-    return new Prediction('update', id.entity.type, id.record, values, {});
+  static update(id, values, scope = null) {
+    return new Prediction('update', id.entity.type, id.record, values, {}, scope);
   }
 
   /**
    * @param {AnyId} id
    * @param {Record<string, Json>} values
    * @param {Record<string, string>} texts
+   * @param {string | null} [scope]
    */
-  static write(id, values, texts = {}) {
-    return new Prediction('write', id.entity.type, id.record, values, texts);
+  static write(id, values, texts = {}, scope = null) {
+    return new Prediction('write', id.entity.type, id.record, values, texts, scope);
   }
 
-  /** @param {AnyId} id */
-  static remove(id) {
-    return new Prediction('remove', id.entity.type, id.record, {}, {});
+  /**
+   * @param {AnyId} id
+   * @param {string | null} [scope]
+   */
+  static remove(id, scope = null) {
+    return new Prediction('remove', id.entity.type, id.record, {}, {}, scope);
   }
 }
 

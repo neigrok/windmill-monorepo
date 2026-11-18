@@ -1708,5 +1708,205 @@
     "expect": {
       "error": true
     }
+  },
+  {
+    "name": "rule 8: a keyed create of a type with life and no field writes its presence alone",
+    "input": {
+      "linkFields": {},
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "create",
+          "t": "link",
+          "id": [
+            "tag0001",
+            "tag0002"
+          ],
+          "f": {},
+          "fields": []
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "put",
+            "t": "link",
+            "id": [
+              "tag0001",
+              "tag0002"
+            ],
+            "present": true
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [
+          {
+            "t": "link",
+            "id": [
+              "tag0001",
+              "tag0002"
+            ]
+          }
+        ],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a command with scoped effects predicts records of other scopes, grouped by scope, its own first",
+    "input": {
+      "cmd": {
+        "name": "probe.branch",
+        "args": {
+          "parent": "b_00000001",
+          "child": "b_00000002",
+          "title": "Child"
+        }
+      },
+      "predict": [
+        {
+          "op": "write",
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": "Child"
+          },
+          "scope": "tree/b_00000002"
+        },
+        {
+          "op": "create",
+          "t": "board",
+          "id": "b_00000002",
+          "f": {}
+        },
+        {
+          "op": "update",
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": "Parent"
+          },
+          "scope": "tree/b_00000001"
+        }
+      ],
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {
+          "name": "probe.branch",
+          "args": {
+            "parent": "b_00000001",
+            "child": "b_00000002",
+            "title": "Child"
+          }
+        },
+        "predict": [],
+        "local": [],
+        "scopedPredict": [
+          {
+            "scope": "self/probe",
+            "changes": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000002"
+              }
+            ]
+          },
+          {
+            "scope": "tree/b_00000001",
+            "changes": [
+              {
+                "op": "update",
+                "t": "meta",
+                "id": "meta",
+                "f": {
+                  "title": "Parent"
+                }
+              }
+            ]
+          },
+          {
+            "scope": "tree/b_00000002",
+            "changes": [
+              {
+                "op": "write",
+                "t": "meta",
+                "id": "meta",
+                "f": {
+                  "title": "Child"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "rule 5: a prediction of another scope needs a command with scoped effects",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {
+          "id": "run00001",
+          "startedAt": 1800000000000,
+          "join": false
+        }
+      },
+      "predict": [
+        {
+          "op": "write",
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": "Run"
+          },
+          "scope": "tree/b_00000001"
+        }
+      ],
+      "plan": []
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "rule 5: a prediction names a scope that holds its type",
+    "input": {
+      "cmd": {
+        "name": "probe.branch",
+        "args": {
+          "parent": "b_00000001",
+          "child": "b_00000002",
+          "title": "Child"
+        }
+      },
+      "predict": [
+        {
+          "op": "create",
+          "t": "board",
+          "id": "b_00000002",
+          "f": {},
+          "scope": "tree/b_00000002"
+        }
+      ],
+      "plan": []
+    },
+    "expect": {
+      "error": true
+    }
   }
 ]

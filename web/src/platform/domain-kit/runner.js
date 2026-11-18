@@ -310,8 +310,8 @@ export class EngineReplica {
     const { outcome, value } = await this.engine.commit(scope, (/** @type {CommitViews} */ views) => {
       const decided = body(views);
       if (decided.gesture === null) return { gesture: null, value: decided.value };
-      const { changes, atomic, hold, guards, retire, cmd, predict, local, supersede } = decided.gesture;
-      const opts = { gestureId, atomic, hold, guard: guards, retire, predict,
+      const { changes, atomic, hold, guards, retire, cmd, predict, scopedPredict, local, supersede } = decided.gesture;
+      const opts = { gestureId, atomic, hold, guard: guards, retire, predict, ...(scopedPredict ? { scopedPredict } : {}),
         ...(supersede?.length ? { supersede } : {}), local: Object.fromEntries(local.map((write) => [write.key, write.value])) };
       return { gesture: { changes, opts: cmd === null ? opts : { ...opts, cmd } }, value: decided.value };
     });
@@ -334,8 +334,8 @@ export class EngineReplica {
    */
   async commitAct(prepare, segment) {
     const { outcome, value } = await this.engine.commitAct(prepare, (/** @type {T} */ value, /** @type {number} */ index, /** @type {CommitViews} */ input) => {
-      const { changes, atomic, hold, guards, retire, cmd, predict, local, supersede } = segment(value, index, input);
-      const opts = { atomic, hold, guard: guards, retire, predict,
+      const { changes, atomic, hold, guards, retire, cmd, predict, scopedPredict, local, supersede } = segment(value, index, input);
+      const opts = { atomic, hold, guard: guards, retire, predict, ...(scopedPredict ? { scopedPredict } : {}),
         ...(supersede?.length ? { supersede } : {}), local: Object.fromEntries(local.map((write) => [write.key, write.value])) };
       return { changes, opts: cmd === null ? opts : { ...opts, cmd } };
     });

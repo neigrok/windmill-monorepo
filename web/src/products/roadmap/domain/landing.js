@@ -1,0 +1,90 @@
+// @ts-check
+
+import { ActDecision } from '../../../platform/domain-kit/acts.js';
+import { Plan } from '../../../platform/domain-kit/plans.js';
+import { DomainNotice } from '../../../platform/domain-kit/refusals.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { FollowGraph } from './graph.js';
+import { LandingNote } from './records.js';
+import { landingFacts } from './reads.js';
+import { RoadmapRefusals, RoadmapScopes, writeIn } from './roadmapRules.js';
+import { readTree } from './steps.js';
+
+/** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
+/** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
+/** @typedef {import('../../../platform/domain-kit/refusals.js').Notice} Notice */
+/** @typedef {import('../../../../../packages/api-contract/sync/reference/core/registry.js').Registry} Registry */
+/** @typedef {'roadmapDeleted' | 'capFilled' | 'accessEnded' | 'noteTooLong'} CannotLandReason */
+
+// §6 What a device tells a person once, read from its note and the roadmap as it now stands: each of its own
+// new steps and links that follows through a step deleted elsewhere, and each step its change brought back.
+/**
+ * @param {string} tree
+ * @param {Reader} read
+ */
+export function landingOf(tree, read) {
+  const note = LandingNote.of(read.device(RoadmapScopes.landing(tree)));
+  const roadmap = readTree(tree, read);
+  return {
+    follows: landingFacts(new FollowGraph(roadmap), { nodes: [...note.nodes], edges: note.edges.map((edge) => [...edge]) }),
+    cameBack: note.revived.filter((id) => roadmap.nodesById.get(id)?.present === true),
+    note,
+  };
+}
+
+// Once told, the device clears what it told from its note; an empty note leaves the device row.
+export class ClearLanding {
+  /**
+   * @param {string} tree
+   * @param {{ nodes?: string[], edges?: string[][], revived?: string[] }} told
+   */
+  constructor(tree, told) {
+    this.tree = tree;
+    this.told = told;
+    this.refusals = RoadmapRefusals;
+    Object.freeze(this);
+  }
+
+  /** @param {import('../../../platform/domain-kit/acts.js').ActReader} read */
+  load(read) {
+    return read.inScope(RoadmapScopes.tree(this.tree), (tree) => LandingNote.of(tree.device(RoadmapScopes.landing(this.tree))));
+  }
+
+  /** @param {LandingNote} note */
+  decide(note) {
+    const left = note.clearing(this.told);
+    if (jcs(left.json) === jcs(note.json)) return ActDecision.unchanged(null);
+    const plan = new Plan();
+    plan.device(RoadmapScopes.landing(this.tree), left.isEmpty ? null : left.json);
+    return writeIn(RoadmapScopes.tree(this.tree), plan, null);
+  }
+}
+
+// §6 The one list of what cannot land, from the engine's notices: each with its reason and what the person
+// wrote, to copy or discard. Every other notice is no refusal a person is shown; `unexpected` names it for the
+// failure report.
+/**
+ * @param {Notice[]} notices
+ * @param {Registry} registry
+ */
+export function cannotLand(notices, registry) {
+  /** @type {{ id: string, gestureId: string, reason: CannotLandReason, subject: import('../../../platform/domain-kit/entities.js').RecordRef | null, values: Record<string, Json> }[]} */
+  const listed = [];
+  /** @type {{ id: string, code: string }[]} */
+  const unexpected = [];
+  for (const notice of notices) {
+    const read = new DomainNotice(notice, registry, RoadmapRefusals);
+    const { refusal } = read;
+    /** @type {CannotLandReason | null} */
+    const reason = refusal.kind === 'roadmapGone' ? 'roadmapDeleted'
+      : refusal.kind === 'full' ? 'capFilled'
+        : refusal.kind === 'unreachable' ? 'accessEnded'
+          : refusal.kind === 'tooLarge' && refusal.subject.t === 'stepNote' ? 'noteTooLong' : null;
+    if (reason === null) {
+      unexpected.push({ id: notice.id, code: notice.code });
+      continue;
+    }
+    listed.push({ id: notice.id, gestureId: read.gestureId, reason, subject: read.subject, values: read.subject === null ? {} : read.values(read.subject) });
+  }
+  return { listed, unexpected };
+}

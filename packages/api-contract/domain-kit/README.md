@@ -135,8 +135,8 @@ normalised value. So item `i` validates at `at + i`.
 ### `plan/translate.json`
 
 `{scope?, now?, offsetSeconds?, cmd?, predict?, plan}` → `{gesture}`, `{violation}` or `{error: true}`.
-A vector with `cmd` builds `Plan(running:predicting:)` first (`predict`: `[{op: "create" | "update", t, id,
-f}]`), then applies each operation of `plan` in order:
+A vector with `cmd` builds `Plan(running:predicting:)` first (`predict`: `[{op: "create" | "update" | "write", t, id,
+f, scope?}]`, `scope` naming a scope other than the plan's), then applies each operation of `plan` in order:
 
 | Operation | Plan call |
 |---|---|
@@ -152,7 +152,10 @@ f}]`), then applies each operation of `plan` in order:
 `valid` is `Valid(entity, fields: checked, at: moment)`, where the entity decodes from `f` with the
 operation's id and `checked` defaults to `fields`, then to every field. A violation ends the vector with it.
 Translation then runs for `scope`. A translation vector may replace the probe tag's `label` declaration
-with `tagField` to prove that revival rejects const, time and text edits on a revivable type.
+with `tagField` to prove that revival rejects const, time and text edits on a revivable type, and the probe
+link's fields with `linkFields` to prove that a keyed type with life and no field is created by its presence
+alone. A gesture whose predictions name another scope carries them in `scopedPredict` (`[{scope, changes}]`,
+the plan's scope first, then by bytes) and an empty `predict`.
 
 ### `run/pipeline.json`
 
@@ -225,6 +228,15 @@ a different scope traps before the repository is read.
 The declaration is dynamic for `GuardedMeta`, `Meta`, `Mark`, `Link` and `Tag`. Older vectors that omit the actual
 scope explicitly use `tree/b_00000001` or `self/overlay/b_00000001` in their fixture runner; those
 fixture defaults are not part of the entity declaration. Product entities keep `self/probe` fixed.
+
+### `run/act-decisions.json`
+
+`{loads, segments, scopes, ids?}` → `{decision}`, through `ProductCorpus.act`, the act form a product's vectors use.
+The act's load reads each scope of `loads` in turn, its result the ids each draws, `{<scope>: [id]}`; its decision
+builds each of `segments` (`{scope, plan}`) as in `plan/translate.json`, an operation with `mint: true` taking the
+next of `ids` in its segment's scope. `scopes` holds each scope's records (`{drawn, stored?}`). The decision is
+`{write: {segments: [{scope, gesture}], result}}`, `{unchanged: {result}}` when `segments` is empty, or `{refuse}` in
+the probe refusal form.
 
 ### `run/acts.json`
 

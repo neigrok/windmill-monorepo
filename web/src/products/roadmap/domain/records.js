@@ -1,5 +1,6 @@
 // @ts-check
 import { compareText } from '../../../platform/domain-kit/entities.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 
 /** @typedef {{id:string, present?:boolean, born?:string|null, rc?:number|null, ru?:number|null, label?:string, icon?:string, color?:string, ord?:string, status?:string, description?:string, links?:{url:string,label:string}[], branch?:string|null, branchStamp?:string|null}} StepInput */
@@ -72,4 +73,51 @@ export function authoredOrder(a, b) {
 /** @param {{from:string,to:string}} a @param {{from:string,to:string}} b */
 export function edgeOrder(a, b) {
   return compareText(a.from, b.from) || compareText(a.to, b.to);
+}
+
+// The device's own note of what it made and revived in one roadmap (§6), held in its `landing:<tree>` row
+// until the person has been told.
+export class LandingNote {
+  /** @param {{nodes?:string[],edges?:string[][],revived?:string[]}} note */
+  constructor({ nodes = [], edges = [], revived = [] } = {}) {
+    this.nodes = Object.freeze([...nodes]);
+    this.edges = Object.freeze(edges.map(([from = '', to = '']) => Object.freeze([from, to])));
+    this.revived = Object.freeze([...revived]);
+    Object.freeze(this);
+  }
+
+  /** @param {unknown} json */
+  static of(json) {
+    if (json === null || typeof json !== 'object' || Array.isArray(json)) return new LandingNote();
+    const note = /** @type {{nodes?:unknown,edges?:unknown,revived?:unknown}} */ (json);
+    const strings = (/** @type {unknown} */ list) => Array.isArray(list) ? list.filter((item) => typeof item === 'string') : [];
+    const pairs = Array.isArray(note.edges) ? note.edges.filter((edge) => Array.isArray(edge) && edge.length === 2).map((edge) => strings(edge)) : [];
+    return new LandingNote({ nodes: strings(note.nodes), edges: pairs.filter((edge) => edge.length === 2), revived: strings(note.revived) });
+  }
+
+  /** @param {{nodes?:string[],edges?:string[][],revived?:string[]}} made */
+  adding({ nodes = [], edges = [], revived = [] }) {
+    const key = (/** @type {readonly string[]} */ edge) => jcs([...edge]);
+    const known = new Set(this.edges.map(key));
+    return new LandingNote({
+      nodes: [...this.nodes, ...nodes.filter((id, index) => !this.nodes.includes(id) && nodes.indexOf(id) === index)],
+      edges: [...this.edges.map((edge) => [...edge]), ...edges.filter((edge) => !known.has(key(edge)) && known.add(key(edge)))],
+      revived: [...this.revived, ...revived.filter((id, index) => !this.revived.includes(id) && revived.indexOf(id) === index)],
+    });
+  }
+
+  /** @param {{nodes?:string[],edges?:string[][],revived?:string[]}} told */
+  clearing({ nodes = [], edges = [], revived = [] }) {
+    const key = (/** @type {readonly string[]} */ edge) => jcs([...edge]);
+    const toldEdges = new Set(edges.map(key));
+    return new LandingNote({
+      nodes: this.nodes.filter((id) => !nodes.includes(id)),
+      edges: this.edges.filter((edge) => !toldEdges.has(key(edge))).map((edge) => [...edge]),
+      revived: this.revived.filter((id) => !revived.includes(id)),
+    });
+  }
+
+  get isEmpty() { return !this.nodes.length && !this.edges.length && !this.revived.length; }
+
+  get json() { return { nodes: [...this.nodes], edges: this.edges.map((edge) => [...edge]), revived: [...this.revived] }; }
 }
