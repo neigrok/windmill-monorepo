@@ -71,8 +71,8 @@ internal class Entry(var json: Json) {
                 val stamp = slot.stamp ?: return@fold accepted
                 val lattice = accepted.lattice
                 val versioned = when (slot.kind) {
-                    EffectSlot.Kind.born -> Lattice(lattice.life, lattice.born?.let { stamp }, lattice.fields)
-                    EffectSlot.Kind.life -> Lattice(lattice.life?.copy(stamp = stamp), lattice.born, lattice.fields)
+                    Slot.Kind.born -> Lattice(lattice.life, lattice.born?.let { stamp }, lattice.fields)
+                    Slot.Kind.life -> Lattice(lattice.life?.copy(stamp = stamp), lattice.born, lattice.fields)
                     else -> Lattice(lattice.life, lattice.born, lattice.fields.mapValues { (name, register) -> if (name == slot.name) register.copy(stamp = stamp) else register })
                 }
                 accepted.copy(lattice = versioned)

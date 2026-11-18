@@ -446,10 +446,10 @@ internal fun Engine.applyReceipt(replica: ReplicaState, command: Entry, effects:
             val at = rows.indexOfFirst { it.key == map.key }
             val row = rows.getOrNull(at) ?: EffectRow(map.key, null, 0, emptyList())
             val versions = buildList {
-                map.born?.let { add(EffectSlot(EffectSlot.Kind.born, null, EffectSlot.Version.Stamped(it))); add(EffectSlot(EffectSlot.Kind.life, null, EffectSlot.Version.Stamped(it))) }
-                for ((name, stamp) in map.fields) add(EffectSlot(EffectSlot.Kind.field, name, EffectSlot.Version.Stamped(stamp)))
+                map.born?.let { add(EffectSlot(Slot(Slot.Kind.born), SlotVersion.Stamped(it))); add(EffectSlot(Slot(Slot.Kind.life), SlotVersion.Stamped(it))) }
+                for ((name, stamp) in map.fields) add(EffectSlot(Slot(Slot.Kind.field, name), SlotVersion.Stamped(stamp)))
             }
-            val next = row.copy(slots = row.slots + versions.filter { row.slot(it.kind, it.name) == null })
+            val next = row.copy(slots = row.slots + versions.filter { row.slot(it.slot) == null })
             if (at < 0) rows.add(next) else rows[at] = next
         }
         effect.copy(rows = rows)
@@ -465,7 +465,7 @@ private fun Engine.applyAcceptedVersions(replica: ReplicaState, command: Entry, 
     val later = replica.entries().filter { it.order > command.order && it.queued() }
     val own = later.associateWith { entry -> entry.slots().flatMap { slot ->
         val row = effects.firstOrNull { it.scope == slot.scope }?.row(slot.delta.recordKey)
-        row?.slots.orEmpty().mapNotNull { it.register }.filter { register ->
+        row?.slots.orEmpty().mapNotNull { it.slot.register }.filter { register ->
             val value = if (register == "life") slot.delta["life"] else slot.delta["f"]?.get(register)
             value != null && Stamp(value.arr()[1].str()) >= entry.stamp
         }.map { NamedRegister(slot, it) }
@@ -476,18 +476,18 @@ private fun Engine.applyAcceptedVersions(replica: ReplicaState, command: Entry, 
         val prior = previous.firstOrNull { it.scope == effect.scope }?.row(row.key)
         for (slot in row.slots) {
             val stamp = slot.stamp ?: continue
-            val register = if (slot.kind == EffectSlot.Kind.field) slot.name!! else "life"
+            val register = if (slot.kind == Slot.Kind.field) slot.name!! else "life"
             fun follow(old: Stamp?) {
-                if (old != null && old != stamp) followRegister(replica, command, effect.scope, row.key, register, old, stamp, slot.kind == EffectSlot.Kind.born, queuedOnly = true)
+                if (old != null && old != stamp) followRegister(replica, command, effect.scope, row.key, register, old, stamp, slot.kind == Slot.Kind.born, queuedOnly = true)
             }
-            follow(prior?.slot(slot.kind, slot.name)?.stamp)
+            follow(prior?.slot(slot.slot)?.stamp)
             for (delta in ordinary) follow(when (slot.kind) {
-                EffectSlot.Kind.born -> delta.lattice.born
-                EffectSlot.Kind.life -> delta.lattice.life?.stamp
+                Slot.Kind.born -> delta.lattice.born
+                Slot.Kind.life -> delta.lattice.life?.stamp
                 else -> delta.lattice.fields[register]?.stamp
             })
             for (delta in predicted) {
-                if (slot.kind != EffectSlot.Kind.born) { moveRegister(replica, NamedRegister(delta, register), stamp, queuedOnly = true); continue }
+                if (slot.kind != Slot.Kind.born) { moveRegister(replica, NamedRegister(delta, register), stamp, queuedOnly = true); continue }
                 val old = delta.delta["born"]?.str()?.let(::Stamp) ?: continue
                 var updated = delta.delta.with("born" to stamp.json)
                 updated["life"]?.arr()?.let { if (it[0] == Json.of("alive") && it[1] == old.json) updated = updated.with("life" to Json.array(it[0], stamp.json)) }

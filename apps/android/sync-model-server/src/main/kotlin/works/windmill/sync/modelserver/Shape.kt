@@ -37,7 +37,11 @@ data class PlannedDelta(val key: RecordKey, val op: String, val life: PlannedLif
         }
     }
 }
-data class CheckedCommand(val definition: CommandDef, val args: Map<String, Json>) { val name get() = definition.name; fun string(name: String) = (args[name] as? Json.Str)?.value ?: "" }
+// A command as admission reads it: its declared arguments, an engine restore's fixed arguments, or an inverse command's evidence (K-3).
+data class CheckedCommand(val definition: CommandDef, val args: Map<String, Json>, val restore: RestoreArguments? = null, val evidence: Evidence? = null) {
+    val name get() = definition.name
+    fun string(name: String) = (args[name] as? Json.Str)?.value ?: ""
+}
 data class CheckedIntent(val scope: ScopeRef, val deltas: List<PlannedDelta>, val guards: List<Guard>, val command: CheckedCommand?)
 
 object IdentityRules {
@@ -76,13 +80,15 @@ object IntentShape {
         }.orEmpty()
         val command = json["cmd"]?.let { value ->
             value.expectKeys(listOf("args", "name")); val def = registry.command(value.member("name").str()) ?: throw Refusal("invalid")
-            val args = value.member("args").obj(); require(def.scope == kind && args.keys.all { it in def.args })
+            val args = value.member("args").obj(); require(def.scope == kind)
+            if (def.engine == "restore") return@let CheckedCommand(def, args, restore = RestoreArguments.read(registry, def, value.member("args")))
+            require(args.keys.all { it in def.args || def.inverse && it == "evidence" })
             for ((name, arg) in def.args) {
                 val input = args[name]; if (input == null) { require(arg.optional); continue }
                 require(registry.admits(input, arg))
             }
             require(registry.references.checkArguments(def, value.member("args")))
-            CheckedCommand(def, args)
+            CheckedCommand(def, args, evidence = if (def.inverse) Evidence.read(registry, value.member("args").member("evidence")) else null)
         }
         require(deltas.isNotEmpty() || command != null)
         val bound = now + Constants.MAX_SKEW_MS
@@ -91,7 +97,7 @@ object IntentShape {
             if (registry.type(delta.key.type)?.fields?.get(name)?.kind == "time" && reg.value.long() > bound) reg.copy(value = Json.of(now)) else reg
         }) }
         val checkedCommand = command?.let { cmd -> cmd.copy(args = cmd.args.mapValues { (name, value) ->
-            when (cmd.definition.args.getValue(name).type) {
+            when (cmd.definition.args[name]?.type) {
                 "time" -> if (value.long() > bound) Json.of(now) else value
                 "instant" -> { if (value.long() > bound) throw Refusal("invalid"); value }; else -> value
             }
