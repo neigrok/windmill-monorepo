@@ -26,21 +26,25 @@ struct HexTokens : TokenGenerator {
   std::string s256Challenge(const std::string& verifier) override { return "c:" + verifier; }
 };
 
-// Roadmap's tools through the door, over the engine's in-memory store bound to roadmap's registry: accounts A and B,
-// and A's roadmap "Test Roadmap", created as create_tree creates one but with no legend, so a session starts where the
-// rooms' harness does.
-struct DoorHarness {
+// Roadmap's tools through the door, over the engine's store in `World` bound to roadmap's registry — in memory, or over
+// Postgres (PgSyncWorld) — : accounts A and B, and A's roadmap "Test Roadmap", created as create_tree creates one but
+// with no legend, so a session starts where the rooms' harness does.
+template <typename World>
+struct DoorOver {
   BlockingThread::Mark blocking;
-  sync::test::FakeWorld world{sync::test::WorldProduct::roadmap};
+  World world{sync::test::WorldProduct::roadmap};
   StepClock clock;
   HexTokens tokens;
   roadmap::RoadmapDoor door{world.catalog(), world.store(), world.feed, world.clock(), clock, world.failures};
   RoadmapDoorTools tools{door, tokens, clock, "https://app.example"};
-  UserId caller{"A"};
+  UserId caller;
+  UserId reader;
   std::string tree;
 
-  DoorHarness() {
+  DoorOver() {
     world.seed(sync::parseJson(R"({"epoch":"ep-1","clock":{"ms":0,"counter":0},"accounts":{"A":{"name":"Ann"},"B":{"name":"Bo"}}})"));
+    caller = world.account("A");
+    reader = world.account("B");
     tree = plant(caller, "Test Roadmap");
   }
 
@@ -83,5 +87,7 @@ struct DoorHarness {
     return door.read([&](sync::SyncTxn& txn) { return door.rows().tree(txn, id, std::nullopt).seq(); });
   }
 };
+
+using DoorHarness = DoorOver<sync::test::FakeWorld>;
 
 }

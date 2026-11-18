@@ -759,17 +759,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                  *nodeEdits, appBaseUrl);
   // Who may write a tree, for a tend: from the engine's tables where it serves roadmap, from the rooms otherwise.
   TendingService::AccessOf treeAccess = [registry](const TreeId& tree) { return registry->accessOf(tree); };
-  if (roadmapOnEngine) {
-    treeAccess = [roadmapDoor](const TreeId& tree) -> std::optional<TreeAccess> {
-      return roadmapDoor->read([&](sync::SyncTxn& txn) -> std::optional<TreeAccess> {
-        const roadmap::TreeRows rows = roadmapDoor->rows().tree(txn, tree.str(), std::nullopt);
-        if (!rows.exists()) return std::nullopt;
-        const roadmap::AccountRows trees = roadmapDoor->rows().account(txn, rows.owner());
-        if (!trees.isAlive(tree.str())) return std::nullopt;
-        return TreeAccess{rows.owner(), rows.reach(), TreeId{trees.rootOf(tree.str())}, trees.pathOf(tree.str())};
-      });
-    };
-  }
+  if (roadmapOnEngine) treeAccess = [roadmapDoor](const TreeId& tree) { return roadmapDoor->accessOf(tree); };
 
   // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
   // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.

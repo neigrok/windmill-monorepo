@@ -1,7 +1,9 @@
 #include "test/products/roadmap/adapters/mcp/DoorHarness.h"
 
+#include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "products/roadmap/application/DoorForks.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
+#include "test/platform/application/sync/SyncFakes.h"
 #include "test/testing.h"
 
 #include <set>
@@ -216,7 +218,7 @@ TEST(door_another_persons_roadmap_is_absent_to_its_writes) {
   DoorHarness h;
   chain(h);
   const Seq before = h.seqOf(h.tree);
-  const ToolResult refused = h.as(UserId{"B"}, "create_node", step("x", "X"));
+  const ToolResult refused = h.as(h.reader, "create_node", step("x", "X"));
   CHECK(refused.isError);
   CHECK_EQ(message(refused), "create_node: no such tree \"" + h.tree + "\"");
   CHECK_EQ(h.seqOf(h.tree), before);
@@ -282,14 +284,14 @@ TEST(door_fork_copies_a_branch_under_new_ids_clears_status_and_keeps_only_the_ow
   REQUIRE_EQ(below["nodes"].size(), 1u);
   CHECK_EQ(below["nodes"][0]["id"].asString(), std::string("deep"));
 
-  CHECK(forks.fork(TreeId{h.tree}, "", "", UserId{"B"}).outcome == TreeForks::Outcome::noSource);
+  CHECK(forks.fork(TreeId{h.tree}, "", "", h.reader).outcome == TreeForks::Outcome::noSource);
   publish(h, h.tree);
-  const TreeForks::Result theirs = forks.fork(TreeId{h.tree}, "", "", UserId{"B"});
+  const TreeForks::Result theirs = forks.fork(TreeId{h.tree}, "", "", h.reader);
   REQUIRE(theirs.outcome == TreeForks::Outcome::forked);
   Json::Value read(Json::objectValue);
   read["treeId"] = theirs.data.id.str();
   read["fields"] = fields({"id", "opens"});
-  const Json::Value forked = body(h.as(UserId{"B"}, "get_tree", read))["tree"];
+  const Json::Value forked = body(h.as(h.reader, "get_tree", read))["tree"];
   CHECK_EQ(forked["guide"]["text"].asString(), std::string("Work it top down."));
   CHECK_EQ(forked["guide"]["yours"].asBool(), false);
   REQUIRE_EQ(forked["nodes"].size(), 3u);
@@ -297,4 +299,142 @@ TEST(door_fork_copies_a_branch_under_new_ids_clears_status_and_keeps_only_the_ow
   const TreeForks::Result alone = forks.fork(TreeId{subtree}, "", "", h.caller);
   REQUIRE(alone.outcome == TreeForks::Outcome::notARoot);
   CHECK_EQ(alone.notARoot->owningStep.step.str(), std::string("c"));
+}
+
+namespace {
+
+// The door's tools over the same engine as `h`, on a store that fails the call's `k`-th stored admit as a lost
+// connection would: what the call admitted before it stays, and the call stays running under its requestId.
+struct CutShort {
+  sync::fake::FaultingStore store;
+  roadmap::RoadmapDoor door;
+  RoadmapDoorTools tools;
+
+  CutShort(DoorHarness& h, int k)
+      : store(h.world.store(), {{}, {{k, sync::FaultClass::transient}}}),
+        door(h.world.catalog(), store, h.world.feed, h.world.clock(), h.clock, h.world.failures),
+        tools(door, h.tokens, h.clock, "https://app.example") {}
+};
+
+Json::Value opensOf(DoorHarness& h, const char* step) {
+  Json::Value read(Json::objectValue);
+  read["nodeIds"] = list({step});
+  read["fields"] = list({"id", "opens"});
+  return body(h.call("get_nodes", read))["nodes"][0]["opens"];
+}
+
+std::size_t marksIn(DoorHarness& h, const UserId& who) {
+  return h.door.read([&](sync::SyncTxn& txn) { return h.door.rows().tree(txn, h.tree, who).marks.size(); });
+}
+
+}
+
+TEST(door_a_call_cut_short_between_its_tree_and_overlay_writes_makes_exactly_the_rest_when_sent_again) {
+  DoorHarness h;
+  const std::string other = h.plant(h.caller, "Other");
+  Json::Value args = step("opener", "Opener");
+  args["treeId"] = h.tree;
+  args["opens"] = other;
+  args["requestId"] = "req-opener";
+  const Seq before = h.seqOf(h.tree);
+
+  CutShort cut(h, 2);
+  const ToolResult first = cut.tools.callTool("create_node", args, ToolCaller{h.caller, ToolScope::everything()});
+  CHECK(first.isError);
+  CHECK_EQ(first.outcomeCode, std::string("busy"));
+  CHECK_EQ(h.seqOf(h.tree), before + 1);
+  CHECK(opensOf(h, "opener").isNull());
+
+  const ToolResult running = h.call("create_node", args);
+  CHECK_EQ(running.outcomeCode, std::string("busy"));
+  CHECK(opensOf(h, "opener").isNull());
+
+  h.clock.ms += sync::Limits{}.requestLeaseMs + 1;
+  const ToolResult resumed = h.call("create_node", args);
+  REQUIRE(!resumed.isError);
+  CHECK_EQ(body(resumed)["resumed"].asBool(), true);
+  CHECK_EQ(body(resumed)["seq"].asUInt64(), before + 1);
+  CHECK_EQ(h.seqOf(h.tree), before + 1);
+  CHECK_EQ(opensOf(h, "opener")["treeId"].asString(), other);
+
+  const ToolResult answered = h.call("create_node", args);
+  CHECK_EQ(sync::jcs(body(answered)), sync::jcs(body(resumed)));
+  CHECK_EQ(h.seqOf(h.tree), before + 1);
+}
+
+TEST(door_a_delete_cut_short_after_its_marks_cleared_deletes_the_steps_when_sent_again) {
+  DoorHarness h;
+  chain(h);
+  REQUIRE(!h.call("update_nodes", asUpdate(mark("b", "complete"))).isError);
+  Json::Value args = with("nodeId", "b");
+  args["treeId"] = h.tree;
+  args["requestId"] = "req-delete-b";
+  const Seq before = h.seqOf(h.tree);
+
+  CutShort cut(h, 2);
+  CHECK_EQ(cut.tools.callTool("delete_node", args, ToolCaller{h.caller, ToolScope::everything()}).outcomeCode, std::string("busy"));
+  CHECK_EQ(sync::jcs(body(h.call("get_progress", kNoArgs))["completed"]), sync::jcs(Json::Value(Json::arrayValue)));
+  CHECK_EQ(h.seqOf(h.tree), before);
+
+  h.clock.ms += sync::Limits{}.requestLeaseMs + 1;
+  const ToolResult resumed = h.call("delete_node", args);
+  REQUIRE(!resumed.isError);
+  CHECK_EQ(body(resumed)["resumed"].asBool(), true);
+  CHECK_EQ(h.seqOf(h.tree), before + 1);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 2u);
+}
+
+TEST(door_a_call_the_engine_cannot_take_now_answers_busy_and_writes_nothing) {
+  DoorHarness h;
+  const Seq before = h.seqOf(h.tree);
+  CutShort cut(h, 1);
+  Json::Value args = step("a", "A");
+  args["treeId"] = h.tree;
+  args["requestId"] = "req-busy";
+  const ToolResult busy = cut.tools.callTool("create_node", args, ToolCaller{h.caller, ToolScope::everything()});
+  CHECK(busy.isError);
+  CHECK_EQ(busy.outcomeCode, std::string("busy"));
+  CHECK_EQ(message(busy), std::string("create_node: the roadmap is busy just now and nothing was written. Send the same call "
+                                      "again in a moment."));
+  CHECK_EQ(h.seqOf(h.tree), before);
+  REQUIRE(!h.call("create_node", args).isError);
+  CHECK_EQ(h.seqOf(h.tree), before + 1);
+}
+
+TEST(door_a_readers_marks_on_a_public_roadmap_land_in_their_own_overlay_alone) {
+  DoorHarness h;
+  chain(h);
+  CHECK(h.as(h.reader, "update_nodes", asUpdate(mark("a", "complete"))).isError);
+  publish(h, h.tree);
+  const ToolResult marked = h.as(h.reader, "update_nodes", asUpdate(mark("a", "complete")));
+  REQUIRE(!marked.isError);
+  CHECK_EQ(body(marked)["progress"][0]["status"].asString(), std::string("complete"));
+  CHECK_EQ(sync::jcs(body(h.as(h.reader, "get_progress", kNoArgs))["completed"]), sync::jcs(list({"a"})));
+  CHECK_EQ(sync::jcs(body(h.call("get_progress", kNoArgs))["completed"]), sync::jcs(Json::Value(Json::arrayValue)));
+  CHECK_EQ(marksIn(h, h.reader), 1u);
+  CHECK_EQ(marksIn(h, h.caller), 0u);
+  CHECK(h.as(h.reader, "create_node", step("x", "X")).isError);
+}
+
+TEST(door_the_fork_at_sign_up_plants_a_readable_roadmap_in_the_new_account) {
+  DoorHarness h;
+  chain(h);
+  DoorForks forks(h.door, h.tokens);
+  ForkSignup signup(forks);
+  CHECK(!signup.describe(h.tree).has_value());
+  CHECK(!signup.plant(h.tree, h.reader).has_value());
+  publish(h, h.tree);
+  const std::optional<ForkDescription> described = signup.describe(h.tree);
+  REQUIRE(described.has_value());
+  CHECK_EQ(described->title, std::string("Test Roadmap"));
+  CHECK_EQ(described->meta, std::string("3 steps"));
+  const std::optional<std::string> planted = signup.plant(h.tree, h.reader);
+  REQUIRE(planted.has_value());
+  CHECK(*planted != h.tree);
+  Json::Value read(Json::objectValue);
+  read["treeId"] = *planted;
+  const Json::Value copy = body(h.as(h.reader, "get_tree", read));
+  CHECK_EQ(copy["count"].asUInt64(), 3u);
+  CHECK_EQ(copy["tree"]["title"].asString(), std::string("Test Roadmap"));
+  CHECK(h.call("get_tree", read).isError);
 }

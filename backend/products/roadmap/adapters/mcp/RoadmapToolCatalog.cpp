@@ -448,6 +448,8 @@ std::vector<ToolDeclaration> roadmapDoorToolCatalog() {
     if (declaration.access == Access::read) continue;
     declaration.descriptor["inputSchema"]["properties"]["requestId"] =
         typed("string", "An id of your choosing for this call; send the same call with it again and it writes once.");
+    if (declaration.descriptor.isMember("outputSchema"))
+      declaration.descriptor["outputSchema"]["properties"]["resumed"] = typed("boolean");
   }
   return tools;
 }

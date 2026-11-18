@@ -10,6 +10,7 @@
 #include "platform/ports/FailureReporter.h"
 #include "platform/ports/SyncStore.h"
 #include "products/roadmap/application/RoadmapRows.h"
+#include "products/roadmap/ports/TreeRepository.h"
 
 #include <json/json.h>
 
@@ -55,6 +56,10 @@ public:
   // `operation` names the call in its write line and in its dedupe digest.
   Json::Value run(const UserId& account, const std::optional<std::string>& requestId, const std::string& operation,
                   const Json::Value& args, const std::function<Json::Value(Call&)>& body);
+
+  // Who may write a roadmap, as the engine's tables hold it — its owner, its reach and where it sits — for a gate that
+  // asks before any call, as a tend's does. Nothing for a roadmap that is not there.
+  std::optional<TreeAccess> accessOf(const TreeId& tree) const;
 
   // A read of one consistent snapshot, on the caller's thread.
   template <typename Read>

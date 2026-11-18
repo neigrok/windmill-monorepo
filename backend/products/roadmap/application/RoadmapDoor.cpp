@@ -73,6 +73,16 @@ Json::Value RoadmapDoor::run(const UserId& account, const std::optional<std::str
   return answered.get();
 }
 
+std::optional<TreeAccess> RoadmapDoor::accessOf(const TreeId& tree) const {
+  return read([&](sync::SyncTxn& txn) -> std::optional<TreeAccess> {
+    const TreeRows rows = rows_.tree(txn, tree.str(), std::nullopt);
+    if (!rows.exists()) return std::nullopt;
+    const AccountRows trees = rows_.account(txn, rows.owner());
+    if (!trees.isAlive(tree.str())) return std::nullopt;
+    return TreeAccess{rows.owner(), rows.reach(), TreeId{trees.rootOf(tree.str())}, trees.pathOf(tree.str())};
+  });
+}
+
 Json::Value RoadmapDoor::Call::admit(Json::Value intent) { return settle(call_.admit(std::move(intent), now_)); }
 
 Json::Value RoadmapDoor::Call::admitBuilt(Json::Value placeholder, const Build& build) {

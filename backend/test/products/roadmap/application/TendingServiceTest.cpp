@@ -5,6 +5,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
+#include "test/products/roadmap/adapters/mcp/DoorHarness.h"
 #include "test/testing.h"
 
 #include <algorithm>
@@ -461,4 +462,49 @@ TEST(a_tend_runs_only_on_a_tree_its_caller_can_write) {
   CHECK(lines.empty());
   CHECK_EQ(h.runs.countForUser(UserId{"u"}, 0), 0);
   CHECK_FALSE(h.rooms.isOpen(TreeId{"t_public"}));
+}
+
+namespace {
+
+// A model that adds one step to the roadmap it tends, through the tools it is handed.
+struct StepAddingAgent : PlanAgent {
+  bool configured() const override { return true; }
+  AgentOutcome run(const std::string&, const TreeId& tree, const UserId& user, ToolHost& tools,
+                   const std::function<void(const AgentStep&)>&) override {
+    Json::Value args(Json::objectValue);
+    args["treeId"] = tree.str();
+    args["id"] = "tended";
+    args["label"] = "Tended";
+    args["color"] = "terracotta";
+    const ToolResult created = tools.callTool("create_node", args, ToolCaller{user, ToolScope::everything()});
+    return created.isError ? AgentOutcome{} : ok("added a step", 1);
+  }
+};
+
+}
+
+TEST(a_tend_where_the_engine_serves_roadmap_reads_its_gate_from_the_engine_and_writes_through_the_door) {
+  test::DoorHarness door;
+  Harness h;
+  StepAddingAgent agent;
+  TendingService service(h.runs, agent, door.tools, [&](const TreeId& tree) { return door.door.accessOf(tree); }, h.clock,
+                         h.tokens, h.entitlements, /*enabled=*/true);
+  const Seq before = door.seqOf(door.tree);
+
+  const TendRun run = service.start(TreeId{door.tree}, door.caller, "ann@example.com", "add a step");
+  REQUIRE(run.status == TendStatus::running);
+  const TendRun done = awaitTerminal(h.runs, run.id);
+  CHECK(done.status == TendStatus::done);
+  CHECK_EQ(done.seqFrom, before);
+  CHECK_EQ(done.seqTo, before + 1);
+  Json::Value read(Json::objectValue);
+  read["nodeIds"] = test::list({"tended"});
+  CHECK_EQ(test::body(door.call("get_nodes", read))["nodes"].size(), 1u);
+
+  const TendRun stranger = service.start(TreeId{door.tree}, door.reader, "bo@example.com", "add a step");
+  CHECK(stranger.status == TendStatus::refused);
+  CHECK(stranger.refusal == TendRefusal::noSuchTree);
+  const TendRun absent = service.start(TreeId{"t_ffffffffffffffff"}, door.caller, "ann@example.com", "add a step");
+  CHECK(absent.refusal == TendRefusal::noSuchTree);
+  service.stop();
 }

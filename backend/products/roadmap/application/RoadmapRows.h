@@ -85,14 +85,22 @@ Progress progressOf(const TreeRows& rows);
 // read from the owner's overlay, at the scope's seq. It is built inside a builder, under the scope lock.
 std::unique_ptr<TreeRoom> roomOf(const TreeRows& rows, const AccountRows& account, PresenceBus& bus);
 
-// What a room's writes come to: the deltas of the tree scope and those of the owner's overlay (pointers), each an
-// intent's `d`, empty when nothing changed there. A created step or kind takes an order key after every one the
-// roadmap holds; one that exists carries its born, so a revival revives.
-struct RoomWrites {
-  Json::Value tree{Json::arrayValue};
-  Json::Value pointers{Json::arrayValue};
+// What a room's writes come to in its tree scope: an intent's `d`, empty when nothing changed there. A created step or
+// kind takes an order key after every one the roadmap holds; one that exists carries its born, so a revival revives.
+// The room's pointers are not among them: they are the owner's overlay's (pointerWritesOf).
+Json::Value writesOf(const TreeRows& before, const TreeRoom& room);
+
+// The roadmap a call sends a step to open, empty for none.
+struct Opens {
+  std::string step;
+  std::string tree;
 };
-RoomWrites writesOf(const TreeRows& before, const TreeRoom& room);
+
+// What the pointers a call sends come to in the owner's overlay, as the tree's rows and the overlay stand: a step that
+// owns a subtree takes none, a step the tree does not hold present takes none, and a pointer the overlay already holds
+// is not written again. A function of the call's arguments and the rows alone, so a call resumed after a crash between
+// its tree write and this one writes exactly the pointers that had not landed.
+Json::Value pointerWritesOf(const TreeRows& rows, const AccountRows& account, const std::vector<Opens>& sent);
 
 // A delta of a server-origin intent, its stamps left for admission to mint: the fields it writes, its life when it
 // says one, and, for a minted or derived type, the born of the record it names (none: a record it creates).

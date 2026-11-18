@@ -314,8 +314,8 @@ std::unique_ptr<TreeRoom> roomOf(const TreeRows& rows, const AccountRows& accoun
                                     std::move(subtrees), std::move(access), meta ? meta->rc : 0, bus);
 }
 
-RoomWrites writesOf(const TreeRows& before, const TreeRoom& room) {
-  RoomWrites writes;
+Json::Value writesOf(const TreeRows& before, const TreeRoom& room) {
+  Json::Value writes(Json::arrayValue);
   const auto [graph, legend] = room.dirtyState();
   const std::map<std::string, const sync::Row*> nodes = byId(before.nodes);
   const std::map<std::string, const sync::Row*> kinds = byId(before.kinds);
@@ -344,16 +344,7 @@ RoomWrites writesOf(const TreeRows& before, const TreeRoom& room) {
     const ElementSet lifeAfter{after.createdAt, after.deletedAt};
     if (!was || lifeChanged(ElementSet{was->createdAt, was->deletedAt}, lifeAfter))
       step.life = lifeAfter.present() ? sync::LifeState::alive : sync::LifeState::dead;
-    if (!step.fields.empty() || step.life) writes.tree.append(step.json());
-    if (changed(&NodeStateEntry::opensAt) && after.opensAt.isSet()) {
-      Written opens{.type = "pointer", .id = Json::Value(after.id.str())};
-      if (after.opens.empty()) opens.life = sync::LifeState::dead;
-      else {
-        opens.life = sync::LifeState::alive;
-        opens.fields["opens"] = after.opens.str();
-      }
-      writes.pointers.append(opens.json());
-    }
+    if (!step.fields.empty() || step.life) writes.append(step.json());
   }
   std::map<Edge, const sync::Row*> edges;
   for (const sync::Row& row : before.edges) edges.emplace(Edge{NodeId{edgeFrom(row)}, NodeId{edgeTo(row)}}, &row);
@@ -364,7 +355,7 @@ RoomWrites writesOf(const TreeRows& before, const TreeRoom& room) {
     Json::Value id(Json::arrayValue);
     id.append(after.edge.from.str());
     id.append(after.edge.to.str());
-    writes.tree.append(Written{.type = "edge", .id = id, .life = lifeAfter.present() ? sync::LifeState::alive : sync::LifeState::dead}.json());
+    writes.append(Written{.type = "edge", .id = id, .life = lifeAfter.present() ? sync::LifeState::alive : sync::LifeState::dead}.json());
   }
   for (const KindStateEntry& after : legend.kinds) {
     const auto held = kinds.find(after.id.str());
@@ -378,13 +369,37 @@ RoomWrites writesOf(const TreeRows& before, const TreeRoom& room) {
     if (!row) kind.fields["ord"] = keyAfter(before.kinds, placedKinds);
     const ElementSet lifeAfter{after.createdAt, after.deletedAt};
     if (!row || lifeChanged(lifeOf(*row), lifeAfter)) kind.life = lifeAfter.present() ? sync::LifeState::alive : sync::LifeState::dead;
-    if (!kind.fields.empty() || kind.life) writes.tree.append(kind.json());
+    if (!kind.fields.empty() || kind.life) writes.append(kind.json());
   }
   Json::Value meta(Json::objectValue);
   const sync::Row* held = before.meta ? &*before.meta : nullptr;
   if (room.title().stamp != (held ? stampOf(*held, "title") : Hlc{})) meta["title"] = room.title().value;
   if (room.guide().stamp != (held ? stampOf(*held, "guide") : Hlc{})) meta["guide"] = room.guide().value;
-  if (!meta.empty()) writes.tree.append(Written{.type = "meta", .id = Json::Value("meta"), .fields = meta}.json());
+  if (!meta.empty()) writes.append(Written{.type = "meta", .id = Json::Value("meta"), .fields = meta}.json());
+  return writes;
+}
+
+Json::Value pointerWritesOf(const TreeRows& rows, const AccountRows& account, const std::vector<Opens>& sent) {
+  const std::map<std::string, const sync::Row*> pointers = byId(rows.pointers);
+  Json::Value writes(Json::arrayValue);
+  std::set<std::string> written;
+  for (const Opens& opens : sent) {
+    const sync::Row* node = rows.node(opens.step);
+    if (!node || !alive(*node) || !written.insert(opens.step).second) continue;
+    const Json::Value branch = valueOf(*node, "branch");
+    if (branch.isString() && account.isAlive(branch.asString())) {
+      const std::optional<read::Parent> place = account.placeOf(branch.asString());
+      if (place && place->tree == rows.tree && place->step == opens.step) continue;
+    }
+    const auto held = pointers.find(opens.step);
+    const bool holds = held != pointers.end() && alive(*held->second);
+    if (opens.tree.empty() && !holds) continue;
+    if (!opens.tree.empty() && holds && textOf(*held->second, "opens") == opens.tree) continue;
+    Written pointer{.type = "pointer", .id = Json::Value(opens.step)};
+    pointer.life = opens.tree.empty() ? sync::LifeState::dead : sync::LifeState::alive;
+    if (!opens.tree.empty()) pointer.fields["opens"] = opens.tree;
+    writes.append(pointer.json());
+  }
   return writes;
 }
 

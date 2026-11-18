@@ -254,56 +254,125 @@ PointerDiagnostics pointerDiagnosticsOf(const read::PointerDiagnostics& found) {
 
 // ---- writes ----
 
+// A tool's refusal met under a scope's lock. Its admit is abandoned whole, so no part of the call is stored for it and
+// the same call sent again is judged again; a part stored as admitted is always one that wrote what it meant to.
+struct Refused {
+  ToolResult answer;
+};
+
+[[noreturn]] void refuse(ToolResult answer) {
+  const std::string code = answer.outcomeCode;
+  throw sync::ServerBuildAborted{std::make_exception_ptr(Refused{std::move(answer)}), code};
+}
+
+// What a call answers when it was cut short after some of its writes and is sent again under its requestId: the writes
+// that had landed are not made again, the rest are, and what the first attempt would have answered is not known.
+ToolResult resumedReceipt(const TreeId& tree, Seq seq) {
+  Json::Value out(Json::objectValue);
+  out["applied"] = true;
+  out["dryRun"] = false;
+  out["resumed"] = true;
+  out["seq"] = static_cast<Json::Int64>(seq);
+  out["treeId"] = tree.str();
+  return ToolResult::json(out);
+}
+
 // The tree-scope write of a tool: the room built from the tree's rows under the scope's lock, `edit` run in it as the
-// tool's room function runs over rooms, and what the room then holds written as the intent's deltas; the pointers the
-// room set follow in the owner's overlay. A reply's `seq` is the tree scope's once the write has landed.
+// tool's room function runs over rooms, and what the room then holds written as the intent's deltas. A refusal of
+// `edit`'s abandons the admit. A reply's `seq` is the tree scope's once the write has landed.
 using RoomEdit = std::function<ToolResult(TreeRoom&, const TreeRows&, const AccountRows&, sync::SyncTxn&)>;
 
 struct TreeEdit {
   ToolResult answer;
-  Seq seqBefore = 0;
   Seq seq = 0;
-  bool treeLanded = false;
+  bool planned = false;     // this attempt planned the edit; false when the call ran before and its write is replayed
+  bool treeLanded = false;  // the edit wrote the tree scope
 };
 
-TreeEdit editTree(Call& call, const TreeId& tree, const UserId& caller, const RoomEdit& edit) {
+// The pointers a call sends, read from its arguments and the tree as it stands after the call's tree write.
+using SentPointers = std::function<std::vector<roadmap::Opens>(const TreeRows&, const TreeEdit&)>;
+
+TreeEdit editTree(Call& call, const TreeId& tree, const UserId& caller, const RoomEdit& edit, const SentPointers& sent = nullptr) {
   TreeEdit edited{noSuchTree(tree)};
-  roadmap::RoomWrites writes;
+  Seq before = 0;
   NullPresenceBus bus;
-  const Json::Value landed = call.admitBuilt(roadmap::treePlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    const TreeRows rows = call.rows().tree(txn, tree.str(), caller);
-    if (!rows.exists()) return std::nullopt;
-    const AccountRows account = call.rows().account(txn, rows.owner());
-    edited.seqBefore = rows.seq();
-    const std::unique_ptr<TreeRoom> room = roadmap::roomOf(rows, account, bus);
-    edited.answer = edit(*room, rows, account, txn);
-    if (edited.answer.isError) return std::nullopt;
-    writes = roadmap::writesOf(rows, *room);
-    if (writes.tree.empty()) return std::nullopt;
-    return roadmap::intentIn("tree/" + tree.str(), writes.tree);
-  });
+  Json::Value landed;
+  try {
+    landed = call.admitBuilt(roadmap::treePlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+      const TreeRows rows = call.rows().tree(txn, tree.str(), caller);
+      if (!rows.exists()) refuse(noSuchTree(tree));
+      const AccountRows account = call.rows().account(txn, rows.owner());
+      edited.planned = true;
+      before = rows.seq();
+      const std::unique_ptr<TreeRoom> room = roadmap::roomOf(rows, account, bus);
+      edited.answer = edit(*room, rows, account, txn);
+      if (edited.answer.isError) refuse(edited.answer);
+      const Json::Value writes = roadmap::writesOf(rows, *room);
+      if (writes.empty()) return std::nullopt;
+      return roadmap::intentIn("tree/" + tree.str(), writes);
+    });
+  } catch (const Refused& refused) {
+    edited.answer = refused.answer;
+    return edited;
+  }
   if (!roadmap::landed(landed)) {
     edited.answer = refusedByEngine(landed, tree);
     return edited;
   }
-  if (edited.answer.isError) return edited;
   edited.seq = landed["seq"].asUInt64();
-  edited.treeLanded = edited.seq != edited.seqBefore;
-  if (!writes.pointers.empty()) {
-    const Json::Value opened = call.admitBuilt(roadmap::overlayPlaceholder(tree.str()), [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-      return roadmap::intentIn("self/overlay/" + tree.str(), writes.pointers);
+  edited.treeLanded = !edited.planned || edited.seq != before;
+  if (!edited.planned) edited.answer = resumedReceipt(tree, edited.seq);
+  if (sent) {
+    // Always the call's next admit when it sends pointers, so a resumed call's admits line up with the first attempt's.
+    const Json::Value opened = call.admitBuilt(roadmap::overlayPlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+      const TreeRows rows = call.rows().tree(txn, tree.str(), caller);
+      if (!rows.exists()) return std::nullopt;
+      const Json::Value writes = roadmap::pointerWritesOf(rows, call.rows().account(txn, rows.owner()), sent(rows, edited));
+      if (writes.empty()) return std::nullopt;
+      return roadmap::intentIn("self/overlay/" + tree.str(), writes);
     });
     if (!roadmap::landed(opened)) {
       edited.answer = refusedByEngine(opened, tree);
       return edited;
     }
   }
-  if (edited.answer.payload.isMember("seq")) {
+  if (edited.planned && edited.answer.payload.isMember("seq")) {
     Json::Value payload = edited.answer.payload;
     payload["seq"] = static_cast<Json::Int64>(edited.seq);
     edited.answer = withPayload(edited.answer, payload);
   }
   return edited;
+}
+
+// What a write judges, under the lock of the admit that comes first, before anything of it lands: it refuses or passes.
+using Judge = std::function<void(sync::SyncTxn&, const TreeRows&)>;
+
+// The caller's completions on `steps`, cleared in their overlay as it stands, before or after a write takes those steps:
+// how many it cleared, or none when the call ran before and the clear is replayed. `judge` runs first, and its refusal
+// abandons the clear whole.
+std::optional<std::size_t> clearMarks(Call& call, const TreeId& tree, const UserId& caller, const std::vector<NodeId>& steps,
+                                      const Judge& judge = nullptr) {
+  std::optional<std::size_t> cleared;
+  const Json::Value landed = call.admitBuilt(roadmap::overlayPlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+    const TreeRows rows = call.rows().tree(txn, tree.str(), caller);
+    if (judge) judge(txn, rows);
+    cleared = 0;
+    Json::Value deltas(Json::arrayValue);
+    for (const sync::Row& mark : rows.marks) {
+      const auto held = mark.lattice.f.find("mark");
+      if (held == mark.lattice.f.end() || held->second.value["status"] != "complete") continue;
+      if (std::none_of(steps.begin(), steps.end(), [&](const NodeId& step) { return step.str() == mark.id.column(); })) continue;
+      Json::Value fields(Json::objectValue);
+      fields["mark"]["status"] = "none";
+      fields["mark"]["outOfOrder"] = false;
+      deltas.append(roadmap::Written{.type = "progress", .id = mark.id.json(), .fields = fields}.json());
+      ++*cleared;
+    }
+    if (deltas.empty()) return std::nullopt;
+    return roadmap::intentIn("self/overlay/" + tree.str(), deltas);
+  });
+  if (!roadmap::landed(landed)) throw Refused{refusedByEngine(landed, tree)};
+  return cleared;
 }
 
 // Whether a step's completion follows the roadmap it opens, as a mark on it would read: for the owner a step that owns
@@ -316,27 +385,35 @@ std::set<std::string> followingSteps(const Reading& reading) {
   return following;
 }
 
+// What a call's marks came to: the batch's rows, or the refusal that wrote none. A call resumed under its requestId
+// after its marks landed is `resumed`, and what each row did is not told again.
+struct Marked {
+  std::variant<MarkedBatch, std::string> answer;
+  bool resumed = false;
+};
+
 // The caller's marks on the tree's steps, in their overlay (Roadmap on the sync engine §5): a step that follows the
 // roadmap it opens takes none and is refused row by row, a step the tree does not hold is skipped, or refuses the call
 // when `rejectUnknown`. A mark already held is written again and answered unchanged. Whether a completed step's
 // prerequisites are met is read after the marks, over what each step follows (D-5).
-std::variant<MarkedBatch, std::string> markSteps(Call& call, const TreeId& tree, const UserId& caller,
-                                                 const std::vector<RequestedMark>& requested, bool rejectUnknown) {
-  std::variant<MarkedBatch, std::string> answer = "no such tree \"" + tree.str() + "\"";
+Marked markSteps(Call& call, const TreeId& tree, const UserId& caller, const std::vector<RequestedMark>& requested,
+                 bool rejectUnknown) {
+  Marked marked{MarkedBatch{}, true};
   std::vector<std::pair<std::size_t, bool>> written;  // each mark's row in `requested`, and whether it was held
-  const Json::Value landed = call.admitBuilt(roadmap::overlayPlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  Json::Value landed;
+  try {
+  landed = call.admitBuilt(roadmap::overlayPlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     std::optional<Reading> reading = readingOf(call.rows(), txn, tree, caller);
-    if (!reading || !reading->readable()) return std::nullopt;
+    if (!reading || !reading->readable()) refuse(noSuchTree(tree));
+    marked.resumed = false;
     MarkedBatch batch;
     std::vector<std::string> unknown;
     for (const RequestedMark& mark : requested) {
       const read::Step* step = reading->mine.step(mark.node.str());
       if (!step || !step->present) unknown.push_back(mark.node.str());
     }
-    if (rejectUnknown && !unknown.empty()) {
-      answer = "no node in this tree is named " + quotedList(unknown) + ". " + kNodeHandle.hint;
-      return std::nullopt;
-    }
+    if (rejectUnknown && !unknown.empty())
+      refuse(ToolResult::failure("no node in this tree is named " + quotedList(unknown) + ". " + kNodeHandle.hint));
     for (const std::string& id : unknown) batch.skipped.append(id);
     const std::set<std::string> following = followingSteps(*reading);
     Json::Value deltas(Json::arrayValue);
@@ -357,10 +434,10 @@ std::variant<MarkedBatch, std::string> markSteps(Call& call, const TreeId& tree,
       deltas.append(roadmap::Written{.type = "progress", .id = Json::Value(mark.node.str()), .fields = fields}.json());
       after[mark.node.str()] = read::Mark{mark.node.str(), status, mark.outOfOrder, std::nullopt, std::nullopt, Hlc{1, 0, "door"}};
     }
-    read::TreeRecords marked = roadmap::recordsOf(reading->rows, reading->trees);
-    marked.marks.clear();
-    for (const auto& [node, mark] : after) marked.marks.push_back(mark);
-    reading->mine = read::RoadmapTree(std::move(marked));
+    read::TreeRecords withMarks = roadmap::recordsOf(reading->rows, reading->trees);
+    withMarks.marks.clear();
+    for (const auto& [node, mark] : after) withMarks.marks.push_back(mark);
+    reading->mine = read::RoadmapTree(std::move(withMarks));
     const read::FollowGraph graph = reading->graph();
     const std::set<std::string> completed = reading->completed();
     auto row = written.begin();
@@ -393,12 +470,15 @@ std::variant<MarkedBatch, std::string> markSteps(Call& call, const TreeId& tree,
       batch.results.append(result);
     }
     batch.cameToARefusal = written.empty() && !batch.refused.empty();
-    answer = batch;
+    marked.answer = batch;
     if (deltas.empty()) return std::nullopt;
     return roadmap::intentIn("self/overlay/" + tree.str(), deltas);
   });
-  if (!roadmap::landed(landed)) return "no such tree \"" + tree.str() + "\"";
-  return answer;
+  } catch (const Refused& refused) {
+    return Marked{refused.answer.content[0]["text"].asString(), false};
+  }
+  if (!roadmap::landed(landed)) return Marked{"no such tree \"" + tree.str() + "\"", false};
+  return marked;
 }
 
 // The marks a write carries beside its tree edit, landed after it and told in its receipt; `treeLanded` says the tree
@@ -406,7 +486,9 @@ std::variant<MarkedBatch, std::string> markSteps(Call& call, const TreeId& tree,
 ToolResult carryMarks(Call& call, const TreeId& tree, const UserId& caller, const std::vector<RequestedMark>& marks,
                       bool rejectUnknown, bool treeLanded, ToolResult edited, const char* failure) {
   Json::Value receipt = edited.payload;
-  const std::variant<MarkedBatch, std::string> applied = markSteps(call, tree, caller, marks, rejectUnknown);
+  const Marked marked = markSteps(call, tree, caller, marks, rejectUnknown);
+  if (marked.resumed) return resumedReceipt(tree, edited.payload["seq"].asUInt64());
+  const std::variant<MarkedBatch, std::string>& applied = marked.answer;
   if (const std::string* error = std::get_if<std::string>(&applied)) {
     if (!treeLanded) return ToolResult::failure(*error);
     fellShort(receipt, std::string(failure) + *error);
@@ -874,32 +956,38 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
       Json::Value out(Json::objectValue);
       out["applied"] = true;
       out["seq"] = static_cast<Json::Int64>(seq);
-      if (unchanged) out["unchanged"] = true;
+      if (!described.planned) out["resumed"] = true;
+      else if (unchanged) out["unchanged"] = true;
       return ToolResult::json(out);
     });
   }
 
   if (name == "delete_tree") {
     return write([&](Call& call) -> ToolResult {
-      ToolResult answer = noSuchTree(tree);
+      // A call that ran before and was cut short after the death landed is answered as removed, its counts not told again.
+      Json::Value resumed(Json::objectValue);
+      resumed["deleted"] = true;
+      resumed["id"] = tree.str();
+      resumed["resumed"] = true;
+      ToolResult answer = ToolResult::json(resumed);
       Json::Value removed(Json::arrayValue);
       Json::Value branch(Json::objectValue);
-      const Json::Value landed = call.admitBuilt(roadmap::accountPlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+      Json::Value landed;
+      try {
+      landed = call.admitBuilt(roadmap::accountPlaceholder(tree.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
         const AccountRows mine = door_.rows().account(txn, caller);
         const TreeRows rows = door_.rows().tree(txn, tree.str(), std::nullopt);
         if (!mine.isAlive(tree.str())) {
           if (rows.exists() && rows.owner() != caller && opensToReaders(rows.reach()))
-            answer = ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
-          return std::nullopt;
+            refuse(ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours)));
+          refuse(noSuchTree(tree));
         }
-        if (const std::optional<read::Parent> place = mine.placeOf(tree.str())) {
-          answer = ToolResult::failure("this tree is a subtree: it hangs from step \"" + place->step + "\" of \"" + place->tree +
-                                           "\" under the roadmap \"" + mine.rootOf(tree.str()) + "\", and goes and comes back "
-                                           "with that step. Delete the step with delete_node, naming this tree in its "
-                                           "branches, and revive the step to bring it back.",
-                                       roadmap::engine::kNotARoot);
-          return std::nullopt;
-        }
+        if (const std::optional<read::Parent> place = mine.placeOf(tree.str()))
+          refuse(ToolResult::failure("this tree is a subtree: it hangs from step \"" + place->step + "\" of \"" + place->tree +
+                                         "\" under the roadmap \"" + mine.rootOf(tree.str()) + "\", and goes and comes back "
+                                         "with that step. Delete the step with delete_node, naming this tree in its "
+                                         "branches, and revive the step to bring it back.",
+                                     roadmap::engine::kNotARoot));
         // What the death takes, read before it lands: every standing subtree under it and their steps, and each step of
         // the caller's other roadmaps whose pointer opens it.
         std::vector<read::RoadmapTree> roadmaps;
@@ -939,6 +1027,9 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
                                        .born = mine.tree(tree.str())->lattice.born.value_or(Hlc{}), .derived = true}.json());
         return roadmap::intentIn("self/roadmap", deltas);
       });
+      } catch (const Refused& refused) {
+        return refused.answer;
+      }
       if (!roadmap::landed(landed)) return refusedByEngine(landed, tree);
       return answer;
     });
@@ -1056,6 +1147,17 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
     if (std::optional<std::string> bad = prepareEdit(name, payload)) return ToolResult::failure(*bad);
     const std::string kind = *commandKindFor(name);
     return write([&](Call& call) -> ToolResult {
+      std::string created;
+      // A created step always takes the pointer the call names, or none: the step a resumed call created is the one its
+      // tree write took, the row that write left at its seq.
+      const SentPointers opensOf = [&](const TreeRows& rows, const TreeEdit& edited) -> std::vector<roadmap::Opens> {
+        std::string step = created;
+        if (!edited.planned)
+          for (const sync::Row& node : rows.nodes)
+            if (node.seq == edited.seq && node.alive()) step = node.id.column();
+        if (step.empty()) return {};
+        return {roadmap::Opens{step, payload.get("opens", "").asString()}};
+      };
       return editTree(call, tree, caller, [&](TreeRoom& room, const TreeRows& rows, const AccountRows&, sync::SyncTxn& txn) -> ToolResult {
         if (!room.readableBy(caller)) return noSuchTree(tree);
         if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, room.owner())) return ToolResult::failure(writeRefusalSentence(*refusal));
@@ -1066,6 +1168,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
           for (const sync::Row& node : rows.nodes) taken.insert(node.id.column());
           command["id"] = sync::deriveId(command.get("label", "").asString(), "step", taken, kMaxIdLength);
         }
+        if (name == "create_node") created = command["id"].asString();
         if (command.isMember("links")) {
           const auto links = shownLinks({}, linksFromJson(command["links"]), "links");
           if (const auto* refusal = std::get_if<std::string>(&links)) return ToolResult::failure(*refusal);
@@ -1109,7 +1212,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
             if (held.hue == hue) out["kind"] = held.id.str();
         }
         return ToolResult::json(out);
-      }).answer;
+      }, name == "create_node" ? opensOf : nullptr).answer;
     });
   }
 
@@ -1340,6 +1443,11 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         after = room.diagnose();
         answerDiagnostics(before, after, out);
         return ToolResult::json(out);
+      }, [&](const TreeRows&, const TreeEdit&) {
+        std::vector<roadmap::Opens> sent;
+        if (!dryRun)
+          for (const SentPointer& pointer : opened) sent.push_back(roadmap::Opens{pointer.step.str(), pointer.tree.str()});
+        return sent;
       });
       if (edited.answer.isError) return edited.answer;
       if (pointersMoved && !dryRun) {
@@ -1367,40 +1475,30 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
     const bool prune = arguments["prune"].asBool();
     const bool single = arguments["nodeIds"].isNull();
     return write([&](Call& call) -> ToolResult {
-      // What the call would take is judged first, and the caller's completions on the steps it deletes are cleared before
-      // the deaths land, so a delete never leaves a mark that a revival would bring back.
-      const auto judged = door_.read([&](sync::SyncTxn& txn) -> std::variant<std::vector<NodeId>, ToolResult> {
-        const TreeRows rows = door_.rows().tree(txn, tree.str(), caller);
-        if (!rows.exists()) return noSuchTree(tree);
-        const AccountRows account = door_.rows().account(txn, rows.owner());
-        NullPresenceBus bus;
-        const std::unique_ptr<TreeRoom> room = roadmap::roomOf(rows, account, bus);
-        if (!room->readableBy(caller)) return noSuchTree(tree);
-        if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, room->owner())) return ToolResult::failure(writeRefusalSentence(*refusal));
-        std::vector<std::string> missing;
-        for (const NodeId& node : targets)
-          if (!room->hasNode(node)) missing.push_back(node.str());
-        if (!missing.empty())
-          return ToolResult::failure("no node in this tree is named " + quotedList(missing) + " — nothing was deleted. " + kNodeHandle.hint);
-        if (std::vector<UnconfirmedBranch> unconfirmed = room->unconfirmedBranches(targets, branches); !unconfirmed.empty())
-          return ToolResult::failure(branchesUnconfirmed(door_.rows(), txn, account, unconfirmed), kBranchUnconfirmed);
-        std::vector<NodeId> completed;
-        for (const NodeId& node : targets) {
-          for (const sync::Row& mark : rows.marks)
-            if (mark.id.column() == node.str() && mark.lattice.f.count("mark") && mark.lattice.f.at("mark").value["status"] == "complete")
-              completed.push_back(node);
-        }
-        return completed;
-      });
-      if (const ToolResult* refused = std::get_if<ToolResult>(&judged)) return *refused;
-      const std::vector<NodeId>& completed = std::get<std::vector<NodeId>>(judged);
-      if (!completed.empty()) {
-        std::vector<RequestedMark> clears;
-        for (const NodeId& node : completed) clears.push_back(RequestedMark{node, ProgressStatus::none, false});
-        const std::variant<MarkedBatch, std::string> cleared = markSteps(call, tree, caller, clears, true);
-        if (const std::string* error = std::get_if<std::string>(&cleared)) return ToolResult::failure(*error);
+      // The call is judged as the caller's completions on the steps it deletes are cleared, under the overlay's lock and
+      // before the deaths land, so a refused call clears nothing and a delete leaves no mark a revival would bring back.
+      std::optional<std::size_t> cleared;
+      try {
+        cleared = clearMarks(call, tree, caller, targets, [&](sync::SyncTxn& txn, const TreeRows& rows) {
+          if (!rows.exists()) refuse(noSuchTree(tree));
+          const AccountRows account = door_.rows().account(txn, rows.owner());
+          NullPresenceBus bus;
+          const std::unique_ptr<TreeRoom> room = roadmap::roomOf(rows, account, bus);
+          if (!room->readableBy(caller)) refuse(noSuchTree(tree));
+          if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, room->owner()))
+            refuse(ToolResult::failure(writeRefusalSentence(*refusal)));
+          std::vector<std::string> missing;
+          for (const NodeId& node : targets)
+            if (!room->hasNode(node)) missing.push_back(node.str());
+          if (!missing.empty())
+            refuse(ToolResult::failure("no node in this tree is named " + quotedList(missing) + " — nothing was deleted. " + kNodeHandle.hint));
+          if (std::vector<UnconfirmedBranch> unconfirmed = room->unconfirmedBranches(targets, branches); !unconfirmed.empty())
+            refuse(ToolResult::failure(branchesUnconfirmed(door_.rows(), txn, account, unconfirmed), kBranchUnconfirmed));
+        });
+      } catch (const Refused& refused) {
+        return refused.answer;
       }
-      return editTree(call, tree, caller, [&](TreeRoom& room, const TreeRows&, const AccountRows&, sync::SyncTxn& txn) -> ToolResult {
+      const TreeEdit edited = editTree(call, tree, caller, [&](TreeRoom& room, const TreeRows&, const AccountRows&, sync::SyncTxn& txn) -> ToolResult {
         std::vector<Command> commands;
         for (const NodeId& node : targets) commands.push_back(DeleteNode{node});
         const std::vector<Edge> dangled = prune ? room.edgesTouching(targets) : std::vector<Edge>{};
@@ -1413,7 +1511,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         for (const NodeId& node : targets) ids.append(node.str());
         Json::Value pruned(Json::objectValue);
         pruned["edges"] = static_cast<int>(dangled.size());
-        pruned["progress"] = static_cast<int>(completed.size());
+        pruned["progress"] = static_cast<int>(cleared.value_or(0));
         Json::Value out(Json::objectValue);
         out["applied"] = true;
         out["seq"] = static_cast<Json::Int64>(seq);
@@ -1422,7 +1520,9 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         out["ids"] = ids;
         out["pruned"] = pruned;
         return ToolResult::json(out);
-      }).answer;
+      });
+      if (!cleared && !edited.answer.isError) return resumedReceipt(tree, edited.seq);
+      return edited.answer;
     });
   }
 
@@ -1470,7 +1570,6 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
     const bool dryRun = arguments["dryRun"].asBool();
     return write([&](Call& call) -> ToolResult {
       std::vector<NodeId> refused;
-      std::vector<NodeId> tombstoned;
       TreeDiagnostics before;
       TreeDiagnostics after;
       bool pointersMoved = false;
@@ -1560,7 +1659,6 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
           const std::map<NodeId, TreeId> pointersBefore = room.pointers();
           before = room.diagnose();
           const std::optional<Seq> landed = room.importTree(landing, clock_.nowMs(), caller);
-          tombstoned = footprint.tombstonedNodes;
           out["graphApplied"] = true;
           out["progressApplied"] = true;
           out["imported"] = true;
@@ -1571,13 +1669,25 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
           answerDiagnostics(before, after, out);
           return ToolResult::json(out);
         }
+      }, [&](const TreeRows&, const TreeEdit&) {
+        std::vector<roadmap::Opens> sent;
+        if (!dryRun)
+          for (const Json::Value& node : arguments["nodes"])
+            if (node["opens"].isString()) sent.push_back(roadmap::Opens{node["id"].asString(), node["opens"].asString()});
+        return sent;
       });
       if (edited.answer.isError || dryRun) return edited.answer;
       ToolResult grafted = edited.answer;
-      if (!tombstoned.empty()) {
-        std::vector<RequestedMark> clears;
-        for (const NodeId& node : tombstoned) clears.push_back(RequestedMark{node, ProgressStatus::none, false});
-        markSteps(call, tree, caller, clears, false);
+      // The caller's completions on what the tombstones took, cleared once the graft has landed.
+      if (!graft.tombstones.empty()) {
+        try {
+          clearMarks(call, tree, caller, graft.tombstones);
+        } catch (const Refused&) {
+          Json::Value receipt = grafted.payload;
+          fellShort(receipt, "The graph committed, but clearing progress on removed nodes failed. Read get_progress before "
+                             "retrying progress changes.");
+          grafted = withPayload(grafted, receipt);
+        }
       }
       if (pointersMoved) {
         Json::Value receipt = grafted.payload;

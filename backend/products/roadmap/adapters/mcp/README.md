@@ -891,7 +891,11 @@ receipts and planners hold, and the room's changes become the intent's deltas, a
 the caller's marks are their overlay's `progress`. Reads read the typed tables through the read domain
 (`domain/read/`). Every write takes an optional `requestId`: the call's reply is stored with it, so the same call sent again
 is answered that reply and writes nothing, and other arguments under it are refused `request-conflict`. A call the engine
-cannot take now answers `busy`, nothing written. `windmill_mcp` and `windmill_mcp_http` keep the rooms.
+cannot take now answers `busy`, nothing written. A call's admits are the same in every attempt, and each builds what it
+writes from the call's arguments and the rows under its lock, so a call cut short after some of its writes and sent again
+under its requestId makes exactly the writes that had not landed and answers `resumed: true` with the tree's `seq`; what
+the first attempt would have answered is not told. A refusal met under a lock abandons its admit whole, so no stored
+part is ever a refusal. `windmill_mcp` and `windmill_mcp_http` keep the rooms.
 
 What the door answers otherwise, each pinned by `golden/wire_corpus_door.json` or `DoorToolsTest.cpp`:
 
@@ -908,6 +912,8 @@ What the door answers otherwise, each pinned by `golden/wire_corpus_door.json` o
 - A write is committed before it answers: no reply says `saved`, `saveError`, `unsaved` or `incomplete`, and the owner's
   roadmaps are read in the reply's snapshot, so none says `openedTreesUnavailable`, `guidesAboveUnavailable` or
   `pointerDiagnosticsUnavailable`.
+- A step's pointer is written in the owner's overlay after the tree write, only where the call sends one: a step an
+  import brings back from a delete keeps the pointer the overlay holds for it, as it keeps its links.
 - `delete_tree` answers in `removed` the steps of the owner's other roadmaps whose pointer opened it, which the engine
   deletes with it; their links stay, read through while the steps are absent.
 - `list_trees` answers `updatedAt` as the newest write among a roadmap's records and the caller's marks, newest first.

@@ -38,7 +38,8 @@ constexpr std::size_t kMaxImportDescriptionBytes = 6 * 1024 * 1024;
 // grant level that reaches it.
 std::vector<ToolDeclaration> roadmapToolCatalog();
 // The catalog the door's host declares (Roadmap on the sync engine §7): every write also takes an optional
-// `requestId`, so a call sent again under it writes once and is answered as the first was.
+// `requestId`, so a call sent again under it writes once and is answered as the first was; a receipt may say `resumed`
+// when the call was cut short after some of its writes and the copy made the rest.
 std::vector<ToolDeclaration> roadmapDoorToolCatalog();
 
 }

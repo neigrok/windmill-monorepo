@@ -652,7 +652,8 @@ add_executable(windmill_sync_tests
   test/products/probe/adapters/postgres/PgProbeTest.cpp
   test/products/gym/sync/PgGymTest.cpp
   test/products/journal/sync/PgJournalTest.cpp
-  test/products/roadmap/sync/PgRoadmapTest.cpp)
+  test/products/roadmap/sync/PgRoadmapTest.cpp
+  test/products/roadmap/application/RoadmapDoorPgTest.cpp)
 target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync)
 target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
