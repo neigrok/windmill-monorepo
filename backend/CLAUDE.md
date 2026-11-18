@@ -118,7 +118,11 @@ admission stack and four-thread worker pool beside the engine's. `GymTools` and 
 the door directly; `TrainingService` uses it for stale closes, `ThreadService` for proposal unlinking and
 `coach::TurnService` for a dropped turn's message. Catalog, program, notes, settings and
 weigh-in reads use repository ports directly. The gym repositories only read, but for shares and
-Coach threads. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
+Coach threads. Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, every roadmap write the server makes for a person — the MCP
+roadmap tools (`RoadmapDoorTools`), tending through them, `POST /v1/trees/{id}/fork` and the fork at sign-up (`DoorForks`)
+— is a call of `RoadmapDoor`, on the engine's store and clock, its intents built under their scope's lock; MCP's roadmap
+reads read the typed tables through the read domain (`products/roadmap/domain/read/`), which claims the shared read
+vectors. Elsewhere they keep roadmap's rooms. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
 `PageWatcher` (echo derivation) after the live feed, reporting a failure of either after the commit.
 
 The admission corpus of gym, journal and roadmap runs over fakes and over Postgres, and so do journal's

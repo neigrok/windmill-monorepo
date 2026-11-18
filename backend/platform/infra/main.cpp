@@ -40,6 +40,7 @@
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
+#include "products/roadmap/adapters/mcp/RoadmapDoorTools.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
 #include "platform/adapters/postgres/PgAuthRepository.h"
 #include "platform/adapters/amplitude/AmplitudeUsageSink.h"
@@ -72,6 +73,7 @@
 #include "platform/application/LiveSessions.h"
 #include "platform/domain/AiFuse.h"
 #include "platform/domain/MailArming.h"
+#include "products/roadmap/application/DoorForks.h"
 #include "products/roadmap/application/ForkService.h"
 #include "platform/application/McpKeyService.h"
 #include "platform/application/OAuthService.h"
@@ -84,6 +86,7 @@
 #include "platform/application/ClosedAccountSweep.h"
 #include "platform/application/RetentionSweep.h"
 #include "products/roadmap/application/ReminderSweep.h"
+#include "products/roadmap/application/RoadmapDoor.h"
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/email/ResendNudgeSender.h"
 #include "platform/adapters/llm/AnthropicClient.h"
@@ -422,7 +425,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(googleClient);
   lifetime.watch(appleClient);
   lifetime.watch(appleNativeVerifier);
-  auto forkSignup = std::make_shared<ForkSignup>(*forkService);
   // The origins allowed to send credentialed (cookie-bearing) requests. The app is always trusted;
   // WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets no CORS grant.
   std::set<std::string> allowedOrigins;
@@ -443,8 +445,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     }
   }
 
-  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
-                                           googleClient, appBaseUrl, appleClient, appleNativeVerifier, allowedOrigins);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
   auto ogImages = std::make_shared<PgOgImageRepository>(pool);
@@ -654,6 +654,19 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
   lifetime.watch(syncEngine, systemClock, sentry);
 
+  // Every server write for a person goes through roadmap's door where the engine serves roadmap's scopes (Roadmap on the
+  // sync engine §7): MCP's tools, tending, the fork and the fork at sign-up, beside the engine's own admissions on its
+  // store and clock. Elsewhere they write through roadmap's rooms, as before the cutover.
+  const bool roadmapOnEngine = productsCatalog->serves("roadmap");
+  auto roadmapDoor = std::make_shared<roadmap::RoadmapDoor>(*productsCatalog, syncEngine->store, *syncEngine->live,
+                                                           syncEngine->serverClock, *systemClock, *sentry);
+  lifetime.watch(roadmapDoor, syncEngine, systemClock, sentry);
+  std::shared_ptr<TreeForks> forks = forkService;
+  if (roadmapOnEngine) forks = std::make_shared<DoorForks>(*roadmapDoor, *tokens);
+  auto forkSignup = std::make_shared<ForkSignup>(*forks);
+  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
+                                           googleClient, appBaseUrl, appleClient, appleNativeVerifier, allowedOrigins);
+
   // Accepted funnel events forward to Amplitude with the session-resolved user_id when
   // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).
   const char* amplitudeKey = std::getenv("AMPLITUDE_API_KEY");
@@ -749,8 +762,13 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
-  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *ownerProgress, *systemClock,
-                                                 *treeRegistry, *nodeEdits, appBaseUrl);
+  std::shared_ptr<ToolHost> mcpTools;
+  if (roadmapOnEngine) mcpTools = std::make_shared<RoadmapDoorTools>(*roadmapDoor, *tokens, *systemClock, appBaseUrl);
+  else mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *ownerProgress, *systemClock, *treeRegistry,
+                                                 *nodeEdits, appBaseUrl);
+  // Who may write a tree, for a tend: from the engine's tables where it serves roadmap, from the rooms otherwise.
+  TendingService::AccessOf treeAccess = [registry](const TreeId& tree) { return registry->accessOf(tree); };
+  if (roadmapOnEngine) treeAccess = [roadmapDoor](const TreeId& tree) { return roadmapDoor->accessOf(tree); };
 
   // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
   // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.
@@ -781,7 +799,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(tendingAgent);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
-  auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools, *registry,
+  auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools, treeAccess,
                                                          *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
   lifetime.watch(tendingService, tendRuns, tendingAgent, mcpTools, systemClock, tokens, entitlements,
@@ -1285,7 +1303,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   RoadmapDeps roadmapDeps{
       .registry = registry, .trees = trees, .progressService = progressService, .ownerProgress = ownerProgress,
       .oplog = oplog, .bus = bus, .presence = presence,
-      .authService = authService, .forkService = forkService, .treeRegistry = treeRegistry,
+      .authService = authService, .forkService = forks, .treeRegistry = treeRegistry,
       .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "", .appBaseUrl = appBaseUrl,
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
       .tokens = tokens, .clock = systemClock,

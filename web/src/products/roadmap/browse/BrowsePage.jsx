@@ -28,6 +28,7 @@ export function BrowsePage() {
   const [skeleton, setSkeleton] = useState('hidden'); // hidden | shown | leaving
   const [attempt, setAttempt] = useState(0);
   const [forkingId, setForkingId] = useState('');
+  const forkKeys = useRef(new Map()); // the fork in flight or failed, by roadmap: its retry resends the same fork
   const [forkFailedId, setForkFailedId] = useState('');
   const [doorFor, setDoorFor] = useState('');
   const pageRead = useRef(null);
@@ -103,8 +104,12 @@ export function BrowsePage() {
     if (forkingId) return;
     setForkingId(entry.id);
     track('fork_attempt', { mode: 'browse' });
+    // A retry of a fork that failed resends the same fork; one that landed lets the next fork be a new copy.
+    const key = forkKeys.current.get(entry.id) ?? crypto.randomUUID();
+    forkKeys.current.set(entry.id, key);
     try {
-      const { treeId } = await forkTree(entry.id);
+      const { treeId } = await forkTree(entry.id, key);
+      forkKeys.current.delete(entry.id);
       track('fork_claim', { mode: 'browse' });
       setIndex((current) => current.forked(entry.id, treeId));
     } catch (error) {

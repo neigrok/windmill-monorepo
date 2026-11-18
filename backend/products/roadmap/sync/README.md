@@ -42,4 +42,7 @@ Every admission logs its one `sync.admit` line and each command its `sync.comman
 `roadmap`, door, outcome or refusal code and duration, and reports an unexpected failure to Sentry under those static
 names (`platform/application/WriteObservation`). Neither names an id or a text.
 
-No server door writes roadmap's records yet: MCP, tending and the fork still write through roadmap's own sync.
+Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, every server write for a person goes through roadmap's door
+(`application/RoadmapDoor`) into this binding as server-origin intents: MCP's write tools (`adapters/mcp/RoadmapDoorTools`),
+tending through them, the fork and the fork at sign-up (`application/DoorForks`). Elsewhere they write through roadmap's
+own sync.
