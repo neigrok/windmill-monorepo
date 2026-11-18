@@ -17,6 +17,7 @@ const engine = await BrowserSyncEngine.open({ appVersion, telemetry, credentials
 const records = engine.observe('self/gym');
 // React: useSyncExternalStore(records.subscribe, records.getSnapshot).
 await engine.start();
+records.release(); // when the holder leaves the scope
 ```
 
 `commit` accepts either changes/options or the reference's synchronous read-and-commit callback.
@@ -25,10 +26,31 @@ transaction and must not return a Promise; its views carry `drawn`, `stored`, `n
 product's `devices` rows and the scope's `firstPullComplete`. A rejection is one of §7.1's three failures, a
 `CommitError` of kind `not-writable`, `malformed` or `store`, or the callback's own throw, passed
 through unchanged. `newGestureId()` mints the id a caller passes as `opts.gestureId` when it must know it
-before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`) does. `observe` exposes
-drawn/stored records, notices, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and
-the records it changes) and `firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
-replica changes after durable commits and persisted-page suspension, restoration and restore failure.
+before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`) does.
+
+`observe(scope)` answers a hold on the scope's observation, with `getSnapshot`, `subscribe` and `release`.
+Every hold of a scope reads one observation; the engine refreshes and hydrates the scope while any hold
+is unreleased, and the last `release()` drops it, so a later `observe` reads the scope afresh. A released
+hold calls no listener again; `release` is idempotent, and a hold never released lasts the document. The
+snapshot carries:
+
+- `drawn` and `stored`: the scope's records, retaining confirmed `seq`, `rc` and `ru` envelope metadata;
+- `pending`: the drawn records some queued outbox entry (held, ready, sent or acked) still changes, each
+  the same object as in `drawn`, so `new Set(snapshot.pending).has(record)` asks it of a drawn record; a
+  record leaves it once no queued entry changes it (the pull that covers its entries settled them, or they
+  were undone, refused or discarded);
+- `outbox`: `{held, ready, sent, acked}`, the counts of the queued entries that belong to the scope or draw
+  in it;
+- `loaded`: whether the device's stored rows of the scope are in the snapshot; false only while an
+  observed scope's rows are still being read from the device;
+- `notices`, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and the records it
+  changes) and `firstPullComplete`.
+
+`observeEngine` and `getSnapshot` expose replica/auth/upgrade state and `connection`: `offline` while the
+browser reports no network, `unreachable` after a request to the server got no answer or a 5xx answer
+and before one answers again, else `online`. The tab that makes a request tells the other tabs whether it
+was answered. `onEvent` delivers active replica changes after durable commits and persisted-page
+suspension, restoration and restore failure.
 `commitAct(segments, {undo})` journals an act opted into Undo after its hold (engine.md §7.3 Undo of an act);
 `requestInverse(actId, slots?)` asks for its inverse in one transaction and answers an `InverseResult`,
 `readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a
@@ -99,7 +121,7 @@ version changes. Fixture reads wait for transaction completion before closing th
 Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
 scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.
 An observation (`observation.js`) keeps its scope's records between publications and folds again only
-the records whose confirmed row changed identity or whose pending entries changed; a record no held
+the records whose confirmed row changed identity or whose queued entries changed; a record no held
 entry touches is one frozen object in both `drawn` and `stored`.
 The default beacon adapter maps spec event labels to the intake's snake_case names.
 Writer telemetry measures transaction enqueue to durable completion, with bounded numeric timings,
@@ -134,8 +156,8 @@ territory; scheduling this script there remains an integration task. `npm run bu
 the browser engine separately and rejects Node builtins. The app shell caches the built room assets for offline reload; product adapters own their projections and migration.
 
 `react.js` exports `useSyncEngine()` (the open bound engine, or null during boot/sign-out) and
-`useSyncRecords(scope)` (stable drawn/stored records, notices and first-pull state through
-`useSyncExternalStore`). Records can observe the anonymous replica; only the session owner opens
+`useSyncRecords(scope)` (the scope's snapshot through `useSyncExternalStore`, holding the scope for the
+document). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
 `onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)` and `signedOutWork` — the record type a
 sign-in question counts, with the product's own words for it (`counted(n)`, `many`) — and the session owner composes every group into the engine options;

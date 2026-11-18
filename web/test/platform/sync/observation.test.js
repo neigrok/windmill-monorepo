@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { compareRecords } from '../../../../packages/api-contract/sync/reference/core/rows.js';
+import { compareRecords, recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
+import { effectsOf } from '../../../../packages/api-contract/sync/reference/client/projections.js';
 import { drawn, stored } from '../../../../packages/api-contract/sync/reference/client/views.js';
 import { undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
@@ -10,6 +11,20 @@ import { overlayScope, productScope, registry, row, Rng, serverState, st, treeSc
 
 const tree = 'tree/b_00000001', overlay = 'self/overlay/b_00000001';
 const names = ['oak', 'ash', 'elm', 'yew', 'fir', 'a-b', 'a', 'ab', 'z9'];
+
+const QUEUED = ['held', 'ready', 'sent', 'acked'];
+const reaches = (entry, scope) => effectsOf(entry, { active: true }).some((effect) => effect.scope === scope);
+
+function pendingKeys(replica, scope) {
+  return new Set(replica.entries().filter((entry) => QUEUED.includes(entry.state))
+    .flatMap((entry) => effectsOf(entry, { active: true }).filter((effect) => effect.scope === scope).flatMap(({ d }) => d))
+    .map((delta) => recordKey(delta.t, delta.id)));
+}
+
+function outboxOf(replica, scope) {
+  const entries = replica.entries().filter((entry) => entry.scope === scope || reaches(entry, scope));
+  return Object.fromEntries(QUEUED.map((state) => [state, entries.filter((entry) => entry.state === state).length]));
+}
 
 function reference(replica, scope, view) {
   return [...view(replica, registry, scope).values()].sort(compareRecords).map((record) => {
@@ -42,6 +57,10 @@ for (const seed of [1, 2, 3]) test(`scope observations equal the reference views
       assert.deepEqual(snapshot.drawn, reference(replica, scope, drawn), `step ${step}: drawn ${scope}`);
       assert.deepEqual(snapshot.stored, reference(replica, scope, stored), `step ${step}: stored ${scope}`);
       assert.deepEqual(snapshot.undoOffers, undoOffers(replica, scope), `step ${step}: undo offers ${scope}`);
+      const pending = pendingKeys(replica, scope);
+      assert.deepEqual(snapshot.pending, snapshot.drawn.filter((record) => pending.has(recordKey(record.t, record.id))), `step ${step}: pending ${scope}`);
+      assert.deepEqual(snapshot.outbox, outboxOf(replica, scope), `step ${step}: outbox ${scope}`);
+      assert.equal(snapshot.loaded, true, `step ${step}: loaded ${scope}`);
     }
   };
   try {
