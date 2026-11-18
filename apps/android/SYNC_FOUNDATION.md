@@ -69,8 +69,8 @@ cover intent and predicted deletions, restored confirmed-alive rows, records vie
 
 An opted command (engine §2.4) keeps its prediction as one projection per scope in its outbox
 entry's JSON (`predictions`), its origin's always present, and from its `ok` the receipt it was
-accepted with (`acceptedEffects`). Both are additive: entries written before them read unchanged,
-and the SQLite schema stays at version 1. `outbox_touch` names every scope an entry's deltas are in.
+accepted with (`acceptedEffects`). Both are additive: entries written before them read unchanged.
+`outbox_touch` names every scope an entry's deltas are in.
 A projection draws over its own scope until that scope's cursor covers its accepted seq or the scope
 ends; the entry resolves when every projection is covered. Once its receipt applies, the command's own
 intent draws, and later queued work follows, at the versions the server accepted. `HTTPTransport` takes the registry's opted
@@ -82,6 +82,16 @@ The registry compiles every place it declares a record identity — ids, key par
 Value and argument checks, dependents and every write map read identities only through it; a map
 renames each delta, guard, receipt row and argument in two passes, global leaves first and then
 scope-local ones, and a proposed creation moves only with its own retained target.
+
+An act opted into Undo (engine §7.3 Undo of an act, `ActRequest.undo`) journals each segment's source
+entry with its recipes and first local preimages, and each `ok` or terminal refusal in the result's own
+transaction. `requestInverse` cancels a wholly held act, or reserves inverse slots at the end of commit
+order that stop the sender until the act's sources are authoritative, then binds them into restore or
+product inverse commands; `readInverseResult` and `releaseReversibleAct` answer and release. The journal,
+inverse requests and cancellation receipts are replica JSON (`journal`, `inverses`, `cancellations`);
+SQLite schema version 2 keeps each as one row of its replica in `reversible_act`, `inverse_request` and
+`cancellation`, written only when it changes. A version 1 store gains the three empty tables when it
+opens. Android's registries declare no restore or inverse command.
 
 The JVM model server implements probe, gym and journal bindings. Step mode drives the production
 engine's sender/result batches and puller/page chunks/settling, with virtual clocks and transport.

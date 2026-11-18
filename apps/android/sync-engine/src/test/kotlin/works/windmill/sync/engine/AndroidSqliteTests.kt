@@ -156,6 +156,40 @@ class AndroidSqliteTests {
         }
     }
 
+    @Test fun aReservedUndoKeepsItsJournalAndBarrierAcrossReopen() = database { file ->
+        val vector = Json.parse(File(System.getProperty("windmill.contract"), "sync/corpus/undo/restore.json").readBytes()).arr()
+            .single { it.member("name").str().startsWith("an inverse slot whose source is still held stops numbering") }
+        val steps = vector.member("input").member("steps").arr()
+        var gestures = 0
+        val counted = object : IdentitySource { override fun opaqueID() = "g${++gestures}"; override fun draw(bound: Int) = 0 }
+        fun reopen() = AndroidSqlite.open(file, registry, vector.member("input").member("device"), clock, counted, "r_aaaaaaaaaaaa")
+        val held = reopen().use { engine ->
+            val undo = steps[0].member("opts").member("undo").member("segments").arr().map { segment ->
+                UndoSegment(segment.member("index").long().toInt(), segment.member("recipes").arr().map(UndoRecipe::read)) }
+            val segments = listOf(Gesture(listOf(Change.update("card", RecordID("cardAAAA0001"), mapOf("title" to Json.of("New"))))),
+                Gesture(listOf(Change.write("meta", RecordID("meta"), mapOf("title" to Json.of("Grown"))))))
+            engine.commitAct({ ActRequest(listOf(scope, ScopeRef.tree("b_00000001")), hold = true, undo = undo) to segments }, { values, index, _ -> values[index] })
+            assertTrue(engine.release("g1/0"))
+            val pushed = engine.nextPush()!!
+            val response = steps[3].member("response")
+            engine.onPushResponse(pushed, SyncResponse(response.member("status").long().toInt(), response["body"]),
+                RequestTiming(ClockReading(6_000, 6_000, "boot"), ClockReading(6_000, 6_000, "boot")))
+            assertEquals(works.windmill.sync.api.InverseResult.Pending("g3", "g2", true), engine.requestInverse("g1"))
+            assertNull(engine.nextPush())
+            engine.snapshot()
+        }
+        reopen().use { engine ->
+            assertEquals(held, engine.snapshot())
+            assertEquals(listOf("g1", "g2"), engine.snapshot().member("replicas").arr().single().member("journal").arr().map { it.member("actId").str() })
+            assertNull(engine.nextPush())
+            engine.start()
+            assertEquals(listOf(ScopeRef.tree("b_00000001").json), engine.nextPush()!!.member("intents").arr().map { it.member("scope") })
+        }
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            val stored = listOf("reversible_act", "inverse_request").map { table -> db.rawQuery("SELECT COUNT(*) FROM $table", null).use { it.moveToFirst(); it.getInt(0) } }
+            assertEquals(listOf(2, 1), stored)
+        }
+    }
     @Test fun anAcknowledgedScopedCommandKeepsEachProjectionAndReceiptAcrossReopenAndSettlesOneTargetAtATime() = database { file ->
         val vector = Json.parse(File(System.getProperty("windmill.contract"), "sync/corpus/write/scoped-predictions.json").readBytes()).arr()
             .single { it.member("name").str() == "after restart a covering newer text deactivates only that target and reset does not revive it" }
