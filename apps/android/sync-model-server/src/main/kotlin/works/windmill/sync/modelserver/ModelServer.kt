@@ -53,12 +53,22 @@ class ModelServer(val registry: Registry, val rules: ServerRules = NoServerRules
             if (bound && lastN() == 0L && tables.results[replica] == null) tables.replicas.remove(replica)
             return failure(409, error, account, now).copy(events = events.toList())
         }
-        for (intent in intents) {
-            val n = intent.member("n").long(); val digest = Sha256.hex(intent.jcs.encodeToByteArray())
+        for ((index, intent) in intents.withIndex()) {
+            val rawCommand = intent["cmd"] as? Json.Obj
+            val scoped = (rawCommand?.get("name") as? Json.Str)?.value?.let { registry.command(it)?.scopedEffects } == true
+            val n = intent.member("n").long()
+            if (scoped && results.isNotEmpty()) { retry = Json.objectOf("n" to Json.of(n), "retryAfterMs" to Json.of(0)); break }
+            val digest = Sha256.hex(intent.jcs.encodeToByteArray())
+            fun stopAfterScoped(): Boolean {
+                if (!scoped) return false
+                if (index + 1 < intents.size) retry = Json.objectOf("n" to intents[index + 1].member("n"), "retryAfterMs" to Json.of(0))
+                return true
+            }
+            
             if (n <= lastN()) {
                 val stored = tables.results[replica]?.get(n)
                 if (stored == null || stored.member("digest").str() != digest || stored.member("result") === Json.Null) return stop("replica-forked")
-                results.add(stored.member("result").with("n" to Json.of(n))); continue
+                results.add(stored.member("result").with("n" to Json.of(n))); if (stopAfterScoped()) break; continue
             }
             if (n != lastN() + 1) return stop("gap")
             if (faults.budget != null && admissions >= faults.budget) { retry = Json.objectOf("n" to Json.of(n), "retryAfterMs" to Json.of(0)); break }
@@ -76,11 +86,12 @@ class ModelServer(val registry: Registry, val rules: ServerRules = NoServerRules
                 tables.results.getOrPut(replica) { mutableMapOf() }[n] = storedResult(n, digest, if (poisoned) refused("internal") else Json.Null, count)
                 if (!poisoned) { retry = Json.objectOf("n" to Json.of(n), "retryAfterMs" to Json.of(0)); break }
                 tables.replicas[replica] = tables.replicas.getValue(replica).with("lastN" to Json.of(n))
-                results.add(refused("internal").with("n" to Json.of(n))); continue
+                results.add(refused("internal").with("n" to Json.of(n))); if (stopAfterScoped()) break; continue
             }
             tables.results.getOrPut(replica) { mutableMapOf() }[n] = storedResult(n, digest, admitted.result, counted)
             tables.replicas[replica] = tables.replicas.getValue(replica).with("lastN" to Json.of(n))
             publish(admitted.events); events.addAll(admitted.events); results.add(admitted.result.with("n" to Json.of(n)))
+            if (stopAfterScoped()) break
         }
         val last = lastN(); tables.results[replica]?.keys?.removeAll { it <= minOf(ack, last) }
         if (tables.results[replica]?.isEmpty() == true) tables.results.remove(replica)

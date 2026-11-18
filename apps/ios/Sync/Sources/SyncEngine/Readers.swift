@@ -362,9 +362,9 @@ final class TransactionReader: CommitContext {
   // Each read batch indexes its pending metadata once, including duplicate delta and prediction touches.
   func pendingMetadata(in replica: LoadedReplica, mode: ViewMode) -> [RecordKey: PendingMetadata] {
     var records: [RecordKey: PendingMetadata] = [:]
-    for entry in replica.entriesTouchingReads where entry.scope == scope {
+    for entry in replica.entriesTouchingReads {
       let folded = entry.state != .held || mode == .drawn
-      for delta in entry.drawnDeltas {
+      for delta in entry.deltas(in: scope, active: true) {
         var pending = records[delta.key, default: PendingMetadata()]
         pending.isHeld = pending.isHeld || entry.state == .held
         if folded {

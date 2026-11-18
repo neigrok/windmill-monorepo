@@ -190,7 +190,32 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         val first = deltas[at]
         deltas[at] = Delta(delta.key, Lattice(first.lattice.life, first.lattice.born, first.lattice.fields + delta.lattice.fields), first.texts + delta.texts)
     }
-    val predict = gesture.predict.mapNotNull { builder.build(it, prediction = true) }
+    val definition = gesture.command?.let { registry.command(it.name) }
+    if (gesture.scopedPredict != null && definition?.scopedEffects != true) malformed("scoped-prediction-command")
+    if (gesture.scopedPredict != null && gesture.predict.isNotEmpty()) malformed("ambiguous-predictions")
+    val predict = if (definition?.scopedEffects == true) emptyList() else gesture.predict.mapNotNull { builder.build(it, prediction = true) }
+    val predictions = if (definition?.scopedEffects == true) {
+        val groups = mutableMapOf(scope to mutableListOf<Change>())
+        groups.getValue(scope).addAll(gesture.predict)
+        for (prediction in gesture.scopedPredict.orEmpty()) groups.getOrPut(prediction.scope) { mutableListOf() }.addAll(prediction.changes)
+        EffectReceipts.orderedScopes(scope, groups.keys).map { target ->
+            if (registry.scopeKind(target) == null || target.tree?.let { id -> registry.governingType?.let { registry.isId(Json.of(id), it) } != true } == true) malformed("prediction-scope")
+            registry.governingRecord(target)?.let { (key, governingScope) ->
+                if (replica.known.containsKey(target.text) || replica.known.containsKey("tree/${target.tree}") || latticeView(replica, governingScope, key, ViewMode.stored)?.life?.isAlive == false)
+                    return CommitOutcome.Refused(RefusalCode.scopeDead, null)
+            }
+            val targetBuilder = DeltaBuilder(this, replica, target, stamp, now, gone)
+            val changes = groups.getValue(target)
+            if (changes.any { it.type !in definition.predicts }) malformed("prediction-type")
+            val values = changes.mapNotNull { targetBuilder.build(it, prediction = true) }
+            if (values.map { it.key }.distinct().size != values.size) malformed("duplicate-prediction")
+            Projection(target, values)
+        }.also { values ->
+            val json = Json.Arr(values.map(Projection::json))
+            if (EffectReceipts.holdsNul(json)) malformed("nul")
+            if (json.jcs.encodeToByteArray().size > effectMaxBytes) return CommitOutcome.Refused(RefusalCode.tooLarge, null)
+        }
+    } else null
     val guards = gesture.guards.distinct().map { ref ->
         if (!registry.lives(ref.type, scope) || registry.type(ref.type)?.fields?.get(ref.field)?.isLattice != true) malformed("guard-field")
         Guard(ref.key, ref.field, latticeView(replica, scope, ref.key, ViewMode.stored, gone)?.fields?.get(ref.field)?.stamp)
@@ -207,7 +232,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     val written = Intent(scope, deltas = deltas, guards = guards, command = command, gestureId = gesture.gestureId).json
     if (nul(written)) malformed("nul")
     // Opening the store parses every entry and notice under MAX_DEPTH. The deepest of them, a notice's dependent, holds a delta three levels deeper than its intent does.
-    val deepest = maxOf(written.depth, Json.Arr(predict.map { it.json }).depth)
+    val deepest = maxOf(written.depth, Json.Arr(predict.map { it.json }).depth, predictions?.let { Json.Arr(it.map(Projection::json)).depth } ?: 0)
     if (deepest + 3 > Json.MAX_DEPTH || gesture.local.any { (it.value?.depth ?: 0) > Json.MAX_DEPTH }) malformed("too-deep")
     for (type in deltas.mapNotNull { registry.type(it.key.type) }.distinct()) {
         val cap = type.cap ?: continue
@@ -251,7 +276,8 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
             add("localId" to Json.of(localId)); add("gestureId" to Json.of(gestureId)); add("lineage" to Json.of(replica.account ?: "anon")); add("scope" to scope.json)
             add("state" to Json.of(if (gesture.hold) "held" else "ready")); add("commitOrder" to Json.of(firstOrder + index)); add("releaseAt" to Json.of(if (gesture.hold) now - replica.meta.member("serverOffsetMs").long() + gesture.holdMs else 0))
             add("stamp" to stamp.json); add("intent" to intent.json)
-            if (command != null && predict.isNotEmpty()) add("predict" to Json.Arr(predict.map { it.json }))
+            if (predictions != null) add("predictions" to Json.Arr(predictions.map(Projection::json)))
+            else if (command != null && predict.isNotEmpty()) add("predict" to Json.Arr(predict.map { it.json }))
             if (texts.isNotEmpty()) add("baseTexts" to Json.Obj(texts.map { it to builder.baseTexts.getValue(it) }))
         })))
         localId

@@ -23,6 +23,7 @@ internal fun Engine.subscriptionsOf(replica: ReplicaState, products: List<String
         scopes.add(scope)
         if (bound && tree != null) scopes.add(ScopeRef.overlay(tree.id))
     }
+    replica.entries().flatMap { it.predictions.orEmpty() }.filter { !it.covered }.forEach { scopes.add(it.scope) }
     return scopes.filter { it.text !in replica.known }.toSet()
 }
 fun Engine.subscriptions(products: List<String> = listOf("gym")): Set<ScopeRef> = lock.withLock { ensureOpen(); subscriptionsOf(device.current(), products) }
@@ -45,12 +46,18 @@ internal fun Engine.forgetScope(replica: ReplicaState, scope: ScopeRef) {
     changedScopes.add(scope)
     store.forgetScope(replica.id, scope)
     replica.spent.remove(scope.text); replica.cursors.remove(scope.text); replica.staging.remove(scope.text)
-    replica.entries().filter { it.scope == scope && it.state == "acked" }.forEach { replica.move(it, "resolve", ended) }
+    replica.entries().filter { scope in it.scopes && it.state == "acked" }.forEach { entry ->
+        if (entry.predictions == null) replica.move(entry, "resolve", ended)
+        else { entry.predictions = entry.predictions!!.map { if (it.scope == scope) it.copy(covered = true) else it }; resolveIfCovered(replica, entry) }
+    }
 }
 fun Engine.reconcile(scopes: Set<ScopeRef>) { write(EngineOperation.subscription) { replica ->
     selectedScopes = scopes.toSet()
     replica.cursors.keys.map(::ScopeRef).filter { it !in scopes }.forEach { forgetScope(replica, it); doubts.left(it) }
-    replica.entries().filter { it.state == "acked" && it.scope !in scopes }.forEach { replica.move(it, "resolve", ended) }
+    replica.entries().filter { it.state == "acked" }.forEach { entry ->
+        if (entry.predictions == null) { if (entry.scope !in scopes) replica.move(entry, "resolve", ended) }
+        else { entry.predictions = entry.predictions!!.map { if (it.scope !in scopes) it.copy(covered = true) else it }; resolveIfCovered(replica, entry) }
+    }
 } }
 
 class Doubts {

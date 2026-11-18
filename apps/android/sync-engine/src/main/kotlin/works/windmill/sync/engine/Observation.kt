@@ -168,7 +168,7 @@ internal class ObservationHub(private val engine: Engine) : AutoCloseable {
         if (!engine.closed) engine.report(EngineOperation.read, EngineOutcome.failure, "store-failure")
         null
     }
-    private fun noticeContent(json: Json): NoticeContent = NoticeContent(json.items("d").map(::Delta), json["cmd"]?.let(::Command), json.items("dependents").map(::noticeContent))
+    private fun noticeContent(json: Json): NoticeContent = NoticeContent(json.items("d").map(::Delta), json["cmd"]?.let(::Command), json.items("dependents").map(::noticeContent), json["predictions"]?.arr()?.map(::ScopedDeltas))
     private fun loadNotices(product: String): List<Notice> = engine.device.current().notices.mapNotNull { notice ->
         val scope = ScopeRef(notice.member("scope"))
         if (notice.flag("dismissed") || engine.registry.product(scope) != product) null else Notice(notice.member("id").str(), product, scope,

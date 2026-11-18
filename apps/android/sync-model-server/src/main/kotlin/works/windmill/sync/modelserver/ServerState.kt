@@ -116,6 +116,8 @@ class ServerLimits(json: Json? = null) {
     val maxRecordBytes = json?.get("MAX_RECORD_BYTES")?.long(1)?.toInt() ?: Constants.MAX_RECORD_BYTES
     val pushMaxIntents = json?.get("PUSH_MAX_INTENTS")?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS
     val pushMaxBytes = json?.get("PUSH_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES
+    val receiptMaxBytes = (json?.get("RECEIPT_MAX_BYTES")?.long(1) ?: Constants.RECEIPT_MAX_BYTES.toLong()).also { require(it <= Constants.RECEIPT_MAX_BYTES) }.toInt()
+    val scopedResponseMaxBytes = (json?.get("SCOPED_RESPONSE_MAX_BYTES")?.long(1) ?: Constants.SCOPED_RESPONSE_MAX_BYTES.toLong()).also { require(it <= Constants.SCOPED_RESPONSE_MAX_BYTES) }.toInt()
     val effectMaxBytes = (json?.get("EFFECT_MAX_BYTES")?.long(1) ?: Constants.EFFECT_MAX_BYTES.toLong()).also { require(it <= Constants.EFFECT_MAX_BYTES) }.toInt()
     val pullPageBytes = json?.get("PULL_PAGE_BYTES")?.long(1)?.toInt() ?: Constants.PULL_PAGE_BYTES
     val pullMaxBytes = json?.get("PULL_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PULL_MAX_BYTES

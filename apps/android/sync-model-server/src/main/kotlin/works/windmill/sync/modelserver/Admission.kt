@@ -25,6 +25,7 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
     private inner class Run(val origin: IntentOrigin, val now: Long, val scope: ScopeKey, val state: ServerState, val intent: CheckedIntent) {
         val locks = mutableMapOf<Place, IdState>(); val touched = linkedMapOf<Place, Touched>()
         var effectBytes = 0
+        var beforeSeqs: Map<String, Long> = emptyMap()
         var declared = setOf(scope); val events = mutableListOf<LiveEvent>(); val deaths = mutableListOf<LiveEvent>()
         fun context(): RuleContext = RuleContext(registry, scope, origin, intent.deltas, intent.guards, now, state, rules,
             touched.filterKeys { it.scope == scope }.mapNotNull { (place, record) -> record.row?.let { place.key to it } }.toMap(),
@@ -34,12 +35,13 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
                 "not-found" -> throw Refusal("not-found"); "gone" -> throw Refusal("scope-dead"); "readable" -> throw Refusal("forbidden")
                 "absent" -> state.scopes[scope.text] = ScopeRecord(origin.account, governedBy = scope.tree?.let { "tree:$it" })
             }
+            beforeSeqs = state.scopes.mapValues { it.value.seq }
             intent.command?.definition?.let { if (it.serverInternal && origin.isReplica || origin.kind !in it.origins) throw Refusal("forbidden") }
             if (intent.deltas.any { origin.kind !in registry.type(it.key.type)!!.json.member("origins").arr().map(Json::str) }) throw Refusal("forbidden")
             val client = lockIdentities(intent.deltas, scope, "intent")
-            if (intent.command?.let { rules.replays(it, context()) } != true) checkGuards(client)
+            if (intent.command?.takeUnless { it.definition.engine == "capture" }?.let { rules.replays(it, context()) } != true) checkGuards(client)
             discoverEffectScopes()
-            val outcome = intent.command?.let { rules.run(it, context()) }
+            val outcome = intent.command?.let { if (it.definition.engine == "capture") CommandOutcome(emptyList(), product = state.product) else rules.run(it, context()) }
             outcome?.let { state.product = it.product }
             val commandEffects = outcome?.into.orEmpty().toMutableMap()
             commandEffects[scope] = outcome?.deltas.orEmpty() + commandEffects[scope].orEmpty()
@@ -53,8 +55,27 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
             }
             applyDeaths()
             events.addAll(deaths.sortedBy { it.key })
-            return Json.objectOf("s" to Json.of("ok"), "seq" to Json.of(state.scopes.getValue(scope.text).seq)).with(
+            var result = Json.objectOf("s" to Json.of("ok"), "seq" to Json.of(state.scopes.getValue(scope.text).seq)).with(
                 "write" to outcome?.let { Json.Arr(it.write.map { claim -> claim.json(stamp, touched[Place(scope, claim.key)]?.row?.lattice?.born) }) }, "detail" to outcome?.detail)
+            if (intent.command?.definition?.scopedEffects == true) {
+                val targets = declared + state.scopes.keys.filter { it !in beforeSeqs }.map(::ScopeKey) + deaths.map { it.key }.filter { state.scopes[it.text]?.owner == origin.account }
+                val keys = targets.associateBy { it.ref }
+                val effects = EffectReceipts.orderedScopes(scope.ref, keys.keys).map { target ->
+                    val key = keys.getValue(target); val seq = state.scopes[key.text]?.seq
+                    val rows = touched.filter { it.key.scope == key && it.value.changed }.map { (place, record) ->
+                        EffectReceipts.row(record.locked.row, record.row!!.copy(seq = seq!!))
+                    }.sortedWith { a, b -> a.recordKey.compareTo(b.recordKey) }
+                    Json.objectOf("scope" to target.json, "beforeSeq" to (beforeSeqs[key.text]?.let(Json::of) ?: Json.Null),
+                        "seq" to (seq?.let(Json::of) ?: Json.Null), "rows" to Json.Arr(rows))
+                }
+                val kit = Json.objectOf("v" to Json.of(1), "effects" to Json.Arr(effects))
+                result = result.with("detail" to Json.objectOf("windmillKit" to kit).with("command" to outcome?.detail))
+                val max = Json.of(Json.MAX_SAFE_INTEGER)
+                val widest = Json.objectOf("serverTime" to max, "epoch" to Json.of(state.epoch), "as" to Json.of(origin.account), "lastN" to max,
+                    "results" to Json.array(result.with("n" to max)), "retry" to Json.objectOf("n" to max, "retryAfterMs" to max))
+                if (kit.jcs.encodeToByteArray().size > limits.receiptMaxBytes || widest.jcs.encodeToByteArray().size > limits.scopedResponseMaxBytes) throw Refusal("too-large")
+            }
+            return result
         }
         private fun discoverEffectScopes() {
             declared = rules.discoverEffectScopes(context(), intent.command) + scope
@@ -218,7 +239,7 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
                 val tree = ScopeKey("tree:${place.key.id}")
                 if (tree.text !in state.scopes) creates[tree] = governor(place.scope, place.key)
             }
-            if (declared.any { it.text !in state.scopes && it !in creates }) throw Refusal("not-found")
+            if (declared.any { it.text !in state.scopes && it !in creates && (intent.command?.definition?.scopedEffects != true || touched.keys.any { place -> place.scope == it }) }) throw Refusal("not-found")
             for ((tree, governor) in creates) state.scopes[tree.text] = ScopeRecord(origin.account, governedBy = governor)
         }
         private fun applyDeaths() {

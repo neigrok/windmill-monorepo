@@ -34,14 +34,21 @@ internal fun Engine.endScope(replica: ReplicaState, scope: ScopeRef, kind: Strin
         if (replica.known[endedScope.text] != Json.of("gone")) replica.known[endedScope.text] = Json.of(kind)
     }
 }
-internal fun ReplicaState.covers(entry: Entry): Boolean {
-    val cursor = cursorOf(entry.scope).cursor() ?: return false
-    return cursor.mode == "live" && entry.state == "acked" && entry.json["resultEpoch"] == meta["serverEpoch"] && entry.json.member("resultSeq").long() <= cursor.seq - if (cursor.key == null) 0 else 1
+internal fun ReplicaState.covers(entry: Entry, scope: ScopeRef, seq: Long?): Boolean {
+    if (entry.state != "acked" || entry.json["resultEpoch"] != meta["serverEpoch"] || seq == null) return false
+    val cursor = cursorOf(scope).cursor() ?: return false
+    return cursor.mode == "live" && seq <= cursor.seq - if (cursor.key == null) 0 else 1
 }
-internal fun Engine.resolveIfCovered(replica: ReplicaState, entry: Entry) { if (replica.covers(entry)) replica.move(entry, "resolve", ended) }
+internal fun ReplicaState.covers(entry: Entry): Boolean = entry.predictions?.all { it.covered || covers(entry, it.scope, it.resultSeq) }
+    ?: covers(entry, entry.scope, entry.json["resultSeq"]?.long())
+internal fun Engine.resolveIfCovered(replica: ReplicaState, entry: Entry) {
+    entry.predictions = entry.predictions?.map { if (!it.covered && replica.covers(entry, it.scope, it.resultSeq)) it.copy(covered = true) else it }
+    if (replica.covers(entry)) replica.move(entry, "resolve", ended)
+}
 internal fun Engine.settle(replica: ReplicaState, scope: ScopeRef, count: Int): Boolean {
-    val covered = replica.entries().filter { it.scope == scope && replica.covers(it) }
-    covered.take(count).forEach { replica.move(it, "resolve", ended) }
+    val covered = replica.entries().filter { entry -> entry.predictions?.any { it.scope == scope && !it.covered && replica.covers(entry, scope, it.resultSeq) }
+        ?: (entry.scope == scope && replica.covers(entry)) }
+    covered.take(count).forEach { resolveIfCovered(replica, it) }
     return covered.size > count
 }
 internal fun Engine.checkDigest(replica: ReplicaState, scope: ScopeRef, received: Json, seq: Json, appVersion: String) {

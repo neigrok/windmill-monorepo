@@ -48,6 +48,12 @@ public struct CommitPlanner: Sendable {
     selection.keys.formUnion(gesture.retire.map(\.key))
     var reads = [scope: selection]
     if let governing = registry.governingRecord(of: scope) { reads[governing.scope, default: RowSelection()].keys.insert(governing.key) }
+    for prediction in gesture.scopedPredict ?? [] {
+      for (target, selection) in self.reads(of: Gesture(changes: prediction.changes), in: prediction.scope) {
+        reads[target, default: RowSelection()].keys.formUnion(selection.keys)
+        reads[target, default: RowSelection()].types.formUnion(selection.types)
+      }
+    }
     return reads
   }
 
@@ -95,15 +101,42 @@ public struct CommitPlanner: Sendable {
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
       drawn: try ScopeView(retired, scope, .drawn, registry: registry),
       stored: try ScopeView(retired, scope, .stored, registry: registry), identities: identities, draws: draws)
+    let definition = gesture.command.flatMap { registry.command($0.name) }
+    if gesture.scopedPredict != nil && definition?.scopedEffects != true { throw CommitFailure.malformed("scoped predictions require an opted command") }
+    if gesture.scopedPredict != nil && !gesture.predict.isEmpty { throw CommitFailure.malformed("ambiguous predictions") }
     let deltas: [Delta]
     let predict: [Delta]
     do {
       deltas = try oneDeltaPerRecord(try gesture.changes.compactMap { change in try builder.delta(change).map { (change, $0) } })
-      predict = try gesture.predict.map { try builder.predicted($0) }
+      predict = definition?.scopedEffects == true ? [] : try gesture.predict.map { try builder.predicted($0) }
     } catch where !builder.unread.isEmpty {
       throw UnreadDraws(keys: builder.unread, draws: builder.draws)
     }
     guard builder.unread.isEmpty else { throw UnreadDraws(keys: builder.unread, draws: builder.draws) }
+    var predictions: [Projection]?
+    if let definition, definition.scopedEffects {
+      var groups: [ScopeRef: [Change]] = [scope: gesture.predict]
+      for prediction in gesture.scopedPredict ?? [] { groups[prediction.scope, default: []] += prediction.changes }
+      var result: [Projection] = []
+      for target in [scope] + groups.keys.filter({ $0 != scope }).sorted() {
+        guard registry.scopeKind(of: target) != nil && registry.isScopeID(target) else { throw CommitFailure.malformed("invalid prediction scope") }
+        if try scopeIsDead(target, in: retired) { return .refused(.scopeDead, detail: nil) }
+        var targetBuilder = DeltaBuilder(registry: registry, replica: retired, scope: target, stamp: stamp, physNow: physNow,
+          drawn: try ScopeView(retired, target, .drawn, registry: registry), stored: try ScopeView(retired, target, .stored, registry: registry), identities: identities, draws: [])
+        var values: [Delta] = []
+        for change in groups[target] ?? [] {
+          guard definition.predicts.contains(where: { $0.utf8.elementsEqual(change.type.utf8) }) else { throw CommitFailure.malformed("undeclared prediction type") }
+          let delta = try targetBuilder.predicted(change)
+          guard !values.contains(where: { $0.key == delta.key }) else { throw CommitFailure.malformed("duplicate prediction") }
+          values.append(delta)
+        }
+        result.append(Projection(scope: target, deltas: values))
+      }
+      let json = JSON.array(result.map(\.json))
+      guard !json.holdsNul else { throw CommitFailure.malformed("prediction holds U+0000") }
+      guard json.jcs.count <= limits.effectMaxBytes else { return .refused(.tooLarge, detail: nil) }
+      predictions = result
+    }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
     let command = gesture.command.map(registry.rounded)
     // Step 7: a string the intents send (their scope, deltas, guards, command and given gesture id) holding U+0000
@@ -135,10 +168,12 @@ public struct CommitPlanner: Sendable {
         preconditionFailure("a commit enqueues")
       }
       let texts = Set(intent.deltas.flatMap { delta in delta.texts.keys.map { TextRef(delta.key, $0) } })
-      return OutboxEntry(
+      var entry = OutboxEntry(
         localId: "\(gestureId)/\((actOffset ?? 0) + k)", gestureId: gestureId, lineage: replica.meta.lineage, scope: scope, state: state,
         commitOrder: firstOrder + Int64(k), releaseAt: releaseAt, stamp: stamp, intent: intent,
         predict: command == nil ? [] : predict, baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
+      entry.predictions = predictions
+      return entry
     }
     for entry in entries { replica.apply(.putEntry(entry)) }
 

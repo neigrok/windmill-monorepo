@@ -23,6 +23,23 @@ enum Schema {
     migrator.registerMigration("v2") { db in
       try db.execute(sql: "ALTER TABLE outbox ADD COLUMN write_targets BLOB NULL")
     }
+    migrator.registerMigration("v3") { db in
+      try db.execute(sql: """
+        ALTER TABLE outbox ADD COLUMN predictions BLOB NULL;
+        ALTER TABLE outbox ADD COLUMN accepted_effects BLOB NULL;
+        CREATE TABLE outbox_target (
+          local_id TEXT NOT NULL REFERENCES outbox ON DELETE CASCADE,
+          scope TEXT NOT NULL,
+          result_epoch TEXT NULL,
+          result_seq INTEGER NULL,
+          settled INTEGER NOT NULL,
+          PRIMARY KEY(local_id, scope)
+        ) WITHOUT ROWID;
+        CREATE INDEX outbox_target_coverage ON outbox_target(scope, result_epoch, settled, result_seq, local_id);
+        INSERT INTO outbox_target(local_id, scope, result_epoch, result_seq, settled)
+          SELECT local_id, scope, result_epoch, result_seq, 0 FROM outbox;
+        """)
+    }
     return migrator
   }
 

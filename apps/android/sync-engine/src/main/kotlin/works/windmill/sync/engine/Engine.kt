@@ -44,7 +44,9 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     internal val rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
     internal val intentResultWrites: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
     internal val pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() },
-    private val writerObserver: WriterObserver? = null) : Replica, AutoCloseable {
+    private val writerObserver: WriterObserver? = null,
+    internal val effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES) : Replica, AutoCloseable {
+    init { require(effectMaxBytes in 1..Constants.EFFECT_MAX_BYTES) }
     internal val lock = ReentrantLock(true)
     internal var device = DeviceState(store.metadata()).also { device -> device.replicas.forEach { replica -> replica.staging.replaceAll { _, stage -> stage.with("rows" to null) } } }
     // The answer `activeReplica()` gives, published as each transaction turns durable: the Main thread asks it, and no transaction may hold that thread up.
@@ -178,7 +180,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
                     val changed = deviceChanged || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes
                     if (changed) {
                         version++
-                        changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.toSet() + changedRows,
+                        changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.effects().flatMap { effect -> effect.deltas.map { effect.scope to it.key } } }.toSet() + changedRows,
                             activeChanged || operation == EngineOperation.lifecycle || operation == EngineOperation.subscription, scopes = changedScopes.toSet(), firstPullScopes = cursorScopes, operation = operation,
                             replica = device.current().id, account = device.current().account))
                     }
@@ -313,9 +315,9 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     // The outbox deltas a scope's records draw, by record, in commit order: a view over many records
     // indexes the outbox once instead of walking it for each record.
     internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef): Map<RecordKey, List<OutboxDelta>> =
-        replica.entries().filter { it.scope == scope }.flatMap { entry -> entry.deltas.map { OutboxDelta(entry, it) } }.groupBy { it.delta.key }
+        replica.entries().flatMap { entry -> entry.deltas(scope, active = true).map { OutboxDelta(entry, it) } }.groupBy { it.delta.key }
     internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef, key: RecordKey): List<OutboxDelta> =
-        replica.entries().filter { it.scope == scope }.flatMap { entry -> entry.deltas.filter { it.key == key }.map { OutboxDelta(entry, it) } }
+        replica.entries().flatMap { entry -> entry.deltas(scope, active = true).filter { it.key == key }.map { OutboxDelta(entry, it) } }
     internal fun view(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet(),
         outbox: List<OutboxDelta> = outboxDeltas(replica, scope, key)): Record? {
         val row = store.row(replica.id, scope, key)
@@ -347,7 +349,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     internal fun keys(replica: ReplicaState, scope: ScopeRef, type: String, field: String? = null, id: RecordID? = null): Set<RecordKey> {
         val rows = if (field != null && id != null) store.matching(replica.id, scope, type, field, id) else store.rows(replica.id, scope, type)
-        return rows.map { it.key }.toSet() + replica.entries().filter { it.scope == scope }.flatMap { it.deltas }.filter { it.key.type == type }.map { it.key }
+        return rows.map { it.key }.toSet() + replica.entries().flatMap { it.deltas(scope, active = true) }.filter { it.key.type == type }.map { it.key }
     }
     internal inner class Reader(private val replicaState: ReplicaState, private val scope: ScopeRef, override val now: Long) : CommitContext {
         private var open = true
@@ -420,7 +422,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     fun materialized(scope: ScopeRef, mode: ViewMode): Json = lock.withLock {
         ensureOpen()
         val replica = device.current()
-        val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().filter { it.scope == scope }.flatMap { it.deltas }.map { it.key }
+        val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().flatMap { it.deltas(scope, active = true) }.map { it.key }
         val outbox = outboxDeltas(replica, scope)
         val records = allKeys.sorted().mapNotNull { key ->
             val record = view(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: return@mapNotNull null
@@ -450,11 +452,11 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             }, actor: String = "r_" + identities.opaqueID().take(12), pushMaxBytes: Int = Constants.PUSH_MAX_BYTES, telemetry: EngineTelemetry = NoEngineTelemetry,
             rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
             intentResultWrites: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
-            pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }, writerObserver: WriterObserver? = null): Engine {
+            pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }, writerObserver: WriterObserver? = null, effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES): Engine {
             val device = snapshot ?: Json.objectOf("active" to Json.of("rp_" + buildString { repeat(32) { append("0123456789abcdef"[identities.draw(16)]) } }), "replicas" to Json.array())
             val initial = if (snapshot != null) device else device.with("replicas" to Json.array(freshReplica(device.member("active").str()).json()))
             return Engine(registry, MemoryStore(registry, initial), clock, identities, actor, pushMaxBytes, telemetry,
-                rewriteDeviceValue, intentResultWrites, pendingDeviceWork, writerObserver)
+                rewriteDeviceValue, intentResultWrites, pendingDeviceWork, writerObserver, effectMaxBytes)
         }
     }
 }

@@ -45,11 +45,13 @@ data class Change(val type: String, val operation: Operation, val values: Map<St
     }
 }
 
+data class ScopedPrediction(val scope: ScopeRef, val changes: List<Change>)
+
 data class DeviceWrite(val key: String, val value: Json?)
 data class Gesture(var changes: List<Change>, var atomic: Boolean = false, var hold: Boolean = false,
     var guards: List<RegisterRef> = emptyList(), var retire: List<RecordRef> = emptyList(), var supersede: List<String> = emptyList(),
     var command: Command? = null, var predict: List<Change> = emptyList(), var local: List<DeviceWrite> = emptyList(), var gestureId: String? = null,
-    var holdMs: Long = Constants.HOLD_MS)
+    var holdMs: Long = Constants.HOLD_MS, var scopedPredict: List<ScopedPrediction>? = null)
 
 sealed interface CommitOutcome {
     data class Committed(val receipt: CommitReceipt) : CommitOutcome
@@ -76,7 +78,7 @@ data class TextValue(val text: String, val merged: Boolean, val pending: Boolean
 data class Record(val type: String, val id: RecordID, val life: Life?, val born: Stamp?, val values: Map<String, Json>,
     val texts: Map<String, TextValue>, val serials: Map<String, Json>, val rc: Long?, val ru: Long?,
     val isVisible: Boolean, val isPending: Boolean, val isHeld: Boolean)
-data class NoticeContent(var deltas: List<Delta> = emptyList(), var command: Command? = null, var dependents: List<NoticeContent> = emptyList())
+data class NoticeContent(var deltas: List<Delta> = emptyList(), var command: Command? = null, var dependents: List<NoticeContent> = emptyList(), var predictions: List<ScopedDeltas>? = null)
 data class Notice(val id: String, val product: String, val scope: ScopeRef, val code: RefusalCode, val detail: Json?,
     val content: NoticeContent, val at: Long, val isDismissed: Boolean = false)
 data class UndoOffer(val id: String, val scope: ScopeRef, val releaseAt: Long)

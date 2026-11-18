@@ -17,6 +17,7 @@ internal class Entry(var json: Json) {
     private var decodedIntent: Decoded<Intent>? = null
     private var decodedPredict: Decoded<List<Delta>>? = null
     private var decodedDeltas: Decoded<List<Delta>>? = null
+    private var decodedPredictions: Decoded<List<Projection>>? = null
     private fun <T> Decoded<T>?.of(source: Json, decode: (Json) -> T): Decoded<T> =
         this?.takeIf { it.source === source } ?: Decoded(source, decode(source))
     val id get() = json.member("localId").str()
@@ -33,7 +34,22 @@ internal class Entry(var json: Json) {
     var predict: List<Delta>
         get() = json["predict"]?.let { source -> decodedPredict.of(source) { it.arr().map(::Delta) }.also { decodedPredict = it }.value }.orEmpty()
         set(value) { json = json.with("predict" to value.takeIf { it.isNotEmpty() }?.let { Json.Arr(it.map(Delta::json)) }) }
-    val deltas: List<Delta> get() = decodedDeltas.of(json) { intent.deltas + predict }.also { decodedDeltas = it }.value
+    var predictions: List<Projection>?
+        get() = json["predictions"]?.let { source -> decodedPredictions.of(source) { it.arr().map(::Projection) }.also { decodedPredictions = it }.value }
+        set(value) { json = json.with("predictions" to value?.let { Json.Arr(it.map(Projection::json)) }) }
+    fun effects(active: Boolean = false): List<ScopedDeltas> = predictions?.filter { !active || !it.covered }?.map {
+        ScopedDeltas(it.scope, (if (it.scope == scope) intent.deltas else emptyList()) + it.deltas)
+    } ?: listOf(ScopedDeltas(scope, intent.deltas + predict))
+    fun deltas(scope: ScopeRef, active: Boolean = false): List<Delta> = effects(active).filter { it.scope == scope }.flatMap { it.deltas }
+    fun mergePredictions() {
+        val groups = predictions?.groupBy { it.scope } ?: return
+        predictions = EffectReceipts.orderedScopes(scope, groups.keys).map { target ->
+            val values = groups[target].orEmpty()
+            Projection(target, values.flatMap { it.deltas }, values.mapNotNull { it.resultSeq }.maxOrNull(), values.isNotEmpty() && values.all { it.covered })
+        }
+    }
+    val scopes: Set<ScopeRef> get() = effects().map { it.scope }.toSet()
+    val deltas: List<Delta> get() = decodedDeltas.of(json) { effects().flatMap { it.deltas } }.also { decodedDeltas = it }.value
 }
 
 internal data class OutboxDelta(val entry: Entry, val delta: Delta)
@@ -73,6 +89,7 @@ internal class ReplicaState(input: Json) {
             if (next == "ready") {
                 entry.json = entry.json.with("n" to null, "digest" to null, "resultSeq" to null, "resultEpoch" to null)
                 entry.intent = entry.intent.copy(n = null)
+                entry.predictions = entry.predictions?.map { it.copy(resultSeq = null, covered = false) }
             }
         }
     }
