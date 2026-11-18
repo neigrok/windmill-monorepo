@@ -6,7 +6,18 @@
 
 namespace wm::sync {
 
-SyncCatalog::SyncCatalog(const Registry& registry) : registry_(registry), opening_(openingOf(registry)) {}
+namespace {
+class Capture final : public SyncCommand {
+public:
+  bool isReplay(CommandCtx&) override { return false; }
+  CommandOutcome run(CommandCtx&) override { return {}; }
+};
+}
+
+SyncCatalog::SyncCatalog(const Registry& registry)
+    : registry_(registry), opening_(openingOf(registry)), capture_(std::make_unique<Capture>()) {
+  for (const CommandDef& command : registry.commands()) if (command.engine) commands_.emplace(command.name, capture_.get());
+}
 
 void SyncCatalog::bindType(TypeStore& store, TypeRules* rules) {
   if (sealed_) throw CatalogError("a sync type was bound after the catalog was sealed");

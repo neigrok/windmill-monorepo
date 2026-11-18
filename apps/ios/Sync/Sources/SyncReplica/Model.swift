@@ -196,6 +196,8 @@ public struct OutboxEntry: Sendable, Hashable {
   public var stamp: Stamp
   public var intent: Intent
   public var predict: [Delta]
+  public var predictions: [Projection]?
+  public var acceptedEffects: [JSON]?
   public var baseTexts: [TextRef: String]
   public var digest: String?
   public var resultSeq: Int64?
@@ -224,12 +226,25 @@ public struct OutboxEntry: Sendable, Hashable {
   public var isQueued: Bool { state == .held || state == .ready }
 
   // The intent's deltas, then the prediction's: everything the entry draws (§7.6).
-  public var drawnDeltas: [Delta] { intent.deltas + predict }
+  public var drawnDeltas: [Delta] { effects().flatMap(\.deltas) }
+
+  public func effects(active: Bool = false) -> [ScopedDeltas] {
+    guard let predictions else { return [ScopedDeltas(scope: scope, deltas: intent.deltas + predict)] }
+    return predictions.filter { !active || !$0.covered }.map {
+      ScopedDeltas(scope: $0.scope, deltas: ($0.scope == scope ? intent.deltas : []) + $0.deltas)
+    }
+  }
+
+  public func deltas(in scope: ScopeRef, active: Bool = false) -> [Delta] {
+    effects(active: active).filter { $0.scope == scope }.flatMap(\.deltas)
+  }
+
+  public var scopes: Set<ScopeRef> { Set(effects().map(\.scope)) }
 
   public func touches(_ key: RecordKey) -> Bool { drawnDeltas.contains { $0.key == key } }
 
   // What a notice holds of this entry: its deltas and its command.
-  public var content: NoticeContent { NoticeContent(deltas: intent.deltas, command: intent.command) }
+  public var content: NoticeContent { NoticeContent(deltas: intent.deltas, command: intent.command, predictions: predictions.map { $0.map { ScopedDeltas(scope: $0.scope, deltas: $0.deltas) } }) }
 
   public init(json: JSON) throws {
     let object = try json.asObject()
@@ -243,6 +258,8 @@ public struct OutboxEntry: Sendable, Hashable {
       baseTexts: Dictionary(uniqueKeysWithValues: try (object["baseTexts"]?.asObject().members ?? []).map {
         (try TextRef(text: $0.key), try $0.value.asString())
       }))
+    predictions = try object["predictions"]?.asArray().map { try Projection(json: $0) }
+    acceptedEffects = try object["acceptedEffects"]?.asArray()
     digest = try object["digest"]?.asString()
     resultSeq = try object["resultSeq"].map { try $0.asInteger() }
     resultEpoch = try object["resultEpoch"]?.asString()
@@ -257,6 +274,8 @@ public struct OutboxEntry: Sendable, Hashable {
       "intent": intent.json,
     ]
     object["predict"] = predict.isEmpty ? nil : .array(predict.map(\.json))
+    object["predictions"] = predictions.map { .array($0.map(\.json)) }
+    object["acceptedEffects"] = acceptedEffects.map { .array($0) }
     object["baseTexts"] = baseTexts.isEmpty ? nil : .object(JSON.Object(uniqueKeysWithValues: baseTexts.map { ($0.key.text, .string($0.value)) }))
     object["n"] = n.map { JSON($0) }
     object["digest"] = digest.map { .string($0) }
@@ -546,7 +565,8 @@ extension NoticeContent {
     self.init(
       deltas: try json["d"]?.asArray().map { try Delta(json: $0) } ?? [],
       command: try json["cmd"].map { try Command(json: $0) },
-      dependents: try json["dependents"]?.asArray().map { try NoticeContent(json: $0) } ?? [])
+      dependents: try json["dependents"]?.asArray().map { try NoticeContent(json: $0) } ?? [],
+      predictions: try json["predictions"]?.asArray().map { try ScopedDeltas(json: $0) })
   }
 
   public var json: JSON {
@@ -554,6 +574,7 @@ extension NoticeContent {
     object["d"] = deltas.isEmpty ? nil : .array(deltas.map(\.json))
     object["cmd"] = command?.json
     object["dependents"] = dependents.isEmpty ? nil : .array(dependents.map(\.json))
+    object["predictions"] = predictions.map { .array($0.map(\.json)) }
     return .object(object)
   }
 
@@ -598,9 +619,12 @@ public struct Limits: Sendable, Hashable {
   public let holdMs: Int64
   public let pushMaxIntents: Int
   public let pushMaxBytes: Int
+  public let effectMaxBytes: Int
 
   public init(holdMs: Int64 = Constants.holdMs, pushMaxIntents: Int = Constants.pushMaxIntents,
-              pushMaxBytes: Int = Constants.pushMaxBytes) {
+              pushMaxBytes: Int = Constants.pushMaxBytes, effectMaxBytes: Int = Constants.effectMaxBytes) {
+    precondition((1...Constants.effectMaxBytes).contains(effectMaxBytes))
+    self.effectMaxBytes = effectMaxBytes
     self.holdMs = holdMs
     self.pushMaxIntents = pushMaxIntents
     self.pushMaxBytes = pushMaxBytes

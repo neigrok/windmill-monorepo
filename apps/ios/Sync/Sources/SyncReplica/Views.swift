@@ -47,8 +47,8 @@ public struct ScopeView: Sendable {
     self.registry = registry
     coverage = replica.rows(scope)
     loaded = coverage.loaded.mapValues(ViewRecord.init)
-    for entry in replica.entriesTouchingReads where entry.scope == scope && (entry.state != .held || mode == .drawn) {
-      for delta in entry.drawnDeltas { try fold(delta) }
+    for entry in replica.entriesTouchingReads where entry.state != .held || mode == .drawn {
+      for delta in entry.deltas(in: scope, active: true) { try fold(delta) }
     }
   }
 

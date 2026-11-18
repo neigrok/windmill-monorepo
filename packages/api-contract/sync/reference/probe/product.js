@@ -1,6 +1,7 @@
 // The probe product's server rules (its Appendix A): commands, `check`, and one kept text revision.
 // corpus/README.md states the same rules.
 
+import { sameJson } from '../core/jcs.js';
 import { isAlive } from '../core/rows.js';
 import { ownValue, setOwn } from '../core/maps.js';
 import { Refusal } from '../server/admit.js';
@@ -9,6 +10,11 @@ export const TICK_AFTER_MS = 600_000;
 
 function isOpen(run) {
   return run.life[0] === 'alive' && (run.f?.endedAt === undefined || run.f.endedAt[0] === null);
+}
+
+function isBranchReplay(ctx, { parent, child, title }) {
+  const receipt = ownValue(receipts(ctx, 'branches'), child);
+  return receipt !== undefined && sameJson(receipt, { parent, title });
 }
 
 function receipts(ctx, book) {
@@ -24,6 +30,7 @@ export class ProbeProduct {
   }
 
   discoverEffectScopes(ctx, cmd) {
+    if (cmd?.name === 'probe.branch') return [`tree:${cmd.args.parent}`, `tree:${cmd.args.child}`];
     if (cmd?.name !== 'probe.copy' || ownValue(ctx.productState.copies?.[ctx.scopeKey], cmd.args.dst) === cmd.args.src) return [];
     if (ctx.idState('board', cmd.args.dst).state !== 'none') return [];
     return [`tree:${cmd.args.dst}`];
@@ -32,6 +39,7 @@ export class ProbeProduct {
   isReplay(ctx, cmd) {
     if (cmd.name === 'probe.start') return Object.hasOwn(receipts(ctx, 'receipts'), cmd.args.id);
     if (cmd.name === 'probe.copy') return ownValue(receipts(ctx, 'copies'), cmd.args.dst) === cmd.args.src;
+    if (cmd.name === 'probe.branch') return isBranchReplay(ctx, cmd.args);
     return false;
   }
 
@@ -43,11 +51,30 @@ export class ProbeProduct {
         return this.end(ctx, cmd.args);
       case 'probe.copy':
         return this.copy(ctx, cmd.args);
+      case 'probe.branch':
+        return this.branch(ctx, cmd.args);
       case 'probe.tick':
         return this.tick(ctx);
       default:
         throw new Refusal('invalid');
     }
+  }
+
+  // Creates board `child` and titles both trees. Its receipt `child → {parent, title}` resolves a replay,
+  // from any replica, to the board it created.
+  branch(ctx, { parent, child, title }) {
+    if (isBranchReplay(ctx, { parent, child, title })) {
+      const created = ctx.stored('board', child);
+      return { deltas: [], write: created && isAlive(created) ? [{ t: 'board', id: child, born: created.born }] : [], detail: { created: false } };
+    }
+    if (parent === child) throw new Refusal('invalid');
+    const existing = ctx.stored('board', child);
+    if (existing) throw new Refusal('id-taken');
+    setOwn(receipts(ctx, 'branches'), child, { parent, title });
+    const board = { t: 'board', id: child, life: ['alive', null], born: null };
+    const meta = { t: 'meta', id: 'meta', f: { title: [title, null] } };
+    return { deltas: [board], into: [parent, child].map((id) => ({ scopeKey: `tree:${id}`, deltas: [meta] })),
+      write: [{ t: 'board', id: child, born: null }], detail: { created: true } };
   }
 
   start(ctx, args) {

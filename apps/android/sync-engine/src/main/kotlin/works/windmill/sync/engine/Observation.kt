@@ -16,6 +16,7 @@ import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.RecordKey
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.ScopedDeltas
 import works.windmill.sync.core.lives
 import works.windmill.sync.core.product
 import works.windmill.sync.core.Command
@@ -101,7 +102,7 @@ internal fun Reply<SyncResponse>.pushFailure(account: String?): PushFailure? {
     }
 }
 
-// What the person may need to know about sync. `failedPushes` names the records of each scope's unsent entries while its last push failed; `unansweredPushes`, the scopes among them whose last push got no answer the engine could read; `unavailablePushes`, those whose last push the server answered with a 5xx.
+// What the person may need to know about sync. `failedPushes` names the records of each scope's unsent entries while its last push failed, an opted command's under every scope it predicts; `unansweredPushes`, the scopes among them whose last push got no answer the engine could read; `unavailablePushes`, those whose last push the server answered with a 5xx.
 class SyncStatus internal constructor(initial: Snapshot = Snapshot()) {
     data class Snapshot(val account: String? = null, val authPaused: Boolean = false, val upgradeRequired: Boolean = false,
         val online: Boolean = true, val pendingSignIn: String? = null, val ready: Int = 0, val sent: Int = 0, val serverSchema: Long? = null,
@@ -168,7 +169,8 @@ internal class ObservationHub(private val engine: Engine) : AutoCloseable {
         if (!engine.closed) engine.report(EngineOperation.read, EngineOutcome.failure, "store-failure")
         null
     }
-    private fun noticeContent(json: Json): NoticeContent = NoticeContent(json.items("d").map(::Delta), json["cmd"]?.let(::Command), json.items("dependents").map(::noticeContent))
+    private fun noticeContent(json: Json): NoticeContent = NoticeContent(json.items("d").map(::Delta), json["cmd"]?.let(::Command), json.items("dependents").map(::noticeContent),
+        json["predictions"]?.arr()?.map(::ScopedDeltas), json["scope"]?.let(::ScopeRef))
     private fun loadNotices(product: String): List<Notice> = engine.device.current().notices.mapNotNull { notice ->
         val scope = ScopeRef(notice.member("scope"))
         if (notice.flag("dismissed") || engine.registry.product(scope) != product) null else Notice(notice.member("id").str(), product, scope,
@@ -178,14 +180,15 @@ internal class ObservationHub(private val engine: Engine) : AutoCloseable {
         val replica = engine.device.current()
         val pending = engine.device.meta["pendingSignIn"]
         val failed = engine.pushFailures[replica.id].orEmpty()
-        val failedPushes = replica.entries().filter { it.scope in failed && it.state in setOf("ready", "sent") }
-            .groupBy({ it.scope }, { entry -> entry.deltas.map { it.key } }).mapValues { it.value.flatten().toSet() }
+        val waiting = replica.entries().filter { it.scope in failed && it.state in setOf("ready", "sent") }
+            .flatMap { entry -> entry.effects.map { effect -> Triple(effect.scope, failed.getValue(entry.scope), effect.deltas.map { it.key }) } }
+        val failedPushes = waiting.groupBy({ it.first }, { it.third }).mapValues { it.value.flatten().toSet() }
         return SyncStatus.Snapshot(if (replica.state == "bound") replica.account else null, replica.meta.flag("authPaused"),
             engine.networkUpgradeRequired, engine.networkOnline, pending?.get("account")?.str(),
             replica.outbox.count { it.state == "ready" }, replica.outbox.count { it.state == "sent" },
             if (replica.state == "bound") replica.meta["serverSchema"]?.long() else null,
-            failedPushes, failedPushes.keys.filter { failed[it] == PushFailure.unanswered }.toSet(),
-            failedPushes.keys.filter { failed[it] == PushFailure.unavailable }.toSet())
+            failedPushes, waiting.filter { it.second == PushFailure.unanswered }.map { it.first }.toSet(),
+            waiting.filter { it.second == PushFailure.unavailable }.map { it.first }.toSet())
     }
     fun notices(product: String): NoticesView {
         if (product !in engine.registry.products) throw CommitFailure.malformed("product")

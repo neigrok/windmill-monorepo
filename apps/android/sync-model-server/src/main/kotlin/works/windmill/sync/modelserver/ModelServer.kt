@@ -53,14 +53,23 @@ class ModelServer(val registry: Registry, val rules: ServerRules = NoServerRules
             if (bound && lastN() == 0L && tables.results[replica] == null) tables.replicas.remove(replica)
             return failure(409, error, account, now).copy(events = events.toList())
         }
+        // §6.2: an opted command's result rides alone, so its receipt has the whole response to itself; a continuation asks for the rest.
+        var scopedResult = false
         for (intent in intents) {
             val n = intent.member("n").long(); val digest = Sha256.hex(intent.jcs.encodeToByteArray())
+            if (n > lastN() + 1) return stop("gap")
+            val scoped = ((intent["cmd"] as? Json.Obj)?.get("name") as? Json.Str)?.value?.let { registry.command(it)?.scopedEffects } == true
+            if (scopedResult && n == results.first().member("n").long()) {
+                if (tables.results[replica]?.get(n)?.get("digest") != Json.of(digest)) return stop("replica-forked")
+                continue
+            }
+            if (scopedResult || scoped && results.isNotEmpty()) { retry = Json.objectOf("n" to Json.of(n), "retryAfterMs" to Json.of(0)); break }
+            scopedResult = scoped
             if (n <= lastN()) {
                 val stored = tables.results[replica]?.get(n)
                 if (stored == null || stored.member("digest").str() != digest || stored.member("result") === Json.Null) return stop("replica-forked")
                 results.add(stored.member("result").with("n" to Json.of(n))); continue
             }
-            if (n != lastN() + 1) return stop("gap")
             if (faults.budget != null && admissions >= faults.budget) { retry = Json.objectOf("n" to Json.of(n), "retryAfterMs" to Json.of(0)); break }
             admissions++
             if (faults.byN[n] == "transient") { retry = Json.objectOf("n" to Json.of(n), "retryAfterMs" to Json.of(1000)); break }

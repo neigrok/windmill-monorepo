@@ -71,7 +71,7 @@ public:
     resetClock(state["clock"]);
     std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
     pqxx::transaction_base& sql = sqlOf(*txn);
-    for (const char* table : {"probe_marks_revisions", "probe_start_receipts", "probe_copy_receipts", "probe_marks", "probe_links", "probe_tags",
+    for (const char* table : {"probe_marks_revisions", "probe_start_receipts", "probe_copy_receipts", "probe_branch_receipts", "probe_marks", "probe_links", "probe_tags",
                               "probe_metas", "probe_facts", "probe_days", "probe_laps", "probe_runs", "probe_cards", "probe_boards", "sync_spent",
                               "sync_requests", "sync_replicas", "sync_scopes"}) {
       sql.exec(std::string("delete from ") + table);
@@ -189,6 +189,13 @@ public:
                  pqxx::params{storeKey(key).text(), destination, product["copies"][key][destination].asString()});
       }
     }
+    for (const std::string& key : product["branches"].getMemberNames()) {
+      for (const std::string& child : product["branches"][key].getMemberNames()) {
+        const Json::Value& receipt = product["branches"][key][child];
+        sql.exec("insert into probe_branch_receipts (scope_key, child, parent, title) values ($1, $2, $3, $4)",
+                 pqxx::params{storeKey(key).text(), child, receipt["parent"].asString(), receipt["title"].asString()});
+      }
+    }
     if (gym_) {
       wm::gym::engine::PgGymState gymState;
       const Json::Value& product = state["product"];
@@ -298,6 +305,11 @@ public:
     for (const auto& row : sql.exec("select scope_key, destination, source from probe_copy_receipts")) {
       state["product"]["copies"][aliasKey(*ScopeKey::parse(row["scope_key"].template as<std::string>()))][row["destination"].template as<std::string>()] =
           row["source"].template as<std::string>();
+    }
+    for (const auto& row : sql.exec("select scope_key, child, parent, title from probe_branch_receipts")) {
+      Json::Value& receipt = state["product"]["branches"][aliasKey(*ScopeKey::parse(row["scope_key"].template as<std::string>()))][row["child"].template as<std::string>()];
+      receipt["parent"] = row["parent"].template as<std::string>();
+      receipt["title"] = row["title"].template as<std::string>();
     }
     if (gym_) {
       state["product"] = Json::Value(Json::objectValue);

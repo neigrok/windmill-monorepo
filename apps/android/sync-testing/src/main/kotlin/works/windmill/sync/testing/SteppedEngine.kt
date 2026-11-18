@@ -8,13 +8,14 @@ import works.windmill.sync.engine.*
 
 // Step mode uses the engine's public API and memory store; no loop or background scheduler starts.
 class SteppedEngine private constructor(private val registry: Registry, snapshot: Json?, private val draws: List<Int>, pushMaxBytes: Int,
-    val clock: SimClock, private val seed: Long, private val account: String?, shared: Fleet?, rules: works.windmill.sync.modelserver.ServerRules, private val legacyDraws: Boolean) : AutoCloseable {
+    val clock: SimClock, private val seed: Long, private val account: String?, shared: Fleet?, rules: works.windmill.sync.modelserver.ServerRules, private val legacyDraws: Boolean,
+    effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES) : AutoCloseable {
     private class Fleet(val clock: SimClock, val server: ModelServerHandle, val seed: Long) {
         val devices = mutableListOf<SteppedEngine>()
         var joined = 0
     }
-    constructor(registry: Registry, snapshot: Json? = null, draws: List<Int> = emptyList(), pushMaxBytes: Int = Constants.PUSH_MAX_BYTES) :
-        this(registry, snapshot, draws, pushMaxBytes, SimClock(), 117, "acct-1", null, works.windmill.sync.modelserver.NoServerRules(), true)
+    constructor(registry: Registry, snapshot: Json? = null, draws: List<Int> = emptyList(), pushMaxBytes: Int = Constants.PUSH_MAX_BYTES, effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES) :
+        this(registry, snapshot, draws, pushMaxBytes, SimClock(), 117, "acct-1", null, works.windmill.sync.modelserver.NoServerRules(), true, effectMaxBytes)
     constructor(registry: Registry, startMs: Long, seed: Long = 1, account: String? = "acct-1", rules: works.windmill.sync.modelserver.ServerRules = works.windmill.sync.modelserver.NoServerRules()) :
         this(registry, null, emptyList(), Constants.PUSH_MAX_BYTES, SimClock(startMs), seed, account,
             null, rules, false)
@@ -32,7 +33,7 @@ class SteppedEngine private constructor(private val registry: Registry, snapshot
                 else draws.getOrNull(index) ?: error("draw-queue-exhausted")
             return value.also { require(it in 0 until bound) }
         }
-    }, if (legacyDraws) "r_aaaaaaaaaaaa" else "r_${java.lang.Long.toUnsignedString(seed, 16).padStart(16, '0')}", pushMaxBytes)
+    }, if (legacyDraws) "r_aaaaaaaaaaaa" else "r_${java.lang.Long.toUnsignedString(seed, 16).padStart(16, '0')}", pushMaxBytes, effectMaxBytes = effectMaxBytes)
     val replica: Replica get() = engine
     val server: ModelServerHandle get() = fleet.server
     val transport = InMemoryTransport(fleet.server, clock)
@@ -120,7 +121,18 @@ object ClientCorpus {
         opts["guard"]?.arr()?.map { RegisterRef(it.member("t").str(), RecordID(it.member("id")), it.member("field").str()) }.orEmpty(),
         opts["retire"]?.arr()?.map { RecordRef(it.member("t").str(), RecordID(it.member("id"))) }.orEmpty(),
         opts["supersede"]?.arr()?.map { it.str() }.orEmpty(), opts["cmd"]?.let(::Command),
-        opts["predict"]?.arr()?.map { change(it, prediction = true) }.orEmpty(), opts["local"]?.obj()?.map { DeviceWrite(it.key, it.value.orNull()) }.orEmpty(), opts["gestureId"]?.str())
+        opts["predict"]?.arr()?.map { change(it, prediction = true) }.orEmpty(), opts["local"]?.obj()?.map { DeviceWrite(it.key, it.value.orNull()) }.orEmpty(), opts["gestureId"]?.str(),
+        scopedPredict = opts["scopedPredict"]?.arr()?.map { group ->
+            group.expectKeys(listOf("scope", "changes"))
+            ScopedPrediction(ScopeRef(group.member("scope")), group.member("changes").arr().map { change(it, prediction = true) })
+        })
+    // A vector's `limits` shrink the constants a client runner can configure; naming any other fails the vector (corpus/README.md).
+    data class Limits(val pushMaxBytes: Int, val effectMaxBytes: Int)
+    fun limits(input: Json): Limits {
+        val limits = input["limits"] ?: Json.objectOf()
+        limits.expectKeys(emptyList(), listOf("PUSH_MAX_BYTES", "EFFECT_MAX_BYTES"))
+        return Limits(limits["PUSH_MAX_BYTES"]?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES, limits["EFFECT_MAX_BYTES"]?.long(1)?.toInt() ?: Constants.EFFECT_MAX_BYTES)
+    }
     fun outcome(result: CommitOutcome): Json = when (result) {
         is CommitOutcome.Committed -> Json.Obj(buildList {
             add("localIds" to Json.Arr(result.receipt.localIds.map(Json::of))); add("retired" to Json.Arr(result.receipt.retired.map(Json::of))); add("stamp" to result.receipt.stamp.json)
@@ -140,7 +152,8 @@ object ClientCorpus {
             "releaseAt" to (receipt.releaseAt?.let(Json::of) ?: Json.Null)) }
     }
     fun steps(registry: Registry, input: Json): Json {
-        SteppedEngine(registry, input.member("device"), input["draws"]?.arr()?.map { it.long().toInt() }.orEmpty(), input["limits"]?.get("PUSH_MAX_BYTES")?.long()?.toInt() ?: Constants.PUSH_MAX_BYTES).use { stepped ->
+        val limits = limits(input)
+        SteppedEngine(registry, input.member("device"), input["draws"]?.arr()?.map { it.long().toInt() }.orEmpty(), limits.pushMaxBytes, limits.effectMaxBytes).use { stepped ->
             val results = input.member("steps").arr().map { step ->
                 stepped.now = step["deviceNow"]?.long() ?: 0
                 val beforeGesture = stepped.gestures; val beforeDraw = stepped.drawIndex

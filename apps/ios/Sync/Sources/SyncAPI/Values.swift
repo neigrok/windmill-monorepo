@@ -219,6 +219,12 @@ public struct DeviceWrite: Hashable, Sendable {
 }
 
 // §7.1 one user act and its options.
+public struct ScopedPrediction: Hashable, Sendable {
+  public var scope: ScopeRef
+  public var changes: [Change]
+  public init(scope: ScopeRef, changes: [Change]) { self.scope = scope; self.changes = changes }
+}
+
 public struct Gesture: Hashable, Sendable {
   public var changes: [Change]
   public var atomic: Bool
@@ -228,6 +234,7 @@ public struct Gesture: Hashable, Sendable {
   public var supersede: [String]
   public var command: Command?
   public var predict: [Change]
+  public var scopedPredict: [ScopedPrediction]?
   public var local: [DeviceWrite]
   public var gestureId: String?
 
@@ -235,7 +242,7 @@ public struct Gesture: Hashable, Sendable {
   // records end undone first.
   public init(changes: [Change], atomic: Bool = false, hold: Bool = false, guards: [RegisterRef] = [],
               retire: [RecordRef] = [], supersede: [String] = [], command: Command? = nil, predict: [Change] = [], local: [DeviceWrite] = [],
-              gestureId: String? = nil) {
+              gestureId: String? = nil, scopedPredict: [ScopedPrediction]? = nil) {
     self.changes = changes
     self.atomic = atomic
     self.hold = hold
@@ -244,13 +251,14 @@ public struct Gesture: Hashable, Sendable {
     self.supersede = supersede
     self.command = command
     self.predict = predict
+    self.scopedPredict = scopedPredict
     self.local = local
     self.gestureId = gestureId
   }
 
   public static func == (lhs: Gesture, rhs: Gesture) -> Bool {
     lhs.changes == rhs.changes && lhs.atomic == rhs.atomic && lhs.hold == rhs.hold && lhs.guards == rhs.guards
-      && lhs.retire == rhs.retire && lhs.supersede.map { Array($0.utf8) } == rhs.supersede.map { Array($0.utf8) } && lhs.command == rhs.command && lhs.predict == rhs.predict && lhs.local == rhs.local
+      && lhs.retire == rhs.retire && lhs.supersede.map { Array($0.utf8) } == rhs.supersede.map { Array($0.utf8) } && lhs.command == rhs.command && lhs.predict == rhs.predict && lhs.scopedPredict == rhs.scopedPredict && lhs.local == rhs.local
       && lhs.gestureId.map { Array($0.utf8) } == rhs.gestureId.map { Array($0.utf8) }
   }
 
@@ -263,6 +271,7 @@ public struct Gesture: Hashable, Sendable {
     hasher.combine(supersede.map { Array($0.utf8) })
     hasher.combine(command)
     hasher.combine(predict)
+    hasher.combine(scopedPredict)
     hasher.combine(local)
     hasher.combine(gestureId.map { Array($0.utf8) })
   }
@@ -444,11 +453,13 @@ public struct NoticeContent: Hashable, Sendable {
   public var deltas: [Delta]
   public var command: Command?
   public var dependents: [NoticeContent]
+  public var predictions: [ScopedDeltas]?
 
-  public init(deltas: [Delta] = [], command: Command? = nil, dependents: [NoticeContent] = []) {
+  public init(deltas: [Delta] = [], command: Command? = nil, dependents: [NoticeContent] = [], predictions: [ScopedDeltas]? = nil) {
     self.deltas = deltas
     self.command = command
     self.dependents = dependents
+    self.predictions = predictions
   }
 }
 

@@ -64,7 +64,8 @@ TEST(every_registered_sync_command_logs_one_bounded_command_and_admission_outcom
     for (const CommandDef& command : world.catalog().registry().commands()) {
       WriteCapture capture;
       Json::Value intent(Json::objectValue);
-      intent["scope"] = "self/" + command.scope.product;
+      intent["scope"] = command.scope.kind == ScopeKind::product ? "self/" + command.scope.product
+          : command.scope.kind == ScopeKind::tree ? "tree/b_00000001" : "self/overlay/b_00000001";
       intent["cmd"]["name"] = command.name;
       intent["cmd"]["args"]["private_content"] = "PRIVATE-JOURNAL-WORKOUT-TOKEN";
       const auto outcome = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
@@ -73,13 +74,13 @@ TEST(every_registered_sync_command_logs_one_bounded_command_and_admission_outcom
       REQUIRE_EQ(capture.completed.size(), 2u);
       const auto& observed = capture.completed[0];
       CHECK_EQ(observed.operation, "sync.command." + command.name);
-      CHECK_EQ(observed.product, command.scope.product);
+      CHECK_EQ(observed.product, world.catalog().observationProduct(command.scope));
       CHECK_EQ(observed.door, "command");
       CHECK_EQ(observed.outcome, "invalid");
       CHECK(observed.durationMs >= 0);
       CHECK_FALSE(observed.requestId.empty());
       CHECK_EQ(capture.completed[1].operation, "sync.admit");
-      CHECK_EQ(capture.completed[1].product, command.scope.product);
+      CHECK_EQ(capture.completed[1].product, world.catalog().observationProduct(command.scope));
       CHECK_EQ(capture.completed[1].door, "server-origin");
       CHECK_EQ(capture.completed[1].outcome, "invalid");
       CHECK_EQ(capture.completed[1].requestId, observed.requestId);
@@ -117,7 +118,7 @@ TEST(sync_invariant_failures_report_static_operation_type_and_request_id_without
   } command;
   SyncCatalog catalog(world.catalog().registry());
   for (const TypeDef& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name));
-  for (const CommandDef& def : catalog.registry().commands()) catalog.bindCommand(def.name, command);
+  for (const CommandDef& def : catalog.registry().commands()) if (!def.engine) catalog.bindCommand(def.name, command);
   catalog.seal();
   Admission admission(catalog, world.store(), world.feed, world.clock(), world.failures);
   WriteCapture capture;
@@ -344,7 +345,7 @@ TEST(admission_owner_gate_covers_opposite_scope_effects_until_publication) {
   } rules;
   SyncCatalog catalog(world.catalog().registry());
   for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "meta" ? &rules : world.catalog().rules(type.name));
-  for (const auto& command : catalog.registry().commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  for (const auto& command : catalog.registry().commands()) if (!command.engine) catalog.bindCommand(command.name, world.catalog().command(command.name));
   catalog.seal();
   struct HeldPublication final : ChangeFeed {
     std::promise<CommittedChange> committed;
@@ -425,7 +426,7 @@ TEST(admission_local_rule_reads_and_emits_its_consequence_in_the_target_scope) {
   } command;
   SyncCatalog catalog(registry);
   for (const auto& type : registry.types()) catalog.bindType(world.catalog().store(type.name), world.catalog().rules(type.name));
-  for (const auto& def : registry.commands()) catalog.bindCommand(def.name, def.name == "probe.tick" ? command : world.catalog().command(def.name));
+  for (const auto& def : registry.commands()) if (!def.engine) catalog.bindCommand(def.name, def.name == "probe.tick" ? command : world.catalog().command(def.name));
   catalog.seal();
   Admission admission(catalog, world.store(), world.feed, world.clock(), world.failures);
   WriteCapture capture;

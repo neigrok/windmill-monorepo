@@ -150,13 +150,14 @@ struct BatchWriter {
     let baseTexts = JSON.object(from: Dictionary(uniqueKeysWithValues: entry.baseTexts.map { ($0.key.text, $0.value) })) { .string($0) }
     try db.cachedStatement(sql: """
       INSERT INTO outbox (replica, local_id, gesture_id, lineage, scope, state, commit_order, release_at, stamp, intent,
-        predict, base_texts, n, digest, result_seq, result_epoch, orphan_of, write_targets)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        predict, base_texts, n, digest, result_seq, result_epoch, orphan_of, write_targets, predictions, accepted_effects)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (local_id) DO UPDATE SET gesture_id = excluded.gesture_id, lineage = excluded.lineage,
         scope = excluded.scope, state = excluded.state, commit_order = excluded.commit_order, release_at = excluded.release_at,
         stamp = excluded.stamp, intent = excluded.intent, predict = excluded.predict,
         base_texts = excluded.base_texts, n = excluded.n, digest = excluded.digest, result_seq = excluded.result_seq,
-        result_epoch = excluded.result_epoch, orphan_of = excluded.orphan_of, write_targets = excluded.write_targets
+        result_epoch = excluded.result_epoch, orphan_of = excluded.orphan_of, write_targets = excluded.write_targets,
+        predictions = excluded.predictions, accepted_effects = excluded.accepted_effects
       WHERE outbox.replica = excluded.replica AND outbox.commit_order = excluded.commit_order
       """).execute(arguments: [
         replica.value, entry.localId, entry.gestureId, entry.lineage, entry.scope.text, entry.state.rawValue, entry.commitOrder,
@@ -164,12 +165,20 @@ struct BatchWriter {
         entry.predict.isEmpty ? nil : Blob.of(.array(entry.predict.map(\.json))), baseTexts.map(Blob.of), entry.n,
         entry.digest.map { Data(Blob.hexBytes($0)) }, entry.resultSeq, entry.resultEpoch, entry.orphanOf,
         entry.writeTargets.map { Blob.of(.array($0.map(\.json))) },
+        entry.predictions.map { Blob.of(.array($0.map(\.json))) }, entry.acceptedEffects.map { Blob.of(.array($0)) },
       ])
     guard db.changesCount == 1 else { throw StoreError.localIdTaken(entry.localId) }
     try db.cachedStatement(sql: "DELETE FROM outbox_touch WHERE local_id = ?").execute(arguments: [entry.localId])
-    for key in Set(entry.drawnDeltas.map(\.key)) {
-      try db.cachedStatement(sql: "INSERT INTO outbox_touch (local_id, scope, type, id) VALUES (?, ?, ?, ?)")
-        .execute(arguments: [entry.localId, entry.scope.text, key.type, key.id.text])
+    for effect in entry.effects() {
+      for key in Set(effect.deltas.map(\.key)) {
+        try db.cachedStatement(sql: "INSERT INTO outbox_touch (local_id, scope, type, id) VALUES (?, ?, ?, ?)")
+          .execute(arguments: [entry.localId, effect.scope.text, key.type, key.id.text])
+      }
+    }
+    try db.cachedStatement(sql: "DELETE FROM outbox_target WHERE local_id = ?").execute(arguments: [entry.localId])
+    for target in entry.predictions ?? [Projection(scope: entry.scope, deltas: [], resultSeq: entry.resultSeq)] {
+      try db.cachedStatement(sql: "INSERT INTO outbox_target (local_id, scope, result_epoch, result_seq, settled) VALUES (?, ?, ?, ?, ?)")
+        .execute(arguments: [entry.localId, target.scope.text, entry.resultEpoch, target.resultSeq, target.covered])
     }
   }
 

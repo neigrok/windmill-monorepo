@@ -328,6 +328,8 @@ void serverConstants(const Json::Value& constants) {
   CHECK_EQ(constants["PUSH_MAX_INTENTS"].asUInt64(), limits.pushMaxIntents);
   CHECK_EQ(constants["PUSH_MAX_BYTES"].asUInt64(), limits.pushMaxBytes);
   CHECK_EQ(constants["EFFECT_MAX_BYTES"].asUInt64(), limits.effectMaxBytes);
+  CHECK_EQ(constants["RECEIPT_MAX_BYTES"].asUInt64(), limits.receiptMaxBytes);
+  CHECK_EQ(constants["SCOPED_RESPONSE_MAX_BYTES"].asUInt64(), Limits{}.scopedResponseMaxBytes);
   CHECK_EQ(constants["PUSH_WORK_MS"].asUInt64(), limits.pushWorkMs);
   CHECK_EQ(constants["PULL_PAGE_BYTES"].asUInt64(), limits.pullPageBytes);
   CHECK_EQ(constants["PULL_MAX_SCOPES"].asUInt64(), limits.pullMaxScopes);

@@ -196,6 +196,7 @@ private:
 
   const ScopeKey& scope() const { return shaped_->scope; }
   const Intent& intent() const { return shaped_->intent; }
+  bool scopedEffects() const { return intent().cmd && registry_.command(intent().cmd->name)->scopedEffects; }
   SyncStore& store() { return a_.store_; }
   const ReplicaOrigin* replica() const { return std::get_if<ReplicaOrigin>(&origin_); }
   const CallPart* call() const {
@@ -268,7 +269,25 @@ private:
     createScopes();
     applyOtherScopes();                                                   // 14
     killScopes();                                                         // 15
-    const Json::Value result = okResult(scopeRow_->seq, commandWriteMap(), detail_);  // 16
+    Json::Value result = okResult(scopeRow_->seq, commandWriteMap(), detail_);  // 16
+    if (scopedEffects()) {
+      Json::Value detail(Json::objectValue);
+      detail["windmillKit"] = changes_->effectReceipt(watermarks_);
+      if (!detail_.isNull()) detail["command"] = detail_;
+      result["detail"] = std::move(detail);
+      constexpr Json::UInt64 max = 9'007'199'254'740'991;
+      Json::Value envelope(Json::objectValue);
+      envelope["serverTime"] = max;
+      envelope["epoch"] = store().epoch(*txn_);
+      envelope["as"] = caller_.account.str();
+      envelope["lastN"] = max;
+      envelope["results"].append(result);
+      envelope["results"][0]["n"] = max;
+      envelope["retry"]["n"] = max;
+      envelope["retry"]["retryAfterMs"] = max;
+      if (jcs(result["detail"]["windmillKit"]).size() > std::min(a_.limits_.receiptMaxBytes, Limits{}.receiptMaxBytes)
+          || jcs(envelope).size() > std::min(a_.limits_.scopedResponseMaxBytes, Limits{}.scopedResponseMaxBytes)) throw Refusal(code::tooLarge);
+    }
     recordResult(result);
     commitAndPublish();                                                   // 17
     return Admitted{result};
@@ -485,6 +504,15 @@ private:
       }
       scopes_.insert_or_assign(key, *row);
     }
+    if (scopedEffects()) {
+      watermarks_.emplace(scope(), ScopeWatermark{scopeRow_->seq, scopeRow_->seq});
+      for (const ScopeKey& key : effectScopes_) {
+        if (key == scope()) continue;
+        const auto row = scopes_.find(key);
+        const std::optional<Seq> seq = row == scopes_.end() ? std::nullopt : std::optional(row->second.seq);
+        watermarks_.emplace(key, ScopeWatermark{seq, seq});
+      }
+    }
   }
 
   void admitEffects(const Effects& effects, Source source) {
@@ -577,7 +605,10 @@ private:
       if (governed.created) created.insert(governed.tree);
     }
     for (const ScopeKey& key : missingScopes_) {
-      if (!created.contains(key)) throw Refusal(code::notFound);
+      if (created.contains(key)) continue;
+      const auto changedScopes = changes_->otherScopes();
+      if (scopedEffects() && std::find(changedScopes.begin(), changedScopes.end(), key) == changedScopes.end()) continue;
+      throw Refusal(code::notFound);
     }
   }
 
@@ -608,17 +639,29 @@ private:
   void createScopes() {
     for (const Governed& governed : changes_->lifecycle()) {
       if (!governed.created) continue;
+      if (scopedEffects() && !watermarks_.contains(governed.tree)) {
+        const auto before = store().scope(*txn_, governed.tree, RowLock::none);
+        watermarks_.emplace(governed.tree, ScopeWatermark{before ? std::optional(before->seq) : std::nullopt, std::nullopt});
+      }
       store().insertScope(*txn_, governed.tree, caller_.account, governed.governedBy);
       const auto row = store().scope(*txn_, governed.tree, RowLock::none);
       if (!row || row->dead) throw Refusal(code::scopeDead);
       if (row->owner != caller_.account || row->governedBy != governed.governedBy) throw Refusal(code::idTaken);
       scopes_.insert_or_assign(governed.tree, *row);
+      if (scopedEffects()) watermarks_.at(governed.tree).seq = row->seq;
     }
   }
 
   void killScopes() {
     for (const Governed& governed : changes_->lifecycle()) {
       if (governed.created) continue;
+      if (scopedEffects()) {
+        for (const ScopeKey& key : {governed.tree, ScopeKey::overlay(caller_.account, governed.tree.treeId())}) {
+          if (watermarks_.contains(key)) continue;
+          const auto row = store().scope(*txn_, key, RowLock::none);
+          if (row && row->owner == caller_.account && !row->dead) watermarks_.emplace(key, ScopeWatermark{row->seq, row->seq});
+        }
+      }
       std::vector<ScopeKey> killed = store().killTree(*txn_, governed.tree, now_);
       killed_.insert(killed_.end(), killed.begin(), killed.end());
     }
@@ -644,6 +687,7 @@ private:
     row.digest = write.digest;
     row.open = write.open;
     store().saveScope(*txn_, row);
+    if (scopedEffects()) watermarks_.at(write.scope).seq = write.seq;
     const std::vector<const TypeDef*>& order = a_.catalog_.applyOrder();
     auto applyWhere = [&](const TypeDef* type, bool remaining) {
       std::vector<RowWrite> rows;
@@ -852,6 +896,7 @@ private:
   std::optional<ScopeRow> tree_;
   std::optional<ScopeRow> scopeRow_;
   std::map<ScopeKey, ScopeRow> scopes_;
+  std::map<ScopeKey, ScopeWatermark> watermarks_;
   std::set<ScopeKey> lockedTrees_;
   std::set<std::pair<std::string, std::string>> lockedIds_;
   std::map<RecordRef, Locked> records_;

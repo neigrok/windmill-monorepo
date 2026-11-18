@@ -68,13 +68,13 @@ public struct LoadedReplica: Sendable {
   // Every entry of a scope, in commit order; after a load of part of the outbox, reading a scope it did not load whole traps.
   public func entries(in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || entrySelection.scopes.contains(scope), "the entries of \(scope) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope }
+    return loadedEntries.filter { $0.scopes.contains(scope) }
   }
 
   // The entries that touch one record, in commit order; after a load of part of the outbox, reading a record whose row it did not read traps.
   public func entries(touching key: RecordKey, in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || confirmed[scope]?.wasRead(key) == true, "the entries touching \(key) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope && $0.touches(key) }
+    return loadedEntries.filter { $0.deltas(in: scope).contains { $0.key == key } }
   }
 
   // The entries that touch a record the load read, in commit order: every entry after a load of the whole outbox, and
@@ -83,7 +83,7 @@ public struct LoadedReplica: Sendable {
   public var entriesTouchingReads: [OutboxEntry] {
     if entrySelection.all { return loadedEntries }
     return loadedEntries.filter { entry in
-      entry.drawnDeltas.contains { delta in confirmed[entry.scope].map { $0.covers(delta.key) } ?? wholeScopes }
+      entry.effects().contains { effect in effect.deltas.contains { delta in confirmed[effect.scope].map { $0.covers(delta.key) } ?? wholeScopes } }
     }
   }
 
@@ -96,15 +96,33 @@ public struct LoadedReplica: Sendable {
 
   // §7.5 step 2: the scope's stored cursor covers an acked entry of the replica's epoch whose seq it has received whole.
   public func covers(_ entry: OutboxEntry) -> Bool {
-    guard entry.state == .acked, let cleanSeq = cursors[entry.scope]?.cleanSeq, let seq = entry.resultSeq,
-          let epoch = entry.resultEpoch else { return false }
+    if let predictions = entry.predictions { return predictions.allSatisfy { $0.covered || covers(entry, scope: $0.scope, seq: $0.resultSeq) } }
+    return covers(entry, scope: entry.scope, seq: entry.resultSeq)
+  }
+
+  public func covers(_ entry: OutboxEntry, scope: ScopeRef, seq: Int64?) -> Bool {
+    guard entry.state == .acked, let cleanSeq = cursors[scope]?.cleanSeq, let seq, let epoch = entry.resultEpoch else { return false }
     return seq <= cleanSeq && meta.serverEpoch?.utf8.elementsEqual(epoch.utf8) == true
+  }
+
+  public mutating func settle(_ entry: OutboxEntry) throws {
+    var next = entry
+    next.predictions = entry.predictions.map { $0.map { projection in
+      var projection = projection
+      if covers(entry, scope: projection.scope, seq: projection.resultSeq) { projection.covered = true }
+      return projection
+    } }
+    if covers(next) { try move(entry.localId, .resolve) }
+    else if next != entry { apply(.putEntry(next)) }
   }
 
   // The entries of `scope` its stored cursor covers, in commit order; a partial load reads its covered selection.
   public func covered(in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || entrySelection.covered?.scope == scope, "the covered entries of \(scope) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope && covers($0) }
+    return loadedEntries.filter { entry in
+      if let predictions = entry.predictions { return predictions.contains { $0.scope == scope && !$0.covered && covers(entry, scope: scope, seq: $0.resultSeq) } }
+      return entry.scope == scope && covers(entry)
+    }
   }
 
   // The sent entry numbered `n`, which a push result answers.
@@ -232,7 +250,7 @@ public struct LoadedReplica: Sendable {
       let before = loadedEntries[index]
       var entry = before
       try update(&entry)
-      precondition(entry.localId.utf8.elementsEqual(before.localId.utf8) && entry.commitOrder == before.commitOrder && entry.scope == before.scope,
+      precondition(entry.localId.utf8.elementsEqual(before.localId.utf8) && entry.commitOrder == before.commitOrder,
                    "bulk entry updates preserve identity, order and scope")
       guard entry != before else { continue }
       let write = ReplicaWrite.putEntry(entry)
@@ -300,10 +318,10 @@ public struct LoadedReplica: Sendable {
     case .putEntry(let entry):
       change.outbox = true
       let previous = previousEntry ?? self.entry(entry.localId)
-      change.touch(entry.scope, entry.drawnDeltas.map(\.key) + (previous?.drawnDeltas.map(\.key) ?? []))
+      for effect in entry.effects() + (previous?.effects() ?? []) { change.touch(effect.scope, effect.deltas.map(\.key)) }
     case .deleteEntry(let localId):
       change.outbox = true
-      if let entry = entry(localId) { change.touch(entry.scope, entry.drawnDeltas.map(\.key)) }
+      if let entry = entry(localId) { for effect in entry.effects() { change.touch(effect.scope, effect.deltas.map(\.key)) } }
     case .putRow(let scope, let row): change.touch(scope, [row.key])
     case .deleteRow(let scope, let key): change.touch(scope, [key])
     case .swapStaging(let scope), .forgetScope(let scope):

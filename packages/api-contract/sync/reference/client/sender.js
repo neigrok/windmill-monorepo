@@ -4,12 +4,14 @@
 
 import { CONSTANTS } from '../core/constants.js';
 import { moveEntry } from '../core/machines.js';
+import { receiptEffects } from '../core/receipts.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
-import { Dependents, deltasOf, scopedKey } from './dependents.js';
+import { Dependents, scopedKey } from './dependents.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
-import { applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
+import { applyAcceptedVersions, applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
+import { effectsOf, mergePredictions } from './projections.js';
 
 // §7.4 held back: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
 // orphan awaiting its result (sent, or returned to ready), or touch a record an earlier held-back entry
@@ -20,14 +22,15 @@ function heldBack(replica, registry) {
   const back = new Set();
   for (const entry of replica.entries()) {
     if (entry.state === 'ready') {
-      const records = [...deltasOf(entry), ...(entry.intent.guard ?? [])].map((target) => scopedKey(entry.scope, target.t, target.id));
+      const records = [...effectsOf(entry).flatMap(({ scope, d }) => d.map((target) => scopedKey(scope, target.t, target.id))),
+        ...(entry.intent.guard ?? []).map((guard) => scopedKey(entry.scope, guard.t, guard.id))];
       if (sources.of(entry).any || records.some((record) => touched.has(record))) {
         back.add(entry);
         for (const record of records) touched.add(record);
       }
     }
     const awaiting = entry.orphanOf !== undefined && (entry.state === 'sent' || entry.state === 'ready');
-    if (entry.state === 'held' || back.has(entry) || awaiting) sources.absorb(entry.scope, deltasOf(entry), entry.stamp);
+    if (entry.state === 'held' || back.has(entry) || awaiting) sources.absorbEntry(entry);
   }
   return back;
 }
@@ -100,6 +103,25 @@ export function validatePushEnvelope({ status, body }) {
     throw new ResponseError('invalid sync response');
   if (status === 200 && (!Number.isSafeInteger(body.lastN) || body.lastN < 0 || !Array.isArray(body.results)))
     throw new ResponseError('invalid sync response');
+  if (status === 200 && body.retry !== undefined && (!Number.isSafeInteger(body.retry?.n) || body.retry.n < 1
+    || body.retry.n > body.lastN + 1 || !Number.isSafeInteger(body.retry.retryAfterMs) || body.retry.retryAfterMs < 0
+    || body.results.some((result) => result.n >= body.retry.n))) throw new ResponseError('invalid sync continuation');
+}
+
+export function validatePushReceipts(replica, registry, body) {
+  try {
+    for (const result of body.results) {
+      const entry = replica.entries().find((candidate) => ['sent', 'acked'].includes(candidate.state) && candidate.n === result.n);
+      if (!entry || result.s !== 'ok') continue;
+      if (entry.predictions) {
+        receiptEffects(registry, entry, result);
+        if (bodyBytes(body) > CONSTANTS.SCOPED_RESPONSE_MAX_BYTES) throw new ResponseError('scoped response too large');
+      }
+      else if (result.detail?.windmillKit !== undefined) throw new ResponseError('unexpected scoped receipt');
+    }
+  } catch {
+    throw new ResponseError('invalid scoped receipt');
+  }
 }
 
 export function onPushResponse(replica, ctx, request, response, timing, { dieAfter = Infinity } = {}) {
@@ -107,6 +129,7 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
   const { status, body } = response;
   const unauthenticated = replica.isUnauthenticated(response);
   if ((status === 200 || status === 409) && !unauthenticated) validatePushEnvelope(response);
+  if (status === 200 && !unauthenticated) validatePushReceipts(replica, ctx.registry, body);
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
   if (unauthenticated) {
     meta.authPaused = true;
@@ -149,7 +172,7 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
     applyPushResult(replica, ctx, result, body);
   }
   meta.serverEpoch ??= body.epoch;
-  meta.ackThrough = body.lastN;
+  meta.ackThrough = body.retry ? Math.min(body.lastN, body.retry.n - 1) : body.lastN;
   return undefined;
 }
 
@@ -158,6 +181,7 @@ export function applyPushResult(replica, ctx, result, body) {
   const meta = replica.meta;
   const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
   if (!entry) return;
+  const effects = entry.predictions && result.s === 'ok' ? receiptEffects(ctx.registry, entry, result) : undefined;
   meta.serverEpoch ??= body.epoch;
   if (result.s === 'refused') {
     onRefused(replica, ctx, entry, result, body);
@@ -168,7 +192,34 @@ export function applyPushResult(replica, ctx, result, body) {
   entry.resultEpoch = body.epoch;
   replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
   if (result.write) applyWriteMap(replica, ctx, entry, result.write);
+  if (effects) applyReceipt(replica, ctx, entry, effects, result.write ?? []);
   resolveIfCovered(replica, ctx, entry);
+}
+
+// The ACK transaction's receipt-application point, before any projection settles or the entry resolves.
+export function applyReceipt(replica, ctx, entry, effects, write) {
+  const previous = entry.acceptedEffects ?? [];
+  entry.acceptedEffects = structuredClone(effects);
+  for (const effect of effects) {
+    let projection = entry.predictions.find((candidate) => candidate.scope === effect.scope);
+    if (!projection) entry.predictions.push(projection = { scope: effect.scope, d: [] });
+    if (effect.seq === null) projection.covered = true;
+    else projection.resultSeq = effect.seq;
+  }
+  mergePredictions(entry);
+  const accepted = structuredClone(effects);
+  const rows = accepted.find((effect) => effect.scope === entry.scope).rows;
+  for (const item of write) {
+    let row = rows.find((row) => row.t === item.t && JSON.stringify(row.id) === JSON.stringify(item.id));
+    if (!row) rows.push(row = { t: item.t, id: item.id, slots: [] });
+    const slots = [
+      ...(item.born === undefined ? [] : [{ slot: { kind: 'born' }, version: { kind: 'stamp', stamp: item.born } },
+        { slot: { kind: 'life' }, version: { kind: 'stamp', stamp: item.born } }]),
+      ...Object.entries(item.f ?? {}).map(([name, stamp]) => ({ slot: { kind: 'field', name }, version: { kind: 'stamp', stamp } })),
+    ];
+    for (const item of slots) if (!row.slots.some(({ slot }) => slot.kind === item.slot.kind && slot.name === item.slot.name)) row.slots.push(item);
+  }
+  applyAcceptedVersions(replica, ctx, entry, accepted, previous);
 }
 
 // §7.4 the sender's wait between pushes. A backoff draws a sleep in [0, min(ceiling, base · 2^k)) and

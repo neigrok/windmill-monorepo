@@ -296,7 +296,7 @@ public struct PageApplier: Sendable {
     guard replica.cursors[scope]?.cleanSeq != nil else { return (0, false) }
     let covered = replica.covered(in: scope)
     let slice = covered.prefix(count)
-    for entry in slice { try replica.move(entry.localId, .resolve) }
+    for entry in slice { try replica.settle(entry) }
     return (slice.count, covered.count > count)
   }
 

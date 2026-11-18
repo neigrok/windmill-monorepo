@@ -152,12 +152,58 @@ public:
   }
 };
 
+// probe.branch {parent, child, title}: creates board child and titles both trees; its receipt resolves a replay
+// from any replica to the board it created.
+class ProbeProduct::Branch final : public SyncCommand {
+public:
+  explicit Branch(ProbeReceipts& receipts) : receipts_(receipts) {}
+
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    return {ScopeKey::tree(ctx.args["parent"].asString()), ScopeKey::tree(ctx.args["child"].asString())};
+  }
+
+  bool isReplay(CommandCtx& ctx) override {
+    return receipts_.branched(ctx.txn, ctx.scope.key, ctx.args["child"].asString()) == receiptOf(ctx);
+  }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const std::string parent = ctx.args["parent"].asString();
+    const std::string child = ctx.args["child"].asString();
+    if (isReplay(ctx)) {
+      const std::optional<Row>& created = ctx.read.lock("board", RecordId(child)).stored;
+      CommandOutcome replayed;
+      if (created && created->alive()) replayed.write = {WriteEntry{.t = "board", .id = created->id, .born = created->lattice.born}};
+      replayed.detail["created"] = false;
+      return replayed;
+    }
+    if (parent == child) throw Refusal(code::invalid);
+    if (ctx.read.lock("board", RecordId(child)).stored) throw Refusal(code::idTaken);
+    receipts_.recordBranch(ctx.txn, ctx.scope.key, child, receiptOf(ctx));
+    Delta board{.t = "board", .id = RecordId(child)};
+    board.lattice.born = Stamp{};
+    board.lattice.life = Life(LifeState::alive, Stamp{});
+    Delta meta{.t = "meta", .id = RecordId(std::string("meta"))};
+    meta.lattice.f.emplace("title", Reg(ctx.args["title"], Stamp{}));
+    CommandOutcome outcome{.deltas = {board},
+      .into = {{ScopeKey::tree(parent), {meta}}, {ScopeKey::tree(child), {meta}}},
+      .write = {{.t = "board", .id = RecordId(child), .born = Stamp{}}}};
+    outcome.detail["created"] = true;
+    return outcome;
+  }
+
+private:
+  static BranchReceipt receiptOf(const CommandCtx& ctx) { return BranchReceipt{ctx.args["parent"].asString(), ctx.args["title"].asString()}; }
+
+  ProbeReceipts& receipts_;
+};
+
 ProbeProduct::ProbeProduct(ProbeReceipts& receipts)
     : runRules_(std::make_unique<RunRules>()),
       start_(std::make_unique<Start>(receipts)),
       end_(std::make_unique<End>()),
       copy_(std::make_unique<Copy>(receipts)),
-      tick_(std::make_unique<Tick>()) {}
+      tick_(std::make_unique<Tick>()),
+      branch_(std::make_unique<Branch>(receipts)) {}
 
 ProbeProduct::~ProbeProduct() = default;
 
@@ -167,6 +213,7 @@ void ProbeProduct::bindTo(SyncCatalog& catalog, const std::map<std::string, Type
   catalog.bindCommand("probe.end", *end_);
   catalog.bindCommand("probe.copy", *copy_);
   catalog.bindCommand("probe.tick", *tick_);
+  catalog.bindCommand("probe.branch", *branch_);
 }
 
 }

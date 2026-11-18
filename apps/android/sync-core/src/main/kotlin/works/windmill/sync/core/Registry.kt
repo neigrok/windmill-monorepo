@@ -379,12 +379,14 @@ class Registry(input: Json) {
             }
         }
         for (command in commands) {
-            command.expectKeys(listOf("name", "scope", "origins", "serverInternal", "args"), listOf("predicts", "beforePull"))
+            command.expectKeys(listOf("name", "scope", "origins", "serverInternal", "args"), listOf("predicts", "beforePull", "scopedEffects", "engine"))
             require(command.member("name").str().matches(Regex("[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*")))
             val origins = command.member("origins").distinctStrings()
             require(origins.isNotEmpty() && origins.all { it in listOf("replica", "server") })
             require(!command.member("serverInternal").bool() || "replica" !in origins)
             require(command["beforePull"]?.bool() != true || command.member("serverInternal").bool())
+            require(command["scopedEffects"] == null || command["scopedEffects"] == Json.of(true))
+            require(command["engine"] == null || (command["engine"] == Json.of("capture") && command["scopedEffects"] == Json.of(true) && command.member("args").obj().isEmpty()))
             val scope = command.member("scope").str()
             require(scope in listOf("tree", "overlay") || (scope.startsWith("product:") && scope.drop(8) in products))
             for ((name, arg) in command.member("args").obj()) {
@@ -449,6 +451,8 @@ class CommandDef(val json: Json) {
     val origins: List<String> = json.member("origins").distinctStrings()
     val serverInternal: Boolean = json.member("serverInternal").bool()
     val beforePull: Boolean = json["beforePull"]?.bool() ?: false
+    val scopedEffects: Boolean = json["scopedEffects"]?.bool() ?: false
+    val engine: String? = json["engine"]?.str()
     val args: Map<String, ArgumentDef> = json.member("args").obj().mapValues { ArgumentDef(it.key, it.value) }
     val predicts: List<String> = json["predicts"]?.distinctStrings() ?: emptyList()
 }

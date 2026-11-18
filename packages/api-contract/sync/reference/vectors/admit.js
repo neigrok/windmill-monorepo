@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
+import { scopedResponseBytes } from '../core/receipts.js';
 import { admit } from '../server/admit.js';
 import { serverCall } from '../server/requests.js';
 import { ServerState } from '../server/state.js';
@@ -1080,6 +1081,137 @@ function crossScope() {
   ];
 }
 
+export function scopedReceipts() {
+  const capture = { name: 'probe.capture', args: {} };
+  const created = admitted('capture owns the complete created row footprint without retaining values', {
+    state: serverState({ scopes: { [PROBE_A]: productScope('A') } }),
+    intent: probe([create('card', 'card0001', s(5000), { title: 'Private' })], { cmd: capture }),
+  });
+  assert.deepEqual(created.expect.result, { s: 'ok', seq: 1, write: [], detail: { windmillKit: { v: 1, effects: [{
+    scope: 'self/probe', beforeSeq: 0, seq: 1, rows: [{ t: 'card', id: 'card0001', beforeRowSeq: null, rowSeq: 1,
+      slots: [
+        { slot: { kind: 'born' }, version: { kind: 'stamp', stamp: s(5000) } },
+        { slot: { kind: 'life' }, version: { kind: 'stamp', stamp: s(5000) } },
+        { slot: { kind: 'field', name: 'title' }, version: { kind: 'stamp', stamp: s(5000) } },
+      ] }],
+  }] } } });
+  const updated = admitted('capture chains beforeRowSeq and includes only the winning field version', {
+    state: created.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }),
+  });
+  assert.deepEqual(updated.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'card', id: 'card0001', beforeRowSeq: 1, rowSeq: 2,
+    slots: [{ slot: { kind: 'field', name: 'title' }, version: { kind: 'stamp', stamp: s(6000) } }] }]);
+  const noop = admitted('capture emits a watermark without an artificial sequence for an unchanged row', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }),
+  });
+  assert.deepEqual(noop.expect.result.detail, { windmillKit: { v: 1, effects: [{ scope: 'self/probe', beforeSeq: 2, seq: 2, rows: [] }] } });
+  const absent = admitted('capture covers an absent declared no-op target without granting creation authority', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }), effectPlan: { declared: ['tree:b_00000009'] },
+  });
+  assert.deepEqual(absent.expect.result.detail.windmillKit.effects[1], { scope: 'tree/b_00000009', beforeSeq: null, seq: null, rows: [] });
+  const invalid = admitted('capture still refuses a write into an absent target without its governing create', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }),
+    effectPlan: { declared: ['tree:b_00000009'], check: { 'tree:b_00000009': [{ t: 'meta', id: 'meta', f: { title: ['Missing', null] } }] } },
+  });
+  assert.equal(invalid.expect.result.code, 'not-found');
+  const emptyTree = admitted('capture includes a newly created empty tree at zero without inventing a write', {
+    state: created.input.state, intent: probe([create('board', 'b_00000009', s(5000))], { cmd: capture }),
+  });
+  assert.deepEqual(emptyTree.expect.result.detail.windmillKit.effects[1], { scope: 'tree/b_00000009', beforeSeq: null, seq: 0, rows: [] });
+  const dying = treeState({ visibility: 'public' });
+  dying.scopes[OVERLAY_B] = { ...dying.scopes[OVERLAY_A], owner: 'B' };
+  dying.rows[OVERLAY_B] = structuredClone(dying.rows[OVERLAY_A]);
+  const death = admitted('capture includes owned lifecycle watermarks and omits a foreign readers overlay', {
+    state: dying, intent: probe([{ t: 'board', id: BOARD, born: s(2000), life: ['dead', s(5000)] }], { cmd: capture }),
+  });
+  assert.deepEqual(death.expect.result.detail.windmillKit.effects.map(({ scope, beforeSeq, seq }) => ({ scope, beforeSeq, seq })), [
+    { scope: 'self/probe', beforeSeq: 1, seq: 2 }, { scope: `self/overlay/${BOARD}`, beforeSeq: 1, seq: 1 }, { scope: `tree/${BOARD}`, beforeSeq: 4, seq: 4 },
+  ]);
+  const texts = treeState();
+  texts.scopes[OVERLAY_A].seq = 7;
+  texts.rows[OVERLAY_A] = [row({ t: 'mark', id: 'oak', f: { done: [true, s(2400)] }, x: { memo: { text: 'one three', rev: 7, merged: false } }, seq: 7 })];
+  Object.assign(texts, serverState(texts));
+  const text = admitted('capture owns the actual forward-merged text revision', { state: texts,
+    intent: { scope: `self/overlay/${BOARD}`, d: [{ t: 'mark', id: 'oak', x: { memo: { text: 'one two', base: { text: 'one' } } } }], cmd: { name: 'probe.captureOverlay', args: {} } },
+  });
+  assert.deepEqual(text.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'mark', id: 'oak', beforeRowSeq: 7, rowSeq: 8,
+    slots: [{ slot: { kind: 'text', name: 'memo' }, version: { kind: 'text', revision: 8 } }] }]);
+  const noText = admitted('capture does not own an unchanged text head', { state: texts,
+    intent: { scope: `self/overlay/${BOARD}`, d: [{ t: 'mark', id: 'oak', x: { memo: { text: 'one three', base: { rev: 7 } } } }], cmd: { name: 'probe.captureOverlay', args: {} } },
+  });
+  assert.deepEqual(noText.expect.result.detail.windmillKit.effects[0].rows, []);
+  const fullText = admitted('capture includes every version on a newly created text record', { state: texts,
+    intent: { scope: `self/overlay/${BOARD}`, d: [{ t: 'mark', id: 'elm', f: { done: [true, s(5000)] }, x: { memo: { text: 'Hello', base: { text: '' } } } }], cmd: { name: 'probe.captureOverlay', args: {} } },
+  });
+  assert.deepEqual(fullText.expect.result.detail.windmillKit.effects[0].rows[0].slots, [
+    { slot: { kind: 'field', name: 'done' }, version: { kind: 'stamp', stamp: s(5000) } },
+    { slot: { kind: 'text', name: 'memo' }, version: { kind: 'text', revision: 8 } },
+  ]);
+  const bytes = Buffer.byteLength(jcs(created.expect.result.detail.windmillKit));
+  assert.equal(bytes, 411);
+  const boundary = [bytes - 1, bytes].map((limit) => {
+    const sample = admitted(`capture receipt byte limit ${limit} is enforced before commit`, { ...created.input, limits: { RECEIPT_MAX_BYTES: limit } });
+    assert.equal(sample.expect.result.s, limit === bytes ? 'ok' : 'refused');
+    if (limit < bytes) {
+      assert.equal(sample.expect.result.code, 'too-large');
+      assert.equal(jcs(sample.expect.state), jcs(created.input.state));
+    }
+    return sample;
+  });
+  const owner = '11111111-1111-4111-8111-111111111111';
+  const branchState = serverState({ accounts: { [owner]: { name: 'Fixture' } },
+    scopes: { [`acct:${owner}/probe`]: productScope(owner), [TREE]: treeScope(owner, BOARD) },
+    rows: { [`acct:${owner}/probe`]: [row({ t: 'board', id: BOARD, born: s(1000), life: ['alive', s(1000)], seq: 1 })] },
+  });
+  const branch = admitted('an opted product command preserves its own detail beside actual three-scope receipt versions', {
+    state: branchState, origin: { kind: 'server', account: owner },
+    intent: { scope: 'self/probe', cmd: { name: 'probe.branch', args: { parent: BOARD, child: 'b_00000002', title: 'Branch' } } },
+  });
+  assert.equal(branch.expect.result.s, 'ok');
+  assert.deepEqual(branch.expect.result.detail.command, { created: true });
+  assert.deepEqual(branch.expect.result.detail.windmillKit.effects.map(({ scope }) => scope), ['self/probe', `tree/${BOARD}`, 'tree/b_00000002']);
+  const resultBytes = scopedResponseBytes(branch.expect.result, branchState.epoch, owner);
+  assert.equal(resultBytes, 1083);
+  const responseBounds = [resultBytes - 1, resultBytes].map((limit) => {
+    const sample = admitted(`complete opted result envelope byte limit ${limit} is enforced before any scope commits`, {
+      ...branch.input, limits: { SCOPED_RESPONSE_MAX_BYTES: limit },
+    });
+    assert.equal(sample.expect.result.code ?? sample.expect.result.s, limit < resultBytes ? 'too-large' : 'ok');
+    if (limit < resultBytes) assert.deepEqual(sample.expect.state, sample.input.state);
+    return sample;
+  });
+  const serialState = serverState({ scopes: { [PROBE_A]: productScope('A') }, rows: { [PROBE_A]: [
+    ...created.expect.state.rows[PROBE_A],
+    row({ t: 'run', id: 'run00001', born: s(1000), life: ['alive', s(1000)], f: { startedAt: [1000, s(1000)] }, seq: 2 }),
+    row({ t: 'lap', id: 'lap00001', born: s(1000), life: ['alive', s(1000)], f: { runId: ['run00001', s(1000)] }, v: { no: 1 }, seq: 3 }),
+  ] } });
+  const serial = admitted('a serial-only consequence advances row sequence with an empty version-slot footprint', {
+    state: serialState, intent: probe([update('card', 'card0001', s(5000), s(5000), { title: 'First' })], { cmd: capture }),
+    effectPlan: { check: { [PROBE_A]: [{ t: 'lap', id: 'lap00001', born: s(1000), v: { no: 2 } }] } },
+  });
+  assert.deepEqual(serial.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'lap', id: 'lap00001', beforeRowSeq: 3, rowSeq: 4, slots: [] }]);
+  const consequence = admitted('capture owns the version a consequence gives a register its ordinary write also wrote', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(7000), { title: 'Mine' })], { cmd: capture }),
+    effectPlan: { check: { [PROBE_A]: [{ t: 'card', id: 'card0001', born: s(5000), f: { title: ['Normalized', null] } }] } },
+  });
+  assert.deepEqual(consequence.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'card', id: 'card0001', beforeRowSeq: 2, rowSeq: 3,
+    slots: [{ slot: { kind: 'field', name: 'title' }, version: { kind: 'stamp', stamp: SRV(NOW) } }] }]);
+  const newReplica = { kind: 'replica', account: owner, replica: 'rp_0000000000000000000000000000000c', n: 1 };
+  const replay = admitted('a probe.branch replayed from a new replica resolves by its receipt and changes no row', {
+    state: branch.expect.state, origin: newReplica, intent: branch.input.intent,
+  });
+  const branched = branch.expect.state;
+  assert.deepEqual(replay.expect.result, { s: 'ok', seq: 2, write: [{ t: 'board', id: 'b_00000002', born: SRV(NOW) }], detail: {
+    windmillKit: { v: 1, effects: [['self/probe', 2], [`tree/${BOARD}`, 1], ['tree/b_00000002', 1]].map(([scope, seq]) => ({ scope, beforeSeq: seq, seq, rows: [] })) },
+    command: { created: false } } });
+  assert.deepEqual(replay.expect.state, branched);
+  assert.deepEqual(branched.product.branches, { [`acct:${owner}/probe`]: { b_00000002: { parent: BOARD, title: 'Branch' } } });
+  const retitled = admitted('a probe.branch whose receipt names other arguments answers id-taken', {
+    state: branched, origin: newReplica, intent: { ...branch.input.intent, cmd: { name: 'probe.branch', args: { parent: BOARD, child: 'b_00000002', title: 'Other' } } },
+  });
+  assert.deepEqual(retitled.expect.result, { s: 'refused', code: 'id-taken' });
+  return [created, updated, noop, absent, invalid, emptyTree, death, text, noText, fullText, ...boundary, branch, ...responseBounds, serial, consequence, replay, retitled];
+}
+
 export function files() {
   return {
     'admit/shape.json': shape(),
@@ -1096,5 +1228,6 @@ export function files() {
     'admit/requests.json': requests(),
     'admit/record-bound.json': recordBound(),
     'admit/cross-scope.json': crossScope(),
+    'admit/scoped-receipts.json': scopedReceipts(),
   };
 }

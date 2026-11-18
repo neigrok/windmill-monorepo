@@ -159,3 +159,22 @@ test('a captured browser fetch preserves its global receiver', async () => {
     } });
   assert.equal((await transport.request('hello')).response.status, 200);
 });
+
+test('scoped push and saved-result replay select the bounded UTF-8 response allowance from registry command names', async () => {
+  const text = '{"value":"界"}';
+  assert.equal(new TextEncoder().encode(text).length, 15);
+  const timers = new FakeTimers();
+  const transport = new HttpTransport({ schema: 3, timers, scopedCommands: ['probe.capture'],
+    limits: { REQUEST_TIMEOUT_MS: 1000, PULL_PAGE_BYTES: 7, PULL_MAX_SCOPES: 1, SCOPED_RESPONSE_MAX_BYTES: 15 },
+    reading: () => ({ wall: 1, mono: 1, boot: 'test' }), fetch: async () => new Response(text) });
+  for (const ackThrough of [0, 8]) {
+    const { response } = await transport.request('push', { ackThrough, intents: [{ n: 9, cmd: { name: 'probe.capture', args: {} } }] });
+    assert.deepEqual(response.body, { value: '界' });
+  }
+  for (const [endpoint, body] of [['hello', undefined], ['push', { intents: [] }], ['push', { intents: [{ cmd: { name: 'legacy' } }] }]]) {
+    await assert.rejects(transport.request(endpoint, body), { message: 'sync response too large' });
+  }
+  transport.limits.SCOPED_RESPONSE_MAX_BYTES = 14;
+  await assert.rejects(transport.request('push', { intents: [{ cmd: { name: 'probe.capture' } }] }), { message: 'sync response too large' });
+  assert.equal(timers.tasks.size, 0);
+});

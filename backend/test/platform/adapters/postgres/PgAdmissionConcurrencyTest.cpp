@@ -494,7 +494,7 @@ TEST(pg_admission_opposite_owned_scope_effects_commit_and_publish_in_order) {
   } rules;
   SyncCatalog catalog(world.catalog().registry());
   for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "meta" ? &rules : world.catalog().rules(type.name));
-  for (const auto& command : catalog.registry().commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  for (const auto& command : catalog.registry().commands()) if (!command.engine) catalog.bindCommand(command.name, world.catalog().command(command.name));
   catalog.seal();
   fake::RecordingChangeFeed feed;
   Admission admission(catalog, world.store(), feed, world.clock(), world.failures);
@@ -557,7 +557,7 @@ TEST(pg_foreign_overlay_effect_publication_cannot_follow_tree_death_with_live_ro
   } rules;
   SyncCatalog catalog(world.catalog().registry());
   for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "mark" ? &rules : world.catalog().rules(type.name));
-  for (const auto& command : catalog.registry().commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  for (const auto& command : catalog.registry().commands()) if (!command.engine) catalog.bindCommand(command.name, world.catalog().command(command.name));
   catalog.seal();
   SyncLive live(catalog, world.store(), Limits{});
   auto bob = std::make_shared<fake::RecordingSocket>();
@@ -631,7 +631,7 @@ TEST(pg_declared_absent_target_keeps_foreign_creation_out_until_authority_is_pro
     } command(creates);
     SyncCatalog catalog(pg.catalog().registry());
     for (const auto& type : catalog.registry().types()) catalog.bindType(pg.catalog().store(type.name), pg.catalog().rules(type.name));
-    for (const auto& def : catalog.registry().commands()) catalog.bindCommand(def.name, def.name == "probe.tick" ? command : pg.catalog().command(def.name));
+    for (const auto& def : catalog.registry().commands()) if (!def.engine) catalog.bindCommand(def.name, def.name == "probe.tick" ? command : pg.catalog().command(def.name));
     catalog.seal();
     fake::RecordingChangeFeed feed;
     Admission admission(catalog, pg.store(), feed, pg.clock(), pg.failures);

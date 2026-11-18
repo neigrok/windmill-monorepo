@@ -131,7 +131,7 @@ public struct StoreTransaction {
     if selection.all { return (try outbox(of: handle), 0) }
     var queries: [(sql: String, arguments: StatementArguments)] = []
     for (scope, rows) in reads {
-      if rows.all { queries.append(("SELECT * FROM outbox WHERE replica = ? AND scope = ?", [handle.value, scope.text])) }
+      if rows.all { queries.append(("SELECT outbox.* FROM outbox_target JOIN outbox USING (local_id) WHERE outbox.replica = ? AND outbox_target.scope = ?", [handle.value, scope.text])) }
       for key in rows.keys {
         queries.append(("""
           SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
@@ -156,12 +156,14 @@ public struct StoreTransaction {
     }
     if let covered = selection.covered {
       queries.append(("""
-        SELECT * FROM outbox WHERE replica = ? AND scope = ? AND state = 'acked' AND result_epoch = ? AND result_seq <= ?
-        ORDER BY commit_order LIMIT ?
+        SELECT outbox.* FROM outbox_target JOIN outbox USING (local_id)
+        WHERE outbox.replica = ? AND outbox_target.scope = ? AND outbox.state = 'acked'
+          AND outbox_target.result_epoch = ? AND outbox_target.settled = 0 AND outbox_target.result_seq <= ?
+        ORDER BY outbox.commit_order LIMIT ?
         """, [handle.value, covered.scope.text, covered.epoch, covered.cleanSeq, covered.limit]))
     }
     for scope in selection.scopes {
-      queries.append(("SELECT * FROM outbox WHERE replica = ? AND scope = ?", [handle.value, scope.text]))
+      queries.append(("SELECT outbox.* FROM outbox_target JOIN outbox USING (local_id) WHERE outbox.replica = ? AND outbox_target.scope = ?", [handle.value, scope.text]))
     }
     var read: [[UInt8]: GRDB.Row] = [:]
     for query in queries {
@@ -186,6 +188,8 @@ public struct StoreTransaction {
       predict: try (record["predict"] as Data?).map { try Blob.json($0).asArray().map { try Delta(json: $0) } } ?? [],
       baseTexts: Dictionary(uniqueKeysWithValues: try baseTexts.map { (try TextRef(text: $0.key), try $0.value.asString()) }))
     entry.digest = (record["digest"] as Data?).map(Blob.hex)
+    entry.predictions = try (record["predictions"] as Data?).map { try Blob.json($0).asArray().map { try Projection(json: $0) } }
+    entry.acceptedEffects = try (record["accepted_effects"] as Data?).map { try Blob.json($0).asArray() }
     entry.resultSeq = record["result_seq"]
     entry.resultEpoch = record["result_epoch"]
     entry.orphanOf = record["orphan_of"]
