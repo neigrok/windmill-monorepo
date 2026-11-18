@@ -17,11 +17,12 @@
 namespace wm {
 
 GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<OwnerProgress> progress,
-                       std::shared_ptr<AuthService> auth, std::string webRoot)
+                       std::shared_ptr<AuthService> auth, std::string webRoot, std::shared_ptr<EngineReadModels> engine)
     : trees_(std::move(trees)), progress_(std::move(progress)), auth_(std::move(auth)),
-      webRoot_(std::move(webRoot)) {}
+      webRoot_(std::move(webRoot)), engine_(std::move(engine)) {}
 
 std::vector<WallCandidate> GalleryApi::candidates() {
+  if (engine_) return engine_->wall();
   std::vector<ListedTree> listed = trees_->listPublic();
   std::vector<WallCandidate> candidates;
   candidates.reserve(listed.size());
@@ -128,7 +129,7 @@ void GalleryApi::index(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   Viewer viewer;
   if (caller) {
     viewer.user = caller;
-    viewer.forked = trees_->listForkedSources(*caller);
+    viewer.forked = engine_ ? engine_->forkedSources(*caller) : trees_->listForkedSources(*caller);
   }
 
   const std::vector<GalleryEntry> wall = publicWall(candidates(), viewer);

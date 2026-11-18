@@ -141,6 +141,7 @@ add_library(windmill_roadmap
   products/roadmap/application/ProgressService.cpp
   products/roadmap/application/NodeEdits.cpp
   products/roadmap/application/ActivityFeed.cpp
+  products/roadmap/application/EngineReadModels.cpp
   products/roadmap/application/ForkService.cpp
   products/roadmap/application/ScopedToolHost.cpp
   products/roadmap/application/TendingService.cpp
@@ -459,6 +460,7 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/postgres/PgTreeRepository.cpp
   products/roadmap/adapters/postgres/PgProgressRepository.cpp
   products/roadmap/adapters/postgres/PgOpLog.cpp
+  products/roadmap/adapters/postgres/PgRoadmapRecords.cpp
   products/roadmap/adapters/postgres/PgOgImageRepository.cpp
   products/roadmap/adapters/postgres/PgOgVideoRepository.cpp
   products/roadmap/adapters/postgres/PgReminderRepository.cpp
@@ -720,6 +722,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/http/TreeApiTest.cpp
   test/products/roadmap/adapters/http/SharePageApiTest.cpp
   test/products/roadmap/adapters/http/GalleryApiTest.cpp
+  test/products/roadmap/adapters/http/EngineReadsApiTest.cpp
   test/products/roadmap/adapters/http/OgImageApiTest.cpp
   test/products/roadmap/adapters/http/OgVideoApiTest.cpp
   test/products/roadmap/adapters/http/TreeRegistryApiTest.cpp

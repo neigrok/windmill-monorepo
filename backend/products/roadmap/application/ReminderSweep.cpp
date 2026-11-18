@@ -20,9 +20,9 @@ constexpr int kFirstTickJitterSeconds = 30;
 
 ReminderSweep::ReminderSweep(ReminderRepository& reminders, ReminderMailSender& mail,
                              TokenGenerator& tokens, Clock& clock, MailArming arming,
-                             std::string appBaseUrl)
+                             std::string appBaseUrl, EngineReadModels* engine)
     : MailSweep(reminders, tokens, std::move(arming), "roadmap.reminder.sweep", "roadmap"), reminders_(reminders), mail_(mail),
-      clock_(clock), appBaseUrl_(std::move(appBaseUrl)), heartbeat_("reminder", "roadmap") {}
+      clock_(clock), appBaseUrl_(std::move(appBaseUrl)), engine_(engine), heartbeat_("reminder", "roadmap") {}
 
 void ReminderSweep::start() {
   std::random_device entropy;
@@ -67,7 +67,7 @@ ReminderDecision ReminderSweep::decideFor(const DueUser& due, std::uint64_t nowM
     candidate.slotInstantMs = due.slotInstantMs;
     candidate.lastActiveAtMs = reminders_.lastActiveAtMs(due.user);
     candidate.accountCreatedAtMs = reminders_.accountCreatedAtMs(due.user);
-    candidate.trees = reminders_.readinessFor(due.user);
+    candidate.trees = engine_ ? engine_->readiness(due.user) : reminders_.readinessFor(due.user);
     return decide(candidate, nowMs);
   } catch (const std::exception& error) {
     reportCurrentWriteFailure(error);

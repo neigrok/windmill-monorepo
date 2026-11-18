@@ -1179,7 +1179,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, `present` and `land_seq` (Model, land seqs); `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc`, `land_seq` |
 | `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp, and `land_seq` |
-| `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
+| `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency; where the engine serves roadmap, its binding writes one row a gesture (`products/roadmap/sync/README.md`) |
 | `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |
 

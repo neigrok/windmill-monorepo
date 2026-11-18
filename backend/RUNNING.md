@@ -92,9 +92,11 @@ Everything else is optional and each feature stays dark without its key — copy
 `.env` and `set -a; source .env; set +a` before the binary.
 
 `ROADMAP_ENGINE_ENABLED=1` serves roadmap's scopes through the sync engine (`products/roadmap/sync/`), on the
-`roadmap_*` tables `db/schema.sql` builds. Without it the server composes and binds roadmap but withholds its
-scopes, as production does until roadmap's cutover: hello says roadmap holds nothing, `self/roadmap` pulls
-empty, its trees are not found and every roadmap intent is refused.
+`roadmap_*` tables `db/schema.sql` builds, and feeds roadmap's read models from them: the activity feed, the owner's
+progress, the share page, the gallery and reminders' readiness (`application/EngineReadModels`). Without it the server
+composes and binds roadmap but withholds its scopes, as production does until roadmap's cutover: hello says roadmap
+holds nothing, `self/roadmap` pulls empty, its trees are not found, every roadmap intent is refused, and the read
+models read the rooms and roadmap's own tables.
 
 ### The subscription service
 

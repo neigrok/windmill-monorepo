@@ -54,6 +54,7 @@
 #include "products/roadmap/adapters/postgres/PgOgImageRepository.h"
 #include "products/roadmap/adapters/postgres/PgOgVideoRepository.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
+#include "products/roadmap/adapters/postgres/PgRoadmapRecords.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/adapters/email/ResendReminderSender.h"
 #include "products/roadmap/adapters/postgres/PgReminderRepository.h"
@@ -632,8 +633,16 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // cutover (roadmap-on-the-engine.md §8.1).
   const char* roadmapEngineEnv = std::getenv("ROADMAP_ENGINE_ENABLED");
   const std::string roadmapEngineFlag = roadmapEngineEnv ? roadmapEngineEnv : "";
-  auto productsCatalog = sync::productCatalog(roadmapEngineFlag == "true" || roadmapEngineFlag == "1" ? sync::RoadmapServing::served
-                                                                                                       : sync::RoadmapServing::withheld);
+  const bool roadmapEngine = roadmapEngineFlag == "true" || roadmapEngineFlag == "1";
+  auto productsCatalog = sync::productCatalog(roadmapEngine ? sync::RoadmapServing::served : sync::RoadmapServing::withheld);
+  // Where the engine serves roadmap, its read models (the activity, the progress, the share page, the gallery and
+  // reminders' readiness) read its records (roadmap-on-the-engine.md §7); elsewhere the rooms and roadmap's own tables.
+  std::shared_ptr<RoadmapRecords> roadmapRecords;
+  std::shared_ptr<EngineReadModels> engineReads;
+  if (roadmapEngine) {
+    roadmapRecords = std::make_shared<PgRoadmapRecords>(pool);
+    engineReads = std::make_shared<EngineReadModels>(*roadmapRecords, *oplog);
+  }
 #ifdef WM_SYNC_PROBE
   auto syncCatalog = std::make_shared<sync::SyncCatalog>(probe::registry());
   probe::PgProbe probeTables(probe::registry());
@@ -790,8 +799,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                             remindersAllowlistEnv ? remindersAllowlistEnv : "");
   auto reminderMail = std::make_shared<ResendReminderSender>(*resendClient);
   auto reminderSweep = std::make_shared<ReminderSweep>(*reminderRepo, *reminderMail, *tokens,
-                                                       *systemClock, reminderArming, appBaseUrl);
-  lifetime.watch(reminderSweep, reminderRepo, reminderMail, tokens, systemClock, resendClient);
+                                                       *systemClock, reminderArming, appBaseUrl, engineReads.get());
+  lifetime.watch(reminderSweep, reminderRepo, reminderMail, tokens, systemClock, resendClient, engineReads, roadmapRecords);
   reminderSweep->start();
 
   // Built here because its tools are part of the MCP surface below, constructed once before the
@@ -1281,10 +1290,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
       .tokens = tokens, .clock = systemClock,
       .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,
-      .allowedOrigins = allowedOrigins};
+      .allowedOrigins = allowedOrigins, .engineReads = engineReads};
   lifetime.onStop([] { stopCollab(); }, registry, oplog, bus, progressService, ownerProgress, progress, authService,
                   presence, systemClock, authRepo, emailSender, resendClient, tokens, oauthService, oauthRepo,
-                  accountFootprint, liveSessions);
+                  accountFootprint, liveSessions, engineReads, roadmapRecords);
   registerRoutes(app, roadmapDeps);
 
   auto journalPages = std::make_shared<PgJournalRepository>(pool);
