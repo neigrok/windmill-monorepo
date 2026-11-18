@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
@@ -10,6 +11,7 @@ let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const referencePath = fileURLToPath(new URL('../../../../packages/api-contract/sync/reference/', import.meta.url));
 const registryPath = fileURLToPath(new URL('../../../../packages/api-contract/sync/probe.registry.json', import.meta.url));
+const probeRegistry = JSON.parse(readFileSync(registryPath, 'utf8'));
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-transport-test`, plugins: [{ name: 'transport-test-page', configureServer(server) {
     server.middlewares.use('/transport-test', (_request, response) => {
@@ -50,13 +52,13 @@ for (const bound of ['count', 'bytes']) test(`Chromium: stalled live ${bound} ov
   const digest = replaceRow(ZERO_DIGEST, undefined, row);
   let recovering = false, pulls = 0;
   try {
-    await context.routeWebSocket('**/v1/sync/live?schema=2', (socket) => {
+    await context.routeWebSocket(`**/v1/sync/live?schema=${probeRegistry.version}`, (socket) => {
       sockets.push(socket);
       socket.onMessage(() => {});
     });
     const page = await context.newPage();
     await page.route('**/v1/sync/hello', (route) => route.fulfill({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({ serverTime: Date.now(), epoch: 'ep-live', as: 'A', schema: 2, minSchema: 2, holdsRecords: { probe: false } }) }));
+      body: JSON.stringify({ serverTime: Date.now(), epoch: 'ep-live', as: 'A', schema: probeRegistry.version, minSchema: probeRegistry.minVersion, holdsRecords: { probe: false } }) }));
     await page.route('**/v1/sync/pull', async (route) => {
       pulls++;
       const request = route.request().postDataJSON();

@@ -1036,7 +1036,7 @@
           }
         },
         "predicts": {
-          "description": "The types whose records the command's client prediction may carry (§7.1 `predict`).",
+          "description": "The types whose records the command's client prediction may carry (§7.1 `predict`); a scopedEffects command's `scopedPredict` may carry them in any scope that holds them. No wholePut type.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/typeName"
@@ -1044,10 +1044,13 @@
           "uniqueItems": true
         },
         "scopedEffects": {
-          "description": "Captures scope-qualified committed versions and accepts scoped local predictions.",
+          "description": "A successful result's detail carries the scope-qualified receipt of every committed version (§6.4), and the command accepts scoped local predictions (§7.1).",
           "const": true
         },
-        "engine": { "const": "capture" },
+        "engine": {
+          "description": "The platform runs the command: `capture` admits the intent's ordinary deltas, checks and consequences with no product mutation (§2.4). Requires scopedEffects and no args.",
+          "const": "capture"
+        },
         "beforePull": {
           "description": "A server-internal command that runs before every pull of its scope, in its own admission (§6.7).",
           "type": "boolean"
@@ -1058,7 +1061,7 @@
           "if": { "required": ["engine"] },
           "then": {
             "required": ["scopedEffects"],
-            "properties": { "scopedEffects": { "const": true }, "args": { "maxProperties": 0 } }
+            "properties": { "scopedEffects": { "const": true }, "args": { "additionalProperties": false } }
           }
         },
         {
