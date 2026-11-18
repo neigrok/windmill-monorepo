@@ -89,7 +89,7 @@ Step mode leaves sender waits pending until the caller advances its virtual cloc
 retry, and live/pull answers remain bound to the requested replica across lineage changes. Live
 channels close on replica renewal, leave, authentication pause and shutdown.
 
-Gym consumes registry v12/minimum 11. The model server binds the Coach conversation types `thread` and
+Gym consumes registry v13/minimum 11. The model server binds the Coach conversation types `thread` and
 `message` (gym Coach §9.1), and authors routine revision/original count,
 proposal base revision/name/change count, note content time and immutable Coach creation snapshots.
 The gym domain decodes that metadata without including it in client fields, plans or guards;
