@@ -163,7 +163,7 @@ internal sealed interface SlotRecipe {
 
 // One outbox entry an inverse request reserved in `originScope`: waiting for its sources, materialized with bound arguments, or settled.
 // `skipped` holds the codes of the operations it skipped before sending.
-internal class InverseSlot(val localId: String, val commitOrder: Long, val originScope: ScopeRef, var recipe: SlotRecipe, var state: String = "waiting",
+internal class InverseSlot(val localId: String, val commitOrder: Long, var originScope: ScopeRef, var recipe: SlotRecipe, var state: String = "waiting",
     var skipped: List<String>? = null, var outcomes: List<InverseOutcome>? = null, var changed: Boolean? = null) {
     constructor(json: Json) : this(json.member("localId").str(), json.member("commitOrder").long(), ScopeRef(json.member("originScope")),
         SlotRecipe(json.member("recipe")), json.member("state").str(), json["skipped"]?.arr()?.map { it.member("code").str() },
@@ -342,24 +342,61 @@ internal fun ReplicaState.settleEnded(code: String) {
     }
 }
 
-// §7.7 write map and E-8: the journal's scoped references follow the same logical map as the queue.
+// §7.7 write map and E-8: the journal, its inverse requests and its cancellations follow the same logical map as the queue. Each record a
+// holder names is renamed in the scope it names, and a command input in the scope its holder had, before that scope moves. A value recorded
+// for a field (a preimage, a written value, a default, an operation's earlier value, a redo value, a revival's registers) is renamed as that
+// record's field would be, so a typed reference it holds follows the map too; a text or a life holds none.
 internal fun Registry.remapJournal(replica: ReplicaState, map: RecordMap) {
     fun address(record: RecordAddress) = RecordAddress(references.remapRecord(record.scope, record.json, map)).let { it.copy(scope = map.scope(it.scope)) }
     fun target(target: RecordSlot) = RecordSlot(address(target.record), target.slot)
+    fun registers(record: RecordAddress, fields: Json): Json = references.remapRecord(record.scope, record.json.with("f" to fields), map).member("f")
+    fun value(target: RecordSlot, value: Json): Json = target.slot.name?.takeIf { target.slot.kind == Slot.Kind.field }
+        ?.let { name -> registers(target.record, Json.objectOf(name to Json.array(value, Json.Null))).member(name).arr().first() } ?: value
+    fun values(record: RecordAddress, values: Map<String, Json>): Map<String, Json> =
+        registers(record, Json.Obj(values.map { (name, value) -> name to Json.array(value, Json.Null) })).obj().mapValues { it.value.arr().first() }
+    fun drawn(target: RecordSlot, record: Json?): Json? = record?.let { read -> read["f"]?.let { read.with("f" to registers(target.record, it)) } ?: read }
+    fun reference(named: VersionReference): VersionReference = when (named) {
+        is VersionReference.Pending -> named.copy(target = target(named.target))
+        is VersionReference.FieldAbsent -> named.copy(recordBirth = named.recordBirth?.let(::reference))
+        else -> named
+    }
+    fun recipe(scope: ScopeRef, recipe: UndoRecipe): UndoRecipe = when (recipe) {
+        is UndoRecipe.Fields -> recipe.copy(targets = recipe.targets.map { UndoRecipe.FieldTarget(target(it.target), it.defaultValue?.let { default -> value(it.target, default) }) })
+        is UndoRecipe.CreatedRecord -> recipe.copy(record = address(recipe.record))
+        is UndoRecipe.Product -> UndoRecipe.Product(recipe.command,
+            references.remapCommand(scope, Json.objectOf("name" to Json.of(recipe.command), "args" to Json.objectOf("input" to recipe.input)), map).member("args").member("input"),
+            EvidenceSelection(recipe.evidence.ownedFields.map(::target), recipe.evidence.unchangedCreatedRecords.map(::address), recipe.evidence.unchangedCreatedScopes.map(map::scope)))
+    }
+    fun slotRecipe(scope: ScopeRef, recipe: SlotRecipe): SlotRecipe = when (recipe) {
+        is SlotRecipe.Restore -> recipe.copy(operations = recipe.operations.map { op -> when (op) {
+            is PlannedOperation.Field -> PlannedOperation.Field(target(op.target), value(op.target, op.before), op.reference?.let(::reference), drawn(op.target, op.drawn))
+            is PlannedOperation.CreatedRecord -> PlannedOperation.CreatedRecord(address(op.record))
+            is PlannedOperation.CreateRecord -> PlannedOperation.CreateRecord(address(op.record),
+                op.values.copy(fields = op.values.fields.takeIf { it.isNotEmpty() }?.let { values(op.record, it) }.orEmpty()), reference(op.reference))
+        } })
+        is SlotRecipe.Product -> SlotRecipe.Product(recipe(scope, recipe.recipe) as UndoRecipe.Product)
+        is SlotRecipe.Withdrawn -> recipe
+    }
     for (source in replica.journal.flatMap { it.sourceEntries }) {
-        val origin = source.originScope
-        source.originScope = map.scope(origin)
-        source.recipes = source.recipes.map { recipe -> when (recipe) {
-            is UndoRecipe.Fields -> recipe.copy(targets = recipe.targets.map { it.copy(target = target(it.target)) })
-            is UndoRecipe.CreatedRecord -> recipe.copy(record = address(recipe.record))
-            is UndoRecipe.Product -> UndoRecipe.Product(recipe.command,
-                references.remapCommand(origin, Json.objectOf("name" to Json.of(recipe.command), "args" to Json.objectOf("input" to recipe.input)), map).member("args").member("input"),
-                EvidenceSelection(recipe.evidence.ownedFields.map(::target), recipe.evidence.unchangedCreatedRecords.map(::address), recipe.evidence.unchangedCreatedScopes.map(map::scope)))
-        } }
-        source.preimages = source.preimages.map { it.copy(target = target(it.target)) }
-        source.written = source.written.map { it.copy(target = target(it.target)) }
+        source.recipes = source.recipes.map { recipe(source.originScope, it) }
+        source.originScope = map.scope(source.originScope)
+        source.preimages = source.preimages.map { it.copy(target = target(it.target), value = value(it.target, it.value), drawn = drawn(it.target, it.drawn)) }
+        source.written = source.written.map { Written(target(it.target), value(it.target, it.value)) }
         source.attempts = source.attempts.map { attempt -> attempt.copy(acceptedEffects = attempt.acceptedEffects?.map { effect ->
             EffectReceipt(map.scope(effect.scope), effect.beforeSeq, effect.seq, effect.rows.map { row -> EffectRow(references.remapRecord(effect.scope, row.json, map)) })
         }) }
+    }
+    for (slot in replica.inverses.flatMap { it.slots }) {
+        slot.recipe = slotRecipe(slot.originScope, slot.recipe)
+        slot.originScope = map.scope(slot.originScope)
+    }
+    for (cancellation in replica.cancellations) {
+        cancellation.sourceEntries = cancellation.sourceEntries.map { it.copy(originScope = map.scope(it.originScope)) }
+        cancellation.units = cancellation.units.map { unit -> when (unit) {
+            is CancellationUnit.Field -> CancellationUnit.Field(unit.ownerLocalId, target(unit.target), value(unit.target, unit.redoValue), reference(unit.restored),
+                unit.restoredValue?.let { value(unit.target, it) })
+            is CancellationUnit.CreatedRecord -> CancellationUnit.CreatedRecord(unit.ownerLocalId, address(unit.record),
+                unit.redoValues.copy(fields = unit.redoValues.fields.takeIf { it.isNotEmpty() }?.let { values(unit.record, it) }.orEmpty()), reference(unit.restored))
+        } }
     }
 }
