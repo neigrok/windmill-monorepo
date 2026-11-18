@@ -1014,7 +1014,7 @@ public struct Plan: Sendable {
 | `hold` | true iff the plan is held |
 | `guards` | every lattice field a guarded update or revival names, and every `guardRead` register |
 | `retire` | every keyed-with-life record the plan creates |
-| `command`, `predict` | the plan's command and predictions (§8.4) |
+| `command`, `predict`, `scopedPredict` | the plan's command and predictions (§8.4) |
 | `local` | the plan's device writes, in order |
 | `gestureId` | nil (the engine mints it) |
 
@@ -1037,12 +1037,15 @@ when:
 3. a held plan contains any operation other than removals of held types and device writes, or runs a
    command;
 4. `create` names an `Ordered` type (use `insert`), or `create(_:fields:)` a minted or derived type;
-5. a prediction's type is not in the command's registry `predicts`;
+5. a prediction's type is not in the command's registry `predicts`, or does not live in the scope the
+   prediction names, or a prediction names a scope other than the plan's on a command without
+   `scopedEffects` (engine E-7);
 6. a named field is not client-written, is `serial` or the order field, is absent from
    `value.fields`, or is not among `value.checked`;
 7. an update names a `const` or `time` field (engine §4.4), or a text field without a `base`; a revival
    names a const, time or text field;
-8. an update names no field, or a keyed create writes no field;
+8. an update names no field, or a keyed create writes no field, except a create of a keyed type with
+   life that declares no field, which writes the record's presence alone;
 9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4).
 
 A revival of a type without `revivable: true` is also a `PlanError`.
@@ -1059,9 +1062,9 @@ public protocol ServerCommand: Sendable {
   var args: [String: JSON] { get }            // ref<t>: an id; time and instant: Instant.ms
 }
 public struct Prediction: Sendable {
-  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction
-  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction
-  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>) -> Prediction
+  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction
+  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction
+  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>, in scope: ScopeRef? = nil) -> Prediction
 }
 ```
 
@@ -1073,6 +1076,10 @@ public struct Prediction: Sendable {
   included, unvalidated. The engine draws them until the command's entry resolves, once the cursor
   covers its result (engine §7.5 step 2), and restamps or rewrites them through the write map (engine
   §7.7).
+- A prediction names its scope when it is not the plan's: a command with `scopedEffects` MAY predict
+  records in every scope it changes (engine E-7). Translation then carries every prediction in
+  `scopedPredict`, grouped by scope, the plan's own first and the rest in UTF-8 order, each group in
+  the plan's order, and leaves `predict` empty; with no other scope, `predict` carries them all.
 - A removal prediction draws a dead life register, preserving the record's born. It becomes a
   keyed `put(present: false)` or a minted `delete`; a refused command restores the prior record.
 - A product holds no predicted id across the result; it reads the record again from a view.
@@ -1743,6 +1750,8 @@ public struct ProductCorpus {                                                   
                                                                    result: (Saved) -> JSON, refusal: (R) -> JSON)
     throws -> JSON
   public func read(_ vector: Vector, in scope: ScopeRef, _ body: (Reader) throws -> JSON) throws -> JSON
+  public func act<A: ActAction>(_ action: A, _ vector: Vector, result: (A.Result) -> JSON,
+                                refusal: (A.Refusal) -> JSON) throws -> JSON           // an act's case (§9.5)
 }
 extension Entity { public init(form: JSON) throws }                                 // {id, fields}
 public enum Contract { public static func vectors(_ path: String) throws -> [Vector] }
@@ -1755,7 +1764,9 @@ public struct Vector: Sendable {
 Each product's tests run `RegistryCheck` for every entity (§3.4) and command (§8.4), `RuleBookCheck`
 and `RuleBookParity` over its rule book (§6.3), and `ProductCorpus` over every case of its
 `values.json`, each feature's `<feature>-actions.json` and each `rules/<read>.json` (§15.3),
-comparing the result with the case's `expect` by JCS. `vectors`, `file` and `Contract.vectors` take
+comparing the result with the case's `expect` by JCS. An act's case is a scene of several scopes, `{scopes: {<scope>: {drawn, stored?}}, device?,
+ids?, now, offsetSeconds}`, decided as `{write: {segments: [{scope, gesture}], result}}`, `{unchanged:
+{result}}` or `{refuse}`. `vectors`, `file` and `Contract.vectors` take
 paths under `packages/api-contract/`. A feature's actions test maps each case's `action` to the
 decider it names, built from the case's `input`, and gives the JSON forms of its result and its
 product refusal; a draft's save runs through `save`, which opens the draft of `blank`'s id over the
@@ -1789,6 +1800,7 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 | `capacity/count.json` | §7.3 over `stored`, held deletes counted | `{records, type}` → `{used, cap, full}` |
 | `plan/translate.json` | §8.2 every cell, text edits from an update's `base` and from `""`, anchors, `retire`, hold, exact guards, null fields, UTF-8 order; every §8.3 rule; §8.4 a command's specs applied, nested strings included | `{plan}` → `{gesture}`, `{violation}` or `{error}` |
 | `run/pipeline.json` | §9.2 gone for update, remove and move; an emptied gesture → `unchanged`, a retire-only receipt → `committed`; the refusal subject | `{plan, drawn, receipt?}` → `{outcome}` |
+| `run/act-decisions.json` | §9.5 an act's decision as a product's vectors read it: each segment's gesture in its scope and in order, ids minted in order across scopes, a violation in any segment refusing the act, each scope's records read in that scope | `{loads, segments, scopes, ids?}` → `{decision}` |
 | `draft/save.json` | §10.2 every step: a whole save of a `wholePut` type, untouched, edited, over a record another device deleted and inside a delete window, its timestamp at `now`, and refused on a check; unchanged; gone, a keyed record another device deleted included; an untouched new minted draft (refused on its checks) and a prefilled one (created); present again, new and inside a delete window, and over an invisible keyed record, whose untouched field is taken from it; already stored, `exists` included; stale; update; a text field edited from the base's text, and from `""` in a blank; `creating`, which refuses `id-taken` over a drawn or stored record | `{draft | creating, drawn, stored, anchor?, now, offsetSeconds}` → `{decision}` |
 | `draft/script.json` | §10.1 and §10.3 as operation scripts: `new`, `open` (absent → nil; `orNew` on a minted type, or with a blank of another key, traps), `edit`, `save` (§10.2 over the case's records; `fail: true` fails the commit; a `current` of another id traps), `rebase` (touched and untouched fields; an unguarded type, and a `theirs` of another id, trap), and `records`, which replaces the records; the draft after each op. A refused and a failed save leave the draft as it was; a quantum field is taken rounded, and a whole save's timestamp as written | `{drawn, stored, now, offsetSeconds, ops}` → `{steps: [{draft, result?} | {trap: true}]}` |
 | `refusal/subject.json` | §12.1 subjects; the notice's gesture id and `values(of:)` | `{source, plan? | notice?}` → `{subject, gestureId?, values?}` |
