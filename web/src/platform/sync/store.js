@@ -5,7 +5,8 @@ const keyOf = (...parts) => jcs(parts);
 const HEAD = keyOf('head');
 const WRITER_SLICE_MS = 25;
 const caches = ['confirmed', 'spentIds', 'staging'];
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b) || jcs(a ?? null) === jcs(b ?? null);
+const json = (value) => ({ text: JSON.stringify(value), value });
+const equal = (left, right) => left.text === right.text || (left.text.length === right.text.length && jcs(left.value) === jcs(right.value));
 
 export function frozen(value) {
   if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -119,8 +120,9 @@ function deviceOf(controls, { shared }) {
 }
 
 export class IndexedDBStore {
-  constructor(database) {
+  constructor(database, keyRange) {
     this.database = database;
+    this.generationRows = (generation) => keyRange.bound([generation], [generation, []]);
     this.closed = false;
     this.controls = null;
     this.generations = new Map();
@@ -128,8 +130,8 @@ export class IndexedDBStore {
     database.onversionchange = () => this.close();
   }
 
-  static async open({ indexedDB = globalThis.indexedDB, name = 'wm-sync', newReplicaId }) {
-    if (!indexedDB) throw new Error('sync storage unavailable');
+  static async open({ indexedDB = globalThis.indexedDB, keyRange = globalThis.IDBKeyRange, name = 'wm-sync', newReplicaId }) {
+    if (!indexedDB || !keyRange) throw new Error('sync storage unavailable');
     const database = await new Promise((resolve, reject) => {
       const request = indexedDB.open(name, 2);
       let abandoned = false;
@@ -174,8 +176,8 @@ export class IndexedDBStore {
       request.onerror = () => reject(request.error);
       request.onblocked = () => { abandoned = true; reject(new Error('sync storage blocked')); };
     });
-    const store = new IndexedDBStore(database);
-    store.reopen = () => IndexedDBStore.open({ indexedDB, name, newReplicaId });
+    const store = new IndexedDBStore(database, keyRange);
+    store.reopen = () => IndexedDBStore.open({ indexedDB, keyRange, name, newReplicaId });
     try { await store.transact((device) => device, { initialize: newReplicaId }); return store; }
     catch (error) { store.close(); throw error; }
   }
@@ -232,7 +234,7 @@ export class IndexedDBStore {
         if (full) {
           replica.loadedCaches.add(`${kind}:${scope}`);
           if (generation.complete) { fill(); return; }
-          awaitRead(rows.index('generation').getAll(pointer.generation), (records) => {
+          awaitRead(rows.getAll(this.generationRows(pointer.generation)), (records) => {
             for (const id of [...generation.rows.keys()]) generation.set(id, undefined);
             remember(records);
             generation.complete = true;
@@ -316,7 +318,7 @@ export class IndexedDBStore {
           let count = state.count;
           for (const id of Object.keys(map)) {
             const old = state.base.get(id), row = map[id];
-            if (old === row || (old !== undefined && same(old, row))) continue;
+            if (old === row || (old !== undefined && equal(json(row), json(old)))) continue;
             written.set(id, frozen(row));
             count += Number(old === undefined);
           }
@@ -334,7 +336,7 @@ export class IndexedDBStore {
         const texts = new Map([...after].map(([key, value]) => [key, JSON.stringify(value)]));
         const differs = (key) => {
           const before = controls.records.get(key);
-          return !before || (before.text !== texts.get(key) && jcs(before.value) !== jcs(after.get(key)));
+          return !before || !equal({ text: texts.get(key), value: after.get(key) }, before);
         };
         const removed = [...controls.records.keys()].filter((key) => !after.has(key));
         const dead = [...controls.records.values()].filter(({ parts: [kind] }) => kind === 'cache')
@@ -408,7 +410,7 @@ export class IndexedDBStore {
         const generation = pending.shift();
         if (generation === undefined || deleted >= limit) return;
         const remaining = limit - deleted;
-        const clean = rows.index('generation').getAllKeys(generation, remaining);
+        const clean = rows.getAllKeys(this.generationRows(generation), remaining);
         clean.onsuccess = () => {
           for (const key of clean.result) rows.delete(key);
           deleted += clean.result.length;

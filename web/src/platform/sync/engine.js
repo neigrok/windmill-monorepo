@@ -79,7 +79,7 @@ export class BrowserSyncEngine {
   static async open(options = {}) {
     let store;
     try {
-      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB,
+      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB, keyRange: options.keyRange,
         name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
       const engine = new BrowserSyncEngine({ ...options, store });
       await engine.refresh(true);

@@ -57,6 +57,15 @@ and durable device work are separate from cached rows. Replica handles stay fixe
 changes. Each cache has a generation pointer; completed boots transfer the staging pointer, and
 forget/sign-out invalidate pointers atomically. Old generations are deleted in batches of 128.
 
+A store keeps the control records it last committed or read, as JSON text, and uses them while the
+head record's revision is unchanged; any other tab's write moves the revision and the next transaction
+reads them again. It keeps each cache generation's rows it has read, frozen, while the generation's
+version is unchanged, and reads a whole generation along the `[generation, id]` primary key, so
+`open` takes the `IDBKeyRange` of the same IndexedDB implementation (`keyRange`, the global by
+default). A write materializes the controls afresh, shares the rows, and compares only rows whose
+identity changed; a read shares frozen values, so unchanged state keeps its identity from one
+publication to the next. A row is a value: a change replaces it and never edits it.
+
 IndexedDB store versions are independent of the wire registry version:
 
 | Store version | Layout | Release evidence |
