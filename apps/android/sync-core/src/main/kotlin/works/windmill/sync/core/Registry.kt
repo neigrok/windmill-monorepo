@@ -378,15 +378,21 @@ class Registry(input: Json) {
             for (field in type.fields.values) require(field.ref == null || type(field.ref) != null)
         }
         for (command in commands) {
-            command.expectKeys(listOf("name", "scope", "origins", "serverInternal", "args"), listOf("predicts", "beforePull", "scopedEffects", "engine", "refPaths"))
+            command.expectKeys(listOf("name", "scope", "origins", "serverInternal", "args"), listOf("predicts", "beforePull", "scopedEffects", "engine", "inverse", "refPaths"))
             require(command.member("name").str().matches(Regex("[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*")))
             val origins = command.member("origins").distinctStrings()
             require(origins.isNotEmpty() && origins.all { it in listOf("replica", "server") })
             require(!command.member("serverInternal").bool() || "replica" !in origins)
             require(command["beforePull"]?.bool() != true || command.member("serverInternal").bool())
             require(command["scopedEffects"] == null || command["scopedEffects"] == Json.of(true))
-            require(command["engine"] == null || (command["engine"] == Json.of("capture") && command["scopedEffects"] == Json.of(true) && command.member("args").obj().isEmpty()))
+            require(command["engine"] == null || (command["engine"]?.str() in listOf("capture", "restore") && command["scopedEffects"] == Json.of(true) && command.member("args").obj().isEmpty()))
             val scope = command.member("scope").str()
+            // K-3: a restore restores types of its own scope that govern no tree, under §6.4's fixed arguments.
+            if (command["engine"] == Json.of("restore")) require(command["refPaths"] == null &&
+                command["predicts"]?.arr()?.isNotEmpty() == true && command.member("predicts").arr().all { name -> type(name.str())?.let { it.scope == scope && it.json["governs"] == null } != false })
+            // K-3: an inverse command is a product command an Undo or Redo runs, declaring only its required json input.
+            if (command["inverse"] != null) require(command["inverse"] == Json.of(true) && command["scopedEffects"] == Json.of(true) && command["engine"] == null &&
+                command.member("args").obj().keys == setOf("input") && command.member("args").member("input").let { it["type"] == Json.of("json") && it["optional"]?.bool() != true })
             require(scope in listOf("tree", "overlay") || (scope.startsWith("product:") && scope.drop(8) in products))
             for ((name, arg) in command.member("args").obj()) {
                 require(name.matches(Regex("[a-z][A-Za-z0-9]*")))
@@ -460,6 +466,7 @@ class CommandDef(val json: Json) {
     val beforePull: Boolean = json["beforePull"]?.bool() ?: false
     val scopedEffects: Boolean = json["scopedEffects"]?.bool() ?: false
     val engine: String? = json["engine"]?.str()
+    val inverse: Boolean = json["inverse"]?.bool() ?: false
     val args: Map<String, ArgumentDef> = json.member("args").obj().mapValues { ArgumentDef(it.key, it.value) }
     val predicts: List<String> = json["predicts"]?.distinctStrings() ?: emptyList()
 }

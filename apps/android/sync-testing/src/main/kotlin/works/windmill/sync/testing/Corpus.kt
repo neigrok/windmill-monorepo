@@ -62,7 +62,7 @@ class Corpus(val root: File) {
             "hlc/jump.json" to CorpusRole.CLIENT, "fracindex/" to CorpusRole.CLIENT, "view/" to CorpusRole.CLIENT,
             "commit/" to CorpusRole.CLIENT, "hold/" to CorpusRole.CLIENT, "refusal/" to CorpusRole.CLIENT,
             "write/" to CorpusRole.CLIENT, "refs/" to CorpusRole.CLIENT, "lineage/" to CorpusRole.CLIENT, "pull/pages.json" to CorpusRole.CLIENT,
-            "machine/intent.json" to CorpusRole.CLIENT, "machine/replica.json" to CorpusRole.CLIENT,
+            "machine/intent.json" to CorpusRole.CLIENT, "machine/replica.json" to CorpusRole.CLIENT, "undo/" to CorpusRole.CLIENT,
         )
         fun role(path: String): CorpusRole = roles.firstOrNull { it.first == path }?.second
             ?: roles.firstOrNull { it.first.endsWith('/') && path.startsWith(it.first) }?.second
