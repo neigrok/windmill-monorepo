@@ -101,10 +101,11 @@ characters; `tag` is 12 of `0-9a-z`.
   `self/probe` (§6.7). Every open run whose `startedAt ≤ serverNow − 600000` gets
   `endedAt := serverNow` at the server stamp; write `[]`.
 - `probe.capture {}` (`self/probe`, predicts `board`, `card`, `run`, `lap`, `day`),
-  `probe.captureTree {}` (`tree/<T>`, predicts `meta`, `tag`, `link`) and `probe.captureOverlay {}`
-  (`self/overlay/<T>`, predicts `mark`) — replica and server origin; `scopedEffects` and
-  `engine: "capture"` (engine.md §2.4): the platform runs the intent's ordinary deltas, checks and
-  consequences with no product command, write `[]`, and the result carries the scoped receipt (§6.4).
+  `probe.captureTree {}` (`tree/<T>`, predicts `meta`, `tag`, `link`, and `run` in the product scope)
+  and `probe.captureOverlay {}` (`self/overlay/<T>`, predicts `mark`) — replica and server origin;
+  `scopedEffects` and `engine: "capture"` (engine.md §2.4): the platform runs the intent's ordinary
+  deltas, checks and consequences with no product command, write `[]`, and the result carries the
+  scoped receipt (§6.4).
 - `probe.branch {parent: ref<board>, child: ref<board>, title}` — replica and server origin;
   `scopedEffects`, predicts `board` and `meta`. Discovery declares `tree:parent` and `tree:child`,
   replay or not.
