@@ -543,26 +543,35 @@ type Notice = { id, replica, scope, code: RefusalCode, detail?, content: NoticeC
 type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 type ReversibleAct = { version: 1, replica, actId: string /* its gesture id */, retained: boolean,
                        sourceEntries: { localId, originScope: ScopeRef, recipes: UndoRecipe[],
-                                        preimages: { target: Target, value: Json }[],
+                                        preimages: { target: Target, value: Json, rowSeq: number | null,
+                                                     epoch: string | null }[],
+                                        written: { target: Target, value: Json }[],
                                         attempts: { epoch, n, outcome: 'ok' | 'refused',
                                                     acceptedEffects?: EffectReceipt[] }[],
                                         unavailable?: true }[] }
 type InverseRequest = { version: 1, replica, requestId, sourceActId, inverseActId,
-                        state: 'waiting' | 'materialized' | 'settled', localChanged?: boolean,
-                        slots: { localId, commitOrder, recipe: SlotRecipe,
-                                 state: 'waiting' | 'materialized' | 'settled',
+                        state: 'waiting' | 'materialized' | 'settled', requestedAt: number,
+                        localChanged?: boolean,
+                        slots: { localId, commitOrder, originScope: ScopeRef, recipe: SlotRecipe,
+                                 state: 'waiting' | 'materialized' | 'settled', skipped?: { code }[],
                                  outcomes?: { index, s: 'applied' | 'skipped', code? }[], changed?: boolean }[],
                         result?: InverseResult }
-type SlotRecipe = { kind: 'restore', command, operations: ({ kind: 'field', target: Target, before: Json }
-                                                         | { kind: 'createdRecord', record: RecordAddress })[] }
+type SlotRecipe = { kind: 'restore', command, operations: (
+                      | { kind: 'field', target: Target, before: Json, reference?: VersionReference }
+                      | { kind: 'createdRecord', record: RecordAddress }
+                      | { kind: 'createRecord', record: RecordAddress, values: { f?, x? },
+                          reference: { kind: 'recordAbsent', epoch: string | null } })[] }
                 | { kind: 'command', command, input: Json, evidence: EvidenceSelection }
                 | { kind: 'withdrawn', command }
-type CancellationReceipt = { version: 1, replica, inverseActId, cancelledActId, retained?: false, units: (
-  | { kind: 'field', ownerLocalId, target: Target, redoValue: Json, restored: VersionReference }
+type CancellationReceipt = { version: 1, replica, inverseActId, cancelledActId, retained?: false,
+  sourceEntries: { localId, originScope: ScopeRef, command?: true }[], units: (
+  | { kind: 'field', ownerLocalId, target: Target, redoValue: Json, restored: VersionReference,
+      restoredValue?: Json }
   | { kind: 'createdRecord', ownerLocalId, record: RecordAddress, redoValues: { f?, x? },
       restored: { kind: 'recordAbsent', epoch: string | null } })[] }
 type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Version }
                       | { kind: 'pending', localId, target: Target }
+                      | { kind: 'unbound' }
                       | { kind: 'fieldAbsent', epoch: string | null, recordBirth: VersionReference | null }
 ```
 
@@ -595,10 +604,16 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
 - `liveHint` (§7.4) is not stored: the product's view rule computes it when the sender backs off
   (Appendix A).
 - `ReversibleAct`: the journal of an act opted into Undo (§7.3 Undo of an act), in its replica's
-  namespace, never shared across replicas. Its preimages are local user data and its ids private sync data:
-  neither enters telemetry, logs or reports. `unavailable` marks a source whose history an epoch change
-  took. `InverseRequest`: one Undo or Redo of an act; its slots are outbox entries (`OutboxEntry.inverseOf`
-  names the request) whose recipes hold the same private values.
+  namespace, never shared across replicas. Its preimages and written values are local user data and its
+  ids private sync data: neither enters telemetry, logs or reports. A preimage's `rowSeq` is the confirmed
+  row it was read over (null where none was), counted in `epoch`; an inverse act's is the row its restore
+  wrote over. `written` is the value the act left in each target, which a Redo writes back. `unavailable`
+  marks a source whose history is lost: an epoch change took it, its `ok` came without a readable receipt,
+  or its scope ended, which also empties its recipes, preimages and written values. `InverseRequest`: one
+  Undo or Redo of an act; its slots are outbox entries (`OutboxEntry.inverseOf` names the request) whose
+  recipes hold the same private values until the slot settles, when its recipe becomes `withdrawn`.
+  `skipped` lists the codes of the operations a slot skipped before sending. A `CancellationReceipt`'s
+  `sourceEntries` are the cancelled entries, `command` marking one that ran a product command.
 
 **The writer.** The store runs one writing transaction at a time. A commit (§7.1) waits for the
 writer, and the person waits for the commit, so the engine's other transactions are short. This is a
@@ -1331,7 +1346,8 @@ type Evidence = { expectedEpoch: string,
 ```
 
 The product decides which evidence it needs and refuses `invalid` without it; its handler answers the same
-`InverseDetail` with one outcome, since its effect is all or nothing. It holds while the epoch is the
+`InverseDetail` with one outcome, since its effect is all or nothing. A handler whose detail reports no such
+outcome is a technical contract fault, and the admission commits nothing. It holds while the epoch is the
 server's, every owned field is still at its version, every created record alive at its row sequence with
 its footprint, and every created scope at its seq; otherwise it skips `epoch-changed`, `version-changed`,
 `record-changed` or `scope-changed` and writes nothing. The probe's `probe.unbranch` undoes `probe.branch`.
@@ -1812,19 +1828,22 @@ type UndoRecipe =
   `drawn` before the act. A `command` recipe names an `inverse: true` command of the segment's scope kind;
   its evidence may name any scope. Anything else throws malformed before the act changes anything.
 - **Capture.** Before any segment changes a projection, the act reads each field target's value in
-  `drawn`: its *first local preimage*. An unset slot takes the target's `defaultValue`, the product's value
+  `drawn`: its *first local preimage*, with the sequence of the confirmed row it was read over (null where
+  none is confirmed) and the epoch that sequence counts in. An unset slot takes the target's `defaultValue`, the product's value
   equivalent to unset (`null` is a value); without one the act throws malformed. A named segment runs as one
   scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
   one `engine: "capture"` command when it writes a delta (none, or several, throws malformed). A capture
   command does not stop a retire (§7.1 step 4) from matching its removal.
 - **Record.** The act's transaction writes its `ReversibleAct` (§2.5), `actId` its gesture id: one source
-  entry per named segment that left an entry, with its recipes and preimages. A segment that writes nothing
-  leaves none, and an act left with none records nothing.
+  entry per named segment that left an entry, with its recipes, its preimages and the value the act left in
+  each target (`written`). A segment that writes nothing leaves none, and an act left with none records
+  nothing.
 - **Retention.** A source entry's `ok` stores `{epoch, n, outcome: 'ok', acceptedEffects}`, its receipt
   after the result's maps, and a terminal refusal `{epoch, n, outcome: 'refused'}`, in the result's
   transaction (§7.4), before the entry can settle or be collected. One attempt an epoch: a replayed answer
   replaces it. A death before that transaction leaves the entry `sent`, and its resend's stored result is
-  retained.
+  retained. An `ok` whose receipt the replica cannot read (§7.4) retains none, and the source's history is
+  `unavailable`.
 - **Epochs.** An epoch change (§7.5 step 1) drops every attempt of another epoch. A source still in the
   outbox replays and earns its own; a collected one has none, and an inverse never reconstructs it. A
   changed-epoch answer that records its results before the change keeps those, which are the new epoch's.
@@ -1832,60 +1851,85 @@ type UndoRecipe =
 - **Maps.** A write map's logical map (§7.7) renames the journal's scopes, targets, records, typed inputs and
   receipts with the queue.
 - **Release.** `releaseReversibleAct(actId)` says the product's stack no longer needs the act: its record and
-  values go, once no unsettled inverse request reads it.
+  values go, once no unsettled inverse request reads it, with a settled request whose inverse act it is. No
+  product stack outlives its process: engine start releases every act and cancellation that no unsettled
+  request reads.
+- **Scope end.** A scope that ends (§7.5 step 2, or a dead governing row) keeps none of its values in the
+  journal, in the same transaction: its sources lose their recipes, preimages and written values and become
+  `unavailable`, a cancellation's units there go, and a slot still waiting there vacates, skipped
+  `scope-gone`. A release (§7.9) is no end: the values stay the person's.
 
 `requestInverse(sourceActId, inverseSlots?)` asks for the inverse of a journaled act, in one transaction.
 `inverseSlots`, a complete `[{index, recipes}]` by source ordinal, replaces the stored recipes (a product's
-Redo); there are no callbacks. Asking again for the same act answers its existing request.
+Redo); there are no callbacks. Each recipe is checked as at the act, and a field target must be one the act
+journaled a preimage of; anything else throws malformed. A cancellation journals none, so its replacement
+holds no field recipe. Asking again for the same act answers its existing request.
 1. **Held cancel.** An act every entry of which is still held is cancelled at once, as `undo` cancels it,
    its dependents folded silently. The request settles `cancelled`, whether anything drawn changed, and the
-   act leaves the journal. In the same transaction a `CancellationReceipt` keeps what actually disappeared
-   from `drawn`: each register the act wrote that now reads otherwise, with the value the act wrote and the
-   version it now reads (a pending entry's write, the confirmed row's accepted version, or unset in the
-   record's birth), and each record it created that is now absent, with the act's own creation values. A
-   later local edit that masks the act's write took nothing out and is no unit. A reference taken before
-   the replica held an epoch belongs to the epoch it then takes.
+   act leaves the journal. In the same transaction a `CancellationReceipt` lists the cancelled entries and
+   keeps what the act's ordinary deltas actually took out of `drawn` (a product command's effects are its
+   own, and have no generic Redo): each register the act wrote that now reads otherwise, with the value the
+   act wrote, the value it reads now and the version it reads now (a pending entry's write, the confirmed
+   row's accepted version, or unset in the record's birth), and each record it created that is now absent,
+   with the act's own creation values. A later local edit that masks the act's write took nothing out and is
+   no unit. A reference taken before the replica held an epoch belongs to the epoch it then takes.
 2. **Reserve.** Otherwise the request takes an inverse act id and a request id, and one stamp. Walking the
    act's sources backwards, each source's generic recipes become one restore slot in its origin scope, each
    target in one slot only, restored to its first preimage; each `command` recipe becomes a slot of its own.
    Each slot is an outbox entry at the next commit position, `ready`, its command's arguments still unbound,
    carrying the optimistic projection of its restore (each value at the request's stamp, a created record
-   dead) as its origin prediction. The inverse act journals each slot as a source whose recipes put back the
-   values its targets show now, a created record's life only where a write can bring it back.
+   dead) as its origin prediction. The inverse act journals each restore slot as a source whose recipes put
+   back the values the act wrote (`written`), never a later local edit's, and a created record's life only
+   where a write can bring it back. Its preimages are read at the row each restore writes over, which the
+   restore's ACK names.
 3. **Barrier.** The sender stops at a slot still waiting (§7.4); later entries keep their positions, and a
    restart changes nothing.
 4. **Materialize.** Once every source of the act is authoritative (ended, or `acked` with this epoch's
-   attempt), in the request transaction or the numbering transaction: each `field` operation takes the latest
-   version the act's current-epoch receipts own of its target, and is dropped when none owns it (a refused or
-   collected source owns nothing). A `createdRecord` is proven by its own receipts alone: its creation
-   (`beforeRowSeq: null`) and each later own write continuing it (`beforeRowSeq` the previous `rowSeq`); a gap,
-   or a source whose history is `unavailable`, drops it. A `command` slot gets its evidence: the latest owned
-   version of each selected field that has one, each created record proven so, and each created scope proven
-   by its own receipts (`beforeSeq: null`, then each next `beforeSeq` the previous `seq`); a created record or
-   scope it cannot prove drops the whole slot. `expectedEpoch` is the replica's epoch. The arguments bind
-   atomically; a dropped operation's projection is withdrawn; a slot left with nothing ends `resolved`
-   unnumbered. Numbered arguments never change: an epoch change replays the entry as it is, and the server
-   skips it.
+   attempt), in the request transaction or the numbering transaction. An Undo never erases a write the device
+   had not seen when it acted: each `field` operation takes the latest version the act's current-epoch
+   receipts own of its target only if nothing but this device's own receipted writes came between the row its
+   preimage was read over and the act's last write of the record. From the preimage's `rowSeq`, each next row
+   of the record the journal's receipts hold starts where the last ended (`beforeRowSeq` the previous
+   `rowSeq`), until the act's last; a write the device had not seen breaks the chain, and the operation skips
+   `history-changed`. The check is per row: an unseen write of another field of the record breaks it too. A
+   preimage of another epoch skips `epoch-changed`. An operation on a target no source owns is dropped, as
+   there is nothing to take back (a refused source owns nothing), unless a source's history is
+   `unavailable`, when it skips `history-changed`. A `createdRecord` is proven by its own receipts alone: its
+   creation (`beforeRowSeq: null`) and each later own write continuing it; a gap, or `unavailable` history,
+   skips it `history-changed`. A `command` slot gets its evidence: the latest owned version of each selected
+   field that has one, each created record proven so, and each created scope proven by its own receipts
+   (`beforeSeq: null`, then each next `beforeSeq` the previous `seq`); a created record or scope it cannot
+   prove skips the whole slot `history-changed`. `expectedEpoch` is the replica's epoch. The arguments bind
+   atomically; a skipped or dropped operation's projection is withdrawn; a slot left with nothing to send
+   ends `resolved` unnumbered. Numbered arguments never change: an epoch change replays the entry as it is,
+   and the server skips it.
 5. **Results.** A slot's `ok` records its outcomes, withdraws a skipped operation's projection and notes
-   whether its receipt changed a row; a refusal, or an entry that ends without a result, settles it skipped by
-   that code. The request settles with its last slot: `changed` from accepted effects, `appliedCount` and
-   `skippedCount` over every operation, an atomic product slot counting one. The restore's ACK reclocks every
-   later queued write of a register it restored, so an edit queued after the Undo stays the newest.
+   whether its receipt changed a row; an `ok` whose outcomes the replica cannot read (§7.4), a refusal, or an
+   entry that ends without a result, settles it skipped by `invalid` or that code. The request settles with
+   its last slot: `changed` from accepted effects, `appliedCount` and `skippedCount` over every operation,
+   those skipped before sending included, an atomic product slot counting one. A settled slot keeps no values.
+   The restore's ACK reclocks every later queued write of a register it restored, so an edit queued after the
+   Undo stays the newest.
 
 A Redo of a cancellation is `requestInverse(inverseActId)` too, and reserves ordinary restore slots at once,
-one a scope: each field unit restores its value expecting the version its reference binds to, an accepted
-version of this epoch or what a pending entry's receipt accepted, or an absence in that birth (`expected:
-{kind: 'absent', born}`); each created record is created again (`createRecord`) only while wholly absent. The
-slots wait while an entry a reference names has no authoritative outcome; a refused, dropped or unowned
-reference drops its operation, never substituting what is visible now. The receipt, and the acts whose
-sources its references wait on, stay until the Redo settles or the product releases it.
+one a scope: each field unit restores the value the act wrote expecting the version its reference binds to,
+an accepted version of this epoch, or an absence in that birth (`expected: {kind: 'absent', born}`); each
+created record is created again (`createRecord`) only while wholly absent. A pending reference binds in its
+entry's ACK transaction to the version that entry wrote: from its receipt, or an ordinary entry's own delta
+stamp, which the restore's condition checks; a text without a receipt binds nothing (`unbound`). The slots
+wait while an entry a reference names is queued; a reference left unbound, or whose entry ended without an
+ACK, skips its operation `reference-unbound`, never substituting what is visible now. A cancellation of an
+act that ran a product command has no generic Redo: without `inverseSlots` it answers `{kind:
+'unavailable', requestId: null, reason: 'product-redo-required'}`. The receipt, and the acts whose sources
+its references wait on, stay until the Redo settles or the product releases it.
 
 `readInverseResult(requestId)` answers `{kind: 'cancelled', requestId, inverseActId, changed}`,
 `{kind: 'pending', requestId, inverseActId, localChanged}`, `{kind: 'settled', requestId, inverseActId,
 changed, appliedCount, skippedCount}`, or `{kind: 'unavailable', requestId, reason}`. A transport failure
-stays pending. A Redo is `requestInverse(inverseActId)`: it restores only what the Undo actually applied, since
-it owns nothing else. Sign-in's Discard of a product settles that product's waiting slots skipped
-`discarded` and withdraws their values; slots stay counted as unsent work until then.
+stays pending. A Redo is `requestInverse(inverseActId)`: it writes back the values the act wrote, and only
+where the Undo applied, since it owns nothing else. Sign-in's Discard of a product settles that product's
+waiting slots skipped `discarded`, and takes that product's source entries, cancellation units and requests
+with its work; an Add carries them. Slots stay counted as unsent work until then.
 
 ### §7.4 Sender (one per replica: the web leader tab, or an app-scoped worker)
 
@@ -1956,12 +2000,17 @@ with a `5xx`, so a product can tell the log's outage from a refusal.
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
 a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
-An authenticated `200` validates every scoped receipt before any ACK-side mutation, including offset
-sampling, each against the sent entry at its result's `n`: an entry acknowledged under an earlier replica id
-keeps its old `n` until it settles, and no result answers it. Require the origin and every predicted scope after global-ID remaps; reject duplicate,
+An authenticated `200` validates every scoped receipt, and every inverse slot's outcomes, before any
+ACK-side mutation, including offset sampling, each against the sent entry at its result's `n`: an entry
+acknowledged under an earlier replica id keeps its old `n` until it settles, and no result answers it.
+Require the origin and every predicted scope after global-ID remaps; reject duplicate,
 unknown or invalid scopes, malformed slots, rows of a type outside their declared scope, and missing
 required markers. Additional well-formed discovered scopes are accepted and persisted as receipt-only
-empty-d markers. A continuation has positive safe-integer `n ≤ lastN + 1`, strictly after every
+empty-d markers. A response over `SCOPED_RESPONSE_MAX_BYTES` that answers a scoped entry is a transport
+failure. A rejected receipt never stops sync: its `ok` is *unreadable*, and still acknowledges its entry,
+since the server holds the write. The entry records no receipt, every projection of it ends at once (the
+pull brings its rows), its source's Undo history is `unavailable`, an inverse slot settles skipped
+`invalid`, and the response emits `sync-push-malformed`, with no receipt content. A continuation has positive safe-integer `n ≤ lastN + 1`, strictly after every
 returned result, and nonnegative safe-integer `retryAfterMs`; malformed metadata is a static transport
 failure with no ACK mutation. An authenticated changed-epoch `200` triggers atomic recovery before ordinary result batches.
 If the replica has no retained acknowledgement from an older epoch, record its successful results
@@ -2515,13 +2564,15 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
 Then, in one local transaction:
 1. **Discard.** For each decision answered discard, the entries it covers end `discarded`, deletes
    released at the start among them, and the product's device rows in the `anon` replica are
-   deleted, with the journal's whole source entries of that product and their preimages (§7.3 Undo of
-   an act). An act left with no source entry goes.
+   deleted, with the journal's whole source entries of that product and their preimages, its
+   cancellations' units and its inverse requests (§7.3 Undo of an act). An act or cancellation left with
+   no entry of its own goes.
 2. **Bind.** A `dormant(A)` replica becomes `bound(A)`, with every cursor `null`. Otherwise the
    `anon` replica, when entries or pending product device work remain, is rebound (`state := bound`, `account := A`).
    Otherwise a new `bound(A)` replica is created.
 3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries or pending product device
-   work remain in the `anon` replica, they move, with its device rows, notices and journal, into `bound(A)`, preserving local ids,
+   work remain in the `anon` replica, they move, with its device rows, notices, journal, cancellations and
+   inverse requests, into `bound(A)`, preserving local ids,
    gesture ids and stamps, after `bound(A)`'s own entries in their commit order. The `anon` replica
    is then deleted. Products merge writing-bearing device-row collisions without dropping either
    document; the destination's current draft stays current and incoming writing remains available

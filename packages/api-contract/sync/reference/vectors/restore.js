@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { CONSTANTS } from '../core/constants.js';
 import { admit } from '../server/admit.js';
 import { ServerState } from '../server/state.js';
+import { EffectPlanProduct } from './effect-plan.js';
 import { overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
 
 const NOW = 1_000_000;
@@ -138,7 +139,12 @@ function unbranch() {
   assert.deepEqual(grown.expect.result.detail.command, { inverse: { outcomes: [{ index: 0, s: 'skipped', code: 'scope-changed' }] } });
   const unproved = admitted('an unbranch without proof of the created tree is invalid', branched, call({ ...evidence(), unchangedCreatedScopes: [] }));
   assert.equal(unproved.expect.result.code, 'invalid');
-  return [undone, grown, unproved];
+  const effectPlan = { detail: { created: true }, fault: true };
+  assert.throws(() => admit({ state: new ServerState(branched), registry, product: new EffectPlanProduct(effectPlan), origin: A, intent: call(evidence()), serverNow: NOW, limits: CONSTANTS }),
+    /an inverse command reports no outcome/);
+  const silent = vector('an inverse command whose detail reports no outcome is a technical contract fault, and commits nothing',
+    { state: branched, origin: A, intent: call(evidence()), serverNow: NOW, effectPlan }, { fault: true, state: branched });
+  return [undone, grown, unproved, silent];
 }
 
 export function files() {

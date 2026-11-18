@@ -7,6 +7,7 @@ import { moveEntry } from '../core/machines.js';
 import { compactRow, isAlive, recordKey, stampsOf } from '../core/rows.js';
 import { Cursor } from '../core/wire.js';
 import { deltasOf } from './dependents.js';
+import { forgetJournalScope } from './journal.js';
 import { epochChange } from './lifecycle.js';
 import { drawn, stored } from './views.js';
 
@@ -133,6 +134,7 @@ function forget(replica, ctx, scope, kind) {
     ? [scope, `self/overlay/${scope.slice('tree/'.length)}`] : [scope];
   for (const endedScope of scopes) {
     replica.forgetScope(endedScope);
+    forgetJournalScope(replica, ctx.ended, endedScope);
     if (replica.known[endedScope] !== 'gone') replica.known[endedScope] = kind;
     endScopeProjections(replica, ctx, endedScope);
   }
@@ -152,6 +154,7 @@ function receiveRow(replica, ctx, scope, target, row) {
     if (type?.identity === 'derived') replica.addSpent(scope, row.t, row.id, row.born);
     for (const ref of governed) {
       replica.known[ref] = 'gone';
+      forgetJournalScope(replica, ctx.ended, ref);
       endScopeProjections(replica, ctx, ref);
     }
     delete target.rows[key];
