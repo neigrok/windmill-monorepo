@@ -5,8 +5,7 @@ import { PlanError } from '../../../../src/platform/domain-kit/plans.js';
 import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { Contract, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
-import { roadmapRegistry, runAction } from './actionVectors.js';
-import { runRead } from './vectors.js';
+import { roadmapRegistry, runAction, runRead } from './vectors.js';
 
 const READS = ['account', 'board', 'diagnostics', 'graph', 'guides', 'landing', 'legend', 'pointers', 'progress', 'search'].map((name) => `${name}.json`);
 const ACTIONS = ['roadmaps', 'steps', 'kinds', 'progress', 'workspace', 'landing'].map((name) => `${name}-actions.json`);

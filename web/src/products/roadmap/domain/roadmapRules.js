@@ -1,13 +1,13 @@
 // @ts-check
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
+import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { ChoiceSpec, CountSpec, TextSpec } from '../../../platform/domain-kit/values.js';
 import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/values.js').Violation} Violation */
 /** @typedef {import('../../../platform/domain-kit/entities.js').RecordRef} RecordRef */
-/** @typedef {import('../../../platform/domain-kit/refusals.js').Refused} Refused */
 /** @typedef {import('../../../platform/domain-kit/refusals.js').RefusalPath} RefusalPath */
 /**
  * @typedef {{ kind: 'invalid', violation: Violation }
@@ -117,4 +117,25 @@ export function refusalForm(refusal) {
  */
 export function writeIn(scope, plan, result) {
   return ActDecision.write(new ActPlan([new ScopedPlan(scope, plan)]), result);
+}
+
+// A record the act names that the roadmap never held, or no longer draws where it must: refused before anything
+// is written, as the kit's gone check refuses.
+/**
+ * @param {string} type
+ * @param {import('../../../platform/domain-kit/entities.js').RecordID} id
+ */
+export function gone(type, id) {
+  return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('unknown-record', { t: type, id }, null, 'predicted')));
+}
+
+// The growth rule (§7.3) heard where the gesture is made: a cap another device has not yet filled refuses here.
+/**
+ * @param {import('../../../platform/domain-kit/reading.js').Capacity} capacity
+ * @param {number} growth
+ * @param {import('../../../platform/domain-kit/entities.js').RecordRef | null} subject
+ */
+export function full(capacity, growth, subject) {
+  const refused = capacity.refusal(growth, subject);
+  return refused === null ? null : ActDecision.refuse(RoadmapRefusals.ofRefused(refused));
 }

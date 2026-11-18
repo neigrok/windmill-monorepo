@@ -5,10 +5,9 @@ import { SaveDraft } from '../../../platform/domain-kit/drafts.js';
 import { EntityType, Id, sameJson } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
 import { Placement } from '../../../platform/domain-kit/reading.js';
-import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
-import { RoadmapRefusals, RoadmapScopes, RoadmapSpecs, writeIn } from './roadmapRules.js';
+import { RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
@@ -99,14 +98,6 @@ export const StepNote = new EntityType({
 /** @param {import('../../../platform/domain-kit/drafts.js').Draft<StepNoteValue>} draft */
 export function SaveStepNote(draft) { return SaveDraft.ofDraft(draft, RoadmapRefusals); }
 
-/**
- * @param {EntityType<any, null>} type
- * @param {import('../../../platform/domain-kit/entities.js').RecordID} id
- */
-function gone(type, id) {
-  return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('unknown-record', { t: type.type, id }, null, 'predicted')));
-}
-
 // A new subtask or link, at the bottom of its step's list. Its step must be one the roadmap knows, present or
 // deleted elsewhere.
 export class AddToWorkspace {
@@ -140,11 +131,11 @@ export class AddToWorkspace {
    * @param {ActIDSource} ids
    */
   decide({ known, anchor, capacity, moment }, ids) {
-    if (!known) return gone(RoadmapStep, this.step);
+    if (!known) return gone(RoadmapStep.type, this.step);
     const scope = RoadmapScopes.overlay(this.tree);
     const valid = new Valid(this.item(ids.mint(this.type, scope)), moment);
-    const refused = capacity.refusal(1, valid.id.ref);
-    if (refused) return ActDecision.refuse(RoadmapRefusals.ofRefused(refused));
+    const refused = full(capacity, 1, valid.id.ref);
+    if (refused) return refused;
     const plan = new Plan();
     plan.insert(valid, anchor);
     return writeIn(scope, plan, valid.id.record);
@@ -198,7 +189,7 @@ export class ChangeInWorkspace {
 
   /** @param {ReturnType<typeof readItem>} loaded */
   decide({ item, moment }) {
-    if (item === null) return gone(this.type, this.id);
+    if (item === null) return gone(this.type.type, this.id);
     const valid = new Valid(/** @type {any} */ (item).with(this.changes), moment, Object.keys(this.changes));
     const before = /** @type {Record<string, import('../../../platform/domain-kit/values.js').Json>} */ (item.fields());
     const changed = valid.checked.filter((name) => !sameJson(before[name], valid.written[name]));
@@ -231,9 +222,9 @@ export class MoveInWorkspace {
 
   /** @param {ReturnType<typeof readItem>} loaded */
   decide({ item, siblings }) {
-    if (item === null) return gone(this.type, this.id);
+    if (item === null) return gone(this.type.type, this.id);
     const ids = siblings.map((sibling) => String(sibling.id.record));
-    if (this.below !== null && !ids.includes(this.below)) return gone(this.type, this.below);
+    if (this.below !== null && !ids.includes(this.below)) return gone(this.type.type, this.below);
     const above = ids[ids.indexOf(this.id) - 1] ?? null;
     if (this.below === this.id || this.below === above) return ActDecision.unchanged(null);
     const plan = new Plan();

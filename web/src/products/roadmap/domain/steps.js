@@ -3,7 +3,6 @@
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
-import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation, precondition } from '../../../platform/domain-kit/values.js';
 import { utf8 } from '../../../platform/sync/core/encoding.js';
@@ -11,15 +10,12 @@ import { between, dropKey, isOrderKey } from '../../../../../packages/api-contra
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { components, FollowGraph } from './graph.js';
 import { LandingNote, RoadmapTree } from './records.js';
-import { RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, writeIn } from './roadmapRules.js';
+import { RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, writeIn } from './roadmapRules.js';
 
-/** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/time.js').Moment} Moment */
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
-/** @typedef {import('../../../platform/domain-kit/reading.js').Capacity} Capacity */
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActIDSource} ActIDSource */
-/** @typedef {import('../../../platform/domain-kit/entities.js').ViewRecord} ViewRecord */
 /** @typedef {{ url: string, label: string }} StepWebLink */
 /** @typedef {{ label?: string, icon?: string, color?: string, description?: string, links?: StepWebLink[] }} StepChanges */
 /** @typedef {StepChanges & { key: string }} ImportedStep */
@@ -111,7 +107,7 @@ export const RoadmapLink = new EntityType({
  * @param {Reader} read
  */
 export function readTree(tree, read) {
-  read.repository(RoadmapStep);
+  precondition(read.scope === RoadmapScopes.tree(tree), `the steps of ${tree} are read in its tree scope`);
   const nodes = [];
   const edges = [];
   for (const record of read.views.drawn.values()) {
@@ -177,17 +173,6 @@ function firstLoop(tree, links, made) {
 /** @param {string[]} link @param {Path} at */
 function loopAt(link, at) {
   return new Violation(RoadmapChecks.cycle, at, { kind: 'custom', custom: link[0] === link[1] ? 'self' : 'loop' });
-}
-
-/** @param {string} id */
-function gone(id) {
-  return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('unknown-record', { t: RoadmapStep.type, id }, null, 'predicted')));
-}
-
-/** @param {Capacity} capacity @param {number} growth @param {import('../../../platform/domain-kit/entities.js').RecordRef | null} subject */
-function full(capacity, growth, subject) {
-  const refused = capacity.refusal(growth, subject);
-  return refused === null ? null : ActDecision.refuse(RoadmapRefusals.ofRefused(refused));
 }
 
 // One imported step and the links that lead to it: the unit a chunk holds whole.
@@ -262,7 +247,8 @@ export class StepsImport {
     const keys = imported.steps.map((step) => step.key);
     precondition(new Set(keys).size === keys.length, 'an import names each step once');
     for (const [from, to] of imported.links) precondition(keys.includes(from ?? '') && keys.includes(to ?? ''), 'an import links its own steps');
-    this.imported = imported;
+    const links = new Map(imported.links.map(([from = '', to = '']) => [jcs([from, to]), [from, to]]));
+    this.imported = { steps: imported.steps, links: [...links.values()] };
     this.tree = tree;
     this.under = under;
     Object.freeze(this);
@@ -375,7 +361,7 @@ export class CreateStep {
   decide({ tree, steps, links, note, moment }, ids) {
     const scope = RoadmapScopes.tree(this.tree);
     const unknown = this.prerequisites.find((id) => !tree.nodesById.has(id));
-    if (unknown !== undefined) return gone(unknown);
+    if (unknown !== undefined) return gone(RoadmapStep.type, unknown);
     const id = String(ids.mint(RoadmapStep, scope).record);
     const ord = keyAfter(siblingOrds(tree, this.prerequisites[0] ?? null));
     const step = new Valid(new RoadmapStepValue(new Id(id, RoadmapStep), { ...this.step, ord }), moment);
@@ -443,7 +429,7 @@ export class ChangeStep {
 
   /** @param {ReturnType<typeof readStep>} loaded */
   decide({ step, absent, note, moment }) {
-    if (step === null) return gone(this.step);
+    if (step === null) return gone(RoadmapStep.type, this.step);
     return revived(this.tree, step, new Valid(step.with(this.changes), moment, Object.keys(this.changes)), absent, note);
   }
 }
@@ -480,8 +466,8 @@ export class MoveStep {
 
   /** @param {ReturnType<typeof readStep> & { members: { id: string, key: string }[] }} loaded */
   decide({ step, absent, note, moment, members }) {
-    if (step === null) return gone(this.step);
-    if (this.below !== null && !members.some((member) => member.id === this.below)) return gone(this.below);
+    if (step === null) return gone(RoadmapStep.type, this.step);
+    if (this.below !== null && !members.some((member) => member.id === this.below)) return gone(RoadmapStep.type, this.below);
     const own = step.ord !== null && isOrderKey(step.ord) ? step.ord : null;
     const above = own === null ? null : [...members].filter((member) => member.key < own || (member.key === own && compareText(member.id, this.step) < 0))
       .sort((a, b) => compareText(a.key, b.key) || compareText(a.id, b.id)).at(-1)?.id ?? null;
@@ -540,7 +526,7 @@ export class ChangePrerequisites {
   /** @param {LoadedTree} loaded */
   decide({ tree, links, note, moment }) {
     const unknown = [this.step, ...this.add].find((id) => !tree.nodesById.has(id));
-    if (unknown !== undefined) return gone(unknown);
+    if (unknown !== undefined) return gone(RoadmapStep.type, unknown);
     const live = new Set(tree.edges.filter((edge) => edge.present).map((edge) => jcs([edge.from, edge.to])));
     const adding = this.add.filter((from) => !live.has(jcs([from, this.step]))).map((from) => [from, this.step]);
     const loop = firstLoop(tree, adding, new Set());
@@ -591,7 +577,7 @@ export class ImportSteps {
    * @param {ActIDSource} ids
    */
   decide({ tree, steps, links, note, moment }, ids) {
-    if (this.under !== null && !tree.nodesById.has(this.under)) return gone(this.under);
+    if (this.under !== null && !tree.nodesById.has(this.under)) return gone(RoadmapStep.type, this.under);
     if (this.imported.steps.length === 0) return ActDecision.unchanged({});
     const scope = RoadmapScopes.tree(this.tree);
     const planned = new StepsImport(this.imported, tree, this.under).planned(moment, ids, scope);

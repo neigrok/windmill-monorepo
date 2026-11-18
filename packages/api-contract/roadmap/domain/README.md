@@ -1,9 +1,13 @@
-# Roadmap pure reads
+# Roadmap domain corpus
 
-Each JSON file holds `{name,input,expect}` cases. The web corpus discovers every file and compares
-its complete output. These are normalized domain records, not engine record envelopes. The adapter,
-registry-backed ProductCorpus, actions and live UI binding are separate work. No operation reads
-storage, time, randomness, personal acknowledgments or localization.
+Each JSON file holds `{name,input,expect}` cases, except `rules.json`, the pinned rule book. The web
+corpus (`web/test/products/roadmap/domain/corpus.test.js`) claims every file by name and compares
+complete outputs. The pure reads below take normalized domain records; the actions, `values.json`
+and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
+rows and `../../sync/roadmap.registry.json` (see [Actions](#actions)). No operation reads storage,
+time, randomness or localization.
+
+## Pure reads
 
 `RoadmapTree` constructs the supplied normalized tree, nodes and kinds. Trees retain `present`,
 `read`, immutable `parent`, metadata, every node record including absent ones, every edge's presence,
@@ -88,7 +92,7 @@ The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, t
 graph reads only; it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}`
 or MCP's `{query,color,kind}`. Optional query fields have the defaults in `reads.js`.
 
-The production modules are `records.js` (normalized values and authored ordering), `graph.js`
+The read modules are `records.js` (normalized values, authored ordering and the device's landing note), `graph.js`
 (raw adjacency, iterative strongly connected components and compact prerequisite/debt closure),
 `account.js` (standing, least-fixed-point completion, effective dates and guides), `reads.js`
 (Board, legend, search and landing facts), and `diagnostics.js` (bounded findings). Detailed followed
@@ -103,3 +107,69 @@ The timed Board path includes a fresh FollowGraph, state/debt derivation, cards,
 only normalized record construction stays outside it. Other size timings are reported, not assigned
 new budgets. Run all with `node --test --test-concurrency=1 test/products/roadmap/domain/*.test.js`,
 then `npm run check:domain`.
+
+## Actions
+
+Every gesture of the spec's §5 is an act on the kit (§9.5) in `web/src/products/roadmap/domain/`:
+`roadmaps.js` (`tree`, `meta`), `steps.js` (`node`, `edge`, and the import), `kinds.js`, `progress.js`
+(`progress`, `pointer`), `workspace.js` (`subtask`, `stepLink`, `stepNote`) and `landing.js` (§6), with
+`roadmapRules.js` (specs, limits, the genesis kinds, `RoadmapRefusals`) and `ruleBook.js` (the book over
+the registry its caller composes). Files:
+
+| File | Cases |
+|---|---|
+| `rules.json` | Entity facts and the rule book, compared by `RuleBookParity` |
+| `values.json` | Every LOCAL spec, and each writable entity's check order |
+| `roadmaps-actions.json` | Create a roadmap (genesis kinds, first steps, chunks), delete a root held, title and guide |
+| `steps-actions.json` | Create a step with its links, change and reorder with the step's life, delete held, prerequisites added and retired through absent steps, loops, import in chunks |
+| `kinds-actions.json` | Create, change, reorder, delete; a worn hue; the cap; `roadmap.recolourKind` and its predictions |
+| `progress-actions.json` | Complete and Reset; a step that opens or owns a roadmap takes no mark; pointers |
+| `workspace-actions.json` | Subtasks and links in their step's order; the note saved as text |
+| `landing-actions.json` | The landing read and its clearing; the one list of what cannot land |
+
+**Scenes.** An action case is `{action, input, scopes: {<scope>: {drawn, stored?}}, device?, ids?, now,
+offsetSeconds}`: each scope's records are engine rows (`stored` defaults to `drawn`), `device` holds
+device rows by key, and `ids` are minted in order across scopes. Its `expect` is `{decision}`:
+`{write: {segments: [{scope, gesture}], result}}` with each segment's gesture in the kit's form,
+`{unchanged: {result}}` or `{refuse: <refusal>}`. A read case replaces `action` with `read`.
+Scopes are `self/roadmap`, `tree/<T>` and `self/overlay/<T>`; the device row is `landing:<T>`.
+
+| Action | Input | Result |
+|---|---|---|
+| `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2`, and the steps, chunked |
+| `DeleteRoadmap` | `{tree}` | `null`; held; a subtree's record refuses `notARoot` |
+| `WriteRoadmap` | `{tree, title?, guide?}` | `null`; the changed fields of `meta` |
+| `CreateStep` | `{tree, step: {label, icon?, color?, description?, links?}, prerequisites}` | the step's id; the step after the steps its first prerequisite leads to (or after the first steps), one link from each prerequisite, and the landing note |
+| `ChangeStep` | `{tree, step, changes}` | `null`; a `revive` naming the changed fields; a step `drawn` holds dead is noted `revived` |
+| `MoveStep` | `{tree, step, below, siblings}` | `null`; `siblings` are the trunk parent's steps the layout names; the key between `below` and the next sibling, as a `revive`; a drop in place writes nothing |
+| `DeleteStep` | `{tree, step}` | `null`; held; the step's death alone |
+| `ChangePrerequisites` | `{tree, step, add, remove}` | `null`; a removed prerequisite followed through an absent step retires each link the step reaches it by |
+| `ImportSteps` | `{tree, imported, under?}` | `{key: id}`; under `under`, each step the import has no prerequisite for follows it |
+| `CreateKind`, `ChangeKind`, `MoveKind`, `DeleteKind` | `{tree, kind: {hue, label?, description?}}`, `{tree, kind, changes}`, `{tree, kind, below}`, `{tree, kind}` | the kind's id, or `null` |
+| `RecolourKind` | `{tree, kind, hue}` | `null`; the command, predicting the kind's hue and every step wearing the old hue, present or not, by id |
+| `Complete`, `Reset` | `{tree, step, outOfOrder?}`, `{tree, step}` | `null`; the step's `mark` |
+| `SetPointer`, `ClearPointer` | `{tree, step, opens}`, `{tree, step}` | `null` |
+| `AddSubtask`, `ChangeSubtask`, `MoveSubtask`, `DeleteSubtask` | `{tree, step, label}`, `{tree, subtask, changes}`, `{tree, subtask, below}`, `{tree, subtask}` | the subtask's id, or `null`; a move lands below another of its step's subtasks |
+| `AddStepLink`, `ChangeStepLink`, `MoveStepLink`, `DeleteStepLink` | `{tree, step, link: {url, title?}}`, `{tree, link, changes}`, `{tree, link, below}`, `{tree, link}` | as subtasks |
+| `SaveStepNote` | `{tree, step, text}` | the draft save's `{values, exists}`; the note opened from `drawn` or new |
+| `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; the note less what was told, or no row |
+| read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the note's steps and links, and its revived steps now present |
+| read `cannotLand` | `{notices}` | `{listed: [{id, gestureId, reason, subject, values}], unexpected: [{id, code}]}`; `reason` ∈ `roadmapDeleted` (`scope-dead`), `capFilled` (`cap`), `accessEnded` (`forbidden`, `not-found`), `noteTooLong` (`too-large` on a note) |
+
+Limits refuse before anything is written, in this order where a case meets several: the bounds of
+the values written, a prerequisite or step the roadmap never held (`gone`), a loop among what steps
+follow (`edge.cycle`, `custom` `loop` or `self`; a loop of absent steps alone is admitted), a hue
+another present kind wears (`kind.hue.worn`), then the caps by the growth rule. A step that owns a
+subtree or opens a roadmap refuses `progress.opening`. Imports chunk at 500 records and half
+`PUSH_MAX_BYTES`, measured as each record's JCS bytes, a step with the links that lead to it.
+
+**Refusal forms.** `{invalid: violation}`, `{gone | taken | tooLarge: {subject, path}}`,
+`{full: {type, cap, path}}`, and `{roadmapGone | unreachable | notARoot | stepOpensARoadmap |
+depthLimit | other: {code, subject, detail, path}}`.
+
+**Waiting on the kit.** The kit refuses a keyed create that writes no field (§8.3 rule 8), and an
+`edge` has none, so the six cases that write a link fail on that rule on the web, as the corpus
+asserts, until the kit admits it. `roadmap.setVisibility` and `roadmap.createSubtree` have no cases:
+the first takes the gesture's stamp as an argument, which a decision cannot know, and the second
+predicts records in other scopes, which the kit's predictions cannot name.
+

@@ -8,10 +8,11 @@ import { RoadmapLink, RoadmapLinkValue, RoadmapStep, RoadmapStepValue } from '..
 import { RoadmapKind, RoadmapKindValue } from '../../../../src/products/roadmap/domain/kinds.js';
 import { StepMark, StepMarkValue, StepPointer, StepPointerValue } from '../../../../src/products/roadmap/domain/progress.js';
 import { StepLink, StepLinkValue, StepNote, StepNoteValue, Subtask, SubtaskValue } from '../../../../src/products/roadmap/domain/workspace.js';
-import { RoadmapRefusals } from '../../../../src/products/roadmap/domain/roadmapRules.js';
+import { GENESIS_KINDS, RoadmapRefusals } from '../../../../src/products/roadmap/domain/roadmapRules.js';
+import { DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
 import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
-import { roadmapRegistry } from './actionVectors.js';
+import { roadmapRegistry } from './vectors.js';
 
 const book = new RoadmapRules(roadmapRegistry).book;
 const T = 't_0000000000000001';
@@ -40,4 +41,8 @@ test('the rule book is the one pinned in rules.json', () => {
 test('every rule has its vector and every code maps to a roadmap refusal on both paths', () => {
   const actions = ['roadmaps', 'steps', 'kinds', 'progress', 'workspace', 'landing'].map((name) => `roadmap/domain/${name}-actions.json`);
   RuleBookCheck.check(book, RoadmapRefusals, 'roadmap/domain/values.json', actions);
+});
+
+test("a new roadmap's genesis kinds are the server's", () => {
+  assert.deepEqual(GENESIS_KINDS, DEFAULT_KINDS);
 });

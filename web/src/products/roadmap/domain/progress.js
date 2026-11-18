@@ -3,10 +3,9 @@
 import { ActDecision } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Id } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
-import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
-import { RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, writeIn } from './roadmapRules.js';
+import { RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
@@ -65,11 +64,6 @@ export const StepPointer = new EntityType({
   decode: (f) => new StepPointerValue(new Id(f.id, StepPointer), f.string('opens', '')),
 });
 
-/** @param {string} step */
-function gone(step) {
-  return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('unknown-record', { t: RoadmapStep.type, id: step }, null, 'predicted')));
-}
-
 // What a mark or a pointer reads of its step in the tree, and of the step in the person's overlay.
 class StepOverlay {
   /**
@@ -119,7 +113,7 @@ export class MarkStep {
 
   /** @param {StepOverlay} loaded */
   decide({ known, opens, mark, moment }) {
-    if (!known) return gone(this.step);
+    if (!known) return gone(RoadmapStep.type, this.step);
     if (this.status === 'complete' && opens) throw new Violation(RoadmapChecks.opening, new Path('step'), { kind: 'custom', custom: 'opens' });
     if (mark.holds(this.status, this.outOfOrder)) return ActDecision.unchanged(null);
     const plan = new Plan();
@@ -148,7 +142,7 @@ export class PointStep {
 
   /** @param {StepOverlay} loaded */
   decide({ known, pointer, moment }) {
-    if (!known) return gone(this.step);
+    if (!known) return gone(RoadmapStep.type, this.step);
     if ((pointer?.opens ?? null) === this.opens) return ActDecision.unchanged(null);
     const plan = new Plan();
     const id = new Id(this.step, StepPointer);

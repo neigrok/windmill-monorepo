@@ -3,11 +3,10 @@
 import { ActDecision } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
 import { Plan, Prediction } from '../../../platform/domain-kit/plans.js';
-import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { between, dropKey, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
-import { RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, writeIn } from './roadmapRules.js';
+import { RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -70,11 +69,6 @@ function readKinds(read, id) {
 
 /** @typedef {ReturnType<typeof readKinds>} LoadedKinds */
 
-/** @param {string} id */
-function gone(id) {
-  return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('unknown-record', { t: RoadmapKind.type, id }, null, 'predicted')));
-}
-
 // A hue another present kind wears is refused where a kind is made or changed (§4).
 /**
  * @param {LoadedKinds['present']} present
@@ -112,8 +106,8 @@ export class CreateKind {
     const keys = present.flatMap((kind) => kind.ord !== null && isOrderKey(kind.ord) ? [kind.ord] : []).sort(compareText);
     const valid = new Valid(new RoadmapKindValue(id, { ...this.kind, ord: between(keys.at(-1) ?? null, null) }), moment);
     wearing(present, valid.value.hue, String(id.record));
-    const refused = capacity.refusal(1, id.ref);
-    if (refused) return ActDecision.refuse(RoadmapRefusals.ofRefused(refused));
+    const refused = full(capacity, 1, id.ref);
+    if (refused) return refused;
     const plan = new Plan();
     plan.create(valid);
     return writeIn(scope, plan, id.record);
@@ -154,7 +148,7 @@ export class ChangeKind {
 
   /** @param {LoadedKinds} loaded */
   decide({ kind, moment }) {
-    if (kind === null) return gone(this.kind);
+    if (kind === null) return gone(RoadmapKind.type, this.kind);
     return revived(this.tree, kind, new Valid(kind.with(this.changes), moment, Object.keys(this.changes)));
   }
 }
@@ -178,11 +172,11 @@ export class MoveKind {
 
   /** @param {LoadedKinds} loaded */
   decide({ kind, present, moment }) {
-    if (kind === null) return gone(this.kind);
+    if (kind === null) return gone(RoadmapKind.type, this.kind);
     const members = present.filter((other) => String(other.id.record) !== this.kind && other.ord !== null && isOrderKey(other.ord))
       .map((other) => ({ id: String(other.id.record), key: /** @type {string} */ (other.ord) }))
       .sort((a, b) => compareText(a.key, b.key) || compareText(a.id, b.id));
-    if (this.below !== null && !members.some((member) => member.id === this.below)) return gone(this.below);
+    if (this.below !== null && !members.some((member) => member.id === this.below)) return gone(RoadmapKind.type, this.below);
     const own = kind.ord !== null && isOrderKey(kind.ord) ? kind.ord : null;
     const above = own === null ? undefined : members.filter((member) => member.key < own || (member.key === own && compareText(member.id, this.kind) < 0)).at(-1)?.id ?? null;
     if (above === this.below) return ActDecision.unchanged(null);
@@ -218,7 +212,7 @@ export class RecolourKind {
 
   /** @param {LoadedKinds & { steps: import('./steps.js').RoadmapStepValue[] }} loaded */
   decide({ kind, present, steps, moment }) {
-    if (kind === null) return gone(this.kind);
+    if (kind === null) return gone(RoadmapKind.type, this.kind);
     const hue = new Valid(kind.with({ hue: this.hue }), moment, ['hue']).value.hue;
     wearing(present, hue, this.kind);
     if (hue === kind.hue) return ActDecision.unchanged(null);
