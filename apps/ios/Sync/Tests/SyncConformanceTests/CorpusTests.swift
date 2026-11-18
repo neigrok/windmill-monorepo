@@ -16,11 +16,7 @@ struct CorpusTests {
       #expect(vector.expect == answer, "\(vector) threw: \(error)")
       return
     }
-    guard let fault = Corpus.knownIssues[vector.description] else {
-      #expect(answer == vector.expect, "\(vector)")
-      return
-    }
-    withKnownIssue(Comment(rawValue: fault)) { #expect(answer == vector.expect, "\(vector)") }
+    #expect(answer == vector.expect, "\(vector)")
   }
 
   // The runner counts each settling slice toward `dieAfter`: the vector that dies right after the last chunk, dying one
