@@ -9,7 +9,7 @@ import { Registry } from '../../../../packages/api-contract/sync/reference/core/
 import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 import { Views } from '../../../src/platform/domain-kit/reading.js';
 import { FixedZone, Instant, Moment } from '../../../src/platform/domain-kit/time.js';
-import { translate } from '../../../src/platform/domain-kit/translation.js';
+import { translate, translateUndo } from '../../../src/platform/domain-kit/translation.js';
 import { ChoiceSpec, CountSpec, Fault, NumberSpec, Path, TextSpec } from '../../../src/platform/domain-kit/values.js';
 
 /** @typedef {import('../../../src/platform/domain-kit/values.js').Json} Json */
@@ -273,8 +273,11 @@ export function draftForm(draft) {
  */
 export function decisionForm(decision, scope, resultForm, refusalForm) {
   switch (decision.kind) {
-    case 'write':
-      return { write: { gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(decision.plan, scope, probeRegistry))), result: resultForm(decision.result) } };
+    case 'write': {
+      const undo = translateUndo(decision.plan, scope);
+      return { write: { gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(decision.plan, scope, probeRegistry))),
+        ...(undo === null ? {} : { undo: /** @type {Json} */ (/** @type {unknown} */ (undo)) }), result: resultForm(decision.result) } };
+    }
     case 'unchanged':
       return { unchanged: { result: resultForm(decision.result) } };
     default:

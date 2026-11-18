@@ -3,9 +3,10 @@
 // from a draft (INV-14). Each edit and each save returns the next draft as a value.
 
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
+import { creatableFault } from '../../../../packages/api-contract/sync/reference/core/restore.js';
 import { Decision } from './actions.js';
 import { Fields, sameJson, uniqueInByteOrder } from './entities.js';
-import { Plan } from './plans.js';
+import { Plan, UndoRecipe, UndoTarget } from './plans.js';
 import { Placement } from './reading.js';
 import { Refused } from './refusals.js';
 import { Valid } from './validation.js';
@@ -138,7 +139,7 @@ export const SaveResult = Object.freeze({
 /**
  * @template E
  * @typedef {{ drawn: E | null, stored: E | null, folded: E | null, anchor: RecordID | null, moment: Moment,
- *   definition: import('./entities.js').Definition }} SaveDraftLoaded
+ *   definition: import('./entities.js').Definition, restoreCommand: string | null }} SaveDraftLoaded
  */
 
 // §10.2 the save of a draft, and §11 an executor's own new record (`creating`).
@@ -194,6 +195,11 @@ export class SaveDraft {
       touched: uniqueInByteOrder(Object.keys(value.fields())), creating: true, scope: value.id.entity.boundScope(scope) });
   }
 
+  // §10.2: a save of a type that saves reversibly opts into Undo of an act, so the runner runs it as one.
+  get reversible() {
+    return this.type.savesReversibly;
+  }
+
   /**
    * @param {import('./reading.js').Reader} read
    * @returns {SaveDraftLoaded<E>}
@@ -202,6 +208,9 @@ export class SaveDraft {
     precondition(read.scope === this.scope, 'a decider loads its bound scope');
     const definition = /** @type {import('./entities.js').Definition | undefined} */ (read.registry.type(this.type.type));
     precondition(definition !== undefined, `the registry lacks ${this.type.type}`);
+    const restore = [...read.registry.commands.values()].find((command) => command.engine === 'restore' && command.scope === definition.scope
+      && command.predicts.includes(this.type.type));
+    precondition(!this.reversible || restore !== undefined, `${this.type.type}: a reversible save needs its scope kind's restore command`);
     const repository = read.repository(this.type);
     const foldedRecord = repository.record(this.id.record, 'stored');
     const anchor = this.isNew && this.type.isOrdered ? repository.anchor(this.placement ?? Placement.bottom) : null;
@@ -212,6 +221,7 @@ export class SaveDraft {
       anchor,
       moment: read.moment,
       definition,
+      restoreCommand: this.reversible && restore ? restore.name : null,
     };
   }
 
@@ -223,6 +233,7 @@ export class SaveDraft {
     const { definition, moment } = loaded;
     if (this.creating && (loaded.drawn !== null || loaded.stored !== null)) return this.refused('id-taken');
     if (definition.wholePut === true) {
+      precondition(!this.reversible, `${this.type.type}: a whole-put save is not reversible`);
       const valid = new Valid(this.current, moment);
       const plan = new Plan();
       plan.create(valid);
@@ -238,6 +249,7 @@ export class SaveDraft {
       const plan = new Plan();
       if (this.type.isOrdered) plan.insert(valid, loaded.anchor);
       else plan.create(valid);
+      this.optInto(plan, loaded, Object.keys(valid.value.fields()));
       const stamped = Object.fromEntries(Object.entries(valid.value.fields()).map(([name, value]) =>
         [name, value === null && definition.field(name)?.kind === 'time' ? moment.now.ms : value]));
       return Decision.write(plan, new Saved(stamped, true));
@@ -246,6 +258,7 @@ export class SaveDraft {
       const valid = new Valid(this.current, moment, this.isNew ? undefined : [...this.touched]);
       const plan = new Plan();
       plan.create(valid, { fields: [...this.touched], from: this.base });
+      this.optInto(plan, loaded, this.touched);
       const written = Object.fromEntries(this.touched.map((name) => [name, valid.value.fields()[name] ?? null]));
       return Decision.write(plan, new Saved({ ...(loaded.folded ?? this.base).fields(), ...written }, true));
     }
@@ -260,7 +273,36 @@ export class SaveDraft {
     if (this.type.savesGuarded === true && moved) return this.refused('stale');
     const plan = new Plan();
     plan.update(valid, { fields: changed, from: this.base, guarded: this.type.savesGuarded === true });
+    this.optInto(plan, loaded, changed);
     return Decision.write(plan, new Saved(settled, true));
+  }
+
+  // A reversible save's Undo recipe, named on its plan. A record the save creates where no record was, and a
+  // delete can take it back, goes again while its own writes are all that changed it. Otherwise each written
+  // field or text takes back its earlier value, an unset one the draft base's, and a record the save brings
+  // back to life (present again) takes back its life, dead when unset.
+  /**
+   * @param {Plan} plan
+   * @param {SaveDraftLoaded<E>} loaded
+   * @param {readonly string[]} written
+   */
+  optInto(plan, loaded, written) {
+    const { definition, restoreCommand } = loaded;
+    if (restoreCommand === null) return;
+    if (loaded.drawn === null && loaded.folded === null && creatableFault(definition) === null) {
+      plan.undoBy(UndoRecipe.createdRecord(restoreCommand, this.id));
+      return;
+    }
+    const base = this.base.fields();
+    const revives = loaded.drawn === null && definition.life === true && (definition.identity === 'keyed' || definition.revivable === true);
+    plan.undoBy(UndoRecipe.fields(restoreCommand, [
+      ...(revives ? [{ target: UndoTarget.life(this.id), defaultValue: 'dead' }] : []),
+      ...written.map((name) => {
+        const field = definition.field(name);
+        precondition(field?.writer === 'client' && (field.kind === 'lww' || field.kind === 'text'), `${this.type.type}.${name}: a reversible save writes client fields and texts`);
+        return { target: field.kind === 'text' ? UndoTarget.text(this.id, name) : UndoTarget.field(this.id, name), defaultValue: base[name] ?? null };
+      }),
+    ]));
   }
 
   /** @param {string} code */
