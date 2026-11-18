@@ -3,8 +3,12 @@
 // through the kit's ProductCorpus over the roadmap registry.
 
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
+import { translateUndo } from '../../../../src/platform/domain-kit/translation.js';
 import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
-import { CreateRoadmap, CreateSubtree, DeleteRoadmap, SetVisibility, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { CreateRoadmap, CreateSubtree, DeleteRoadmap, Roadmap, SetVisibility, WriteRoadmap, redoCreateSubtree } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { Harness } from '../../../platform/domain-kit/harness.js';
 import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../../../../src/products/roadmap/domain/steps.js';
@@ -12,7 +16,7 @@ import { ChangeKind, CreateKind, DeleteKind, MoveKind, RecolourKind } from '../.
 import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
-import { RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
+import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { Contract, savedForm } from '../../../platform/domain-kit/vectors.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
@@ -68,8 +72,15 @@ function actOf(input) {
 /** @param {Vector} vector */
 function noteSave(vector) {
   const { tree, step, text } = vector.input.input;
-  return corpus.save((draft) => SaveStepNote(draft), vector, new StepNoteValue(new Id(step, StepNote)),
-    (note) => new StepNoteValue(note.id, text), savedForm, refusalForm, RoadmapScopes.overlay(tree));
+  const scope = RoadmapScopes.overlay(tree);
+  /** @type {any} */
+  let decided = null;
+  const form = /** @type {any} */ (corpus.save((draft) => {
+    const save = SaveStepNote(draft);
+    return { scope: save.scope, refusals: save.refusals, load: (read) => save.load(read), decide: (loaded) => (decided = save.decide(loaded)) };
+  }, vector, new StepNoteValue(new Id(step, StepNote)), (note) => new StepNoteValue(note.id, text), savedForm, refusalForm, scope));
+  const recipes = form.decision.write ? translateUndo(decided.plan, scope) : null;
+  return recipes === null ? form : { decision: { write: { ...form.decision.write, undo: recipes } } };
 }
 
 /** @param {Vector} vector */
@@ -91,7 +102,132 @@ export function runAction(vector) {
   const input = vector.input;
   if (input.read !== undefined) return /** @type {Json} */ (/** @type {unknown} */ (readResult(vector)));
   if (input.action === 'SaveStepNote') return noteSave(vector);
-  return corpus.act(/** @type {import('../../../../src/platform/domain-kit/acts.js').ActAction<any, any, any>} */ (actOf(input)), vector, (result) => /** @type {Json} */ (result), refusalForm);
+  const act = /** @type {import('../../../../src/platform/domain-kit/acts.js').ActAction<any, any, any>} */ (actOf(input));
+  /** @type {any} */
+  let decided = null;
+  const form = /** @type {any} */ (corpus.act({ refusals: act.refusals, load: (read) => act.load(read), decide: (loaded, ids) => (decided = act.decide(loaded, ids)) },
+    vector, (result) => /** @type {Json} */ (result), refusalForm));
+  if (!form.decision.write) return form;
+  // K-3: each segment's Undo recipes as the engine journals them (translateUndo), where the segment opts in.
+  form.decision.write.segments = form.decision.write.segments.map((/** @type {any} */ segment, /** @type {number} */ index) => {
+    const recipes = translateUndo(decided.plan.segments[index].plan, segment.scope);
+    return recipes === null ? segment : { ...segment, undo: recipes };
+  });
+  return form;
+}
+
+// K-3 scenes (`undo.json`): acts and a note's draft saves on the kit's harness over the reference server with roadmap's
+// binding, then their Undo and Redo. A step names a role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back
+// names each id by the first role that holds it, and any other minted id `<new>`.
+/** @param {Vector} vector */
+export async function runScene(vector) {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  /** @type {Record<string, Harness>} */
+  const phones = { a };
+  /** @type {Record<string, { input: any, result: any, actId: string | null, requestId: string | null }>} */
+  const roles = {};
+  /** @param {string} path */
+  const lookup = (path) => {
+    const [role = '', ...keys] = path.split('.');
+    return keys.reduce((found, key) => found?.[key], roles[role]?.result);
+  };
+  /** @param {any} value @returns {any} */
+  const bind = (value) => {
+    if (Array.isArray(value)) return value.map(bind);
+    if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, bind(item)]));
+    if (typeof value !== 'string' || !value.includes('$')) return value;
+    const whole = /^\$([\w.]+)$/.exec(value);
+    if (whole) return lookup(whole[1] ?? '');
+    return value.replace(/\$([\w.]+)/g, (_, path) => String(lookup(path)));
+  };
+  /** @param {any} value @returns {any} */
+  const named = (value) => {
+    /** @type {Map<string, string>} */
+    const known = new Map();
+    /** @param {any} found @param {string} path */
+    const walk = (found, path) => {
+      if (typeof found === 'string') { if (!known.has(found)) known.set(found, path); }
+      else if (found !== null && typeof found === 'object') for (const [key, item] of Object.entries(found)) walk(item, `${path}.${key}`);
+    };
+    for (const [role, { result }] of Object.entries(roles)) walk(result, `$${role}`);
+    /** @param {any} item @returns {any} */
+    const rename = (item) => {
+      if (typeof item === 'string') return known.get(item) ?? (/^(t_[0-9a-f]{16}|[0-9a-z]{16})$/.test(item) ? '<new>' : item);
+      if (Array.isArray(item)) return item.map(rename);
+      if (item !== null && typeof item === 'object') return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, rename(inner)]));
+      return item;
+    };
+    return rename(value);
+  };
+  /** @param {any} result */
+  const inverse = (result) => {
+    const { requestId, inverseActId, ...form } = result;
+    return form;
+  };
+  const observeAll = () => {
+    for (const phone of Object.values(phones)) {
+      for (const record of phone.runner.read(RoadmapScopes.account, (read) => read.views.visible('drawn', Roadmap.type))) {
+        a.observe(RoadmapScopes.tree(String(record.id)));
+        a.observe(RoadmapScopes.overlay(String(record.id)));
+      }
+    }
+  };
+  /** @type {any[]} */
+  const outcomes = [];
+  try {
+    for (const step of vector.input.steps) {
+      if (step.device) {
+        phones[step.device] = await a.device();
+        continue;
+      }
+      const phone = /** @type {Harness} */ (phones[step.on ?? 'a']);
+      if (step.run) {
+        const input = bind(step.input);
+        const outcome = await phone.runner.runAct(/** @type {any} */ (actOf({ action: step.run, input })));
+        if (step.as) {
+          roles[step.as] = { input, result: outcome.kind === 'refused' ? null : outcome.result,
+            actId: outcome.kind === 'committed' ? outcome.receipt.gestureId : null, requestId: null };
+        }
+        outcomes.push(outcome.kind === 'refused' ? { refused: refusalForm(outcome.refusal) } : outcome.kind);
+      } else if (step.save) {
+        const { tree, step: owner, text } = bind(step.input);
+        const scope = RoadmapScopes.overlay(tree);
+        const id = new Id(owner, StepNote);
+        const draft = phone.runner.openOrNew(StepNote, id, new StepNoteValue(id), scope).edit((note) => new StepNoteValue(note.id, text));
+        const { result } = await phone.runner.save(draft, RoadmapRefusals, scope);
+        if (step.as) roles[step.as] = { input: { tree, step: owner, text }, result: null, actId: result.kind === 'saved' ? result.receipt?.gestureId ?? null : null, requestId: null };
+        outcomes.push(result.kind);
+      } else if (step.sync) {
+        observeAll();
+        await a.sync();
+      } else if (step.advance) {
+        await a.advance(step.advance);
+      } else if (step.undo || step.redo) {
+        const role = roles[step.undo ?? step.redo];
+        if (role === undefined) throw new Error(`no scene role ${step.undo ?? step.redo}`);
+        const fresh = step.redo && step.subtree ? String(phone.runner.mint(Roadmap).record) : null;
+        const slots = fresh === null ? undefined : redoCreateSubtree({ ...role.input, ...role.result }, fresh);
+        if (fresh !== null) for (const scope of [RoadmapScopes.tree(fresh), RoadmapScopes.overlay(fresh)]) a.observe(scope);
+        const result = step.undo ? await phone.runner.undo(String(role.actId)) : await phone.runner.redo(String(role.requestId), slots);
+        if (result.kind !== 'unavailable') role.requestId = result.requestId;
+        outcomes.push(inverse(result));
+      } else if (step.read) {
+        outcomes.push(inverse(phone.runner.inverseResult(String(roles[step.read]?.requestId))));
+      } else if (step.cancelHeld) {
+        outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.actId)) });
+      } else if (step.inspect) {
+        const { scope, t, fields } = step.inspect;
+        const rows = phone.runner.read(bind(scope), (read) => read.views.visible('drawn', t)).map((record) => Object.fromEntries(fields.map((/** @type {string} */ name) =>
+          [name, name === 'id' ? record.id : record.f?.[name]?.[0] ?? record.x?.[name] ?? null])));
+        outcomes.push({ [t]: named(rows).sort((/** @type {any} */ x, /** @type {any} */ y) => (jcs(x) < jcs(y) ? -1 : jcs(x) > jcs(y) ? 1 : 0)) });
+      } else {
+        throw new Error(`no scene step ${Object.keys(step).join()}`);
+      }
+    }
+    return { outcomes };
+  } finally {
+    a.close();
+  }
 }
 
 /** @param {any} input */

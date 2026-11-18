@@ -2,10 +2,10 @@
 
 import { ActDecision } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Id } from '../../../platform/domain-kit/entities.js';
-import { Plan } from '../../../platform/domain-kit/plans.js';
+import { Plan, UndoRecipe } from '../../../platform/domain-kit/plans.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
-import { RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, writeIn } from './roadmapRules.js';
+import { Restore, RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
@@ -79,12 +79,14 @@ class StepOverlay {
     const overlay = read.inScope(RoadmapScopes.overlay(tree), (scope) => ({
       mark: scope.repository(StepMark).find(new Id(step, StepMark), 'drawn'),
       pointer: scope.repository(StepPointer).find(new Id(step, StepPointer), 'drawn'),
+      pointerHeld: scope.repository(StepPointer).record(step, 'drawn') !== undefined,
       moment: scope.moment,
     }));
     this.known = known.known;
     this.owns = known.branch;
     this.mark = overlay.mark ?? new StepMarkValue(new Id(step, StepMark));
     this.pointer = overlay.pointer;
+    this.pointerHeld = overlay.pointerHeld;
     this.moment = overlay.moment;
     Object.freeze(this);
   }
@@ -121,6 +123,7 @@ export class MarkStep {
     if (mark.holds(this.status, this.outOfOrder)) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.create(new Valid(new StepMarkValue(mark.id, this.status, this.outOfOrder), moment), { fields: ['mark'] });
+    plan.undoBy(restoring(Restore.overlay, mark.id, ['mark']));
     return writeIn(RoadmapScopes.overlay(this.tree), plan, null);
   }
 }
@@ -144,13 +147,14 @@ export class PointStep {
   load(read) { return new StepOverlay(read, this.tree, this.step); }
 
   /** @param {StepOverlay} loaded */
-  decide({ known, pointer, moment }) {
+  decide({ known, pointer, pointerHeld, moment }) {
     if (!known) return gone(RoadmapStep.type, this.step);
     if ((pointer?.opens ?? null) === this.opens) return ActDecision.unchanged(null);
     const plan = new Plan();
     const id = new Id(this.step, StepPointer);
     if (this.opens === null) plan.remove(id);
     else plan.create(new Valid(new StepPointerValue(id, this.opens), moment), { fields: ['opens'] });
+    plan.undoBy(pointerHeld ? restoring(Restore.overlay, id, this.opens === null ? [] : ['opens'], { life: true }) : UndoRecipe.createdRecord(Restore.overlay, id));
     return writeIn(RoadmapScopes.overlay(this.tree), plan, null);
   }
 }

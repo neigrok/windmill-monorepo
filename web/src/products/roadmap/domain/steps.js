@@ -2,7 +2,7 @@
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
-import { Plan } from '../../../platform/domain-kit/plans.js';
+import { Plan, UndoRecipe } from '../../../platform/domain-kit/plans.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation, precondition } from '../../../platform/domain-kit/values.js';
 import { utf8 } from '../../../platform/sync/core/encoding.js';
@@ -10,7 +10,7 @@ import { between, dropKey, isOrderKey } from '../../../../../packages/api-contra
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { components, FollowGraph } from './graph.js';
 import { LandingNote, RoadmapTree } from './records.js';
-import { RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, writeIn } from './roadmapRules.js';
+import { Restore, RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
 
 /** @typedef {import('../../../platform/domain-kit/time.js').Moment} Moment */
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -190,10 +190,13 @@ class ImportUnit {
     Object.freeze(this);
   }
 
-  /** @param {Plan} plan */
-  writeTo(plan) {
+  // The step and its links, and, unless the act's Undo is another's, an Undo that deletes them again while they
+  // are as the import made them.
+  /** @param {Plan} plan @param {boolean} [undone] */
+  writeTo(plan, undone = true) {
     plan.create(this.step);
     for (const link of this.links) plan.create(link);
+    if (undone) plan.undoBy(...[this.step, ...this.links].map((valid) => UndoRecipe.createdRecord(Restore.tree, valid.id)));
   }
 }
 
@@ -371,6 +374,7 @@ export class CreateStep {
     const plan = new Plan();
     plan.create(step);
     for (const link of made) plan.create(link);
+    plan.undoBy(...[step, ...made].map((valid) => UndoRecipe.createdRecord(Restore.tree, valid.id)));
     plan.device(RoadmapScopes.landing(this.tree), note.adding({ nodes: [id], edges: this.prerequisites.map((from) => [from, id]) }).json);
     return writeIn(scope, plan, id);
   }
@@ -406,6 +410,8 @@ function revived(tree, step, valid, absent, note) {
   if (changed.length === 0) return ActDecision.unchanged(null);
   const plan = new Plan();
   plan.revive(valid, { fields: changed });
+  const restorable = changed.filter((name) => name !== 'ord' || step.ord !== null);
+  if (restorable.length || absent) plan.undoBy(restoring(Restore.tree, step.id, restorable, { life: absent }));
   if (absent) plan.device(RoadmapScopes.landing(tree), note.adding({ revived: [String(step.id.record)] }).json);
   return writeIn(RoadmapScopes.tree(tree), plan, null);
 }
@@ -498,6 +504,7 @@ export class DeleteStep {
     if (step === null) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.remove(this.id);
+    plan.undoBy(restoring(Restore.tree, this.id, [], { life: true }));
     return writeIn(RoadmapScopes.tree(this.tree), plan, null);
   }
 }
@@ -548,6 +555,10 @@ export class ChangePrerequisites {
     const plan = new Plan();
     for (const link of made) plan.create(link);
     for (const [from = '', to = ''] of removing) plan.remove(new RoadmapLinkValue(from, to).id);
+    const held = new Set(tree.edges.map((edge) => jcs([edge.from, edge.to])));
+    plan.undoBy(...made.map((link) => (held.has(jcs([link.value.from, link.value.to]))
+      ? restoring(Restore.tree, link.id, [], { life: true }) : UndoRecipe.createdRecord(Restore.tree, link.id))),
+    ...removing.map(([from = '', to = '']) => restoring(Restore.tree, new RoadmapLinkValue(from, to).id, [], { life: true })));
     if (adding.length) plan.device(RoadmapScopes.landing(this.tree), note.adding({ edges: adding }).json);
     return writeIn(RoadmapScopes.tree(this.tree), plan, null);
   }

@@ -4,15 +4,16 @@ import { readdirSync } from 'node:fs';
 import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { Contract, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
-import { roadmapBook, runAction, runRead } from './vectors.js';
+import { roadmapBook, runAction, runRead, runScene } from './vectors.js';
 
 const READS = ['account', 'board', 'diagnostics', 'graph', 'guides', 'landing', 'legend', 'pointers', 'progress', 'search'].map((name) => `${name}.json`);
 const ACTIONS = ['roadmaps', 'steps', 'kinds', 'progress', 'workspace', 'landing'].map((name) => `${name}-actions.json`);
+const SCENES = ['undo.json'];
 const PINNED = ['rules.json', 'values.json'];
 
 test('every file of the roadmap corpus is claimed', () => {
   const files = readdirSync(new URL('../../../../../packages/api-contract/roadmap/domain/', import.meta.url)).filter((name) => name.endsWith('.json')).sort();
-  assert.deepEqual(files, [...READS, ...ACTIONS, ...PINNED].sort());
+  assert.deepEqual(files, [...READS, ...ACTIONS, ...SCENES, ...PINNED].sort());
 });
 
 for (const file of READS) {
@@ -33,4 +34,10 @@ for (const file of ACTIONS) {
 const corpus = new ProductCorpus(roadmapBook, RoadmapRules.spec);
 for (const vector of Contract.vectors('roadmap/domain/values.json')) {
   test(`values.json: ${vector.name}`, () => assert.deepEqual(corpus.value(vector), vector.expect));
+}
+
+for (const file of SCENES) {
+  for (const vector of Contract.vectors(`roadmap/domain/${file}`)) {
+    test(`${file}: ${vector.name}`, async () => assert.deepEqual(await runScene(vector), vector.expect));
+  }
 }

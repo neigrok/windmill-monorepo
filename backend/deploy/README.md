@@ -307,7 +307,7 @@ the grace that container was created with, so a changed value holds from the dep
 
 ## Coordinated client cutoff
 
-The repository registry is schema 12 / minimum 11. Every schema in that interval carries explicit gym
+The repository registry is schema 13 / minimum 11. Every schema in that interval carries explicit gym
 `other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
 schema 12 / minimum 11, verified on 2026-11-01 after
 [deployment 41306516632](https://github.com/neigrok/windmill-monorepo/actions/runs/41306516632).
