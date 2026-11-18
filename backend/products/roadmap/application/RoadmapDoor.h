@@ -38,6 +38,8 @@ public:
   RoadmapDoor(const sync::SyncCatalog& catalog, sync::SyncStore& store, sync::ChangeFeed& feed, sync::ServerClock& stamps,
               Clock& clock, FailureReporter& failures);
   ~RoadmapDoor();
+  // Takes no more calls, runs the ones already queued and joins its workers.
+  void stop();
 
   // Whether the engine serves roadmap's scopes here (ROADMAP_ENGINE_ENABLED): the door writes nothing where it does not.
   bool serving() const;

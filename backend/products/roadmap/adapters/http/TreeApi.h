@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "products/roadmap/application/ForkService.h"
+#include "products/roadmap/ports/TreeForks.h"
 #include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Ids.h"
@@ -24,7 +24,7 @@ class TreeApi {
 public:
   TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
           std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, std::shared_ptr<AuthService> auth,
-          std::shared_ptr<ForkService> fork);
+          std::shared_ptr<TreeForks> fork);
 
   void getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
@@ -49,7 +49,7 @@ private:
   std::shared_ptr<OwnerProgress> progress_;
   std::shared_ptr<OpLog> ops_;
   std::shared_ptr<AuthService> auth_;
-  std::shared_ptr<ForkService> fork_;
+  std::shared_ptr<TreeForks> fork_;
 };
 
 }

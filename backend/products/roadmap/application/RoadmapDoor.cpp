@@ -25,7 +25,9 @@ RoadmapDoor::RoadmapDoor(const sync::SyncCatalog& catalog, sync::SyncStore& stor
     : catalog_(catalog), store_(store), clock_(clock), now_(clock), admission_(catalog, store, feed, stamps, failures),
       rows_(catalog, store) {}
 
-RoadmapDoor::~RoadmapDoor() { workers_.stopAndJoin(); }
+RoadmapDoor::~RoadmapDoor() { stop(); }
+
+void RoadmapDoor::stop() { workers_.stopAndJoin(); }
 
 bool RoadmapDoor::serving() const { return catalog_.serves("roadmap"); }
 

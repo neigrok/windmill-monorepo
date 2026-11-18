@@ -144,6 +144,7 @@ add_library(windmill_roadmap
   products/roadmap/application/ForkService.cpp
   products/roadmap/application/RoadmapRows.cpp
   products/roadmap/application/RoadmapDoor.cpp
+  products/roadmap/application/DoorForks.cpp
   products/roadmap/application/ScopedToolHost.cpp
   products/roadmap/application/TendingService.cpp
   products/roadmap/application/TreeRegistry.cpp
@@ -615,6 +616,7 @@ add_executable(windmill_mcp_tests
   test/products/roadmap/adapters/mcp/RoadmapToolsTest.cpp
   test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp
   test/products/roadmap/adapters/mcp/WireCorpusTest.cpp
+  test/products/roadmap/adapters/mcp/DoorToolsTest.cpp
   test/products/gym/adapters/mcp/GymToolsTest.cpp
   test/products/gym/adapters/mcp/CatalogContractTest.cpp
   test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp)

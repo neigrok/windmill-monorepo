@@ -18,7 +18,7 @@ namespace wm {
 
 TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                  std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, std::shared_ptr<AuthService> auth,
-                 std::shared_ptr<ForkService> fork)
+                 std::shared_ptr<TreeForks> fork)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
       ops_(std::move(ops)), auth_(std::move(auth)), fork_(std::move(fork)) {}
 
@@ -234,16 +234,16 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
 
-  ForkService::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller);
-  if (forked.outcome == ForkService::Outcome::noSource) {
+  TreeForks::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller);
+  if (forked.outcome == TreeForks::Outcome::noSource) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  if (forked.outcome == ForkService::Outcome::conflict) {
+  if (forked.outcome == TreeForks::Outcome::conflict) {
     callback(error(drogon::k409Conflict, "a tree with that id already exists"));
     return;
   }
-  if (forked.outcome == ForkService::Outcome::notARoot) {
+  if (forked.outcome == TreeForks::Outcome::notARoot) {
     callback(jsonResponse(toJson(*forked.notARoot, "a subtree is copied with its root, so fork the root"),
                           drogon::k409Conflict));
     return;
