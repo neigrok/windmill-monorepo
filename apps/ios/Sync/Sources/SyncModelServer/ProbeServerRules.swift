@@ -1,8 +1,9 @@
 import SyncCore
 
 // The probe product's binding (corpus README "The probe product"): `probe.start` with its join and receipts,
-// `probe.end`, `probe.copy` into a board it creates, the opted `probe.branch` across three scopes, the `beforePull`
-// `probe.tick`, the run checks, and one kept revision per text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
+// `probe.end`, `probe.copy` into a board it creates, the opted `probe.branch` across three scopes, `probe.sprout` and
+// `probe.adopt` over typed references (E-8), the `beforePull` `probe.tick`, the run checks, and one kept revision per
+// text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
 // `copies[<scope key>][<dst>]`.
 
 public struct ProbeServerRules: ServerRules {
@@ -17,6 +18,8 @@ public struct ProbeServerRules: ServerRules {
     case "probe.start": receipt(of: command.string("id"), in: context) != nil
     case "probe.copy": copySource(of: command.string("dst"), in: context)?.isSameID(as: command.string("src")) ?? false
     case "probe.branch": branchReceipt(of: command.string("child"), in: context) == branched(command)
+    case "probe.sprout": owner(of: step(command), in: context) != nil
+    case "probe.adopt": labelled(command.args["label"] ?? .null, in: context) != nil
     default: false
     }
   }
@@ -36,6 +39,8 @@ public struct ProbeServerRules: ServerRules {
     case "probe.end": try end(command, in: context)
     case "probe.copy": try copy(command, in: context)
     case "probe.branch": try branch(command, in: context)
+    case "probe.sprout": try sprout(command, in: context)
+    case "probe.adopt": try adopt(command, in: context)
     case "probe.tick": tick(in: context)
     default: throw Refusal(.invalid)
     }
@@ -161,6 +166,51 @@ public struct ProbeServerRules: ServerRules {
       deltas: [.serverCreate(board)], write: [WriteClaim(key: board, born: .minted)], detail: ["created": true],
       product: recording(branched(command), under: "branches", at: child, in: context),
       into: [ScopeKey(.tree(parent)): [meta], ScopeKey(.tree(child)): [meta]])
+  }
+
+  // Board `child` owned by the step `{board, tag}`, its `parent`. A step that already owns an alive board answers that
+  // board, so a retry, or another device's sprout of the same step, resolves to the subtree the step owns. Neither the
+  // board nor the tag need exist.
+  func sprout(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    let child = RecordKey("board", RecordID(command.string("child")))
+    if let owned = owner(of: step(command), in: context) { return resolved(owned, called: child, in: context) }
+    guard case .none = context.idState(of: child) else { throw Refusal(.idTaken) }
+    return CommandOutcome(
+      deltas: [.serverCreate(child, fields: ["parent": step(command)])], write: [WriteClaim(key: child, born: .minted, fields: ["parent"])],
+      product: context.product)
+  }
+
+  // The tree's alive tag labelled `label`, else tag `tag` created with that label: a command whose write map renames a
+  // scope-local id.
+  func adopt(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    let tag = RecordKey("tag", RecordID(command.string("tag")))
+    let label = command.args["label"] ?? .null
+    if let named = labelled(label, in: context) { return resolved(named, called: tag, in: context) }
+    guard case .none = context.idState(of: tag) else { throw Refusal(.idTaken) }
+    return CommandOutcome(
+      deltas: [.serverCreate(tag, fields: ["label": label])], write: [WriteClaim(key: tag, born: .minted, fields: ["label"])],
+      product: context.product)
+  }
+
+  func step(_ command: CheckedCommand) -> JSON {
+    ["board": command.args["board"] ?? .null, "tag": command.args["tag"] ?? .null]
+  }
+
+  // The alive board a step owns, the least id first.
+  func owner(of step: JSON, in context: RuleContext) -> Row? {
+    context.storedRecords(ofType: "board").first { $0.isAlive && $0.lattice.fields["parent"]?.value == step }
+  }
+
+  // The alive tag a label names, the least id first.
+  func labelled(_ label: JSON, in context: RuleContext) -> Row? {
+    context.storedRecords(ofType: "tag").first { $0.isAlive && $0.lattice.fields["label"]?.value == label }
+  }
+
+  // A resolution to a record that already exists, from the called id when it differs.
+  func resolved(_ row: Row, called: RecordKey, in context: RuleContext) -> CommandOutcome {
+    CommandOutcome(
+      write: [WriteClaim(key: row.key, from: row.key == called ? nil : called.id, born: row.lattice.born.map(WriteClaim.Born.stored))],
+      product: context.product)
   }
 
   func tick(in context: RuleContext) -> CommandOutcome {

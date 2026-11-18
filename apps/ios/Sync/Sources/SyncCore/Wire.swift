@@ -236,22 +236,6 @@ extension ScopeKind {
 }
 
 extension TypeDef {
-  // Every record this one names: the parts of its ref-built key, and its ref fields' values (§7.7 step 3).
-  public func references(of id: RecordID, values: [String: JSON]) -> [RecordKey] {
-    var named: [RecordKey] = []
-    switch key {
-    case .ref(let target)?: named.append(RecordKey(target, id))
-    case .tuple(let parts)?:
-      for (part, value) in zip(parts, id.parts ?? []) { named.append(RecordKey(part.ref, RecordID(value))) }
-    case nil: break
-    }
-    for field in fields {
-      guard let target = field.ref, case .string(let value)? = values[field.name] else { continue }
-      named.append(RecordKey(target, RecordID(value)))
-    }
-    return named
-  }
-
   public var clientTimeFields: [String] {
     fields.filter { if case .time = $0.kind { $0.writer == .client } else { false } }.map(\.name)
   }
