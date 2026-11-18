@@ -95,11 +95,11 @@ public struct ProductCorpus {
     return ["result": try body(Reader(context, scope: scope, moment: moment, registry: book.registry))]
   }
 
-  // A vector's records as the engine's readers of `scope` answer them, at its moment, minting its `ids` in order.
+  // A vector's records as the engine's readers of `scope` answer them, at its moment, minting its `ids` in order: its
+  // `records`, or the scope's in a scene of several scopes, so every form reads a scene as `act` does.
   func scene(of vector: Vector, in scope: ScopeRef) throws -> (VectorReader, Moment) {
     let input = vector.input
-    let rows = try input.member("records")
-    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: rows["device"], registry: book.registry)
+    let records = try VectorRecords(input, in: scope, registry: book.registry)
     let (moment, ids) = (try Moment(form: input), try (input["ids"]?.asArray() ?? []).map { try RecordID(json: $0) })
     let firstPullComplete = try input["firstPullComplete"]?.asBool() ?? true
     let reader = VectorReader(records: records, now: moment.now.ms, ids: ids, firstPullComplete: firstPullComplete,
@@ -129,6 +129,18 @@ package struct VectorRecords: Sendable {
     self.drawn = try VectorRecords.records(drawn, registry: registry)
     self.stored = try VectorRecords.records(stored, registry: registry)
     self.device = try device?.asObject() ?? [:]
+  }
+
+  // A case's records in `scope`, `stored` defaulting to `drawn`: its `records`, device rows among them, or, in a scene of
+  // several scopes, `scopes[scope]` with the scene's `device` rows, a scope the scene leaves out holding none.
+  package init(_ input: JSON, in scope: ScopeRef, registry: Registry) throws {
+    guard case .object(let scopes)? = input["scopes"] else {
+      let rows = try input.member("records")
+      try self.init(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: rows["device"], registry: registry)
+      return
+    }
+    let rows: JSON = scopes[scope.text] ?? ["drawn": []]
+    try self.init(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: input["device"], registry: registry)
   }
 
   static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
@@ -205,12 +217,10 @@ package final class VectorReader: CommitContext {
   }
 }
 
-// An act's scene: each scope's records as the engine's readers of that scope answer them, `stored` defaulting to `drawn`
-// and a scope the scene leaves out holding none, the device rows every scope shares, and the ids it lists, minted in order
-// across scopes and no other.
+// An act's scene: each scope's records as the engine's readers of that scope answer them, and the ids it lists, minted in
+// order across scopes and no other.
 package final class VectorScene: ActContext {
-  let scopes: JSON.Object
-  let device: JSON?
+  let input: JSON
   let registry: Registry
   let pulled: Bool
   var ids: [RecordID]
@@ -220,8 +230,7 @@ package final class VectorScene: ActContext {
   package let isAnonymous = false
 
   package init(_ input: JSON, now: Int64, registry: Registry) throws {
-    scopes = try input["scopes"]?.asObject() ?? [:]
-    device = input["device"]
+    self.input = input
     self.registry = registry
     pulled = try input["firstPullComplete"]?.asBool() ?? true
     ids = try (input["ids"]?.asArray() ?? []).map { (id: JSON) throws -> RecordID in try RecordID(json: id) }
@@ -231,8 +240,7 @@ package final class VectorScene: ActContext {
   package func finishLoad() throws {}
 
   package func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
-    let rows: JSON = scopes[scope.text] ?? ["drawn": []]
-    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: device, registry: registry)
+    let records = try VectorRecords(input, in: scope, registry: registry)
     return try body(VectorReader(records: records, now: now, firstPullComplete: pulled, scope: (scope, registry)))
   }
 
