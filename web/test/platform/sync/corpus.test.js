@@ -2,17 +2,20 @@ import './core/corpus.js';
 import './client/corpus.js';
 import './protocol.js';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { corpus, load, claim, claims } from './corpus-support.js';
 import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { nextDocumentStamp } from '../../../src/platform/sync/core/content.js';
 import { runSteps } from './oracle-adapters/steps.js';
 import { journalRegistry, journalProduct } from './oracle-adapters/journal.js';
 import { runClaimEdit } from './oracle-adapters/journal-claim.js';
 import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
+
+const roadmapRegistry = new Registry(JSON.parse(readFileSync(new URL('../../../../packages/api-contract/sync/roadmap.registry.json', import.meta.url), 'utf8')));
 
 claim('constants.json', 1);
 test('browser corpus constants.json', () => assert.equal(jcs(CONSTANTS), jcs(load('constants.json'))));
@@ -30,6 +33,10 @@ for (const [path, run] of [
     }
     return out;
   }],
+  ['roadmap/client.json', (input) => {
+    const { returns, device, ended, telemetry, events } = runSteps(input, roadmapRegistry);
+    return { returns, device, ended, ...(telemetry.length ? { telemetry } : {}), ...(events.length ? { events } : {}) };
+  }],
 ]) {
   claim(path);
   test(`browser corpus ${path}`, () => {
@@ -39,7 +46,7 @@ for (const [path, run] of [
 
 const server = new Set(['identity/table.json', 'envelope/credentials.json', 'push/serve.json',
   'pull/serve.json', 'pull/hello.json', 'live/death.json', 'machine/scope.json',
-  'gym/admit.json', 'journal/admit.json', 'journal/revisions.json']);
+  'gym/admit.json', 'journal/admit.json', 'journal/revisions.json', 'roadmap/admit.json']);
 function inventory(directory = corpus, prefix = '') {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => entry.isDirectory()
     ? inventory(new URL(`${entry.name}/`, directory), `${prefix}${entry.name}/`)

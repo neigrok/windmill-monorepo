@@ -99,7 +99,7 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym and journal bindings against registry v12/minimum 11 and composition.json. `windmill_sync_tests` replays the server's files again
+(`RegistryTest.cpp`), and run the gym and journal bindings against registry v13/minimum 11 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's thirteen types and nine commands, and `products/journal/sync/` binds

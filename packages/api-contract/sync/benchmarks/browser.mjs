@@ -95,7 +95,7 @@ try {
         }, openLive() { return { readyState: 0, send() {}, close() {} }; } };
         const timers = { setTimeout: () => 1, clearTimeout() {} };
         const options = { name, registry, transport, timers, telemetry: {
-          limit: 100,
+          limit: 100, writerLimit: 100,
           failure: (name) => failures.push(name),
           event: (name, properties) => {
             events.push(name);
@@ -207,7 +207,7 @@ try {
           }) };
         result.writer = { coverage: 'delivered sync-writer events for changed transactions, grouped by benchmark API phase',
           timing: 'duration includes queue wait through durable completion; integer milliseconds rounded up',
-          sampling: 'at most 100 telemetry events per minute per engine; duration capped at 60000 ms; samples may be censored',
+          sampling: 'at most 100 sync-writer events per minute per engine, on an allowance of their own; duration capped at 60000 ms; samples may be censored',
           summaries, samples: writerSamples };
         result.failures = failures; result.events = [...new Set(events)];
         engine.close(); return result;

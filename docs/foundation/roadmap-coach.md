@@ -341,7 +341,7 @@ Coach's records are private to a person and are no part of a roadmap's shared st
 reader of a shared roadmap can see. They are records of the [sync engine](engine.md), in a registry
 for the product `roadmap` under the scope `self/roadmap`, beside gym's and journal's in the
 composition. (R-4) They join the registry that holds a roadmap's structure
-([Roadmap on the sync engine](roadmap-on-the-engine.md) §3).
+([Roadmap on the sync engine](roadmap-on-the-engine.md) §4).
 
 | Type | Holds |
 |---|---|
