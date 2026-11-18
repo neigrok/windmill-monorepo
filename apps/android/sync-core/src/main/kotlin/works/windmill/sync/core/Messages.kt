@@ -115,11 +115,10 @@ data class EffectReceipt(val scope: ScopeRef, val beforeSeq: Long?, val seq: Lon
             val effects = kit.member("effects").arr().map { effect(registry, it) }
             val scopes = effects.map { it.scope }
             check(scopes.toSet().size == scopes.size && scopes == ordered(origin, scopes) && scopes.containsAll(required))
-            check(effects.first().beforeSeq != null && effects.first().seq == resultSeq)
+            check(effects.firstOrNull()?.let { it.beforeSeq != null && it.seq == resultSeq } == true)
             effects
         } catch (_: IllegalArgumentException) { throw JsonError("scoped-receipt") }
           catch (_: IllegalStateException) { throw JsonError("scoped-receipt") }
-          catch (_: NoSuchElementException) { throw JsonError("scoped-receipt") }
 
         private fun effect(registry: Registry, json: Json): EffectReceipt {
             json.expectKeys(listOf("scope", "beforeSeq", "seq", "rows"))
@@ -155,7 +154,7 @@ data class EffectReceipt(val scope: ScopeRef, val beforeSeq: Long?, val seq: Lon
             for (item in json.member("slots").arr()) {
                 item.expectKeys(listOf("slot", "version"))
                 val slot = item.member("slot"); val version = item.member("version")
-                val kind = EffectSlot.Kind.entries.single { it.name == slot.member("kind").str() }
+                val kind = checkNotNull(EffectSlot.Kind.entries.firstOrNull { it.name == slot.member("kind").str() })
                 if (kind == EffectSlot.Kind.born || kind == EffectSlot.Kind.life) slot.expectKeys(listOf("kind")) else { slot.expectKeys(listOf("kind", "name")); slot.member("name").str() }
                 if (kind == EffectSlot.Kind.text) {
                     version.expectKeys(listOf("kind", "revision")); check(version.member("kind") == Json.of("text")); version.member("revision").long(1)
