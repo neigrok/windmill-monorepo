@@ -19,9 +19,10 @@ function laterUnacked(replica, entry) {
   return replica.entries().filter((other) => other.commitOrder > entry.commitOrder && (isQueued(other) || other.state === 'sent'));
 }
 
-// `register`: 'life' or a field name. A create's born moves with its life; a later delta carrying the
-// life register unchanged (a keyed put that keeps presence, §7.1 step 4) follows it.
-function moveRegister(replica, entry, delta, register, n, scope = entry.scope, queuedOnly = false) {
+// `register`: 'life' or a field name of `delta`, which writes `scope`: an opted entry's projection is its own
+// scope's. A create's born moves with its life; a later delta carrying the life register unchanged (a keyed put
+// that keeps presence, §7.1 step 4) follows it.
+function moveRegister(replica, entry, scope, delta, register, n, queuedOnly = false) {
   const current = register === 'life' ? delta.life : delta.f?.[register];
   if (!current || current[1] === n) return;
   const o = current[1];
@@ -102,7 +103,7 @@ function recoverSkew(replica, ctx, refused, lastN) {
   const lowered = unsourced(replica);
   for (const { entry, own } of plan) {
     const n = clock.tick();
-    for (const [delta, register] of own) moveRegister(replica, entry, delta, register, n);
+    for (const [delta, register] of own) moveRegister(replica, entry, entry.scope, delta, register, n);
     entry.stamp = n;
     high = Stamp.max(high, n);
   }
@@ -323,8 +324,8 @@ export function applyWriteMap(replica, ctx, command, write) {
     }
     for (const delta of command.predict ?? []) {
       if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
-      for (const [name, stamp] of Object.entries(w.f ?? {})) moveRegister(replica, command, delta, name, stamp);
-      if (w.born !== undefined) moveRegister(replica, command, delta, 'life', w.born);
+      for (const [name, stamp] of Object.entries(w.f ?? {})) moveRegister(replica, command, command.scope, delta, name, stamp);
+      if (w.born !== undefined) moveRegister(replica, command, command.scope, delta, 'life', w.born);
     }
     const target = previous ?? { t: w.t, from: structuredClone(source), id: structuredClone(w.id) };
     target.id = structuredClone(w.id);
@@ -348,7 +349,7 @@ export function applyWriteMap(replica, ctx, command, write) {
     }
     if (named.length === 0) continue;
     const n = clock.tick();
-    for (const [delta, register] of named) moveRegister(replica, entry, delta, register, n);
+    for (const [delta, register] of named) moveRegister(replica, entry, command.scope, delta, register, n);
     replica.meta.hlcHigh = Stamp.max(replica.meta.hlcHigh, n);
   }
   replica.meta.hlc = clock.pair;
@@ -432,7 +433,7 @@ export function applyAcceptedVersions(replica, ctx, command, effects, previous =
       if (before?.kind === 'stamp') follow(before.stamp);
       for (const delta of ordinary) follow(stampIn(delta, slot));
       for (const delta of predicted) {
-        if (slot.kind !== 'born') moveRegister(replica, command, delta, register, n, scope, true);
+        if (slot.kind !== 'born') moveRegister(replica, command, scope, delta, register, n, true);
         else if (delta.born !== undefined) {
           const old = delta.born;
           delta.born = n;
@@ -447,7 +448,7 @@ export function applyAcceptedVersions(replica, ctx, command, effects, previous =
     const named = own.get(entry);
     if (!named.length) continue;
     const stamp = clock.tick();
-    for (const { delta, register, scope } of named) moveRegister(replica, entry, delta, register, stamp, scope, true);
+    for (const { delta, register, scope } of named) moveRegister(replica, entry, scope, delta, register, stamp, true);
     replica.meta.hlcHigh = Stamp.max(replica.meta.hlcHigh, stamp);
   }
   replica.meta.hlc = clock.pair;

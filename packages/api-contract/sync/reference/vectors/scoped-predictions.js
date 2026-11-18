@@ -293,7 +293,26 @@ export function scopedReconciliation() {
   assert.deepEqual(guards, [accepted, accepted]);
   const next = push({ state: admitted.state, registry, product, account: 'A', request: ordinary.expect.returns[6], serverNow: 3003 });
   assert.deepEqual(next.response.body.results.map(({ s }) => s), ['ok', 'ok']);
-  return [mapped, replay, deletion, withoutPrediction, receiptOnly, ordinary];
+  const run = { t: 'run', id: 'run00001' };
+  const start = { op: 'commit', scope: origin, deviceNow: 2000, changes: [], opts: {
+    cmd: { name: 'probe.start', args: { id: run.id, label: 'Start', startedAt: 2000, join: false } },
+    predict: [{ op: 'create', ...run, f: { label: 'Start', startedAt: 2000 } }],
+  } };
+  const treeCapture = { op: 'commit', scope: `tree/${parent}`, deviceNow: 2001, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Tree' } }],
+    opts: { cmd: { name: 'probe.captureTree', args: {} }, scopedPredict: [{ scope: origin, changes: [{ op: 'update', ...run, f: { label: 'Tree' } }] }] } };
+  const labelGuarded = { op: 'commit', scope: origin, deviceNow: 2002, changes: [{ op: 'update', ...run, f: { label: 'Later' } }],
+    opts: { guard: [{ ...run, field: 'label' }] } };
+  const started = { op: 'pushResponse', deviceNow: 3000, response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 3000, lastN: 1,
+    results: [{ n: 1, s: 'ok', seq: 2, write: [{ ...run, born: '3000:0:srv', f: { label: '3000:0:srv', startedAt: '3000:0:srv' } }] }] } } };
+  const projected = stepsVector('a write map moves a tree command\'s product projection and the product guards that read it follow', {
+    device, steps: [start, treeCapture, labelGuarded, { op: 'push' }, started],
+  });
+  const [, treeEntry, guardEntry] = projected.expect.device.replicas[0].outbox;
+  const moved = treeEntry.predictions.find((projection) => projection.scope === origin).d[0].f.label[1];
+  const read = runSteps({ device, steps: [start, treeCapture, labelGuarded] }).device.replicas[0].outbox[2].intent.guard[0].stamp;
+  assert.notEqual(moved, read);
+  assert.equal(guardEntry.intent.guard[0].stamp, moved);
+  return [mapped, replay, deletion, withoutPrediction, receiptOnly, ordinary, projected];
 }
 
 export function scopedReplay() {
