@@ -376,12 +376,12 @@ public struct Inverses: Sendable {
       let preimages: [Preimage] = targets.compactMap { (target: Target) -> Preimage? in
         views[scope]?.record(target.key)?.value(of: target.slot).map { Preimage(target: target, value: $0) }
       }
-      let recreated: [UndoRecipe] = operations.compactMap { (operation: PlannedOperation) -> UndoRecipe? in
+      let recreated: [ActUndoRecipe] = operations.compactMap { (operation: PlannedOperation) -> ActUndoRecipe? in
         guard case .createRecord(let record, _, _) = operation else { return nil }
         return .createdRecord(restoreCommand: command, record: record)
       }
       let restorable: [RestoreTarget] = preimages.map { RestoreTarget(target: $0.target) }
-      let recipes: [UndoRecipe] = (restorable.isEmpty ? [] : [.fields(restoreCommand: command, targets: restorable)]) + recreated
+      let recipes: [ActUndoRecipe] = (restorable.isEmpty ? [] : [.fields(restoreCommand: command, targets: restorable)]) + recreated
       return JournalSource(localId: slot.localId, originScope: scope, recipes: recipes, preimages: preimages)
     }
     return ReversibleAct(actId: inverseActId, sourceEntries: sources)

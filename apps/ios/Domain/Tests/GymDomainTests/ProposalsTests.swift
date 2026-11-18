@@ -142,7 +142,7 @@ struct ProposalsTests {
     #expect(try a.runner.run(ApplyProposal(Self.proposalId)).refusal == .gone(Self.routineId.ref, .predicted))
     let action = ProposeRoutine(id: ID("proposal2"), routineId: Self.routineId, name: "Later", entries: Self.after, summary: "")
     #expect(try a.runner.run(action).refusal == .gone(Self.routineId.ref, .predicted))
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     #expect(try a.drawn(Proposal.self).map(\.state) == ["pending"])
     #expect(try a.runner.run(ApplyProposal(Self.proposalId)).receipt != nil)
     a.sync()

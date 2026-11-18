@@ -191,7 +191,7 @@ import Testing
     #expect(try b.drawn(WeighIn.self) == [weighIn])
     #expect(a.undoOffers().map(\.id) == [receipt.gestureId])
 
-    #expect(try a.runner.undo(receipt.gestureId))
+    #expect(try a.runner.cancelHeld(receipt.gestureId))
     a.advance(ms: Constants.holdMs)
     a.sync()
     #expect(try a.drawn(WeighIn.self) == [weighIn])
@@ -208,7 +208,7 @@ import Testing
 
     let receipt = try #require(try a.runner.run(DeleteWeighIn(ID(today))).receipt)
     a.advance(ms: Constants.holdMs)
-    #expect(try !a.runner.undo(receipt.gestureId))
+    #expect(try !a.runner.cancelHeld(receipt.gestureId))
     a.sync()
 
     #expect(try a.stored(WeighIn.self) == [])
@@ -229,7 +229,7 @@ import Testing
     guard case .saved(let rewrite?) = again else { throw ContractError("the weigh-in was not written: \(again)") }
     #expect(sheet.isNew == false && rewrite.retired == [delete.gestureId])
     #expect(a.undoOffers().isEmpty)
-    #expect(try !a.runner.undo(delete.gestureId))
+    #expect(try !a.runner.cancelHeld(delete.gestureId))
     a.advance(ms: Constants.holdMs)
     a.sync()
 
@@ -249,7 +249,7 @@ import Testing
       == .invalid(Violation(rule: "weighin.kg", path: "kg", reason: .below(min: 20))))
     #expect(a.undoOffers().map(\.id) == [delete.gestureId])
 
-    #expect(try a.runner.undo(delete.gestureId))
+    #expect(try a.runner.cancelHeld(delete.gestureId))
     #expect(try a.drawn(WeighIn.self) == [weighIn])
   }
 

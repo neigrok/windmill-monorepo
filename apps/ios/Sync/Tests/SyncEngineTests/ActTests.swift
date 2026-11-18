@@ -33,7 +33,7 @@ struct ActTests {
     #expect(receipt.segments.map(\.scope) == [scope, scope])
     #expect(receipt.localIds == ["\(receipt.gestureId)/0", "\(receipt.gestureId)/1"])
     #expect(receipt.segments[0].stamp! < receipt.segments[1].stamp!)
-    #expect(try rig.engine.undo(receipt.gestureId))
+    #expect(try rig.engine.cancelHeld(receipt.gestureId))
     #expect(try rig.engine.read(scope) { try $0.drawn("card").isEmpty })
   }
 

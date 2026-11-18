@@ -60,13 +60,13 @@ public struct Attempt: Sendable, Hashable {
 public struct JournalSource: Sendable, Hashable {
   public let localId: String
   public var originScope: ScopeRef
-  public var recipes: [UndoRecipe]
+  public var recipes: [ActUndoRecipe]
   public var preimages: [Preimage]
   public var attempts: [Attempt]
   // An epoch change took its history: it was collected before it could earn the new epoch's receipt.
   public var unavailable: Bool
 
-  public init(localId: String, originScope: ScopeRef, recipes: [UndoRecipe], preimages: [Preimage], attempts: [Attempt] = [],
+  public init(localId: String, originScope: ScopeRef, recipes: [ActUndoRecipe], preimages: [Preimage], attempts: [Attempt] = [],
               unavailable: Bool = false) {
     self.localId = localId
     self.originScope = originScope
@@ -81,7 +81,7 @@ public struct JournalSource: Sendable, Hashable {
     try object.expectKeys(required: ["localId", "originScope", "recipes", "preimages", "attempts"], optional: ["unavailable"])
     self.init(
       localId: try object.member("localId").asString(), originScope: try ScopeRef(json: object.member("originScope")),
-      recipes: try object.member("recipes").asArray().map { (recipe: JSON) throws -> UndoRecipe in try UndoRecipe(json: recipe) },
+      recipes: try object.member("recipes").asArray().map { (recipe: JSON) throws -> ActUndoRecipe in try ActUndoRecipe(json: recipe) },
       preimages: try object.member("preimages").asArray().map { (preimage: JSON) throws -> Preimage in try Preimage(json: preimage) },
       attempts: try object.member("attempts").asArray().map { (attempt: JSON) throws -> Attempt in try Attempt(json: attempt) },
       unavailable: try object["unavailable"]?.asBool() ?? false)
@@ -405,55 +405,6 @@ public struct InverseSlot: Sendable, Hashable {
   }
 }
 
-// §7.3 readInverseResult: what an Undo or a Redo came to.
-public enum InverseResult: Sendable, Hashable {
-  case cancelled(requestId: String, inverseActId: String, changed: Bool)
-  case pending(requestId: String, inverseActId: String, localChanged: Bool?)
-  case settled(requestId: String, inverseActId: String, changed: Bool, appliedCount: Int, skippedCount: Int)
-  case unavailable(requestId: String?, reason: String)
-
-  init(json: JSON) throws {
-    let object = try json.asObject()
-    let text = { (key: String) throws -> String in try object.member(key).asString() }
-    switch try text("kind") {
-    case "cancelled": self = .cancelled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool())
-    case "pending": self = .pending(requestId: try text("requestId"), inverseActId: try text("inverseActId"), localChanged: try object["localChanged"]?.asBool())
-    case "settled":
-      self = .settled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool(),
-                      appliedCount: Int(try object.member("appliedCount").asInteger()), skippedCount: Int(try object.member("skippedCount").asInteger()))
-    case "unavailable":
-      self = .unavailable(requestId: try object.member("requestId").nullable { (id: JSON) throws -> String in try id.asString() }, reason: try text("reason"))
-    default: throw JSONError.shape("an unknown inverse result")
-    }
-  }
-
-  // Its kind as telemetry may name it: cancelled, pending, settled or unavailable, never an id.
-  public var kindName: String {
-    switch self {
-    case .cancelled: "cancelled"
-    case .pending: "pending"
-    case .settled: "settled"
-    case .unavailable: "unavailable"
-    }
-  }
-
-  public var json: JSON {
-    switch self {
-    case .cancelled(let requestId, let inverseActId, let changed):
-      return ["kind": "cancelled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed)]
-    case .pending(let requestId, let inverseActId, let localChanged):
-      var object: JSON.Object = ["kind": "pending", "requestId": .string(requestId), "inverseActId": .string(inverseActId)]
-      object["localChanged"] = localChanged.map(JSON.bool)
-      return .object(object)
-    case .settled(let requestId, let inverseActId, let changed, let applied, let skipped):
-      return ["kind": "settled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed),
-              "appliedCount": JSON(applied), "skippedCount": JSON(skipped)]
-    case .unavailable(let requestId, let reason):
-      return ["kind": "unavailable", "requestId": requestId.map(JSON.string) ?? .null, "reason": .string(reason)]
-    }
-  }
-}
-
 // §7.3 one Undo or Redo of an act: its slots are outbox entries whose `inverseOf` names the request.
 public struct InverseRequest: Sendable, Hashable {
   public let requestId: String
@@ -515,7 +466,7 @@ public struct InverseRequest: Sendable, Hashable {
 
   // readInverseResult: its result once it has one, else pending.
   public var current: InverseResult {
-    result ?? .pending(requestId: requestId, inverseActId: inverseActId, localChanged: localChanged)
+    result ?? .pending(requestId: requestId, inverseActId: inverseActId, localChanged: localChanged ?? false)
   }
 }
 
@@ -709,7 +660,7 @@ extension LoadedReplica {
           var source = journal.acts[act].sourceEntries[index]
           source.originScope = map.scope(source.originScope)
           let scope = source.originScope
-          source.recipes = source.recipes.map { (recipe: UndoRecipe) -> UndoRecipe in
+          source.recipes = source.recipes.map { (recipe: ActUndoRecipe) -> ActUndoRecipe in
             switch recipe {
             case .fields(let command, let targets):
               return .fields(restoreCommand: command, targets: targets.map { (item: RestoreTarget) -> RestoreTarget in
@@ -752,7 +703,7 @@ extension LoadedReplica {
 public struct UndoPlan: Sendable {
   struct Segment: Sendable {
     let scope: ScopeRef
-    let recipes: [UndoRecipe]
+    let recipes: [ActUndoRecipe]
     let preimages: [Preimage]
   }
 

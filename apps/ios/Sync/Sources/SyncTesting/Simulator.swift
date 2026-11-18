@@ -548,7 +548,7 @@ package final class Simulator {
         phone.committed += receipt.localIds
         count("gesture \(planned.label)")
         if !receipt.retired.isEmpty { count("retired") }
-        if receipt.releaseAt != nil, rng.chance(0.2), (try? engine.undo(receipt.gestureId)) == true { count("undo at once") }
+        if receipt.releaseAt != nil, rng.chance(0.2), (try? engine.cancelHeld(receipt.gestureId)) == true { count("undo at once") }
       case .refused(let code, _, let notice):
         count("commit refused \(code)")
         if code == .tooLarge, notice.map(phone.noticeIDs().subtracting(notices).contains) != true {
@@ -700,7 +700,7 @@ package final class Simulator {
 
   func undo(on phone: Phone) {
     guard let offers = try? phone.engine.currentUndoOffers(), !offers.isEmpty else { return }
-    if (try? phone.engine.undo(rng.pick(offers).id)) == true { count("undo") }
+    if (try? phone.engine.cancelHeld(rng.pick(offers).id)) == true { count("undo") }
   }
 
   // Leaving the app: holds released, then, when `flushing`, the leave flush over whatever the wire does.

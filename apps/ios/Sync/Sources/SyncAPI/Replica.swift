@@ -89,8 +89,13 @@ public protocol Replica: Sendable {
   func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T)
   func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T),
                     segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T)
-  // §7.3: true iff every entry of the gesture was still held, and so removed.
-  func undo(_ gestureId: String) throws -> Bool
+  // §7.3: the held-only Undo, true iff every entry of the gesture was still held, and so removed.
+  func cancelHeld(_ gestureId: String) throws -> Bool
+  // §7.3 Undo of an act (K-3): the inverse of a journaled act, `slots` replacing its stored recipes whole by source
+  // ordinal; the result as it stands; and the act's release from the product's stack, false when nothing held it.
+  func requestInverse(_ actId: String, slots: [ActUndo.Segment]?) throws -> InverseResult
+  func readInverseResult(_ requestId: String) throws -> InverseResult
+  func releaseReversibleAct(_ actId: String) throws -> Bool
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T
   // A CSPRNG id by the type's registry `mint`; a type that mints none throws malformed.
   func mintID(_ type: String) throws -> RecordID

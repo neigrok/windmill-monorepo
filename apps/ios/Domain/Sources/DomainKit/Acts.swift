@@ -96,7 +96,12 @@ extension ActionRunner {
           case .refuse(let refusal): return (nil, .done(.refused(refusal)))
           case .unchanged(let result): return (nil, .done(.unchanged(result)))
           case .write(let act, let result):
-            return (ActRequest(scopes: act.segments.map(\.scope), hold: holdRemovals && act.segments.contains { $0.plan.isHeld }), .writing(act, result))
+            let opted: [ActUndo.Segment] = act.segments.enumerated().compactMap { (index: Int, segment: ScopedPlan) -> ActUndo.Segment? in
+              segment.plan.undoRecipes(in: segment.scope).map { ActUndo.Segment(index: index, recipes: $0) }
+            }
+            let request = ActRequest(scopes: act.segments.map(\.scope), hold: holdRemovals && act.segments.contains { $0.plan.isHeld },
+                                     undo: opted.isEmpty ? nil : ActUndo(segments: opted))
+            return (request, .writing(act, result))
           }
         }, segment: { step, index, context in
           guard case .writing(let act, _) = step else { preconditionFailure("only a writing act has segments") }

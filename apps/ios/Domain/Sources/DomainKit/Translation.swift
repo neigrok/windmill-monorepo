@@ -115,6 +115,29 @@ extension Plan {
   }
 }
 
+extension Plan {
+  // §9.6: the plan's Undo recipes in the engine's form (engine §7.3), a target or record without a scope of its own in
+  // the plan's; nil when the plan does not opt in.
+  package func undoRecipes(in scope: ScopeRef) -> [ActUndoRecipe]? {
+    guard !undoRecipes.isEmpty else { return nil }
+    let address = { (record: UndoRecord) -> RecordAddress in RecordAddress(scope: record.scope ?? scope, key: record.key) }
+    let target = { (target: UndoTarget) -> Target in Target(address(target.record), target.slot) }
+    return undoRecipes.map { (recipe: UndoRecipe) -> ActUndoRecipe in
+      switch recipe {
+      case .fields(let command, let targets):
+        return .fields(restoreCommand: command, targets: targets.map { (item: (target: UndoTarget, default: JSON?)) -> RestoreTarget in
+          RestoreTarget(target: target(item.target), defaultValue: item.default)
+        })
+      case .createdRecord(let command, let record):
+        return .createdRecord(restoreCommand: command, record: address(record))
+      case .command(let name, let input, let owned, let records, let scopes):
+        return .command(name, input: input, evidence: EvidenceSelection(
+          ownedFields: owned.map(target), unchangedCreatedRecords: records.map(address), unchangedCreatedScopes: scopes))
+      }
+    }
+  }
+}
+
 extension Operation {
   // The table's cell for this operation, or nil for a guard, which writes nothing.
   func change(in scope: ScopeRef, registry: Registry) throws(PlanError) -> Change? {

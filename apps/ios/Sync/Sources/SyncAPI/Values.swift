@@ -295,9 +295,9 @@ public enum CommitOutcome: Hashable, Sendable {
 public struct ActUndo: Sendable, Hashable {
   public struct Segment: Sendable, Hashable {
     public let index: Int
-    public let recipes: [UndoRecipe]
+    public let recipes: [ActUndoRecipe]
 
-    public init(index: Int, recipes: [UndoRecipe]) {
+    public init(index: Int, recipes: [ActUndoRecipe]) {
       self.index = index
       self.recipes = recipes
     }
@@ -318,7 +318,56 @@ public struct ActUndo: Sendable, Hashable {
       let fields = try segment.asObject()
       try fields.expectKeys(required: ["index", "recipes"])
       return Segment(index: Int(try fields.member("index").asInteger()),
-                     recipes: try fields.member("recipes").asArray().map { (recipe: JSON) throws -> UndoRecipe in try UndoRecipe(json: recipe) })
+                     recipes: try fields.member("recipes").asArray().map { (recipe: JSON) throws -> ActUndoRecipe in try ActUndoRecipe(json: recipe) })
+    }
+  }
+}
+
+// §7.3 Undo of an act (K-3): what an Undo or a Redo came to. A pending one says whether the device's view changed; a
+// settled one whether accepted effects changed anything and how many conditional operations applied and skipped.
+public enum InverseResult: Sendable, Hashable {
+  case cancelled(requestId: String, inverseActId: String, changed: Bool)
+  case pending(requestId: String, inverseActId: String, localChanged: Bool)
+  case settled(requestId: String, inverseActId: String, changed: Bool, appliedCount: Int, skippedCount: Int)
+  case unavailable(requestId: String?, reason: String)
+
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    let text = { (key: String) throws -> String in try object.member(key).asString() }
+    switch try text("kind") {
+    case "cancelled": self = .cancelled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool())
+    case "pending":
+      self = .pending(requestId: try text("requestId"), inverseActId: try text("inverseActId"), localChanged: try object.member("localChanged").asBool())
+    case "settled":
+      self = .settled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool(),
+                      appliedCount: Int(try object.member("appliedCount").asInteger()), skippedCount: Int(try object.member("skippedCount").asInteger()))
+    case "unavailable":
+      self = .unavailable(requestId: try object.member("requestId").nullable { (id: JSON) throws -> String in try id.asString() }, reason: try text("reason"))
+    default: throw JSONError.shape("an unknown inverse result")
+    }
+  }
+
+  // Its kind as telemetry may name it: cancelled, pending, settled or unavailable, never an id.
+  public var kindName: String {
+    switch self {
+    case .cancelled: "cancelled"
+    case .pending: "pending"
+    case .settled: "settled"
+    case .unavailable: "unavailable"
+    }
+  }
+
+  public var json: JSON {
+    switch self {
+    case .cancelled(let requestId, let inverseActId, let changed):
+      return ["kind": "cancelled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed)]
+    case .pending(let requestId, let inverseActId, let localChanged):
+      return ["kind": "pending", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "localChanged": .bool(localChanged)]
+    case .settled(let requestId, let inverseActId, let changed, let applied, let skipped):
+      return ["kind": "settled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed),
+              "appliedCount": JSON(applied), "skippedCount": JSON(skipped)]
+    case .unavailable(let requestId, let reason):
+      return ["kind": "unavailable", "requestId": requestId.map(JSON.string) ?? .null, "reason": .string(reason)]
     }
   }
 }

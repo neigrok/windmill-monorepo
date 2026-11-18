@@ -227,7 +227,7 @@ struct NotesTests {
     a.sync()
     #expect(try b.drawn(Note.self).map(\.id) == [two, three, one])
 
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     #expect(try a.drawn(Note.self).map(\.id) == [two, three, one])
     #expect(a.undoOffers().isEmpty)
     #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
@@ -244,7 +244,7 @@ struct NotesTests {
     #expect(a.undoOffers().map(\.id) == [removal.gestureId])
     #expect(try a.drawn(Note.self).map(\.id) == [two])
     #expect(Note.position(of: two, stored: try a.stored(Note.self)) == 1)
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     #expect(try a.drawn(Note.self).map(\.id) == [one, two])
     let again = try #require(try a.runner.run(DeleteNote(one)).receipt)
     a.sync()
@@ -252,7 +252,7 @@ struct NotesTests {
     a.advance(ms: Constants.holdMs)
     a.sync()
     #expect(try b.drawn(Note.self).map(\.id) == [two])
-    #expect(try a.runner.undo(again.gestureId) == false)
+    #expect(try a.runner.cancelHeld(again.gestureId) == false)
   }
 
   @Test func coachAppendsItsNoteAndAReplayKeepsTheLiftersEdit() throws {
@@ -293,7 +293,7 @@ struct NotesTests {
     let removal = try #require(try a.runner.run(DeleteNote(id)).receipt)
     let call = SaveNoteCall(Note(id: a.runner.mint(Note.self), title: "Tone ", body: "Blunt."))
     #expect(unchanged(try a.runner.run(call)) == id)
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     #expect(try a.drawn(Note.self).map(\.id) == [id])
   }
 

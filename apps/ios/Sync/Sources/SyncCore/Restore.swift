@@ -161,6 +161,12 @@ public struct EvidenceSelection: Sendable, Hashable {
   public var unchangedCreatedRecords: [RecordAddress]
   public var unchangedCreatedScopes: [ScopeRef]
 
+  public init(ownedFields: [Target], unchangedCreatedRecords: [RecordAddress], unchangedCreatedScopes: [ScopeRef]) {
+    self.ownedFields = ownedFields
+    self.unchangedCreatedRecords = unchangedCreatedRecords
+    self.unchangedCreatedScopes = unchangedCreatedScopes
+  }
+
   public init(json: JSON) throws {
     let object = try json.asObject()
     try object.expectKeys(required: ["ownedFields", "unchangedCreatedRecords", "unchangedCreatedScopes"])
@@ -202,7 +208,7 @@ public struct RestoreTarget: Sendable, Hashable {
 }
 
 // The closed union a segment opts into Undo with.
-public enum UndoRecipe: Sendable, Hashable {
+public enum ActUndoRecipe: Sendable, Hashable {
   case fields(restoreCommand: String, targets: [RestoreTarget])
   case createdRecord(restoreCommand: String, record: RecordAddress)
   case command(String, input: JSON, evidence: EvidenceSelection)
@@ -463,7 +469,7 @@ extension Registry {
   // §7.3 a segment's recipe against its scope: the scope kind's restore command and targets of its own scope and types,
   // restorable slots and defaults on their domains, a creatable created record, or an inverse command of the scope kind
   // with evidence of records and created trees and overlays. The fault, or nil.
-  public func recipeFault(_ recipe: UndoRecipe, in scope: ScopeRef) -> String? {
+  public func recipeFault(_ recipe: ActUndoRecipe, in scope: ScopeRef) -> String? {
     guard let kind = scopeKind(of: scope) else { return "\(scope) is no scope" }
     switch recipe {
     case .fields(let name, let targets):

@@ -215,7 +215,7 @@ struct PredictionTests {
     } else {
       #expect(await rig.engine.sender.step() == .idle)
       #expect(rig.transport.pushes == [])
-      #expect(try replica.undo(receipt.gestureId))
+      #expect(try replica.cancelHeld(receipt.gestureId))
     }
     rig.connectivity.set(online: false)
     #expect(try rig.outbox() == ["later/0 ready"])

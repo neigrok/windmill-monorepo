@@ -208,7 +208,7 @@ public final class SyncEngine: Replica {
   }
 
   // An Undo's silent fold may leave sendable what the held gesture held back, so an Undo kicks the sender.
-  public func undo(_ gestureId: String) throws -> Bool {
+  public func cancelHeld(_ gestureId: String) throws -> Bool {
     let undone = try core.write { store, _ in try store.undo(gestureId) }
     if undone { core.wakes.sender.kick() }
     return undone
@@ -219,7 +219,7 @@ public final class SyncEngine: Replica {
   // requestInverse(sourceActId, inverseSlots?): an act still wholly held is cancelled at once; otherwise its inverse slots
   // are reserved and projected, and the sender takes them from here. `slots` replace the stored recipes whole. A failure
   // of the transaction throws as a commit's does.
-  public func requestInverse(_ sourceActId: String, replacing slots: [ActUndo.Segment]? = nil) throws -> InverseResult {
+  public func requestInverse(_ sourceActId: String, slots: [ActUndo.Segment]? = nil) throws -> InverseResult {
     let result: InverseResult
     do {
       result = try core.write(operation: .commit) { store, instance in
