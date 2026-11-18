@@ -42,6 +42,14 @@ class ActIDSource internal constructor(private val context: ActContext) {
         catch (failure: Exception) { throw ProgrammingFault("minting an opaque act identity failed", failure) }
 }
 
+// An act's load over `context` and its one decision (§9.5); a violation refuses the act. The runner commits what it decides.
+fun <L, T, R> ActAction<L, T, R>.decision(context: ActContext, registry: Registry, moment: Moment): ActDecision<T, R> {
+    val read = ActReader(context, registry, moment)
+    val loaded = try { load(read) } finally { read.open = false }
+    context.finishLoad()
+    return try { decide(loaded, ActIDSource(context)) } catch (violation: Violation) { ActDecision.Refuse(refusals.of(violation)) }
+}
+
 internal class ActPrediction(val refusal: Refused) : RuntimeException()
 internal sealed interface ActStep<out T, out R> {
     data class Done<T, R>(val outcome: ActOutcome<T, R>) : ActStep<T, R>
