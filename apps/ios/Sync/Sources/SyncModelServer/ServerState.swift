@@ -434,6 +434,18 @@ public struct SpentRow: Sendable, Hashable {
 }
 
 // A superseded text head, kept under its rev (§2.2, §6.11 step 4).
+extension Revision {
+  // One kept revision a text field: revisions sort by record, field and rev, so each field's latest is the last of its run.
+  static func latestOfEachField(_ revisions: [Revision]) -> [Revision] {
+    var latest: [Revision] = []
+    for revision in revisions.sorted() {
+      if let last = latest.last, last.key == revision.key, last.field.isSameID(as: revision.field) { latest.removeLast() }
+      latest.append(revision)
+    }
+    return latest
+  }
+}
+
 public struct Revision: Sendable, Hashable, Comparable {
   public let key: RecordKey
   public let field: String

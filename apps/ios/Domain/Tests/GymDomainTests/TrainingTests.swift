@@ -224,7 +224,7 @@ struct TrainingTests {
     let delete = try #require(try a.runner.run(DeleteSet(corrected.id)).receipt)
     #expect(delete.releaseAt == a.clock.nowMs() + Constants.holdMs)
     #expect(try a.drawn(TrainingSet.self).isEmpty)
-    #expect(try a.runner.undo(delete.gestureId))
+    #expect(try a.runner.cancelHeld(delete.gestureId))
     #expect(try a.drawn(TrainingSet.self) == [corrected])
     _ = try a.runner.run(DeleteSet(corrected.id)); a.advance(ms: Constants.holdMs); a.sync()
     #expect(try a.stored(TrainingSet.self).isEmpty)
@@ -261,14 +261,14 @@ struct TrainingTests {
     let removal = try #require(try a.runner.run(DiscardSession(Self.sessionID)).receipt)
     #expect(removal.releaseAt == a.clock.nowMs() + Constants.holdMs)
     #expect(try a.drawn(Session.self).isEmpty)
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     #expect(try a.drawn(Session.self) == before && a.drawn(TrainingSet.self) == beforeSets)
     let again = try #require(try a.runner.run(DiscardSession(Self.sessionID)).receipt)
     a.sync(); #expect(try b.drawn(Session.self) == before)
     a.advance(ms: Constants.holdMs); a.sync()
     #expect(try a.drawn(Session.self).isEmpty && b.drawn(Session.self).isEmpty)
     #expect(try a.drawn(TrainingSet.self).isEmpty && b.drawn(TrainingSet.self).isEmpty)
-    #expect(try a.runner.undo(again.gestureId) == false)
+    #expect(try a.runner.cancelHeld(again.gestureId) == false)
   }
 
   @Test func importReceiptDistinguishesOmittedAndExplicitNullDespiteIdenticalPrediction() throws {
@@ -372,7 +372,7 @@ struct TrainingTests {
     let removal = try #require(try a.runner.run(DeleteSet(editing.id)).receipt)
     editing.weightKg = 90
     #expect(try a.runner.run(CorrectSet(editing)).refusal == .gone(editing.id.ref, .predicted))
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     #expect(try a.drawn(TrainingSet.self).first?.weightKg == 80)
   }
 
@@ -394,7 +394,7 @@ struct TrainingTests {
     a.advance(ms: SessionRules.staleAfterMs)
     let removal = try #require(try a.runner.run(DiscardSession(Self.sessionID)).receipt)
     #expect(try a.runner.run(FinishSession(id: Self.sessionID)).refusal == .gone(Self.sessionID.ref, .predicted))
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     #expect(try a.stored(Session.self).first?.finishedAt == nil)
   }
 
@@ -408,7 +408,7 @@ struct TrainingTests {
     let result = try a.runner.run(CorrectSession(id: Self.sessionID, requestId: "request1", startedAt: Instant(ms: Self.now), finishedAt: Instant(ms: Self.now), routineName: nil, sets: [kept]))
     #expect(result.receipt != nil)
     #expect(try a.drawn(TrainingSet.self).isEmpty)
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     a.sync()
     var corrected = prior; corrected.weightKg = 90
     #expect(try a.drawn(TrainingSet.self) == [corrected])

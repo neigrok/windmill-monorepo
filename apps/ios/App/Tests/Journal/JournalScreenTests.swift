@@ -21,7 +21,10 @@ nonisolated final class ClockCountingReplica: Replica {
   func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T), segment: (T, Int, any CommitContext) throws -> SyncAPI.Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
     try base.commitAct(prepare, segment: segment)
   }
-  func undo(_ gestureId: String) throws -> Bool { try base.undo(gestureId) }
+  func cancelHeld(_ gestureId: String) throws -> Bool { try base.cancelHeld(gestureId) }
+  func requestInverse(_ actId: String, slots: [ActUndo.Segment]?) throws -> InverseResult { try base.requestInverse(actId, slots: slots) }
+  func readInverseResult(_ requestId: String) throws -> InverseResult { try base.readInverseResult(requestId) }
+  func releaseReversibleAct(_ actId: String) throws -> Bool { try base.releaseReversibleAct(actId) }
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try base.read(scope, body) }
   func mintID(_ type: String) throws -> RecordID { try base.mintID(type) }
   func physNow() throws -> Int64 { clockReads.withLock { $0 += 1 }; return try base.physNow() }

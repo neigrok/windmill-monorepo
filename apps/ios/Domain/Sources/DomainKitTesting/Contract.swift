@@ -248,13 +248,15 @@ extension Draft {
 }
 
 extension Decision {
-  // A write's gesture as §8.2 translates its plan for `scope`.
+  // A write's gesture as §8.2 translates its plan for `scope`, with the plan's Undo recipes when it opts in.
   public func form(in scope: ScopeRef, registry: Registry, result: (Result) -> JSON, refusal: (Refusal) -> JSON) throws -> JSON {
     switch self {
     case .write(let plan, let value):
-      ["write": ["gesture": try plan.gesture(in: scope, registry: registry).form, "result": result(value)]]
-    case .unchanged(let value): ["unchanged": ["result": result(value)]]
-    case .refuse(let reason): ["refuse": refusal(reason)]
+      var write: JSON.Object = ["gesture": try plan.gesture(in: scope, registry: registry).form, "result": result(value)]
+      write["undo"] = plan.undoRecipes(in: scope).map { (recipes: [ActUndoRecipe]) -> JSON in .array(recipes.map(\.json)) }
+      return ["write": .object(write)]
+    case .unchanged(let value): return ["unchanged": ["result": result(value)]]
+    case .refuse(let reason): return ["refuse": refusal(reason)]
     }
   }
 }

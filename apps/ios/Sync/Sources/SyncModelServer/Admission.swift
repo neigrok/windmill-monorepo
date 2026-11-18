@@ -400,8 +400,100 @@ struct AdmissionRun {
   // A capture command mutates nothing of its own: the intent's deltas, checks and consequences are its effects.
   func runCommand(_ command: CheckedCommand?) throws -> CommandOutcome? {
     guard let command else { return nil }
-    if command.definition.engine == .capture { return CommandOutcome(product: state.product) }
-    return try admission.rules.run(command, in: context())
+    switch command.definition.engine {
+    case .capture?: return CommandOutcome(product: state.product)
+    case .restore?: return try restore(registry.restoreArguments(.object(command.args), of: command.definition))
+    case nil:
+      let outcome = try admission.rules.run(command, in: context())
+      if command.definition.inverse, (try? InverseOutcome.reported(in: outcome.detail, count: 1)) == nil {
+        throw AdmissionFault(description: "an inverse command reports no outcome")
+      }
+      return outcome
+    }
+  }
+
+  // §6.4 restore (K-3): each operation, in order, holds or skips by its own condition against the scope as stored, a
+  // create also against what earlier operations created; what holds becomes one server delta a record, at the stamp
+  // step 9 mints. The detail reports one outcome an operation.
+  func restore(_ arguments: RestoreArguments) -> CommandOutcome {
+    var outcomes: [InverseOutcome] = []
+    var deltas: [RecordKey: PlannedDelta] = [:]
+    var order: [RecordKey] = []
+    let text = { (value: JSON) -> String in
+      guard case .string(let text) = value else { return "" }
+      return text
+    }
+    let members = { (value: JSON?) -> [(key: String, value: JSON)] in
+      guard case .object(let object)? = value else { return [] }
+      return object.members
+    }
+    for (index, operation) in arguments.operations.enumerated() {
+      guard arguments.expectedEpoch.isSameID(as: state.epoch) else {
+        outcomes.append(InverseOutcome(index: index, skipped: "epoch-changed"))
+        continue
+      }
+      let key = operation.key
+      let type = registry.type(key.type)!
+      let row: Row? = state.rows[scope]?[key]
+      if !order.contains(key) { order.append(key) }
+      let written = { () -> PlannedDelta in
+        if let delta = deltas[key] { return delta }
+        let keepsLife = type.life && (type.identity == .keyed || row?.isAlive == false)
+        return PlannedDelta(key: key, op: .write, life: keepsLife ? row?.lattice.life.map { PlannedLife($0.state, .given($0.stamp)) } : nil,
+                            born: type.hasBorn ? row?.lattice.born.map(StampSlot.given) : nil)
+      }
+      switch operation {
+      case .field(_, let slot, let expected, let before):
+        let holds: Bool = switch expected {
+        case .absent(let born): row != nil && (!type.hasBorn || row?.lattice.born == born) && row?.version(of: slot) == nil
+        case .version(let version): row?.version(of: slot) == version
+        }
+        guard holds, let row else {
+          outcomes.append(InverseOutcome(index: index, skipped: "version-changed"))
+          continue
+        }
+        if slot != .life, type.life, !row.isAlive || row.lattice.life == nil, type.revivable != true, type.identity != .keyed {
+          outcomes.append(InverseOutcome(index: index, skipped: "record-dead"))
+          continue
+        }
+        var delta = written()
+        switch slot {
+        case .life: delta.life = PlannedLife(before == "alive" ? .alive : .dead, .server)
+        case .field(let name): delta.fields[name] = PlannedRegister(before, .server)
+        case .text(let name): delta.replacements[name] = TextReplacement(text(before))
+        case .born: preconditionFailure("born is never restored")
+        }
+        deltas[key] = delta
+      case .createdRecord(_, let rowSeq, let footprint):
+        guard let row, row.isAlive, row.lattice.life != nil, row.seq == rowSeq, row.footprint == footprint else {
+          outcomes.append(InverseOutcome(index: index, skipped: "record-changed"))
+          continue
+        }
+        var delta = written()
+        delta.life = PlannedLife(.dead, .server)
+        deltas[key] = delta
+      case .createRecord(_, let values):
+        guard row == nil, deltas[key] == nil, case .none = state.idState(of: key, in: scope, registry: registry) else {
+          outcomes.append(InverseOutcome(index: index, skipped: "record-present"))
+          continue
+        }
+        let fields = Dictionary(uniqueKeysWithValues: members(values["f"]).map { (member: (key: String, value: JSON)) -> (String, PlannedRegister) in
+          (member.key, PlannedRegister(member.value, .server))
+        })
+        let texts = Dictionary(uniqueKeysWithValues: members(values["x"]).map { (member: (key: String, value: JSON)) -> (String, TextWrite) in
+          (member.key, TextWrite(text: text(member.value), base: .rev(0)))
+        })
+        deltas[key] = PlannedDelta(key: key, op: .create, life: PlannedLife(.alive, .server), born: type.hasBorn ? .server : nil,
+                                   fields: fields, texts: texts)
+      }
+      outcomes.append(InverseOutcome(index: index))
+    }
+    let restored: [PlannedDelta] = order.compactMap { (key: RecordKey) -> PlannedDelta? in
+      guard var delta = deltas[key], let type = registry.type(key.type) else { return nil }
+      delta.op = IdentityRules.op(of: type, life: delta.life, born: delta.born) ?? delta.op
+      return delta
+    }
+    return CommandOutcome(deltas: restored, detail: InverseOutcome.detail(outcomes), product: state.product)
   }
 
   // MARK: - Step 9: one pass of server stamps, the joins, text merges and the record bound

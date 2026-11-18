@@ -93,6 +93,34 @@ public struct Saved: Equatable {
   }
 }
 
+// §10.2 Reversible: a draft's save as the reversible action `run` takes. Its `Saved` travels as the values and presence it
+// holds, which the act path can carry, and becomes a `Saved` again only in `save`.
+struct ReversibleSave<E: Draftable, R: ProductRefusal>: Action {
+  struct Carried: Sendable {
+    let values: [String: JSON]
+    let exists: Bool
+
+    var saved: Saved { Saved(values: values, exists: exists) }
+  }
+
+  let save: SaveDraft<E, R>
+
+  var scope: ScopeRef { save.scope }
+  var reversible: Bool { true }
+
+  func load(_ read: Reader) throws -> SaveDraftLoaded<E> {
+    try save.load(read)
+  }
+
+  func decide(_ loaded: SaveDraftLoaded<E>, ids: IDSource) throws(Violation) -> Decision<Carried, R> {
+    switch try save.decide(loaded, ids: ids) {
+    case .write(let plan, let saved): .write(plan, Carried(values: saved.values, exists: saved.exists))
+    case .unchanged(let saved): .unchanged(Carried(values: saved.values, exists: saved.exists))
+    case .refuse(let refusal): .refuse(refusal)
+    }
+  }
+}
+
 extension ActionRunner {
   // The record as `drawn` shows it, or nil when it does not.
   public func open<E: Draftable>(_ id: ID<E>, in scope: ScopeRef) throws -> Draft<E>? {
@@ -110,11 +138,21 @@ extension ActionRunner {
   }
 
   // §10.1 the draft's save as one commit. Synchronous, and it never throws: a refused or failed save leaves the draft as
-  // it was; a programming fault traps.
+  // it was; a programming fault traps. A type that saves reversibly saves through the act path (§10.2 Reversible), so the
+  // receipt's gesture id is the act an Undo names.
   public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, _ type: SaveDraft<E, R>.Type) -> SaveResult<R> {
     let outcome: Outcome<Saved, R>
     do {
-      outcome = try perform(SaveDraft<E, R>(draft))
+      let save = SaveDraft<E, R>(draft)
+      if save.reversible {
+        switch try run(ReversibleSave(save: save)) {
+        case .committed(let carried, let receipt): outcome = .committed(carried.saved, receipt)
+        case .unchanged(let carried): outcome = .unchanged(carried.saved)
+        case .refused(let refusal): outcome = .refused(refusal)
+        }
+      } else {
+        outcome = try perform(save)
+      }
     } catch let fault as PlanError {
       preconditionFailure("a draft's save made a plan no write path makes: \(fault)")
     } catch let fault as DecodeError {

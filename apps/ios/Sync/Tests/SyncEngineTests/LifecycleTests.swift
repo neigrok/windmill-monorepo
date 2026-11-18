@@ -21,7 +21,7 @@ struct LifecycleTests {
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], hold: true, gestureId: "g1"))
     let relaunched = try rig.relaunch()
     #expect(try rig.outbox() == ["g1/0 ready"])
-    #expect(try relaunched.undo("g1") == false)
+    #expect(try relaunched.cancelHeld("g1") == false)
   }
 
   // A first launch mints the guard and re-identifies nothing; a copy that differs re-identifies every replica, and the

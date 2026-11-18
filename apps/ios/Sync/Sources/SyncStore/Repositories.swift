@@ -33,9 +33,12 @@ public struct StoreTransaction {
   }
 
   // One replica with the rows `reads` names and the outbox entries `entries` names; `notices` loads its notices too.
-  public func replica(_ id: String, reads: [ScopeRef: RowSelection] = [:], entries: EntrySelection = .every,
+  public func replica(_ id: String, reads: [ScopeRef: RowSelection] = [:], entries selection: EntrySelection = .every,
                       notices: Bool = false) throws -> LoadedReplica? {
-    guard let (handle, meta) = try record(of: id) else { return nil }
+    guard let (handle, meta, journaled) = try record(of: id) else { return nil }
+    let journal = journaled ? try self.journal(of: handle) : Journal()
+    var entries = selection
+    entries.localIds.formUnion(journal.namedLocalIds)
     let cursors = try cursors(of: handle)
     var confirmed: [ScopeRef: Rows] = [:]
     var spent: [ScopeRef: [RecordKey: SpentID]] = [:]
@@ -52,8 +55,22 @@ public struct StoreTransaction {
       meta: meta, outbox: outbox.read, entries: entries, unreadCommitOrder: outbox.unreadCommitOrder,
       projectionTargets: entries.projectionTargets ? try projectionTargets(of: handle) : [], confirmed: confirmed,
       staging: staging, spent: spent, cursors: cursors.records, known: try known(of: handle),
-      notices: notices ? try self.notices(of: handle) : nil, deviceRows: try deviceRows(of: handle), wholeScopes: false,
+      notices: notices ? try self.notices(of: handle) : nil, deviceRows: try deviceRows(of: handle), journal: journal, wholeScopes: false,
       isActive: try isActive(handle))
+  }
+
+  // K-3 a replica's journal, each record by its id.
+  func journal(of handle: ReplicaHandle) throws -> Journal {
+    let records = { (table: String, column: String, id: String) throws -> [JSON] in
+      try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT \(column) FROM \(table) WHERE replica = ? ORDER BY \(id)"), arguments: [handle.value])
+        .map { (record: GRDB.Row) throws -> JSON in try Blob.json(record[column]) }
+    }
+    return Journal(
+      acts: try records("journal_act", "act", "act_id").map { (json: JSON) throws -> ReversibleAct in try ReversibleAct(json: json) },
+      inverses: try records("inverse_request", "request", "request_id").map { (json: JSON) throws -> InverseRequest in try InverseRequest(json: json) },
+      cancellations: try records("cancellation", "receipt", "inverse_act_id").map { (json: JSON) throws -> CancellationReceipt in
+        try CancellationReceipt(json: json)
+      })
   }
 
   // Every replica with its notices: what the lifecycle planners read. `rows` loads every row too.
@@ -67,7 +84,7 @@ public struct StoreTransaction {
 
   // Everything one replica holds, every row included.
   func wholeReplica(_ id: String) throws -> LoadedReplica {
-    guard let (handle, meta) = try record(of: id) else { throw StoreError.noReplica(id) }
+    guard let (handle, meta, journaled) = try record(of: id) else { throw StoreError.noReplica(id) }
     let cursors = try cursors(of: handle)
     var confirmed: [ScopeRef: Rows] = [:]
     for (scope, rows) in try Dictionary(grouping: allRows(.confirmed, of: handle), by: \.scope) { confirmed[scope] = Rows(rows.map(\.row)) }
@@ -81,12 +98,13 @@ public struct StoreTransaction {
     }
     return LoadedReplica(
       meta: meta, outbox: try outbox(of: handle), confirmed: confirmed, staging: staging, spent: spent, cursors: cursors.records,
-      known: try known(of: handle), notices: try notices(of: handle), deviceRows: try deviceRows(of: handle), wholeScopes: true,
-      isActive: try isActive(handle))
+      known: try known(of: handle), notices: try notices(of: handle), deviceRows: try deviceRows(of: handle),
+      journal: journaled ? try journal(of: handle) : Journal(),
+      wholeScopes: true, isActive: try isActive(handle))
   }
 
   public func holdsScope(_ scope: ScopeRef, in id: String) throws -> Bool {
-    guard let (handle, _) = try record(of: id) else { throw StoreError.noReplica(id) }
+    guard let (handle, _, _) = try record(of: id) else { throw StoreError.noReplica(id) }
     for table in ["row_set", "spent", "cursor", "known_scope", "outbox"] {
       let active = table == "row_set" ? " AND role IS NOT NULL" : ""
       if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM \(table) WHERE replica = ? AND scope = ?\(active))",
@@ -102,7 +120,7 @@ public struct StoreTransaction {
   }
 
   // The replica of `id`: its handle, which every other table names it by, and its meta.
-  func record(of id: String) throws -> (handle: ReplicaHandle, meta: ReplicaMeta)? {
+  func record(of id: String) throws -> (handle: ReplicaHandle, meta: ReplicaMeta, journaled: Bool)? {
     guard let record = try GRDB.Row.fetchOne(db.cachedStatement(sql: "SELECT * FROM replica WHERE id = ?"), arguments: [id]) else { return nil }
     guard let state = ReplicaMeta.State(rawValue: record["state"]) else { throw StoreError.corrupt("replica state") }
     var meta = ReplicaMeta(replica: id, state: state, account: record["account"])
@@ -118,7 +136,7 @@ public struct StoreTransaction {
     meta.serverEpoch = record["server_epoch"]
     meta.ackThrough = record["ack_through"]
     meta.authPaused = record["auth_paused"]
-    return (ReplicaHandle(value: record["handle"]), meta)
+    return (ReplicaHandle(value: record["handle"]), meta, record["journaled"])
   }
 
   func isActive(_ handle: ReplicaHandle) throws -> Bool {
@@ -154,6 +172,9 @@ public struct StoreTransaction {
         SELECT gesture.* FROM outbox AS held JOIN outbox AS gesture USING (gesture_id)
         WHERE held.replica = ?1 AND held.state = 'held' AND gesture.replica = ?1
         """, [handle.value]))
+    }
+    for localId in selection.localIds {
+      queries.append(("SELECT * FROM outbox WHERE replica = ? AND local_id = ?", [handle.value, localId]))
     }
     for n in selection.numbered {
       queries.append(("SELECT * FROM outbox WHERE replica = ? AND state = 'sent' AND n = ?", [handle.value, n]))
@@ -220,6 +241,7 @@ public struct StoreTransaction {
     entry.resultEpoch = record["result_epoch"]
     entry.orphanOf = record["orphan_of"]
     entry.writeTargets = try (record["write_targets"] as Data?).map { try Blob.json($0).asArray().map { try WriteTarget(json: $0) } }
+    entry.inverseOf = record["inverse_of"]
     return entry
   }
 
@@ -274,7 +296,11 @@ public struct StoreTransaction {
     }
     let noticed = try String.fetchAll(db, sql: "SELECT id FROM notice WHERE id >= ? AND id < ?",
                                       arguments: ["notice:\(gestureId)/", "notice:\(gestureId)0"])
-    return noticed.contains { Notice.gestureId(ofNotice: $0)?.utf8.elementsEqual(gestureId.utf8) == true }
+    if noticed.contains(where: { Notice.gestureId(ofNotice: $0)?.utf8.elementsEqual(gestureId.utf8) == true }) { return true }
+    return try Bool.fetchOne(db, sql: """
+      SELECT EXISTS (SELECT 1 FROM journal_act WHERE act_id = ?1) OR EXISTS (SELECT 1 FROM inverse_request WHERE request_id = ?1)
+        OR EXISTS (SELECT 1 FROM inverse_request WHERE inverse_act_id = ?1) OR EXISTS (SELECT 1 FROM cancellation WHERE inverse_act_id = ?1)
+      """, arguments: [gestureId]) == true
   }
 
   // §7.6: the records of `type` in `scope` that the replica's entries touch, a held entry's only `withHeld`, in id order.

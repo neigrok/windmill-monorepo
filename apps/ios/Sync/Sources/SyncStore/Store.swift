@@ -123,7 +123,7 @@ public struct Written<Value> {
 public enum TxName: String, Sendable, Hashable, CaseIterable {
   case firstLaunch, commit, undo, release, engineStart, number, offset, results, localRefusal, authPause, authResume, reidentify
   case epochChange, pullPage, liveFrame, subscriptions, signInBegin, signInComplete, signInCancel, signOutRelease, signOutCount
-  case signOutFinish, discardDormant, dismissNotice, sweep, settle
+  case signOutFinish, discardDormant, dismissNotice, sweep, settle, inverse
 }
 
 public enum CrashPoint: Sendable, Hashable {
@@ -151,6 +151,7 @@ struct Planners: Sendable {
   let pushes: PushPlanner
   let pages: PageApplier
   let lifecycle: ReplicaLifecycle
+  let inverses: Inverses
 
   init(registry: Registry, limits: Limits, rewriteDeviceValue: @escaping DeviceValueRewrite, commandResultWrites: @escaping CommandResultDeviceWrites,
        pendingDeviceWork: @escaping PendingDeviceWork) {
@@ -159,5 +160,6 @@ struct Planners: Sendable {
     pushes = PushPlanner(registry: registry, limits: limits, rewriteDeviceValue: rewriteDeviceValue, commandResultWrites: commandResultWrites)
     pages = PageApplier(registry: registry)
     lifecycle = ReplicaLifecycle(registry: registry, pendingDeviceWork: pendingDeviceWork)
+    inverses = Inverses(registry: registry)
   }
 }

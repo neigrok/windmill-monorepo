@@ -401,6 +401,7 @@ public struct PageApplier: Sendable {
       }
       for governed in governed(by: row) {
         replica.apply(.putKnown(governed, .gone))
+        try replica.forgetJournalScope(governed)
         try replica.endProjections(in: governed)
       }
       if previous != nil { replica.apply(staged ? .deleteStagedRow(scope, row.key) : .deleteRow(scope, row.key)) }
@@ -444,13 +445,15 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // A scope end also ends a bound tree's own overlay; both forget their cache and end only acknowledged entries'
-  // effects there. Only a tree's scopes are ever known so (§2.5); the replica's own product scope never is.
+  // A scope end also ends a bound tree's own overlay; both forget their cache and their journal values and end only
+  // acknowledged entries' effects there. Only a tree's scopes are ever known so (§2.5); the replica's own product scope
+  // never is.
   func forget(_ scope: ScopeRef, as kind: KnownKind, in replica: inout LoadedReplica) throws {
     var scopes = [scope]
     if replica.meta.state == .bound, case .tree(let id) = scope.kind { scopes.append(.overlay(id)) }
     for endedScope in scopes {
       replica.apply(.forgetScope(endedScope))
+      try replica.forgetJournalScope(endedScope)
       if replica.known[endedScope] != .gone { replica.apply(.putKnown(endedScope, kind)) }
       try replica.endProjections(in: endedScope)
     }

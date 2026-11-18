@@ -14,6 +14,9 @@ enum Handlers {
 
   static let core: [String: @Sendable (JSON) throws -> JSON] = [
     "journal/client.json": { try JournalHandlers.client($0) },
+    "roadmap/client.json": { input in
+      try ClientSteps.run(input, registry: ServerHandlers.roadmap) { PlannedDevice($0, registry: ServerHandlers.roadmap, limits: $1) }
+    },
     "journal/claim-edit.json": { try JournalHandlers.claimEdit($0) },
     "journal/content-clock.json": { input in
       ["stamp": try ContentClock.next(pair: input["pair"], observed: input["observed"], now: input.member("now").asInteger(), actor: input.member("actor").asString())]
