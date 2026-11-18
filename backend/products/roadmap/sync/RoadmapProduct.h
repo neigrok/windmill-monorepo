@@ -17,9 +17,13 @@ namespace wm::roadmap::engine {
 std::string_view registryText();
 const sync::Registry& registry();
 
+class Deeds;
+
 class RoadmapProduct {
 public:
+  // A binding whose deeds no activity keeps: the test worlds'.
   RoadmapProduct();
+  explicit RoadmapProduct(Deeds& deeds);
   ~RoadmapProduct();
 
   // Binds every roadmap type to its store, by type name, under one rules object, and every product command to its

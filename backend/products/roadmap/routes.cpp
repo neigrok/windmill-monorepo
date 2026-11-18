@@ -33,13 +33,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
   linkTreeSocket();
 
   auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.ownerProgress, deps.oplog, deps.authService,
-                                       deps.forkService);
-  auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.registry, deps.authService);
-  auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.registry, deps.authService);
+                                       deps.forkService, deps.engineReads);
+  auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.registry, deps.authService, deps.engineReads);
+  auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.registry, deps.authService, deps.engineReads);
   auto sharePageApi =
       std::make_shared<SharePageApi>(deps.registry, deps.trees, deps.authService, deps.ogVideos, deps.webRoot,
-                                     deps.appBaseUrl);
-  auto galleryApi = std::make_shared<GalleryApi>(deps.trees, deps.ownerProgress, deps.authService, deps.webRoot);
+                                     deps.appBaseUrl, deps.engineReads);
+  auto galleryApi = std::make_shared<GalleryApi>(deps.trees, deps.ownerProgress, deps.authService, deps.webRoot, deps.engineReads);
   auto registryApi = std::make_shared<TreeRegistryApi>(deps.treeRegistry, deps.authService);
   auto tendingApi = std::make_shared<TendingApi>(deps.tendingService, deps.authService);
   auto remindersApi = std::make_shared<RemindersApi>(deps.reminderSweep, deps.reminderRepo, deps.authService,

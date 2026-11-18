@@ -131,12 +131,18 @@ add_library(windmill_roadmap
   products/roadmap/domain/Gallery.cpp
   products/roadmap/domain/Tending.cpp
   products/roadmap/domain/Reminders.cpp
+  products/roadmap/domain/read/RoadmapTree.cpp
+  products/roadmap/domain/read/FollowGraph.cpp
+  products/roadmap/domain/read/RoadmapAccount.cpp
+  products/roadmap/domain/read/Reads.cpp
   products/roadmap/application/TreeRoom.cpp
   products/roadmap/application/RoomRegistry.cpp
   products/roadmap/application/OwnerProgress.cpp
+  products/roadmap/application/OwnerFollows.cpp
   products/roadmap/application/ProgressService.cpp
   products/roadmap/application/NodeEdits.cpp
   products/roadmap/application/ActivityFeed.cpp
+  products/roadmap/application/EngineReadModels.cpp
   products/roadmap/application/ForkService.cpp
   products/roadmap/application/ScopedToolHost.cpp
   products/roadmap/application/TendingService.cpp
@@ -144,6 +150,7 @@ add_library(windmill_roadmap
   products/roadmap/application/ReminderSweep.cpp
   products/roadmap/sync/RoadmapRules.cpp
   products/roadmap/sync/RoadmapProduct.cpp
+  products/roadmap/sync/RoadmapDeeds.cpp
   products/roadmap/sync/PgRoadmap.cpp)
 target_include_directories(windmill_roadmap PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
@@ -313,6 +320,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/TendingTest.cpp
   test/products/roadmap/domain/TreeTest.cpp
   test/products/roadmap/domain/RemindersTest.cpp
+  test/products/roadmap/domain/read/ReadVectorsTest.cpp
   test/products/roadmap/application/TreeRegistryTest.cpp
   test/products/roadmap/application/ForkServiceTest.cpp
   test/products/roadmap/application/TreeRoomTest.cpp
@@ -320,9 +328,11 @@ add_executable(windmill_domain_tests
   test/products/roadmap/application/ProgressServiceTest.cpp
   test/products/roadmap/application/OwnerProgressTest.cpp
   test/products/roadmap/application/ActivityFeedTest.cpp
+  test/products/roadmap/application/EngineReadModelsTest.cpp
   test/products/roadmap/application/ScopedToolHostTest.cpp
   test/products/roadmap/application/TendingServiceTest.cpp
   test/products/roadmap/application/ReminderSweepTest.cpp
+  test/products/roadmap/sync/RoadmapDeedsTest.cpp
   test/products/journal/domain/PageTest.cpp
   test/products/journal/domain/NudgePlanTest.cpp
   test/products/journal/domain/PassageTest.cpp
@@ -357,12 +367,13 @@ add_executable(windmill_domain_tests
   test/products/gym/coach/TurnServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
-# contract holds; the gym turn exchanges (gym/turns), the gym domain vectors (gym/domain) and the roadmap's web
-# addresses (roadmap-addresses.json), the link urls a person is shown (roadmap-link-urls.json) and the tree socket's
+# contract holds; the gym turn exchanges (gym/turns), the gym domain vectors (gym/domain), roadmap's read vectors
+# (roadmap/domain) and the roadmap's web addresses (roadmap-addresses.json), the link urls a person is shown (roadmap-link-urls.json) and the tree socket's
 # message sizes (roadmap-socket.json) the same way.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns" WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
   WM_ROADMAP_ADDRESSES="${WM_API_CONTRACT_DIR}/roadmap-addresses.json"
+  WM_ROADMAP_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/roadmap/domain"
   WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json"
   WM_ROADMAP_SOCKET="${WM_API_CONTRACT_DIR}/roadmap-socket.json"
   WM_SUBSCRIPTIONS_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/subscriptions")
@@ -451,6 +462,7 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/postgres/PgTreeRepository.cpp
   products/roadmap/adapters/postgres/PgProgressRepository.cpp
   products/roadmap/adapters/postgres/PgOpLog.cpp
+  products/roadmap/adapters/postgres/PgRoadmapRecords.cpp
   products/roadmap/adapters/postgres/PgOgImageRepository.cpp
   products/roadmap/adapters/postgres/PgOgVideoRepository.cpp
   products/roadmap/adapters/postgres/PgReminderRepository.cpp
@@ -712,6 +724,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/http/TreeApiTest.cpp
   test/products/roadmap/adapters/http/SharePageApiTest.cpp
   test/products/roadmap/adapters/http/GalleryApiTest.cpp
+  test/products/roadmap/adapters/http/EngineReadsApiTest.cpp
   test/products/roadmap/adapters/http/OgImageApiTest.cpp
   test/products/roadmap/adapters/http/OgVideoApiTest.cpp
   test/products/roadmap/adapters/http/TreeRegistryApiTest.cpp

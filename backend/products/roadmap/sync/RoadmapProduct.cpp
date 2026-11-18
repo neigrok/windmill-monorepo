@@ -3,6 +3,7 @@
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Restore.h"
 #include "platform/domain/sync/Scope.h"
+#include "products/roadmap/sync/RoadmapDeeds.h"
 #include "products/roadmap/sync/RoadmapRules.h"
 
 #include <algorithm>
@@ -26,6 +27,8 @@ constexpr std::array<const char*, 4> kOwnerOnly{"pointer", "subtask", "stepLink"
 constexpr std::array<const char*, 4> kWriterTerminal{"completed", "declined", "failed", "stopped"};
 constexpr std::array<const char*, 4> kFinalRegisters{"state", "text", "calls", "receipts"};
 constexpr std::array<const char*, 2> kRevivedByAChange{"node", "kind"};
+// The records a roadmap's activity tells of (deedOf).
+constexpr std::array<const char*, 4> kTold{"meta", "node", "edge", "kind"};
 // The product-scope commands whose own discovery declares every scope they and their consequences reach.
 constexpr std::array<const char*, 4> kSelfDeclaring{"roadmap.createSubtree", "roadmap.redoCreateSubtree", "roadmap.undoCreateSubtree",
                                                     "roadmap.undoCreateRoadmap"};
@@ -87,6 +90,16 @@ std::vector<Row> openers(SyncReader& read, const UserId& account, const std::str
   return opening;
 }
 
+// The deeds of a binding no activity keeps.
+Deeds& unkept() {
+  class Unkept final : public Deeds {
+  public:
+    void record(SyncTxn&, const Deed&) override {}
+  };
+  static Unkept deeds;
+  return deeds;
+}
+
 // §2.3 discovery: the scopes an intent's consequences reach, read from the owner's roadmaps as they stand before it.
 class Reached {
 public:
@@ -143,7 +156,11 @@ private:
 class Outcome {
 public:
   Outcome(SyncReader& read, const std::vector<Change>& changes) : read_(read) {
-    for (const Change& change : changes) rows_.insert_or_assign(RecordRef{change.scope, change.after.t, change.after.id}, change.after);
+    for (const Change& change : changes) {
+      const RecordRef ref{change.scope, change.after.t, change.after.id};
+      rows_.insert_or_assign(ref, change.after);
+      before_.insert_or_assign(ref, change.stored);
+    }
   }
 
   std::optional<Row> row(const ScopeKey& scope, const std::string& type, const RecordId& id) {
@@ -164,7 +181,9 @@ public:
   }
 
   void append(const ScopeKey& scope, Delta delta) {
-    Row joined = row(scope, delta.t, delta.id).value_or(Row(delta.t, delta.id));
+    const std::optional<Row> current = row(scope, delta.t, delta.id);
+    before_.try_emplace(RecordRef{scope, delta.t, delta.id}, current);
+    Row joined = current.value_or(Row(delta.t, delta.id));
     if (delta.lattice.life) joined.lattice.life = delta.lattice.life;
     for (const auto& [name, reg] : delta.lattice.f) joined.lattice.f.insert_or_assign(name, reg);
     rows_.insert_or_assign(RecordRef{scope, delta.t, delta.id}, std::move(joined));
@@ -179,9 +198,20 @@ public:
   const std::vector<std::pair<ScopeKey, RecordId>>& appendedSteps() const { return appendedSteps_; }
   Effects effects() const { return effects_; }
 
+  // Every step, link, kind and meta of a roadmap the intent writes, as it found each and as it leaves it, roadmap by
+  // roadmap.
+  std::map<ScopeKey, std::vector<Touched>> roadmapsTouched() const {
+    std::map<ScopeKey, std::vector<Touched>> touched;
+    for (const auto& [ref, row] : rows_) {
+      if (ref.scope.kind() == ScopeKind::tree && among(kTold, ref.t)) touched[ref.scope].push_back(Touched{before_.at(ref), row});
+    }
+    return touched;
+  }
+
 private:
   SyncReader& read_;
   std::map<RecordRef, Row> rows_;
+  std::map<RecordRef, std::optional<Row>> before_;
   std::vector<std::pair<ScopeKey, RecordId>> appendedSteps_;
   Effects effects_;
 };
@@ -337,6 +367,8 @@ public:
     return reached.keys();
   }
 
+  explicit Rules(Deeds& deeds) : deeds_(deeds) {}
+
   Effects effects(const CheckCtx& ctx, const std::vector<Change>& changes) override {
     Outcome outcome(ctx.read, changes);
     for (const Change& change : changes) checkRecord(ctx, change, outcome);
@@ -344,10 +376,21 @@ public:
     if (ctx.scope.key == accountOf(ctx.caller.account)) endBranches(ctx, changes, outcome);
     settleVisibility(ctx, changes, outcome);
     settleReach(ctx, changes, outcome);
+    recordDeeds(ctx, outcome);
     return outcome.effects();
   }
 
 private:
+  // §7: each roadmap the intent leaves a deed in keeps one for it, made by the intent's account, the only one that
+  // writes a roadmap: a person's own gesture, a server door's on their behalf, or the consequence of either.
+  void recordDeeds(const CheckCtx& ctx, const Outcome& outcome) {
+    for (const auto& [scope, records] : outcome.roadmapsTouched()) {
+      if (std::optional<Command> deed = deedOf(records)) deeds_.record(ctx.txn, Deed{scope.treeId(), ctx.caller.account, ctx.intent.gestureId, std::move(*deed)});
+    }
+  }
+
+  Deeds& deeds_;
+
   static void checkRecord(const CheckCtx& ctx, const Change& change, Outcome& outcome) {
     const std::string& type = change.type->name;
     if (type == "tree") return onlyARootIsDeleted(ctx, change);
@@ -660,7 +703,9 @@ public:
   }
 };
 
-RoadmapProduct::RoadmapProduct() : rules_(std::make_unique<Rules>()) {
+RoadmapProduct::RoadmapProduct() : RoadmapProduct(unkept()) {}
+
+RoadmapProduct::RoadmapProduct(Deeds& deeds) : rules_(std::make_unique<Rules>(deeds)) {
   commands_.emplace("roadmap.createSubtree", std::make_unique<CreateSubtree>());
   commands_.emplace("roadmap.recolourKind", std::make_unique<RecolourKind>());
   commands_.emplace("roadmap.undoCreateRoadmap", std::make_unique<UndoCreateRoadmap>());
