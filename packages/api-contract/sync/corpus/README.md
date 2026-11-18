@@ -116,6 +116,20 @@ characters; `tag` is 12 of `0-9a-z`.
   3. Otherwise create board `child` at the server stamp, which creates `tree:child`; write
      `meta.title := title` at the server stamp into `tree:parent` and `tree:child`; record the receipt
      `child → {parent, title}`; write `[{t: "board", id: child, born}]`; detail `{created: true}`.
+- `probe.restore {}` (`self/probe`, restores `card`, `run`, `lap`, `day`), `probe.restoreTree {}`
+  (`tree/<T>`, restores `meta`, `tag`, `link`) and `probe.restoreOverlay {}` (`self/overlay/<T>`, restores
+  `mark`) — replica and server origin; `scopedEffects` and `engine: "restore"`: the platform holds or skips
+  each operation of engine.md §6.4's fixed arguments and answers `{inverse: {outcomes}}`.
+- `probe.unbranch {input: {parent, child, title}, evidence}` — replica and server origin; `scopedEffects`,
+  `inverse: true`; `input.parent` and `input.child` are boards of `self/probe` (E-8). Discovery declares
+  `tree:parent` and `tree:child`.
+  1. Evidence that names no created record `self/probe` board `child`, or no created scope `tree/child`,
+     or `parent = child` → `invalid`.
+  2. Evidence that no longer holds (engine.md §6.4) → `ok`, no change; detail `{inverse: {outcomes:
+     [{index: 0, s: "skipped", code}]}}`.
+  3. Otherwise board `child` dies at the server stamp, which kills `tree:child`; when the evidence owns
+     `tree/parent`'s `meta.title`, it takes `input.title` at the server stamp; detail `{inverse:
+     {outcomes: [{index: 0, s: "applied"}]}}`.
 
 - `probe.sprout {board, tag, child}` — replica and server origin; predicts `board`. Each argument is a
   json string and a typed leaf (E-8): `board` an ordinary board in `self/probe`, `tag` an ordinary tag in
@@ -716,6 +730,7 @@ admission mints one stamp per intent by §10.3 and puts it there and in the writ
 | `check.json` | the parent rule and the run-delete consequence (laps die only when the run's joined life turns dead) |
 | `serial.json`, `caps.json`, `lifecycle.json`, `text.json` | steps 11, 12, 15 and §6.11 through admission |
 | `server-stamps.json` | §10.3: one tick per pass of step 9, after observing the registers the server deltas write, as stored and as a same-intent client delta writes them |
+| `restore.json` | K-3 (engine.md §6.4): `probe.restore`, `probe.restoreTree` and `probe.restoreOverlay` hold or skip each operation by its own condition (a field's version, a text's revision, an absent field of one birth, a created record's footprint and row sequence, a wholly absent id, the epoch) and write what holds under a fresh server stamp, with `{inverse: {outcomes}}` in the scoped detail's `command`; malformed operations are `invalid`; `probe.unbranch` kills the board a branch created, with its tree, and takes back the parent title while its evidence holds, skips whole when the created tree moved, and is `invalid` without proof of the board and tree |
 | `references.json` | E-8 through admission: `probe.sprout` creates its child with its `parent`, answers the subtree a step owns, admits a step in an absent tree, keeps the same step id in another tree apart, and refuses a taken proposed child; malformed typed leaves (a number, outside the tag pattern, empty, no board id) in arguments and in a nested `parent` are `invalid` with the state unchanged; a null `parent` names nothing; `probe.adopt` creates, answers a labelled tag of its own tree only, and refuses a taken id |
 
 The parent rule is checked against the joined records of the intent, so a lap under a run the same
@@ -986,6 +1001,10 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
   - `outbox`: `[OutboxEntry]`.
   - `notices`: `[Notice]`.
   - `device`: `{product: {key: value}}`.
+  - `journal`: `[ReversibleAct]` (engine.md §2.5, §7.3 Undo of an act), sorted by the UTF-8 bytes of
+    `actId`.
+  - `inverses`: `[InverseRequest]`, sorted by the UTF-8 bytes of `requestId`.
+  - `cancellations`: `[CancellationReceipt]`, sorted by the UTF-8 bytes of `inverseActId`.
 
   Absent parts are empty. Rows sort by `t`, then by the UTF-8 bytes of `jcs(id)`. The outbox sorts by
   `commitOrder`.
@@ -1057,6 +1076,9 @@ Expect: `{returns, device, ended, telemetry?, events?}`.
 | `unsubscribe` | `scope` | releases the explicit open and reconciles the replica's resolved set; an owner-derived scope or separately opened overlay stays | `null` |
 | `subscriptions` | | resolves the replica's product, owner-derived and explicit scopes, including bound trees' own overlays | the scope list |
 | `dismiss` | `id` | D-17: the notice `id` of the active replica takes `dismissed: true` | `null` |
+| `releaseReversibleAct` | `actId` | §7.3 Undo of an act: the act's journal record goes | `true` if the replica held it |
+| `requestInverse` | `actId`, `slots?` | §7.3 Undo of an act: cancels a wholly held act, or reserves, projects and, when its sources are authoritative, materializes its inverse slots | an `InverseResult` |
+| `readInverseResult` | `requestId` | §7.3 Undo of an act | an `InverseResult` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
 | `pushResponse` | `response`, `dieAfter?` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1); a malformed authenticated conflict throws | `{throws: true}` for a malformed conflict; `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
 | `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
@@ -1244,6 +1266,38 @@ write-map stamps.
   ends `undone` with event `silent-fold`. A guard names nothing: an entry that only guards a register
   of the undone record keeps its guard.
 
+### undo/*.json
+
+K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequest.undo` of an act:
+`{version: 1, segments: [{index, recipes}]}`.
+
+- `journal.json`: what an opted act journals and keeps. Each named segment runs as one scoped intent,
+  under its own scopedEffects command or its scope kind's capture command when it writes a delta; the
+  act's `ReversibleAct` holds one source entry per named segment that left an entry, with the first
+  local preimages read before any segment changed a projection (an unset slot takes the target's
+  `defaultValue`, and with none the act throws). A malformed recipe throws before anything changes. Each
+  source's ACK records `{epoch, n, outcome, acceptedEffects?}` in the result's transaction, one attempt an
+  epoch; a death before the ACK records nothing and the resend's replayed result is retained; settling
+  collects the entry, never the attempt. An epoch change drops other-epoch attempts: a requeued source
+  replays into the new epoch, a collected one keeps none; a changed-epoch answer that records its
+  results first keeps them. A retire matches an opted removal. `releaseReversibleAct` removes the record.
+  Sign-in's Add carries the journal; Discard removes the product's whole source entries. A write map that
+  renames a record a journaled act names renames it in the act's recipe, preimage and receipt.
+- `restore.json`: inverse requests end to end against the reference server. An Undo after its act settled
+  restores each field and settles with its counts; one requested before every segment settles waits for
+  each source, a refused source owning nothing and its slot vacating unnumbered; a slot whose source is
+  still held stops numbering across a restart; an edit queued after the Undo wins once the restore's ACK
+  reclocks it; a field written away and back skips alone, and the Redo restores only what the Undo
+  applied; a masking local edit that the server refuses leaves the restore to apply; a materialized slot
+  replays after an epoch change with its own `expectedEpoch` and skips; a foreign edit between a creation
+  and the act's later write of the record keeps the record, while an unbroken history deletes it; a wholly
+  held act is cancelled in place and asking again answers the same request; a product inverse
+  (`probe.unbranch`) runs over the evidence the engine builds from the act's receipts and skips whole when
+  the created tree grew; explicit slots replace the stored recipes whole; a held cancellation's Redo writes
+  back against the accepted versions it found and creates the record again, waits for a pending entry's
+  accepted version, and restores nothing for a write a later local edit masked; a Discard at sign-in
+  settles a pending inverse skipped with its values withdrawn.
+
 ### refusal/*.json
 
 `fold.json`, `restamp.json` (clock-skew) and `base-unknown.json` use responses from the reference
@@ -1346,6 +1400,13 @@ E-8's client steps, every reference read through the compiled traversal (`refs/t
   refusal resends `base: {text}` with it;
 - a governor redirect, then a tag map in the redirected tree, reach an overlay key and a sprout's step
   through both.
+
+### write/scoped-predictions.json
+
+E-7's client steps: scoped predictions across scopes, their coverage marker by marker, receipt validation
+before any ACK change, replays and dependencies. A result names the sent entry at its `n`: after a
+re-identify, an entry acknowledged under the old replica id keeps its old `n` until it settles, and a scoped
+receipt for the new entry numbered the same is that entry's, checked and applied as its own.
 
 ### refs/traversal.json (client)
 
@@ -1474,6 +1535,13 @@ survey shows.
 | a store restored or cloned | `store restored`, `store cloned` | `http 409 gap`, `http 409 replica-forked` |
 | engine paths | `activeReplicaChanged announced`, `ok with a joining write map`, `refused cap`, `http 413 request-too-large`, `retry` | `ended refused by target-merged`, `http 400 malformed` |
 | typed references (E-8): a redirected proposal, and the work that named it | `a pushed reference names a record a redirect resolved to` | `sprout answered with its step's subtree`, `adopt answered with a labelled tag` |
+| Undo of an act (K-3): opted acts, held cancellation, Undo and Redo slots, empty slots, releases | `opted act`, `undo pending` | `undo cancelled`, `redo pending`, `reversible act released`, `inverse settled applied`, `inverse settled skipped`, `ended resolved by vacate` |
+
+K-3's events were surveyed with the Undo mix in place (an opted card retitle or held tag removal, and an
+Undo, Redo or release of a journaled act, in the faults phase) over 30 fuzzes of 60×160 and 10 of 500×300
+from first seeds 1, 1001, 2001, …, with no miss: `undo pending` the fewest of its 60 × 160 column (11.9
+seeds a fuzz on average), and `undo cancelled` of its 500 × 300 column (20.7). After quiescence every inverse
+request of every replica has settled.
 
 The simulator reports its other counts, the other refusal codes and `page outside the subscription
 set` among them, without listing them.

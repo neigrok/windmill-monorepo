@@ -29,6 +29,11 @@ before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`)
 drawn/stored records, notices, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and
 the records it changes) and `firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
 replica changes after durable commits and persisted-page suspension, restoration and restore failure.
+`commitAct(segments, {undo})` journals an act opted into Undo after its hold (engine.md §7.3 Undo of an act);
+`requestInverse(actId, slots?)` asks for its inverse in one transaction and answers an `InverseResult`,
+`readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a
+journal record the product's stack no longer needs. The journal, inverse requests and cancellation receipts
+are control records of the replica's store, beside its outbox.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
 

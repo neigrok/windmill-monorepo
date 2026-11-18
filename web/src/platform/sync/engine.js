@@ -12,6 +12,9 @@ import { Offset } from '../../../../packages/api-contract/sync/reference/core/cl
 import { CommitError, commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { ActCommit } from '../../../../packages/api-contract/sync/reference/client/acts.js';
 import { release, releaseAll, releaseDue, undo } from '../../../../packages/api-contract/sync/reference/client/hold.js';
+import { readInverseResult, requestInverse } from '../../../../packages/api-contract/sync/reference/client/inverse.js';
+import { releaseReversibleAct } from '../../../../packages/api-contract/sync/reference/client/journal.js';
+import { effectsOf } from '../../../../packages/api-contract/sync/reference/client/projections.js';
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
@@ -400,10 +403,42 @@ export class BrowserSyncEngine {
     return result;
   }
 
+  // K-3 (engine.md §7.3 Undo of an act): the inverse of a journaled act, reserved in one transaction over the
+  // scopes its sources and held entries wrote. Its event carries the result's kind as an outcome, nothing more.
+  async requestInverse(actId, slots) {
+    const replica = this.device.activeReplica;
+    const act = replica.journal.find((candidate) => candidate.actId === actId);
+    const cancellation = replica.cancellations.find((candidate) => candidate.inverseActId === actId);
+    const scopes = [...new Set([
+      ...(act?.sourceEntries ?? []).map((source) => source.originScope),
+      ...(cancellation?.units ?? []).map((unit) => (unit.target ?? unit.record).scope),
+      ...replica.entries().filter((entry) => entry.gestureId === actId).flatMap((entry) => effectsOf(entry).map(({ scope }) => scope)),
+    ])];
+    let result;
+    try {
+      result = await this.write(null, (device, ctx) => requestInverse(device.activeReplica, ctx, actId, slots), scopes);
+    } catch (error) {
+      this.telemetry.event('sync-inverse', { outcome: 'failed' });
+      throw error;
+    }
+    this.telemetry.event('sync-inverse', { outcome: { cancelled: 'ok', settled: 'ok', pending: 'pending', unavailable: 'unavailable' }[result.kind] });
+    this.kick();
+    return result;
+  }
+
+  readInverseResult(requestId) {
+    return readInverseResult(this.device.activeReplica, requestId);
+  }
+
+  releaseReversibleAct(actId) {
+    return this.write(null, (device) => releaseReversibleAct(device.activeReplica, actId));
+  }
+
   async commitAct(prepare, segment) {
     if (typeof prepare !== 'function') {
       const segments = prepare;
-      prepare = () => ({ request: segments === null ? null : { scopes: segments.map((item) => item.scope), hold: segments.some((item) => item.opts?.hold) }, value: segments });
+      const options = segment ?? {};
+      prepare = () => ({ request: segments === null ? null : { scopes: segments.map((item) => item.scope), hold: segments.some((item) => item.opts?.hold), ...options }, value: segments });
       segment = (values, index) => values[index];
     }
     const act = new ActCommit();

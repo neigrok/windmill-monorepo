@@ -220,6 +220,11 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     val command = gesture.command?.let { cmd ->
         if (cmd.args !is Json.Obj) cmd else cmd.copy(args = Json.Obj(cmd.args.obj().map { (name, value) -> name to (registry.command(cmd.name)?.args?.get(name)?.domain?.rounded(value) ?: value) }))
     }
+    // E-8: every typed leaf this commit writes holds an id of its type, in every delta, prediction and argument.
+    val references = registry.references
+    val leaves = (deltas + predict + predictions.orEmpty().flatMap { it.deltas }).all { delta -> delta.lattice.fields.all { (name, register) ->
+        registry.type(delta.key.type)?.fields?.get(name)?.let { references.checkValue(it, register.value) } != false } }
+    if (!leaves || definition != null && command != null && !references.checkArguments(definition, command.args)) malformed("typed-reference")
     val written = Intent(scope, deltas = deltas, guards = guards, command = command, gestureId = gesture.gestureId).json
     if (written.holdsNul) malformed("nul")
     // Opening the store parses every entry and notice under MAX_DEPTH. The deepest of them, a notice's dependent, holds a delta three levels deeper than its intent does.

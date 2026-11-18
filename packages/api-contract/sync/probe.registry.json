@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "probe",
-  "version": 4,
+  "version": 5,
   "minVersion": 2,
   "products": {
     "probe": {
@@ -222,6 +222,31 @@
     {
       "name": "probe.captureOverlay", "scope": "overlay", "origins": ["replica", "server"],
       "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {}, "predicts": ["mark"]
+    },
+    {
+      "name": "probe.restore", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "restore", "args": {}, "predicts": ["card", "run", "lap", "day"]
+    },
+    {
+      "name": "probe.restoreTree", "scope": "tree", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "restore", "args": {}, "predicts": ["meta", "tag", "link"]
+    },
+    {
+      "name": "probe.restoreOverlay", "scope": "overlay", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "restore", "args": {}, "predicts": ["mark"]
+    },
+    {
+      "name": "probe.unbranch", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "inverse": true,
+      "args": {
+        "input": { "type": "json", "domain": { "type": "object", "properties": {
+          "parent": { "type": "string" }, "child": { "type": "string" },
+          "title": { "type": "string", "unit": "chars", "max": 12 } }, "required": ["parent", "child", "title"] } }
+      },
+      "refPaths": [
+        { "path": ["input", "parent"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } },
+        { "path": ["input", "child"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } }
+      ]
     },
     {
       "name": "probe.branch", "scope": "product:probe", "origins": ["replica", "server"],
