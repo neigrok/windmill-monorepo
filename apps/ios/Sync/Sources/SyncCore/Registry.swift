@@ -8,6 +8,8 @@ public struct Registry: Sendable {
   public let products: [ProductDef]
   public let types: [TypeDef]
   public let commands: [CommandDef]
+  // E-8: every leaf of every type and command, compiled once (§2.4 References).
+  public private(set) var references = References()
 
   public init(json: JSON) throws(RegistryError) {
     do {
@@ -26,6 +28,7 @@ public struct Registry: Sendable {
     } catch {
       throw RegistryError(context: "registry", underlying: error)
     }
+    references = try References(compiling: self)
     try checkReferences()
   }
 
@@ -45,6 +48,7 @@ public struct Registry: Sendable {
     products = parts.flatMap(\.products)
     types = parts.flatMap(\.types)
     commands = parts.flatMap(\.commands)
+    references = try References(compiling: self)
     try checkReferences()
   }
 
@@ -102,7 +106,7 @@ public struct Registry: Sendable {
         throw RegistryError("type \(type.name) lives in the undeclared product \(product)")
       }
       for field in type.fields {
-        guard let value = field.defaultValue, !admits(value, for: field) else { continue }
+        guard let value = field.defaultValue, !admits(value, for: field, of: type) else { continue }
         throw RegistryError("type \(type.name) field \(field.name): the default \(value.jcsText) is no value of the field")
       }
     }
@@ -552,6 +556,8 @@ public struct FieldDef: Sendable {
   // when the field declares none; JSON null when it declares null.
   public let defaultValue: JSON?
   public let opens: [String]?
+  // E-8 typed leaves in the value, as declared; `References` compiles and checks them with the registry.
+  public let refPaths: JSON?
 
   init(name: String, json: JSON) throws(RegistryError) {
     do {
@@ -559,7 +565,7 @@ public struct FieldDef: Sendable {
       let object = try json.asObject()
       try object.expectKeys(
         required: ["kind", "writer"],
-        optional: ["ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens"])
+        optional: ["ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens", "refPaths"])
       self.name = name
       kind = try FieldKind(name: object.member("kind").asString(), rank: object["rank"], serialNext: object["serialNext"])
       writer = try Writer(decoding: object.member("writer").asString())
@@ -572,6 +578,7 @@ public struct FieldDef: Sendable {
       domain = try object["domain"].map { try Domain(json: $0) }
       defaultValue = object["default"]
       opens = try object["opens"]?.asDistinctStrings()
+      refPaths = object["refPaths"]
       guard !parent || ref != nil else { throw RegistryError("the parent field is a ref") }
       guard !kind.isText || bounds?.max != nil else { throw RegistryError("a text field has unit and max") }
       guard !kind.isSerial || writer == .server else { throw RegistryError("a serial field is server-written") }
@@ -592,6 +599,7 @@ public struct FieldDef: Sendable {
     object["domain"] = domain?.json
     object["default"] = defaultValue
     object["opens"] = opens.map { .array($0.map { .string($0) }) }
+    object["refPaths"] = refPaths
     switch kind {
     case .ranked(let rank):
       object["rank"] = .object(JSON.Object(uniqueKeysWithValues: rank.values.map { ($0.value, JSON($0.rank)) }))
@@ -892,12 +900,15 @@ public struct CommandDef: Sendable {
   // E-7: its success carries a scoped receipt, and a commit may predict records in every scope it changes.
   public let scopedEffects: Bool
   public let engine: Engine?
+  // E-8 typed leaves in the arguments, as declared; `References` compiles and checks them with the registry.
+  public let refPaths: JSON?
 
   init(json: JSON) throws(RegistryError) {
     do {
       let object = try json.asObject()
       try object.expectKeys(
-        required: ["name", "scope", "origins", "serverInternal", "args"], optional: ["predicts", "beforePull", "scopedEffects", "engine"])
+        required: ["name", "scope", "origins", "serverInternal", "args"],
+        optional: ["predicts", "beforePull", "scopedEffects", "engine", "refPaths"])
       name = try object.member("name").asString()
       guard RegistryName.isCommand(name) else { throw RegistryError("\(name) is not a command name") }
       scope = try ScopeKind(text: object.member("scope").asString())
@@ -906,6 +917,7 @@ public struct CommandDef: Sendable {
       args = try object.member("args").asObject().members.map { try ArgumentDef(name: $0.key, json: $0.value) }
       predicts = try object["predicts"]?.asDistinctStrings() ?? []
       beforePull = try object["beforePull"]?.asBool() ?? false
+      refPaths = object["refPaths"]
       scopedEffects = try object["scopedEffects"]?.asBool() ?? false
       guard object["scopedEffects"] == nil || scopedEffects else { throw RegistryError("scopedEffects is true or absent") }
       engine = try object["engine"].map { json in
@@ -935,6 +947,7 @@ public struct CommandDef: Sendable {
     object["beforePull"] = beforePull ? true : nil
     object["scopedEffects"] = scopedEffects ? true : nil
     object["engine"] = engine.map { .string($0.rawValue) }
+    object["refPaths"] = refPaths
     return .object(object)
   }
 }

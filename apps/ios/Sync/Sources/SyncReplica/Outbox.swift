@@ -8,7 +8,8 @@ import SyncCore
 
 // Later deltas and commands that touch or name a record a source created, that carry unchanged a life register a
 // source wrote, or that target a scope its governing record creates; an opted command also by what it predicts in any
-// scope. Records are keyed by scope, and dependency is transitive through `absorb`.
+// scope. Records are keyed by scope, a reference naming the record its compiled leaf resolves to (E-8), and a command's
+// proposed creation names none. Dependency is transitive through `absorb`.
 public struct Dependents: Sendable {
   // One later entry's dependent part: its dependent deltas, whether its command is dependent, and, when the sources are
   // being replaced, its guards on what they created.
@@ -66,18 +67,15 @@ public struct Dependents: Sendable {
     for projection in entry.projected { absorb(scope: projection.scope, deltas: projection.deltas, stamp: entry.stamp) }
   }
 
-  // A reference names a record in the scope its type lives in: a product scope, or the tree and overlay scopes of
-  // the referencing scope's tree.
-  func names(_ key: RecordKey, from scope: ScopeRef) -> Bool {
-    guard let target = registry.scope(ofType: key.type, from: scope) else { return false }
-    return created.contains(ScopedKey(scope: target, key: key))
+  func names(_ references: [ResolvedReference]) -> Bool {
+    references.contains { created.contains($0.record) }
   }
 
   public func part(of entry: OutboxEntry) -> Part {
     let wholeScope = governed.contains(entry.scope)
     let removed = entry.intent.deltas.filter { wholeScope || depends($0, in: entry.scope) }
     let commandGone = entry.intent.command.map { command in
-      wholeScope || Dependents.references(of: command, registry: registry).contains { names($0.key, from: entry.scope) }
+      wholeScope || names(registry.references(of: command, in: entry.scope))
         || entry.predictions != nil && entry.projected.contains { projection in
           governed.contains(projection.scope) || projection.deltas.contains { depends($0, in: projection.scope) }
         }
@@ -91,24 +89,11 @@ public struct Dependents: Sendable {
   // record a source created.
   func depends(_ delta: Delta, in scope: ScopeRef) -> Bool {
     created.contains(ScopedKey(scope: scope, key: delta.key)) || carriesLife(delta, in: scope)
-      || references(of: delta).contains { names($0, from: scope) }
+      || names(registry.references(of: delta, in: scope))
   }
 
   func carriesLife(_ delta: Delta, in scope: ScopeRef) -> Bool {
     delta.lattice.life.map { lives.contains(ScopedLife(record: ScopedKey(scope: scope, key: delta.key), life: $0)) } == true
-  }
-
-  func references(of delta: Delta) -> [RecordKey] {
-    registry.type(delta.key.type)?.references(of: delta.key.id, values: delta.lattice.fields.mapValues(\.value)) ?? []
-  }
-
-  // A command's `ref<t>` arguments that hold an id, with the argument's name.
-  public static func references(of command: Command, registry: Registry) -> [(key: RecordKey, argument: String)] {
-    guard let def = registry.command(command.name) else { return [] }
-    return def.args.compactMap { arg in
-      guard let type = arg.type.ref, case .string(let id)? = command.args[arg.name] else { return nil }
-      return (RecordKey(type, RecordID(id)), arg.name)
-    }
   }
 
   // Removes a queued entry's dependent part: its deltas, the guards on their records and those the part names, and a
