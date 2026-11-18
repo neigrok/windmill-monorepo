@@ -222,16 +222,30 @@ export class RoadmapAccount {
       .map(({ distance, ...guide }) => guide);
   }
 
+  // What each step of one tree opens comes to, read without reading every tree: whether that tree is complete, how far
+  // it is and whether it leads back to this one.
+  /** @param {string} id */
+  openingsOf(id) {
+    return (this.openings.get(id) ?? []).map((opening) => ({ ...opening,
+      complete: opening.status === 'loaded' && this.complete.has(opening.tree),
+      counts: opening.status === 'loaded' ? this.counts(opening.tree) : null,
+      loop: opening.status !== 'dangling' && opening.status !== 'unknown' && this.loopOf.has(id) && this.loopOf.get(id) === this.loopOf.get(opening.tree),
+    }));
+  }
+
+  // The person's own roadmaps as their list shows them: each root of theirs that stands, newest first by when the server
+  // last received a record of it, a roadmap it has received nothing of last, ties in id byte order.
+  list() {
+    return [...this.trees.values()]
+      .filter((tree) => tree.own && this.locate(tree.id).standing === 'standing' && this.locate(tree.id).place?.parent === null)
+      .sort((a, b) => Number(a.updatedAt === null) - Number(b.updatedAt === null) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || compareText(a.id, b.id))
+      .map((tree) => ({ id: tree.id, title: this.locate(tree.id).title, counts: this.counts(tree.id), updatedAt: tree.updatedAt }));
+  }
+
   result() {
     return { trees: [...this.trees].map(([id, tree]) => {
       const location = this.locate(id);
-      return { id, ...location, read: tree.read, counts: this.counts(id), complete: this.complete.has(id),
-        openings: (this.openings.get(id) ?? []).map((opening) => ({ ...opening,
-          complete: opening.status === 'loaded' && this.complete.has(opening.tree),
-          counts: opening.status === 'loaded' ? this.counts(opening.tree) : null,
-          loop: opening.status !== 'dangling' && opening.status !== 'unknown' && this.loopOf.has(id) && this.loopOf.get(id) === this.loopOf.get(opening.tree),
-        })),
-      };
+      return { id, ...location, read: tree.read, counts: this.counts(id), complete: this.complete.has(id), openings: this.openingsOf(id) };
     }), loops: this.loops };
   }
 }

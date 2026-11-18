@@ -5,12 +5,13 @@
 // waiting on the network, follows each change, and drops every scope it subscribed when the room leaves. It takes no
 // write: the room's gestures reach the replica through the domain's actions in the next build.
 
+import { Fields } from '../../../platform/domain-kit/entities.js';
 import { syncSession } from '../../../platform/sync/session.js';
-import { Roadmap } from '../domain/roadmaps.js';
+import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
 import { StepMark } from '../domain/progress.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
-import { HeldRoadmap, ReplicaRoadmap, placeOf } from './ReplicaRoadmap.js';
+import { HeldRoadmap, ReplicaRoadmap } from './ReplicaRoadmap.js';
 
 // How long a room that holds no copy of its roadmap waits on the engine and the server's first answer before it says
 // it could not load the roadmap.
@@ -174,7 +175,8 @@ export class ReplicaReading {
         this.subscribed.add(scope);
         this.engine.subscribe(scope).catch(() => {});
       }
-      id = placeOf(this.observe(scope).drawn.find((record) => record.t === 'meta'))?.tree ?? null;
+      const meta = this.observe(scope).drawn.find((record) => record.t === RoadmapMeta.type);
+      id = meta ? RoadmapMeta.decode(Fields.record(meta)).parent?.tree ?? null : null;
     }
     return ids;
   }
@@ -186,9 +188,9 @@ export class ReplicaReading {
     const read = tree.firstPullComplete && this.hydrated(RoadmapScopes.tree(id));
     const known = this.holdings.get(id);
     if (known && known.record === record && known.read === read && same(known.tree, tree.drawn) && same(known.overlay, overlay.drawn)) return known.held;
-    const received = new Map(this.engine.device.activeReplica.confirmedRows(RoadmapScopes.overlay(id))
-      .filter((row) => row.t === StepMark.type).map((row) => [String(row.id), row.f?.mark?.[1]]));
-    const held = new HeldRoadmap({ id, record, tree: tree.drawn, overlay: overlay.drawn, received, read });
+    const confirmed = this.engine.device.activeReplica.confirmedRows(RoadmapScopes.overlay(id))
+      .filter((row) => row.t === StepMark.type).map((row) => ({ t: row.t, id: row.id, f: row.f, ru: row.ru }));
+    const held = new HeldRoadmap({ id, record, tree: tree.drawn, overlay: overlay.drawn, confirmed, read });
     this.holdings.set(id, { record, read, tree: tree.drawn, overlay: overlay.drawn, held });
     return held;
   }
