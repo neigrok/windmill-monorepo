@@ -82,10 +82,10 @@ const Domain& propertyOf(const Domain& object, const std::string& name) {
 TEST(the_probe_registry_loads_its_types_and_commands_in_order) {
   const Registry& probe = probe::registry();
   CHECK_EQ(probe.name(), std::string("probe"));
-  CHECK_EQ(probe.version(), 2);
+  CHECK_EQ(probe.version(), 3);
   CHECK_EQ(probe.minVersion(), 2);
   CHECK_EQ(namesOf(probe.types()), (std::vector<std::string>{"board", "card", "run", "lap", "day", "fact", "meta", "tag", "link", "mark"}));
-  CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.start", "probe.end", "probe.copy", "probe.tick"}));
+  CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.capture", "probe.captureTree", "probe.captureOverlay", "probe.branch", "probe.start", "probe.end", "probe.copy", "probe.tick"}));
   REQUIRE(probe.products().contains("probe"));
   CHECK_EQ(probe.products().at("probe").surfaces, (std::vector<std::string>{"web", "ios", "android"}));
   CHECK(probe.products().at("probe").device.at("picture").localOnly);
@@ -205,6 +205,12 @@ TEST(the_probe_commands_read_as_declared) {
   CHECK_EQ(start.predicts, (std::vector<std::string>{"run"}));
 
   CHECK(!start.beforePull);
+  CHECK(!start.scopedEffects && !start.engine);
+  const CommandDef& capture = *probe::registry().command("probe.capture");
+  CHECK(capture.scopedEffects && capture.engine == EngineCommand::capture && capture.args.empty());
+  const CommandDef& branch = *probe::registry().command("probe.branch");
+  CHECK(branch.scopedEffects && !branch.engine);
+  CHECK_EQ(branch.predicts, (std::vector<std::string>{"board", "meta"}));
 
   CHECK(probe::registry().command("probe.end")->args.at("endedAt").type == ArgType::instant);
   CHECK_EQ(probe::registry().command("probe.copy")->args.at("dst").ref, std::optional<std::string>("board"));

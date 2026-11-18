@@ -428,7 +428,11 @@ The journal registry carries version 12 with it, since the composed registries d
   honours them for the subset or with a matcher of its own, and never by a search, which in some
   dialects lets `$` match before a final line terminator.
 - **Commands:** `name`, `scope`, `origins`, `serverInternal`, `beforePull`, `args` (each of type
-  `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`) and `predicts`.
+  `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`), `predicts`, optional
+  `scopedEffects: true` and optional `engine: "capture"`. The engine tag requires `scopedEffects`
+  and empty `args`. Capture is bound by the platform and runs the ordinary intent deltas, checks and
+  consequences without a product command mutation. An opted command may predict registered types
+  outside its origin scope; whole-put types remain excluded.
 
 The engine applies:
 - `parent: true` marks the one `ref` field whose target must be alive (§6.1 step 10).
@@ -489,11 +493,14 @@ type KnownScope = { replica, scope, kind: 'gone' | 'not-found' }
 type OutboxEntry = { localId, replica, gestureId, lineage: string /* account id | 'anon' */, scope,
                      state: 'held'|'ready'|'sent'|'acked', stamp: Stamp,
                      commitOrder: number, releaseAt: number, n?, digest?, intent: Intent,
-                     predict?: Delta[], baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
+                     predict?: Delta[], predictions?: ScopedPrediction[], acceptedEffects?: EffectReceipt[],
+                     baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
                      resultSeq?: number, resultEpoch?: string, orphanOf?: string,
                      writeTargets?: {t, from: Id, id: Id, born?: Stamp}[] }
-type Notice = { id, replica, scope, code: RefusalCode, detail?,
-                content: { d?: Delta[], cmd?: Cmd, dependents?: { d?: Delta[], cmd?: Cmd }[] }, at,
+type ScopedPrediction = { scope: ScopeRef, d: Delta[], resultSeq?: number, covered?: true }
+type NoticeContent = { scope?: ScopeRef, d?: Delta[], cmd?: Cmd, predictions?: ScopedPrediction[],
+                       dependents?: NoticeContent[] }
+type Notice = { id, replica, scope, code: RefusalCode, detail?, content: NoticeContent, at,
                 dismissed?: true }
 type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 ```
@@ -1048,7 +1055,10 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
     - An overlay row stores `governed_by = tree:<id>`. These scope rows are locked in this order:
       `tree:<id>`, then overlays in ascending key order.
 16. **Result.** `ok {seq: scope.seq, write?, detail?}`. A command's result always carries `write`,
-    its write map, possibly empty.
+    its write map, possibly empty. A `scopedEffects` command also captures the committed version
+    footprint and watermarks (§6.4), after every scope's seq, row seq, text revision and stamp is
+    assigned. Check both receipt and complete response bounds (§9.7) before storing the result;
+    exceeding either refuses `too-large` and rolls back every scope and product mutation.
     - Replica origin: upsert `sync_results(replica, n, digest, result)` and set `last_n := n`.
     - Server origin with a `requestId`: store the result as the call's part `requestId#k` (§6.3).
 17. **`COMMIT`.** All scopes, product receipts and the result commit in one transaction. Publish
@@ -1092,7 +1102,11 @@ The scope mutex is held until step R's transaction, or a fault path's (§6.6), e
    - Otherwise `admit`.
 5. **Bound the work.** Once the request has admitted an intent and `PUSH_WORK_MS` have passed, stop
    and return `retry {n, retryAfterMs: 0}` naming the first unprocessed intent. An answer from
-   `sync_results` is not an admission.
+   `sync_results` is not an admission. An opted command result occupies an exclusive response
+   batch: stop before it when ordinary results already occupy the batch, and after it before the
+   next distinct intent. Return `retry` naming that next intent. Apply this rule equally to stored
+   result replay; duplicate copies of the returned opted `n` verify its digest without repeating
+   its result. `lastN` still reports durable `last_n`, even beyond the returned batch.
 6. **Prune.** In a request answered `200`, delete this replica's `sync_results` rows with
    `n ≤ min(ackThrough, last_n)`.
 
@@ -1167,6 +1181,40 @@ MCP tools, REST writes, tending and server-internal commands call
   text. A replacement MUST accompany a
   changed register or changed text, so it cannot mint a rev without a changed row. A binding MAY
   retain revision metadata and prune revisions in the admitting transaction, as Appendix A states.
+
+
+**Scoped effect receipts.** Only a command with `scopedEffects: true` wraps its successful detail:
+
+```ts
+type EffectSlot = { slot: {kind: 'born'} | {kind: 'life'} | {kind: 'field'|'text', name: string},
+                    version: {kind: 'stamp', stamp: Stamp} | {kind: 'text', revision: number} }
+type EffectReceipt = { scope: ScopeRef, beforeSeq: number | null, seq: number | null,
+  rows: {t: string, id: Id, beforeRowSeq: number | null, rowSeq: number, slots: EffectSlot[]}[] }
+type ScopedDetail = { windmillKit: {v: 1, effects: EffectReceipt[]}, command?: Json }
+```
+
+`command` preserves the handler's original detail when present. Top-level `seq` and `write` keep
+D-20's meanings. The receipt records all caller-owned committed effects of the intent, including its
+ordinary `d`, checks and consequences, plus every declared target. It includes caller-owned created
+scopes and lifecycle deaths, even with no changed rows. Platform deaths of another reader's overlay
+are omitted: a caller's `self/overlay` never names that reader's data or discloses its existence.
+
+Scopes appear origin first, then by UTF-8 ScopeRef order; rows sort by type and the UTF-8 bytes of
+the ID's JCS. Slots appear born, life, sorted field names, sorted text names. Only changed rows
+appear. A newly created row has `beforeRowSeq: null` and its complete versioned footprint; an updated
+row lists only changed slot versions. A serial-only change still advances `rowSeq` and has `slots: []`.
+A changed text owns its actual committed revision after merge; unchanged text owns no slot.
+
+Watermarks are captured before and after this admission, with no artificial sequence advance.
+The origin always exists. An existing or killed scope has its actual final seq; a new empty scope
+has `beforeSeq: null, seq: 0`. An opted command may declare an absent no-op target, represented by
+`beforeSeq: null, seq: null, rows: []`; any actual delta there still requires the exact governing
+create and every admission check. Legacy commands retain their missing-target rule.
+
+The exact receipt is stored with the idempotency result and replayed, never reconstructed from later
+rows. It omits field and text values, but IDs may derive from user text: the entire receipt is private
+sync data and MUST NOT enter telemetry or log properties. This outbox receipt is not durable Undo
+history; normal outbox garbage collection removes it.
 
 ### §6.5 Caps
 
@@ -1381,7 +1429,7 @@ entries and predictions never enter it.
 
 ### §7.1 `commit(scope, changes, opts) → {localIds, retired, superseded?, stamp} | Refused | none`
 
-`opts = {atomic, hold, guard, retire, supersede, cmd, predict, local, gestureId}`. `commit` is a synchronous
+`opts = {atomic, hold, guard, retire, supersede, cmd, predict, scopedPredict, local, gestureId}`. `commit` is a synchronous
 call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
 network. It throws only before its local transaction commits, and every client API declares exactly
 three failures, told apart by where they arise:
@@ -1482,6 +1530,13 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      Predicted serials name declared serial fields and MUST be positive safe integers; otherwise
      the commit throws. Predictions fold locally, never entering wire deltas or the digest.
      The command's confirmed row supplies its actual text, rev and serials through result and pull.
+   - An opted command accepts `scopedPredict: [{scope, changes}]`. Nonempty `predict` and
+     `scopedPredict` cannot coexist; an opted command's legacy `predict` becomes its origin
+     projection. Group scopes uniquely, origin first then UTF-8 order, always retaining an empty
+     origin marker. Persist `predictions`; legacy entries retain `predict` and omit `predictions`.
+     The canonical grouped prediction bytes are bounded by `EFFECT_MAX_BYTES` (§9.7); exceeding it
+     refuses `too-large` atomically, leaving no entry, clock change or partial notice. Ordinary
+     `intent.d` stays in the origin and is active only while its origin marker is uncovered.
 5. **Ids.** Minted ids come from a CSPRNG by the type's `mint`, or are seeded (D-8). Label-based
    derived ids come from `derive` (D-26).
 6. **Guards.** `guard` lists registers `(t, id, field)`, and guards exactly those: each becomes
@@ -1539,7 +1594,9 @@ before drawing randomness. Raw prepare callbacks call it before their pure decis
 runner does so automatically. All reader loans expire when their bodies return.
 
 Browser storage may replay pure deterministic load after a missing-scope demand, under the same
-writer transaction and snapshot. No decision, identity draw or device write precedes successful
+writer transaction and snapshot. After successful load, a prepared raw commit body and each prepared
+act segment are retained until commit: discovering a prediction target hydrates its scope without
+replaying decisions, identity draws or the segment callback. No decision, identity draw or device write precedes successful
 `finishLoad`. Native prepare loads once. Existing scopes used for minting must be borrowed during
 load; an unborrowed new tree or overlay requires no initial cache, cursor, known state, pending
 entry or governing record, and an earlier segment must create its governor before those IDs are used.
@@ -1649,7 +1706,8 @@ loop while state = bound ∧ ¬authPaused ∧ online:
   each result, in ascending n, in batches (below):
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
     refused → §7.7; after a `clock-skew` recovery, back off before the next push
-  in the last batch, once every result is recorded: ackThrough := the response's lastN
+  in the last batch, once every returned result is recorded:
+    ackThrough := retry ? min(lastN, retry.n - 1) : lastN
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveHint ? 30 s : 300 s; k resets
          on a response with results, unless one of them is `clock-skew`
          (liveHint: computed now by the product's view rule, Appendix A)
@@ -1664,19 +1722,27 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
 `authPaused`, `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope
 whose last push failed with anything but a `400`, `409` or `413`, until a push of that scope is
 answered `200` or one of those three (a `400` or `413` changes the next push, a `409` re-identifies or
-pauses). A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
+pauses). An opted command's records are listed under every scope it predicts, as its origin's push
+ended. A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
 unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsBack(scope, key)`
 applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
-its size cap) — so a product can tell a server it never reached from one that answered with a failure.
+its size cap, and a `200` whose receipts the replica cannot accept) — so a product can tell a server
+it never reached from one that answered with a failure.
 Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
 with a `5xx`, so a product can tell the log's outage from a refusal.
 
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
 a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
-An authenticated changed-epoch `200` triggers atomic recovery before ordinary result batches.
+An authenticated `200` validates every scoped receipt before any ACK-side mutation, including offset
+sampling. Require the origin and every predicted scope after global-ID remaps; reject duplicate,
+unknown or invalid scopes, malformed slots, rows of a type outside their declared scope, and missing
+required markers. Additional well-formed discovered scopes are accepted and persisted as receipt-only
+empty-d markers. A continuation has positive safe-integer `n ≤ lastN + 1`, strictly after every
+returned result, and nonnegative safe-integer `retryAfterMs`; malformed metadata is a static transport
+failure with no ACK mutation. An authenticated changed-epoch `200` triggers atomic recovery before ordinary result batches.
 If the replica has no retained acknowledgement from an older epoch, record its successful results
 and their product receipts in that same transaction before the epoch change; these acknowledgements
 belong to the response epoch and are not requeued. No already accepted removal is reported as a
@@ -1699,6 +1765,12 @@ batches keeps the batches recorded and loses the rest: their entries stay `sent`
 not moved, and the next push resends them. The server answers them from its stored results (§6.2
 step 4), or `replica-forked` for an entry an earlier batch's `clock-skew` recovery rewrote, which
 re-identifies with nothing lost (§7.7).
+
+An opted result applies global-ID remaps first, then stores scope-qualified `acceptedEffects` and
+projection watermarks in one receipt-application step within its ACK transaction, before settlement
+or garbage collection. That step is the boundary where a future durable receipt consumer can persist
+its own copy atomically. A null scope seq immediately covers its uncreated target. Receipt-only
+markers are covered by the same rule as predicted ones.
 
 A null `serverEpoch` takes the answer's epoch in the first batch, so no entry is ever acked while
 `serverEpoch` is null. Were it taken later, a death before the take would leave entries acked in an
@@ -1858,6 +1930,13 @@ engine stops on any `426`.
    - live cursor: `cleanSeq = cursor.seq`, or `cursor.seq − 1` while the cursor carries a key;
    - booting, or no cursor: `cleanSeq = −∞`.
 
+   For an opted entry, test each marker against its own scope cursor and shared `resultEpoch`.
+   Cover and deactivate that marker independently; retain the acked entry until every marker is
+   covered. A terminal scope end covers only that scope's marker. Ordinary reset preserves coverage;
+   epoch recovery deliberately clears it for replay. A covered target's text and serial predictions
+   cannot overlay newer confirmed values while another target still waits. Retained acked entries
+   are never resent in the same epoch.
+
    A covered entry resolves. The transaction that stores a cursor (a page's last chunk, a frame
    applied inline) settles the entries it covers: it resolves them all, or a first part in commit
    order and leaves the rest to *settling slices*, transactions of their own that follow it, sized by
@@ -1909,7 +1988,8 @@ engine stops on any `426`.
 ### §7.6 Views
 
 ```
-pending(scope, withHeld) = entries of scope in {ready, sent, acked} ∪ (withHeld ? {held} : {}), in commitOrder
+pending(scope, withHeld) = active effects in scope from entries in {ready, sent, acked}
+                          ∪ (withHeld ? {held} : {}), in commitOrder
 drawn(t, id)  = fold(joinRecord, confirmed[t, id], [e.delta[t, id] ∪ e.predict[t, id] for e in pending(scope, true)])
 stored(t, id) = the same fold over pending(scope, false)
 text fields: the newest pending text replaces the confirmed text
@@ -1920,6 +2000,11 @@ capCount(t) = |{ id : visible(stored(t, id)) }|
 - `drawn` decides what is drawn.
 - `stored` decides caps, guards and write positions (D-25's drop position), so a held delete still
   occupies its slot.
+- A scoped entry contributes only its uncovered projection for this scope, plus ordinary `d` while
+  its origin marker is uncovered. Once its receipt is applied, ordinary `d` draws each register the
+  origin receipt versions at that accepted version, so a guard read after the ACK holds what the
+  server stored. Stored all-scope effects remain available for dependencies, adoption, identity
+  recovery and retained notices after a projection deactivates.
 - Serial values start from confirmed rows; command predictions overlay their serial keys in commit
   order. Entries without serials preserve them, and `stored` excludes held predictions.
 - Unknown fields, and rows of unknown types, are preserved and ignored: a row of an unknown type is
@@ -2017,7 +2102,21 @@ entry `w`, then step 3 once for the map:
    of a `w` with `born`) in every held or ready entry that writes them. A later local write
    therefore follows the command it came after (INV-1).
 
-No entry is `sent` behind a command (§7.4), so every reference, born and guard is rewritable.
+For scoped entries, every record and slot mapping is keyed by `(scope, t, id, slot)`. Apply global-ID
+remaps, including governed ScopeRefs, before scoped accepted slot versions. Observe all accepted
+stamps and reclock later queued owned writes; numbered immutable intents are never rewritten by a
+scoped ACK. A predicted register moves to its accepted version. Where an accepted version differs
+from the stamp the command wrote (a consequence rewrote an ordinary register) or from the previous
+receipt's (a replay), later queued guards, borns and carried lives holding the old stamp follow it,
+for ordinary `d` and predictions alike. Repeated singleton IDs in two trees never share a slot map.
+The stored effects drive record, reference, born, life and governor dependencies, including a target
+update with no life register. Held-back numbering, refusal folding and unsourced-clock recovery use
+these scoped keys. Target read projections expose that scope's pending records, Undo offers and
+failed deltas. Command read lists remain owned by the origin. A projected notice preserves its
+identity and origin, while the durable notice retains all scoped content for global copy and
+discard; origin command arguments never infer a target singleton's failed record.
+
+No entry is `sent` behind a command (§7.4), so every queued reference, born and guard is rewritable.
 
 **Restamp rule.** Used by `clock-skew` recovery and by the write map (steps 2 and 3). It moves only
 registers an entry wrote, which carry a stamp at or after the entry's `stamp`. A register an entry
@@ -2026,7 +2125,9 @@ by recovery's lowering (step 1.5). The registers
 each entry wrote are determined for every entry before any register moves in a pass. Each restamped
 entry takes one new stamp `n`: a fresh tick of the recovering instance's clock, in commit order, or
 the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's `stamp`; a write-map
-restamp leaves the entry's `stamp` unchanged. For each register that moves from `o` to `n`:
+restamp leaves the entry's `stamp` unchanged. A register belongs to the scope its delta writes: an
+opted entry's projection is its own scope's, and steps 2–4 look in that scope, whatever the entry's
+origin. For each register that moves from `o` to `n`:
 1. the register takes `n`;
 2. if it is a create's life, the entry's `born` also becomes `n`, and every later held, ready or
    sent delta on the same `(t, id)` carrying `born = o` takes `n`;
@@ -2090,6 +2191,9 @@ scopes rejoin the subscription set, so the next puller run pulls them (§7.5). A
 pulls only readable trees it opens. Every scope a replica pulls is held in full: a boot sends every
 alive row (§6.7).
 
+Uncovered scoped prediction and receipt-only targets join a bound replica's subscription set, so the
+puller proactively obtains their watermarks even when no product screen has opened them.
+
 A tree or overlay scope whose governing record's create is still in the outbox, held, ready or sent
 (by a delta or a prediction), stays in the subscription set but is neither pulled nor subscribed
 (`sub`) on the live socket: the server holds no such scope yet. Both start once that entry has its
@@ -2150,7 +2254,10 @@ replica pulls no product scope).
 
 **Sign-in as A** follows the lineage rule (D-27), per product. It runs after a hello served as A
 (`as`, §9.1), which states the products in which A holds records (§9.2). An entry's product is its
-scope's; a tree or overlay scope's product is its governing type's. It first releases every held
+origin scope's; a tree or overlay origin's product is its governing type's. One Add/Discard choice
+owns the whole entry and every projection, including projections into another product. Its count
+uses distinct `(scope, type, id)` across those effects; an entry is never split between product
+choices. It first releases every held
 entry into the durable queue (Undo does not survive sign-in), before the decisions. While it is
 incomplete, `DeviceMeta.pendingSignIn` holds A.
 - Entries of lineage A, a `dormant(A)` replica's included, are sent without asking.
@@ -2513,6 +2620,13 @@ type PushResponse = { serverTime, epoch, as: string, lastN: number, results: Res
                       retry?: {n: number, retryAfterMs: number} }
 ```
 
+An opted push response is bounded by `SCOPED_RESPONSE_MAX_BYTES` (§9.7), including its complete
+result, write map, original command detail and envelope. Admission checks the full canonical UTF-8
+response with widest safe-integer envelope fields before commit; the metadata also has its separate
+receipt bound. Transports select the allowance from registry-declared scoped command names in the
+request, including saved-result replay, and measure actual UTF-8 response bytes. Hello, conflicts and
+empty pushes return no saved successful result. Non-opted response limits remain unchanged.
+
 ### §9.4 Pull: `POST /v1/sync/pull`
 
 ```ts
@@ -2617,7 +2731,9 @@ product copy shows its generic refusal line.
 |---|---|
 | `MAX_RECORD_BYTES` | 1 048 576, a joined row (admits a 131 072-byte body at worst-case JSON escaping). It is measured before step 11's serial (§6.1 step 9), so a stored row may exceed it by that register. |
 | `PUSH_MAX_INTENTS` / `PUSH_MAX_BYTES` | 64 / 2 097 152 (admits a text intent with its inline base) |
-| `EFFECT_MAX_BYTES` | 67 108 864 bytes (64 MiB), summed JCS `{scope, delta}` bytes of generated command and check effects across all scopes, independent of the input body; supports bulk changes carrying maximal Unicode ids. Tests may shrink it. |
+| `EFFECT_MAX_BYTES` | 67 108 864 bytes (64 MiB), summed JCS `{scope, delta}` bytes of generated command and check effects across all scopes, independent of the input body; supports bulk changes carrying maximal Unicode ids. Local scoped predictions use the same bound on their canonical grouped deltas. Tests may shrink it. |
+| `RECEIPT_MAX_BYTES` | 67 108 864 UTF-8 bytes (64 MiB) of canonical `windmillKit` metadata. Positive test overrides may only shrink it. |
+| `SCOPED_RESPONSE_MAX_BYTES` | 71 303 168 UTF-8 bytes (68 MiB), one complete opted result plus its push envelope. Positive test overrides may only shrink it. |
 | `PUSH_WORK_MS` | 50 |
 | `PULL_PAGE_BYTES` | 1 048 576 (at least one row) |
 | `PULL_MAX_SCOPES` / `PULL_MAX_BYTES` | 64 / 65 536 (admits `PULL_MAX_SCOPES` scopes with their cursors) |

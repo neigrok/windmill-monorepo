@@ -2,16 +2,19 @@
 // corpus/README.md ("Changes").
 
 import { Clock } from '../core/clock.js';
+import { utf8 } from '../core/encoding.js';
 import { CONSTANTS } from '../core/constants.js';
 import { derive, mintId } from '../core/derive.js';
 import { OrderKeyError, dropKey } from '../core/fracindex.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { INTENT_MACHINE, moveEntry, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
+import { orderedScopes } from '../core/receipts.js';
 import { isVisible, recordKey } from '../core/rows.js';
-import { roundToDomain } from '../core/values.js';
+import { checkId, roundToDomain } from '../core/values.js';
 import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
+import { predictionsOf } from './projections.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
 // §7.1's three failures before the transaction commits: `not-writable`, `malformed` (a programming
@@ -417,6 +420,9 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
 export function commitGesture(replica, ctx, physNow, scope, changes, opts, act = null) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
+  for (const projection of Array.isArray(opts.scopedPredict) ? opts.scopedPredict : []) {
+    if (registry.scopeKindOf(projection?.scope)) ctx.ensureScope?.(projection.scope);
+  }
   if (!act && opts.gestureId !== undefined && ctx.device.carriesGesture(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken on the device`);
   const product = registry.productOfRef(scope);
   for (const key of Object.keys(opts.local ?? {})) {
@@ -435,7 +441,7 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
   const ending = [...new Set([...retiring, ...superseding])];
   const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
-  const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])])]);
+  const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? predictionsOf(entry).flatMap(({ d }) => d) : [])])]);
   const drawnView = drawn(replica, registry, scope, gone);
   const storedView = stored(replica, registry, scope, gone);
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
@@ -444,6 +450,34 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
   const cmd = opts.cmd === undefined ? undefined : roundedCommand(registry, opts.cmd);
+  const definition = cmd && registry.command(cmd.name);
+  let predictions;
+  if (opts.scopedPredict !== undefined && (!definition?.scopedEffects || !Array.isArray(opts.scopedPredict))) throw new CommitError('scopedPredict requires a scopedEffects command');
+  if (definition?.scopedEffects) {
+    if (predict.length && opts.scopedPredict?.length) throw new CommitError('predict and scopedPredict are mutually exclusive');
+    const groups = new Map([[scope, []]]);
+    if (predict.length) groups.get(scope).push(...(opts.predict ?? []));
+    for (const group of opts.scopedPredict ?? []) {
+      if (!group || Object.keys(group).sort().join() !== 'changes,scope' || !Array.isArray(group.changes)) throw new CommitError('a scoped prediction names scope and changes');
+      const kind = registry.scopeKindOf(group.scope);
+      if (!kind || kind === 'device' || ((kind === 'tree' || kind === 'overlay')
+        && (!registry.governingType || checkId(registry, registry.governingType, group.scope.split('/').pop())))) throw new CommitError('invalid prediction scope');
+      const refusal = refusalOfScope(replica, registry, group.scope);
+      if (refusal) return { refused: refusal };
+      if (!groups.has(group.scope)) groups.set(group.scope, []);
+      groups.get(group.scope).push(...group.changes);
+    }
+    predictions = orderedScopes(scope, groups.keys()).map((target) => {
+      const targetBuilder = target === scope ? builder : new DeltaBuilder({ registry, replica, scope: target, stamp, physNow,
+        drawnView: drawn(replica, registry, target, gone), storedView: stored(replica, registry, target, gone), draw: ctx.draw });
+      const changes = groups.get(target);
+      if (changes.some((change) => !definition.predicts?.includes(change.t))) throw new CommitError('prediction type is not declared by the command');
+      const d = oneDeltaPerRecord(changes.map((change) => ({ change, delta: targetBuilder.predicted(change) })));
+      return { scope: target, d };
+    });
+    if (holdsNul(predictions)) throw new CommitError('a string of the predictions holds U+0000');
+    if (utf8(jcs(predictions)).length > Math.min(limits.EFFECT_MAX_BYTES, CONSTANTS.EFFECT_MAX_BYTES)) return { refused: 'too-large' };
+  }
   if (holdsNul({ scope, d: deltas, guard: guards, cmd, gestureId: opts.gestureId })) throw new CommitError('a string of the intents holds U+0000');
   const capped = cappedType(registry, storedView, deltas);
   if (capped !== undefined) return { refused: 'cap', detail: { type: capped, cap: registry.type(capped).cap } };
@@ -477,7 +511,8 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
       stamp,
       intent,
     };
-    if (cmd && predict.length) entry.predict = predict;
+    if (predictions) entry.predictions = predictions;
+    else if (cmd && predict.length) entry.predict = predict;
     const texts = {};
     for (const delta of intent.d ?? []) {
       for (const name of Object.keys(delta.x ?? {})) {

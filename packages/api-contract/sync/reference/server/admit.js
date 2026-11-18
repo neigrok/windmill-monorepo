@@ -7,7 +7,8 @@ import { replaceRow } from '../core/digest.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { joinRecord } from '../core/merge.js';
 import { Registry } from '../core/registry.js';
-import { compactRow, isAlive, latticeOf, recordKey, stampsOf, thinRow } from '../core/rows.js';
+import { orderedScopes, receiptRow, scopedResponseBytes } from '../core/receipts.js';
+import { compactRow, compareRecords, isAlive, latticeOf, recordKey, stampsOf, thinRow } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
 import { checkArgument, checkFieldValue, checkId, lengthIn } from '../core/values.js';
 import { holdsNul } from '../core/wire.js';
@@ -190,6 +191,7 @@ class Admission {
   checkCommandShape(cmd) {
     const def = isObject(cmd) ? this.registry.command(cmd.name) : undefined;
     if (!def || def.scope !== this.scopeKind || !isObject(cmd.args)) throw new Refusal('invalid');
+    this.command = def;
     for (const name of Object.keys(cmd.args)) if (!Object.hasOwn(def.args, name)) throw new Refusal('invalid');
     for (const [name, arg] of Object.entries(def.args)) {
       if (!Object.hasOwn(cmd.args, name)) {
@@ -278,6 +280,7 @@ class Admission {
   discoverEffectScopes() {
     this.declared = new Set([this.scopeKey, ...(this.product.discoverEffectScopes?.(this.context(), this.intent.cmd) ?? [])]);
     this.targets = new Map();
+    this.beforeSeqs = new Map(Object.entries(this.work.scopes).filter(([, scope]) => scope.owner === this.origin.account).map(([key, scope]) => [key, scope.seq]));
     for (const key of [...this.declared].sort()) {
       if (key === this.scopeKey) continue;
       let ref;
@@ -360,7 +363,7 @@ class Admission {
   // already carries the stamp this intent writes to it.
   checkGuards() {
     const cmd = this.intent.cmd;
-    if (cmd && this.product.isReplay(this.context(), cmd)) return;
+    if (cmd && this.command.engine !== 'capture' && this.product.isReplay(this.context(), cmd)) return;
     for (const guard of this.intent.guard ?? []) {
       const current = this.work.stored(this.scopeKey, guard.t, guard.id)?.f?.[guard.field];
       const currentStamp = current ? current[1] : null;
@@ -375,6 +378,7 @@ class Admission {
   runCommand() {
     const cmd = this.intent.cmd;
     if (!cmd) return;
+    if (this.command.engine === 'capture') { this.write = []; return; }
     const outcome = this.product.runCommand(this.context(), cmd);
     const byScope = { [this.scopeKey]: [...outcome.deltas] };
     for (const { scopeKey, deltas } of outcome.into ?? []) (byScope[scopeKey] ??= []).push(...deltas);
@@ -614,7 +618,9 @@ class Admission {
       if (this.work.scope(key) === undefined) this.created.set(key, `${record.scopeKey}#${record.type.type}#${record.after.id}`);
     }
     for (const key of this.declared) {
-      if (!this.work.scope(key) && !this.created.has(key)) throw new Refusal('not-found');
+      if (this.work.scope(key) || this.created.has(key)) continue;
+      if (this.command?.scopedEffects && !this.changes.some((change) => change.scopeKey === key)) continue;
+      throw new Refusal('not-found');
     }
   }
 
@@ -644,6 +650,21 @@ class Admission {
     const result = { s: 'ok', seq: this.scope.seq };
     if (this.write !== undefined) result.write = this.write;
     if (this.detail !== undefined) result.detail = this.detail;
+    if (this.command?.scopedEffects) {
+      const refOf = (key) => key.startsWith('tree:') ? `tree/${key.slice(5)}` : `self/${key.slice(`acct:${this.origin.account}/`.length)}`;
+      const keys = new Map([...this.declared, ...this.created.keys(), ...this.killed.filter((key) => this.work.scope(key).owner === this.origin.account)].map((key) => [refOf(key), key]));
+      const effects = orderedScopes(this.intent.scope, keys.keys()).map((scope) => {
+        const key = keys.get(scope);
+        const rows = this.changed.filter((record) => record.scopeKey === key)
+          .map((record) => receiptRow(record.original, { ...record.after, seq: this.work.scope(key).seq }))
+          .sort(compareRecords);
+        return { scope, beforeSeq: this.beforeSeqs.get(key) ?? null, seq: this.work.scope(key)?.seq ?? null, rows };
+      });
+      result.detail = { windmillKit: { v: 1, effects } };
+      if (this.detail !== undefined) result.detail.command = this.detail;
+      if (Buffer.byteLength(jcs(result.detail.windmillKit)) > Math.min(this.limits.RECEIPT_MAX_BYTES, CONSTANTS.RECEIPT_MAX_BYTES)
+        || scopedResponseBytes(result, this.work.epoch, this.origin.account) > Math.min(this.limits.SCOPED_RESPONSE_MAX_BYTES, CONSTANTS.SCOPED_RESPONSE_MAX_BYTES)) throw new Refusal('too-large');
+    }
     return result;
   }
 }

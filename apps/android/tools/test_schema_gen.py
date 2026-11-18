@@ -57,6 +57,25 @@ class SchemaGeneratorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 gen.validate(schema, registry, schema)
 
+    def test_scoped_commands_validate_and_engine_capture_takes_no_arguments(self):
+        schema = gen.load(gen.CONTRACT / "registry.schema.json")
+        probe = gen.load(gen.CONTRACT / "probe.registry.json")
+        gen.validate(schema, probe, schema)
+
+        def capture(registry):
+            return next(command for command in registry["commands"] if command["name"] == "probe.capture")
+        mutations = [
+            lambda r: capture(r)["args"].update(id={"type": "ref<card>"}),
+            lambda r: capture(r).pop("scopedEffects"),
+            lambda r: capture(r).update(scopedEffects=False),
+            lambda r: capture(r).update(engine="restore"),
+        ]
+        for mutate in mutations:
+            registry = copy.deepcopy(probe)
+            mutate(registry)
+            with self.assertRaises(ValueError):
+                gen.validate(schema, registry, schema)
+
     def test_unknown_schema_validation_keyword_fails(self):
         with self.assertRaises(ValueError):
             gen.validate({"unknownValidation": True}, {}, {})

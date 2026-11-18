@@ -876,6 +876,12 @@ public struct Domain: Sendable {
 // MARK: - Commands
 
 public struct CommandDef: Sendable {
+  // A command the platform runs itself: `capture` admits the intent's ordinary deltas, checks and consequences with no
+  // product mutation, so its receipt captures them (§2.4, §6.4).
+  public enum Engine: String, Sendable {
+    case capture
+  }
+
   public let name: String
   public let scope: ScopeKind
   public let origins: [Origin]
@@ -883,12 +889,15 @@ public struct CommandDef: Sendable {
   public let args: [ArgumentDef]
   public let predicts: [String]
   public let beforePull: Bool
+  // E-7: its success carries a scoped receipt, and a commit may predict records in every scope it changes.
+  public let scopedEffects: Bool
+  public let engine: Engine?
 
   init(json: JSON) throws(RegistryError) {
     do {
       let object = try json.asObject()
       try object.expectKeys(
-        required: ["name", "scope", "origins", "serverInternal", "args"], optional: ["predicts", "beforePull"])
+        required: ["name", "scope", "origins", "serverInternal", "args"], optional: ["predicts", "beforePull", "scopedEffects", "engine"])
       name = try object.member("name").asString()
       guard RegistryName.isCommand(name) else { throw RegistryError("\(name) is not a command name") }
       scope = try ScopeKind(text: object.member("scope").asString())
@@ -897,6 +906,13 @@ public struct CommandDef: Sendable {
       args = try object.member("args").asObject().members.map { try ArgumentDef(name: $0.key, json: $0.value) }
       predicts = try object["predicts"]?.asDistinctStrings() ?? []
       beforePull = try object["beforePull"]?.asBool() ?? false
+      scopedEffects = try object["scopedEffects"]?.asBool() ?? false
+      guard object["scopedEffects"] == nil || scopedEffects else { throw RegistryError("scopedEffects is true or absent") }
+      engine = try object["engine"].map { json in
+        guard let engine = Engine(rawValue: try json.asString()) else { throw RegistryError("the engine runs capture only") }
+        return engine
+      }
+      guard engine == nil || scopedEffects && args.isEmpty else { throw RegistryError("an engine command has scoped effects and no arguments") }
       guard !origins.isEmpty else { throw RegistryError("a command has at least one origin") }
       guard !serverInternal || !origins.contains(.replica) else {
         throw RegistryError("a server-internal command has server origin only")
@@ -917,6 +933,8 @@ public struct CommandDef: Sendable {
     ]
     object["predicts"] = predicts.isEmpty ? nil : .array(predicts.map { .string($0) })
     object["beforePull"] = beforePull ? true : nil
+    object["scopedEffects"] = scopedEffects ? true : nil
+    object["engine"] = engine.map { .string($0.rawValue) }
     return .object(object)
   }
 }

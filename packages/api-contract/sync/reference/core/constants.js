@@ -24,8 +24,11 @@ export const CONSTANTS = Object.freeze({
   MAX_RECORD_BYTES: 1_048_576,
   PUSH_MAX_INTENTS: 64,
   PUSH_MAX_BYTES: 2_097_152,
-  // Generated effects share this byte budget across scopes; maximal-id bulk changes exceed input size.
+  // Generated effects and local scoped predictions each share this budget across their scopes.
   EFFECT_MAX_BYTES: 67_108_864,
+  // Canonical receipt metadata bytes; scoped push responses reserve another 4 MiB for the envelope.
+  RECEIPT_MAX_BYTES: 67_108_864,
+  SCOPED_RESPONSE_MAX_BYTES: 71_303_168,
   PUSH_WORK_MS: 50,
   PULL_PAGE_BYTES: 1_048_576,
   PULL_MAX_SCOPES: 64,

@@ -15,7 +15,7 @@ import { release, releaseAll, releaseDue, undo } from '../../../../packages/api-
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
-import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope } from '../../../../packages/api-contract/sync/reference/client/sender.js';
+import { applyPushResult, nextPush, onHello, onPushResponse, ResponseError, SenderWait, validatePushEnvelope, validatePushReceipts } from '../../../../packages/api-contract/sync/reference/client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf, unsubscribe } from '../../../../packages/api-contract/sync/reference/client/subscriptions.js';
 import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
@@ -43,7 +43,8 @@ export class BrowserSyncEngine {
     this.actor = newActor();
     this.boot = crypto.randomUUID();
     this.reading = () => ({ wall: Math.floor(now()), mono: monotonic(), boot: this.boot });
-    this.transport = transport ?? new HttpTransport({ schema: registry.version, base, reading: this.reading, timers, limits: this.limits });
+    this.transport = transport ?? new HttpTransport({ schema: registry.version, base, reading: this.reading, timers, limits: this.limits,
+      scopedCommands: [...registry.commands.values()].filter((command) => command.scopedEffects).map((command) => command.name) });
     this.leadershipOptions = leadership;
     this.visible = document?.visibilityState !== 'hidden';
     this.online = navigator?.onLine !== false;
@@ -113,7 +114,7 @@ export class BrowserSyncEngine {
         if (!this.closed) this.telemetry.failure('storage');
         throw new CommitError('the device store did not commit', 'store', { cause: error });
       }
-      if (!(error instanceof CommitError) && error !== context.callerError) this.telemetry.failure('storage');
+      if (!(error instanceof CommitError) && !(error instanceof ResponseError) && error !== context.callerError) this.telemetry.failure('storage');
       throw error;
     }
     this.actor = context.actor;
@@ -374,12 +375,16 @@ export class BrowserSyncEngine {
   // The read-and-commit body (§7.12) also reads, in its transaction, the product's device rows and the
   // scope's reconciliation metadata. The body's own throw is the caller's (§7.1), unreported.
   async commit(scope, changes, opts) {
+    let prepared, didPrepare = false;
     const result = await this.write('sync-commit', (device, ctx) => {
       const replica = device.activeReplica;
       const read = typeof changes === 'function'
         ? (views) => {
           const seen = { ...views, ...this.readMetadata(scope, replica, ctx.actor) };
-          try { return changes(seen); } catch (error) { ctx.callerError = error; throw error; }
+          try {
+            if (!didPrepare) { prepared = changes(seen); didPrepare = true; }
+            return prepared;
+          } catch (error) { ctx.callerError = error; throw error; }
         }
         : changes;
       return commit(replica, ctx, scope, read, opts);
@@ -530,6 +535,7 @@ export class BrowserSyncEngine {
       return;
     }
     if (endpoint === 'push') {
+      validatePushEnvelope(response);
       valid(integer(body.lastN) && Array.isArray(body.results));
       const numbers = new Set();
       for (const result of body.results) {
@@ -668,6 +674,7 @@ export class BrowserSyncEngine {
       const replica = device.replicas.find((replica) => replica.storageHandle === handle);
       if (!replica || replica.id !== request.replica) return false;
       if (replica.isUnauthenticated(response)) { replica.meta.authPaused = true; return false; }
+      validatePushReceipts(replica, this.registry, response.body);
       replica.takeOffsetSample(response.body.serverTime, timing, this.limits);
       return true;
     });
@@ -694,7 +701,7 @@ export class BrowserSyncEngine {
         }
         if (index === results.length - 1 || results.length === 0) {
           replica.meta.serverEpoch ??= response.body.epoch;
-          replica.meta.ackThrough = response.body.lastN;
+          replica.meta.ackThrough = response.body.retry ? Math.min(response.body.lastN, response.body.retry.n - 1) : response.body.lastN;
         }
       });
     }

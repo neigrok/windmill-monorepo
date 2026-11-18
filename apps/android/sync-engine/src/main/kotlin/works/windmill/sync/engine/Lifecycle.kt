@@ -91,6 +91,7 @@ internal fun Engine.epochChange(replica: ReplicaState, epoch: String) {
     replica.staging.clear()
     replica.entries().filter { it.state == "acked" && it.json["resultEpoch"]?.str() != epoch }.forEach { entry ->
         recoverWriteTargets(entry)
+        entry.predictions = entry.predictions?.map { it.copy(resultSeq = null, covered = false) }
         replica.move(entry, "epoch", ended)
     }
     reidentify(replica); actor = identities.actorID()
@@ -118,7 +119,7 @@ internal fun Engine.lineageWork(replica: ReplicaState, product: String): List<St
         "device:$product:$key:${Sha256.hex(replica.device.getValue(product).member(key).jcs.encodeToByteArray())}"
     }
 internal fun Engine.anonCount(replica: ReplicaState, product: String, counts: (ScopeRef, RecordKey) -> Boolean = { _, _ -> true }): Json {
-    val records = entriesOf(replica, product).flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.distinct().filter { (scope, key) -> counts(scope, key) }
+    val records = entriesOf(replica, product).flatMap { entry -> entry.effects.flatMap { effect -> effect.deltas.map { effect.scope to it.key } } }.distinct().filter { (scope, key) -> counts(scope, key) }
     val counts = records.groupingBy { it.second.type }.eachCount().toMutableMap()
     for (key in pendingKeys(replica, product)) {
         val detail = replica.device.getValue(product).member(key)["count"]?.obj()

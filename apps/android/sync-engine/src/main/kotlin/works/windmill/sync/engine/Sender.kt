@@ -20,10 +20,10 @@ internal fun Engine.heldBack(replica: ReplicaState): Set<Entry> {
     val back = mutableSetOf<Entry>()
     for (entry in replica.entries()) {
         if (entry.state == "ready") {
-            val keys = (entry.deltas.map { it.key } + entry.intent.guards.map { it.key }).map { entry.scope to it }
+            val keys = entry.effects.flatMap { group -> group.deltas.map { group.scope to it.key } } + entry.intent.guards.map { entry.scope to it.key }
             if (sources.of(entry).any || keys.any { it in touched }) { back.add(entry); touched.addAll(keys) }
         }
-        if (entry.state == "held" || entry in back || entry.json["orphanOf"] != null && entry.state in setOf("sent", "ready")) sources.absorb(entry.scope, entry.deltas, entry.stamp)
+        if (entry.state == "held" || entry in back || entry.json["orphanOf"] != null && entry.state in setOf("sent", "ready")) sources.absorb(entry)
     }
     return back
 }
@@ -63,6 +63,7 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
     val requestedReplica = request.member("replica").str()
     val proceed = write(EngineOperation.push) { _ ->
         val replica = device.replicas.firstOrNull { it.id == requestedReplica } ?: return@write false
+        if (response.status == 200 && body != null && !response.unauthenticated(replica.account)) validateAcknowledgement(replica, body)
         if (response.unauthenticated(replica.account)) {
             body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
             replica.meta = replica.meta.with("authPaused" to Json.of(true)); return@write false
@@ -130,7 +131,7 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
             }
             if (to == results.size) {
                 if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
-                replica.meta = replica.meta.with("ackThrough" to body.member("lastN"))
+                replica.meta = replica.meta.with("ackThrough" to Json.of(minOf(body.member("lastN").long(), body["retry"]?.member("n")?.long()?.minus(1) ?: Long.MAX_VALUE)))
             }
             recorded
         } ?: return null
@@ -141,12 +142,38 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
     return null
 }
 
+// An opted command's ok result carries its receipts, which must name every scope it predicted, under the identities its write map gives.
+private fun Engine.receipts(entry: Entry, result: Json): List<EffectReceipt> {
+    val write = result.items("write").map(::WriteMapEntry)
+    val required = entry.predictions!!.map { registry.remappedScope(it.scope, write, entry.json.items("writeTargets")) }
+    return EffectReceipt.read(registry, entry.scope, required, result.member("seq").long(), result["detail"])
+}
+
+// What a 200 acknowledges is checked before anything of it applies, its offset sample included: a continuation names an n past every
+// result and at most one past `lastN`, an opted result carries whole receipts within SCOPED_RESPONSE_MAX_BYTES, a repeated one too, and
+// any other result none. A failure throws, and the response changes nothing.
+private fun Engine.validateAcknowledgement(replica: ReplicaState, body: Json) {
+    body["retry"]?.let { retry ->
+        val n = retry.member("n").long(1); retry.member("retryAfterMs").long(0)
+        if (n > body.member("lastN").long(0) + 1 || body.items("results").any { it.member("n").long() >= n }) throw JsonError("push-continuation")
+    }
+    for (result in body.items("results")) {
+        val entry = replica.entries().firstOrNull { it.state in setOf("sent", "acked") && it.json["n"] == result["n"] } ?: continue
+        if (result.member("s").str() != "ok") continue
+        if (entry.predictions == null) { if (result["detail"]?.get("windmillKit") != null) throw JsonError("scoped-receipt"); continue }
+        receipts(entry, result)
+        if (body.jcs.encodeToByteArray().size > Constants.SCOPED_RESPONSE_MAX_BYTES) throw JsonError("scoped-response")
+    }
+}
+
 private fun Engine.acceptPushResult(replica: ReplicaState, entry: Entry, result: Json, epoch: Json) {
+    val effects = if (entry.predictions != null) receipts(entry, result) else null
     applyIntentResultDeviceWrites(replica, entry.intent, entry.gestureId, PushResult(result), epoch.str())
     replica.move(entry, "ok", ended)
     entry.json = entry.json.with("resultSeq" to result.member("seq"), "resultEpoch" to epoch)
     raiseAdmittedHigh(replica, entry.intent.deltas.flatMap { it.lattice.stamps })
     result["write"]?.let { applyWriteMap(replica, entry, it.arr()) }
+    if (effects != null) applyReceipt(replica, entry, effects, result.items("write"))
 }
 
 private fun Engine.recoverPushEpoch(replica: ReplicaState, body: Json) {

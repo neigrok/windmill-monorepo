@@ -151,6 +151,8 @@ object Constants {
     const val PUSH_MAX_INTENTS = 64
     const val PUSH_MAX_BYTES = 2_097_152
     const val EFFECT_MAX_BYTES = 67_108_864
+    const val RECEIPT_MAX_BYTES = 67_108_864
+    const val SCOPED_RESPONSE_MAX_BYTES = 71_303_168
     const val PUSH_WORK_MS = 50L
     const val PULL_PAGE_BYTES = 1_048_576
     const val PULL_MAX_SCOPES = 64

@@ -67,6 +67,16 @@ Refusal and held Undo fold commands whose predictions inherit the source's life,
 transitive predictions, while preserving unrelated intent deltas. Four public-path regressions
 cover intent and predicted deletions, restored confirmed-alive rows, records views and notices.
 
+An opted command (engine §2.4) keeps its prediction as one projection per scope in its outbox
+entry's JSON (`predictions`), its origin's always present, and from its `ok` the receipt it was
+accepted with (`acceptedEffects`). Both are additive: entries written before them read unchanged,
+and the SQLite schema stays at version 1. `outbox_touch` names every scope an entry's deltas are in.
+A projection draws over its own scope until that scope's cursor covers its accepted seq or the scope
+ends; the entry resolves when every projection is covered. Once its receipt applies, the command's own
+intent draws, and later queued work follows, at the versions the server accepted. `HTTPTransport` takes the registry's opted
+command names: a push carrying one may be answered with up to `SCOPED_RESPONSE_MAX_BYTES`, and every
+other non-pull answer keeps the 4 MiB bound. Android's registries declare no opted command.
+
 The JVM model server implements probe, gym and journal bindings. Step mode drives the production
 engine's sender/result batches and puller/page chunks/settling, with virtual clocks and transport.
 Step mode leaves sender waits pending until the caller advances its virtual clock; timed-out pulls

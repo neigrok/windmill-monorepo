@@ -105,6 +105,7 @@ public:
     Json::Value results(Json::arrayValue);
     std::optional<Json::Value> retry;
     std::size_t admitted = 0;
+    bool scopedResult = false;
     for (const Json::Value* intent : byN()) {
       const std::uint64_t n = (*intent)["n"].asUInt64();
       const Digest256 digest = intentDigest(*intent);
@@ -114,6 +115,18 @@ public:
         break;
       }
       Turn turn = *read;
+      if (turn == Turn::foreign) return conflict(std::move(body), "replica-foreign");
+      if (turn == Turn::gap) return conflict(std::move(body), "gap");
+      const auto* command = (*intent)["cmd"].isObject() && (*intent)["cmd"]["name"].isString() ? catalog_.registry().command((*intent)["cmd"]["name"].asString()) : nullptr;
+      if (scopedResult && n == results[0]["n"].asUInt64()) {
+        if (!storedAnswer(n, digest, *intent)) return conflict(std::move(body), "replica-forked");
+        continue;
+      }
+      if (scopedResult || (command && command->scopedEffects && !results.empty())) {
+        retry = retryAt(n, 0);
+        break;
+      }
+      scopedResult = command && command->scopedEffects;
       if (turn == Turn::next) {
         if (budget.spent(admitted)) {
           retry = retryAt(n, 0);

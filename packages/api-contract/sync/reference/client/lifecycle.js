@@ -9,6 +9,7 @@ import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
 import { commandRefs } from './dependents.js';
 import { Replica } from './replica.js';
+import { effectsOf } from './projections.js';
 
 // §7.12: `activeReplica()` answers `replica` where it answered `previous`.
 function announce(ctx, previous, replica) {
@@ -44,6 +45,7 @@ export function epochChange(replica, ctx, epoch) {
         return [{ t: delta.t, from: sources[0].id, id: delta.id, ...(delta.born === undefined ? {} : { born: delta.born }) }];
       });
     }
+    for (const projection of entry.predictions ?? []) { delete projection.covered; delete projection.resultSeq; }
     moveEntry(replica, ctx.ended, entry, 'epoch');
   }
   reidentify(replica, ctx);
@@ -79,7 +81,7 @@ function entriesOf(registry, replica, product) {
 export function anonCount(registry, replica, product) {
   const records = new Map();
   for (const entry of entriesOf(registry, replica, product)) {
-    for (const delta of [...(entry.intent.d ?? []), ...(entry.predict ?? [])]) records.set(`${entry.scope}|${recordKey(delta.t, delta.id)}`, delta.t);
+    for (const { scope, d } of effectsOf(entry)) for (const delta of d) records.set(`${scope}|${recordKey(delta.t, delta.id)}`, delta.t);
   }
   const counts = {};
   for (const t of [...records.values()].sort()) counts[t] = (counts[t] ?? 0) + 1;
@@ -88,7 +90,7 @@ export function anonCount(registry, replica, product) {
 
 function observeEntries(replica) {
   for (const entry of replica.entries()) {
-    replica.observe([entry.stamp, ...[...(entry.intent.d ?? []), ...(entry.predict ?? [])].flatMap(stampsOf)]);
+    replica.observe([entry.stamp, ...effectsOf(entry).flatMap(({ d }) => d.flatMap(stampsOf))]);
   }
 }
 

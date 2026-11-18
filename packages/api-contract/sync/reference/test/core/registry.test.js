@@ -84,6 +84,10 @@ test('the probe registry is valid against registry.schema.json', () => {
 test('registry.schema.json refuses broken registries', () => {
   const cases = {
     'no types': broken((r) => delete r.types),
+    'capture without scoped effects': broken((r) => delete command(r, 'probe.capture').scopedEffects),
+    'capture with arguments': broken((r) => { command(r, 'probe.capture').args.id = { type: 'ref<card>' }; }),
+    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'restore'; }),
+    'false scoped effects': broken((r) => { command(r, 'probe.capture').scopedEffects = false; }),
     'an unknown identity class': broken((r) => { card(r).identity = 'random'; }),
     'a ranked field without ranks': broken((r) => { delete card(r).fields.tier.rank; }),
     'a serial field written by clients': broken((r) => { r.types.find((t) => t.type === 'lap').fields.no.writer = 'client'; }),
@@ -91,7 +95,7 @@ test('registry.schema.json refuses broken registries', () => {
     'an unknown field kind': broken((r) => { card(r).fields.title.kind = 'counter'; }),
     'a singleton with life': broken((r) => { r.types.find((t) => t.type === 'meta').life = true; }),
     'a tuple key of one part': broken((r) => { r.types.find((t) => t.type === 'link').key.tuple.pop(); }),
-    'a malformed argument type': broken((r) => { r.commands[0].args.id.type = 'ref<Run>'; }),
+    'a malformed argument type': broken((r) => { command(r, 'probe.start').args.id.type = 'ref<Run>'; }),
     'an unknown type property': broken((r) => { card(r).colour = 'red'; }),
     'a parent without a ref': broken((r) => { delete r.types.find((t) => t.type === 'lap').fields.runId.ref; }),
     'a derived type without its rule': broken((r) => { delete r.types.find((t) => t.type === 'tag').derive; }),
@@ -121,6 +125,11 @@ test('registry.schema.json refuses broken registries', () => {
 
 test('the Registry refuses what the schema cannot express', () => {
   const cases = {
+    'capture without scoped effects': broken((r) => delete command(r, 'probe.capture').scopedEffects),
+    'capture with arguments': broken((r) => { command(r, 'probe.capture').args.id = { type: 'ref<card>' }; }),
+    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'restore'; }),
+    'false scoped effects': broken((r) => { command(r, 'probe.capture').scopedEffects = false; }),
+    'unknown scoped prediction type': broken((r) => { command(r, 'probe.capture').predicts.push('missing'); }),
     'a ref to an unknown type': broken((r) => { card(r).fields.attachment.ref = 'ghost'; }),
     'origins without replica': broken((r) => { card(r).origins = ['server']; }),
     'a revivable type whose dead rows are spent': broken((r) => { card(r).revivable = true; }),

@@ -99,9 +99,11 @@ export class ActCommit {
           throw new CommitError('an act must create the governing record before using identities in its new scope');
       }
       let loan = true;
-      let gesture;
-      try { gesture = segment(value, this.index, { ...views(working, scope), assertOpen: () => { if (!loan) throw new CommitError('an act segment reader has ended'); } }); }
-      finally { loan = false; }
+      if (!this.segment) {
+        try { this.segment = segment(value, this.index, { ...views(working, scope), assertOpen: () => { if (!loan) throw new CommitError('an act segment reader has ended'); } }); }
+        finally { loan = false; }
+      }
+      const gesture = this.segment;
       const opts = gesture.opts ?? {};
       if (opts.gestureId !== undefined && opts.gestureId !== this.gestureId || opts.hold && !request.hold) throw new CommitError('a segment uses its act identity and hold');
       const before = structuredClone(working.meta);
@@ -115,6 +117,7 @@ export class ActCommit {
       this.offset += result.localIds.length;
       result.retired.forEach((id) => this.retired.add(id));
       result.superseded?.forEach((id) => this.superseded.add(id));
+      delete this.segment;
     }
     if (!this.wrote) return { outcome: null, value };
     for (const key of ['meta', 'outbox', 'notices', 'device']) replica[key] = working[key];

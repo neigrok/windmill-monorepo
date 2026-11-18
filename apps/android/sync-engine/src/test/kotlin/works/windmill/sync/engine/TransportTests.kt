@@ -108,6 +108,31 @@ class TransportTests {
         }
     }
 
+    @Test fun anOptedPushMayBeAnsweredPastFourMiBUpToItsShrinkOnlyAllowance() = runBlocking {
+        val answer = Json.objectOf("serverTime" to Json.of(100), "epoch" to Json.of("ep-1"), "as" to Json.of("A"), "lastN" to Json.of(1),
+            "results" to Json.array(Json.objectOf("n" to Json.of(1), "s" to Json.of("ok"), "seq" to Json.of(1), "write" to Json.array(),
+                "detail" to Json.objectOf("command" to Json.of("x".repeat(4 * 1024 * 1024)))))).jcs
+        val bytes = answer.encodeToByteArray().size.toLong()
+        fun request(command: String) = Json.objectOf("replica" to Json.of("rp_" + "0".repeat(32)), "account" to Json.of("A"), "ackThrough" to Json.of(0),
+            "intents" to Json.array(Json.objectOf("n" to Json.of(1), "scope" to Json.of("self/probe"), "cmd" to Json.objectOf("name" to Json.of(command), "args" to Json.objectOf()))))
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4, scopedCommands = setOf("probe.capture"), scopedResponseMaxBytes = bytes).use { transport ->
+                server.enqueue(MockResponse().setBody(answer))
+                assertEquals(Json.parse(answer), answer(transport.push(request("probe.capture"), "token")).body)
+                server.enqueue(MockResponse().setBody(answer))
+                assertSame(Reply.Unreachable, transport.push(request("probe.start"), "token"))
+            }
+            HTTPTransport(server.url("/").toString(), 4, scopedCommands = setOf("probe.capture"), scopedResponseMaxBytes = bytes - 1).use { transport ->
+                server.enqueue(MockResponse().setBody(answer))
+                assertSame(Reply.Unreachable, transport.push(request("probe.capture"), "token"))
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            HTTPTransport("http://127.0.0.1/", 4, scopedResponseMaxBytes = Constants.SCOPED_RESPONSE_MAX_BYTES + 1L)
+        }
+        Unit
+    }
+
     @Test fun aMalformedRestoreConflictReachesTheEngineAsTheServerAnsweredAndFilesAsMalformed() = runBlocking {
         val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
         val request = json("""{"account":"A"}""")

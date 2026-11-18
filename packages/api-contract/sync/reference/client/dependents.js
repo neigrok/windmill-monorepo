@@ -6,9 +6,10 @@
 import { moveEntry } from '../core/machines.js';
 import { recordKey } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
+import { effectsOf, predictionsOf } from './projections.js';
 
 export function deltasOf(entry) {
-  return [...(entry.intent.d ?? []), ...(entry.predict ?? [])];
+  return effectsOf(entry).flatMap(({ d }) => d);
 }
 
 export function scopedKey(scope, t, id) {
@@ -70,6 +71,10 @@ export class Dependents {
     return this.created.has(scopedKey(scopeOfType(this.registry, fromScope, t), t, id));
   }
 
+  absorbEntry(entry, selected) {
+    for (const { scope, d } of effectsOf(entry)) this.absorb(scope, selected ? d.filter((delta) => selected.includes(delta)) : d, entry.stamp);
+  }
+
   // One later entry's dependent part: the dependent deltas, whether its command is dependent, whether
   // nothing of the entry is independent, and, when the sources are being replaced, its guards on what
   // they created: a replacement is numbered after the entry, so the record it read is not there yet.
@@ -83,6 +88,10 @@ export class Dependents {
     const cmdGone = cmd !== undefined
       && (this.governed.has(entry.scope)
         || commandRefs(this.registry, cmd).some((ref) => this.names(entry.scope, ref.t, ref.id))
+        || (entry.predictions && predictionsOf(entry).some(({ scope, d }) => this.governed.has(scope)
+          || d.some((delta) => this.created.has(scopedKey(scope, delta.t, delta.id))
+            || (delta.life && this.lives.has(lifeKey(scope, delta)))
+            || refsOf(this.registry, delta).some((ref) => this.names(scope, ref.t, ref.id)))))
         || (entry.predict ?? []).some((delta) => delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta))));
     const guards = replaced ? (entry.intent.guard ?? []).filter((guard) => this.created.has(scopedKey(entry.scope, guard.t, guard.id))) : [];
     return { removed, cmdGone, guards, any: removed.length > 0 || cmdGone || guards.length > 0, whole: removed.length === deltas.length && (cmd === undefined || cmdGone) };
@@ -90,7 +99,8 @@ export class Dependents {
 
   // A dependent part joins the sources, so dependency is transitive through the records it creates.
   absorbPart(entry, { removed, cmdGone }) {
-    this.absorb(entry.scope, [...removed, ...(cmdGone ? entry.predict ?? [] : [])], entry.stamp);
+    this.absorb(entry.scope, removed, entry.stamp);
+    if (cmdGone) for (const { scope, d } of predictionsOf(entry)) this.absorb(scope, d, entry.stamp);
   }
 }
 
@@ -100,7 +110,10 @@ export class Dependents {
 export function removeDependent(entry, { removed, cmdGone, guards = [] }) {
   const content = {};
   if (removed.length) content.d = structuredClone(removed);
-  if (cmdGone) content.cmd = structuredClone(entry.intent.cmd);
+  if (cmdGone) {
+    content.cmd = structuredClone(entry.intent.cmd);
+    if (entry.predictions) content.predictions = structuredClone(entry.predictions);
+  }
   const kept = (entry.intent.d ?? []).filter((delta) => !removed.includes(delta));
   const removedKeys = new Set(removed.map((delta) => recordKey(delta.t, delta.id)));
   if (kept.length) entry.intent.d = kept;
@@ -112,6 +125,8 @@ export function removeDependent(entry, { removed, cmdGone, guards = [] }) {
   if (cmdGone) {
     delete entry.intent.cmd;
     delete entry.predict;
+    delete entry.predictions;
+    delete entry.acceptedEffects;
   }
   return content;
 }
@@ -131,7 +146,7 @@ export function silentFoldOf(replica, registry, sources, { replaced = false } = 
   for (const entry of replica.entries()) {
     const source = sources.find((candidate) => candidate.entry === entry);
     if (source) {
-      dependents.absorb(entry.scope, source.deltas, entry.stamp);
+      dependents.absorbEntry(entry, source.deltas);
       continue;
     }
     const part = dependents.of(entry, { replaced });
