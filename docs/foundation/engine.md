@@ -2106,13 +2106,13 @@ stamps and reclock later queued owned writes; numbered immutable intents are nev
 scoped ACK. A predicted register moves to its accepted version. Where an accepted version differs
 from the stamp the command wrote (a consequence rewrote an ordinary register) or from the previous
 receipt's (a replay), later queued guards, borns and carried lives holding the old stamp follow it,
-for ordinary `d` and predictions alike. Repeated singleton IDs in two trees never share a slot map. The stored effects drive
-record, reference, born, life and governor dependencies, including a target update with no life
-register. Held-back numbering, refusal folding and unsourced-clock recovery use these scoped keys.
-Target read projections expose that scope's pending records, Undo offers and failed deltas. Command
-read lists remain owned by the origin. A projected notice preserves its identity and origin, while
-the durable notice retains all scoped content for global copy and discard; origin command arguments
-never infer a target singleton's failed record.
+for ordinary `d` and predictions alike. Repeated singleton IDs in two trees never share a slot map.
+The stored effects drive record, reference, born, life and governor dependencies, including a target
+update with no life register. Held-back numbering, refusal folding and unsourced-clock recovery use
+these scoped keys. Target read projections expose that scope's pending records, Undo offers and
+failed deltas. Command read lists remain owned by the origin. A projected notice preserves its
+identity and origin, while the durable notice retains all scoped content for global copy and
+discard; origin command arguments never infer a target singleton's failed record.
 
 No entry is `sent` behind a command (§7.4), so every queued reference, born and guard is rewritable.
 
