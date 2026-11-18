@@ -1,0 +1,637 @@
+{
+  "format": "coach-turn/v1",
+  "name": "no-connection-later-round",
+  "profile": {
+    "name": "vector.coach",
+    "version": 1,
+    "system": [
+      "Be useful."
+    ],
+    "firstContent": {
+      "historyPrefix": "History: ",
+      "contextPrefix": "Context: ",
+      "questionPrefix": "Question: ",
+      "emptyQuestion": "Look."
+    },
+    "refusals": {
+      "not-offered": "not-offered.",
+      "seat-required": "seat-required.",
+      "invalid-input": "invalid-input.",
+      "one-proposal": "one-proposal.",
+      "coach-turn-volume": "coach-turn-volume.",
+      "product-refused": "product-refused.",
+      "stopped": "stopped.",
+      "executor-refused": "executor-refused."
+    },
+    "tools": [
+      {
+        "name": "read",
+        "description": "read a value",
+        "input": {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "integer"
+            }
+          }
+        },
+        "countsAsWrite": false
+      },
+      {
+        "name": "write",
+        "description": "write a value",
+        "input": {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "integer"
+            }
+          }
+        },
+        "countsAsWrite": true
+      }
+    ],
+    "model": "small",
+    "effort": "low",
+    "output": {
+      "maxTokens": 100,
+      "minTokens": null
+    },
+    "label": "other",
+    "limits": {
+      "modelCalls": 3,
+      "abilityCalls": 4,
+      "writes": 2
+    },
+    "groups": [
+      {
+        "name": "proposal",
+        "tools": [
+          "write"
+        ],
+        "maxSuccesses": 1,
+        "code": "one-proposal"
+      }
+    ]
+  },
+  "input": {
+    "turnId": "turn-vector",
+    "seat": {
+      "kind": "bound",
+      "key": "seat-1"
+    },
+    "question": "Help",
+    "pictures": []
+  },
+  "runtime": {
+    "nowMs": 0,
+    "callIds": [
+      "AAAAAAAAAAAAAAAAAAAAAA",
+      "BBBBBBBBBBBBBBBBBBBBBB",
+      "CCCCCCCCCCCCCCCCCCCCCC"
+    ],
+    "lockAvailable": true,
+    "connected": true
+  },
+  "host": {
+    "open": {
+      "history": "Earlier",
+      "context": [
+        "Now"
+      ],
+      "pictures": []
+    },
+    "checks": {},
+    "executions": {
+      "tool-0": {
+        "ok": true,
+        "content": "0"
+      }
+    },
+    "recovery": null
+  },
+  "service": {
+    "passes": [
+      {
+        "pass": "vector-pass",
+        "expiresIn": 600000
+      }
+    ],
+    "exchanges": [
+      {
+        "events": [
+          {
+            "id": 1,
+            "event": "started",
+            "data": {
+              "callId": "AAAAAAAAAAAAAAAAAAAAAA",
+              "served": "small",
+              "maxTokens": 100
+            }
+          },
+          {
+            "id": 2,
+            "event": "text",
+            "data": {
+              "delta": "First"
+            }
+          },
+          {
+            "id": 3,
+            "event": "ended",
+            "data": {
+              "stop": "tool_calls",
+              "message": {
+                "role": "assistant",
+                "parts": [
+                  {
+                    "text": "First"
+                  },
+                  {
+                    "toolCall": {
+                      "id": "tool-0",
+                      "name": "read",
+                      "input": {
+                        "value": 0
+                      }
+                    }
+                  }
+                ],
+                "carry": "opaque"
+              },
+              "charged": "0",
+              "allowance": null
+            }
+          }
+        ],
+        "refusal": null,
+        "broken": false,
+        "repeat": 1
+      },
+      {
+        "events": [],
+        "refusal": null,
+        "broken": false,
+        "repeat": 1,
+        "transport": "offline"
+      },
+      {
+        "events": [
+          {
+            "id": 1,
+            "event": "started",
+            "data": {
+              "callId": "BBBBBBBBBBBBBBBBBBBBBB",
+              "served": "small",
+              "maxTokens": 100
+            }
+          },
+          {
+            "id": 2,
+            "event": "text",
+            "data": {
+              "delta": "Last"
+            }
+          },
+          {
+            "id": 3,
+            "event": "ended",
+            "data": {
+              "stop": "completed",
+              "message": {
+                "role": "assistant",
+                "parts": [
+                  {
+                    "text": "Last"
+                  }
+                ],
+                "carry": "opaque"
+              },
+              "charged": "0",
+              "allowance": null
+            }
+          }
+        ],
+        "refusal": null,
+        "broken": false,
+        "repeat": 1
+      }
+    ],
+    "pictures": []
+  },
+  "controls": [
+    {
+      "at": "execute:tool-0:beforeCommit",
+      "action": "disconnect"
+    }
+  ],
+  "expected": {
+    "requests": [
+      {
+        "method": "PUT",
+        "path": "/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/calls/BBBBBBBBBBBBBBBBBBBBBB/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "parts": [
+                {
+                  "text": "First"
+                },
+                {
+                  "toolCall": {
+                    "id": "tool-0",
+                    "name": "read",
+                    "input": {
+                      "value": 0
+                    }
+                  }
+                }
+              ],
+              "carry": "opaque"
+            },
+            {
+              "role": "tool",
+              "results": [
+                {
+                  "id": "tool-0",
+                  "content": "0",
+                  "isError": false
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/calls/BBBBBBBBBBBBBBBBBBBBBB/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "parts": [
+                {
+                  "text": "First"
+                },
+                {
+                  "toolCall": {
+                    "id": "tool-0",
+                    "name": "read",
+                    "input": {
+                      "value": 0
+                    }
+                  }
+                }
+              ],
+              "carry": "opaque"
+            },
+            {
+              "role": "tool",
+              "results": [
+                {
+                  "id": "tool-0",
+                  "content": "0",
+                  "isError": false
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      }
+    ],
+    "hostCalls": [
+      {
+        "op": "open",
+        "input": {
+          "turnId": "turn-vector",
+          "seat": {
+            "kind": "bound",
+            "key": "seat-1"
+          },
+          "question": "Help",
+          "pictures": []
+        }
+      },
+      {
+        "op": "beginRound",
+        "text": "",
+        "mark": {
+          "turnId": "turn-vector",
+          "callId": "AAAAAAAAAAAAAAAAAAAAAA",
+          "textBytesBeforeRound": 0
+        }
+      },
+      {
+        "op": "text",
+        "text": "First"
+      },
+      {
+        "op": "check",
+        "rule": "seat",
+        "call": {
+          "id": "tool-0",
+          "name": "read",
+          "input": {
+            "value": 0
+          }
+        }
+      },
+      {
+        "op": "check",
+        "rule": "shape",
+        "call": {
+          "id": "tool-0",
+          "name": "read",
+          "input": {
+            "value": 0
+          }
+        }
+      },
+      {
+        "op": "check",
+        "rule": "product",
+        "call": {
+          "id": "tool-0",
+          "name": "read",
+          "input": {
+            "value": 0
+          }
+        }
+      },
+      {
+        "op": "execute",
+        "callId": "AAAAAAAAAAAAAAAAAAAAAA",
+        "call": {
+          "id": "tool-0",
+          "name": "read",
+          "input": {
+            "value": 0
+          }
+        }
+      },
+      {
+        "op": "beginRound",
+        "text": "First",
+        "mark": {
+          "turnId": "turn-vector",
+          "callId": "BBBBBBBBBBBBBBBBBBBBBB",
+          "textBytesBeforeRound": 5
+        }
+      },
+      {
+        "op": "text",
+        "text": "FirstLast"
+      },
+      {
+        "op": "end",
+        "end": {
+          "state": "completed",
+          "text": "FirstLast",
+          "truncated": false,
+          "code": null
+        }
+      }
+    ],
+    "gateRefusals": [],
+    "marks": [
+      {
+        "turnId": "turn-vector",
+        "callId": null,
+        "textBytesBeforeRound": 0
+      },
+      {
+        "turnId": "turn-vector",
+        "callId": "AAAAAAAAAAAAAAAAAAAAAA",
+        "textBytesBeforeRound": 0
+      },
+      {
+        "turnId": "turn-vector",
+        "callId": "BBBBBBBBBBBBBBBBBBBBBB",
+        "textBytesBeforeRound": 5
+      },
+      null
+    ],
+    "waitsMs": [
+      1000
+    ],
+    "telemetry": [
+      {
+        "kind": "ability",
+        "name": "read",
+        "outcome": "ok",
+        "code": null
+      },
+      {
+        "kind": "turn",
+        "state": "completed",
+        "seat": "bound",
+        "code": null,
+        "rounds": 2,
+        "abilityCalls": 1,
+        "refusals": 0,
+        "answerBytes": 9,
+        "durationMs": 1000
+      }
+    ],
+    "end": {
+      "state": "completed",
+      "text": "FirstLast",
+      "truncated": false,
+      "code": null
+    }
+  }
+}

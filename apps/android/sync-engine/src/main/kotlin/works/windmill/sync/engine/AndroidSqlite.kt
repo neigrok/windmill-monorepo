@@ -340,7 +340,8 @@ object AndroidSqlite {
         telemetry: EngineTelemetry = NoEngineTelemetry,
         rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
         intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
-        pendingDeviceWork: works.windmill.sync.api.PendingDeviceWork = { _, _ -> emptyList() }): Engine {
+        pendingDeviceWork: works.windmill.sync.api.PendingDeviceWork = { _, _ -> emptyList() },
+        writerObserver: WriterObserver? = null): Engine {
         val db = try {
             val handler = DatabaseErrorHandler { }
             if (Build.VERSION.SDK_INT >= 28) SQLiteDatabase.openDatabase(file, SQLiteDatabase.OpenParams.Builder()
@@ -363,7 +364,8 @@ object AndroidSqlite {
                     }
                 }
             }
-            return Engine(registry, store, clock, identities, actor, telemetry = telemetry, rewriteDeviceValue = rewriteDeviceValue, intentResultWrites = intentResultWrites, pendingDeviceWork = pendingDeviceWork)
+            return Engine(registry, store, clock, identities, actor, telemetry = telemetry, rewriteDeviceValue = rewriteDeviceValue,
+                intentResultWrites = intentResultWrites, pendingDeviceWork = pendingDeviceWork, writerObserver = writerObserver)
         } catch (failure: Throwable) {
             db.close()
             if (failure is StoreFailure || failure is SQLiteException || failure is IllegalArgumentException) {

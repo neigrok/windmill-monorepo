@@ -89,7 +89,7 @@ export const Probe = Object.freeze({
   run: probeType({ type: 'run', scope: PROBE_SCOPE, defaults: { startedAt: null, label: null }, specs: [chars('run.label', 0, 12)], heldRemoval: false }),
   link: probeType({ type: 'link', scope: null, defaults: { strength: null }, specs: [new NumberSpec('link.strength', { min: 0, max: 9, integer: true })],
     heldRemoval: true }),
-  tag: probeType({ type: 'tag', scope: null, defaults: { label: '' }, specs: [] }),
+  tag: probeType({ type: 'tag', scope: null, defaults: { label: '' }, specs: [new TextSpec('tag.label', { unit: 'chars', min: 0, max: 24, trim: false, nfc: false })], heldRemoval: false }),
 });
 
 /** @param {string} type */

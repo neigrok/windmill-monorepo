@@ -156,8 +156,11 @@ private sealed interface Step<out T, out R> {
 
 fun Plan.firstGone(context: CommitContext, scope: ScopeRef, registry: Registry): Refused? {
     for (operation in operations.filter { registry.lives(it.entity.type, scope) }) {
+        val definition = registry.type(operation.entity.type)
+        if (operation.kind is Operation.Kind.Revive && definition?.hasBorn == true && definition.json["revivable"]?.bool() == true &&
+            context.drawn(operation.entity.type, operation.id)?.born == null) return Refused(RefusalCode.unknownRecord, operation.ref, path = Refused.Path.predicted)
         val needsLife = operation.kind is Operation.Kind.Update || operation.kind == Operation.Kind.Remove || operation.kind is Operation.Kind.Move
-        if (needsLife && registry.type(operation.entity.type)?.life == true && context.drawn(operation.entity.type, operation.id)?.life?.isAlive != true) {
+        if (needsLife && definition?.life == true && context.drawn(operation.entity.type, operation.id)?.life?.isAlive != true) {
             return Refused(RefusalCode.unknownRecord, operation.ref, path = Refused.Path.predicted)
         }
         val anchor = operation.anchor

@@ -268,7 +268,7 @@ public struct ReplicaLifecycle: Sendable {
       device.remove(anon.id)
     }
     device.modify(target) { target in
-      for entry in target.outbox { target.update(entry: entry.localId) { $0.lineage = account } }
+      target.updateEntries { $0.lineage = account }
       let stamps = target.outbox.flatMap { [$0.stamp] + $0.drawnDeltas.flatMap(\.lattice.stamps) }
       target.update { meta in
         meta.observe(stamps)

@@ -68,7 +68,7 @@ not kit content. `f` in an input lists field values; a field it leaves out takes
 | `Lap` | `lap`, `self/probe` | `Writable`, `Removable` (`heldRemoval` false) | `runId` (`""`), `at` (null), `weight` (null) | `weight`: number `lap.weight` −500…500 quantum 0.01 |
 | `Run` | `run`, `self/probe` | `Writable`, `Removable` (`heldRemoval` false) | `startedAt` (null), `label` (null) | `label`: text `run.label` chars 0–12 trim nfc |
 | `Link` | `link`, dynamic tree | `Writable`, `Removable` (`heldRemoval` true) | `strength` (null) | `strength`: number `link.strength` 0–9 integer |
-| `Tag` | `tag`, dynamic tree | `Writable` | `label` (`""`) | none |
+| `Tag` | `tag`, dynamic tree | `Writable`, `Removable` (`heldRemoval` false) | `label` (`""`) | `label`: text `tag.label` chars 0–24, no trim or NFC |
 
 Every entity's `fields` holds every field of its row above, a nil value as `null`; `Mark.memo` decodes by
 `Fields.text`. They are vector declarations, not a product's: a card writes `claim: null` and a blank `title`, which the
@@ -76,9 +76,10 @@ registry's domains refuse at a server. Commands: `ProbeStart` (`probe.start`, sp
 trim nfc), `ProbeEnd` (`probe.end`, no specs) and `ProbeCopy` (`probe.copy`, no specs); a vector gives a command as
 `{name, args}`. `ProbeRefusal` maps a `Violation` and a `Refused` to the refusal forms above.
 
-Translation writes minted, keyed and singleton types. A `—` cell of §8.2's table (a removal of a type
-without life, a move of a singleton), a derived type (`tag`) and a type the registry does not hold fail
-translation like a §8.3 rule: `{error: true}`. A minted create leaves a nil `time` field out of `f`, so the engine
+Translation writes minted, derived, keyed and singleton types. Derived operations keep the supplied
+ID. A `—` cell of §8.2's table (a removal of a type without life, a move of a singleton), a revival of a
+non-revivable type and a type the registry does not hold fail translation like a §8.3 rule: `{error: true}`.
+A minted or derived create leaves a nil `time` field out of `f`, so the engine
 stamps it with the commit's now; the save of such a create takes that now as the field's stored value.
 
 Beyond its checks, `Valid` refuses a U+0000 in a field it names that no check caught, with the rule `<type>.<field>`,
@@ -142,6 +143,7 @@ f}]`), then applies each operation of `plan` in order:
 | `{op: "create", t, id, f, fields?, checked?}` | `create(valid)`, or `create(valid, fields:)` when `fields` is given |
 | `{op: "insert", t, id, f, below, checked?}` | `insert(valid, below:)` |
 | `{op: "update", t, id, f, fields?, base?, guarded?, checked?}` | `update(valid, fields:, from:, guarded:)`; `base` is the base entity's `f` |
+| `{op: "revive", t, id, f?, fields, base?, guarded?, checked?}` | `revive(valid, fields:, from:, guarded:)` |
 | `{op: "remove", t, id}` | `remove(id)` |
 | `{op: "move", t, id, below}` | `move(id, below:)` |
 | `{op: "guardRead", t, id, fields}` | `guardRead(id, fields:)` |
@@ -149,7 +151,8 @@ f}]`), then applies each operation of `plan` in order:
 
 `valid` is `Valid(entity, fields: checked, at: moment)`, where the entity decodes from `f` with the
 operation's id and `checked` defaults to `fields`, then to every field. A violation ends the vector with it.
-Translation then runs for `scope`.
+Translation then runs for `scope`. A translation vector may replace the probe tag's `label` declaration
+with `tagField` to prove that revival rejects const, time and text edits on a revivable type.
 
 ### `run/pipeline.json`
 
@@ -229,7 +232,8 @@ Each input lists ordered `segments`, each with `scope` and the `plan` language a
 scoped types to read after the act; `undo: true` performs one Undo using the shared receipt. These
 vectors run `ActionRunner.runAct` over the real local engine. The output names the outcome kind,
 per-segment scopes and local-id counts, whether the whole act is held, and inspected records as
-`{id, title}` (null when that type has no title). Identity cases instead name `mint` with its type, scope,
+`{id, title}` (null when that type has no title). An inspected type with `detail: true` also returns
+its fields, life, and `bornSegment`, the index of the segment whose stamp matches its retained born. Identity cases instead name `mint` with its type, scope,
 count and whether load borrows the scope; `new` first creates its governing board. `caughtScope`
 attempts and catches an invalid scope read before minting, which must still fail the act. They drive the
 engine act context directly so a missing-load programming fault can be asserted without a kit trap.

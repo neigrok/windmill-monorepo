@@ -265,7 +265,8 @@ struct Link: ProbeEntity, Removable {
   ]
 }
 
-struct Tag: ProbeEntity {
+struct Tag: ProbeEntity, Removable {
+  static let heldRemoval = false
   static let type = "tag"
 
   let id: ID<Tag>
@@ -278,7 +279,9 @@ struct Tag: ProbeEntity {
 
   var fields: [String: JSON] { ["label": .string(label)] }
 
-  static let checks: [Check<Tag>] = []
+  static let label = TextSpec("tag.label", unit: .chars, min: 0, max: 24, trim: false, nfc: false)
+  static let checks: [Check<Tag>] = [Check("label") { tag, _ in tag.label = try Tag.label.apply(tag.label, at: "label") }]
+
 }
 
 // The entity a vector names by its registry type.

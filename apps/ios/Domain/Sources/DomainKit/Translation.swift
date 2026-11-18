@@ -50,7 +50,7 @@ extension Plan {
     for operation in operations {
       let definition = registry.type(operation.entity.type)
       switch operation.kind {
-      case .update(let named, _, true):
+      case .update(let named, _, true), .revive(let named, _, true):
         guards += named.filter { definition?.field($0)?.kind.isLattice == true }
           .map { RegisterRef(type: operation.entity.type, id: operation.recordID(in: registry), field: $0) }
       case .guardRead(let fields):
@@ -111,12 +111,11 @@ extension Operation {
     guard entity.scope.map({ $0 == scope }) ?? true, registry.lives(entity.type, in: scope) else {
       throw PlanError(rule: 1, "\(entity.type) lives outside the action's scope \(scope)")
     }
-    guard definition.identity != .derived else { throw PlanError(rule: 0, "the kit writes no derived type (\(entity.type))") }
     switch kind {
     case .create(let named, let base):
       guard !entity.isOrdered else { throw PlanError(rule: 4, "create names the ordered type \(entity.type); insert places it") }
-      guard named == nil || definition.identity != .minted else {
-        throw PlanError(rule: 4, "create(_:fields:) names the minted type \(entity.type)")
+      guard named == nil || !definition.hasBorn else {
+        throw PlanError(rule: 4, "create(_:fields:) names the minted or derived type \(entity.type)")
       }
       return try creation(definition, writing: named ?? Array(values.keys).uniqueInByteOrder, anchor: nil, editedFrom: base)
     case .insert(let below):
@@ -125,6 +124,16 @@ extension Operation {
                           anchor: OrderAnchor(field: orderField, below: below))
     case .update(let named, let base, _):
       return try update(definition, writing: named, base: base)
+    case .revive(let names, let base, _):
+      guard definition.hasBorn, definition.revivable == true else { throw PlanError(rule: 0, "\(entity.type) has no revivable life") }
+      for name in names {
+        switch definition.field(name)?.kind {
+        case .const?, .time?, .text?: throw PlanError(rule: 7, "revive cannot edit \(name)")
+        default: continue
+        }
+      }
+      let (values, _) = try split(names, definition, editedFrom: base)
+      return .revive(entity.type, id, values)
     case .remove:
       return try removal(definition)
     case .move(let below):
@@ -137,23 +146,23 @@ extension Operation {
     }
   }
 
-  // A minted create leaves a nil time field unset, so the engine stamps it with the commit's now (§5.3, engine §7.1
+  // A minted or derived create leaves a nil time field unset, so the engine stamps it with the commit's now (§5.3, engine §7.1
   // step 4).
   func creation(_ definition: TypeDef, writing names: [String], anchor: OrderAnchor?, editedFrom base: [String: JSON]? = nil)
     throws(PlanError) -> Change {
     try checkWhole(definition, writing: names)
     var (values, texts) = try split(names, definition, editedFrom: base)
-    if definition.identity == .minted {
+    if definition.hasBorn {
       values = values.filter { name, value in !(value.isNull && definition.field(name)?.isTime == true) }
     }
-    guard anchor == nil || definition.identity == .minted else {
+    guard anchor == nil || definition.hasBorn else {
       throw PlanError(rule: 0, "an anchored create of the \(definition.identity.rawValue) type \(entity.type)")
     }
-    if definition.identity != .minted && names.isEmpty {
+    if !definition.hasBorn && names.isEmpty {
       throw PlanError(rule: 8, "a keyed create of \(ref) writes no field")
     }
     switch definition.identity {
-    case .minted: return .create(entity.type, id: .given(id), values, texts: texts, anchor: anchor)
+    case .minted, .derived: return .create(entity.type, id: .given(id), values, texts: texts, anchor: anchor)
     case .keyed where definition.life: return .put(entity.type, id, present: true, values, texts: texts)
     default: return .write(entity.type, recordID(in: definition), values, texts: texts)
     }
@@ -172,7 +181,7 @@ extension Operation {
     try checkWhole(definition, writing: names)
     let (values, texts) = try split(names, definition, editedFrom: base)
     switch definition.identity {
-    case .minted: return .update(entity.type, id, values, texts: texts)
+    case .minted, .derived: return .update(entity.type, id, values, texts: texts)
     case .keyed where definition.life: return .put(entity.type, id, present: nil, values, texts: texts)
     default: return .write(entity.type, recordID(in: definition), values, texts: texts)
     }
@@ -187,7 +196,7 @@ extension Operation {
 
   func removal(_ definition: TypeDef) throws(PlanError) -> Change {
     switch definition.identity {
-    case .minted: return .delete(entity.type, id)
+    case .minted, .derived: return .delete(entity.type, id)
     case .keyed where definition.life: return .put(entity.type, id, present: false)
     default: throw PlanError(rule: 0, "the \(entity.type) type has no life to remove")
     }

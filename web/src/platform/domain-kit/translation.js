@@ -17,7 +17,7 @@ import { PlanError } from './plans.js';
 /** @typedef {{ text: string, from: string | null }} TextEdit */
 /**
  * The engine's change language (engine corpus "Changes"), one change per plan operation.
- * @typedef {{ op: 'create' | 'update' | 'delete' | 'put' | 'write' | 'move', t: string, id: RecordID, f?: Record<string, Json>,
+ * @typedef {{ op: 'create' | 'update' | 'delete' | 'revive' | 'put' | 'write' | 'move', t: string, id: RecordID, f?: Record<string, Json>,
  *   x?: Record<string, TextEdit>, present?: boolean | null, anchor?: { field: string, below: RecordID | null } }} Change
  */
 /**
@@ -103,10 +103,10 @@ function checkWhole(definition, names) {
 function creation(operation, definition, names, anchor, base, registry) {
   checkWhole(definition, names);
   const { values, texts } = split(operation, names, definition, base);
-  const minted = definition.identity === 'minted';
-  if (anchor !== null && !minted) throw new PlanError(0, 'an anchored create names a non-minted type');
-  if (!minted && names.length === 0) throw new PlanError(8, 'a keyed create writes no field');
-  if (minted) {
+  const hasBorn = definition.hasBorn;
+  if (anchor !== null && !hasBorn) throw new PlanError(0, 'an anchored create names a type without a birth identity');
+  if (!hasBorn && names.length === 0) throw new PlanError(8, 'a keyed create writes no field');
+  if (hasBorn) {
     // §5.3: a nil time field is left to the engine, which stamps it with the commit's now.
     const written = Object.fromEntries(Object.entries(values).filter(([name, value]) => value !== null || definition.fields[name]?.kind !== 'time'));
     const change = withParts({ op: 'create', t: operation.entity.type, id: operation.id }, written, texts);
@@ -128,12 +128,11 @@ function changeOf(operation, scope, registry) {
   const definition = /** @type {Definition | undefined} */ (registry.type(entity.type));
   if (!definition) throw new PlanError(0, `the registry has no type ${entity.type}`);
   if ((entity.scope !== null && entity.scope !== scope) || definition.scope !== registry.scopeKindOf(scope)) throw new PlanError(1, `${entity.type} lives outside ${scope}`);
-  if (definition.identity === 'derived') throw new PlanError(0, 'the kit writes no derived type');
-  const minted = definition.identity === 'minted';
+  const hasBorn = definition.hasBorn;
   const keyedWithLife = definition.identity === 'keyed' && definition.life === true;
   switch (kind.op) {
     case 'create':
-      if (entity.isOrdered || (kind.named !== null && minted)) throw new PlanError(4, 'create does not place an Ordered type, nor part of a minted one');
+      if (entity.isOrdered || (kind.named !== null && hasBorn)) throw new PlanError(4, 'create does not place an Ordered type, nor part of a minted or derived one');
       return creation(operation, definition, kind.named ?? uniqueInByteOrder(Object.keys(operation.values)), null, kind.base, registry);
     case 'insert':
       if (entity.orderField === null) throw new PlanError(4, 'insert names an unordered type');
@@ -147,12 +146,20 @@ function changeOf(operation, scope, registry) {
       }
       checkWhole(definition, kind.named);
       const { values, texts } = split(operation, kind.named, definition, kind.base);
-      if (minted) return withParts({ op: 'update', t: entity.type, id: operation.id }, values, texts);
+      if (hasBorn) return withParts({ op: 'update', t: entity.type, id: operation.id }, values, texts);
       if (keyedWithLife) return withParts({ op: 'put', t: entity.type, id: operation.id, present: null }, values, texts);
       return withParts({ op: 'write', t: entity.type, id: recordIdOf(operation, registry) }, values, texts);
     }
+    case 'revive': {
+      if (!definition.hasBorn || definition.revivable !== true) throw new PlanError(0, `${entity.type} has no revivable life`);
+      for (const name of kind.named) {
+        if (['const', 'time', 'text'].includes(definition.fields[name]?.kind ?? '')) throw new PlanError(7, `revive cannot edit ${name}`);
+      }
+      const { values, texts } = split(operation, kind.named, definition, kind.base);
+      return withParts({ op: 'revive', t: entity.type, id: operation.id }, values, texts);
+    }
     case 'remove':
-      if (minted) return { op: 'delete', t: entity.type, id: operation.id };
+      if (hasBorn) return { op: 'delete', t: entity.type, id: operation.id };
       if (keyedWithLife) return { op: 'put', t: entity.type, id: operation.id, present: false };
       throw new PlanError(0, `${entity.type} has no removable life`);
     case 'move':
@@ -179,7 +186,7 @@ function guardsOf(operations, registry) {
     const isLattice = (/** @type {string} */ name) => Registry.isLattice(definition?.fields[name]?.kind);
     /** @type {readonly string[]} */
     let fields = [];
-    if (operation.kind.op === 'update' && operation.kind.guarded) fields = operation.kind.named.filter(isLattice);
+    if ((operation.kind.op === 'update' || operation.kind.op === 'revive') && operation.kind.guarded) fields = operation.kind.named.filter(isLattice);
     if (operation.kind.op === 'guardRead') {
       fields = operation.kind.fields;
       if (fields.some((name) => !isLattice(name))) throw new PlanError(6, 'a guard names no lattice register');

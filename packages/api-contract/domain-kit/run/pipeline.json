@@ -634,5 +634,164 @@
         }
       }
     }
+  },
+  {
+    "name": "revive of a missing tag predicts unknown-record",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ],
+      "drawn": [],
+      "receipt": {
+        "gestureId": "g1",
+        "localIds": [
+          "g1/0"
+        ],
+        "retired": []
+      }
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {
+              "t": "tag",
+              "id": "oak"
+            },
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "revive needs born even when life is present",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ],
+      "drawn": [
+        {
+          "t": "tag",
+          "id": "oak",
+          "seq": 1,
+          "life": [
+            "dead",
+            "3000:0:r_aaaaaaaaaaaa"
+          ],
+          "f": {
+            "label": [
+              "Before",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ],
+      "receipt": {
+        "gestureId": "g1",
+        "localIds": [
+          "g1/0"
+        ],
+        "retired": []
+      }
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {
+              "t": "tag",
+              "id": "oak"
+            },
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "ordinary edits of a dead derived tag still predict gone",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "update",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ],
+      "drawn": [
+        {
+          "t": "tag",
+          "id": "oak",
+          "seq": 1,
+          "life": [
+            "dead",
+            "3000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": [
+              "Before",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ],
+      "receipt": {
+        "gestureId": "g1",
+        "localIds": [
+          "g1/0"
+        ],
+        "retired": []
+      }
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {
+              "t": "tag",
+              "id": "oak"
+            },
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
   }
 ]

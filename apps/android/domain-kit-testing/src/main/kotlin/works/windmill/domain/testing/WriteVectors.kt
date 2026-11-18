@@ -55,6 +55,7 @@ internal object WriteVectors {
                 "create" -> plan.create(valid(), fields = operation["fields"]?.let(::names))
                 "insert" -> { if (type !is OrderedType<*>) throw PlanError(0, "$op of ${type.type} is unexpressible"); plan.insert(valid(), recordID(operation["below"])) }
                 "update" -> plan.update(valid(), operation["fields"]?.let(::names), operation["base"]?.let { type.entity(record, fields(it)) }, operation["guarded"]?.bool() ?: false)
+                "revive" -> plan.revive(valid(), names(operation.member("fields")), operation["base"]?.let { type.entity(record, fields(it)) }, operation["guarded"]?.bool() ?: false)
                 "remove" -> { if (type !is RemovableType<*>) throw PlanError(0, "$op of ${type.type} is unexpressible"); plan.remove(id) }
                 "move" -> { if (type !is OrderedType<*>) throw PlanError(0, "$op of ${type.type} is unexpressible"); plan.move(id, recordID(operation["below"])?.let { Id(it, type) }) }
                 "guardRead" -> plan.guardRead(id, names(operation.member("fields")))
@@ -64,7 +65,16 @@ internal object WriteVectors {
         return plan
     }
     fun translate(input: Json): Json = try {
-        Json.objectOf("gesture" to build(input, moment(input)).gesture(input["scope"]?.str()?.let(::ScopeRef) ?: Probe.scope, probeRegistry()).form)
+        var registry = probeRegistry()
+        input["tagField"]?.let { field ->
+            val document = registry.json.obj().toMutableMap()
+            document["types"] = Json.Arr(document.getValue("types").arr().map { type ->
+                if (type.member("type").str() != "tag") type
+                else Json.Obj((type.obj() + ("fields" to Json.objectOf("label" to field))).toList())
+            })
+            registry = Registry(Json.Obj(document.toList()))
+        }
+        Json.objectOf("gesture" to build(input, moment(input)).gesture(input["scope"]?.str()?.let(::ScopeRef) ?: Probe.scope, registry).form)
     } catch (violation: Violation) { Json.objectOf("violation" to violation.json) }
       catch (error: PlanError) { Json.objectOf("error" to Json.of(true)) }
     fun pipeline(input: Json): Json = runBlocking { withActionContext { pipeline(input, it) } }
@@ -107,8 +117,10 @@ internal object WriteVectors {
                     ActPlan(input.member("segments").arr().map { ScopedPlan(ScopeRef(it.member("scope")), build(it, loaded)) }), Unit)
             }
             val result = runner.runAct(action)
+            var stamps = emptyList<Stamp?>()
             val outcome = when (result) {
                 is ActOutcome.Committed -> {
+                    stamps = result.receipt.segments.map { it.stamp }
                     if (input["undo"]?.bool() == true) runner.undo(result.receipt.gestureId)
                     Json.objectOf("kind" to Json.of("committed"), "scopes" to Json.Arr(result.receipt.segments.map { it.scope.json }),
                         "counts" to Json.Arr(result.receipt.segments.map { Json.of(it.localIds.size) }), "held" to Json.of(result.receipt.releaseAt != null))
@@ -118,7 +130,15 @@ internal object WriteVectors {
             }
             val records = input.member("inspect").arr().map { item ->
                 Json.Arr(engine.replica.read(ScopeRef(item.member("scope"))) { it.drawn(item.member("t").str()) }.filter { it.isVisible }
-                    .map { Json.objectOf("id" to it.id.json, "title" to (it.values["title"] ?: Json.Null)) })
+                    .map { record ->
+                        val result = linkedMapOf("id" to record.id.json, "title" to (record.values["title"] ?: Json.Null))
+                        if (item["detail"]?.bool() == true) {
+                            result["fields"] = Json.Obj(record.values.toList())
+                            result["life"] = record.life?.let { Json.of(if (it.isAlive) "alive" else "dead") } ?: Json.Null
+                            result["bornSegment"] = Json.of(stamps.indexOf(record.born))
+                        }
+                        Json.Obj(result.toList())
+                    })
             }
             Json.objectOf("outcome" to outcome, "records" to Json.Arr(records))
         }

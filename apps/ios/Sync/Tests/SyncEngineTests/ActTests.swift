@@ -8,7 +8,9 @@ import Testing
 
 struct ActTests {
   @Test func initialLoansEndAndSegmentsSeeEarlierCreates() throws {
-    let rig = try Rig()
+    let timings = Mutex<[WriterTiming.Operation]>([])
+    let rig = try Rig(writerObserver: { sample in timings.withLock { $0.append(sample.operation) } })
+    timings.withLock { $0.removeAll() }
     let scope = Rig.scope
     var loan: (any ScopeReader)?
     var prepares = 0
@@ -25,6 +27,7 @@ struct ActTests {
       return Gesture(changes: [.update("card", "card0001", ["title": "Next"])])
     })
     guard case .committed(let receipt)? = result.outcome else { Issue.record("act did not commit"); return }
+    #expect(timings.withLock { $0 } == [.commit])
     #expect(throws: CommitFailure.self) { try loan!.drawn("card") }
     #expect(prepares == 1)
     #expect(receipt.segments.map(\.scope) == [scope, scope])

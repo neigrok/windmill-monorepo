@@ -97,6 +97,7 @@ public struct Recovery: Sendable {
       }
       try checkSeat()
       if stopRequested { return await finish(.stopped) }
+      if !client.connected { return await finish(.interrupted, withdraw: true) }
       try await client.upload(open.pictures, profile: profile, seat: input.seat)
       try checkSeat()
       var messages = [try profile.firstMessage(input: input, open: open)]

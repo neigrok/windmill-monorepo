@@ -1,0 +1,186 @@
+[
+  {
+    "name": "Opening dates follow stamped target completion unless a stamped complete mark is retained",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "ordinary", "present": true, "born": null, "rc": null, "ru": null, "label": "ordinary", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "opening", "present": true, "born": null, "rc": null, "ru": null, "label": "opening", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "stored", "present": true, "born": null, "rc": null, "ru": null, "label": "stored", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {"node": "ordinary", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 7},
+            {"node": "opening", "status": "complete", "outOfOrder": false, "recordedAt": 9999, "deviceAt": 9},
+            {"node": "stored", "status": "complete", "outOfOrder": false, "recordedAt": 123, "deviceAt": 4, "stamp": "1:0:a"}
+          ],
+          "pointers": [
+            {"node": "opening", "present": true, "opens": "B", "setAt": "15:0:a"},
+            {"node": "stored", "present": true, "opens": "B", "setAt": "30:0:a"}
+          ]
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "x", "present": true, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "y", "present": true, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {"node": "x", "status": "complete", "outOfOrder": false, "recordedAt": 900, "deviceAt": 10, "stamp": "10:0:a"},
+            {"node": "y", "status": "complete", "outOfOrder": false, "recordedAt": 800, "deviceAt": 20, "stamp": "20:0:a"}
+          ],
+          "pointers": []
+        }
+      ],
+      "tree": "A"
+    },
+    "expect": {
+      "completed": ["opening", "ordinary", "stored"],
+      "dates": [{"node": "opening", "at": 800}, {"node": "ordinary", "at": 7}, {"node": "stored", "at": 123}]
+    }
+  },
+  {
+    "name": "A later pointer stamp supplies its physical time as readerView does",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "ordinary", "present": true, "born": null, "rc": null, "ru": null, "label": "ordinary", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "opening", "present": true, "born": null, "rc": null, "ru": null, "label": "opening", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "stored", "present": true, "born": null, "rc": null, "ru": null, "label": "stored", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {"node": "ordinary", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 7},
+            {"node": "opening", "status": "complete", "outOfOrder": false, "recordedAt": 9999, "deviceAt": 9},
+            {"node": "stored", "status": "complete", "outOfOrder": false, "recordedAt": 123, "deviceAt": 4, "stamp": "1:0:a"}
+          ],
+          "pointers": [
+            {"node": "opening", "present": true, "opens": "B", "setAt": "40:0:a"},
+            {"node": "stored", "present": true, "opens": "B", "setAt": "40:0:a"}
+          ]
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "x", "present": true, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "y", "present": true, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {"node": "x", "status": "complete", "outOfOrder": false, "recordedAt": 900, "deviceAt": 10, "stamp": "10:0:a"},
+            {"node": "y", "status": "complete", "outOfOrder": false, "recordedAt": 800, "deviceAt": 20, "stamp": "20:0:a"}
+          ],
+          "pointers": []
+        }
+      ],
+      "tree": "A"
+    },
+    "expect": {
+      "completed": ["opening", "ordinary", "stored"],
+      "dates": [{"node": "opening", "at": 40}, {"node": "ordinary", "at": 7}, {"node": "stored", "at": 123}]
+    }
+  },
+  {
+    "name": "An opening without stamp evidence never borrows the ignored personal mark date",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "p", "status": "complete", "outOfOrder": false, "recordedAt": 999, "deviceAt": 99}],
+          "pointers": [{"node": "p", "present": true, "opens": "B"}]
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "b", "status": "complete", "outOfOrder": false, "recordedAt": 20, "deviceAt": 10}],
+          "pointers": []
+        }
+      ],
+      "tree": "A"
+    },
+    "expect": {"completed": ["p"], "dates": [{"node": "p", "at": null}]}
+  },
+  {
+    "name": "A subtree uses its branch register stamp for effective completion dates",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "own", "present": true, "born": null, "rc": null, "ru": null, "label": "own", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": "B", "branchStamp": "50:0:a"}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": {"tree": "A", "step": "own"},
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "b", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 10, "stamp": "10:0:a"}],
+          "pointers": []
+        }
+      ],
+      "tree": "A"
+    },
+    "expect": {"completed": ["own"], "dates": [{"node": "own", "at": 50}]}
+  }
+]

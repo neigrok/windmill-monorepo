@@ -490,5 +490,284 @@
     "expect": {
       "error": true
     }
+  },
+  {
+    "name": "derived create delete and revival retain the original born",
+    "input": {
+      "segments": [
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "create",
+              "t": "tag",
+              "id": "oak",
+              "f": {
+                "label": "Before"
+              }
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "remove",
+              "t": "tag",
+              "id": "oak"
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "revive",
+              "t": "tag",
+              "id": "oak",
+              "f": {
+                "label": "Next"
+              },
+              "fields": [
+                "label"
+              ]
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "tree/b_00000001",
+          "t": "tag",
+          "detail": true
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "scopes": [
+          "tree/b_00000001",
+          "tree/b_00000001",
+          "tree/b_00000001"
+        ],
+        "counts": [
+          1,
+          1,
+          1
+        ],
+        "held": false
+      },
+      "records": [
+        [
+          {
+            "id": "oak",
+            "title": null,
+            "fields": {
+              "label": "Next"
+            },
+            "life": "alive",
+            "bornSegment": 0
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "revive also edits an alive record without changing its born",
+    "input": {
+      "segments": [
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "create",
+              "t": "tag",
+              "id": "oak",
+              "f": {
+                "label": "Before"
+              }
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "revive",
+              "t": "tag",
+              "id": "oak",
+              "f": {
+                "label": "Next"
+              },
+              "fields": [
+                "label"
+              ]
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "tree/b_00000001",
+          "t": "tag",
+          "detail": true
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "committed",
+        "scopes": [
+          "tree/b_00000001",
+          "tree/b_00000001"
+        ],
+        "counts": [
+          1,
+          1
+        ],
+        "held": false
+      },
+      "records": [
+        [
+          {
+            "id": "oak",
+            "title": null,
+            "fields": {
+              "label": "Next"
+            },
+            "life": "alive",
+            "bornSegment": 0
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a later revival without born rolls back the earlier create",
+    "input": {
+      "segments": [
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "create",
+              "t": "tag",
+              "id": "oak",
+              "f": {
+                "label": "Before"
+              }
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "revive",
+              "t": "tag",
+              "id": "missing",
+              "fields": []
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "tree/b_00000001",
+          "t": "tag"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "refused",
+        "refusal": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {
+              "t": "tag",
+              "id": "missing"
+            },
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      },
+      "records": [
+        []
+      ]
+    }
+  },
+  {
+    "name": "a later ordinary edit cannot revive a dead tag",
+    "input": {
+      "segments": [
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "create",
+              "t": "tag",
+              "id": "oak",
+              "f": {
+                "label": "Before"
+              }
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "remove",
+              "t": "tag",
+              "id": "oak"
+            }
+          ]
+        },
+        {
+          "scope": "tree/b_00000001",
+          "plan": [
+            {
+              "op": "update",
+              "t": "tag",
+              "id": "oak",
+              "f": {
+                "label": "Next"
+              },
+              "fields": [
+                "label"
+              ]
+            }
+          ]
+        }
+      ],
+      "inspect": [
+        {
+          "scope": "tree/b_00000001",
+          "t": "tag"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "refused",
+        "refusal": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {
+              "t": "tag",
+              "id": "oak"
+            },
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      },
+      "records": [
+        []
+      ]
+    }
   }
 ]

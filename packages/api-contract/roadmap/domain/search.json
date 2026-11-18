@@ -1,0 +1,132 @@
+[
+  {
+    "name": "MCP search ranks exact ID, ID prefix, label, ID substring, then description",
+    "input": {
+      "operation": "search",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "abc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "abcd", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "ABC basics", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "xabc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "abc", "links": [], "branch": null},
+          {"id": "hidden", "present": false, "born": null, "rc": null, "ru": null, "label": "abc", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"query": "ABC"}
+    },
+    "expect": ["abc", "abcd", "z", "xabc", "d"]
+  },
+  {
+    "name": "MCP search does not trim its query",
+    "input": {
+      "operation": "search",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "abc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "abcd", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "ABC basics", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "xabc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "abc", "links": [], "branch": null},
+          {"id": "hidden", "present": false, "born": null, "rc": null, "ru": null, "label": "abc", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"query": " abc "}
+    },
+    "expect": []
+  },
+  {
+    "name": "MCP filters intersect color and kind while preserving authored order within relevance",
+    "input": {
+      "operation": "search",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "abc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "abcd", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "ABC basics", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "xabc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "abc", "links": [], "branch": null},
+          {"id": "hidden", "present": false, "born": null, "rc": null, "ru": null, "label": "abc", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [{"id": "build", "present": true, "born": "1:0:a", "hue": "terracotta", "label": "Build", "description": "", "ord": ""}],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"query": "abc", "kind": "build", "color": "terracotta"}
+    },
+    "expect": ["z", "d"]
+  },
+  {
+    "name": "An unknown kind matches nothing",
+    "input": {
+      "operation": "search",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "abc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "abcd", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "ABC basics", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "xabc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "abc", "links": [], "branch": null},
+          {"id": "hidden", "present": false, "born": null, "rc": null, "ru": null, "label": "abc", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"query": "", "kind": "unknown"}
+    },
+    "expect": []
+  },
+  {
+    "name": "MCP case folding preserves its ASCII-only matching",
+    "input": {
+      "operation": "search",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "umlaut", "present": true, "born": null, "rc": null, "ru": null, "label": "Ä", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"query": "ä"}
+    },
+    "expect": []
+  }
+]

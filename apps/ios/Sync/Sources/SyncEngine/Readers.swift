@@ -292,9 +292,12 @@ final class TransactionReader: CommitContext {
   func records(_ keys: Set<RecordKey>, _ mode: ViewMode) throws -> [RecordKey: Record] {
     let replica = try load(RowSelection(keys: keys))
     let view = try ScopeView(replica, scope, mode, registry: registry)
+    let pending = pendingMetadata(in: replica, mode: mode)
     var records: [RecordKey: Record] = [:]
     for key in keys {
-      if let record = view.record(key) { records[key] = shaped(record, in: view, of: replica) }
+      if let record = view.record(key) {
+        records[key] = shaped(record, in: view, confirmed: replica.rows(scope).row(key), pending: pending[key, default: PendingMetadata()])
+      }
     }
     return records
   }
@@ -307,16 +310,18 @@ final class TransactionReader: CommitContext {
     guard let narrowing = listing.narrowing else {
       let replica = try load(RowSelection(types: [listing.type]))
       let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+      let pending = pendingMetadata(in: replica, mode: listing.mode)
       return view.records(ofType: listing.type).filter { listing.holds($0, in: view) }
-        .map { shaped($0, in: view, of: replica) }
+        .map { shaped($0, in: view, confirmed: replica.rows(scope).row($0.key), pending: pending[$0.key, default: PendingMetadata()]) }
     }
     let indexed = try tx.referencing(meta.replica, in: scope, type: listing.type, field: narrowing.field, target: narrowing.id)
     let pending = try tx.touched(meta.replica, in: scope, type: listing.type, withHeld: listing.mode == .drawn)
     let candidates = Set(indexed).union(pending)
     let replica = try load(RowSelection(keys: candidates))
     let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+    let metadata = pendingMetadata(in: replica, mode: listing.mode)
     return candidates.sorted().compactMap { view.record($0) }.filter { listing.holds($0, in: view) }
-      .map { shaped($0, in: view, of: replica) }
+      .map { shaped($0, in: view, confirmed: replica.rows(scope).row($0.key), pending: metadata[$0.key, default: PendingMetadata()]) }
   }
 
   // The records of `keys` a list holds, each folded again, as a view refreshes them (design §4.5); a key the list does
@@ -324,9 +329,12 @@ final class TransactionReader: CommitContext {
   func records(_ keys: Set<RecordKey>, in listing: Listing) throws -> [RecordKey: Record] {
     let replica = try load(RowSelection(keys: keys))
     let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+    let pending = pendingMetadata(in: replica, mode: listing.mode)
     var held: [RecordKey: Record] = [:]
     for key in keys {
-      if let record = view.record(key), listing.holds(record, in: view) { held[key] = shaped(record, in: view, of: replica) }
+      if let record = view.record(key), listing.holds(record, in: view) {
+        held[key] = shaped(record, in: view, confirmed: replica.rows(scope).row(key), pending: pending[key, default: PendingMetadata()])
+      }
     }
     return held
   }
@@ -345,22 +353,40 @@ final class TransactionReader: CommitContext {
     guard registry.lives(type, in: scope) else { throw CommitFailure.malformed("\(type) is no type of \(scope)") }
   }
 
-  // A folded record as products read it: its texts marked pending where an entry of the view writes them, its server
-  // times from the confirmed row, and whether the view's entries or a held entry touch it.
-  func shaped(_ record: ViewRecord, in view: ScopeView, of replica: LoadedReplica) -> Record {
-    let touching = replica.entriesTouchingReads.filter { $0.scope == scope && $0.touches(record.key) }
-    let folded = touching.filter { $0.state != .held || view.mode == .drawn }
-    let confirmed = replica.rows(scope).row(record.key)
-    let pendingTexts = Set(folded.flatMap { $0.drawnDeltas.filter { $0.key == record.key }.flatMap(\.texts.keys) })
+  struct PendingMetadata {
+    var isPending = false
+    var isHeld = false
+    var texts: Set<String> = []
+  }
+
+  // Each read batch indexes its pending metadata once, including duplicate delta and prediction touches.
+  func pendingMetadata(in replica: LoadedReplica, mode: ViewMode) -> [RecordKey: PendingMetadata] {
+    var records: [RecordKey: PendingMetadata] = [:]
+    for entry in replica.entriesTouchingReads where entry.scope == scope {
+      let folded = entry.state != .held || mode == .drawn
+      for delta in entry.drawnDeltas {
+        var pending = records[delta.key, default: PendingMetadata()]
+        pending.isHeld = pending.isHeld || entry.state == .held
+        if folded {
+          pending.isPending = true
+          pending.texts.formUnion(delta.texts.keys)
+        }
+        records[delta.key] = pending
+      }
+    }
+    return records
+  }
+
+  // Shaping receives only this record's metadata, so it cannot rescan the read batch's outbox.
+  func shaped(_ record: ViewRecord, in view: ScopeView, confirmed: Row?, pending: PendingMetadata) -> Record {
     var texts: [String: TextValue] = [:]
     for (name, text) in record.texts {
-      let pending = pendingTexts.contains(name)
-      texts[name] = TextValue(text: text, merged: !pending && confirmed?.texts[name]?.merged == true, pending: pending)
+      let hasPendingText = pending.texts.contains(name)
+      texts[name] = TextValue(text: text, merged: !hasPendingText && confirmed?.texts[name]?.merged == true, pending: hasPendingText)
     }
     return Record(
       type: record.key.type, id: record.key.id, life: record.lattice.life, born: record.lattice.born,
       values: record.lattice.fields.mapValues(\.value), texts: texts, serials: record.serials, rc: confirmed?.rc,
-      ru: confirmed?.ru, isVisible: view.isVisible(record), isPending: !folded.isEmpty,
-      isHeld: touching.contains { $0.state == .held })
+      ru: confirmed?.ru, isVisible: view.isVisible(record), isPending: pending.isPending, isHeld: pending.isHeld)
   }
 }

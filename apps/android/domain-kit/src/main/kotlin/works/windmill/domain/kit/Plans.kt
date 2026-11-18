@@ -65,6 +65,9 @@ class Plan {
     fun <E : Writable<E>> update(value: Valid<E>, fields: List<String>? = null, from: E? = null, guarded: Boolean = false) {
         append(Operation.Kind.Update((fields ?: value.checked).uniqueInByteOrder(), from?.fields()?.toMap(), guarded), value)
     }
+    fun <E : Writable<E>> revive(value: Valid<E>, fields: List<String>, from: E? = null, guarded: Boolean = false) {
+        append(Operation.Kind.Revive(fields.uniqueInByteOrder(), from?.fields()?.toMap(), guarded), value)
+    }
     fun <E : Entity<E>> remove(id: Id<E>) {
         check(id.entity is RemovableType<*>) { "${id.entity.type} is not removable" }
         writing += Operation(Operation.Kind.Remove, EntityFacts(id.entity), id.record)
@@ -90,6 +93,7 @@ class Plan {
             val definition = registry.type(operation.entity.type)
             val fields = when (val kind = operation.kind) {
                 is Operation.Kind.Update -> if (kind.guarded) kind.named.filter { definition?.fields?.get(it)?.isLattice == true } else emptyList()
+                is Operation.Kind.Revive -> if (kind.guarded) kind.named.filter { definition?.fields?.get(it)?.isLattice == true } else emptyList()
                 is Operation.Kind.GuardRead -> kind.fields.also { names ->
                     if (names.any { definition?.fields?.get(it)?.isLattice != true }) throw PlanError(6, "guard names no lattice register")
                 }
@@ -137,6 +141,7 @@ data class Operation(val kind: Kind, val entity: EntityFacts, val id: RecordID,
         data class Create(val named: List<String>?, val base: Map<String, Json>?) : Kind
         data class Insert(val below: RecordID?) : Kind
         data class Update(val named: List<String>, val base: Map<String, Json>?, val guarded: Boolean) : Kind
+        data class Revive(val named: List<String>, val base: Map<String, Json>?, val guarded: Boolean) : Kind
         data object Remove : Kind
         data class Move(val below: RecordID?) : Kind
         data class GuardRead(val fields: List<String>) : Kind
@@ -150,10 +155,9 @@ data class Operation(val kind: Kind, val entity: EntityFacts, val id: RecordID,
     fun change(scope: ScopeRef, registry: Registry): Change? {
         val d = registry.type(entity.type) ?: throw PlanError(0, "the registry has no type ${entity.type}")
         if ((entity.scope != null && entity.scope != scope) || !registry.lives(entity.type, scope)) throw PlanError(1, "${entity.type} lives outside $scope")
-        if (d.identity == "derived") throw PlanError(0, "the kit writes no derived type")
         return when (val kind = kind) {
             is Kind.Create -> {
-                if (entity.isOrdered || (kind.named != null && d.identity == "minted")) throw PlanError(4, "create does not place an ordered or partial minted type")
+                if (entity.isOrdered || (kind.named != null && d.hasBorn)) throw PlanError(4, "create does not place an ordered or partial minted or derived type")
                 creation(d, kind.named ?: values.keys.toList().uniqueInByteOrder(), null, kind.base)
             }
             is Kind.Insert -> creation(d, values.keys.toList().uniqueInByteOrder(),
@@ -167,13 +171,19 @@ data class Operation(val kind: Kind, val entity: EntityFacts, val id: RecordID,
                 checkWhole(d, kind.named)
                 val (values, texts) = split(kind.named, d, kind.base)
                 when {
-                    d.identity == "minted" -> Change.update(entity.type, id, values, texts)
+                    d.hasBorn -> Change.update(entity.type, id, values, texts)
                     d.identity == "keyed" && d.life -> Change.put(entity.type, id, null, values, texts)
                     else -> Change.write(entity.type, recordID(d), values, texts)
                 }
             }
+            is Kind.Revive -> {
+                if (!d.hasBorn || d.json["revivable"]?.bool() != true) throw PlanError(0, "the type has no revivable life")
+                if (kind.named.any { d.fields[it]?.kind in listOf("const", "time", "text") }) throw PlanError(7, "revive names a const, time or text field")
+                val (values, _) = split(kind.named, d, kind.base)
+                Change.revive(entity.type, id, values)
+            }
             Kind.Remove -> when {
-                d.identity == "minted" -> Change.delete(entity.type, id)
+                d.hasBorn -> Change.delete(entity.type, id)
                 d.identity == "keyed" && d.life -> Change.put(entity.type, id, false)
                 else -> throw PlanError(0, "the type has no removable life")
             }
@@ -187,11 +197,11 @@ data class Operation(val kind: Kind, val entity: EntityFacts, val id: RecordID,
     private fun creation(d: TypeDef, names: List<String>, anchor: OrderAnchor?, base: Map<String, Json>?): Change {
         checkWhole(d, names)
         val (written, texts) = split(names, d, base)
-        val values = if (d.identity == "minted") written.filter { (name, value) -> value !== Json.Null || d.fields[name]?.kind != "time" } else written
-        if (anchor != null && d.identity != "minted") throw PlanError(0, "an anchored create names a non-minted type")
-        if (d.identity != "minted" && names.isEmpty()) throw PlanError(8, "a keyed create writes no field")
+        val values = if (d.hasBorn) written.filter { (name, value) -> value !== Json.Null || d.fields[name]?.kind != "time" } else written
+        if (anchor != null && !d.hasBorn) throw PlanError(0, "an anchored create names a type without a birth identity")
+        if (!d.hasBorn && names.isEmpty()) throw PlanError(8, "a keyed create writes no field")
         return when {
-            d.identity == "minted" -> Change.create(entity.type, NewID.Given(id), values, texts, anchor)
+            d.hasBorn -> Change.create(entity.type, NewID.Given(id), values, texts, anchor)
             d.identity == "keyed" && d.life -> Change.put(entity.type, id, true, values, texts)
             else -> Change.write(entity.type, recordID(d), values, texts)
         }

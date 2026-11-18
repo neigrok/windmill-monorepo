@@ -70,6 +70,7 @@ import SyncCore
   func recover(id: String, profile: Profile, seat: Seat, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {}
   func allowance(profile: Profile, seat: Seat) async throws -> JSON { .null }
   func upload(_ pictures: [Picture], profile: Profile, seat: Seat) async throws {}
+  var connected: Bool { true }
   func stopAskingAgain() {}
   func seatWillChange() {}
   func invalidAnswer() {}

@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ActDecision, ActPlan, ScopedPlan } from '../../../src/platform/domain-kit/acts.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
@@ -130,6 +131,9 @@ function build(input, at) {
           guarded: operation.guarded ?? false,
         });
         break;
+      case 'revive':
+        plan.revive(valid(), { fields: operation.fields, ...(operation.base ? { from: probeValue(type, operation.id, operation.base) } : {}), guarded: operation.guarded ?? false });
+        break;
       case 'remove':
         if (!type.isRemovable) throw new PlanError(0, `a remove of ${type.type} is unexpressible`);
         plan.remove(id);
@@ -151,7 +155,13 @@ function build(input, at) {
 /** @param {any} input */
 function translateVector(input) {
   try {
-    return { gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(build(input, momentOf(input)), input.scope ?? PROBE_SCOPE, probeRegistry))) };
+    let registry = probeRegistry;
+    if (input.tagField) {
+      const document = /** @type {any} */ (Contract.json('sync/probe.registry.json'));
+      document.types.find((/** @type {any} */ type) => type.type === 'tag').fields.label = input.tagField;
+      registry = new Registry(document);
+    }
+    return { gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(build(input, momentOf(input)), input.scope ?? PROBE_SCOPE, registry))) };
   } catch (error) {
     if (error instanceof Violation) return { violation: error.json };
     if (error instanceof PlanError) return { error: true };
@@ -223,7 +233,12 @@ async function actVector(input) {
       if (input.undo) await runner.undo(result.receipt.gestureId);
     } else outcome = result.kind === 'refused' ? { kind: result.kind, refusal: refusalForm(result.refusal) } : { kind: result.kind };
     const records = input.inspect.map((/** @type {any} */ item) => runner.read(item.scope, (read) => read.repository(probeEntity(item.t)).all('drawn')
-      .map((record) => ({ id: record.id.json, title: record.fields().title ?? null }))));
+      .map((record) => {
+        const fields = record.fields();
+        const raw = read.views.record('drawn', item.t, record.id.record);
+        return { id: record.id.json, title: fields.title ?? null, ...(item.detail ? { fields, life: raw?.life?.[0] ?? null,
+          bornSegment: result.kind === 'committed' ? result.receipt.segments.findIndex((segment) => segment.stamp === raw?.born) : -1 } : {}) };
+      })));
     return { outcome, records };
   } finally { engine.close(); }
 }
