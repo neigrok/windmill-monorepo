@@ -907,8 +907,8 @@ What the door answers otherwise, each pinned by `golden/wire_corpus_door.json` o
   `step`.
 - What a step follows is read through absent steps (D-5): `prerequisites`, `state` and `find_nodes {state}` follow a
   deleted step's prerequisites, and `get_diagnostics` lists in `dangling` only links naming an id no step record holds,
-  never `maskedWork`, and no loop of absent steps alone. A write's `diagnosticsClean` and `introducedDiagnostics` are
-  the room's, which reads a link to a deleted step as dangling.
+  never `maskedWork`, and no loop of absent steps alone. A write's `diagnosticsClean` and `introducedDiagnostics` read
+  the tree the same way, so deleting a step dangles none of its links.
 - A write is committed before it answers: no reply says `saved`, `saveError`, `unsaved` or `incomplete`, and the owner's
   roadmaps are read in the reply's snapshot, so none says `openedTreesUnavailable`, `guidesAboveUnavailable` or
   `pointerDiagnosticsUnavailable`.

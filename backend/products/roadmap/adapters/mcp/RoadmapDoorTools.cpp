@@ -238,6 +238,25 @@ TreeDiagnostics diagnosticsOf(const read::Diagnostics& found) {
   return diagnostics;
 }
 
+// The diagnostics a write's receipt compares, read as get_diagnostics reads them (D-5): over the room's graph and legend
+// as they stand, a link from a deleted step followed through rather than dangling.
+TreeDiagnostics followedDiagnostics(const TreeRoom& room) {
+  read::TreeRecords records;
+  const GraphState graph = room.exportState();
+  for (const NodeStateEntry& node : graph.nodes) {
+    read::Step step{.id = node.id.str(), .present = ElementSet{node.createdAt, node.deletedAt}.present(), .born = node.createdAt,
+                    .label = node.label, .icon = node.icon, .color = std::string(toString(node.color)), .ord = node.order};
+    records.nodes.push_back(std::move(step));
+  }
+  for (const EdgeStateEntry& edge : graph.edges)
+    records.edges.push_back(read::Edge{edge.edge.from.str(), edge.edge.to.str(), ElementSet{edge.addedAt, edge.removedAt}.present()});
+  for (const KindStateEntry& kind : room.exportLegend().kinds)
+    records.kinds.push_back(read::Kind{kind.id.str(), ElementSet{kind.createdAt, kind.deletedAt}.present(), kind.createdAt,
+                                       std::string(toString(kind.hue)), kind.label, kind.description, ""});
+  const read::RoadmapTree tree(std::move(records));
+  return diagnosticsOf(read::diagnose(read::FollowGraph(tree)));
+}
+
 PointerDiagnostics pointerDiagnosticsOf(const read::PointerDiagnostics& found) {
   PointerDiagnostics pointers;
   for (const read::TreeLoop& loop : found.treeLoops) {
@@ -1197,12 +1216,12 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         if (std::optional<ToolResult> refusal = checkPointers(door_.rows(), txn, caller, room, opened)) return *refusal;
         const std::vector<NodeId> refused = refusedPointersOf(room, opened);
         countCurrentWriteRefused(refused.size());
-        const TreeDiagnostics before = room.diagnose();
+        const TreeDiagnostics before = followedDiagnostics(room);
         const Seq seq = room.applyCommand(*decoded, clock_.nowMs(), caller);
         Json::Value out(Json::objectValue);
         out["applied"] = true;
         out["seq"] = static_cast<Json::Int64>(seq);
-        answerDiagnostics(before, room.diagnose(), out);
+        answerDiagnostics(before, followedDiagnostics(room), out);
         answerRefusedPointers(refused, out);
         if (command.isMember("id")) out["id"] = command["id"];
         if (setsHue && command.isMember("kind")) out["kind"] = command["kind"];
@@ -1234,7 +1253,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         const std::variant<KindUpdatePlan, std::string> planned = room.planKindUpdate(update);
         if (const auto* refusal = std::get_if<std::string>(&planned)) return ToolResult::failure(*refusal);
         const KindUpdatePlan& plan = std::get<KindUpdatePlan>(planned);
-        const TreeDiagnostics before = room.diagnose();
+        const TreeDiagnostics before = followedDiagnostics(room);
         Seq seq = room.head();
         if (!plan.landsNothing()) seq = room.applyCommands(plan.commands, clock_.nowMs(), caller);
         Json::Value out(Json::objectValue);
@@ -1243,7 +1262,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         out["id"] = update.id.str();
         if (plan.landsNothing()) out["unchanged"] = true;
         if (plan.repaintedNodes) out["repaintedNodes"] = static_cast<Json::UInt64>(*plan.repaintedNodes);
-        answerDiagnostics(before, room.diagnose(), out);
+        answerDiagnostics(before, followedDiagnostics(room), out);
         return ToolResult::json(out);
       }).answer;
     });
@@ -1408,9 +1427,9 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
             if (dryRun) return ToolResult::json(out);
             countCurrentWriteRefused(refused.size());
             const std::map<NodeId, TreeId> pointersBefore = room.pointers();
-            before = room.diagnose();
+            before = followedDiagnostics(room);
             if (!landsNothing) out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock_.nowMs(), caller));
-            after = room.diagnose();
+            after = followedDiagnostics(room);
             pointersMoved = !pointersSetSince(pointersBefore, room.pointers()).empty();
             answerDiagnostics(before, after, out);
             return ToolResult::json(out);
@@ -1438,9 +1457,9 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         out["seq"] = static_cast<Json::Int64>(room.head());
         if (plan.landsNothing()) out["unchanged"] = true;
         if (dryRun) return ToolResult::json(out);
-        before = room.diagnose();
+        before = followedDiagnostics(room);
         if (!plan.landsNothing()) out["seq"] = static_cast<Json::Int64>(room.applyCommands(plan.batch.commands, clock_.nowMs(), caller));
-        after = room.diagnose();
+        after = followedDiagnostics(room);
         answerDiagnostics(before, after, out);
         return ToolResult::json(out);
       }, [&](const TreeRows&, const TreeEdit&) {
@@ -1505,7 +1524,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         for (const Edge& edge : dangled) commands.push_back(RemoveEdge{edge.from, edge.to});
         for (const Command& command : commands)
           if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
-        const TreeDiagnostics before = room.diagnose();
+        const TreeDiagnostics before = followedDiagnostics(room);
         const Seq seq = room.applyCommands(commands, clock_.nowMs(), caller, branches);
         Json::Value ids(Json::arrayValue);
         for (const NodeId& node : targets) ids.append(node.str());
@@ -1515,7 +1534,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         Json::Value out(Json::objectValue);
         out["applied"] = true;
         out["seq"] = static_cast<Json::Int64>(seq);
-        answerDiagnostics(before, room.diagnose(), out);
+        answerDiagnostics(before, followedDiagnostics(room), out);
         if (single) out["id"] = targets.front().str();
         out["ids"] = ids;
         out["pruned"] = pruned;
@@ -1657,14 +1676,14 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
           }
           countCurrentWriteRefused(refused.size());
           const std::map<NodeId, TreeId> pointersBefore = room.pointers();
-          before = room.diagnose();
+          before = followedDiagnostics(room);
           const std::optional<Seq> landed = room.importTree(landing, clock_.nowMs(), caller);
           out["graphApplied"] = true;
           out["progressApplied"] = true;
           out["imported"] = true;
           out["seq"] = static_cast<Json::Int64>(landed.value_or(room.head()));
           if (!landed) out["unchanged"] = true;
-          after = room.diagnose();
+          after = followedDiagnostics(room);
           pointersMoved = !pointersSetSince(pointersBefore, room.pointers()).empty();
           answerDiagnostics(before, after, out);
           return ToolResult::json(out);

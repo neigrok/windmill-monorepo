@@ -178,7 +178,11 @@ TEST(door_a_step_follows_through_a_deleted_step_without_a_prune) {
   chain(h);
   Json::Value args(Json::objectValue);
   args["nodeId"] = "b";
-  REQUIRE(!h.call("delete_node", args).isError);
+  const ToolResult deleted = h.call("delete_node", args);
+  REQUIRE(!deleted.isError);
+  CHECK_EQ(body(deleted)["diagnosticsClean"].asBool(), true);
+  CHECK_EQ(sync::jcs(body(deleted)["introducedDiagnostics"]), sync::jcs(Json::Value(Json::arrayValue)));
+  CHECK_EQ(sync::jcs(body(h.call("get_diagnostics", kNoArgs))["dangling"]), sync::jcs(Json::Value(Json::arrayValue)));
   Json::Value read(Json::objectValue);
   read["nodeIds"] = list({"c"});
   read["fields"] = fields({"id", "prerequisites", "state"});
