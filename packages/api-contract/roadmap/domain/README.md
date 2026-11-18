@@ -2,7 +2,9 @@
 
 Each JSON file holds `{name,input,expect}` cases, except `rules.json`, the pinned rule book. The web
 corpus (`web/test/products/roadmap/domain/corpus.test.js`) claims every file by name and compares
-complete outputs. The pure reads below take normalized domain records; the actions, `values.json`
+complete outputs. The server's read domain (`backend/products/roadmap/domain/read/`) claims the reads
+the table marks as the server's, by JCS, in `backend/test/products/roadmap/domain/read/ReadVectorsTest.cpp`,
+which fails on a file it neither claims nor names as a device's. The pure reads below take normalized domain records; the actions, `values.json`
 and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
 rows and `../../sync/roadmap.registry.json` (see [Actions](#actions)). No operation reads storage,
 time, randomness or localization.
@@ -20,7 +22,7 @@ Authored and sibling order is `(ord, born, id)`, missing birth normalized to `St
 (zero). Empty order sorts first. Other ties keep authored order unless an operation specifies
 ID byte order.
 
-| Operation | Complete result | Later server claim |
+| Operation | Complete result | The server claims it |
 | --- | --- | --- |
 | `graph` | Present IDs and states in authored order; requested subjects with followed prerequisites, unmet IDs, owed IDs/count and completion-unlocks | yes |
 | `account` | Trees by ID with standing, place/path/title, counts, completion and openings; pointer-loop components | yes |
