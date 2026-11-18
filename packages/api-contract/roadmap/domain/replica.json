@@ -1,6 +1,6 @@
 [
   {
-    "name": "An owner’s roadmap: its steps and links, absent ones kept, its meta and kinds, and each mark dated by the server’s receipt where the server holds that very mark, else by the device",
+    "name": "An owner’s roadmap: its steps and links, absent ones kept, its meta and kinds, and each mark dated by the server once no queued entry still changes it, else by the device",
     "input": {
       "operation": "roadmap",
       "id": "t_00000000000000a1",
@@ -262,52 +262,14 @@
             "ru": 2000
           }
         ],
-        "confirmed": [
+        "queued": [
           {
             "t": "progress",
-            "id": "wind",
-            "f": {
-              "mark": [
-                {
-                  "status": "complete",
-                  "outOfOrder": false
-                },
-                "105:0:r_a"
-              ]
-            },
-            "rc": 1800,
-            "ru": 1800
+            "id": "dock"
           },
           {
             "t": "progress",
-            "id": "dock",
-            "f": {
-              "mark": [
-                {
-                  "status": "none",
-                  "outOfOrder": false
-                },
-                "106:0:r_a"
-              ]
-            },
-            "rc": 1900,
-            "ru": 1900
-          },
-          {
-            "t": "pointer",
-            "id": "dock",
-            "life": [
-              "alive",
-              "108:0:r_a"
-            ],
-            "f": {
-              "opens": [
-                "t_00000000000000c3",
-                "108:0:r_a"
-              ]
-            },
-            "rc": 2000,
-            "ru": 2000
+            "id": "kite"
           }
         ]
       }
@@ -569,7 +531,7 @@
       "read": true,
       "overlay": {
         "drawn": [],
-        "confirmed": []
+        "queued": []
       },
       "listed": {
         "t": "tree",

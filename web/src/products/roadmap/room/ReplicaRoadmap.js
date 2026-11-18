@@ -18,15 +18,15 @@ import { Opening, TreePlace } from '../model/Opening.js';
 const TIMELESS = new Moment(new Instant(0), new FixedZone(0));
 
 // What the replica holds of one roadmap: its record in the person's list (null for one someone else owns), its tree
-// scope's records, and its owner's overlay with the records of it the server has confirmed; `read` says the server has
-// answered for its tree scope.
+// scope's records, and its owner's overlay with the records of it a queued entry still changes (`queued`); `read` says
+// the server has answered for its tree scope.
 export class HeldRoadmap {
-  constructor({ id, record = null, tree = [], overlay = [], confirmed = [], read = true }) {
+  constructor({ id, record = null, tree = [], overlay = [], queued = [], read = true }) {
     this.id = id;
     this.record = record;
     this.records = tree;
     this.overlay = overlay;
-    this.confirmed = confirmed;
+    this.queued = queued;
     this.read = read;
     Object.freeze(this);
   }
@@ -37,9 +37,9 @@ export class HeldRoadmap {
   // The domain's roadmap (`readRoadmap`), the overlay read only for the person's own: the room shows a reader its owner's
   // marks, which the server reads.
   tree(registry) {
-    const reader = (scope, drawn, confirmed = []) => new Reader(Views.ofRecords(registry, { drawn, stored: drawn, confirmed }), scope, TIMELESS);
+    const reader = (scope, drawn) => new Reader(Views.ofRecords(registry, { drawn, stored: drawn }), scope, TIMELESS);
     return readRoadmap(this.id, { listed: this.record, tree: reader(RoadmapScopes.tree(this.id), this.records), read: this.read,
-      overlay: this.record ? reader(RoadmapScopes.overlay(this.id), this.overlay, this.confirmed) : null });
+      overlay: this.record ? reader(RoadmapScopes.overlay(this.id), this.overlay) : null, queued: this.queued });
   }
 
   // The owner's workspace of each step, as the step page reads it: subtasks and links in their own order, and the note.

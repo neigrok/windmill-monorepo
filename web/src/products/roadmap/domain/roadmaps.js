@@ -6,6 +6,7 @@ import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/doma
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
+import { recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
 import { GENESIS_KINDS, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
@@ -96,23 +97,26 @@ export const RoadmapMeta = new EntityType({
 
 // One roadmap as a device's replica holds it, as the domain's normalized tree. `tree` reads its tree scope: the steps and
 // links as `readTree` reads them, absent ones included, its meta and its kinds. `overlay` reads its owner's overlay for
-// the marks and pointers, null where the reader takes none (a roadmap someone else owns). `listed` is its record in the
-// person's own list, null where it is not theirs, and says whether it is present and where it sits; without it the meta
-// says where. `read` says the server has answered for its tree scope; a scope the device holds records of is read.
-// §5 Dates: the server received a mark when the overlay's confirmed record holds that very mark, under the same stamp,
-// and its time is that record's `ru`; any other mark is the device's, timed by its stamp. A roadmap was last changed when
-// the server last received a record of it: the newest `ru` among its record, its tree scope's and its overlay's.
+// the marks and pointers, null where the reader takes none (a roadmap someone else owns); `queued` are the overlay's
+// records an entry the device still queues changes. `listed` is its record in the person's own list, null where it is
+// not theirs, and says whether it is present and where it sits; without it the meta says where. `read` says the server
+// has answered for its tree scope; a scope the device holds records of is read.
+// §5 Dates: the server has received a mark once no entry the device queues still changes it, and its time is its
+// record's `ru`, the server's; a mark an entry still changes is the device's, timed by its stamp. A roadmap was last
+// changed when the server last received a record of it: the newest `ru` among its record, its tree scope's and its
+// overlay's.
 /**
  * @param {string} id
- * @param {{ listed?: ReceivedRecord | null, tree: Reader, overlay?: Reader | null, read?: boolean }} held
+ * @param {{ listed?: ReceivedRecord | null, tree: Reader, overlay?: Reader | null, queued?: { t: string, id: import('../../../platform/domain-kit/entities.js').RecordID }[], read?: boolean }} held
  */
-export function readRoadmap(id, { listed = null, tree, overlay = null, read = true }) {
+export function readRoadmap(id, { listed = null, tree, overlay = null, queued = [], read = true }) {
   const steps = readTree(id, tree);
   const records = /** @type {ReceivedRecord[]} */ ([...tree.views.drawn.values()]);
   const overlaid = /** @type {ReceivedRecord[]} */ (overlay ? [...overlay.views.drawn.values()] : []);
   const metaRecord = tree.repository(RoadmapMeta).record('meta', 'drawn');
   const meta = metaRecord ? RoadmapMeta.decode(Fields.record(metaRecord)) : RoadmapMetaValue.blank();
   const alive = (/** @type {ReceivedRecord} */ record) => record.life?.[0] === 'alive';
+  const changing = new Set(queued.map((record) => recordKey(record.t, record.id)));
   const updatedAt = [listed, ...records, ...overlaid].reduce((latest, record) => (typeof record?.ru === 'number' && (latest === null || record.ru > latest)
     ? record.ru : latest), /** @type {number | null} */ (null));
   return new RoadmapTree({
@@ -134,10 +138,8 @@ export function readRoadmap(id, { listed = null, tree, overlay = null, read = tr
     marks: overlaid.filter((record) => record.t === StepMark.type).map((record) => {
       const mark = StepMark.decode(Fields.record(record));
       const stamp = record.f?.mark?.[1] ?? null;
-      const confirmed = /** @type {ReceivedRecord | null} */ (overlay?.confirmed(StepMark, mark.id) ?? null);
-      const receivedAt = stamp !== null && confirmed?.f?.mark?.[1] === stamp ? confirmed.ru ?? null : null;
-      return { node: String(record.id), status: mark.status, outOfOrder: mark.outOfOrder, stamp, recordedAt: receivedAt,
-        deviceAt: stamp === null ? null : Stamp.parse(stamp).ms };
+      return { node: String(record.id), status: mark.status, outOfOrder: mark.outOfOrder, stamp,
+        recordedAt: changing.has(recordKey(record.t, record.id)) ? null : record.ru ?? null, deviceAt: stamp === null ? null : Stamp.parse(stamp).ms };
     }),
     pointers: overlaid.filter((record) => record.t === StepPointer.type).map((record) => ({
       node: String(record.id), present: alive(record), opens: StepPointer.decode(Fields.record(record)).opens, setAt: record.f?.opens?.[1] ?? null,

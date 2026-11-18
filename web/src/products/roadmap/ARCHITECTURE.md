@@ -154,30 +154,34 @@ on, every room but the demo reads through `ReplicaReading`:
 - **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
   it, E-3), observes the account's list `self/roadmap` and every scope the domain reads the roadmap through: every roadmap
   of the account where the open one is in the list, else the open one and each roadmap above it (by its `meta.parent`),
-  each subscribed as it comes to be read. The room drops every scope it subscribed when it leaves.
+  each subscribed as it comes to be read. It keeps one hold on each scope it observes. The room drops every scope it
+  subscribed, and releases every hold, when it leaves. It reads the engine only through its public API
+  (`test/products/roadmap/room/engineBoundary.test.js` holds every `room/` file to that).
 - **Opening.** It opens from what the device holds, asking nothing of the network first: the copy, once the engine
-  stands and the scope's stored rows are read. A roadmap the device holds nothing of waits for the server's first answer;
-  offline, or with no answer within ten seconds (`FIRST_COPY_MS`), the room shows its load error and Try again, as a
+  stands and the scope's stored rows are `loaded`. A roadmap the device holds nothing of waits for the server's first
+  answer; where the engine cannot reach the server (its `connection` is not `online`, or it is paused for auth or an
+  upgrade), or with no answer within ten seconds (`FIRST_COPY_MS`), the room shows its load error and Try again, as a
   failed read does. A roadmap the server does not serve, one the device holds nothing of, and a hidden subtree (§5) are
   in no address: the same load error.
 - **Shapes.** `room/ReplicaRoadmap.js` is the room's edge: each roadmap's records (`HeldRoadmap`) are read by the
-  domain's `readRoadmap` into a `RoadmapTree` (its steps, links, meta, kinds, and the owner's marks dated as §5 says and
-  pointers), the domain's `RoadmapAccount` reads them, and the open roadmap comes out as the tree data `LatticeReading`
-  hands on: present steps in authored order, each following what `FollowGraph` reads it follows through absent steps
-  (D-5), a step's `opening` from the account's `openingsOf`, the kinds that own their hue (`LegendRead`), its name and
-  `TreePlace` from where the account locates it, the owner's marks with the dates `RoadmapAccount.progress` reads, the
-  owner's workspace from the overlay, the guides above from `RoadmapAccount.guides` (`useRoomGuide` asks the server
-  nothing), and the switcher's and the sheet's list in the order of `RoadmapAccount.list`. A reader's roadmap is read
-  without its overlay: the room shows a reader the owner's marks. It decides nothing: a rule it would need belongs in
-  `domain/`.
+  domain's `readRoadmap` into a `RoadmapTree` (its steps, links, meta and kinds, and the owner's marks and pointers, a
+  mark dated by the server once no queued entry still changes its record, the snapshot's `pending`), the domain's
+  `RoadmapAccount` reads them, and the open roadmap comes out as the tree data `LatticeReading` hands on: present steps
+  in authored order, each following what `FollowGraph` reads it follows through absent steps (D-5), a step's `opening`
+  from the account's `openingsOf`, the kinds that own their hue (`LegendRead`), its name and `TreePlace` from where the
+  account locates it, the owner's marks with the dates `RoadmapAccount.progress` reads, the owner's workspace from the
+  overlay, the guides above from `RoadmapAccount.guides` (`useRoomGuide` asks the server nothing), and the switcher's
+  and the sheet's list in the order of `RoadmapAccount.list`. A reader's roadmap is read without its overlay: the room
+  shows a reader the owner's marks. It decides nothing: a rule it would need belongs in `domain/`.
 - **Following.** Each publication of an observed scope is read once it has reached every observation; a roadmap whose
   records did not change answers the reading it answered before. A changed one stands through the room's `onTreeChanged`;
   the owner's marks go to `RoomProgress.adoptRemote`, as another device's do, and the workspace and guides are seated
   again. A roadmap that stops standing while the room is open keeps its last picture; the next load says it is not there.
 - **Status.** The Saving, Saved and Offline line is the room's own (`sync/useRoomSyncNotices.js`), read from the engine:
-  `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the platform
-  session's connectivity, the engine's auth and upgrade stops, and the roadmap's outbox entries in `tree/T` and its
-  overlay that the server has not taken. It never says refused: §6's one list is not built.
+  `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the engine's
+  `connection` and its auth and upgrade stops (Offline while the browser reports no network, and after the grace while
+  the server goes unanswered), and the `outbox` counts of `tree/T` and its overlay the server has not taken, ready or
+  sent, those a command predicts into them included. It never says refused: §6's one list is not built.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.

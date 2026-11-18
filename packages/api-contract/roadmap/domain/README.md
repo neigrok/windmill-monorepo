@@ -45,9 +45,9 @@ its meta with the server's `parent`, `depth`, `reach` and `guideInherited`; its 
 overlay, the marks and pointers (a roadmap someone else owns takes no overlay). Its record in the person's
 list, where there is one, makes it `own`, says whether it is present and where it sits; without one the meta
 says where. A tree scope the device holds records of is read; an empty one is read once the server has
-answered for it. §5 Dates: the server received a mark when the overlay's confirmed record holds that very mark
-under the same stamp, and its `recordedAt` is that record's `ru`; any other mark is the device's, with no
-`recordedAt`. Every mark's `deviceAt` is its stamp's milliseconds. `updatedAt` is the newest `ru` among the
+answered for it. §5 Dates: the server has received a mark once no entry the device queues (held, ready, sent or
+acked) still changes its record, and its `recordedAt` is that record's `ru`; a mark an entry still changes is the
+device's, with no `recordedAt`. Every mark's `deviceAt` is its stamp's milliseconds. `updatedAt` is the newest `ru` among the
 roadmap's record, its tree scope's records and its overlay's.
 
 `FollowGraph` reads every live incoming edge. A present predecessor is a boundary. Any other endpoint
@@ -104,7 +104,8 @@ Run from `web`: `node --test test/products/roadmap/domain/corpus.test.js`.
 
 The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, trees}` for `account` and `list`,
 `{operation, trees, tree: id}` for `guides`, `progress`, `pointers` and `openings`, `{operation, id, listed, tree,
-overlay: {drawn, confirmed} | null, read}` for `roadmap`, its records engine view records, `{operation, tree, query}` for
+overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and `queued` the
+overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for
 `board` and `search`, `{operation, tree}` for `legend` and `diagnostics`, and
 `{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed
 graph reads only; it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}`
