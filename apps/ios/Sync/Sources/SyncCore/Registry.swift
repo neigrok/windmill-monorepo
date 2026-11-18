@@ -121,6 +121,10 @@ public struct Registry: Sendable {
       for predicted in command.predicts where type(predicted)?.wholePut == true {
         throw RegistryError("command \(command.name) predicts \(predicted), a wholePut type only deltas write")
       }
+      guard command.engine == .restore else { continue }
+      for restored in command.predicts.compactMap({ (name: String) -> TypeDef? in type(name) }) where restored.scope != command.scope || restored.governsTree {
+        throw RegistryError("command \(command.name) restores \(restored.name): a restore restores types of its scope that govern no tree")
+      }
     }
   }
 
@@ -885,9 +889,10 @@ public struct Domain: Sendable {
 
 public struct CommandDef: Sendable {
   // A command the platform runs itself: `capture` admits the intent's ordinary deltas, checks and consequences with no
-  // product mutation, so its receipt captures them (§2.4, §6.4).
+  // product mutation, so its receipt captures them; `restore` writes back earlier values under conditions, its arguments
+  // fixed (§2.4, §6.4, K-3).
   public enum Engine: String, Sendable {
-    case capture
+    case capture, restore
   }
 
   public let name: String
@@ -900,6 +905,8 @@ public struct CommandDef: Sendable {
   // E-7: its success carries a scoped receipt, and a commit may predict records in every scope it changes.
   public let scopedEffects: Bool
   public let engine: Engine?
+  // K-3: a product command an Undo or Redo recipe runs, its wire arguments `{input, evidence}` (§6.4).
+  public let inverse: Bool
   // E-8 typed leaves in the arguments, as declared; `References` compiles and checks them with the registry.
   public let refPaths: JSON?
 
@@ -908,7 +915,7 @@ public struct CommandDef: Sendable {
       let object = try json.asObject()
       try object.expectKeys(
         required: ["name", "scope", "origins", "serverInternal", "args"],
-        optional: ["predicts", "beforePull", "scopedEffects", "engine", "refPaths"])
+        optional: ["predicts", "beforePull", "scopedEffects", "engine", "inverse", "refPaths"])
       name = try object.member("name").asString()
       guard RegistryName.isCommand(name) else { throw RegistryError("\(name) is not a command name") }
       scope = try ScopeKind(text: object.member("scope").asString())
@@ -920,11 +927,21 @@ public struct CommandDef: Sendable {
       refPaths = object["refPaths"]
       scopedEffects = try object["scopedEffects"]?.asBool() ?? false
       guard object["scopedEffects"] == nil || scopedEffects else { throw RegistryError("scopedEffects is true or absent") }
-      engine = try object["engine"].map { json in
-        guard let engine = Engine(rawValue: try json.asString()) else { throw RegistryError("the engine runs capture only") }
+      engine = try object["engine"].map { (json: JSON) throws -> Engine in
+        guard let engine = Engine(rawValue: try json.asString()) else { throw RegistryError("the engine runs capture or restore") }
         return engine
       }
       guard engine == nil || scopedEffects && args.isEmpty else { throw RegistryError("an engine command has scoped effects and no arguments") }
+      guard engine != .restore || !predicts.isEmpty else { throw RegistryError("a restore command predicts the types it restores") }
+      guard engine != .restore || refPaths == nil else { throw RegistryError("a restore's arguments are fixed") }
+      inverse = try object["inverse"]?.asBool() ?? false
+      guard object["inverse"] == nil || inverse else { throw RegistryError("inverse is true or absent") }
+      if inverse {
+        guard scopedEffects, engine == nil else { throw RegistryError("an inverse command is a product command with scoped effects") }
+        guard args.count == 1, let input = args.first, input.name == "input", case .json = input.type, !input.optional else {
+          throw RegistryError("an inverse command declares only its required json input")
+        }
+      }
       guard !origins.isEmpty else { throw RegistryError("a command has at least one origin") }
       guard !serverInternal || !origins.contains(.replica) else {
         throw RegistryError("a server-internal command has server origin only")
@@ -947,6 +964,7 @@ public struct CommandDef: Sendable {
     object["beforePull"] = beforePull ? true : nil
     object["scopedEffects"] = scopedEffects ? true : nil
     object["engine"] = engine.map { .string($0.rawValue) }
+    object["inverse"] = inverse ? true : nil
     object["refPaths"] = refPaths
     return .object(object)
   }

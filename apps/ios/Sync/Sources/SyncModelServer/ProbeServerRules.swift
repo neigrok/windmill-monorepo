@@ -1,9 +1,9 @@
 import SyncCore
 
 // The probe product's binding (corpus README "The probe product"): `probe.start` with its join and receipts,
-// `probe.end`, `probe.copy` into a board it creates, the opted `probe.branch` across three scopes, `probe.sprout` and
-// `probe.adopt` over typed references (E-8), the `beforePull` `probe.tick`, the run checks, and one kept revision per
-// text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
+// `probe.end`, `probe.copy` into a board it creates, the opted `probe.branch` across three scopes and its inverse
+// `probe.unbranch` (K-3), `probe.sprout` and `probe.adopt` over typed references (E-8), the `beforePull` `probe.tick`, the
+// run checks, and one kept revision per text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
 // `copies[<scope key>][<dst>]`.
 
 public struct ProbeServerRules: ServerRules {
@@ -28,12 +28,15 @@ public struct ProbeServerRules: ServerRules {
     if let command, command.name == "probe.branch" {
       return [ScopeKey(.tree(command.string("parent"))), ScopeKey(.tree(command.string("child")))]
     }
+    if let command, command.name == "probe.unbranch" {
+      return [ScopeKey(.tree(command.input("parent"))), ScopeKey(.tree(command.input("child")))]
+    }
     guard let command, command.name == "probe.copy", !replays(command, in: context),
           case .none = context.idState(of: RecordKey("board", RecordID(command.string("dst")))) else { return [] }
     return [ScopeKey(.tree(command.string("dst")))]
   }
 
-  public func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+  public func run(_ command: CheckedCommand, in context: RuleContext) throws -> CommandOutcome {
     switch command.name {
     case "probe.start": try start(command, in: context)
     case "probe.end": try end(command, in: context)
@@ -41,6 +44,7 @@ public struct ProbeServerRules: ServerRules {
     case "probe.branch": try branch(command, in: context)
     case "probe.sprout": try sprout(command, in: context)
     case "probe.adopt": try adopt(command, in: context)
+    case "probe.unbranch": try unbranch(command, in: context)
     case "probe.tick": tick(in: context)
     default: throw Refusal(.invalid)
     }
@@ -192,6 +196,29 @@ public struct ProbeServerRules: ServerRules {
       product: context.product)
   }
 
+  // K-3: the inverse of probe.branch, all or nothing. While the created board and its tree are unchanged since the branch,
+  // and the parent's title is still the one the branch wrote where the evidence owns it, the board dies, killing its
+  // tree, and the parent takes back its earlier title. Evidence that proves no board or tree is invalid.
+  func unbranch(_ command: CheckedCommand, in context: RuleContext) throws -> CommandOutcome {
+    let (parent, child) = (command.input("parent"), command.input("child"))
+    let evidence = try context.registry.evidence(command.args["evidence"] ?? .null)
+    let board = RecordKey("board", RecordID(child))
+    let proves = evidence.unchangedCreatedRecords.contains { $0.record.scope == .product("probe") && $0.record.key == board }
+      && evidence.unchangedCreatedScopes.contains { $0.scope == .tree(child) }
+    guard proves, !parent.isSameID(as: child) else { throw Refusal(.invalid) }
+    if let code = try context.skip(by: evidence) {
+      return CommandOutcome(detail: InverseOutcome.detail([InverseOutcome(index: 0, skipped: code)]), product: context.product)
+    }
+    let restoresTitle = evidence.ownedFields.contains { owned in
+      owned.target.scope == .tree(parent) && owned.target.key.type == "meta" && owned.target.slot == .field("title")
+    }
+    let title: JSON = command.args["input"]?["title"] ?? .null
+    let into: [ScopeKey: [PlannedDelta]] = restoresTitle
+      ? [ScopeKey(.tree(parent)): [.serverUpdate(RecordKey("meta", "meta"), born: nil, fields: ["title": title])]] : [:]
+    return CommandOutcome(deltas: [.serverDelete(board, born: context.record(board)?.lattice.born)],
+                          detail: InverseOutcome.detail([InverseOutcome(index: 0)]), product: context.product, into: into)
+  }
+
   func step(_ command: CheckedCommand) -> JSON {
     let board: JSON = command.args["board"] ?? .null
     let tag: JSON = command.args["tag"] ?? .null
@@ -267,5 +294,10 @@ public struct ProbeServerRules: ServerRules {
 extension CheckedCommand {
   func string(_ argument: String) -> String {
     (try? args[argument]?.asString()) ?? ""
+  }
+
+  // A member of an inverse command's `input`.
+  func input(_ member: String) -> String {
+    (try? args["input"]?[member]?.asString()) ?? ""
   }
 }

@@ -308,11 +308,24 @@ public enum IntentShape {
     return Guard(key: RecordKey(typeName, id), field: fieldName, stamp: parsed)
   }
 
+  // A restore's arguments are its fixed shape (§6.4), and an inverse command's are its declared `input` beside the
+  // engine's `evidence`.
   static func commandOf(_ json: JSON, kind: ScopeKind, registry: Registry) throws(Refusal) -> CheckedCommand {
     guard case .object(let object) = json, (try? object.expectKeys(required: ["args", "name"])) != nil,
           case .string(let name)? = object["name"], let definition = registry.command(name), definition.scope == kind,
-          case .object(let args)? = object["args"], registry.admits(arguments: args, of: definition)
+          case .object(var args)? = object["args"]
     else { throw Refusal(.invalid) }
+    if definition.engine == .restore {
+      guard (try? registry.restoreArguments(.object(args), of: definition)) != nil else { throw Refusal(.invalid) }
+      return CheckedCommand(definition: definition, args: args)
+    }
+    let evidence: JSON? = definition.inverse ? args["evidence"] : nil
+    if definition.inverse {
+      guard let evidence, (try? registry.evidence(evidence)) != nil else { throw Refusal(.invalid) }
+      args["evidence"] = nil
+    }
+    guard registry.admits(arguments: args, of: definition) else { throw Refusal(.invalid) }
+    args["evidence"] = evidence
     return CheckedCommand(definition: definition, args: args)
   }
 

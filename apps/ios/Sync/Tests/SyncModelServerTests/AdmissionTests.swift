@@ -417,7 +417,7 @@ struct Creators: ServerRules {
 
   func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { probe.replays(command, in: context) }
 
-  func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+  func run(_ command: CheckedCommand, in context: RuleContext) throws -> CommandOutcome {
     try probe.run(command, in: context)
   }
 

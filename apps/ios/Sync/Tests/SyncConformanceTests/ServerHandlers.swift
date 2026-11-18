@@ -284,7 +284,7 @@ struct EffectPlanRules: ServerRules {
     return probe.discoverEffectScopes(in: context, command: command).union(scopes)
   }
 
-  func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+  func run(_ command: CheckedCommand, in context: RuleContext) throws -> CommandOutcome {
     var result = try probe.run(command, in: context)
     for (scope, deltas) in try effects("command", context: context, source: .command) {
       result.into[scope, default: []] += deltas

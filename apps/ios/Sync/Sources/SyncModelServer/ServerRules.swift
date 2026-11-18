@@ -122,6 +122,40 @@ public struct RuleContext: Sendable {
     return rows.sorted { $0.key < $1.key }.map(\.value)
   }
 
+  // The epoch the server serves (§10.4), which a restore or an inverse command's evidence names.
+  public var epoch: String { state.epoch }
+
+  // A scope's sequence as stored, nil while it is absent.
+  public func seq(of scope: ScopeKey) -> Int64? { state.scopes[scope]?.seq }
+
+  // A stored row of the intent's scope or of a scope its discovery declared, as stored before this intent.
+  public func stored(_ key: RecordKey, in scope: ScopeKey) throws(AdmissionFault) -> Row? {
+    guard scope == self.scope || declared.contains(scope) else { throw AdmissionFault(description: "undeclared effect read") }
+    return state.rows[scope]?[key]
+  }
+
+  // §6.4 the first condition a product inverse command's evidence breaks against the scopes as stored, or nil: another
+  // epoch, an owned field another write moved, a created record or a created scope changed since.
+  public func skip(by evidence: Evidence) throws(AdmissionFault) -> String? {
+    guard evidence.expectedEpoch.isSameID(as: epoch) else { return "epoch-changed" }
+    for owned in evidence.ownedFields {
+      let row: Row? = try ScopeKey(owned.target.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
+        try stored(owned.target.key, in: key)
+      }
+      guard row?.version(of: owned.target.slot) == owned.version else { return "version-changed" }
+    }
+    for created in evidence.unchangedCreatedRecords {
+      let row: Row? = try ScopeKey(created.record.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
+        try stored(created.record.key, in: key)
+      }
+      guard let row, row.lattice.life?.isAlive == true, row.seq == created.rowSeq, row.footprint == created.footprint else { return "record-changed" }
+    }
+    for created in evidence.unchangedCreatedScopes where ScopeKey(created.scope, account: account).flatMap(seq(of:)) != created.seq {
+      return "scope-changed"
+    }
+    return nil
+  }
+
   // A tree is readable while it is alive and its owner is the caller or it is open (D-4, INV-7(e)).
   public func canRead(tree: String) -> Bool {
     switch state.access(ScopeKey(.tree(tree)), as: account, registry: registry) {
