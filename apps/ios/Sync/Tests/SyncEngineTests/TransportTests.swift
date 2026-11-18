@@ -130,7 +130,8 @@ struct TransportTests {
       let reply = await opted(limit).push(request, token: SessionToken("t"))
       if case .answered(.ok) = reply { #expect(answered, "\(limit)") } else { #expect(!answered, "\(limit)") }
     }
-    #expect(telemetry.failures.map { "\($0.name) \($0.kind ?? "")" } == ["sync_push decode"])
+    let failures: [String] = telemetry.failures.map { failure in "\(failure.name) \(failure.kind ?? "")" }
+    #expect(failures == ["sync_push decode"])
   }
 
   @Test func aHelloWithoutATokenCarriesNoAuthorization() async throws {

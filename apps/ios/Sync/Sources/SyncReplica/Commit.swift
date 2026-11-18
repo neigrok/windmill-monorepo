@@ -153,6 +153,20 @@ public struct CommitPlanner: Sendable {
       guard grouped.jcs.count <= limits.effectMaxBytes else { return .refused(.tooLarge, detail: nil) }
       predictions = projections
     }
+    // E-8: a typed leaf of a value the gesture writes or predicts, or of its command's arguments, that breaks admission's
+    // leaf rule throws, since dependents and id maps read every leaf of a queued entry.
+    let predicted: [Delta] = (predictions ?? []).flatMap(\.deltas)
+    let written: [Delta] = deltas + predict + predicted
+    for delta in written {
+      guard let type = registry.type(delta.key.type) else { continue }
+      for (name, register) in delta.lattice.fields {
+        guard let field = type.field(name), registry.typedLeafFault(of: register.value, for: field, of: type) != nil else { continue }
+        throw CommitFailure.malformed("\(type.name).\(name) holds a malformed typed reference")
+      }
+    }
+    if let command, let definition, registry.typedLeafFault(of: command.args, for: definition) != nil {
+      throw CommitFailure.malformed("\(definition.name)'s arguments hold a malformed typed reference")
+    }
     // Step 7: a string the intents send (their scope, deltas, guards, command and given gesture id) holding U+0000
     // throws, before step 8's caps; predictions and device rows are never sent.
     let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: command, gestureId: gesture.gestureId)

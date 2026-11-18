@@ -320,7 +320,20 @@ export class Registry {
     }
     for (const command of this.commands.values()) {
       if (command.scopedEffects !== undefined && command.scopedEffects !== true) fail(`${command.name}: scopedEffects is true or absent`);
-      if (command.engine !== undefined && (command.engine !== 'capture' || !command.scopedEffects || Object.keys(command.args).length)) fail(`${command.name}: engine capture requires scopedEffects and empty args`);
+      if (command.engine !== undefined && (!['capture', 'restore'].includes(command.engine) || !command.scopedEffects || Object.keys(command.args).length)) fail(`${command.name}: an engine command requires scopedEffects and empty args`);
+      if (command.engine === 'restore') {
+        if (!command.predicts?.length) fail(`${command.name}: a restore command predicts the types it restores`);
+        for (const t of command.predicts ?? []) {
+          const type = this.types.get(t);
+          if (type && (type.scope !== command.scope || type.governs)) fail(`${command.name}: a restore restores types of its scope that govern no tree`);
+        }
+        if (command.refPaths !== undefined) fail(`${command.name}: a restore's arguments are fixed`);
+      }
+      if (command.inverse !== undefined) {
+        const input = command.args.input;
+        if (command.inverse !== true || !command.scopedEffects || command.engine !== undefined) fail(`${command.name}: an inverse command is a product command with scopedEffects`);
+        if (Object.keys(command.args).join() !== 'input' || input.type !== 'json' || input.optional) fail(`${command.name}: an inverse command declares only its required json input`);
+      }
       for (const t of command.predicts ?? []) if (!this.types.has(t)) fail(`${command.name}: predicts unknown ${t}`);
       if (command.serverInternal && command.origins.includes('replica')) fail(`${command.name}: server-internal commands have server origin only`);
       if (command.beforePull && !command.serverInternal) fail(`${command.name}: a beforePull command is server-internal`);

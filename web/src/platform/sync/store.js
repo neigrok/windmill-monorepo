@@ -77,6 +77,9 @@ function controlsOf(device, revision) {
     for (const [product, rows] of Object.entries(replica.device)) for (const [key, value] of Object.entries(rows)) records.set(keyOf('device', handle, product, key), value);
     for (const entry of replica.outbox) records.set(keyOf('outbox', handle, entry.localId), entry);
     replica.notices.forEach((notice, index) => records.set(keyOf('notice', handle, index), notice));
+    for (const act of replica.journal) records.set(keyOf('journal', handle, act.actId), act);
+    for (const request of replica.inverses) records.set(keyOf('inverse', handle, request.requestId), request);
+    for (const cancellation of replica.cancellations) records.set(keyOf('cancellation', handle, cancellation.inverseActId), cancellation);
   }
   return records;
 }
@@ -104,6 +107,9 @@ function deviceOf(controls, { shared }) {
     const value = valueFrom(record);
     if (kind === 'outbox') replica.outbox.push(value);
     else if (kind === 'notice') replica.notices[scope] = value;
+    else if (kind === 'journal') replica.journal.push(value);
+    else if (kind === 'inverse') replica.inverses.push(value);
+    else if (kind === 'cancellation') replica.cancellations.push(value);
     else if (kind === 'cache') {
       replica[scope][id] = scope === 'staging' ? { digest: value.digest, rows: {} } : {};
       replica.cachePointers[`${scope}:${id}`] = value;

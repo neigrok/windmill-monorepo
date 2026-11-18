@@ -26,6 +26,7 @@ refusal text never enter telemetry properties.
 | Events | Meaning |
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
+| `sync-inverse` | An Undo or Redo of a journaled act requested (engine.md §7.3 Undo of an act): `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act with no journal, `failed` when the transaction did not commit |
 | `sync-signin`, `sync-signout`, `sync-auth-paused` | Lineage decisions and authentication transitions |
 | `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
 | `sync-refused`, `sync-push-malformed` | Terminal refusals and malformed push responses |

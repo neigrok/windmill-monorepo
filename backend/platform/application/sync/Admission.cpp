@@ -806,7 +806,8 @@ private:
 
   CommandCtx commandCtx() {
     const Json::Value& wire = builtWire_ ? *builtWire_ : wire_;
-    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire["cmd"]["args"]};
+    if (!epoch_) epoch_ = store().epoch(*txn_);
+    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire["cmd"]["args"], *epoch_};
   }
 
   // The records a command's `ref<t>` arguments name.
@@ -882,6 +883,7 @@ private:
   const Origin& origin_;
   const Json::Value& wire_;
   std::optional<Json::Value> builtWire_;
+  std::optional<std::string> epoch_;
   const Ms now_;
   const Sender caller_;
   const ServerBuilder* builder_;

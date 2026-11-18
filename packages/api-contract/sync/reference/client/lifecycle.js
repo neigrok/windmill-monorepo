@@ -7,6 +7,8 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
+import { bindReferences } from './inverse.js';
+import { adoptJournal, discardJournal, invalidateEpochs, settleEnded } from './journal.js';
 import { Replica } from './replica.js';
 import { effectsOf } from './projections.js';
 
@@ -31,6 +33,7 @@ export function renewActor(ctx) {
 }
 
 export function epochChange(replica, ctx, epoch) {
+  bindReferences(replica, replica.meta.serverEpoch);
   replica.meta.serverEpoch = epoch;
   for (const cursor of Object.values(replica.cursors)) cursor.cursor = null;
   replica.staging = {};
@@ -50,6 +53,7 @@ export function epochChange(replica, ctx, epoch) {
     for (const projection of entry.predictions ?? []) { delete projection.covered; delete projection.resultSeq; }
     moveEntry(replica, ctx.ended, entry, 'epoch');
   }
+  invalidateEpochs(replica, epoch);
   reidentify(replica, ctx);
   renewActor(ctx);
 }
@@ -134,6 +138,8 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   for (const decision of due) {
     if (decisions[decision.product] !== 'discard') continue;
     for (const entry of entriesOf(registry, anon, decision.product)) moveEntry(anon, ctx.ended, entry, 'discard');
+    discardJournal(anon, registry, decision.product);
+    settleEnded(anon, 'discarded', { withdraw: true });
     delete anon.device[decision.product];
   }
 
@@ -170,6 +176,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
       for (const [key, value] of Object.entries(rows)) if (!Object.hasOwn(kept, key)) kept[key] = value;
     }
     target.notices.push(...anon.notices);
+    adoptJournal(target, anon);
     transition(REPLICA_MACHINE, 'anon', 'sign-in', 'deleted');
     device.remove(anon);
   }

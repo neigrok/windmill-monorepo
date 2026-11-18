@@ -313,7 +313,7 @@ public enum ClientSteps {
       context.lastPush = try device.push(limit: try step["limit"].map { Int(try $0.asInteger()) }, at: deviceNow)
       return context.lastPush?.json ?? .null
     case "pushResponse":
-      guard let request = context.lastPush else { throw VectorError("pushResponse without a push") }
+      guard let request = try context.lastPush ?? persistedPush(of: device.activeReplica()) else { throw VectorError("pushResponse without a push") }
       let limit = try receive(try answer(step, PushResponse.init(json:)), to: request, dieAfter: try step["dieAfter"]?.asInteger(),
                               on: &device, instance: &instance, timing: timing, context: context)
       return limit.map { ["limit": JSON($0)] } ?? .null
@@ -414,6 +414,14 @@ public enum ClientSteps {
     case let op:
       throw VectorError("unknown step \(op)")
     }
+  }
+
+  // The push a persisted queue's sent entries were numbered into before the steps began, which a first `pushResponse`
+  // answers; nil when the replica holds none.
+  static func persistedPush(of replica: LoadedReplica) -> PushRequest? {
+    let sent = replica.outbox.filter { $0.state == .sent }.sorted { $0.n! < $1.n! }
+    guard !sent.isEmpty, let account = replica.meta.account else { return nil }
+    return PushRequest(replica: replica.meta.replica, account: account, ackThrough: replica.meta.ackThrough, intents: sent.map(\.intent))
   }
 
   // A push answer, one result a batch, the process dying once `dieAfter` results are recorded; answers a halved batch.

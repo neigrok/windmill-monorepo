@@ -230,7 +230,7 @@ struct ArgDef {
   std::optional<Domain> domain;
 };
 
-enum class EngineCommand { capture };
+enum class EngineCommand { capture, restore };
 
 struct CommandDef {
   std::string name;
@@ -240,6 +240,7 @@ struct CommandDef {
   bool beforePull = false;  // §6.7: runs in its own admission before every pull of its scope
   bool scopedEffects = false;
   std::optional<EngineCommand> engine;
+  bool inverse = false;  // K-3: a product command an Undo or Redo recipe runs, with wire arguments {input, evidence}
   std::map<std::string, ArgDef> args;
   std::vector<std::string> predicts;
   std::vector<RefPath> refPaths;  // E-8: the typed leaves of its json arguments

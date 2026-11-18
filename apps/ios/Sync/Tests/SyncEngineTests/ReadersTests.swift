@@ -123,9 +123,13 @@ struct ReadersTests {
       scopedPredict: [ScopedPrediction(scope: child, changes: [.write("meta", "meta", ["title": "Branch"])])], gestureId: "branch"))
     let meta = try #require(try rig.engine.read(child) { try $0.drawn("meta", "meta") })
     #expect((meta.values["title"], meta.isPending, meta.isHeld) == ("Branch", true, false))
-    #expect(try rig.engine.read(child) { try $0.stored("meta").map(\.isPending) } == [true])
-    #expect(try rig.engine.commit(child) { context in (nil as Gesture?, try context.commands().map(\.gestureId)) }.value == [])
-    #expect(try rig.engine.commit(Rig.scope) { context in (nil as Gesture?, try context.commands().map(\.gestureId)) }.value == ["branch"])
+    let pending: [Bool] = try rig.engine.read(child) { (reader: any ScopeReader) -> [Bool] in try reader.stored("meta").map(\.isPending) }
+    #expect(pending == [true])
+    let listed = { (scope: ScopeRef) throws -> [String] in
+      try rig.engine.commit(scope) { (context: any CommitContext) -> (Gesture?, [String]) in (nil, try context.commands().map(\.gestureId)) }.value
+    }
+    #expect(try listed(child) == [])
+    #expect(try listed(Rig.scope) == ["branch"])
   }
 
   // §7.12: a read-and-commit body is given the id of the replica its commit writes to, the active one as it stands at
