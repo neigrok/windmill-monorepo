@@ -200,8 +200,9 @@ Rows that a foreign key to `users` does not cascade from are named in
 `PgAuthRepository::eraseAccount` (the sync engine, telemetry, billing, org membership, and feedback:
 the account's own, plus feedback left signed out with its address; an open account's feedback
 stays whatever address it typed) and, per product, in the `AccountErasure` list `main.cpp` passes
-it. Roadmap's takes the account's trees and everything keyed to them, other people's progress on
-those trees included, since the trees are gone; its hook then retires their live rooms, so no
+it. Roadmap's takes the account's trees, in its own tables and as the sync engine's `tree` records, and everything
+keyed to them, other people's progress on those trees included (the overlays other accounts keep of them), since the
+trees are gone; its hook then retires their live rooms, so no
 reader is served one, no fork copies one, and no save writes one back. The delete of the `users` row,
 here or when an empty account is folded into another, records the unbind the account owes the
 subscription service through a trigger, and the subscriptions share wakes the service's sweep once the
