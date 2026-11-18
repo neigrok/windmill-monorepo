@@ -218,13 +218,18 @@ public struct DeviceWrite: Hashable, Sendable {
   }
 }
 
-// §7.1 one user act and its options.
+// E-7 what an opted command predicts in one scope it changes, its origin's or another's.
 public struct ScopedPrediction: Hashable, Sendable {
   public var scope: ScopeRef
   public var changes: [Change]
-  public init(scope: ScopeRef, changes: [Change]) { self.scope = scope; self.changes = changes }
+
+  public init(scope: ScopeRef, changes: [Change]) {
+    self.scope = scope
+    self.changes = changes
+  }
 }
 
+// §7.1 one user act and its options.
 public struct Gesture: Hashable, Sendable {
   public var changes: [Change]
   public var atomic: Bool
@@ -234,15 +239,16 @@ public struct Gesture: Hashable, Sendable {
   public var supersede: [String]
   public var command: Command?
   public var predict: [Change]
-  public var scopedPredict: [ScopedPrediction]?
+  public var scopedPredict: [ScopedPrediction]
   public var local: [DeviceWrite]
   public var gestureId: String?
 
   // `guards`: exactly these lattice registers, each at its stored stamp. `retire`: held removal gestures of these
-  // records end undone first.
+  // records end undone first. `scopedPredict`: an opted command's predictions, scope by scope, beside `predict`'s origin
+  // ones of any other command.
   public init(changes: [Change], atomic: Bool = false, hold: Bool = false, guards: [RegisterRef] = [],
-              retire: [RecordRef] = [], supersede: [String] = [], command: Command? = nil, predict: [Change] = [], local: [DeviceWrite] = [],
-              gestureId: String? = nil, scopedPredict: [ScopedPrediction]? = nil) {
+              retire: [RecordRef] = [], supersede: [String] = [], command: Command? = nil, predict: [Change] = [],
+              scopedPredict: [ScopedPrediction] = [], local: [DeviceWrite] = [], gestureId: String? = nil) {
     self.changes = changes
     self.atomic = atomic
     self.hold = hold
@@ -258,7 +264,8 @@ public struct Gesture: Hashable, Sendable {
 
   public static func == (lhs: Gesture, rhs: Gesture) -> Bool {
     lhs.changes == rhs.changes && lhs.atomic == rhs.atomic && lhs.hold == rhs.hold && lhs.guards == rhs.guards
-      && lhs.retire == rhs.retire && lhs.supersede.map { Array($0.utf8) } == rhs.supersede.map { Array($0.utf8) } && lhs.command == rhs.command && lhs.predict == rhs.predict && lhs.scopedPredict == rhs.scopedPredict && lhs.local == rhs.local
+      && lhs.retire == rhs.retire && lhs.supersede.map { Array($0.utf8) } == rhs.supersede.map { Array($0.utf8) } && lhs.command == rhs.command
+      && lhs.predict == rhs.predict && lhs.scopedPredict == rhs.scopedPredict && lhs.local == rhs.local
       && lhs.gestureId.map { Array($0.utf8) } == rhs.gestureId.map { Array($0.utf8) }
   }
 
@@ -448,18 +455,22 @@ public struct Record: Hashable, Sendable {
 
 // MARK: - Notices and Undo
 
-// What a refused intent held, and each dependent folded into its refusal (§7.7 step 4).
+// What a refused intent held, and each dependent folded into its refusal (§7.7 step 4). An opted command's predictions
+// keep their scopes, and where a refusal crossed scopes each dependent names the scope it was committed in.
 public struct NoticeContent: Hashable, Sendable {
+  public var scope: ScopeRef?
   public var deltas: [Delta]
   public var command: Command?
-  public var dependents: [NoticeContent]
   public var predictions: [ScopedDeltas]?
+  public var dependents: [NoticeContent]
 
-  public init(deltas: [Delta] = [], command: Command? = nil, dependents: [NoticeContent] = [], predictions: [ScopedDeltas]? = nil) {
+  public init(scope: ScopeRef? = nil, deltas: [Delta] = [], command: Command? = nil, predictions: [ScopedDeltas]? = nil,
+              dependents: [NoticeContent] = []) {
+    self.scope = scope
     self.deltas = deltas
     self.command = command
-    self.dependents = dependents
     self.predictions = predictions
+    self.dependents = dependents
   }
 }
 

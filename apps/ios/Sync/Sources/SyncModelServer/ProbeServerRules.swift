@@ -1,8 +1,8 @@
 import SyncCore
 
 // The probe product's binding (corpus README "The probe product"): `probe.start` with its join and receipts,
-// `probe.end`, `probe.copy` into a board it creates, the `beforePull` `probe.tick`, the run checks, and one kept
-// revision per text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
+// `probe.end`, `probe.copy` into a board it creates, the opted `probe.branch` across three scopes, the `beforePull`
+// `probe.tick`, the run checks, and one kept revision per text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
 // `copies[<scope key>][<dst>]`.
 
 public struct ProbeServerRules: ServerRules {
@@ -21,6 +21,9 @@ public struct ProbeServerRules: ServerRules {
   }
 
   public func discoverEffectScopes(in context: RuleContext, command: CheckedCommand?) -> Set<ScopeKey> {
+    if let command, command.name == "probe.branch" {
+      return [ScopeKey(.tree(command.string("parent"))), ScopeKey(.tree(command.string("child")))]
+    }
     guard let command, command.name == "probe.copy", !replays(command, in: context),
           case .none = context.idState(of: RecordKey("board", RecordID(command.string("dst")))) else { return [] }
     return [ScopeKey(.tree(command.string("dst")))]
@@ -31,6 +34,7 @@ public struct ProbeServerRules: ServerRules {
     case "probe.start": try start(command, in: context)
     case "probe.end": try end(command, in: context)
     case "probe.copy": try copy(command, in: context)
+    case "probe.branch": try branch(command, in: context)
     case "probe.tick": tick(in: context)
     default: throw Refusal(.invalid)
     }
@@ -133,6 +137,21 @@ public struct ProbeServerRules: ServerRules {
       deltas: [.serverCreate(board)], write: [WriteClaim(key: board, born: .minted)],
       product: recording(source, under: "copies", at: board.id.description, in: context),
       into: [ScopeKey(.tree(board.id.description)): copies])
+  }
+
+  // A child board under `parent`: its governor in the product scope, and one meta title written into both trees.
+  func branch(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    let (parent, child) = (command.string("parent"), command.string("child"))
+    guard !parent.isSameID(as: child) else { throw Refusal(.invalid) }
+    let board = RecordKey("board", RecordID(child))
+    switch context.idState(of: board) {
+    case .alive, .dead: throw Refusal(.idTaken)
+    case .none, .foreign: break
+    }
+    let meta = PlannedDelta.serverUpdate(RecordKey("meta", "meta"), born: nil, fields: ["title": command.args["title"] ?? .null])
+    return CommandOutcome(
+      deltas: [.serverCreate(board)], write: [WriteClaim(key: board, born: .minted)], detail: ["created": true], product: context.product,
+      into: [ScopeKey(.tree(parent)): [meta], ScopeKey(.tree(child)): [meta]])
   }
 
   func tick(in context: RuleContext) -> CommandOutcome {

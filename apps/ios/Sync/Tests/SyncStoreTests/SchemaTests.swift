@@ -59,6 +59,55 @@ struct SchemaTests {
     #expect(try ["journal_mode", "synchronous", "foreign_keys"].map(store.pragma) == ["wal", "2", "1"])
   }
 
+  // E-7's v3 on a store from before: it holds legacy entries only, which keep their one scope and seq on the outbox row. The
+  // store gains the projection index in place: every entry reads back as it was, an acked one still settles by its own
+  // scope's cursor, and an opted command then commits its projections, the index kept in step.
+  @Test func aStoreFromBeforeProjectionsMigratesInPlace() throws {
+    let file = try #require(try Corpus.files().first { $0.path == "write/scoped-predictions.json" })
+    let vector = try #require(try Corpus.vectors(in: file).first { $0.name.hasPrefix("one offline command draws its origin") })
+    var device = try LoadedDevice(json: vector.input.member("device"), registry: Self.probe)
+    let scope = ScopeRef.product("probe")
+    var acked = OutboxEntry(
+      localId: "old/0", gestureId: "old", lineage: "A", scope: scope, state: .acked, commitOrder: 1, releaseAt: 0,
+      stamp: try Stamp("900:0:r_aaaaaaaaaaaa"), intent: Intent(n: 1, scope: scope, deltas: [
+        Delta(key: RecordKey("card", "card0009"), lattice: Lattice(life: Life(.alive, try Stamp("900:0:r_aaaaaaaaaaaa")), born: try Stamp("900:0:r_aaaaaaaaaaaa"))),
+      ], gestureId: "old"))
+    acked.digest = acked.intent.digest
+    acked.resultSeq = 1
+    acked.resultEpoch = "ep-1"
+    device.modify(device.active) { $0.apply(.putEntry(acked)) }
+    let before = device.json
+    try StoreTests.inFreshDirectory { path in
+      do {
+        let store = try Store(path: path, registry: Self.probe)
+        _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(building: device)) }
+        try store.writer.write { db in
+          try db.execute(sql: """
+            DROP TABLE outbox_projection;
+            ALTER TABLE outbox DROP COLUMN predictions;
+            ALTER TABLE outbox DROP COLUMN accepted_effects;
+            DELETE FROM grdb_migrations WHERE identifier = 'v3';
+            """)
+        }
+      }
+      let migrated = try Store(path: path, registry: Self.probe)
+      #expect(try migrated.read { try $0.device(rows: true).json } == before)
+      #expect(try migrated.settle(scope, replica: device.active, count: 1).value.map { [$0.resolved] } == [1])
+      let branch = Gesture(changes: [], command: Command(name: "probe.branch", args: ["parent": "b_00000001", "child": "b_00000002", "title": "Branch"]),
+        scopedPredict: [ScopedPrediction(scope: .tree("b_00000002"), changes: [.write("meta", "meta", ["title": "Branch"])])])
+      guard case .committed(let receipt) = try migrated.commit(branch, in: scope, instance: StoreTests.at(5000), identities: StoreTests.none()).value else {
+        Issue.record("the opted command did not commit")
+        return
+      }
+      let replica = try migrated.read { try $0.device(rows: true).activeReplica }
+      #expect(replica.outbox.map(\.localId) == receipt.localIds)
+      #expect(replica.outbox.first?.predictions?.map(\.scope) == [scope, .tree("b_00000002")])
+      let index = try migrated.read { try $0.touchIndex() }
+      #expect(index.stored == index.expected)
+      #expect(index.stored.contains([.string(receipt.localIds[0]), "tree/b_00000002", .null, false]))
+    }
+  }
+
   @Test(arguments: [false, true], [false, true])
   func aLegacyJoinedCommandMigratesAndRecoversAcrossDiskFailures(predicted: Bool, committed: Bool) throws {
     let file = try #require(try Corpus.files().first { $0.path == "refusal/transport.json" })

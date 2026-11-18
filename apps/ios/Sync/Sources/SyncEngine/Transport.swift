@@ -52,17 +52,23 @@ public protocol LiveConnection: Sendable {
 // retries; 30 s of silence or REQUEST_TIMEOUT_MS in all ends a request, so a trickling server cannot hold the one push in
 // flight. The live socket has a session of its own, which ends a handshake after 30 s of silence and never ends an open
 // socket for its age. Every request names the registry version it speaks (§9.1): hello, push and pull in the header
-// `Sync-Schema`, the live socket's upgrade in the query parameter `schema`. Bodies and live messages are JCS bytes.
+// `Sync-Schema`, the live socket's upgrade in the query parameter `schema`. Bodies and live messages are JCS bytes. A push
+// naming a command with scoped effects is answered within SCOPED_RESPONSE_MAX_BYTES of actual body bytes (§9.3), or is
+// unreachable.
 public final class HTTPTransport: SyncTransport {
   let baseURL: URL
   let schema: Int
+  let scopedCommands: Set<String>
+  let scopedResponseMaxBytes: Int
   let session: URLSession
   let liveSession: URLSession
   let diagnostics: TransportDiagnostics
 
-  // `schema`: the registry version the engine was built with.
-  public init(baseURL: URL, schema: Int, configuration: URLSessionConfiguration = .ephemeral,
-              telemetry: any Telemetry = NoopTelemetry()) {
+  // `schema`: the registry version the engine was built with; `scopedCommands`: its commands with scoped effects.
+  // `scopedResponseMaxBytes` may only shrink, in a test.
+  public init(baseURL: URL, schema: Int, scopedCommands: Set<String> = [], scopedResponseMaxBytes: Int = Constants.scopedResponseMaxBytes,
+              configuration: URLSessionConfiguration = .ephemeral, telemetry: any Telemetry = NoopTelemetry()) {
+    precondition((1...Constants.scopedResponseMaxBytes).contains(scopedResponseMaxBytes), "SCOPED_RESPONSE_MAX_BYTES only shrinks")
     let configuration = configuration.copy() as! URLSessionConfiguration
     configuration.timeoutIntervalForRequest = 30
     configuration.waitsForConnectivity = false
@@ -72,6 +78,8 @@ public final class HTTPTransport: SyncTransport {
     configuration.timeoutIntervalForResource = TimeInterval(Constants.requestTimeoutMs) / 1000
     self.baseURL = baseURL
     self.schema = schema
+    self.scopedCommands = scopedCommands
+    self.scopedResponseMaxBytes = scopedResponseMaxBytes
     diagnostics = TransportDiagnostics(telemetry)
     session = URLSession(configuration: configuration)
     liveSession = URLSession(configuration: live)
@@ -82,8 +90,9 @@ public final class HTTPTransport: SyncTransport {
   }
 
   public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    await exchange("POST", "v1/sync/push", operation: "sync_push", expected: ExpectedStatuses.push, body: request.body,
-                   token: token)
+    let scoped = request.intents.contains { intent in intent.command.map { scopedCommands.contains($0.name) } ?? false }
+    return await exchange("POST", "v1/sync/push", operation: "sync_push", expected: ExpectedStatuses.push, body: request.body,
+                          token: token, maxBytes: scoped ? scopedResponseMaxBytes : nil)
   }
 
   public func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
@@ -125,9 +134,10 @@ public final class HTTPTransport: SyncTransport {
     }
   }
 
+  // `maxBytes`: a 200 whose body exceeds it is unreachable.
   func exchange<Body: ResponseBody>(_ method: String, _ path: String, operation: String,
                                     expected: Set<Int> = ExpectedStatuses.all, body: [UInt8]?,
-                                    token: SessionToken?) async -> Reply<Body> {
+                                    token: SessionToken?, maxBytes: Int? = nil) async -> Reply<Body> {
     let start = ContinuousClock.now
     var request = URLRequest(url: baseURL.appending(path: path))
     request.httpMethod = method
@@ -145,7 +155,8 @@ public final class HTTPTransport: SyncTransport {
                            durationMs: TransportDiagnostics.elapsed(since: start))
         return .unreachable
       }
-      let reply = Reply<Body>(status: http.statusCode, body: try? JSON(parsing: [UInt8](data)))
+      let bounded = http.statusCode != 200 || maxBytes.map { data.count <= $0 } ?? true
+      let reply = bounded ? Reply<Body>(status: http.statusCode, body: try? JSON(parsing: [UInt8](data))) : .unreachable
       if http.statusCode != 200 {
         let unavailable = if case .answered(.failed(let failure)) = reply { failure.isUnavailable } else { false }
         diagnostics.report(operation: operation, method: method, kind: "http", status: http.statusCode,

@@ -247,7 +247,9 @@ public enum ClientSteps {
   // step that throws a commit or transition error answers `{throws: true}` and leaves everything as it was.
   public static func run<Device: ClientDevice>(_ input: JSON, registry: Registry,
                                                device makeDevice: (LoadedDevice, Limits) throws -> Device) throws -> JSON {
-    let limits = Limits(pushMaxBytes: Int(try input["limits"]?["PUSH_MAX_BYTES"]?.asInteger() ?? Int64(Constants.pushMaxBytes)))
+    let limits = Limits(
+      pushMaxBytes: Int(try input["limits"]?["PUSH_MAX_BYTES"]?.asInteger() ?? Int64(Constants.pushMaxBytes)),
+      effectMaxBytes: Int(try input["limits"]?["EFFECT_MAX_BYTES"]?.asInteger() ?? Int64(Constants.effectMaxBytes)))
     var device = try makeDevice(try LoadedDevice(json: input.member("device"), registry: registry), limits)
     var context = StepContext(
       registry: registry, identities: try QueuedIdentities(input), actor: try Stamp.Actor(input["actor"]?.asString() ?? ClientSteps.actor))
@@ -500,6 +502,11 @@ public enum ClientSteps {
       supersede: try opts["supersede"]?.asArray().map { try $0.asString() } ?? [],
       command: try opts["cmd"].map { try Command(json: $0) },
       predict: try opts["predict"]?.asArray().map { try change($0, prediction: true) } ?? [],
+      scopedPredict: try opts["scopedPredict"]?.asArray().map { group in
+        try group.asObject().expectKeys(required: ["scope", "changes"])
+        return ScopedPrediction(scope: try ScopeRef(json: group.member("scope")),
+                                changes: try group.member("changes").asArray().map { try change($0, prediction: true) })
+      } ?? [],
       local: try (opts["local"]?.asObject().members ?? []).map { DeviceWrite(key: $0.key, value: $0.value.isNull ? nil : $0.value) },
       gestureId: try opts["gestureId"]?.asString())
   }
@@ -715,11 +722,5 @@ public struct VectorError: Error, CustomStringConvertible {
 
   public init(_ description: String) {
     self.description = description
-  }
-}
-
-extension JSON {
-  public func nullable<Value>(_ decode: (JSON) throws -> Value) rethrows -> Value? {
-    isNull ? nil : try decode(self)
   }
 }
