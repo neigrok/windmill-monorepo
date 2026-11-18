@@ -3812,6 +3812,466 @@
     }
   },
   {
+    "name": "a renamed mark key keeps the text it was edited from, which a base-unknown refusal resends",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "board",
+                  "id": "b_00000003",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "tag-a",
+                  "x": {
+                    "memo": {
+                      "text": "old",
+                      "rev": 1,
+                      "merged": false
+                    }
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "617418f16c3b7b1c1b9c75a077405160ba5cc6945c7c780cbd6fd81b6bb0f1d8",
+                "booted": true
+              },
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "9581ef8610cb5e09014772882348aeff2363fe86fdcc81b82807ffb7c7d2ed50",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "tree/b_00000001",
+          "deviceNow": 2000,
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.adopt",
+              "args": {
+                "tag": "tag-a",
+                "label": "Ash"
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "tag",
+                "id": "tag-a",
+                "f": {
+                  "label": "Ash"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 2001
+        },
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "deviceNow": 2002,
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "tag-a",
+              "x": {
+                "memo": "old!"
+              }
+            }
+          ]
+        },
+        {
+          "op": "pushResponse",
+          "deviceNow": 3000,
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 3000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "tag",
+                      "id": "tag-b",
+                      "from": "tag-a",
+                      "born": "1000:0:r_aaaaaaaaaaaa"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 3001
+        },
+        {
+          "op": "pushResponse",
+          "deviceNow": 3002,
+          "response": {
+            "status": 200,
+            "body": {
+              "as": "A",
+              "epoch": "ep-1",
+              "serverTime": 3002,
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "refused",
+                  "code": "base-unknown"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 3003
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "2000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "cmd": {
+                "name": "probe.adopt",
+                "args": {
+                  "tag": "tag-a",
+                  "label": "Ash"
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "2002:0:r_aaaaaaaaaaaa"
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "tag-b",
+                  "x": {
+                    "memo": {
+                      "text": "old!",
+                      "base": {
+                        "rev": 1
+                      }
+                    }
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "tag-b",
+                  "x": {
+                    "memo": {
+                      "text": "old!",
+                      "base": {
+                        "text": "old"
+                      }
+                    }
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 3
+            }
+          ]
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 2002,
+                "counter": 0
+              },
+              "hlcHigh": "2002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1000:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 3002,
+                "mono": 3002,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "tag-a",
+                  "x": {
+                    "memo": {
+                      "text": "old",
+                      "rev": 1,
+                      "merged": false
+                    }
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ],
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "board",
+                  "id": "b_00000003",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "9581ef8610cb5e09014772882348aeff2363fe86fdcc81b82807ffb7c7d2ed50",
+                "booted": true
+              },
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "617418f16c3b7b1c1b9c75a077405160ba5cc6945c7c780cbd6fd81b6bb0f1d8",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "tree/b_00000001",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "2000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "cmd": {
+                    "name": "probe.adopt",
+                    "args": {
+                      "tag": "tag-a",
+                      "label": "Ash"
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "tag",
+                    "id": "tag-b",
+                    "born": "1000:0:r_aaaaaaaaaaaa",
+                    "life": [
+                      "alive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "f": {
+                      "label": [
+                        "Ash",
+                        "2000:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "2e4db3bde19679bf8c2587e28ab222a47ba4ac3612dfc8ee79c0be2c2ca7dfee",
+                "resultSeq": 1,
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "tag",
+                    "from": "tag-a",
+                    "id": "tag-b",
+                    "born": "1000:0:r_aaaaaaaaaaaa"
+                  }
+                ]
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/overlay/b_00000001",
+                "state": "sent",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "2002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/overlay/b_00000001",
+                  "d": [
+                    {
+                      "t": "mark",
+                      "id": "tag-b",
+                      "x": {
+                        "memo": {
+                          "text": "old!",
+                          "base": {
+                            "text": "old"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "gestureId": "g2",
+                  "n": 3
+                },
+                "baseTexts": {
+                  "[\"mark\",\"tag-b\",\"memo\"]": "old"
+                },
+                "n": 3,
+                "digest": "1d354cd3f758254141e76768b5c6042f6ffe22c8df365bc95dae44b10437be44"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
     "name": "a governor redirect then a tag map in the redirected tree rename an overlay key and a step through both",
     "input": {
       "device": {

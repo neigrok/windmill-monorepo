@@ -451,6 +451,29 @@ function scopedTagMap() {
   return [mapped];
 }
 
+function renamedText() {
+  const overlay = `self/overlay/${B1}`;
+  const memo = (id, text, seq) => row({ t: 'mark', id, x: { memo: { text, rev: seq, merged: false } }, seq });
+  const device = deviceWith({ 'self/probe': productRows(), [overlay]: [memo('tag-a', 'old', 1)] });
+  const steps = [
+    adopt(B1, { tag: 'tag-a', label: 'Ash' }, 2000),
+    { op: 'push', deviceNow: 2001 },
+    { op: 'commit', scope: overlay, deviceNow: 2002, changes: [{ op: 'write', t: 'mark', id: 'tag-a', x: { memo: 'old!' } }] },
+  ];
+  const state = serverState({ scopes: { 'acct:A/probe': productScope('A'), [`tree:${B1}`]: treeScope('A', B1) },
+    rows: { 'acct:A/probe': productRows(), [`tree:${B1}`]: [tag('tag-b', 'Ash', 1)] } });
+  const answer = served(state, runSteps({ device, steps }).returns[1], 3000);
+  assert.deepEqual(answer.response.body.results[0].write, [{ t: 'tag', id: 'tag-b', from: 'tag-a', born: st(1000) }]);
+  const recovered = stepsVector('a renamed mark key keeps the text it was edited from, which a base-unknown refusal resends', {
+    device, steps: [...steps, { op: 'pushResponse', deviceNow: 3000, response: answer.response }, { op: 'push', deviceNow: 3001 },
+      { op: 'pushResponse', deviceNow: 3002, response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 3002, lastN: 2,
+        results: [{ n: 2, s: 'refused', code: 'base-unknown' }] } } }, { op: 'push', deviceNow: 3003 }],
+  });
+  assert.deepEqual(recovered.expect.returns[4].intents[0].d[0], { t: 'mark', id: 'tag-b', x: { memo: { text: 'old!', base: { rev: 1 } } } });
+  assert.deepEqual(recovered.expect.returns.at(-1).intents[0].d[0], { t: 'mark', id: 'tag-b', x: { memo: { text: 'old!', base: { text: 'old' } } } });
+  return [recovered];
+}
+
 function composedMaps() {
   const device = deviceWith({ 'self/probe': productRows(), [`tree/${B1}`]: [tag('oak', 'Oak', 1)] });
   const queued = [
@@ -532,7 +555,7 @@ export function files() {
   return {
     'registry/references.json': [...registryLoads(), ...registryValues()],
     'admit/references.json': admissions(),
-    'write/references.json': [...redirectedChild(), ...dependencies(), ...scopedTagMap(), ...composedMaps()],
+    'write/references.json': [...redirectedChild(), ...dependencies(), ...scopedTagMap(), ...renamedText(), ...composedMaps()],
     'refs/traversal.json': traversal(),
   };
 }

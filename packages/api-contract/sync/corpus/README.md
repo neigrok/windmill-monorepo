@@ -1342,6 +1342,8 @@ E-8's client steps, every reference read through the compiled traversal (`refs/t
 - `probe.adopt`'s scope-local map renames a mark key in that tree's overlay, a link's key parts in the
   tree and a sprout's `tag` whose `board` names the tree, and leaves the same tag id in a sibling tree's
   overlay and sprout;
+- a mark key renamed by that map keeps the text its write was edited from, so a later `base-unknown`
+  refusal resends `base: {text}` with it;
 - a governor redirect, then a tag map in the redirected tree, reach an overlay key and a sprout's step
   through both.
 

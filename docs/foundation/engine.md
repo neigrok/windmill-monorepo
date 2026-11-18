@@ -2110,8 +2110,9 @@ global type renames its id in every scope; a mapping of a scope-local type renam
 command's scope, keyed by that scope as the map's governor mappings leave it, so an overlay's key
 names the record of its own tree and the same id in a sibling tree stays. Each entry takes two passes,
 each reading every leaf before writing one: the global leaves and governed ScopeRefs, then the
-scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. A creation leaf
-moves only with its own command's retained target.
+scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. The entry's
+`baseTexts` keys follow their records, so a `base-unknown` recovery finds the text a renamed record's
+write was edited from. A creation leaf moves only with its own command's retained target.
 0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
    first move its previous resolved id to `w.id` in the command's prediction and its later held or
    ready dependents, including deletes, references, key parts and guards, and in device rows through
