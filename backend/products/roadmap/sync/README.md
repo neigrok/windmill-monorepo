@@ -26,10 +26,11 @@ Postgres. `roadmap/client.json` belongs to the client role.
   `trees`, `tree_nodes`, `tree_edges`, `tree_kinds` and `node_progress`, which roadmap's own sync writes until the
   cutover (§8.1) fills these. Each row goes with its `sync_scopes` row, so an account's erasure takes it. It keeps the
   deeds in `tree_ops`, inside the admitting transaction: one row a gesture leaves a deed in a roadmap, made by the
-  intent's account (the roadmap's owner, the only writer of a tree scope) at the roadmap's seq as the gesture's first
-  intent there committed it; a later intent of the gesture folds its deed into that row. A row already at that seq,
-  a roadmap whose seq did not continue above its old head, keeps its deed and the intent lands; the lost deed is
-  reported as `roadmap.activity.record` `seq-taken`.
+  intent's account (the roadmap's owner, the only writer of a tree scope) at the roadmap's seq as the gesture's latest
+  intent there committed it. A later intent of the gesture folds its deed into the row and moves it to its own seq, so a
+  cursor past the earlier seq meets the whole deed again under the same `op_id`. A row already at that seq, a roadmap
+  whose seq did not continue above its old head, keeps its deed and the intent lands; the lost deed is reported as
+  `roadmap.activity.record` `seq-taken`.
 
 `platform/infra/SyncProducts` composes roadmap beside gym and journal at schema 13 / minimum 11. `windmill_server`
 serves roadmap's scopes only where `ROADMAP_ENGINE_ENABLED` is `true` or `1`; otherwise the catalog withholds the

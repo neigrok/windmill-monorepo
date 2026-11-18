@@ -88,9 +88,8 @@ TEST(the_production_composition_serves_roadmap_only_where_a_deployment_says_so) 
 }
 
 // §7's activity: the binding writes one tree_ops row for each gesture that leaves a deed in a roadmap, in the
-// transaction that admits it, made by the intent's account and at the roadmap's seq as the gesture's first intent there
-// left it; a later intent of the same gesture folds its deed into that row, and an intent that leaves no deed writes
-// none.
+// transaction that admits it, made by the intent's account; a later intent of the same gesture folds its deed into that
+// row and moves it to its own seq, and an intent that leaves no deed writes none.
 TEST(a_roadmaps_activity_keeps_one_row_a_gesture_that_leaves_a_deed_with_who_made_it) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   BlockingThread::Mark blocking;
@@ -180,7 +179,7 @@ TEST(a_roadmaps_activity_keeps_one_row_a_gesture_that_leaves_a_deed_with_who_mad
           {"kind": "CreateNode", "payload": {"id": "basics", "label": "Basics", "icon": "", "color": "terracotta"}},
           {"kind": "CreateNode", "payload": {"id": "ownership", "label": "Ownership", "icon": "", "color": "terracotta"}},
           {"kind": "CreateNode", "payload": {"id": "traits", "label": "Traits", "icon": "", "color": "terracotta"}}]}, ""],
-      [2, "A", "gesture:g-two", "Batch", {"commands": [
+      [3, "A", "gesture:g-two", "Batch", {"commands": [
           {"kind": "RenameNode", "payload": {"id": "basics", "label": "Foundations"}},
           {"kind": "AddEdge", "payload": {"from": "ownership", "to": "traits"}}]}, ""]])")));
 }
