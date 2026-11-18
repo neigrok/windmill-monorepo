@@ -1,6 +1,8 @@
 #pragma once
 
+#include "platform/ports/Clock.h"
 #include "products/roadmap/application/ActivityFeed.h"
+#include "products/roadmap/application/OwnerFollows.h"
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Gallery.h"
 #include "products/roadmap/domain/Ids.h"
@@ -11,6 +13,7 @@
 #include "products/roadmap/ports/RoadmapRecords.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -43,6 +46,12 @@ struct ShownProgress {
   std::vector<SubtreeCount> subtrees;
 };
 
+// The gallery's candidates, and what its follows of their owners came to.
+struct EngineWall {
+  std::vector<WallCandidate> candidates;
+  FollowTally tally;
+};
+
 // What the share page names of a roadmap.
 struct SharedRoadmap {
   std::string title;
@@ -56,7 +65,7 @@ struct SharedRoadmap {
 // answered before. A roadmap that does not stand is hidden from everyone, its owner included (§5 Hidden).
 class EngineReadModels {
 public:
-  EngineReadModels(RoadmapRecords& records, OpLog& activity);
+  EngineReadModels(RoadmapRecords& records, OpLog& activity, Clock& clock);
 
   // The roadmap, when it stands and `caller` owns it or its reach lets anyone with its address read it.
   std::optional<ReadableRoadmap> open(const TreeId& tree, const std::optional<UserId>& caller);
@@ -75,8 +84,11 @@ public:
 
   SharedRoadmap shared(const ReadableRoadmap& roadmap);
 
-  // Every alive public root that stands, with its owner's progress as a reader is shown it.
-  std::vector<WallCandidate> wall();
+  // Every alive public root, read alone, as today's gallery lists every public tree. Its owner's other roadmaps, which
+  // its steps may open, are followed as today's follows are (OwnerFollows): only for an owner whose roots on the wall
+  // open one, in the order the wall shows their cards before their marks are known, within `cap` in all; an owner left
+  // unread is shown with the steps that open a roadmap set aside.
+  EngineWall wall(std::chrono::milliseconds cap);
   std::set<TreeId> forkedSources(const UserId& viewer);
 
   // One row per standing root of `owner`'s, with their own marks: the steps whose prerequisites are met and that are
@@ -86,6 +98,8 @@ public:
 private:
   RoadmapRecords& records_;
   OpLog& activity_;
+  Clock& clock_;
+  OwnerFollows follows_;
 };
 
 }

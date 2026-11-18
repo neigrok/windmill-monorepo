@@ -97,7 +97,8 @@ std::uint64_t editedAtOf(const std::map<std::string, std::uint64_t>& editedAt, c
 
 }
 
-EngineReadModels::EngineReadModels(RoadmapRecords& records, OpLog& activity) : records_(records), activity_(activity) {}
+EngineReadModels::EngineReadModels(RoadmapRecords& records, OpLog& activity, Clock& clock)
+    : records_(records), activity_(activity), clock_(clock), follows_(clock) {}
 
 std::optional<ReadableRoadmap> EngineReadModels::open(const TreeId& tree, const std::optional<UserId>& caller) {
   const std::optional<UserId> owner = records_.ownerOf(tree);
@@ -139,21 +140,50 @@ SharedRoadmap EngineReadModels::shared(const ReadableRoadmap& roadmap) {
                        parseVisibility(roadmap.account.tree(id)->meta.reach), records_.lineageOf(roadmap.tree)};
 }
 
-std::vector<WallCandidate> EngineReadModels::wall() {
-  std::map<UserId, std::vector<ListedRoot>> byOwner;
-  for (ListedRoot& root : records_.publicRoots()) byOwner[root.owner].push_back(std::move(root));
-  std::vector<WallCandidate> candidates;
-  for (const auto& [owner, roots] : byOwner) {
-    AccountRoadmaps roadmaps = records_.roadmapsOf(owner);
+EngineWall EngineReadModels::wall(std::chrono::milliseconds cap) {
+  std::map<UserId, std::set<TreeId>> rootsOf;
+  std::map<TreeId, ListedRoot> listed;
+  for (ListedRoot& root : records_.publicRoots()) {
+    rootsOf[root.owner].insert(root.id);
+    listed.emplace(root.id, std::move(root));
+  }
+  // Each owner's roots on the wall, read alone; the candidates they make, and whether a step of theirs opens a roadmap.
+  std::map<UserId, std::vector<WallCandidate>> byOwner;
+  std::set<UserId> opening;
+  const auto candidatesOf = [&](const UserId& owner, AccountRoadmaps roadmaps) {
     const std::map<std::string, std::uint64_t> editedAt = std::move(roadmaps.editedAt);
     const read::RoadmapAccount account = accountOf(std::move(roadmaps));
-    for (const ListedRoot& root : roots) {
-      if (!account.counts(root.id.str())) continue;
-      candidates.push_back(WallCandidate{treeDataOf(account, root.id.str()), owner, shownToReaders(account, root.id.str()),
-                                         editedAtOf(editedAt, root.id.str()), root.lineage.forkCount, root.lineage.sourceTitle});
+    std::vector<WallCandidate> candidates;
+    for (const TreeId& root : rootsOf.at(owner)) {
+      if (!account.counts(root.str())) continue;
+      const ForkLineage& lineage = listed.at(root).lineage;
+      candidates.push_back(WallCandidate{treeDataOf(account, root.str()), owner, shownToReaders(account, root.str()),
+                                         editedAtOf(editedAt, root.str()), lineage.forkCount, lineage.sourceTitle});
+      if (!account.openingsOf(root.str()).empty()) opening.insert(owner);
     }
+    return candidates;
+  };
+  for (const auto& [owner, roots] : rootsOf) byOwner[owner] = candidatesOf(owner, records_.roadmapsOf(owner, roots));
+
+  std::vector<WallCandidate> unfollowed;
+  for (const auto& [owner, candidates] : byOwner) unfollowed.insert(unfollowed.end(), candidates.begin(), candidates.end());
+  std::vector<UserId> order;
+  for (const GalleryEntry& entry : publicWall(unfollowed, Viewer{})) {
+    const UserId& owner = listed.at(entry.id).owner;
+    if (opening.contains(owner) && std::find(order.begin(), order.end(), owner) == order.end()) order.push_back(owner);
   }
-  return candidates;
+  EngineWall wall;
+  const std::uint64_t started = clock_.nowMs();
+  for (const UserId& owner : order) {
+    const auto spent = std::chrono::milliseconds{static_cast<std::int64_t>(clock_.nowMs() - started)};
+    std::optional<AccountRoadmaps> followed = follows_.followed(
+        owner, std::max(cap - spent, std::chrono::milliseconds{0}), "gallery", wall.tally,
+        [&](std::chrono::milliseconds budget) { return records_.roadmapsOf(owner, std::nullopt, budget); });
+    if (followed) byOwner[owner] = candidatesOf(owner, std::move(*followed));
+  }
+  for (auto& [owner, candidates] : byOwner)
+    for (WallCandidate& candidate : candidates) wall.candidates.push_back(std::move(candidate));
+  return wall;
 }
 
 std::set<TreeId> EngineReadModels::forkedSources(const UserId& viewer) { return records_.forkedSources(viewer); }

@@ -14,10 +14,12 @@ namespace read = roadmap::read;
 
 namespace {
 
-// The rows of each table that belong to `owner`'s alive roadmaps: their tree scopes, or their owner's overlays of them.
-const std::string kTreeScopes = "join roadmap_trees t on t.scope_key = $1 and t.life = 'alive' and r.scope_key = 'tree:' || t.id";
-const std::string kOverlays =
-    "join roadmap_trees t on t.scope_key = $1 and t.life = 'alive' and r.scope_key = 'acct:' || $2 || '/overlay/' || t.id";
+// An account's roadmaps ($1 its product scope), those of the jsonb array $2 alone where it is not null.
+const std::string kAmong = "($2::jsonb is null or t.id in (select jsonb_array_elements_text($2::jsonb)))";
+// The rows of each table that belong to those of them alive: their tree scopes, or their owner's ($3) overlays of them.
+const std::string kTreeScopes = "join roadmap_trees t on t.scope_key = $1 and t.life = 'alive' and " + kAmong + " and r.scope_key = 'tree:' || t.id";
+const std::string kOverlays = "join roadmap_trees t on t.scope_key = $1 and t.life = 'alive' and " + kAmong +
+                              " and r.scope_key = 'acct:' || $3 || '/overlay/' || t.id";
 
 template <typename Field>
 std::string textOf(const Field& field, const std::string& otherwise = "") {
@@ -47,10 +49,33 @@ std::optional<UserId> PgRoadmapRecords::ownerOf(const TreeId& tree) {
   return UserId{rows[0][0].as<std::string>()};
 }
 
-AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
+AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner, const std::optional<std::set<TreeId>>& only,
+                                             std::optional<std::chrono::milliseconds> budget) {
+  std::optional<std::string> among;
+  if (only) {
+    Json::Value ids(Json::arrayValue);
+    for (const TreeId& tree : *only) ids.append(tree.str());
+    among = dump(ids);
+  }
+  const auto deadline = std::chrono::steady_clock::now() + budget.value_or(std::chrono::milliseconds{0});
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   const std::string account = sync::ScopeKey::product(owner, "roadmap").text();
+  const pqxx::params ofRoadmaps{account, among};
+  const pqxx::params ofOverlays{account, among, owner.str()};
+  const auto fetch = [&](const std::string& statement, const pqxx::params& params) {
+    if (budget) {
+      const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+      if (left.count() <= 0) throw FollowTimedOut{};
+      txn.exec("SET LOCAL statement_timeout = '" + std::to_string(left.count()) + "ms'");
+    }
+    try {
+      return txn.exec(statement, params);
+    } catch (const pqxx::sql_error& error) {
+      if (budget && std::string{error.sqlstate()} == "57014") throw FollowTimedOut{};
+      throw;
+    }
+  };
   std::map<std::string, read::TreeRecords> trees;
   AccountRoadmaps roadmaps;
   const auto edited = [&](const std::string& tree, long long at) {
@@ -58,10 +83,10 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
     latest = std::max(latest, static_cast<std::uint64_t>(at));
   };
 
-  const pqxx::result records = txn.exec_params(
-      "select id, life, case when jsonb_typeof(parent) = 'object' then parent->>'tree' end, "
-      "case when jsonb_typeof(parent) = 'object' then parent->>'step' end from roadmap_trees where scope_key = $1",
-      account);
+  const pqxx::result records = fetch(
+      "select t.id, t.life, case when jsonb_typeof(t.parent) = 'object' then t.parent->>'tree' end, "
+      "case when jsonb_typeof(t.parent) = 'object' then t.parent->>'step' end from roadmap_trees t "
+      "where t.scope_key = $1 and " + kAmong, ofRoadmaps);
   for (std::size_t i = 0; i < records.size(); ++i) {
     read::TreeRecords tree;
     tree.id = records[i][0].as<std::string>();
@@ -71,10 +96,9 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
     trees.emplace(tree.id, std::move(tree));
   }
 
-  const pqxx::result metas = txn.exec_params(
+  const pqxx::result metas = fetch(
       "select t.id, r.title, r.guide, r.guide_inherited, r.root, r.depth, r.visibility, r.reach, r.ru from roadmap_metas r " +
-          kTreeScopes,
-      account);
+      kTreeScopes, ofRoadmaps);
   for (std::size_t i = 0; i < metas.size(); ++i) {
     const auto row = metas[i];
     read::Meta meta;
@@ -89,10 +113,9 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
     edited(row[0].as<std::string>(), row[8].as<long long>());
   }
 
-  const pqxx::result nodes = txn.exec_params(
+  const pqxx::result nodes = fetch(
       "select t.id, r.id, r.life, r.born, r.rc, r.ru, r.label, r.icon, r.color, r.ord, r.status, r.description, r.links::text, "
-      "r.branch, r.branch_stamp from roadmap_nodes r " + kTreeScopes,
-      account);
+      "r.branch, r.branch_stamp from roadmap_nodes r " + kTreeScopes, ofRoadmaps);
   for (std::size_t i = 0; i < nodes.size(); ++i) {
     const auto row = nodes[i];
     read::Step step;
@@ -116,7 +139,7 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
     edited(row[0].as<std::string>(), row[5].as<long long>());
   }
 
-  const pqxx::result edges = txn.exec_params("select t.id, r.id, r.life, r.ru from roadmap_edges r " + kTreeScopes, account);
+  const pqxx::result edges = fetch("select t.id, r.id, r.life, r.ru from roadmap_edges r " + kTreeScopes, ofRoadmaps);
   for (std::size_t i = 0; i < edges.size(); ++i) {
     const auto row = edges[i];
     const Json::Value ends = parse(row[1].as<std::string>());
@@ -124,8 +147,8 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
     edited(row[0].as<std::string>(), row[3].as<long long>());
   }
 
-  const pqxx::result kinds = txn.exec_params(
-      "select t.id, r.id, r.life, r.born, r.hue, r.label, r.description, r.ord, r.ru from roadmap_kinds r " + kTreeScopes, account);
+  const pqxx::result kinds = fetch(
+      "select t.id, r.id, r.life, r.born, r.hue, r.label, r.description, r.ord, r.ru from roadmap_kinds r " + kTreeScopes, ofRoadmaps);
   for (std::size_t i = 0; i < kinds.size(); ++i) {
     const auto row = kinds[i];
     read::Kind kind;
@@ -140,8 +163,7 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
     edited(row[0].as<std::string>(), row[8].as<long long>());
   }
 
-  const pqxx::result marks = txn.exec_params(
-      "select t.id, r.id, r.mark::text, r.mark_stamp, r.ru from roadmap_progress r " + kOverlays, account, owner.str());
+  const pqxx::result marks = fetch("select t.id, r.id, r.mark::text, r.mark_stamp, r.ru from roadmap_progress r " + kOverlays, ofOverlays);
   for (std::size_t i = 0; i < marks.size(); ++i) {
     const auto row = marks[i];
     const Json::Value value = row[2].is_null() ? Json::Value(Json::objectValue) : parse(row[2].as<std::string>());
@@ -154,8 +176,7 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner) {
     trees.at(row[0].as<std::string>()).marks.push_back(std::move(mark));
   }
 
-  const pqxx::result pointers = txn.exec_params(
-      "select t.id, r.id, r.life, r.opens, r.opens_stamp from roadmap_pointers r " + kOverlays, account, owner.str());
+  const pqxx::result pointers = fetch("select t.id, r.id, r.life, r.opens, r.opens_stamp from roadmap_pointers r " + kOverlays, ofOverlays);
   for (std::size_t i = 0; i < pointers.size(); ++i) {
     const auto row = pointers[i];
     trees.at(row[0].as<std::string>()).pointers.push_back(

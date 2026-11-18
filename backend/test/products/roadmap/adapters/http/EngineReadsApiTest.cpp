@@ -83,7 +83,7 @@ struct Engine {
 
   std::shared_ptr<PgRoadmapRecords> records = std::make_shared<PgRoadmapRecords>(pgTestPool());
   std::shared_ptr<PgOpLog> activity = std::make_shared<PgOpLog>(pgTestPool());
-  std::shared_ptr<EngineReadModels> reads = std::make_shared<EngineReadModels>(*records, *activity);
+  std::shared_ptr<EngineReadModels> reads = std::make_shared<EngineReadModels>(*records, *activity, clock);
 
   std::shared_ptr<FakeProgressRepository> progress = std::make_shared<FakeProgressRepository>();
   std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>(*progress);
@@ -204,9 +204,11 @@ struct Engine {
     return request;
   }
 
-  drogon::HttpResponsePtr activityOf(const std::string& session, const std::string& tree) {
+  drogon::HttpResponsePtr activityOf(const std::string& session, const std::string& tree, const std::string& since = "") {
+    auto request = get(session);
+    if (!since.empty()) request->setParameter("since", since);
     drogon::HttpResponsePtr answered;
-    treeApi.getActivity(get(session), [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree);
+    treeApi.getActivity(request, [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree);
     return answered;
   }
 
@@ -289,6 +291,32 @@ TEST(engine_activity_tells_each_gesture_once_by_the_roadmaps_present_steps_and_o
   engine.deleteBasics(kStart + 480'000);
   CHECK_EQ(engine.activityOf("ann-session", kSubtree)->statusCode(), drogon::k404NotFound);
   CHECK_EQ(engine.activityOf("ann-session", "t_00000000000000ff")->statusCode(), drogon::k404NotFound);
+}
+
+TEST(engine_activity_moves_a_gestures_deed_to_its_latest_intent_so_a_cursor_past_it_meets_the_whole_deed_again) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  Engine engine;
+  engine.plant();
+  engine.push(kStart + 300'000, {Engine::intent("tree/" + kRoot, "g-split", kStart + 300'000,
+                                                R"([{"t": "node", "id": "ownership", "born": "#", "life": ["alive", "@"], "f": {"label": ["Owning", "@"]}}])")});
+  const Json::Value first = (*engine.activityOf("ann-session", kRoot, "3")->getJsonObject())["events"];
+  engine.push(kStart + 360'000, {Engine::intent("tree/" + kRoot, "g-split", kStart + 360'000,
+                                                R"([{"t": "node", "id": "traits", "born": "#", "life": ["alive", "@"], "f": {"color": ["plum", "@"]}}])")});
+
+  const Json::Value again = (*engine.activityOf("ann-session", kRoot, "4")->getJsonObject())["events"];
+  const Json::Value whole = (*engine.activityOf("ann-session", kRoot)->getJsonObject())["events"];
+
+  REQUIRE_EQ(first.size(), 1u);
+  CHECK_EQ(first[0]["seq"].asInt(), 4);
+  CHECK_EQ(first[0]["summary"].asString(), std::string("renamed to Owning"));
+  REQUIRE_EQ(again.size(), 1u);
+  Json::Value folded = again[0];
+  folded.removeMember("at");
+  CHECK_EQ(sync::jcs(folded), sync::jcs(parse(R"({"id": "5", "seq": 5, "actor": "", "verb": "renamed", "nodeId": "ownership",
+      "label": "Owning", "kind": "terracotta", "summary": "renamed 1 node and recolored 1 node"})")));
+  REQUIRE_EQ(whole.size(), 2u);
+  CHECK_EQ(whole[0]["seq"].asInt(), 1);
+  CHECK_EQ(whole[1]["seq"].asInt(), 5);
 }
 
 TEST(engine_progress_shows_its_owner_the_marks_as_stored_and_a_reader_a_step_complete_when_its_subtree_is) {

@@ -641,7 +641,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   std::shared_ptr<EngineReadModels> engineReads;
   if (roadmapEngine) {
     roadmapRecords = std::make_shared<PgRoadmapRecords>(pool);
-    engineReads = std::make_shared<EngineReadModels>(*roadmapRecords, *oplog);
+    engineReads = std::make_shared<EngineReadModels>(*roadmapRecords, *oplog, *systemClock);
   }
 #ifdef WM_SYNC_PROBE
   auto syncCatalog = std::make_shared<sync::SyncCatalog>(probe::registry());
@@ -794,7 +794,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const std::string remindersEnabledFlag = remindersEnabledEnv ? remindersEnabledEnv : "";
   const char* remindersAllowlistEnv = std::getenv("REMINDERS_ALLOWLIST");
   const char* remindersAdminEnv = std::getenv("REMINDERS_ADMIN_TOKEN");
-  auto reminderRepo = std::make_shared<PgReminderRepository>(pool);
+  auto reminderRepo = std::make_shared<PgReminderRepository>(pool, roadmapEngine ? RoadmapEdits::engine : RoadmapEdits::trees);
   MailArming reminderArming(remindersEnabledFlag == "true" || remindersEnabledFlag == "1",
                             remindersAllowlistEnv ? remindersAllowlistEnv : "");
   auto reminderMail = std::make_shared<ResendReminderSender>(*resendClient);

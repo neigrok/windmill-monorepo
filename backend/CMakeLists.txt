@@ -138,6 +138,7 @@ add_library(windmill_roadmap
   products/roadmap/application/TreeRoom.cpp
   products/roadmap/application/RoomRegistry.cpp
   products/roadmap/application/OwnerProgress.cpp
+  products/roadmap/application/OwnerFollows.cpp
   products/roadmap/application/ProgressService.cpp
   products/roadmap/application/NodeEdits.cpp
   products/roadmap/application/ActivityFeed.cpp
@@ -327,6 +328,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/application/ProgressServiceTest.cpp
   test/products/roadmap/application/OwnerProgressTest.cpp
   test/products/roadmap/application/ActivityFeedTest.cpp
+  test/products/roadmap/application/EngineReadModelsTest.cpp
   test/products/roadmap/application/ScopedToolHostTest.cpp
   test/products/roadmap/application/TendingServiceTest.cpp
   test/products/roadmap/application/ReminderSweepTest.cpp

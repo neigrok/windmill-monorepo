@@ -33,7 +33,7 @@ TEST(pg_readiness_follows_the_tree_a_node_opens) {
   }
   PgTreeRepository trees{pgTestPool()};
   PgProgressRepository progress{pgTestPool()};
-  PgReminderRepository reminders{pgTestPool()};
+  PgReminderRepository reminders{pgTestPool(), RoadmapEdits::trees};
   NodeSpec idea;
   idea.id = NodeId{"idea"};
   idea.label = "Idea";
@@ -74,4 +74,43 @@ TEST(pg_readiness_follows_the_tree_a_node_opens) {
   progress.setStatuses(sub, owner, {{NodeId{"s"}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"}}}, StampedBy::replica, 1'700'000'000'002);
   CHECK_EQ(summary(), (std::vector<std::string>{"t_pgtest_ready_main \"Ideas\" 1/2 ready next:Next:olive",
                                                 "t_pgtest_ready_sub \"Worked\" 1/1 ready"}));
+}
+
+// Where the engine serves roadmap, the last edit of a person's roadmaps is the latest time the server wrote a record of
+// one of their alive roadmaps, their marks left out as a tree row leaves them; elsewhere it is their tree rows'.
+TEST(pg_last_activity_reads_the_roadmap_edits_the_deployment_serves) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  const std::string owner = "5a5a0000-0000-4000-8000-00000000a12e";
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("DELETE FROM sync_spent WHERE scope_key IN (SELECT key FROM sync_scopes WHERE owner = $1::uuid)", owner);
+    txn.exec_params("DELETE FROM sync_scopes WHERE owner = $1::uuid", owner);
+    txn.exec_params("DELETE FROM trees WHERE owner_id = $1::uuid", owner);
+    txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid", owner);
+    txn.exec_params("INSERT INTO users (id, email) VALUES ($1::uuid, 'pg-last-activity@example.test') ON CONFLICT (id) DO NOTHING", owner);
+    txn.exec_params("INSERT INTO trees (id, owner_id, title, updated_at) VALUES ('t_pgtest_last_rooms', $1::uuid, 'Rooms', to_timestamp(1700000100))",
+                    owner);
+    const std::string account = "acct:" + owner + "/roadmap";
+    const std::string overlay = "acct:" + owner + "/overlay/t_pgtest_last_alive";
+    txn.exec_params("INSERT INTO sync_scopes (key, kind, owner) VALUES ($2, 'product', $1::uuid)", owner, account);
+    for (const char* tree : {"t_pgtest_last_alive", "t_pgtest_last_dead"})
+      txn.exec_params("INSERT INTO sync_scopes (key, kind, owner, governed_by) VALUES ('tree:' || $2, 'tree', $1::uuid, $3 || '#tree#' || $2)",
+                      owner, std::string(tree), account);
+    txn.exec_params("INSERT INTO sync_scopes (key, kind, owner, governed_by) VALUES ($2, 'overlay', $1::uuid, 'tree:t_pgtest_last_alive')",
+                    owner, overlay);
+    txn.exec_params("INSERT INTO roadmap_trees (scope_key, id, seq, rc, ru, born, life, life_stamp) VALUES "
+                    "($1, 't_pgtest_last_alive', 1, 1, 1, '1:0:a', 'alive', '1:0:a'), ($1, 't_pgtest_last_dead', 2, 1, 1, '1:0:a', 'dead', '2:0:a')",
+                    account);
+    txn.exec("INSERT INTO roadmap_nodes (scope_key, id, seq, rc, ru, born, life, life_stamp) VALUES "
+             "('tree:t_pgtest_last_alive', 'n1', 1, 1700000200000, 1700000200000, '1:0:a', 'alive', '1:0:a'), "
+             "('tree:t_pgtest_last_dead', 'n1', 1, 1700000400000, 1700000400000, '1:0:a', 'alive', '1:0:a')");
+    txn.exec_params("INSERT INTO roadmap_progress (scope_key, id, seq, rc, ru, mark, mark_stamp) VALUES "
+                    "($1, 'n1', 1, 1700000300000, 1700000300000, '{\"status\": \"complete\", \"outOfOrder\": false}', '1:0:a')",
+                    overlay);
+    txn.commit();
+  }
+
+  CHECK_EQ(PgReminderRepository(pgTestPool(), RoadmapEdits::engine).lastActiveAtMs(UserId{owner}), std::uint64_t{1700000200000});
+  CHECK_EQ(PgReminderRepository(pgTestPool(), RoadmapEdits::trees).lastActiveAtMs(UserId{owner}), std::uint64_t{1700000100000});
 }

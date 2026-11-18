@@ -2353,7 +2353,7 @@ TEST(pg_the_owners_walk_follows_each_step_into_the_subtree_it_owns_whatever_its_
         (std::map<NodeId, Opening>{{nid("empty"), {empty, false, "empty", false, 0, 0}},
                                    {nid("sail"), {kChild, false, "sail", true, 2, 2}}}));
   std::map<TreeId, std::string> readiness;
-  for (const TreeReadiness& tree : PgReminderRepository{pgTestPool()}.readinessFor(kAda))
+  for (const TreeReadiness& tree : PgReminderRepository{pgTestPool(), RoadmapEdits::trees}.readinessFor(kAda))
     readiness[tree.id] = tree.title + " " + std::to_string(tree.done) + "/" + std::to_string(tree.total);
   CHECK(readiness == (std::map<TreeId, std::string>{{kOther, "Planted 0/1"}, {kParent, "Planted 1/2"}}));
 
