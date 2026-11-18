@@ -68,6 +68,22 @@ object CoreCorpus {
         "derive/bounded.json" to { input -> Json.objectOf("id" to Json.of(DerivedId.from(input.member("label").str(), input.member("fallback").str(), input.member("taken").arr().map { it.str() }, input.member("maxChars").long()))) },
         "derive/slug.json" to { input -> Json.objectOf("id" to Json.of(DerivedId.from(input.member("label").str(), input.member("fallback").str(), input.member("taken").arr().map { it.str() }))) },
         "registry/refusals.json" to { input -> Json.objectOf("admitted" to Json.of(runCatching { Registry(input.member("registry")) }.isSuccess)) },
+        // Whether a registry with refPaths loads, and whether a field value or a command's arguments it then declares are admitted.
+        "registry/references.json" to { input ->
+            val loaded = runCatching { Registry(input.member("registry")) }.getOrNull()
+            val field = input["field"]; val command = input["command"]
+            val admitted = when {
+                loaded == null -> false
+                field != null -> loaded.admits(field.member("value"), loaded.type(field.member("type").str())!!.fields.getValue(field.member("name").str()))
+                command != null -> {
+                    val definition = loaded.command(command.member("name").str())!!; val args = command.member("args")
+                    args.obj().keys.all { it in definition.args } && definition.args.values.all { it.optional || it.name in args.obj() } &&
+                        args.obj().all { (name, value) -> definition.args[name]?.let { loaded.admits(value, it) } != false } && loaded.references.checkArguments(definition, args)
+                }
+                else -> true
+            }
+            Json.objectOf("admitted" to Json.of(admitted))
+        },
         "registry/ids.json" to { input ->
             val registry = Registry(input.member("registry"))
             val name = input.member("type").str()

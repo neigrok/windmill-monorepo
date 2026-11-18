@@ -10,8 +10,14 @@ import works.windmill.sync.schema.SyncSchema
 
 @RunWith(Parameterized::class)
 class CorpusTests(private val vector: Vector) {
-    @Test fun vector() { Corpus.assertVector(vector, handlers.getValue(vector.file)) }
+    @Test fun vector() {
+        if (vector.toString() !in knownIssues) return Corpus.assertVector(vector, handlers.getValue(vector.file))
+        assertThrows(AssertionError::class.java) { Corpus.assertVector(vector, handlers.getValue(vector.file)) }
+    }
     companion object {
+        // Oracle vectors known to expect a wrong answer, each until its corrected corpus lands; each must still fail here.
+        val knownIssues = mapOf("refs/traversal.json · a tuple key's parts resolve into the link's own tree" to
+            "the reference resolves the holder's tuple id by alias, so a later map rewrites what it resolved")
         val root = File(System.getProperty("windmill.contract"))
         val corpus = Corpus(File(root, "sync/corpus"))
         val probe = Registry(Json.parse(File(root, "sync/probe.registry.json").readBytes()))

@@ -79,9 +79,9 @@ object IntentShape {
             val args = value.member("args").obj(); require(def.scope == kind && args.keys.all { it in def.args })
             for ((name, arg) in def.args) {
                 val input = args[name]; if (input == null) { require(arg.optional); continue }
-                require(arg.domain?.admits(input) != false)
-                require(when { arg.ref != null -> registry.isId(input, registry.type(arg.ref!!)!!); arg.type in listOf("time", "instant") -> input is Json.Num && input.long(0) >= 0; else -> true })
+                require(registry.admits(input, arg))
             }
+            require(registry.references.checkArguments(def, value.member("args")))
             CheckedCommand(def, args)
         }
         require(deltas.isNotEmpty() || command != null)
