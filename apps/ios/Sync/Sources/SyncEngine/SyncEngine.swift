@@ -734,11 +734,11 @@ final class EngineCore: Sendable {
     try write { store, _ in try store.reconcile(subscriptions()) }
   }
 
-  // §7.9 the active replica's own subscription set: the products its surface carries, the trees its governing records
-  // hold alive, and the scopes opened by hand. A transaction reads it against the replica as it then stands.
+  // §7.9 the active replica's own subscription set: the products its build carries for its surface, the trees its
+  // governing records hold alive, and the scopes opened by hand. A transaction reads it against the replica as it then
+  // stands.
   func subscriptions() -> SubscriptionSet {
-    .own(Subscriptions(
-      products: registry.products.filter { $0.surfaces.contains(config.surface) }.map(\.name), opened: opened.withLock { $0 }))
+    .own(Subscriptions(products: config.products(of: registry), opened: opened.withLock { $0 }))
   }
 
   var isForeground: Bool { foreground.load(ordering: .relaxed) }

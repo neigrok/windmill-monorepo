@@ -6,17 +6,25 @@ import SyncReplica
 public struct EngineConfig: Sendable {
   public var appVersion: String
   public var surface: Surface
+  // The products this build carries, of those its surface lists; nil carries them all.
+  public var carried: Set<String>?
   public var drivesLoops: Bool
   // How a pull page's chunks, its settling slices and a push answer's result batches are sized (§2.5).
   public var slicing: WriterSlicing
 
-  // `surface`: the products a bound replica subscribes are those whose registry `surfaces` include it (§7.9).
   // `drivesLoops` false builds the loops without starting them, for step-mode tests and the simulator.
-  public init(appVersion: String, surface: Surface, drivesLoops: Bool = true, slicing: WriterSlicing = .measured) {
+  public init(appVersion: String, surface: Surface, carried: Set<String>? = nil, drivesLoops: Bool = true, slicing: WriterSlicing = .measured) {
     self.appVersion = appVersion
     self.surface = surface
+    self.carried = carried
     self.drivesLoops = drivesLoops
     self.slicing = slicing
+  }
+
+  // §7.9 the products a bound replica subscribes: those whose registry `surfaces` include `surface`, of those the build
+  // carries.
+  public func products(of registry: Registry) -> [String] {
+    registry.products.filter { $0.surfaces.contains(surface) && (carried?.contains($0.name) ?? true) }.map(\.name)
   }
 }
 
