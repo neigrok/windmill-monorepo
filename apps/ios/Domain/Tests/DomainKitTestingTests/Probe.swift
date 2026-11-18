@@ -217,6 +217,76 @@ struct GuardedMeta: ProbeEntity, Draftable {
   ]
 }
 
+// `Card`, `Day` and `Mark` whose saves are reversible acts (§10.2 Reversible); the card unguarded, checking its title and
+// body only.
+struct ReversibleCard: ProductEntity, ProbeEntity, Draftable, Ordered {
+  static let type = Card.type
+  static let scope = Probe.scope
+  static let orderField = "ord"
+  static let savesGuarded = false
+  static let savesReversibly = true
+
+  let id: ID<ReversibleCard>
+  var card: Card
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    card = try Card(r)
+  }
+
+  var fields: [String: JSON] { card.fields }
+
+  static let checks: [Check<ReversibleCard>] = [
+    Check("title") { c, _ in c.card.title = try Card.title.apply(c.card.title, at: "title") },
+    Check("body") { c, _ in c.card.body = try Card.body.apply(c.card.body, at: "body") },
+  ]
+}
+
+struct ReversibleDay: ProductEntity, ProbeEntity, Draftable, Removable {
+  static let type = Day.type
+  static let scope = Probe.scope
+  static let savesGuarded = false
+  static let savesReversibly = true
+  static let heldRemoval = true
+
+  let id: ID<ReversibleDay>
+  var score: Int?
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    score = try r.optionalInt("score")
+  }
+
+  var fields: [String: JSON] { ["score": .of(score)] }
+
+  static let checks: [Check<ReversibleDay>] = [
+    .key { d, moment in
+      if let day = d.id.day, day > moment.today { throw Violation(rule: "day.notFuture", path: "id", reason: .custom("future")) }
+    },
+    Check("score") { d, _ in d.score = try Day.score.apply(d.score, at: "score") },
+  ]
+}
+
+struct ReversibleMark: ProbeEntity, Draftable {
+  static let type = Mark.type
+  static let savesGuarded = false
+  static let savesReversibly = true
+
+  let id: ID<ReversibleMark>
+  var mark: Mark
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    mark = try Mark(r)
+  }
+
+  var fields: [String: JSON] { mark.fields }
+
+  static let checks: [Check<ReversibleMark>] = [
+    Check("memo") { m, _ in m.mark.memo = try Mark.memo.apply(m.mark.memo, at: "memo") },
+  ]
+}
+
 struct Lap: ProductEntity, ProbeEntity, Removable {
   static let type = "lap"
   static let scope = Probe.scope
@@ -306,7 +376,10 @@ struct Tag: ProbeEntity, Removable {
 
 // The entity a vector names by its registry type.
 func probeEntity(_ type: String) throws -> any ProbeEntity.Type {
-  if type == "guardedMeta" { return GuardedMeta.self }
+  let aliases: [String: any ProbeEntity.Type] = [
+    "guardedMeta": GuardedMeta.self, "reversibleCard": ReversibleCard.self, "reversibleDay": ReversibleDay.self, "reversibleMark": ReversibleMark.self,
+  ]
+  if let alias = aliases[type] { return alias }
   let entities: [any ProbeEntity.Type] = [Board.self, Card.self, Day.self, Fact.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
   guard let entity = entities.first(where: { $0.type == type }) else { throw ContractError("no probe entity \(type)") }
   return entity

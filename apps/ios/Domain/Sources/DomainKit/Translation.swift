@@ -117,9 +117,9 @@ extension Plan {
 
 extension Plan {
   // §9.6: the plan's Undo recipes in the engine's form (engine §7.3), a target or record without a scope of its own in
-  // the plan's; nil when the plan does not opt in.
+  // the plan's; none for a segment named as evidence alone, nil when the plan does not opt in.
   package func undoRecipes(in scope: ScopeRef) -> [ActUndoRecipe]? {
-    guard !undoRecipes.isEmpty else { return nil }
+    guard undo != nil else { return nil }
     let address = { (record: UndoRecord) -> RecordAddress in RecordAddress(scope: record.scope ?? scope, key: record.key) }
     let target = { (target: UndoTarget) -> Target in Target(address(target.record), target.slot) }
     return undoRecipes.map { (recipe: UndoRecipe) -> ActUndoRecipe in

@@ -168,8 +168,9 @@ enum Plans {
     }
   }
 
-  // §9.6 run/undo.json: an act opted into Undo over the real engine and the model server, then its Undo and Redo; each
-  // result without the ids the engine draws.
+  // §9.6 run/undo.json: an act opted into Undo over the real engine and the model server, or a reversible draft's save,
+  // then its Undo and Redo; each result without the ids the engine draws. A segment whose `undo` is empty is named for
+  // evidence alone.
   static func undo(_ vector: Vector) throws -> JSON {
     let phone = Harness(registry: try vector.registry, start: Probe.start, rules: ProbeServerRules())
     let plans = { (segments: JSON) throws -> [ScopedPlan] in
@@ -177,7 +178,7 @@ enum Plans {
         let scoped = Vector(file: vector.file, name: vector.name, input: segment, expect: .null)
         var plan = try Plans.build(scoped, at: try phone.runner.moment())
         let recipes: [UndoRecipe] = try (segment["undo"]?.asArray() ?? []).map(Plans.undoRecipe)
-        if !recipes.isEmpty { plan.undoRecipes += recipes }
+        if !recipes.isEmpty { plan.undoRecipes += recipes } else if segment["undo"] != nil { plan.evidenceForUndo() }
         return ScopedPlan(try scoped.scope, plan)
       }
     }
@@ -188,7 +189,11 @@ enum Plans {
     let actId: String?
     let outcome: JSON
     do {
-      if let reversible = vector.input["reversible"] {
+      if let save = vector.input["save"] {
+        let saved = try Plans.save(try Drafts.draftable(save.member("t").asString()), save, on: phone)
+        actId = saved.receipt?.gestureId
+        outcome = saved.form
+      } else if let reversible = vector.input["reversible"] {
         guard let segment = try plans(vector.input.member("segments")).first else { throw ContractError("a single action names one segment") }
         let ran = try phone.runner.run(PlannedAction(scope: segment.scope, plan: segment.plan, reversible: try reversible.asBool()))
         actId = ran.receipt?.gestureId
@@ -217,18 +222,34 @@ enum Plans {
     }
     let records: [JSON] = try vector.input.member("inspect").asArray().map { (item: JSON) throws -> JSON in
       let scope = try ScopeRef(json: item.member("scope"))
-      let drawn = try phone.runner.read(scope) { (read: Reader) throws -> [ViewedRecord] in
-        try Plans.drawn(try probeEntity(item.member("t").asString()), in: read)
+      let field = try item["field"]?.asString() ?? "title"
+      let drawn = try phone.runner.read(scope) { (read: Reader) throws -> [JSON] in
+        try Plans.drawn(try probeEntity(item.member("t").asString()), field: field, in: read)
       }
-      return .array(drawn.map { (record: ViewedRecord) -> JSON in ["id": record.id, "title": record.title] })
+      return .array(drawn)
     }
     return ["outcome": outcome, "results": .array(results), "records": .array(records)]
   }
 
-  typealias ViewedRecord = (id: JSON, title: JSON)
+  // Each record `drawn` lists as `{id, <field>}`.
+  static func drawn<E: ProbeEntity>(_ type: E.Type, field: String, in read: Reader) throws -> [JSON] {
+    try read.repository(E.self).all(in: .drawn).map { (entity: E) -> JSON in
+      ["id": entity.id.record.json, field: entity.fields[field] ?? .null]
+    }
+  }
 
-  static func drawn<E: ProbeEntity>(_ type: E.Type, in read: Reader) throws -> [ViewedRecord] {
-    try read.repository(E.self).all(in: .drawn).map { (entity: E) -> ViewedRecord in (entity.id.record.json, entity.fields["title"] ?? .null) }
+  // `save: {t, id, scope?, current}`: the record's draft opened on the phone, `current` edited over it and saved through
+  // `ActionRunner.save`.
+  static func save<E: ProbeEntity & Draftable>(_ type: E.Type, _ save: JSON, on phone: Harness) throws -> (receipt: CommitReceipt?, form: JSON) {
+    let id = try RecordID(json: save.member("id"))
+    let scope = try save["scope"].map { (scope: JSON) throws -> ScopeRef in try ScopeRef(json: scope) } ?? E.fixtureScope
+    guard var draft = try phone.runner.open(ID<E>(id), in: scope) else { throw ContractError("a save opens a record the phone holds") }
+    draft.current = try E.decoding(id, fields(save["current"]))
+    switch phone.runner.save(&draft, in: scope, SaveDraft<E, ProbeRefusal>.self) {
+    case .saved(let receipt): return (receipt, ["kind": "saved"])
+    case .refused: return (nil, ["kind": "refused"])
+    case .failed: return (nil, ["kind": "failed"])
+    }
   }
 
   // An InverseResult without the ids the engine draws.
@@ -451,14 +472,10 @@ enum Drafts {
     }
     let reader = VectorReader(records: try VectorRecords(drawn: vector.input["drawn"], stored: vector.input["stored"], registry: registry),
                               now: vector.moment.now.ms)
-    let decode = { (record: Record?) throws -> E? in try record.map { try E(Fields($0)) } }
-    let visible = { (record: Record?) in record.flatMap { $0.isVisible ? $0 : nil } }
-    guard let definition = registry.type(E.type) else { throw ContractError("no type \(E.type)") }
+    let found = try save.load(Reader(reader, scope: E.fixtureScope, moment: vector.moment, registry: registry))
     let loaded = SaveDraftLoaded<E>(
-      drawn: try decode(visible(try reader.drawn(E.type, save.id.record))),
-      stored: try decode(visible(try reader.stored(E.type, save.id.record))),
-      folded: try decode(try reader.stored(E.type, save.id.record)),
-      anchor: try recordID(vector.input["anchor"]), moment: vector.moment, definition: definition)
+      drawn: found.drawn, stored: found.stored, folded: found.folded, anchor: try recordID(vector.input["anchor"]), moment: found.moment,
+      definition: found.definition, restoreCommand: found.restoreCommand, creationUndoable: found.creationUndoable)
     let decision = save.decision(loaded, ids: IDSource(context: reader))
     return ["decision": try decision.form(in: E.fixtureScope, registry: registry, result: \.form, refusal: \.form)]
   }

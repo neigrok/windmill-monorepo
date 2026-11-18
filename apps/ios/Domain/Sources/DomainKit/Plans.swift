@@ -10,6 +10,7 @@ public struct Plan: Sendable {
   var deviceWrites: [DeviceWrite] = []
   var supersededGestures: [String] = []
   var undoRecipes: [UndoRecipe] = []
+  var undoEvidence = false
 
   public init() {}
 
@@ -19,9 +20,17 @@ public struct Plan: Sendable {
     undoRecipes += recipes
   }
 
-  // The plan's Undo recipes as engine §7.3's `{version: 1, recipes}`, or nil when it does not opt in.
+  // §9.6: names the plan's segment for its act's Undo with no recipe of its own. The engine journals the segment's
+  // receipts, which prove what another segment's command recipe names as evidence, such as a scope the act created and
+  // this segment wrote.
+  public mutating func evidenceForUndo() {
+    undoEvidence = true
+  }
+
+  // The plan's Undo recipes as engine §7.3's `{version: 1, recipes}`, with no recipe for evidence alone, or nil when it
+  // does not opt in.
   public var undo: (version: Int, recipes: [UndoRecipe])? {
-    undoRecipes.isEmpty ? nil : (1, undoRecipes)
+    undoRecipes.isEmpty && !undoEvidence ? nil : (1, undoRecipes)
   }
 
   // §8.4: the one command a plan runs, its string arguments normalised by the command's specs.
