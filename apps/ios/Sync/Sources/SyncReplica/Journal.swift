@@ -11,7 +11,7 @@ import SyncCore
 // A record as a view read it, kept for a revival to draw: its birth, field registers and texts, never its life.
 public struct RecordValues: Sendable, Hashable {
   public let born: Stamp?
-  public let fields: [String: Register]
+  public var fields: [String: Register]
   public let texts: [String: String]
 
   public init(_ record: ViewRecord) {
@@ -45,10 +45,10 @@ public struct RecordValues: Sendable, Hashable {
 // preimage keeps the record it read, which a revival draws.
 public struct Preimage: Sendable, Hashable {
   public var target: Target
-  public let value: JSON
+  public var value: JSON
   public var rowSeq: Int64?
   public var epoch: String?
-  public let record: RecordValues?
+  public var record: RecordValues?
 
   public init(target: Target, value: JSON, rowSeq: Int64? = nil, epoch: String? = nil, record: RecordValues? = nil) {
     self.target = target
@@ -78,7 +78,7 @@ public struct Preimage: Sendable, Hashable {
 // The value an act left in a target, which a Redo writes back.
 public struct WrittenValue: Sendable, Hashable {
   public var target: Target
-  public let value: JSON
+  public var value: JSON
 
   public init(target: Target, value: JSON) {
     self.target = target
@@ -875,54 +875,158 @@ extension LoadedReplica {
     }
   }
 
-  // §7.7 write map and E-8: the journal's scopes, targets, records, typed inputs and receipts follow the same logical map
-  // as the queue.
+  // §7.7 write map and E-8: the journal, its inverse requests and its cancellations follow the same logical map as the
+  // queue (`JournalRemap`).
   public mutating func remapJournal(by map: RecordMap, registry: Registry) {
-    guard !journal.acts.isEmpty else { return }
-    let address = { (address: inout RecordAddress) -> Void in
-      address.key = registry.remapped(address.key, in: address.scope, by: map)
-      address.scope = map.scope(address.scope)
-    }
+    guard !journal.isEmpty else { return }
+    let remap = JournalRemap(map: map, registry: registry)
     updateJournal { journal in
-      for act in journal.acts.indices {
-        for index in journal.acts[act].sourceEntries.indices {
-          var source = journal.acts[act].sourceEntries[index]
-          source.originScope = map.scope(source.originScope)
-          let scope = source.originScope
-          source.recipes = source.recipes.map { (recipe: ActUndoRecipe) -> ActUndoRecipe in
-            switch recipe {
-            case .fields(let command, let targets):
-              return .fields(restoreCommand: command, targets: targets.map { (item: RestoreTarget) -> RestoreTarget in
-                var moved = item
-                address(&moved.target.address)
-                return moved
-              })
-            case .createdRecord(let command, var record):
-              address(&record)
-              return .createdRecord(restoreCommand: command, record: record)
-            case .command(let name, let input, var evidence):
-              var command = Command(name: name, args: ["input": input])
-              registry.remap(&command, in: scope, by: map)
-              for target in evidence.ownedFields.indices { address(&evidence.ownedFields[target].address) }
-              for record in evidence.unchangedCreatedRecords.indices { address(&evidence.unchangedCreatedRecords[record]) }
-              evidence.unchangedCreatedScopes = evidence.unchangedCreatedScopes.map(map.scope)
-              return .command(name, input: command.args["input"] ?? input, evidence: evidence)
-            }
-          }
-          for preimage in source.preimages.indices { address(&source.preimages[preimage].target.address) }
-          for written in source.written.indices { address(&source.written[written].target.address) }
-          for attempt in source.attempts.indices {
-            source.attempts[attempt].acceptedEffects = source.attempts[attempt].acceptedEffects?.map { (effect: EffectReceipt) -> EffectReceipt in
-              var moved = effect
-              for row in moved.rows.indices { moved.rows[row].key = registry.remapped(moved.rows[row].key, in: effect.scope, by: map) }
-              moved.scope = map.scope(effect.scope)
-              return moved
-            }
-          }
-          journal.acts[act].sourceEntries[index] = source
-        }
+      for act in journal.acts.indices { journal.acts[act].sourceEntries = journal.acts[act].sourceEntries.map(remap.source) }
+      for request in journal.inverses.indices { journal.inverses[request].slots = journal.inverses[request].slots.map(remap.slot) }
+      journal.cancellations = journal.cancellations.map(remap.cancellation)
+    }
+  }
+}
+
+// One write map over the journal. A record a holder names is renamed in the scope it names, and moves with that scope; a
+// value recorded for a field is renamed as a one-field record of its own record, in that record's scope, before the scope
+// moves (a text or a life names no record); a typed command input is renamed in the scope its holder had.
+struct JournalRemap {
+  let map: RecordMap
+  let registry: Registry
+
+  func address(_ address: RecordAddress) -> RecordAddress {
+    RecordAddress(scope: map.scope(address.scope), key: registry.remapped(address.key, in: address.scope, by: map))
+  }
+
+  func target(_ target: Target) -> Target {
+    Target(address(target.address), target.slot)
+  }
+
+  // A record's registers renamed as its references are, each keeping its stamp.
+  func registers(_ fields: [String: Register], of record: RecordAddress) -> [String: Register] {
+    var delta = Delta(key: record.key, lattice: Lattice(fields: fields))
+    registry.remap(&delta, in: record.scope, by: map)
+    return delta.lattice.fields
+  }
+
+  // The record a revival draws, its registers renamed in the scope of the life it revives.
+  func revival(_ record: RecordValues?, of life: Target) -> RecordValues? {
+    guard var renamed = record else { return nil }
+    renamed.fields = registers(renamed.fields, of: life.address)
+    return renamed
+  }
+
+  func value(_ value: JSON?, of target: Target) -> JSON? {
+    guard case .field(let name) = target.slot, let value else { return value }
+    return registers([name: Register(value, .unset)], of: target.address)[name]?.value ?? value
+  }
+
+  // `{f?, x?}` as an act created a record, its fields renamed.
+  func values(_ values: JSON.Object, of record: RecordAddress) -> JSON.Object {
+    guard case .object(let fields)? = values["f"] else { return values }
+    let named = Dictionary(uniqueKeysWithValues: fields.members.map { (member: (key: String, value: JSON)) -> (String, Register) in
+      (member.key, Register(member.value, .unset))
+    })
+    var renamed = values
+    renamed["f"] = .object(JSON.Object(uniqueKeysWithValues: registers(named, of: record).map { ($0.key, $0.value.value) }))
+    return renamed
+  }
+
+  func reference(_ reference: VersionReference) -> VersionReference {
+    switch reference {
+    case .pending(let localId, let held): .pending(localId: localId, target: target(held))
+    case .fieldAbsent(let epoch, let birth): .fieldAbsent(epoch: epoch, recordBirth: birth.map(self.reference))
+    case .accepted, .recordAbsent, .unbound: reference
+    }
+  }
+
+  func input(_ input: JSON, of command: String, in scope: ScopeRef) -> JSON {
+    var named = Command(name: command, args: ["input": input])
+    registry.remap(&named, in: scope, by: map)
+    return named.args["input"] ?? input
+  }
+
+  func evidence(_ evidence: EvidenceSelection) -> EvidenceSelection {
+    EvidenceSelection(ownedFields: evidence.ownedFields.map(target), unchangedCreatedRecords: evidence.unchangedCreatedRecords.map(address),
+                      unchangedCreatedScopes: evidence.unchangedCreatedScopes.map(map.scope))
+  }
+
+  func recipe(_ recipe: ActUndoRecipe, in scope: ScopeRef) -> ActUndoRecipe {
+    switch recipe {
+    case .fields(let command, let targets):
+      return .fields(restoreCommand: command, targets: targets.map { (item: RestoreTarget) -> RestoreTarget in
+        RestoreTarget(target: target(item.target), defaultValue: value(item.defaultValue, of: item.target))
+      })
+    case .createdRecord(let command, let record):
+      return .createdRecord(restoreCommand: command, record: address(record))
+    case .command(let name, let input, let selection):
+      return .command(name, input: self.input(input, of: name, in: scope), evidence: evidence(selection))
+    }
+  }
+
+  func operation(_ operation: PlannedOperation) -> PlannedOperation {
+    switch operation {
+    case .field(let held, let before, let reference, let record):
+      return .field(target(held), before: value(before, of: held), reference: reference.map(self.reference), record: revival(record, of: held))
+    case .createdRecord(let record):
+      return .createdRecord(address(record))
+    case .createRecord(let record, let values, let reference):
+      return .createRecord(address(record), values: self.values(values, of: record), reference: self.reference(reference))
+    }
+  }
+
+  func source(_ source: JournalSource) -> JournalSource {
+    var moved = source
+    moved.recipes = source.recipes.map { recipe($0, in: source.originScope) }
+    moved.originScope = map.scope(source.originScope)
+    moved.preimages = source.preimages.map { (preimage: Preimage) -> Preimage in
+      var renamed = preimage
+      renamed.value = value(preimage.value, of: preimage.target) ?? preimage.value
+      renamed.record = revival(preimage.record, of: preimage.target)
+      renamed.target = target(preimage.target)
+      return renamed
+    }
+    moved.written = source.written.map { (written: WrittenValue) -> WrittenValue in
+      WrittenValue(target: target(written.target), value: value(written.value, of: written.target) ?? written.value)
+    }
+    moved.attempts = source.attempts.map { (attempt: Attempt) -> Attempt in
+      var renamed = attempt
+      renamed.acceptedEffects = attempt.acceptedEffects?.map { (effect: EffectReceipt) -> EffectReceipt in
+        var receipt = effect
+        for row in receipt.rows.indices { receipt.rows[row].key = registry.remapped(receipt.rows[row].key, in: effect.scope, by: map) }
+        receipt.scope = map.scope(effect.scope)
+        return receipt
+      }
+      return renamed
+    }
+    return moved
+  }
+
+  func slot(_ slot: InverseSlot) -> InverseSlot {
+    var moved = slot
+    moved.recipe = switch slot.recipe {
+    case .restore(let command, let operations): .restore(command: command, operations: operations.map(operation))
+    case .command(let name, let input, let selection): .command(name, input: self.input(input, of: name, in: slot.originScope), evidence: evidence(selection))
+    case .withdrawn: slot.recipe
+    }
+    moved.originScope = map.scope(slot.originScope)
+    return moved
+  }
+
+  func cancellation(_ cancellation: CancellationReceipt) -> CancellationReceipt {
+    var moved = cancellation
+    for index in moved.sourceEntries.indices { moved.sourceEntries[index].originScope = map.scope(moved.sourceEntries[index].originScope) }
+    moved.units = cancellation.units.map { (unit: CancellationUnit) -> CancellationUnit in
+      switch unit {
+      case .field(let owner, let held, let redoValue, let restored, let restoredValue):
+        .field(ownerLocalId: owner, target: target(held), redoValue: value(redoValue, of: held), restored: reference(restored),
+               restoredValue: value(restoredValue, of: held))
+      case .createdRecord(let owner, let record, let redoValues, let restored):
+        .createdRecord(ownerLocalId: owner, record: address(record), redoValues: values(redoValues, of: record), restored: reference(restored))
       }
     }
+    return moved
   }
 }
 
