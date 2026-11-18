@@ -30,6 +30,12 @@ std::pair<std::string, std::string> globalIdOf(const std::string& type, const Re
   return {type, id.column()};
 }
 
+// A product the deployment withholds admits nothing: its product scope reads empty and takes no write, and its trees
+// and overlays read as absent (SyncCatalog::withhold).
+const std::string& withheldRefusal(const ScopeKey& scope) {
+  return scope.kind() == ScopeKind::product ? code::forbidden : code::notFound;
+}
+
 }
 
 std::uint64_t PhysicalClock::nowMs() {
@@ -117,6 +123,7 @@ private:
     } catch (const std::exception& error) {
       return answerFault(error);
     }
+    if (!a_.catalog_.serves(scope().registryScope())) return answerRefusal(Refused{withheldRefusal(scope()), {}});
     std::unique_lock<std::timed_mutex> stripe;
     AdmitOutcome outcome = [this, &stripe]() -> AdmitOutcome {
       try {
@@ -163,6 +170,8 @@ public:
   std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query) override {
     return a_.catalog_.store(type).feed(*txn_, key, query);
   }
+
+  bool declared(const ScopeKey& key) override { return effectScopes_.contains(key); }
 
 private:
   void observeCommand(const Json::Value& wire) {
@@ -457,12 +466,20 @@ private:
     admitEffects(effects, Source::command);
   }
 
+  // 8's discovery: the rules of every type the intent's deltas write, and of every type a restore writes back, whose
+  // checks its deltas trigger; then the command's own.
   void discoverEffectScopes() {
     effectScopes_.insert(scope());
     const CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this, *txn_, intent()};
+    std::vector<std::string> written;
+    for (const Delta& delta : intent().d) written.push_back(delta.t);
+    if (intent().cmd) {
+      const CommandDef& command = *registry_.command(intent().cmd->name);
+      if (command.engine == EngineCommand::restore) written.insert(written.end(), command.predicts.begin(), command.predicts.end());
+    }
     std::set<TypeRules*> discovered;
-    for (const Delta& delta : intent().d) {
-      TypeRules* rules = a_.catalog_.rules(delta.t);
+    for (const std::string& type : written) {
+      TypeRules* rules = a_.catalog_.rules(type);
       if (!rules || !discovered.insert(rules).second) continue;
       const auto targets = rules->discoverEffectScopes(ctx);
       effectScopes_.insert(targets.begin(), targets.end());
