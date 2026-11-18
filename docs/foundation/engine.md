@@ -2909,8 +2909,11 @@ run, and against the real server and Postgres nightly.
 - a store restored from a snapshot, or cloned.
 
 **It checks at every answer and frame** that one served as anyone but the replica's account changes
-nothing the replica pulled (§9.1), and **at every step** that each change of a device's active replica
-id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12).
+nothing the replica pulled (§9.1), **at every step** that each change of a device's active replica
+id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12), and **at every push**
+that no intent a device sends names a proposal its retained write targets say was redirected, by the
+proposal's own id or by any typed reference (§2.4 References), but the command that proposed it and an
+id another retained command resolved to.
 
 **It checks after quiescence:**
 - INV-2: no resurrection without a revive or a newer keyed put.
