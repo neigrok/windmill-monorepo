@@ -33,18 +33,12 @@ class ScopeDemand extends Error {
   constructor(scope) { super('scope hydration required'); this.scope = scope; }
 }
 
+// One control record as the store last committed or read it: its key's parts and its JSON text, which a write
+// parses afresh and readers share frozen.
 class ControlRecord {
-  constructor(key, text, parts = JSON.parse(key)) { Object.assign(this, { key, text, parts }); }
+  constructor(text, parts) { Object.assign(this, { text, parts }); }
   get value() { return JSON.parse(this.text); }
   get shared() { return (this.frozen ??= frozen(this.value)); }
-}
-
-class CommittedControls {
-  constructor(revision, records) { Object.assign(this, { revision, records }); }
-
-  static read(records) {
-    return new CommittedControls(records.get(HEAD)?.value.revision, records);
-  }
 }
 
 class Generation {
@@ -82,14 +76,14 @@ function controlsOf(device, revision) {
 }
 
 function deviceOf(controls, { shared }) {
-  const valueOf = (record) => (shared ? record.shared : record.value);
+  const valueFrom = (record) => (shared ? record.shared : record.value);
   const head = controls.records.get(HEAD)?.value;
   if (!head) return null;
   const replicas = new Map();
   for (const record of controls.records.values()) {
     const [kind, handle] = record.parts;
     if (kind !== 'replica') continue;
-    const replica = new Replica({ meta: valueOf(record) });
+    const replica = new Replica({ meta: valueFrom(record) });
     replica.storageHandle = handle;
     replica.cacheSizes = {};
     replica.cacheGenerations = {};
@@ -101,7 +95,7 @@ function deviceOf(controls, { shared }) {
     const [kind, handle, scope, id] = record.parts;
     const replica = replicas.get(handle);
     if (!replica || kind === 'replica') continue;
-    const value = valueOf(record);
+    const value = valueFrom(record);
     if (kind === 'outbox') replica.outbox.push(value);
     else if (kind === 'notice') replica.notices[scope] = value;
     else if (kind === 'cache') {
@@ -340,7 +334,7 @@ export class IndexedDBStore {
         };
         const removed = [...controls.records.keys()].filter((key) => !after.has(key));
         const dead = [...controls.records.values()].filter(({ parts: [kind] }) => kind === 'cache')
-          .map((record) => record.value.generation).filter((generation) => !alive.has(generation));
+          .map((record) => record.shared.generation).filter((generation) => !alive.has(generation));
         const differing = [...after.keys()].filter(differs);
         const changed = rowWrites > 0 || removed.length > 0 || differing.length > 0;
         if (!changed) return { changed, revision: loaded.revision, records: after };
@@ -353,9 +347,9 @@ export class IndexedDBStore {
         committed = () => {
           const records = new Map([...texts].map(([key, text]) => {
             const before = controls.records.get(key);
-            return [key, before?.text === text ? before : new ControlRecord(key, text, before?.parts)];
+            return [key, before?.text === text ? before : new ControlRecord(text, before?.parts ?? JSON.parse(key))];
           }));
-          if ((this.controls?.revision ?? -1) <= revision) this.controls = new CommittedControls(revision, records);
+          if ((this.controls?.revision ?? -1) <= revision) this.controls = { revision, records };
           for (const generation of dead) { this.generations.delete(generation); this.garbage.add(generation); }
           for (const { generation, from, version, created, written } of rowChanges) {
             const known = created ? new Generation(0, true) : this.generations.get(generation);
@@ -380,11 +374,11 @@ export class IndexedDBStore {
         all.onsuccess = guarded(() => {
           const records = new Map();
           for (const { key, value } of all.result) {
-            const record = new ControlRecord(key, JSON.stringify(value));
-            if (record.parts[0] === 'garbage') this.garbage.add(value);
-            else records.set(key, record);
+            const parts = JSON.parse(key);
+            if (parts[0] === 'garbage') this.garbage.add(value);
+            else records.set(key, new ControlRecord(JSON.stringify(value), parts));
           }
-          controls = this.controls = CommittedControls.read(records);
+          controls = this.controls = { revision: records.get(HEAD)?.value.revision, records };
           begin();
         });
       });

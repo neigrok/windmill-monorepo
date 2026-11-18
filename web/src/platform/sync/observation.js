@@ -9,6 +9,7 @@ import { foldDelta, viewRecord } from '../../../../packages/api-contract/sync/re
 const PENDING = new Set(['ready', 'sent', 'acked']);
 const ENVELOPE = ['seq', 'rc', 'ru'];
 
+// A pending entry of the scope as the observation folded it: the record keys its deltas name, in order.
 class FoldedEntry {
   constructor(entry, signature) {
     this.source = entry;
@@ -24,6 +25,7 @@ class FoldedEntry {
   }
 }
 
+// The keys of the scope's records in compareRecords order, each id's JCS bytes encoded once.
 class RecordOrder {
   constructor() {
     this.keys = [];
@@ -55,6 +57,8 @@ class RecordOrder {
   }
 }
 
+// One scope's drawn and stored records, kept between publications: a publication folds again only the records
+// whose confirmed row changed identity or whose pending entries changed.
 export class ScopeObservation {
   constructor(scope, registry, { firstPullComplete, notify }) {
     Object.assign(this, { scope, registry, firstPullComplete, notify });
@@ -83,7 +87,7 @@ export class ScopeObservation {
     this.readConfirmed(replica, changed);
     this.readEntries(replica, changed);
     this.fold(changed);
-    const records = (view) => this.order.keys.flatMap((key) => view.has(key) ? [view.get(key)] : []);
+    const records = (view) => this.order.keys.filter((key) => view.has(key)).map((key) => view.get(key));
     this.snapshot = frozen({ replica: replica.id, drawn: records(this.drawn), stored: records(this.stored),
       notices: structuredClone(replica.notices.filter((notice) => notice.scope === this.scope)),
       undoOffers: undoOffers(replica, this.scope),
