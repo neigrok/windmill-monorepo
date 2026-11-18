@@ -72,7 +72,8 @@ entry's JSON (`predictions`), its origin's always present, and from its `ok` the
 accepted with (`acceptedEffects`). Both are additive: entries written before them read unchanged,
 and the SQLite schema stays at version 1. `outbox_touch` names every scope an entry's deltas are in.
 A projection draws over its own scope until that scope's cursor covers its accepted seq or the scope
-ends; the entry resolves when every projection is covered. `HTTPTransport` takes the registry's opted
+ends; the entry resolves when every projection is covered. Once its receipt applies, the command's own
+intent draws, and later queued work follows, at the versions the server accepted. `HTTPTransport` takes the registry's opted
 command names: a push carrying one may be answered with up to `SCOPED_RESPONSE_MAX_BYTES`, and every
 other non-pull answer keeps the 4 MiB bound. Android's registries declare no opted command.
 
