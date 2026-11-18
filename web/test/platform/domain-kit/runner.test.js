@@ -118,7 +118,7 @@ test('a new card saves through the engine, its removal is held with its releaseA
   assert.deepEqual(cards(), { drawn: [], stored: cards().stored });
   assert.equal(cards().stored.length, 1);
 
-  assert.equal(await runner.undo(receipt.gestureId), true);
+  assert.equal(await runner.cancelHeld(receipt.gestureId), true);
   assert.equal(cards().drawn.length, 1);
   assert.equal(engine.observe(PROBE_SCOPE).getSnapshot().drawn.length, 1);
   engine.close();
@@ -424,7 +424,7 @@ test('dynamic drafts persist independently by scope and a scoped held removal un
       stored: read.repository(Probe.link).all('stored').length,
     })));
     assert.deepEqual(counts(), [{ drawn: 1, stored: 1 }, { drawn: 0, stored: 1 }]);
-    assert.equal(await runner.undo(receipt.gestureId), true);
+    assert.equal(await runner.cancelHeld(receipt.gestureId), true);
     assert.deepEqual(counts(), [{ drawn: 1, stored: 1 }, { drawn: 1, stored: 1 }]);
     assert.throws(() => runner.open(Probe.meta, new Id('meta', Probe.meta)), Fault);
     assert.throws(() => runner.mint(Probe.card, 'tree/b_00000001'), Fault);
