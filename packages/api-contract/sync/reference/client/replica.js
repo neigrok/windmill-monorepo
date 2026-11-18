@@ -180,9 +180,10 @@ export class Replica {
     delete this.staging[scope];
   }
 
-  // The outbox in commit order.
+  // The outbox in commit order. Commits append in order, so the outbox is sorted unless it was assigned otherwise.
   entries(scope) {
-    const all = [...this.outbox].sort((a, b) => a.commitOrder - b.commitOrder);
+    const all = [...this.outbox];
+    if (all.some((entry, index) => index > 0 && all[index - 1].commitOrder > entry.commitOrder)) all.sort((a, b) => a.commitOrder - b.commitOrder);
     return scope === undefined ? all : all.filter((entry) => entry.scope === scope);
   }
 
@@ -191,7 +192,7 @@ export class Replica {
   }
 
   nextCommitOrder() {
-    return 1 + Math.max(0, ...this.outbox.map((entry) => entry.commitOrder));
+    return 1 + this.outbox.reduce((highest, entry) => Math.max(highest, entry.commitOrder), 0);
   }
 
   removeEntry(localId) {

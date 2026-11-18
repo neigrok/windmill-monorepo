@@ -167,7 +167,7 @@ for (let seed = 1; seed <= 20; seed++) {
       const stale = await request('pull', { scopes: [{ scope: 'self/probe', cursor: null }] });
       const staleCursor = engine.device.activeReplica.cursorOf('self/probe').cursor;
       await put(); await drain();
-      assert.equal(await engine.storePage(engine.device.activeReplica.storageHandle, staleCursor, stale.response.body.pages[0]), 'stale'); hit('reorder'); hit('delay');
+      assert.deepEqual(await engine.storePages(engine.device.activeReplica.storageHandle, [{ cursor: staleCursor, page: stale.response.body.pages[0] }]), ['stale']); hit('reorder'); hit('delay');
       const transact = engine.store.transact.bind(engine.store);
       engine.store.transact = (change, options) => transact(change, { ...options, beforeCommit: ({ transaction }) => transaction.abort() });
       const beforeAbort = (await transact((device) => device, { readonly: true, scopes: 'all' })).device.toJSON();
@@ -238,9 +238,10 @@ for (let seed = 1; seed <= 20; seed++) {
       const handle = engine.device.activeReplica.storageHandle;
       const longPage = (await request('pull', { scopes: [{ scope: 'self/probe', cursor: null }] })).response.body.pages[0];
       assert.ok(longPage.rows.length > 64);
+      engine.pullChunk.size = 64;
       const chunkWrite = engine.write.bind(engine); died = false;
       engine.write = async (...args) => { const result = await chunkWrite(...args); if (!died) { died = true; engine.close(); hit('chunk death'); } return result; };
-      await assert.rejects(engine.storePage(handle, null, longPage)); await restart(); await drain();
+      await assert.rejects(engine.storePages(handle, [{ cursor: null, page: longPage }])); await restart(); await drain();
       await engine.write(null, (device) => { device.activeReplica.cursors['self/probe'].cursor = null; });
       env.transport.request = async (endpoint, body, options) => {
         if (endpoint !== 'pull') return request(endpoint, body, options);

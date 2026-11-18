@@ -1,8 +1,8 @@
 import SyncCore
 
 // The probe product's binding (corpus README "The probe product"): `probe.start` with its join and receipts,
-// `probe.end`, `probe.copy` into a board it creates, the `beforePull` `probe.tick`, the run checks, and one kept
-// revision per text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
+// `probe.end`, `probe.copy` into a board it creates, the opted `probe.branch` across three scopes, the `beforePull`
+// `probe.tick`, the run checks, and one kept revision per text field. Receipts live in the product state as `receipts[<scope key>][<called id>]` and copies as
 // `copies[<scope key>][<dst>]`.
 
 public struct ProbeServerRules: ServerRules {
@@ -16,11 +16,15 @@ public struct ProbeServerRules: ServerRules {
     switch command.name {
     case "probe.start": receipt(of: command.string("id"), in: context) != nil
     case "probe.copy": copySource(of: command.string("dst"), in: context)?.isSameID(as: command.string("src")) ?? false
+    case "probe.branch": branchReceipt(of: command.string("child"), in: context) == branched(command)
     default: false
     }
   }
 
   public func discoverEffectScopes(in context: RuleContext, command: CheckedCommand?) -> Set<ScopeKey> {
+    if let command, command.name == "probe.branch" {
+      return [ScopeKey(.tree(command.string("parent"))), ScopeKey(.tree(command.string("child")))]
+    }
     guard let command, command.name == "probe.copy", !replays(command, in: context),
           case .none = context.idState(of: RecordKey("board", RecordID(command.string("dst")))) else { return [] }
     return [ScopeKey(.tree(command.string("dst")))]
@@ -31,6 +35,7 @@ public struct ProbeServerRules: ServerRules {
     case "probe.start": try start(command, in: context)
     case "probe.end": try end(command, in: context)
     case "probe.copy": try copy(command, in: context)
+    case "probe.branch": try branch(command, in: context)
     case "probe.tick": tick(in: context)
     default: throw Refusal(.invalid)
     }
@@ -76,7 +81,7 @@ public struct ProbeServerRules: ServerRules {
       guard command.args["join"] == .bool(true) else { throw Refusal(.invalid) }
       return CommandOutcome(
         write: [joined(open, called: called)],
-        product: recording(open.key.id.description, under: "receipts", at: called, in: context))
+        product: recording(.string(open.key.id.description), under: "receipts", at: called, in: context))
     }
     var fields: [String: JSON] = ["startedAt": command.args["startedAt"] ?? .null]
     fields["label"] = command.args["label"]
@@ -84,7 +89,7 @@ public struct ProbeServerRules: ServerRules {
     return CommandOutcome(
       deltas: [.serverCreate(key, fields: fields)],
       write: [WriteClaim(key: key, born: .minted, fields: fields.keys.sorted())],
-      product: recording(called, under: "receipts", at: called, in: context))
+      product: recording(.string(called), under: "receipts", at: called, in: context))
   }
 
   func end(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
@@ -131,8 +136,31 @@ public struct ProbeServerRules: ServerRules {
     }
     return CommandOutcome(
       deltas: [.serverCreate(board)], write: [WriteClaim(key: board, born: .minted)],
-      product: recording(source, under: "copies", at: board.id.description, in: context),
+      product: recording(.string(source), under: "copies", at: board.id.description, in: context),
       into: [ScopeKey(.tree(board.id.description)): copies])
+  }
+
+  // A child board under `parent`: its governor in the product scope, and one meta title written into both trees. Its
+  // receipt `child → {parent, title}` answers a replay, from any replica, with the board it created.
+  func branch(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    let (parent, child) = (command.string("parent"), command.string("child"))
+    let board = RecordKey("board", RecordID(child))
+    if replays(command, in: context) {
+      guard case .alive(let row) = context.idState(of: board), let born = row.lattice.born else {
+        return CommandOutcome(detail: ["created": false], product: context.product)
+      }
+      return CommandOutcome(write: [WriteClaim(key: board, born: .stored(born))], detail: ["created": false], product: context.product)
+    }
+    guard !parent.isSameID(as: child) else { throw Refusal(.invalid) }
+    switch context.idState(of: board) {
+    case .alive, .dead: throw Refusal(.idTaken)
+    case .none, .foreign: break
+    }
+    let meta = PlannedDelta.serverUpdate(RecordKey("meta", "meta"), born: nil, fields: ["title": command.args["title"] ?? .null])
+    return CommandOutcome(
+      deltas: [.serverCreate(board)], write: [WriteClaim(key: board, born: .minted)], detail: ["created": true],
+      product: recording(branched(command), under: "branches", at: child, in: context),
+      into: [ScopeKey(.tree(parent)): [meta], ScopeKey(.tree(child)): [meta]])
   }
 
   func tick(in context: RuleContext) -> CommandOutcome {
@@ -164,11 +192,20 @@ public struct ProbeServerRules: ServerRules {
     try? context.product["copies"]?[context.scope.text]?[destination]?.asString()
   }
 
-  func recording(_ value: String, under table: String, at key: String, in context: RuleContext) -> JSON.Object {
+  func branchReceipt(of child: String, in context: RuleContext) -> JSON? {
+    context.product["branches"]?[context.scope.text]?[child]
+  }
+
+  // What a branch's receipt holds: the parent it named and the title it wrote.
+  func branched(_ command: CheckedCommand) -> JSON {
+    ["parent": command.args["parent"] ?? .null, "title": command.args["title"] ?? .null]
+  }
+
+  func recording(_ value: JSON, under table: String, at key: String, in context: RuleContext) -> JSON.Object {
     var product = context.product
     var tables = (try? product[table]?.asObject()) ?? JSON.Object()
     var entries = (try? tables[context.scope.text]?.asObject()) ?? JSON.Object()
-    entries[key] = .string(value)
+    entries[key] = value
     tables[context.scope.text] = .object(entries)
     product[table] = .object(tables)
     return product

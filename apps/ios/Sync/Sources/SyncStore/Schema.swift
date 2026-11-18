@@ -23,6 +23,25 @@ enum Schema {
     migrator.registerMigration("v2") { db in
       try db.execute(sql: "ALTER TABLE outbox ADD COLUMN write_targets BLOB NULL")
     }
+    // E-7: an opted entry's projections and accepted versions beside its intent, and in `outbox_projection` each projection's
+    // scope, the seq that covers it there and whether it is covered, by which a page finds the entries it settles and a
+    // scope the entries that hold effects in it, never reading the rest. A store from before holds legacy entries only,
+    // whose two new blobs stay null and whose one scope and seq the outbox row keeps.
+    migrator.registerMigration("v3") { db in
+      try db.execute(sql: """
+        ALTER TABLE outbox ADD COLUMN predictions BLOB NULL;
+        ALTER TABLE outbox ADD COLUMN accepted_effects BLOB NULL;
+        CREATE TABLE outbox_projection (
+          local_id   TEXT NOT NULL REFERENCES outbox ON DELETE CASCADE,
+          scope      TEXT NOT NULL,
+          result_seq INTEGER NULL,
+          covered    INTEGER NOT NULL CHECK (covered IN (0, 1)),
+          PRIMARY KEY (local_id, scope)
+        ) WITHOUT ROWID;
+        CREATE INDEX outbox_projection_scope ON outbox_projection(scope, covered, result_seq);
+        CREATE INDEX outbox_projection_open  ON outbox_projection(scope) WHERE covered = 0;
+        """)
+    }
     return migrator
   }
 

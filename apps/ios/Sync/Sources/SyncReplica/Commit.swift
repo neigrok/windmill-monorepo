@@ -28,12 +28,28 @@ public struct CommitPlanner: Sendable {
   }
 
   // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
-  // changes, predictions, guards and retire name; whole types where it derives an id from a label, places by an anchor,
-  // or may grow a capped type; and in a tree or overlay scope, the governing record the scope check reads. The ids
-  // minted creates draw are read by their keys once drawn (`UnreadDraws`).
+  // changes, predictions, guards and retire name, an opted command's predictions in their own scopes; whole types where
+  // it derives an id from a label, places by an anchor, or may grow a capped type; and for each tree or overlay scope,
+  // the governing record the scope check reads. The ids minted creates draw are read by their keys once drawn
+  // (`UnreadDraws`).
   public func reads(of gesture: Gesture, in scope: ScopeRef) -> [ScopeRef: RowSelection] {
+    var origin = rows(namedBy: gesture.changes + gesture.predict)
+    origin.keys.formUnion(gesture.guards.map(\.key))
+    origin.keys.formUnion(gesture.retire.map(\.key))
+    var reads = [scope: origin]
+    for prediction in gesture.scopedPredict {
+      reads[prediction.scope] = (reads[prediction.scope] ?? RowSelection()).union(rows(namedBy: prediction.changes))
+    }
+    for read in reads.keys {
+      guard let governing = registry.governingRecord(of: read) else { continue }
+      reads[governing.scope, default: RowSelection()].keys.insert(governing.key)
+    }
+    return reads
+  }
+
+  func rows(namedBy changes: [Change]) -> RowSelection {
     var selection = RowSelection()
-    for change in gesture.changes + gesture.predict {
+    for change in changes {
       guard let type = registry.type(change.type) else { continue }
       switch change.operation {
       case .create(.minted): break
@@ -44,11 +60,7 @@ public struct CommitPlanner: Sendable {
       }
       if change.anchor != nil || type.cap != nil { selection.types.insert(type.name) }
     }
-    selection.keys.formUnion(gesture.guards.map(\.key))
-    selection.keys.formUnion(gesture.retire.map(\.key))
-    var reads = [scope: selection]
-    if let governing = registry.governingRecord(of: scope) { reads[governing.scope, default: RowSelection()].keys.insert(governing.key) }
-    return reads
+    return selection
   }
 
   // Retire loads held gestures; supersede loads the whole outbox to prove complete eligibility and fold dependents.
@@ -106,6 +118,41 @@ public struct CommitPlanner: Sendable {
     guard builder.unread.isEmpty else { throw UnreadDraws(keys: builder.unread, draws: builder.draws) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
     let command = gesture.command.map(registry.rounded)
+    // E-7: an opted command predicts one projection a scope, the origin's always and first, the rest by byte order, each
+    // built against its own scope; `predict` is its origin's projection. A scope known gone refuses, and grouped bytes
+    // past EFFECT_MAX_BYTES refuse too-large, leaving nothing.
+    let definition = command.flatMap { registry.command($0.name) }
+    guard definition?.scopedEffects == true || gesture.scopedPredict.isEmpty else {
+      throw CommitFailure.malformed("scoped predictions belong to a command with scoped effects")
+    }
+    var predictions: [Projection]?
+    if let definition, definition.scopedEffects {
+      guard gesture.predict.isEmpty || gesture.scopedPredict.isEmpty else { throw CommitFailure.malformed("predict and scopedPredict are exclusive") }
+      var groups: [ScopeRef: [Change]] = [scope: gesture.predict]
+      for prediction in gesture.scopedPredict {
+        guard registry.scopeKind(of: prediction.scope) != nil, registry.isScopeID(prediction.scope) else {
+          throw CommitFailure.malformed("\(prediction.scope) is no scope a command predicts in")
+        }
+        if try scopeIsDead(prediction.scope, in: replica) { return .refused(.scopeDead, detail: nil) }
+        groups[prediction.scope, default: []] += prediction.changes
+      }
+      let projections = try EffectReceipt.ordered(origin: scope, groups.keys).map { target in
+        let changes = groups[target]!
+        guard changes.allSatisfy({ change in definition.predicts.contains { $0.utf8.elementsEqual(change.type.utf8) } }) else {
+          throw CommitFailure.malformed("\(definition.name) predicts no type of \(target) it was given")
+        }
+        guard target != scope else { return Projection(scope: target, deltas: try oneDeltaPerRecord(changes.map { ($0, try builder.predicted($0)) })) }
+        var projected = DeltaBuilder(
+          registry: registry, replica: retired, scope: target, stamp: stamp, physNow: physNow,
+          drawn: try ScopeView(retired, target, .drawn, registry: registry),
+          stored: try ScopeView(retired, target, .stored, registry: registry), identities: identities, draws: [])
+        return Projection(scope: target, deltas: try oneDeltaPerRecord(changes.map { ($0, try projected.predicted($0)) }))
+      }
+      let grouped = JSON.array(projections.map(\.json))
+      guard !grouped.holdsNul else { throw CommitFailure.malformed("a string of the predictions holds U+0000") }
+      guard grouped.jcs.count <= limits.effectMaxBytes else { return .refused(.tooLarge, detail: nil) }
+      predictions = projections
+    }
     // Step 7: a string the intents send (their scope, deltas, guards, command and given gesture id) holding U+0000
     // throws, before step 8's caps; predictions and device rows are never sent.
     let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: command, gestureId: gesture.gestureId)
@@ -138,7 +185,8 @@ public struct CommitPlanner: Sendable {
       return OutboxEntry(
         localId: "\(gestureId)/\((actOffset ?? 0) + k)", gestureId: gestureId, lineage: replica.meta.lineage, scope: scope, state: state,
         commitOrder: firstOrder + Int64(k), releaseAt: releaseAt, stamp: stamp, intent: intent,
-        predict: command == nil ? [] : predict, baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
+        predict: command == nil || predictions != nil ? [] : predict, predictions: predictions,
+        baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
     }
     for entry in entries { replica.apply(.putEntry(entry)) }
 

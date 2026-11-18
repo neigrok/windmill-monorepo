@@ -1,5 +1,5 @@
 import { setImmediate } from 'node:timers/promises';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { registry, product } from './oracle-adapters/fixtures.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { hello, pull } from '../../../../packages/api-contract/sync/reference/server/pull.js';
@@ -110,7 +110,7 @@ export function environment() {
       return socket;
     },
   };
-  const options = { indexedDB, registry, timers, now: () => timers.time, monotonic: () => timers.time,
+  const options = { indexedDB, keyRange: IDBKeyRange, registry, timers, now: () => timers.time, monotonic: () => timers.time,
     navigator: { onLine: true, locks, storage: { persist: () => { persisted++; return Promise.resolve(true); } } },
     document: null, window: null, leadership: { locks, channel: channels.open }, transport, newReplicaId,
     newActor: () => 'r_aaaaaaaaaaaa', draw: (bound) => Math.max(1, Math.floor(bound / 2)),

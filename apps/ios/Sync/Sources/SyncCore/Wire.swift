@@ -162,6 +162,17 @@ public struct ScopeRef: Sendable, Hashable, Comparable, CustomStringConvertible 
     }
   }
 
+  // The scope of the same kind in the tree `id` names, where a governing record resolved to another id; a product or
+  // device scope is itself.
+  public func retargeted(to id: RecordID) -> ScopeRef {
+    guard let tree = id.string else { return self }
+    switch kind {
+    case .tree: return .tree(tree)
+    case .overlay: return .overlay(tree)
+    case .product, .device: return self
+    }
+  }
+
   public var description: String { text }
   public var json: JSON { .string(text) }
 

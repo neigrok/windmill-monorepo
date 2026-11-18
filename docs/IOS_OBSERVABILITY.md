@@ -44,7 +44,9 @@ reads/writes, protected-storage preparation, fork-guard I/O, Keychain reads/writ
 enumeration, session restoration, code authentication, Apple ticket creation/linking, sign-in-method
 reads, Apple removal, adoption and sign-out. The sync engine
 reports unexpected admission results, digest resets and doubts that reach the backoff ceiling,
-once per doubt episode. Engine and app runtime adapters enqueue static diagnostics through
+once per doubt episode. A push answer whose scoped receipt (engine E-7) does not decode, or whose
+opted answer exceeds its byte bound, reports `sync_push` as decode and changes nothing; a receipt's
+ids never leave the phone. Engine and app runtime adapters enqueue static diagnostics through
 `BoundedTelemetry`: a serial utility worker invokes the sink outside engine/writer/publisher locks.
 At most 128 records wait behind one in flight; overflow silently drops new diagnostics. A blocked
 sink cannot delay commits/subscriptions or enter adaptive writer timing.

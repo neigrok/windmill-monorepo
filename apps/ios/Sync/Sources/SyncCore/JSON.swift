@@ -425,6 +425,11 @@ extension JSON {
     return false
   }
 
+  // Null as nil, any other value decoded.
+  public func nullable<Value>(_ decode: (JSON) throws -> Value) rethrows -> Value? {
+    isNull ? nil : try decode(self)
+  }
+
   public func asString() throws(JSONError) -> String {
     guard case .string(let text) = self else { throw mismatch("a string") }
     return text

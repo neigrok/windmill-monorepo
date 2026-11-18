@@ -13,6 +13,8 @@ public struct LoadedReplica: Sendable {
   private(set) var loadedEntries: [OutboxEntry]
   let entrySelection: EntrySelection
   let unreadCommitOrder: Int64
+  // The scopes uncovered projections target as the load found them, which a partial load cannot read off its entries.
+  let loadedProjectionTargets: [ScopeRef]
   public private(set) var confirmed: [ScopeRef: Rows]
   public private(set) var staging: [ScopeRef: Staging]
   public private(set) var spent: [ScopeRef: [RecordKey: SpentID]]
@@ -31,7 +33,7 @@ public struct LoadedReplica: Sendable {
   // Cursors, known scopes and staging digests are always loaded whole; rows, outbox entries and notices as a planner
   // needs, `notices` nil when they were not loaded. Device rows are keyed by product, then by their key's bytes.
   public init(meta: ReplicaMeta, outbox: [OutboxEntry] = [], entries: EntrySelection = .every, unreadCommitOrder: Int64 = 0,
-              confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
+              projectionTargets: [ScopeRef] = [], confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
               spent: [ScopeRef: [RecordKey: SpentID]] = [:], cursors: [ScopeRef: CursorRecord] = [:],
               known: [ScopeRef: KnownKind] = [:], notices: [Notice]? = [], deviceRows: [String: JSON.Object] = [:],
               wholeScopes: Bool, isActive: Bool = false) {
@@ -39,6 +41,7 @@ public struct LoadedReplica: Sendable {
     loadedEntries = outbox.sorted { $0.commitOrder < $1.commitOrder }
     entrySelection = entries
     self.unreadCommitOrder = unreadCommitOrder
+    loadedProjectionTargets = projectionTargets
     self.confirmed = confirmed
     self.staging = staging
     self.spent = spent
@@ -65,16 +68,17 @@ public struct LoadedReplica: Sendable {
     return loadedEntries
   }
 
-  // Every entry of a scope, in commit order; after a load of part of the outbox, reading a scope it did not load whole traps.
+  // Every entry with effects in a scope, in commit order; after a load of part of the outbox, reading a scope it did not
+  // load whole traps.
   public func entries(in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || entrySelection.scopes.contains(scope), "the entries of \(scope) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope }
+    return loadedEntries.filter { $0.scopes.contains(scope) }
   }
 
   // The entries that touch one record, in commit order; after a load of part of the outbox, reading a record whose row it did not read traps.
   public func entries(touching key: RecordKey, in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || confirmed[scope]?.wasRead(key) == true, "the entries touching \(key) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope && $0.touches(key) }
+    return loadedEntries.filter { $0.deltas(in: scope).contains { $0.key == key } }
   }
 
   // The entries that touch a record the load read, in commit order: every entry after a load of the whole outbox, and
@@ -83,7 +87,7 @@ public struct LoadedReplica: Sendable {
   public var entriesTouchingReads: [OutboxEntry] {
     if entrySelection.all { return loadedEntries }
     return loadedEntries.filter { entry in
-      entry.drawnDeltas.contains { delta in confirmed[entry.scope].map { $0.covers(delta.key) } ?? wholeScopes }
+      entry.effects().contains { effect in effect.deltas.contains { delta in confirmed[effect.scope].map { $0.covers(delta.key) } ?? wholeScopes } }
     }
   }
 
@@ -94,17 +98,43 @@ public struct LoadedReplica: Sendable {
     return loadedEntries.filter { entry in held.contains { $0.utf8.elementsEqual(entry.gestureId.utf8) } }
   }
 
-  // §7.5 step 2: the scope's stored cursor covers an acked entry of the replica's epoch whose seq it has received whole.
-  public func covers(_ entry: OutboxEntry) -> Bool {
-    guard entry.state == .acked, let cleanSeq = cursors[entry.scope]?.cleanSeq, let seq = entry.resultSeq,
-          let epoch = entry.resultEpoch else { return false }
-    return seq <= cleanSeq && meta.serverEpoch?.utf8.elementsEqual(epoch.utf8) == true
+  // §7.5 step 2: an acked entry of the replica's epoch is covered in a scope whose stored cursor has received `seq` there
+  // whole; an opted entry's projection is covered too in a scope the replica knows gone.
+  public func covers(_ entry: OutboxEntry, in scope: ScopeRef, at seq: Int64?) -> Bool {
+    guard entry.state == .acked, let epoch = entry.resultEpoch, meta.serverEpoch?.utf8.elementsEqual(epoch.utf8) == true else { return false }
+    if entry.predictions != nil && known[scope] == .gone { return true }
+    guard let seq, let cleanSeq = cursors[scope]?.cleanSeq else { return false }
+    return seq <= cleanSeq
   }
 
-  // The entries of `scope` its stored cursor covers, in commit order; a partial load reads its covered selection.
+  // A legacy entry is covered in its scope; an opted one once each projection is, by its own scope.
+  public func covers(_ entry: OutboxEntry) -> Bool {
+    guard let predictions = entry.predictions else { return covers(entry, in: entry.scope, at: entry.resultSeq) }
+    return predictions.allSatisfy { $0.covered || covers(entry, in: $0.scope, at: $0.resultSeq) }
+  }
+
+  // The acked entries with an uncovered effect in `scope` its stored cursor now covers, in commit order; a partial load
+  // reads its covered selection.
   public func covered(in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || entrySelection.covered?.scope == scope, "the covered entries of \(scope) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope && covers($0) }
+    return loadedEntries.filter { entry in
+      guard let predictions = entry.predictions else { return entry.scope == scope && covers(entry) }
+      return predictions.contains { $0.scope == scope && !$0.covered && covers(entry, in: scope, at: $0.resultSeq) }
+    }
+  }
+
+  // §7.9 the scopes uncovered projections target, which a bound replica follows, in commit order: read off the outbox when
+  // it was loaded whole, else as the load found them.
+  public var projectionTargets: [ScopeRef] {
+    guard entrySelection.all else {
+      precondition(entrySelection.projectionTargets, "the projection targets of \(meta.replica) were read but not loaded")
+      return loadedProjectionTargets
+    }
+    var targets: [ScopeRef] = []
+    for projection in loadedEntries.flatMap({ $0.predictions ?? [] }) where !projection.covered && !targets.contains(projection.scope) {
+      targets.append(projection.scope)
+    }
+    return targets
   }
 
   // The sent entry numbered `n`, which a push result answers.
@@ -232,13 +262,46 @@ public struct LoadedReplica: Sendable {
       let before = loadedEntries[index]
       var entry = before
       try update(&entry)
-      precondition(entry.localId.utf8.elementsEqual(before.localId.utf8) && entry.commitOrder == before.commitOrder && entry.scope == before.scope,
-                   "bulk entry updates preserve identity, order and scope")
+      precondition(entry.localId.utf8.elementsEqual(before.localId.utf8) && entry.commitOrder == before.commitOrder,
+                   "bulk entry updates preserve identity and order")
       guard entry != before else { continue }
       let write = ReplicaWrite.putEntry(entry)
       writes.append(.replica(meta.replica, write))
       note(write, previousEntry: before)
       loadedEntries[index] = entry
+    }
+  }
+
+  // §7.5 step 2 an acked entry's coverage as it stands: an opted entry's projections each marked covered once its scope
+  // covers it, and the entry resolved once wholly covered. True when it resolved.
+  @discardableResult
+  public mutating func settle(_ localId: String) throws -> Bool {
+    guard let entry = entry(localId) else { return false }
+    var marked = entry
+    marked.predictions = entry.predictions?.map { projection in
+      var projection = projection
+      if covers(entry, in: projection.scope, at: projection.resultSeq) { projection.covered = true }
+      return projection
+    }
+    if covers(marked) {
+      try move(localId, .resolve)
+      return true
+    }
+    if marked != entry { apply(.putEntry(marked)) }
+    return false
+  }
+
+  // A scope's end, or its leaving the subscription set (§7.5, §7.9): an acked legacy entry of it resolves, and an acked
+  // opted entry's projection into it is covered, the entry resolving once every one is.
+  public mutating func endProjections(in scope: ScopeRef) throws {
+    for entry in entries(in: scope) where entry.state == .acked {
+      guard var predictions = entry.predictions else {
+        if entry.scope == scope { try move(entry.localId, .resolve) }
+        continue
+      }
+      for index in predictions.indices where predictions[index].scope == scope { predictions[index].covered = true }
+      update(entry: entry.localId) { $0.predictions = predictions }
+      try settle(entry.localId)
     }
   }
 
@@ -300,10 +363,10 @@ public struct LoadedReplica: Sendable {
     case .putEntry(let entry):
       change.outbox = true
       let previous = previousEntry ?? self.entry(entry.localId)
-      change.touch(entry.scope, entry.drawnDeltas.map(\.key) + (previous?.drawnDeltas.map(\.key) ?? []))
+      for effect in entry.effects() + (previous?.effects() ?? []) { change.touch(effect.scope, effect.deltas.map(\.key)) }
     case .deleteEntry(let localId):
       change.outbox = true
-      if let entry = entry(localId) { change.touch(entry.scope, entry.drawnDeltas.map(\.key)) }
+      if let entry = entry(localId) { for effect in entry.effects() { change.touch(effect.scope, effect.deltas.map(\.key)) } }
     case .putRow(let scope, let row): change.touch(scope, [row.key])
     case .deleteRow(let scope, let key): change.touch(scope, [key])
     case .swapStaging(let scope), .forgetScope(let scope):

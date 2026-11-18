@@ -10,7 +10,6 @@ import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.Command
 import works.windmill.sync.modelserver.ProbeServerRules
-import works.windmill.sync.modelserver.with
 
 // These are real-engine contracts, never a client algorithm implemented in test support.
 // Every seed must execute the production sender, puller and clock-skew recovery.
