@@ -287,12 +287,13 @@ public enum ClientSteps {
         returns.append(["throws": true])
       }
     }
+    let events = device.events.filter(\.isContract)
     var expect: JSON.Object = [
-      "returns": .array(returns), "device": try device.dump(), "ended": .array(device.events.filter(\.isEnded).map(\.json)),
+      "returns": .array(returns), "device": try device.dump(), "ended": .array(events.filter(\.isEnded).map(\.json)),
     ]
-    let telemetry = device.events.filter(\.isTelemetry)
+    let telemetry = events.filter(\.isTelemetry)
     if !telemetry.isEmpty { expect["telemetry"] = .array(telemetry.map(\.json)) }
-    let announced = device.events.filter { !$0.isEnded && !$0.isTelemetry }
+    let announced = events.filter { !$0.isEnded && !$0.isTelemetry }
     if !announced.isEmpty { expect["events"] = .array(announced.map(\.json)) }
     return .object(expect)
   }

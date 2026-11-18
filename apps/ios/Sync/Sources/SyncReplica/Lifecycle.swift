@@ -18,6 +18,9 @@ public struct EngineStart: Sendable, Hashable {
   public let reidentified: Bool
   public let forkGuard: String?
   public let pendingSignIn: String?
+  // The active replica's inverse requests still waiting or travelling, and the device time the oldest was asked at.
+  public let unsettledInverses: Int
+  public let oldestInverseRequestedAt: Int64?
 }
 
 public enum LineageAnswer: String, Sendable, Hashable {
@@ -188,11 +191,17 @@ public struct ReplicaLifecycle: Sendable {
     return .launching(ReplicaMeta(replica: try identities.replicaID(), state: .anon))
   }
 
-  // §7.3 and §7.11: every held entry released, a fresh actor; a native store whose forkGuard differs from its copy, or
-  // whose copy is missing, re-identifies every replica under a new forkGuard. A store without one mints its first.
+  // §7.3 and §7.11: every held entry released, the journal keeping only what an unsettled request reads, a fresh actor; a
+  // native store whose forkGuard differs from its copy, or whose copy is missing, re-identifies every replica under a new
+  // forkGuard. A store without one mints its first.
   public func start(_ device: inout LoadedDevice, backup: BackupCopy, instance: inout Instance,
                     identities: IdentitySource) throws -> EngineStart {
-    for replica in device.replicas { try device.modify(replica.id) { try hold.releaseAll(in: &$0) } }
+    for replica in device.replicas {
+      try device.modify(replica.id) { replica in
+        try hold.releaseAll(in: &replica)
+        replica.releaseJournal()
+      }
+    }
     instance.actor = try identities.actor()
     var reidentified = false
     if backup != .notKept {
@@ -206,8 +215,10 @@ public struct ReplicaLifecycle: Sendable {
         device.setMeta(meta, active: device.active)
       }
     }
+    let unsettled: [InverseRequest] = device.activeReplica.journal.inverses.filter { $0.state != .settled }
     return EngineStart(
-      actor: instance.actor, reidentified: reidentified, forkGuard: device.meta.forkGuard, pendingSignIn: device.meta.pendingSignIn)
+      actor: instance.actor, reidentified: reidentified, forkGuard: device.meta.forkGuard, pendingSignIn: device.meta.pendingSignIn,
+      unsettledInverses: unsettled.count, oldestInverseRequestedAt: unsettled.map(\.requestedAt).min())
   }
 
   // MARK: Sign-in

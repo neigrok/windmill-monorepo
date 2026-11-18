@@ -142,7 +142,8 @@ public final class ActionRunner: Sendable {
     try replica.requestInverse(actId, slots: nil)
   }
 
-  // The inverse of an Undo, restoring only what it applied, or what `productSlots` name instead.
+  // The inverse of an Undo: the values the act wrote, only where the Undo applied, or what `productSlots` name instead. A
+  // held act cancelled in place whose act ran a product command is unavailable without `productSlots`.
   public func redo(_ requestId: String, productSlots: [ProductSlot]? = nil) throws -> InverseResult {
     let undone = try inverseResult(requestId)
     let inverseActId: String

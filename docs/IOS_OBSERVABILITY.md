@@ -44,9 +44,11 @@ reads/writes, protected-storage preparation, fork-guard I/O, Keychain reads/writ
 enumeration, session restoration, code authentication, Apple ticket creation/linking, sign-in-method
 reads, Apple removal, adoption and sign-out. The sync engine
 reports unexpected admission results, digest resets and doubts that reach the backoff ceiling,
-once per doubt episode. A push answer whose scoped receipt (engine E-7) does not decode, or whose
-opted answer exceeds its byte bound, reports `sync_push` as decode and changes nothing; a receipt's
-ids never leave the phone. Engine and app runtime adapters enqueue static diagnostics through
+once per doubt episode. A push answer to an opted entry that exceeds its byte bound reports `sync_push`
+as decode and changes nothing. An `ok` whose scoped receipt (engine E-7) or inverse outcomes (K-3) do
+not decode still acknowledges its entry with no receipt, ending its predictions until the pull brings
+the rows, and reports `sync_admission` as malformed, as a 400 answer does; a receipt's ids never leave
+the phone. Engine and app runtime adapters enqueue static diagnostics through
 `BoundedTelemetry`: a serial utility worker invokes the sink outside engine/writer/publisher locks.
 At most 128 records wait behind one in flight; overflow silently drops new diagnostics. A blocked
 sink cannot delay commits/subscriptions or enter adaptive writer timing.
@@ -148,6 +150,7 @@ rules refuse, records `journal_save_refused` with its reason alone.
 | Echo sheet | `journal_echo_ink` | action: open, close, back |
 | Echoes | `journal_echo_shown`, `journal_echo_reader_opened`, `journal_echo_intro_dismissed`, `journal_echo_opened`, `journal_echo_useful`, `journal_echo_dismissed` | no properties |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
+| Undo of an act | `sync_inverse` | an Undo or Redo of a journaled act (engine K-3). Requested: outcome ok (cancelled in place, or settled at once), pending (its slots wait or travel), unavailable (an act it cannot invert), failed (the transaction did not commit). A request the phone sent that settles later: outcome settled, with `applied` and `skipped` operation counts. At engine start, while requests still wait: outcome pending, with their `count` and the oldest one's `age_ms`. No act, request or record id and no value |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms; optional coarse scope_kind |
 
 Echoes reads and feedback stay REST and report failures under the static operation `journal_echoes`

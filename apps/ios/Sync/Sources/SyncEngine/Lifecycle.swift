@@ -13,10 +13,11 @@ import Synchronization
 
 extension EngineCore {
   // Before the first frame (§7.3, §7.11, design §5.1): the store first launched; every held entry released, with no Undo
-  // shown; a fresh actor; the fork guard checked against its backup-excluded copy, a copy that differs or is missing
-  // re-identifying every replica, and the copy written once the store has committed, so a death between the two costs
-  // one more re-identify at the next start and loses nothing. Then every token no sign-in needs is deleted, and a bound
-  // replica left with no token is paused.
+  // shown, and every act no unsettled request reads; a fresh actor; the fork guard checked against its backup-excluded
+  // copy, a copy that differs or is missing re-identifying every replica, and the copy written once the store has
+  // committed, so a death between the two costs one more re-identify at the next start and loses nothing. Inverse requests
+  // still waiting are reported, by count and the oldest one's age. Then every token no sign-in needs is deleted, and a
+  // bound replica left with no token is paused.
   func launch(forkGuard: any ForkGuardStore) throws {
     _ = try write { store, _ in try store.firstLaunch(identities: identities) }
     let copy = forkGuard.load()
@@ -24,6 +25,11 @@ extension EngineCore {
       try store.start(backup: copy.map(BackupCopy.held) ?? .missing, instance: &instance, identities: identities)
     }
     if let kept = started.forkGuard, kept != copy { try forkGuard.save(kept) }
+    if let oldest = started.oldestInverseRequestedAt {
+      telemetry.event("sync_inverse", properties: [
+        "outcome": "pending", "count": String(started.unsettledInverses), "age_ms": String(max(0, clock.wall.nowMs() - oldest)),
+      ])
+    }
     let seat = try seat()
     let needed = [seat?.state == .bound ? seat?.account : nil, started.pendingSignIn].compactMap { $0 }
     for account in tokens.accounts() where !needed.contains(where: { $0.utf8.elementsEqual(account.utf8) }) {

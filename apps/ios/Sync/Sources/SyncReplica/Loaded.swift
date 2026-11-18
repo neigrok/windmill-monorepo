@@ -24,6 +24,8 @@ public struct LoadedReplica: Sendable {
   public private(set) var deviceRows: [String: JSON.Object]
   // K-3 the journal, always loaded whole with the entries it names (§7.3 Undo of an act).
   public private(set) var journal: Journal
+  // The inverse requests unsettled as the load found them: each one this transaction settles is reported.
+  let loadedUnsettledRequests: [String]
   public private(set) var writes: [StoreWrite] = []
   public private(set) var events: [EngineEvent] = []
   public private(set) var change = StoreChange()
@@ -52,6 +54,7 @@ public struct LoadedReplica: Sendable {
     loadedNotices = notices
     self.deviceRows = deviceRows
     self.journal = journal
+    loadedUnsettledRequests = journal.inverses.filter { $0.state != .settled }.map(\.requestId)
     self.wholeScopes = wholeScopes
     self.isActive = isActive
   }
@@ -170,13 +173,18 @@ public struct LoadedReplica: Sendable {
     return (after.filter { previous[id($0)] != $0 }, before.map(id).filter { !kept.contains($0) })
   }
 
-  // The journal changed through `body`: each act, request and cancellation it adds, changes or drops is one write.
+  // The journal changed through `body`: each act, request and cancellation it adds, changes or drops is one write, and each
+  // request the load found unsettled that settles now is reported.
   public mutating func updateJournal<T>(_ body: (inout Journal) throws -> T) rethrows -> T {
     var next = journal
     let value = try body(&next)
     let acts = LoadedReplica.changes(journal.acts, next.acts, id: \.actId)
     let inverses = LoadedReplica.changes(journal.inverses, next.inverses, id: \.requestId)
     let cancellations = LoadedReplica.changes(journal.cancellations, next.cancellations, id: \.inverseActId)
+    for request in inverses.put where loadedUnsettledRequests.contains(where: { $0.isSameID(as: request.requestId) }) {
+      guard case .settled(_, _, _, let applied, let skipped)? = request.result, journal.request(request.requestId)?.state != .settled else { continue }
+      record(.inverseSettled(applied: applied, skipped: skipped))
+    }
     for id in acts.gone { apply(.deleteAct(id)) }
     for act in acts.put { apply(.putAct(act)) }
     for id in inverses.gone { apply(.deleteInverse(id)) }

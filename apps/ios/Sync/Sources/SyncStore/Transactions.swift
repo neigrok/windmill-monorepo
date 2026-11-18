@@ -123,7 +123,7 @@ extension Store {
           }
         }
         if wrote, undoPlan != nil {
-          var replica = try loaded(active, in: tx, entries: EntrySelection())
+          var replica = try loaded(active, in: tx, reads: undoReads, entries: EntrySelection())
           try planners.commits.record(act: gestureId, plan: undoPlan, receipts: receipts, in: &replica)
           try BatchWriter(db: db, registry: registry).apply(replica.batch)
           change.merge(replica.batch.change)

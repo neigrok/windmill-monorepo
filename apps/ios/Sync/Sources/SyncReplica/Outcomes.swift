@@ -272,7 +272,7 @@ public struct PushPlanner: Sendable {
                     identities: IdentitySource) throws {
     switch step {
     case .sample(let serverTime, let checking):
-      if let checking { try checkReceipts(of: checking, in: replica) }
+      if let checking, try !everyReceiptReads(in: checking, of: replica) { replica.record(.pushMalformed) }
       replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
     case .pauseAuth:
       replica.update { $0.authPaused = true }
@@ -315,6 +315,7 @@ public struct PushPlanner: Sendable {
   // A result applies only to the entry still sent with its n; any other entry moved on since the request. An `ok` whose
   // seq its scope's stored cursor already covers (its own page or frame came first) resolves its own entry, and no other
   // (§7.5 step 2); an opted entry's ok applies its write map and then its receipt, which may cover some projections at once.
+  // An ok whose receipt or inverse outcomes do not read still acknowledges its entry, with no receipt.
   func apply(_ result: PushResult, lastN: Int64, epoch: String, to replica: inout LoadedReplica, instance: Instance) throws {
     guard let entry = replica.sentEntry(numbered: result.n) else { return }
     try writeCommandResult(entry, result: result, epoch: epoch, in: &replica)
@@ -322,7 +323,9 @@ public struct PushPlanner: Sendable {
     case .refused(let code):
       try refuse(entry.localId, code: code, detail: result.detail, lastN: lastN, in: &replica, instance: instance)
       if replica.entry(entry.localId) == nil { replica.retain(Attempt(epoch: epoch, n: result.n, ok: false), of: entry.localId) }
-      try settleInverse(entry, by: result, in: &replica)
+      try inverses.settle(entry, by: result, epoch: epoch, in: &replica)
+    case .ok(let seq, let write) where !readable(result, of: entry, in: replica):
+      try acknowledgeUnreadable(entry, n: result.n, seq: seq, write: write, epoch: epoch, in: &replica, instance: instance)
     case .ok(let seq, let write):
       let effects = entry.predictions == nil ? nil : try receipt(of: result, for: entry)
       try replica.move(entry.localId, .ok) { entry in
@@ -337,14 +340,37 @@ public struct PushPlanner: Sendable {
         try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance)
       }
       replica.retain(Attempt(epoch: epoch, n: result.n, ok: true, acceptedEffects: replica.entry(entry.localId)?.acceptedEffects), of: entry.localId)
-      try settleInverse(entry, by: result, in: &replica)
+      if let acked = replica.entry(entry.localId) { inverses.resolveReferences(of: acked, epoch: epoch, in: &replica) }
+      try inverses.settle(entry, by: result, epoch: epoch, in: &replica)
       try replica.settle(entry.localId)
     }
   }
 
-  // K-3: an inverse slot's result settles it (§7.3 Undo of an act).
-  func settleInverse(_ entry: OutboxEntry, by result: PushResult, in replica: inout LoadedReplica) throws {
-    try inverses.settle(entry, by: result, in: &replica)
+  // The server holds the write whose receipt does not read: its entry is acknowledged with no receipt, so every projection
+  // ends at once and the pull brings the rows; its source's history proves nothing, and an inverse slot settles skipped
+  // `invalid`.
+  func acknowledgeUnreadable(_ entry: OutboxEntry, n: Int64, seq: Int64, write: [WriteMapEntry]?, epoch: String,
+                             in replica: inout LoadedReplica, instance: Instance) throws {
+    try replica.move(entry.localId, .ok) { entry in
+      entry.resultSeq = seq
+      entry.resultEpoch = epoch
+    }
+    replica.update { $0.admit(entry.intent.deltas.flatMap(\.lattice.stamps)) }
+    if let write {
+      if entry.predictions == nil { try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
+      else { try applyScopedWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
+    }
+    replica.update(entry: entry.localId) { entry in
+      entry.predictions = entry.predictions?.map { (projection: Projection) -> Projection in
+        var covered = projection
+        covered.covered = true
+        return covered
+      }
+    }
+    replica.retain(Attempt(epoch: epoch, n: n, ok: true), of: entry.localId)
+    try replica.settle(entry.localId)
+    let invalid = try PushResult(json: ["n": JSON(n), "s": "refused", "code": RefusalCode.invalid.json])
+    try inverses.settle(entry, by: invalid, epoch: epoch, in: &replica)
   }
 
   func writeCommandResult(_ entry: OutboxEntry, result: PushResult, epoch: String, in replica: inout LoadedReplica) throws {
@@ -503,26 +529,34 @@ public struct PushPlanner: Sendable {
 
   // MARK: Receipts (E-7)
 
-  // §7.4 a 200's receipts, checked whole before anything of it applies: an ok answering a sent opted entry carries a
-  // well-formed receipt naming its origin and every scope it predicted, in an answer within SCOPED_RESPONSE_MAX_BYTES; an
-  // ok answering any other entry carries none.
-  func checkReceipts(of response: PushResponse, in replica: LoadedReplica) throws {
-    var opted = false
-    for result in response.results {
-      guard case .ok = result.verdict, let entry = replica.sentEntry(numbered: result.n) else { continue }
-      guard entry.predictions != nil else {
-        guard result.detail?["windmillKit"] == nil else { throw JSONError.shape("a receipt answers a legacy command") }
-        continue
-      }
+  // §7.4 a 200's receipts, checked before anything of it applies: an answer to a sent opted entry is within
+  // SCOPED_RESPONSE_MAX_BYTES, or the whole answer throws. Whether every ok of it reads (`readable`).
+  func everyReceiptReads(in response: PushResponse, of replica: LoadedReplica) throws -> Bool {
+    let answered: [(result: PushResult, entry: OutboxEntry)] = response.results.compactMap { (result: PushResult) in
+      guard case .ok = result.verdict, let entry = replica.sentEntry(numbered: result.n) else { return nil }
+      return (result, entry)
+    }
+    if answered.contains(where: { $0.entry.predictions != nil }) && response.json.jcs.count > Constants.scopedResponseMaxBytes {
+      throw JSONError.shape("a scoped answer exceeds its bound")
+    }
+    return answered.allSatisfy { readable($0.result, of: $0.entry, in: replica) }
+  }
+
+  // Whether an ok reads: answering an opted entry it carries a well-formed receipt naming its origin and every scope it
+  // predicted, and an inverse slot's outcomes; answering any other entry it carries no receipt.
+  func readable(_ result: PushResult, of entry: OutboxEntry, in replica: LoadedReplica) -> Bool {
+    guard entry.predictions != nil else { return result.detail?["windmillKit"] == nil }
+    do {
       _ = try receipt(of: result, for: entry)
       try inverses.check(result, of: entry, in: replica)
-      opted = true
+      return true
+    } catch {
+      return false
     }
-    if opted && response.json.jcs.count > Constants.scopedResponseMaxBytes { throw JSONError.shape("a scoped answer exceeds its bound") }
   }
 
   // An opted entry's receipt, each predicted scope read through the governor ids the write map resolved.
-  func receipt(of result: PushResult, for entry: OutboxEntry) throws -> [EffectReceipt] {
+  func receipt(of result: PushResult, for entry: OutboxEntry) throws(JSONError) -> [EffectReceipt] {
     guard case .ok(let seq, let write) = result.verdict, let predictions = entry.predictions else { return [] }
     let required = predictions.map { remapped($0.scope, by: write ?? [], targets: entry.writeTargets ?? []) }
     return try ScopedDetail.effects(in: result.detail, registry: registry, origin: entry.scope, seq: seq, requiring: required)

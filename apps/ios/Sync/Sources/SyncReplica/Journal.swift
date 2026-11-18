@@ -8,8 +8,36 @@ import SyncCore
 
 // MARK: - Reversible acts
 
-// What a slot read before an act changed it: a field, a text or a life, as a logical value.
+// What a slot read before an act changed it: a field, a text or a life, as a logical value, with the sequence of the
+// confirmed row it was read over (nil where none was confirmed) and the epoch that sequence counts in.
 public struct Preimage: Sendable, Hashable {
+  public var target: Target
+  public let value: JSON
+  public var rowSeq: Int64?
+  public var epoch: String?
+
+  public init(target: Target, value: JSON, rowSeq: Int64? = nil, epoch: String? = nil) {
+    self.target = target
+    self.value = value
+    self.rowSeq = rowSeq
+    self.epoch = epoch
+  }
+
+  init(json: JSON) throws {
+    let object = try json.asObject()
+    try object.expectKeys(required: ["target", "value"], optional: ["rowSeq", "epoch"])
+    self.init(target: try Target(json: object.member("target")), value: try object.member("value"),
+              rowSeq: try object["rowSeq"]?.nullable { (seq: JSON) throws -> Int64 in try seq.asInteger() },
+              epoch: try object["epoch"]?.nullable { (epoch: JSON) throws -> String in try epoch.asString() })
+  }
+
+  var json: JSON {
+    ["target": target.json, "value": value, "rowSeq": rowSeq.map { JSON($0) } ?? .null, "epoch": epoch.map(JSON.string) ?? .null]
+  }
+}
+
+// The value an act left in a target, which a Redo writes back.
+public struct WrittenValue: Sendable, Hashable {
   public var target: Target
   public let value: JSON
 
@@ -62,27 +90,30 @@ public struct JournalSource: Sendable, Hashable {
   public var originScope: ScopeRef
   public var recipes: [ActUndoRecipe]
   public var preimages: [Preimage]
+  public var written: [WrittenValue]
   public var attempts: [Attempt]
   // An epoch change took its history: it was collected before it could earn the new epoch's receipt.
   public var unavailable: Bool
 
-  public init(localId: String, originScope: ScopeRef, recipes: [ActUndoRecipe], preimages: [Preimage], attempts: [Attempt] = [],
-              unavailable: Bool = false) {
+  public init(localId: String, originScope: ScopeRef, recipes: [ActUndoRecipe], preimages: [Preimage], written: [WrittenValue] = [],
+              attempts: [Attempt] = [], unavailable: Bool = false) {
     self.localId = localId
     self.originScope = originScope
     self.recipes = recipes
     self.preimages = preimages
+    self.written = written
     self.attempts = attempts
     self.unavailable = unavailable
   }
 
   init(json: JSON) throws {
     let object = try json.asObject()
-    try object.expectKeys(required: ["localId", "originScope", "recipes", "preimages", "attempts"], optional: ["unavailable"])
+    try object.expectKeys(required: ["localId", "originScope", "recipes", "preimages", "attempts"], optional: ["written", "unavailable"])
     self.init(
       localId: try object.member("localId").asString(), originScope: try ScopeRef(json: object.member("originScope")),
       recipes: try object.member("recipes").asArray().map { (recipe: JSON) throws -> ActUndoRecipe in try ActUndoRecipe(json: recipe) },
       preimages: try object.member("preimages").asArray().map { (preimage: JSON) throws -> Preimage in try Preimage(json: preimage) },
+      written: try (object["written"]?.asArray() ?? []).map { (written: JSON) throws -> WrittenValue in try WrittenValue(json: written) },
       attempts: try object.member("attempts").asArray().map { (attempt: JSON) throws -> Attempt in try Attempt(json: attempt) },
       unavailable: try object["unavailable"]?.asBool() ?? false)
   }
@@ -90,7 +121,7 @@ public struct JournalSource: Sendable, Hashable {
   var json: JSON {
     var object: JSON.Object = [
       "localId": .string(localId), "originScope": originScope.json, "recipes": .array(recipes.map(\.json)),
-      "preimages": .array(preimages.map(\.json)), "attempts": .array(attempts.map(\.json)),
+      "preimages": .array(preimages.map(\.json)), "written": .array(written.map(\.json)), "attempts": .array(attempts.map(\.json)),
     ]
     object["unavailable"] = unavailable ? true : nil
     return .object(object)
@@ -135,6 +166,8 @@ public indirect enum VersionReference: Sendable, Hashable {
   case pending(localId: String, target: Target)
   case fieldAbsent(epoch: String?, recordBirth: VersionReference?)
   case recordAbsent(epoch: String?)
+  // A pending reference whose entry wrote no version of its target that the device could read: it binds nothing.
+  case unbound
 
   init(json: JSON) throws {
     let object = try json.asObject()
@@ -147,6 +180,7 @@ public indirect enum VersionReference: Sendable, Hashable {
         try VersionReference(json: birth)
       })
     case "recordAbsent": self = .recordAbsent(epoch: try epoch())
+    case "unbound": self = .unbound
     default: throw JSONError.shape("an unknown version reference")
     }
   }
@@ -157,6 +191,7 @@ public indirect enum VersionReference: Sendable, Hashable {
     case .pending(let localId, let target): ["kind": "pending", "localId": .string(localId), "target": target.json]
     case .fieldAbsent(let epoch, let birth): ["kind": "fieldAbsent", "epoch": epoch.map(JSON.string) ?? .null, "recordBirth": birth?.json ?? .null]
     case .recordAbsent(let epoch): ["kind": "recordAbsent", "epoch": epoch.map(JSON.string) ?? .null]
+    case .unbound: ["kind": "unbound"]
     }
   }
 
@@ -165,7 +200,7 @@ public indirect enum VersionReference: Sendable, Hashable {
     switch self {
     case .pending(let localId, _): [localId]
     case .fieldAbsent(_, let birth): birth?.pendingLocalIds ?? []
-    case .accepted, .recordAbsent: []
+    case .accepted, .recordAbsent, .unbound: []
     }
   }
 
@@ -178,11 +213,29 @@ public indirect enum VersionReference: Sendable, Hashable {
     default: self
     }
   }
+
+  // The epoch it was taken in: nil before the replica held one, and for a pending or unbound reference.
+  var epoch: String? {
+    switch self {
+    case .accepted(let epoch, _), .fieldAbsent(let epoch, _), .recordAbsent(let epoch): epoch
+    case .pending, .unbound: nil
+    }
+  }
+
+  // The reference with each pending one to `localId` bound, at that entry's result, to the version `bind` finds for its
+  // target.
+  func resolving(_ localId: String, by bind: (Target) -> VersionReference) -> VersionReference {
+    switch self {
+    case .pending(let id, let target) where id.isSameID(as: localId): bind(target)
+    case .fieldAbsent(let epoch, let birth): .fieldAbsent(epoch: epoch, recordBirth: birth?.resolving(localId, by: bind))
+    default: self
+    }
+  }
 }
 
 // One change a held cancellation took out of `drawn`, and what its Redo must find to put it back.
 public enum CancellationUnit: Sendable, Hashable {
-  case field(ownerLocalId: String, target: Target, redoValue: JSON?, restored: VersionReference)
+  case field(ownerLocalId: String, target: Target, redoValue: JSON?, restored: VersionReference, restoredValue: JSON?)
   case createdRecord(ownerLocalId: String, record: RecordAddress, redoValues: JSON.Object, restored: VersionReference)
 
   init(json: JSON) throws {
@@ -190,7 +243,9 @@ public enum CancellationUnit: Sendable, Hashable {
     let owner = try object.member("ownerLocalId").asString()
     let restored = try VersionReference(json: object.member("restored"))
     switch try object.member("kind").asString() {
-    case "field": self = .field(ownerLocalId: owner, target: try Target(json: object.member("target")), redoValue: object["redoValue"], restored: restored)
+    case "field":
+      self = .field(ownerLocalId: owner, target: try Target(json: object.member("target")), redoValue: object["redoValue"], restored: restored,
+                    restoredValue: object["restoredValue"])
     case "createdRecord":
       self = .createdRecord(ownerLocalId: owner, record: try RecordAddress(json: object.member("record")),
                             redoValues: try object.member("redoValues").asObject(), restored: restored)
@@ -200,9 +255,10 @@ public enum CancellationUnit: Sendable, Hashable {
 
   var json: JSON {
     switch self {
-    case .field(let owner, let target, let value, let restored):
+    case .field(let owner, let target, let value, let restored, let restoredValue):
       var object: JSON.Object = ["kind": "field", "ownerLocalId": .string(owner), "target": target.json, "restored": restored.json]
       object["redoValue"] = value
+      object["restoredValue"] = restoredValue
       return .object(object)
     case .createdRecord(let owner, let record, let values, let restored):
       return ["kind": "createdRecord", "ownerLocalId": .string(owner), "record": record.json, "redoValues": .object(values), "restored": restored.json]
@@ -211,13 +267,30 @@ public enum CancellationUnit: Sendable, Hashable {
 
   var ownerLocalId: String {
     switch self {
-    case .field(let owner, _, _, _), .createdRecord(let owner, _, _, _): owner
+    case .field(let owner, _, _, _, _), .createdRecord(let owner, _, _, _): owner
+    }
+  }
+
+  // The record the unit's change was to.
+  var address: RecordAddress {
+    switch self {
+    case .field(_, let target, _, _, _): target.address
+    case .createdRecord(_, let record, _, _): record
+    }
+  }
+
+  func restoring(_ restored: VersionReference) -> CancellationUnit {
+    switch self {
+    case .field(let owner, let target, let value, _, let restoredValue):
+      .field(ownerLocalId: owner, target: target, redoValue: value, restored: restored, restoredValue: restoredValue)
+    case .createdRecord(let owner, let record, let values, _): .createdRecord(ownerLocalId: owner, record: record, redoValues: values, restored: restored)
     }
   }
 
   func bound(to epoch: String?) -> CancellationUnit {
     switch self {
-    case .field(let owner, let target, let value, let restored): .field(ownerLocalId: owner, target: target, redoValue: value, restored: restored.bound(to: epoch))
+    case .field(let owner, let target, let value, let restored, let restoredValue):
+      .field(ownerLocalId: owner, target: target, redoValue: value, restored: restored.bound(to: epoch), restoredValue: restoredValue)
     case .createdRecord(let owner, let record, let values, let restored):
       .createdRecord(ownerLocalId: owner, record: record, redoValues: values, restored: restored.bound(to: epoch))
     }
@@ -225,36 +298,66 @@ public enum CancellationUnit: Sendable, Hashable {
 
   var restored: VersionReference {
     switch self {
-    case .field(_, _, _, let restored), .createdRecord(_, _, _, let restored): restored
+    case .field(_, _, _, let restored, _), .createdRecord(_, _, _, let restored): restored
     }
   }
 }
 
 // §7.3 what a held cancellation actually took out of `drawn`, which its Redo restores.
 public struct CancellationReceipt: Sendable, Hashable {
+  // An entry the cancellation took out, in the scope it was committed in; `command` marks a product command, whose
+  // effects only the product can write again.
+  public struct Source: Sendable, Hashable {
+    public var localId: String
+    public var originScope: ScopeRef
+    public let command: Bool
+
+    public init(localId: String, originScope: ScopeRef, command: Bool) {
+      self.localId = localId
+      self.originScope = originScope
+      self.command = command
+    }
+
+    init(json: JSON) throws {
+      let object = try json.asObject()
+      try object.expectKeys(required: ["localId", "originScope"], optional: ["command"])
+      self.init(localId: try object.member("localId").asString(), originScope: try ScopeRef(json: object.member("originScope")),
+                command: try object["command"]?.asBool() ?? false)
+    }
+
+    var json: JSON {
+      var object: JSON.Object = ["localId": .string(localId), "originScope": originScope.json]
+      object["command"] = command ? true : nil
+      return .object(object)
+    }
+  }
+
   public let inverseActId: String
   public let cancelledActId: String
+  public var sourceEntries: [Source]
   public var units: [CancellationUnit]
   public var retained: Bool
 
-  public init(inverseActId: String, cancelledActId: String, units: [CancellationUnit], retained: Bool = true) {
+  public init(inverseActId: String, cancelledActId: String, sourceEntries: [Source], units: [CancellationUnit], retained: Bool = true) {
     self.inverseActId = inverseActId
     self.cancelledActId = cancelledActId
+    self.sourceEntries = sourceEntries
     self.units = units
     self.retained = retained
   }
 
   public init(json: JSON) throws {
     let object = try json.asObject()
-    try object.expectKeys(required: ["version", "inverseActId", "cancelledActId", "units"], optional: ["retained"])
+    try object.expectKeys(required: ["version", "inverseActId", "cancelledActId", "sourceEntries", "units"], optional: ["retained"])
     self.init(inverseActId: try object.member("inverseActId").asString(), cancelledActId: try object.member("cancelledActId").asString(),
+              sourceEntries: try object.member("sourceEntries").asArray().map { (source: JSON) throws -> Source in try Source(json: source) },
               units: try object.member("units").asArray().map { (unit: JSON) throws -> CancellationUnit in try CancellationUnit(json: unit) },
               retained: try object["retained"]?.asBool() ?? true)
   }
 
   public var json: JSON {
     var object: JSON.Object = ["version": 1, "inverseActId": .string(inverseActId), "cancelledActId": .string(cancelledActId),
-                               "units": .array(units.map(\.json))]
+                               "sourceEntries": .array(sourceEntries.map(\.json)), "units": .array(units.map(\.json))]
     object["retained"] = retained ? nil : false
     return .object(object)
   }
@@ -317,10 +420,18 @@ public enum PlannedOperation: Sendable, Hashable {
     case .createdRecord: self
     }
   }
+
+  func resolving(_ localId: String, by bind: (Target) -> VersionReference) -> PlannedOperation {
+    switch self {
+    case .field(let target, let before, let reference): .field(target, before: before, reference: reference?.resolving(localId, by: bind))
+    case .createRecord(let record, let values, let reference):
+      .createRecord(record, values: values, reference: reference.resolving(localId, by: bind))
+    case .createdRecord: self
+    }
+  }
 }
 
-// What an inverse slot runs: a restore of its operations, a product inverse command, or nothing once a Discard withdrew
-// its values.
+// What an inverse slot runs: a restore of its operations, a product inverse command, or nothing once the slot settled.
 public enum SlotRecipe: Sendable, Hashable {
   case restore(command: String, operations: [PlannedOperation])
   case command(String, input: JSON, evidence: EvidenceSelection)
@@ -365,30 +476,36 @@ public enum InverseState: String, Sendable, Hashable {
   case waiting, materialized, settled
 }
 
-// One outbox entry an inverse request reserved.
+// One outbox entry an inverse request reserved in its scope. `skipped`: the codes of the operations materialization
+// skipped before sending, which the request's counts take with the slot's outcomes.
 public struct InverseSlot: Sendable, Hashable {
   public let localId: String
   public let commitOrder: Int64
+  public var originScope: ScopeRef
   public var recipe: SlotRecipe
   public var state: InverseState
+  public var skipped: [String]?
   public var outcomes: [InverseOutcome]?
   public var changed: Bool?
 
-  init(localId: String, commitOrder: Int64, recipe: SlotRecipe) {
+  init(localId: String, commitOrder: Int64, originScope: ScopeRef, recipe: SlotRecipe) {
     self.localId = localId
     self.commitOrder = commitOrder
+    self.originScope = originScope
     self.recipe = recipe
     state = .waiting
   }
 
   init(json: JSON) throws {
     let object = try json.asObject()
-    try object.expectKeys(required: ["localId", "commitOrder", "recipe", "state"], optional: ["outcomes", "changed"])
+    try object.expectKeys(required: ["localId", "commitOrder", "originScope", "recipe", "state"], optional: ["skipped", "outcomes", "changed"])
     guard let state = InverseState(rawValue: try object.member("state").asString()) else { throw JSONError.shape("a slot state") }
     localId = try object.member("localId").asString()
     commitOrder = try object.member("commitOrder").asInteger()
+    originScope = try ScopeRef(json: object.member("originScope"))
     recipe = try SlotRecipe(json: object.member("recipe"))
     self.state = state
+    skipped = try object["skipped"]?.asArray().map { (skip: JSON) throws -> String in try skip.asObject().member("code").asString() }
     outcomes = try object["outcomes"]?.asArray().map { (outcome: JSON) throws -> InverseOutcome in
       let fields = try outcome.asObject()
       let code: String? = try fields["code"]?.asString()
@@ -398,7 +515,9 @@ public struct InverseSlot: Sendable, Hashable {
   }
 
   var json: JSON {
-    var object: JSON.Object = ["localId": .string(localId), "commitOrder": JSON(commitOrder), "recipe": recipe.json, "state": .string(state.rawValue)]
+    var object: JSON.Object = ["localId": .string(localId), "commitOrder": JSON(commitOrder), "originScope": originScope.json,
+                               "recipe": recipe.json, "state": .string(state.rawValue)]
+    object["skipped"] = skipped.map { (codes: [String]) -> JSON in .array(codes.map { (code: String) -> JSON in ["code": .string(code)] }) }
     object["outcomes"] = outcomes.map { .array($0.map(\.json)) }
     object["changed"] = changed.map(JSON.bool)
     return .object(object)
@@ -411,16 +530,19 @@ public struct InverseRequest: Sendable, Hashable {
   public let sourceActId: String
   public let inverseActId: String
   public var state: InverseState
+  // The device time it was asked at, which the engine's first start reports the oldest waiting one's age from.
+  public let requestedAt: Int64
   public let localChanged: Bool?
   public var slots: [InverseSlot]
   public var result: InverseResult?
 
-  init(requestId: String, sourceActId: String, inverseActId: String, state: InverseState, localChanged: Bool?, slots: [InverseSlot],
-       result: InverseResult? = nil) {
+  init(requestId: String, sourceActId: String, inverseActId: String, state: InverseState, requestedAt: Int64, localChanged: Bool?,
+       slots: [InverseSlot], result: InverseResult? = nil) {
     self.requestId = requestId
     self.sourceActId = sourceActId
     self.inverseActId = inverseActId
     self.state = state
+    self.requestedAt = requestedAt
     self.localChanged = localChanged
     self.slots = slots
     self.result = result
@@ -428,11 +550,13 @@ public struct InverseRequest: Sendable, Hashable {
 
   public init(json: JSON) throws {
     let object = try json.asObject()
-    try object.expectKeys(required: ["version", "requestId", "sourceActId", "inverseActId", "state", "slots"], optional: ["localChanged", "result"])
+    try object.expectKeys(required: ["version", "requestId", "sourceActId", "inverseActId", "state", "requestedAt", "slots"],
+                          optional: ["localChanged", "result"])
     guard let state = InverseState(rawValue: try object.member("state").asString()) else { throw JSONError.shape("a request state") }
     self.init(
       requestId: try object.member("requestId").asString(), sourceActId: try object.member("sourceActId").asString(),
-      inverseActId: try object.member("inverseActId").asString(), state: state, localChanged: try object["localChanged"]?.asBool(),
+      inverseActId: try object.member("inverseActId").asString(), state: state, requestedAt: try object.member("requestedAt").asInteger(),
+      localChanged: try object["localChanged"]?.asBool(),
       slots: try object.member("slots").asArray().map { (slot: JSON) throws -> InverseSlot in try InverseSlot(json: slot) },
       result: try object["result"].map { (result: JSON) throws -> InverseResult in try InverseResult(json: result) })
   }
@@ -440,27 +564,31 @@ public struct InverseRequest: Sendable, Hashable {
   public var json: JSON {
     var object: JSON.Object = [
       "version": 1, "requestId": .string(requestId), "sourceActId": .string(sourceActId), "inverseActId": .string(inverseActId),
-      "state": .string(state.rawValue), "slots": .array(slots.map(\.json)),
+      "state": .string(state.rawValue), "requestedAt": JSON(requestedAt), "slots": .array(slots.map(\.json)),
     ]
     object["localChanged"] = localChanged.map(JSON.bool)
     object["result"] = result?.json
     return .object(object)
   }
 
-  // A slot settles with its outcomes, or every operation skipped by `code`.
+  // A slot settles with its outcomes, or every operation skipped by `code`. A settled slot keeps no values: its recipe is
+  // withdrawn.
   mutating func settle(slot index: Int, outcomes: [InverseOutcome]?, code: String) {
     let count = slots[index].recipe.count
     slots[index].outcomes = outcomes ?? (0..<count).map { (operation: Int) -> InverseOutcome in InverseOutcome(index: operation, skipped: code) }
+    slots[index].recipe = .withdrawn(command: slots[index].recipe.command)
     slots[index].state = .settled
   }
 
-  // The request settles once every slot has: changed when any slot's accepted effects changed a row. True when it did now.
+  // The request settles once every slot has: changed when any slot's accepted effects changed a row, and the counts take
+  // every operation a slot sent and every one it skipped before sending. True when it did now.
   mutating func settleIfDone() -> Bool {
     guard state != .settled, slots.allSatisfy({ $0.state == .settled }) else { return false }
-    let outcomes: [InverseOutcome] = slots.flatMap { $0.outcomes ?? [] }
+    let applied: Int = slots.flatMap { $0.outcomes ?? [] }.filter(\.applied).count
+    let skipped: Int = slots.flatMap { $0.outcomes ?? [] }.filter { !$0.applied }.count + slots.flatMap { $0.skipped ?? [] }.count
     state = .settled
     result = .settled(requestId: requestId, inverseActId: inverseActId, changed: slots.contains { $0.changed == true },
-                      appliedCount: outcomes.filter(\.applied).count, skippedCount: outcomes.filter { !$0.applied }.count)
+                      appliedCount: applied, skippedCount: skipped)
     return true
   }
 
@@ -516,11 +644,13 @@ public struct Journal: Sendable, Hashable {
   }
 
   // §7.4's retention point: a source keeps its accepted receipt, or its refusal, under the answer's epoch. One attempt an
-  // epoch: a replay's replaces it.
+  // epoch: a replay's replaces it. An ok without a readable receipt proves nothing of what the act wrote: the source's
+  // history is unavailable.
   mutating func retain(_ attempt: Attempt, of localId: String) {
     guard let (act, source) = source(of: localId) else { return }
     acts[act].sourceEntries[source].attempts.removeAll { $0.epoch.isSameID(as: attempt.epoch) }
     acts[act].sourceEntries[source].attempts.append(attempt)
+    if attempt.ok && attempt.acceptedEffects == nil { acts[act].sourceEntries[source].unavailable = true }
   }
 
   // The journal keeps acts the product's stack retains, acts an unsettled request inverts, and acts whose sources a kept
@@ -596,21 +726,73 @@ extension LoadedReplica {
     }
   }
 
-  // §7.10 a Discard of a product's work removes the journal's whole source entries of that product, values included; an
-  // act left with none goes. Its waiting slots settle skipped `discarded`, their values withdrawn.
+  // §7.10 a Discard of a product's work removes the journal's whole source entries of that product, values included, and
+  // its cancellations' units and inverse requests; an act or a cancellation left with nothing of its own goes. The
+  // discarded slots settle skipped `discarded` first.
   public mutating func discardJournal(of product: String, registry: Registry) {
+    let theirs = { (scope: ScopeRef) -> Bool in registry.product(of: scope)?.isSameID(as: product) == true }
     updateJournal { journal in
-      for act in journal.acts.indices {
-        journal.acts[act].sourceEntries.removeAll { registry.product(of: $0.originScope)?.isSameID(as: product) == true }
-      }
+      for act in journal.acts.indices { journal.acts[act].sourceEntries.removeAll { theirs($0.originScope) } }
       journal.acts.removeAll { $0.sourceEntries.isEmpty }
     }
-    settleEnded(code: "discarded", withdraw: true)
+    settleEnded(code: "discarded")
+    updateJournal { journal in
+      for index in journal.cancellations.indices {
+        journal.cancellations[index].sourceEntries.removeAll { theirs($0.originScope) }
+        let kept = Set(journal.cancellations[index].sourceEntries.map(\.localId))
+        journal.cancellations[index].units.removeAll { !kept.contains($0.ownerLocalId) }
+      }
+      let gone = journal.cancellations.filter(\.sourceEntries.isEmpty).map(\.inverseActId)
+      journal.cancellations.removeAll(where: \.sourceEntries.isEmpty)
+      journal.inverses.removeAll { request in
+        request.slots.isEmpty ? gone.contains { $0.isSameID(as: request.inverseActId) } : request.slots.allSatisfy { theirs($0.originScope) }
+      }
+    }
+  }
+
+  // §7.5 step 2: a scope that ends (its `gone` or `not-found`, or a dead governing row) keeps none of its values in the
+  // journal. Its sources keep their receipts and become unavailable; a cancellation's units there go; a slot still
+  // waiting there vacates, skipped `scope-gone`.
+  public mutating func forgetJournalScope(_ scope: ScopeRef) throws {
+    guard !journal.isEmpty else { return }
+    let vacated: [String] = journal.inverses.filter { $0.state != .settled }.flatMap(\.slots)
+      .filter { $0.state == .waiting && $0.originScope == scope }.map(\.localId).filter { named($0) != nil }
+    for localId in vacated { try move(localId, .vacate) }
+    updateJournal { journal in
+      for act in journal.acts.indices {
+        for index in journal.acts[act].sourceEntries.indices where journal.acts[act].sourceEntries[index].originScope == scope {
+          journal.acts[act].sourceEntries[index].recipes = []
+          journal.acts[act].sourceEntries[index].preimages = []
+          journal.acts[act].sourceEntries[index].written = []
+          journal.acts[act].sourceEntries[index].unavailable = true
+        }
+      }
+      for index in journal.cancellations.indices { journal.cancellations[index].units.removeAll { $0.address.scope == scope } }
+      for request in journal.inverses.indices where journal.inverses[request].state != .settled {
+        for slot in journal.inverses[request].slots.indices {
+          let held = journal.inverses[request].slots[slot]
+          guard held.state == .waiting, held.originScope == scope else { continue }
+          journal.inverses[request].settle(slot: slot, outcomes: nil, code: "scope-gone")
+        }
+        journal.settle(request: request)
+      }
+    }
+  }
+
+  // §7.3 engine start: no product's stack outlives its process, so every act and cancellation no unsettled request reads
+  // goes.
+  public mutating func releaseJournal() {
+    guard !journal.isEmpty else { return }
+    updateJournal { journal in
+      for index in journal.acts.indices { journal.acts[index].retained = false }
+      for index in journal.cancellations.indices { journal.cancellations[index].retained = false }
+      journal.collect()
+    }
   }
 
   // The slots whose entries ended without a result (a fold, a refusal of another entry, a Discard) settle skipped by
-  // `code`; a Discard also withdraws their values, the slot keeping only its outcomes.
-  public mutating func settleEnded(code: String, withdraw: Bool = false) {
+  // `code`.
+  public mutating func settleEnded(code: String) {
     let ended: [(request: Int, slot: Int)] = journal.inverses.indices.flatMap { (request: Int) -> [(request: Int, slot: Int)] in
       guard journal.inverses[request].state != .settled else { return [] }
       return journal.inverses[request].slots.indices.compactMap { (slot: Int) -> (request: Int, slot: Int)? in
@@ -621,19 +803,23 @@ extension LoadedReplica {
     let unsettled = journal.inverses.indices.filter { journal.inverses[$0].state != .settled }
     guard !unsettled.isEmpty else { return }
     updateJournal { journal in
-      for (request, slot) in ended {
-        journal.inverses[request].settle(slot: slot, outcomes: nil, code: code)
-        if withdraw { journal.inverses[request].slots[slot].recipe = .withdrawn(command: journal.inverses[request].slots[slot].recipe.command) }
-      }
+      for (request, slot) in ended { journal.inverses[request].settle(slot: slot, outcomes: nil, code: code) }
       for request in unsettled { journal.settle(request: request) }
     }
   }
 
-  // §7.5 step 1: references taken before the replica held an epoch belong to the epoch it then took, which an epoch
-  // change now leaves.
+  // §7.5 step 1: references and preimages taken before the replica held an epoch belong to the epoch it then took, which
+  // an epoch change now leaves.
   public mutating func bindReferences(to epoch: String?) {
-    guard !journal.cancellations.isEmpty || !journal.inverses.isEmpty else { return }
+    guard !journal.isEmpty else { return }
     updateJournal { journal in
+      for act in journal.acts.indices {
+        for source in journal.acts[act].sourceEntries.indices {
+          for preimage in journal.acts[act].sourceEntries[source].preimages.indices where journal.acts[act].sourceEntries[source].preimages[preimage].epoch == nil {
+            journal.acts[act].sourceEntries[source].preimages[preimage].epoch = epoch
+          }
+        }
+      }
       for cancellation in journal.cancellations.indices {
         journal.cancellations[cancellation].units = journal.cancellations[cancellation].units.map { $0.bound(to: epoch) }
       }
@@ -681,6 +867,7 @@ extension LoadedReplica {
             }
           }
           for preimage in source.preimages.indices { address(&source.preimages[preimage].target.address) }
+          for written in source.written.indices { address(&source.written[written].target.address) }
           for attempt in source.attempts.indices {
             source.attempts[attempt].acceptedEffects = source.attempts[attempt].acceptedEffects?.map { (effect: EffectReceipt) -> EffectReceipt in
               var moved = effect
@@ -743,8 +930,9 @@ extension ViewRecord {
 
 extension CommitPlanner {
   // §7.3 capture: the act's undo request checked against its scopes, each segment's first local preimages read from
-  // `drawn` before any segment changes it. An unset slot takes its target's default; with none, and for any malformed
-  // recipe, the act throws before anything changes.
+  // `drawn` before any segment changes it, each with the sequence of the confirmed row it was read over and the epoch
+  // that sequence counts in. An unset slot takes its target's default; with none, and for any malformed recipe, the act
+  // throws before anything changes.
   public func undoPlan(_ undo: ActUndo?, scopes: [ScopeRef], in replica: LoadedReplica) throws -> UndoPlan? {
     guard let undo else { return nil }
     var segments: [Int: UndoPlan.Segment] = [:]
@@ -765,7 +953,8 @@ extension CommitPlanner {
           guard let value = view.record(item.target.key)?.value(of: item.target.slot) ?? item.defaultValue else {
             throw CommitFailure.malformed("an unset undo target needs its default")
           }
-          preimages.append(Preimage(target: item.target, value: value))
+          let rowSeq: Int64? = replica.rows(scope).row(item.target.key)?.seq
+          preimages.append(Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch))
         }
       }
       segments[segment.index] = UndoPlan.Segment(scope: scope, recipes: segment.recipes, preimages: preimages)
@@ -787,8 +976,9 @@ extension CommitPlanner {
     return found[0].name
   }
 
-  // §7.3 record: the act's journal record, one source entry per named segment that left an entry, in commit order. A
-  // segment that writes nothing leaves none, and an act left with none records nothing.
+  // §7.3 record: the act's journal record, one source entry per named segment that left an entry, in commit order, with
+  // the value the act left in each target, which a Redo writes back. A segment that writes nothing leaves none, and an
+  // act left with none records nothing.
   public func record(act actId: String, plan: UndoPlan?, receipts: [ActSegmentReceipt], in replica: inout LoadedReplica) throws {
     guard let plan else { return }
     var sources: [JournalSource] = []
@@ -796,7 +986,12 @@ extension CommitPlanner {
       let localIds = receipts[index].localIds
       if localIds.isEmpty { continue }
       guard localIds.count == 1 else { throw CommitFailure.malformed("an opted segment commits one intent") }
-      sources.append(JournalSource(localId: localIds[0], originScope: segment.scope, recipes: segment.recipes, preimages: segment.preimages))
+      let view = try ScopeView(replica, segment.scope, .drawn, registry: registry)
+      let written: [WrittenValue] = segment.preimages.compactMap { (preimage: Preimage) -> WrittenValue? in
+        view.record(preimage.target.key)?.value(of: preimage.target.slot).map { WrittenValue(target: preimage.target, value: $0) }
+      }
+      sources.append(JournalSource(localId: localIds[0], originScope: segment.scope, recipes: segment.recipes, preimages: segment.preimages,
+                                   written: written))
     }
     guard !sources.isEmpty else { return }
     replica.updateJournal { $0.acts.append(ReversibleAct(actId: actId, sourceEntries: sources)) }

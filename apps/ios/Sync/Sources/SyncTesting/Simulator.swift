@@ -1319,7 +1319,7 @@ package final class Simulator {
         }
       case .digestMismatch(let kind, let seq):
         if !phone.digestCorrupted { found.append("INV-15 \(phone.name): a digest mismatch in a \(kind) scope at \(seq)") }
-      case .pushMalformed, .activeReplicaChanged:
+      case .pushMalformed, .activeReplicaChanged, .inverseSettled:
         break
       }
     }
