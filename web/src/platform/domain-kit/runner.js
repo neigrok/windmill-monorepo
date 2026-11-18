@@ -5,7 +5,7 @@
 
 import { mintId } from '../../../../packages/api-contract/sync/reference/core/derive.js';
 import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
-import { ActReader, ActIDSource, ActPrediction, ActDecision } from './acts.js';
+import { ActReader, ActIDSource, ActPlan, ActPrediction, ActDecision, ScopedPlan } from './acts.js';
 import { IDSource, Outcome, decision, firstGone, refusalSubject } from './actions.js';
 import { Draft, SaveDraft, SaveResult } from './drafts.js';
 import { DecodeError, Id } from './entities.js';
@@ -13,7 +13,7 @@ import { PlanError } from './plans.js';
 import { Reader, Views } from './reading.js';
 import { Refused } from './refusals.js';
 import { Instant, Moment } from './time.js';
-import { translate } from './translation.js';
+import { translate, translateUndo } from './translation.js';
 import { Fault, Violation, precondition } from './values.js';
 
 let insideRun = false;
@@ -34,13 +34,23 @@ let insideRun = false;
  * @typedef {{ receipt: import('./acts.js').ActReceipt } | { refused: { segment: number, code: string, detail: Json | null } }} ActCommitOutcome
  */
 /**
+ * K-3 (engine §7.3 Undo of an act): what an Undo or a Redo answers.
+ * @typedef {{ kind: 'cancelled', requestId: string, inverseActId: string, changed: boolean }
+ *   | { kind: 'pending', requestId: string, inverseActId: string, localChanged: boolean }
+ *   | { kind: 'settled', requestId: string, inverseActId: string, changed: boolean, appliedCount: number, skippedCount: number }
+ *   | { kind: 'unavailable', requestId: string | null, reason: string }} InverseResult
+ */
+/**
  * The replica port (D-18, ER-2): `commit` runs its synchronous body in one local transaction and
  * answers after it; a body returning no gesture writes nothing. `EngineReplica` is the browser engine's.
  * @typedef {{
  *   commit<T>(scope: string, body: (views: CommitViews) => { gesture: Gesture | null, value: T }): Promise<{ outcome: CommitOutcome | null, value: T }> | { outcome: CommitOutcome | null, value: T },
  *   commitAct<T>(prepare: (context: import('./acts.js').ActContext) => { request: import('./acts.js').ActRequest | null, value: T }, segment: (value: T, index: number, views: CommitViews) => Gesture): Promise<{ outcome: ActCommitOutcome | null, value: T }> | { outcome: ActCommitOutcome | null, value: T },
  *   read(scope: string): ReadViews,
- *   undo(gestureId: string): Promise<boolean> | boolean,
+ *   cancelHeld(gestureId: string): Promise<boolean> | boolean,
+ *   requestInverse?(actId: string, slots?: { index: number, recipes: Json[] }[]): Promise<InverseResult> | InverseResult,
+ *   readInverseResult?(requestId: string): InverseResult,
+ *   releaseReversibleAct?(actId: string): Promise<boolean> | boolean,
  *   mintId(type: string, taken: Set<string>): RecordID,
  *   opaqueID?(): string,
  *   physNow(): number,
@@ -80,7 +90,23 @@ export class ActionRunner {
    * @returns {Promise<import('./actions.js').Outcome<T, R>>}
    */
   async run(action) {
-    return this.perform(action);
+    if (action.reversible !== true) return this.perform(action);
+    const scope = action.scope;
+    /** @type {import('./acts.js').ActAction<L, T, R>} */
+    const act = {
+      refusals: action.refusals,
+      load: (read) => read.inScope(scope, (reader) => action.load(reader)),
+      decide: (loaded, ids) => {
+        const decided = decision(action, loaded, /** @type {any} */ ({ mint: (/** @type {any} */ type) => ids.mint(type, scope), opaqueID: () => ids.opaqueID() }));
+        if (decided.kind !== 'write') return decided;
+        return ActDecision.write(new ActPlan([new ScopedPlan(scope, decided.plan)]), decided.result);
+      },
+    };
+    const outcome = await this.runAct(act);
+    if (outcome.kind !== 'committed') return outcome;
+    const { gestureId, segments: [segment], retired, superseded, releaseAt } = outcome.receipt;
+    precondition(segment !== undefined, 'a reversible action commits one segment');
+    return Outcome.committed(outcome.result, { gestureId, localIds: segment.localIds, retired, ...(superseded.length ? { superseded } : {}), releaseAt });
   }
 
   /**
@@ -108,7 +134,12 @@ export class ActionRunner {
           precondition(!isThenable(decided), 'an act decides synchronously');
           if (decided.kind === 'refuse') return { request: null, value: { done: { kind: 'refused', refusal: decided.refusal } } };
           if (decided.kind === 'unchanged') return { request: null, value: { done: { kind: 'unchanged', result: decided.result } } };
-          return { request: { scopes: decided.plan.segments.map((item) => item.scope), hold: decided.plan.segments.some((item) => item.plan.isHeld) }, value: { writing: decided } };
+          const opted = decided.plan.segments.flatMap(({ scope, plan }, index) => {
+            const recipes = translateUndo(plan, scope);
+            return recipes === null ? [] : [{ index, recipes }];
+          });
+          return { request: { scopes: decided.plan.segments.map((item) => item.scope), hold: decided.plan.segments.some((item) => item.plan.isHeld),
+            ...(opted.length ? { undo: { version: 1, segments: opted } } : {}) }, value: { writing: decided } };
         } finally { insideRun = false; }
       }, (value, index, input) => {
         precondition('writing' in value, 'an act segment requires a plan');
@@ -168,6 +199,7 @@ export class ActionRunner {
           precondition(!isThenable(decided), 'a decider decides synchronously');
           if (decided.kind === 'refuse') return { gesture: null, value: { done: Outcome.refused(decided.refusal) } };
           if (decided.kind === 'unchanged') return { gesture: null, value: { done: Outcome.unchanged(decided.result) } };
+          if (decided.plan.undo !== null) throw new PlanError(10, 'only a reversible action opts its plan into Undo');
           const gone = firstGone(decided.plan, views, scope, this.registry);
           if (gone) return { gesture: null, value: { done: Outcome.refused(decider.refusals.ofRefused(gone)) } };
           return { gesture: translate(decided.plan, scope, this.registry), value: { writing: { plan: decided.plan, result: decided.result } } };
@@ -214,9 +246,59 @@ export class ActionRunner {
     return body(new Reader(this.viewsOf(scope, this.replica.read(scope)), scope, this.moment()));
   }
 
+  // §7.3: cancels a gesture while every entry of it is still held; true iff it did.
   /** @param {string} gestureId */
-  async undo(gestureId) {
-    return this.replica.undo(gestureId);
+  async cancelHeld(gestureId) {
+    return this.replica.cancelHeld(gestureId);
+  }
+
+  // K-3 (engine §7.3 Undo of an act): the inverse of an act opted into Undo. A wholly held act is cancelled in
+  // place; otherwise the inverse is reserved at once and settles as its sources do.
+  /**
+   * @param {string} actId
+   * @returns {Promise<InverseResult>}
+   */
+  async undo(actId) {
+    return this.port('requestInverse')(actId);
+  }
+
+  // The inverse of an Undo, restoring only what it applied, or what `productSlots` (by source ordinal, with the
+  // scope each source wrote) name instead, as a product's Redo of a terminal creation does.
+  /**
+   * @param {string} requestId
+   * @param {{ index: number, scope: string, plan: import('./plans.js').Plan }[]} [productSlots]
+   * @returns {Promise<InverseResult>}
+   */
+  async redo(requestId, productSlots) {
+    const undone = this.inverseResult(requestId);
+    if (undone.kind === 'unavailable') return undone;
+    const slots = productSlots?.map(({ index, scope, plan }) => ({ index, recipes: translateUndo(plan, scope) ?? [] }));
+    return this.port('requestInverse')(undone.inverseActId, slots);
+  }
+
+  /**
+   * @param {string} requestId
+   * @returns {InverseResult}
+   */
+  inverseResult(requestId) {
+    return this.port('readInverseResult')(requestId);
+  }
+
+  // The product's stack no longer needs the act: its journal record and values go.
+  /** @param {string} actId */
+  async release(actId) {
+    return this.port('releaseReversibleAct')(actId);
+  }
+
+  /**
+   * @template {'requestInverse' | 'readInverseResult' | 'releaseReversibleAct'} K
+   * @param {K} name
+   * @returns {NonNullable<Replica[K]>}
+   */
+  port(name) {
+    const method = this.replica[name];
+    precondition(typeof method === 'function', `the replica port has no ${name}`);
+    return /** @type {any} */ (method).bind(this.replica);
   }
 
   /**
@@ -265,7 +347,8 @@ export class ActionRunner {
     return this.open(type, id, actual) ?? Draft.new(blank, null, actual);
   }
 
-  // The draft's one door (INV-14): its save as one commit, answering the result and the draft after it.
+  // The draft's one door (INV-14): its save as one commit, answering the result and the draft after it. A type
+  // that saves reversibly saves through the act path, so the receipt's gesture id is the act an Undo names.
   /**
    * @template {import('./entities.js').Writable<any>} E
    * @template R
@@ -279,7 +362,7 @@ export class ActionRunner {
     /** @type {import('./actions.js').Outcome<import('./drafts.js').Saved, R>} */
     let outcome;
     try {
-      outcome = await this.perform(save);
+      outcome = await this.run(save);
     } catch (error) {
       if (error instanceof Fault || error instanceof PlanError || error instanceof DecodeError) throw error;
       return { result: SaveResult.failed(error), draft };
@@ -359,8 +442,26 @@ export class EngineReplica {
   }
 
   /** @param {string} gestureId */
-  undo(gestureId) {
+  cancelHeld(gestureId) {
     return this.engine.undo(gestureId);
+  }
+
+  /**
+   * @param {string} actId
+   * @param {{ index: number, recipes: Json[] }[]} [slots]
+   */
+  requestInverse(actId, slots) {
+    return this.engine.requestInverse(actId, slots);
+  }
+
+  /** @param {string} requestId */
+  readInverseResult(requestId) {
+    return this.engine.readInverseResult(requestId);
+  }
+
+  /** @param {string} actId */
+  releaseReversibleAct(actId) {
+    return this.engine.releaseReversibleAct(actId);
   }
 
   // D-8: a CSPRNG id by the type's mint, drawn again while a drawn record holds it.

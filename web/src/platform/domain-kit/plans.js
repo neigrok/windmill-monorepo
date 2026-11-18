@@ -154,6 +154,64 @@ function applying(spec, json, keys, path) {
   return json;
 }
 
+// K-3: one slot of a record an Undo recipe names, a field, a text or the life, in its scope or, null, in the scope
+// of the plan that carries it.
+export class UndoTarget {
+  /**
+   * @param {AnyId} id
+   * @param {{ kind: 'field' | 'text', name: string } | { kind: 'life' }} slot
+   * @param {string | null} scope
+   */
+  constructor(id, slot, scope = null) {
+    this.id = id;
+    this.slot = Object.freeze({ ...slot });
+    this.scope = scope;
+    Object.freeze(this);
+  }
+
+  /** @param {AnyId} id @param {string} name @param {string | null} [scope] */
+  static field(id, name, scope = null) { return new UndoTarget(id, { kind: 'field', name }, scope); }
+
+  /** @param {AnyId} id @param {string} name @param {string | null} [scope] */
+  static text(id, name, scope = null) { return new UndoTarget(id, { kind: 'text', name }, scope); }
+
+  /** @param {AnyId} id @param {string | null} [scope] */
+  static life(id, scope = null) { return new UndoTarget(id, { kind: 'life' }, scope); }
+}
+
+// K-3: what an Undo of a plan's writes runs (engine §7.3 Undo of an act), the closed union: earlier field values
+// by a scope's restore command, a record the plan created deleted again while unchanged, or a product's inverse
+// command over evidence the engine builds. A field unset before the act names the value equivalent to unset.
+/**
+ * @typedef {{ kind: 'fields', restoreCommand: string, targets: readonly { target: UndoTarget, defaultValue?: Json }[] }
+ *   | { kind: 'createdRecord', restoreCommand: string, id: AnyId }
+ *   | { kind: 'command', command: string, input: Json, evidence: { ownedFields: readonly UndoTarget[],
+ *       unchangedCreatedRecords: readonly { id: AnyId, scope: string | null }[], unchangedCreatedScopes: readonly string[] } }} UndoRecipe
+ */
+export const UndoRecipe = Object.freeze({
+  /**
+   * @param {string} restoreCommand
+   * @param {(UndoTarget | { target: UndoTarget, defaultValue: Json })[]} targets
+   * @returns {UndoRecipe}
+   */
+  fields: (restoreCommand, targets) => Object.freeze({ kind: 'fields', restoreCommand,
+    targets: Object.freeze(targets.map((item) => (item instanceof UndoTarget ? { target: item } : item))) }),
+  /**
+   * @param {string} restoreCommand
+   * @param {AnyId} id
+   * @returns {UndoRecipe}
+   */
+  createdRecord: (restoreCommand, id) => Object.freeze({ kind: 'createdRecord', restoreCommand, id }),
+  /**
+   * @param {string} command
+   * @param {Json} input
+   * @param {{ ownedFields?: UndoTarget[], unchangedCreatedRecords?: { id: AnyId, scope: string | null }[], unchangedCreatedScopes?: string[] }} [evidence]
+   * @returns {UndoRecipe}
+   */
+  command: (command, input, { ownedFields = [], unchangedCreatedRecords = [], unchangedCreatedScopes = [] } = {}) =>
+    Object.freeze({ kind: 'command', command, input, evidence: Object.freeze({ ownedFields, unchangedCreatedRecords, unchangedCreatedScopes }) }),
+});
+
 export class Plan {
   constructor() {
     /** @type {Operation[]} */
@@ -166,6 +224,9 @@ export class Plan {
     this.deviceWrites = [];
     /** @type {string[]} */
     this.supersededGestures = [];
+    /** @type {UndoRecipe[]} */
+    this.undoRecipes = [];
+    this.undoEvidence = false;
   }
 
   // §8.4: a plan running a command, its string arguments normalised by the command's specs; a
@@ -265,6 +326,26 @@ export class Plan {
   /** @param {string[]} gestureIds */
   supersede(gestureIds) {
     this.supersededGestures = [...gestureIds];
+  }
+
+  // K-3: opts the plan's act into Undo after its hold, with the recipes an Undo runs.
+  /** @param {UndoRecipe[]} recipes */
+  undoBy(...recipes) {
+    precondition(recipes.length > 0 && recipes.every((recipe) => ['fields', 'createdRecord', 'command'].includes(recipe?.kind)), 'undoBy takes Undo recipes');
+    this.undoRecipes.push(...recipes);
+  }
+
+  // K-3: names the plan's segment for its act's Undo with no recipe of its own. The engine journals the segment's
+  // receipts, which prove what another segment's command recipe names as evidence, such as a scope the act created
+  // and this segment wrote.
+  evidenceForUndo() {
+    this.undoEvidence = true;
+  }
+
+  /** @returns {{ version: 1, recipes: readonly UndoRecipe[] } | null} */
+  get undo() {
+    if (this.undoRecipes.length === 0 && !this.undoEvidence) return null;
+    return Object.freeze({ version: 1, recipes: Object.freeze([...this.undoRecipes]) });
   }
 
   /**

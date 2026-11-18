@@ -281,3 +281,28 @@ export function translate(plan, scope, registry) {
     ...(plan.supersededGestures.length ? { supersede: [...plan.supersededGestures] } : {}),
   };
 }
+
+// K-3: a plan's Undo recipes in the engine's form (engine §7.3 Undo of an act); a target or record without a
+// scope of its own lives in the plan's.
+/**
+ * @param {Plan} plan
+ * @param {string} scope
+ * @returns {Json[] | null}
+ */
+export function translateUndo(plan, scope) {
+  const undo = plan.undo;
+  if (undo === null) return null;
+  const target = (/** @type {import('./plans.js').UndoTarget} */ item) => ({ scope: item.scope ?? scope, t: item.id.entity.type, id: item.id.record, slot: { ...item.slot } });
+  const record = (/** @type {import('./entities.js').Id<any>} */ id, /** @type {string | null} */ at) => ({ scope: at ?? scope, t: id.entity.type, id: id.record });
+  return undo.recipes.map((recipe) => {
+    if (recipe.kind === 'fields') {
+      return { kind: 'fields', restoreCommand: recipe.restoreCommand,
+        targets: recipe.targets.map((item) => ({ target: target(item.target), ...(item.defaultValue === undefined ? {} : { defaultValue: item.defaultValue }) })) };
+    }
+    if (recipe.kind === 'createdRecord') return { kind: 'createdRecord', restoreCommand: recipe.restoreCommand, record: record(recipe.id, null) };
+    return { kind: 'command', command: recipe.command, input: recipe.input, evidence: {
+      ownedFields: recipe.evidence.ownedFields.map(target),
+      unchangedCreatedRecords: recipe.evidence.unchangedCreatedRecords.map((item) => record(item.id, item.scope)),
+      unchangedCreatedScopes: [...recipe.evidence.unchangedCreatedScopes] } };
+  });
+}

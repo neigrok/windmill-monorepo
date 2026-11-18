@@ -174,6 +174,7 @@ create table if not exists probe_marks (
   primary key (scope_key, id)
 );
 create index if not exists probe_marks_feed on probe_marks (scope_key, seq);
+alter table probe_marks add column if not exists opens text, add column if not exists opens_stamp text;
 
 -- A mark's superseded memo heads (§6.11 step 4); the probe keeps one per record and field.
 create table if not exists probe_marks_revisions (

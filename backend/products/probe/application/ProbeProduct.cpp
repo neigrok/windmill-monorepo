@@ -1,9 +1,11 @@
 #include "products/probe/application/ProbeProduct.h"
 
+#include "platform/domain/sync/Restore.h"
 #include "platform/domain/sync/Scope.h"
 #include "platform/domain/sync/Wire.h"
 #include "products/probe/domain/ProbeRules.h"
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -278,6 +280,60 @@ private:
   }
 };
 
+// K-3 probe.unbranch {input: {parent, child, title}, evidence}: the inverse of probe.branch, all or nothing.
+// While the created board and its tree are unchanged since the branch, and the parent's title is still the
+// one the branch wrote where it wrote one, the board dies, killing its tree, and the parent takes back its
+// earlier title. The evidence must prove the board and its tree; an owned parent title is restored only
+// when the evidence names it.
+class ProbeProduct::Unbranch final : public SyncCommand {
+public:
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    return {ScopeKey::tree(ctx.args["input"]["parent"].asString()), ScopeKey::tree(ctx.args["input"]["child"].asString())};
+  }
+
+  bool isReplay(CommandCtx&) override { return false; }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const Json::Value& input = ctx.args["input"];
+    const Json::Value& evidence = ctx.args["evidence"];
+    const std::string parent = input["parent"].asString();
+    const std::string child = input["child"].asString();
+    const auto names = [](const Json::Value& list, auto matches) {
+      return std::any_of(list.begin(), list.end(), matches);
+    };
+    const bool proves = names(evidence["unchangedCreatedRecords"], [&](const Json::Value& item) {
+      return item["record"]["scope"] == "self/probe" && item["record"]["t"] == "board" && item["record"]["id"] == child;
+    }) && names(evidence["unchangedCreatedScopes"], [&](const Json::Value& item) { return item["scope"] == "tree/" + child; });
+    if (!proves || parent == child) throw Refusal(code::invalid);
+    const auto keyOf = [&](const std::string& ref) { return resolve(ctx.registry, ref, ctx.caller.account); };
+    const EvidenceReader read{
+        .row = [&](const std::string& scope, const std::string& type, const RecordId& id) -> std::optional<Row> {
+          const std::optional<ScopeKey> key = keyOf(scope);
+          return key ? ctx.read.lockIn(*key, type, id).stored : std::nullopt;
+        },
+        .seq = [&](const std::string& scope) -> std::optional<Seq> {
+          const std::optional<ScopeKey> key = keyOf(scope);
+          const std::optional<ScopeRow> row = key ? ctx.read.scope(*key) : std::nullopt;
+          return row ? std::optional<Seq>(row->seq) : std::nullopt;
+        },
+    };
+    if (const std::optional<std::string> skip = evidenceSkip(read, evidence, ctx.epoch)) return CommandOutcome{.detail = inverseDetail(skip)};
+    Delta board{.t = "board", .id = RecordId(child)};
+    board.lattice.born = ctx.read.lock("board", RecordId(child)).stored->lattice.born;
+    board.lattice.life = Life(LifeState::dead, Stamp{});
+    CommandOutcome outcome{.deltas = {board}, .detail = inverseDetail(std::nullopt)};
+    const bool restoresTitle = names(evidence["ownedFields"], [&](const Json::Value& item) {
+      return item["target"]["scope"] == "tree/" + parent && item["target"]["t"] == "meta" && item["target"]["slot"]["name"] == "title";
+    });
+    if (restoresTitle) {
+      Delta meta{.t = "meta", .id = RecordId(std::string("meta"))};
+      meta.lattice.f.emplace("title", Reg(input["title"], Stamp{}));
+      outcome.into.push_back(IntoScope{ScopeKey::tree(parent), {meta}});
+    }
+    return outcome;
+  }
+};
+
 ProbeProduct::ProbeProduct(ProbeReceipts& receipts)
     : runRules_(std::make_unique<RunRules>()),
       start_(std::make_unique<Start>(receipts)),
@@ -286,7 +342,8 @@ ProbeProduct::ProbeProduct(ProbeReceipts& receipts)
       tick_(std::make_unique<Tick>()),
       branch_(std::make_unique<Branch>(receipts)),
       sprout_(std::make_unique<Sprout>()),
-      adopt_(std::make_unique<Adopt>()) {}
+      adopt_(std::make_unique<Adopt>()),
+      unbranch_(std::make_unique<Unbranch>()) {}
 
 ProbeProduct::~ProbeProduct() = default;
 
@@ -299,6 +356,7 @@ void ProbeProduct::bindTo(SyncCatalog& catalog, const std::map<std::string, Type
   catalog.bindCommand("probe.branch", *branch_);
   catalog.bindCommand("probe.sprout", *sprout_);
   catalog.bindCommand("probe.adopt", *adopt_);
+  catalog.bindCommand("probe.unbranch", *unbranch_);
 }
 
 }

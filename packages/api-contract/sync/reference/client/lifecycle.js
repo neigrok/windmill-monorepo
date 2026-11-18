@@ -7,6 +7,8 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
+import { bindReferences } from './inverse.js';
+import { adoptJournal, discardJournal, invalidateEpochs, releaseJournal } from './journal.js';
 import { Replica } from './replica.js';
 import { effectsOf } from './projections.js';
 
@@ -31,6 +33,7 @@ export function renewActor(ctx) {
 }
 
 export function epochChange(replica, ctx, epoch) {
+  bindReferences(replica, replica.meta.serverEpoch);
   replica.meta.serverEpoch = epoch;
   for (const cursor of Object.values(replica.cursors)) cursor.cursor = null;
   replica.staging = {};
@@ -50,17 +53,22 @@ export function epochChange(replica, ctx, epoch) {
     for (const projection of entry.predictions ?? []) { delete projection.covered; delete projection.resultSeq; }
     moveEntry(replica, ctx.ended, entry, 'epoch');
   }
+  invalidateEpochs(replica, epoch);
   reidentify(replica, ctx);
   renewActor(ctx);
 }
 
-// §7.3 and §7.11 at engine start: every held entry is released, the instance takes a new actor, and a
+// §7.3 and §7.11 at engine start: every held entry is released, the journal keeps only what an unsettled
+// request reads, the instance takes a new actor, and a
 // native store (options.backupGuard given: the backup-excluded copy, or null when missing) whose
 // forkGuard differs from that copy re-identifies every replica under a new forkGuard. A store without
 // a forkGuard mints its first. Web runs no fork guard and passes no backupGuard.
 // Answers {actor, reidentified, pendingSignIn?}; a pending sign-in is resumed by the caller.
 export function engineStart(device, ctx, options = {}) {
-  for (const replica of device.replicas) releaseAll(replica, ctx.registry, ctx.ended);
+  for (const replica of device.replicas) {
+    releaseAll(replica, ctx.registry, ctx.ended);
+    releaseJournal(replica);
+  }
   renewActor(ctx);
   let reidentified = false;
   if (Object.hasOwn(options, 'backupGuard')) {
@@ -134,6 +142,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   for (const decision of due) {
     if (decisions[decision.product] !== 'discard') continue;
     for (const entry of entriesOf(registry, anon, decision.product)) moveEntry(anon, ctx.ended, entry, 'discard');
+    discardJournal(anon, registry, decision.product);
     delete anon.device[decision.product];
   }
 
@@ -170,6 +179,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
       for (const [key, value] of Object.entries(rows)) if (!Object.hasOwn(kept, key)) kept[key] = value;
     }
     target.notices.push(...anon.notices);
+    adoptJournal(target, anon);
     transition(REPLICA_MACHINE, 'anon', 'sign-in', 'deleted');
     device.remove(anon);
   }

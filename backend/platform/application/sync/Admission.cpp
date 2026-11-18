@@ -5,6 +5,7 @@
 
 #include "platform/domain/sync/Admit.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/Restore.h"
 #include "platform/domain/sync/Shape.h"
 
 #include <algorithm>
@@ -447,6 +448,7 @@ private:
     if (!intent().cmd) return;
     CommandCtx ctx = commandCtx();
     CommandOutcome outcome = a_.catalog_.command(intent().cmd->name).run(ctx);
+    if (registry_.command(intent().cmd->name)->inverse && !reportsInverseOutcome(outcome.detail)) throw std::logic_error("an inverse command reports no outcome");
     changes_->setWriteMap(std::move(outcome.write));
     detail_ = std::move(outcome.detail);
     Effects effects{{{scope(), std::move(outcome.deltas)}}};
@@ -806,7 +808,8 @@ private:
 
   CommandCtx commandCtx() {
     const Json::Value& wire = builtWire_ ? *builtWire_ : wire_;
-    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire["cmd"]["args"]};
+    if (!epoch_) epoch_ = store().epoch(*txn_);
+    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire["cmd"]["args"], *epoch_};
   }
 
   // The records a command's `ref<t>` arguments name.
@@ -882,6 +885,7 @@ private:
   const Origin& origin_;
   const Json::Value& wire_;
   std::optional<Json::Value> builtWire_;
+  std::optional<std::string> epoch_;
   const Ms now_;
   const Sender caller_;
   const ServerBuilder* builder_;

@@ -77,6 +77,9 @@ function controlsOf(device, revision) {
     for (const [product, rows] of Object.entries(replica.device)) for (const [key, value] of Object.entries(rows)) records.set(keyOf('device', handle, product, key), value);
     for (const entry of replica.outbox) records.set(keyOf('outbox', handle, entry.localId), entry);
     replica.notices.forEach((notice, index) => records.set(keyOf('notice', handle, index), notice));
+    for (const act of replica.journal) records.set(keyOf('journal', handle, act.actId), act);
+    for (const request of replica.inverses) records.set(keyOf('inverse', handle, request.requestId), request);
+    for (const cancellation of replica.cancellations) records.set(keyOf('cancellation', handle, cancellation.inverseActId), cancellation);
   }
   return records;
 }
@@ -104,6 +107,9 @@ function deviceOf(controls, { shared }) {
     const value = valueFrom(record);
     if (kind === 'outbox') replica.outbox.push(value);
     else if (kind === 'notice') replica.notices[scope] = value;
+    else if (kind === 'journal') replica.journal.push(value);
+    else if (kind === 'inverse') replica.inverses.push(value);
+    else if (kind === 'cancellation') replica.cancellations.push(value);
     else if (kind === 'cache') {
       replica[scope][id] = scope === 'staging' ? { digest: value.digest, rows: {} } : {};
       replica.cachePointers[`${scope}:${id}`] = value;
@@ -133,13 +139,17 @@ export class IndexedDBStore {
 
   static async open({ indexedDB = globalThis.indexedDB, keyRange = globalThis.IDBKeyRange, name = 'wm-sync', newReplicaId }) {
     if (!indexedDB || !keyRange) throw new Error('sync storage unavailable');
+    // Version 3 adds no object store: it shuts out every bundle older than Undo of an act (engine.md §7.3), whose
+    // writes would drop the journal's control records and number its waiting slots unbound. An older tab closes
+    // at the upgrade, and an older bundle's open fails.
     const database = await new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 2);
+      const request = indexedDB.open(name, 3);
       let abandoned = false;
       request.onupgradeneeded = ({ oldVersion }) => {
         const database = request.result, transaction = request.transaction;
         transaction.onabort = () => database.close();
         if (abandoned) { transaction.abort(); return; }
+        if (oldVersion >= 2) return;
         const records = oldVersion === 0 ? database.createObjectStore('records', { keyPath: 'key' }) : transaction.objectStore('records');
         const rows = database.createObjectStore('rows', { keyPath: 'key' });
         rows.createIndex('generation', 'generation');

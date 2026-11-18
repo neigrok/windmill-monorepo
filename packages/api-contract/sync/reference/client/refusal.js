@@ -9,6 +9,7 @@ import { Stamp } from '../core/stamp.js';
 import { RecordMap } from '../core/references.js';
 import { baseTextKey } from './commit.js';
 import { Dependents, deltasOf, isEmpty, removeDependent } from './dependents.js';
+import { remapJournal, settleEnded } from './journal.js';
 import { effectsOf, mergePredictions, predictionsOf } from './projections.js';
 
 function isQueued(entry) {
@@ -171,6 +172,7 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
   if (detail !== undefined) notice.detail = detail;
   if (dependents.length) notice.content.dependents = dependents;
   replica.notices.push(notice);
+  settleEnded(replica, code);
 }
 
 // An orphan's refusal, by the server or as outgrown, ends it with no notice of its own; its held-back
@@ -179,6 +181,7 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
 function refuseOrphan(replica, ctx, orphan, event = 'refuse') {
   moveEntry(replica, ctx.ended, orphan, event);
   const dependents = foldDependents(replica, ctx, orphan, orphan.orphanOf);
+  settleEnded(replica, 'refused');
   if (dependents.length === 0) return;
   const notice = replica.notices.find((candidate) => candidate.id === `notice:${orphan.orphanOf}`);
   if (!notice) throw new Error(`notice:${orphan.orphanOf}, which ${orphan.localId}'s orphanOf names, is gone (D-17 keeps it)`);
@@ -317,6 +320,7 @@ export function applyWriteMap(replica, ctx, command, write) {
     const mappings = later.has(entry) ? [...joins, ...replayed] : joins;
     if (mappings.length) rewriteEntry(registry, entry, new RecordMap(registry, mappings), { replayed: later.has(entry) ? replayed : [] });
   }
+  if (joins.length || replayed.length) remapJournal(registry, replica, new RecordMap(registry, [...joins, ...replayed]));
   const own = new RecordMap(registry, [...joins, ...replayed.filter(({ from, id }) => !sameJson(from, id))]);
   for (const delta of command.predict ?? []) registry.references.remapRecord(command.scope, delta, own);
 
@@ -388,6 +392,7 @@ function applyScopedWriteMap(replica, ctx, command, write) {
     const map = new RecordMap(registry, mappings);
     for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, map, { replayed });
     rewriteEntry(registry, command, map, { predictionOnly: true });
+    remapJournal(registry, replica, map);
   }
   for (const { item, source, previous } of items) {
     if (previous?.born !== undefined && item.born !== undefined && previous.born !== item.born) {

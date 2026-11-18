@@ -29,11 +29,11 @@ test("a step's delete is held: Undo during the hold brings it back, and after th
     assert.equal(held.releaseAt, a.world.now + CONSTANTS.HOLD_MS);
     assert.deepEqual(steps(a, tree), []);
     assert.deepEqual(a.stored(RoadmapStep, RoadmapScopes.tree(tree)).map((step) => step.id.record), [basics]);
-    assert.equal(await a.runner.undo(held.gestureId), true);
+    assert.equal(await a.runner.cancelHeld(held.gestureId), true);
     assert.deepEqual(steps(a, tree), [basics]);
     const again = committed(await a.runner.runAct(new DeleteStep(tree, basics))).receipt;
     await a.advance(CONSTANTS.HOLD_MS);
-    assert.equal(await a.runner.undo(again.gestureId), false);
+    assert.equal(await a.runner.cancelHeld(again.gestureId), false);
     assert.deepEqual(steps(a, tree), []);
   } finally {
     a.close();
@@ -47,11 +47,11 @@ test("a roadmap's delete is held nine seconds with Undo, and stands once the hol
     const held = committed(await a.runner.runAct(new DeleteRoadmap(tree))).receipt;
     assert.equal(held.releaseAt, a.world.now + 9000);
     assert.deepEqual(a.drawn(Roadmap), []);
-    assert.equal(await a.runner.undo(held.gestureId), true);
+    assert.equal(await a.runner.cancelHeld(held.gestureId), true);
     assert.deepEqual(a.drawn(Roadmap).map((roadmap) => roadmap.id.record), [tree]);
     const again = committed(await a.runner.runAct(new DeleteRoadmap(tree))).receipt;
     await a.advance(9000);
-    assert.equal(await a.runner.undo(again.gestureId), false);
+    assert.equal(await a.runner.cancelHeld(again.gestureId), false);
     assert.deepEqual(a.drawn(Roadmap), []);
   } finally {
     a.close();

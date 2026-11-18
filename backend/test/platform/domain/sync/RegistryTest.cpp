@@ -82,11 +82,12 @@ const Domain& propertyOf(const Domain& object, const std::string& name) {
 TEST(the_probe_registry_loads_its_types_and_commands_in_order) {
   const Registry& probe = probe::registry();
   CHECK_EQ(probe.name(), std::string("probe"));
-  CHECK_EQ(probe.version(), 4);
+  CHECK_EQ(probe.version(), 6);
   CHECK_EQ(probe.minVersion(), 2);
+  CHECK_EQ(probe.type("mark")->field("opens")->ref, std::optional<std::string>("board"));
   CHECK_EQ(namesOf(probe.types()), (std::vector<std::string>{"board", "card", "run", "lap", "day", "fact", "meta", "tag", "link", "mark"}));
-  CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.capture", "probe.captureTree", "probe.captureOverlay", "probe.branch",
-                                                                "probe.sprout", "probe.adopt", "probe.start", "probe.end", "probe.copy", "probe.tick"}));
+  CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.capture", "probe.captureTree", "probe.captureOverlay", "probe.restore",
+                                                                "probe.restoreTree", "probe.restoreOverlay", "probe.unbranch", "probe.branch", "probe.sprout", "probe.adopt", "probe.start", "probe.end", "probe.copy", "probe.tick"}));
   const std::vector<RefPath>& parent = probe.type("board")->field("parent")->refPaths;
   REQUIRE(parent.size() == 2);
   CHECK(parent[1].path == std::vector<std::string>{"tag"} && parent[1].type == "tag" && parent[1].scope.kind == RefScope::Kind::treeFrom &&

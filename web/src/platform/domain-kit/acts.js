@@ -5,7 +5,7 @@ import { precondition } from './values.js';
 
 /** @typedef {{ scope: string, stamp: string | null, localIds: string[], ids: (import('./entities.js').RecordID | null)[] }} ActSegmentReceipt */
 /** @typedef {{ gestureId: string, segments: ActSegmentReceipt[], retired: string[], superseded: string[], releaseAt: number | null }} ActReceipt */
-/** @typedef {{ scopes: string[], hold: boolean, gestureId?: string }} ActRequest */
+/** @typedef {{ scopes: string[], hold: boolean, gestureId?: string, undo?: { version: 1, segments: { index: number, recipes: import('./values.js').Json[] }[] } }} ActRequest */
 /** @typedef {{ now: number, finishLoad(): void, inScope<T>(scope: string, body: (views: import('./runner.js').CommitViews) => T): T, mintID(type: string, scope: string): import('./entities.js').RecordID, opaqueID(): string }} ActContext */
 /**
  * @template L, T, R

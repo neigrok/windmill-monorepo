@@ -38,8 +38,8 @@ fixture per rule, then type-checks the files using `tsconfig.domain.json`.
 ## Spellings
 
 An entity is a value with `id` (an `Id`) and `fields()`; its declaration is `new EntityType({ type,
-scope, decode, checks, heldRemoval, orderField, savesGuarded, timestampField })`, each protocol a
-declared member. Decisions, outcomes and save results are tagged objects (`kind`), built by
+scope, decode, checks, heldRemoval, orderField, savesGuarded, savesReversibly, timestampField })`, each
+protocol a declared member; `savesReversibly` runs every save of the type as a reversible act. Decisions, outcomes and save results are tagged objects (`kind`), built by
 `Decision.write(plan, result)`, `Outcome.committed(result, receipt)`, `SaveResult.saved(receipt)` and
 their siblings. A draft is immutable: `Draft.new(blank, placement)`, `Draft.opening(value)`,
 `draft.edit(fn)` and `draft.rebased(theirs)` return the next draft, and `runner.save(draft, refusals)`

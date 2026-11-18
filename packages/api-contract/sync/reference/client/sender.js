@@ -4,10 +4,13 @@
 
 import { CONSTANTS } from '../core/constants.js';
 import { moveEntry } from '../core/machines.js';
-import { receiptEffects } from '../core/receipts.js';
+import { ReceiptError, receiptEffects } from '../core/receipts.js';
+import { InverseOutcomesError } from '../core/restore.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
+import { applyInverseResult, checkInverseResult, passesBarrier, resolveReferences } from './inverse.js';
+import { retainOutcome } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
 import { applyAcceptedVersions, applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
@@ -53,6 +56,11 @@ export function nextPush(replica, ctx, { limit } = {}) {
     let back = heldBack(replica, ctx.registry);
     for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
       if (replica.entry(entry.localId) !== entry || entry.state !== 'ready') continue;
+      if (entry.inverseOf !== undefined) {
+        if (!passesBarrier(replica, ctx, entry)) break;
+        back = heldBack(replica, ctx.registry);
+        if (replica.entry(entry.localId) !== entry) continue;
+      }
       if (back.has(entry)) {
         if (entry.intent.cmd !== undefined) break;
         continue;
@@ -89,9 +97,9 @@ function pushRequest(meta, intents) {
 // holds no epoch takes the answer's in its first batch (with no result, in the one that sets
 // ackThrough), so no entry is acked under a null serverEpoch.
 // After a 400 or 413 on several intents it answers {limit}, ⌈count/2⌉, which the caller's next nextPush
-// passes to resend the first half by n; otherwise nothing. Every 400 emits sync-push-malformed. After a
-// 409 or an epoch change the instance takes a new actor (§7.11). A 401, or a 200 or 409 served as anyone
-// but the replica's account, pauses sync with nothing applied (§9.1). With `dieAfter`, the process dies
+// passes to resend the first half by n; otherwise nothing. Every 400, and a 200 with an unreadable receipt,
+// emits sync-push-malformed. After a 409 or an epoch change the instance takes a new actor (§7.11). A 401,
+// or a 200 or 409 served as anyone but the replica's account, pauses sync with nothing applied (§9.1). With `dieAfter`, the process dies
 // once that many results are recorded: the rest stay sent and ackThrough holds. A changed epoch
 // records safe successes and resets together, before ordinary result batches.
 export class ResponseError extends Error {}
@@ -108,20 +116,26 @@ export function validatePushEnvelope({ status, body }) {
     || body.results.some((result) => result.n >= body.retry.n))) throw new ResponseError('invalid sync continuation');
 }
 
+// Each result is checked against the entry it will apply to, the sent entry at its n: an entry acknowledged
+// under an earlier replica id keeps its old n until it settles, and is never the one a result answers. A
+// response over SCOPED_RESPONSE_MAX_BYTES that answers a scoped entry is a transport failure; an `ok` whose
+// receipt or inverse outcomes fail their check is unreadable, and answers its n in the set returned.
 export function validatePushReceipts(replica, registry, body) {
-  try {
-    for (const result of body.results) {
-      const entry = replica.entries().find((candidate) => ['sent', 'acked'].includes(candidate.state) && candidate.n === result.n);
-      if (!entry || result.s !== 'ok') continue;
-      if (entry.predictions) {
-        receiptEffects(registry, entry, result);
-        if (bodyBytes(body) > CONSTANTS.SCOPED_RESPONSE_MAX_BYTES) throw new ResponseError('scoped response too large');
-      }
-      else if (result.detail?.windmillKit !== undefined) throw new ResponseError('unexpected scoped receipt');
+  const unreadable = new Set();
+  for (const result of body.results) {
+    const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
+    if (!entry || result.s !== 'ok') continue;
+    if (entry.predictions && bodyBytes(body) > CONSTANTS.SCOPED_RESPONSE_MAX_BYTES) throw new ResponseError('scoped response too large');
+    try {
+      checkInverseResult(replica, entry, result);
+      if (entry.predictions) receiptEffects(registry, entry, result);
+      else if (result.detail?.windmillKit !== undefined) throw new ReceiptError('unexpected scoped receipt');
+    } catch (error) {
+      if (!(error instanceof ReceiptError || error instanceof InverseOutcomesError)) throw error;
+      unreadable.add(result.n);
     }
-  } catch {
-    throw new ResponseError('invalid scoped receipt');
   }
+  return unreadable;
 }
 
 export function onPushResponse(replica, ctx, request, response, timing, { dieAfter = Infinity } = {}) {
@@ -129,16 +143,17 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
   const { status, body } = response;
   const unauthenticated = replica.isUnauthenticated(response);
   if ((status === 200 || status === 409) && !unauthenticated) validatePushEnvelope(response);
-  if (status === 200 && !unauthenticated) validatePushReceipts(replica, ctx.registry, body);
+  const unreadable = status === 200 && !unauthenticated ? validatePushReceipts(replica, ctx.registry, body) : new Set();
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
   if (unauthenticated) {
     meta.authPaused = true;
     return undefined;
   }
+  if (unreadable.size) ctx.telemetry.push({ event: 'sync-push-malformed' });
   if ((status === 200 || status === 409) && meta.serverEpoch !== null && body.epoch !== meta.serverEpoch) {
     if (status === 200 && !replica.entries().some((entry) => entry.state === 'acked' && entry.resultEpoch !== body.epoch)) {
       for (const result of [...body.results].sort((a, b) => a.n - b.n)) {
-        if (result.s === 'ok') applyPushResult(replica, ctx, result, body);
+        if (result.s === 'ok') applyPushResult(replica, ctx, result, body, unreadable);
       }
     }
     epochChange(replica, ctx, body.epoch);
@@ -169,7 +184,7 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
     if (!entry) continue;
     if (left <= 0) return undefined;
     left -= 1;
-    applyPushResult(replica, ctx, result, body);
+    applyPushResult(replica, ctx, result, body, unreadable);
   }
   meta.serverEpoch ??= body.epoch;
   meta.ackThrough = body.retry ? Math.min(body.lastN, body.retry.n - 1) : body.lastN;
@@ -177,14 +192,23 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
 }
 
 
-export function applyPushResult(replica, ctx, result, body) {
+// One result's transaction. An `ok` whose receipt is unreadable (`unreadable` holds its n) still acknowledges its
+// entry: the server holds the write. It records no receipt, so every projection ends at once and the pull
+// brings the rows, its source's history proves nothing, and an inverse slot settles skipped `invalid`.
+export function applyPushResult(replica, ctx, result, body, unreadable = new Set()) {
   const meta = replica.meta;
   const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
   if (!entry) return;
-  const effects = entry.predictions && result.s === 'ok' ? receiptEffects(ctx.registry, entry, result) : undefined;
   meta.serverEpoch ??= body.epoch;
+  if (unreadable.has(result.n)) {
+    applyUnreadable(replica, ctx, entry, result, body);
+    return;
+  }
+  const effects = entry.predictions && result.s === 'ok' ? receiptEffects(ctx.registry, entry, result) : undefined;
   if (result.s === 'refused') {
     onRefused(replica, ctx, entry, result, body);
+    if (replica.entry(entry.localId) !== entry) retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'refused' });
+    applyInverseResult(replica, entry, result, body.epoch);
     return;
   }
   moveEntry(replica, ctx.ended, entry, 'ok');
@@ -193,7 +217,22 @@ export function applyPushResult(replica, ctx, result, body) {
   replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
   if (result.write) applyWriteMap(replica, ctx, entry, result.write);
   if (effects) applyReceipt(replica, ctx, entry, effects, result.write ?? []);
+  retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'ok', acceptedEffects: entry.acceptedEffects });
+  resolveReferences(replica, entry, body.epoch);
+  applyInverseResult(replica, entry, result, body.epoch);
   resolveIfCovered(replica, ctx, entry);
+}
+
+function applyUnreadable(replica, ctx, entry, result, body) {
+  moveEntry(replica, ctx.ended, entry, 'ok');
+  entry.resultSeq = result.seq;
+  entry.resultEpoch = body.epoch;
+  replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
+  if (result.write) applyWriteMap(replica, ctx, entry, result.write);
+  for (const projection of entry.predictions ?? []) projection.covered = true;
+  retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'ok' });
+  resolveIfCovered(replica, ctx, entry);
+  applyInverseResult(replica, entry, { s: 'refused', code: 'invalid' }, body.epoch);
 }
 
 // The ACK transaction's receipt-application point, before any projection settles or the entry resolves.

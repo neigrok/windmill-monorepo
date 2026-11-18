@@ -464,6 +464,7 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"write/", corpus::ClientRole{"§7.7 write maps"}},
       {"refs/", corpus::ClientRole{"E-8 compiled reference traversal"}},
       {"lineage/", corpus::ClientRole{"§7.10 lineage"}},
+      {"undo/", corpus::ClientRole{"§7.3 Undo of an act"}},
   });
   return true;
 }();

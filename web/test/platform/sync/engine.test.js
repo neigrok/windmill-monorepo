@@ -1140,3 +1140,39 @@ test('an open anonymous tree resolves its overlay separately for each bound acco
     assert.deepEqual(engine.observe(overlay).getSnapshot().drawn, []);
   } finally { engine.close(); }
 });
+
+test('an opted act journals in IndexedDB, and its Undo survives a reopen, reports its wait and settles through the reference server', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send(); await engine.pull();
+  const title = { scope: 'self/probe', t: 'card', id: 'card0001', slot: { kind: 'field', name: 'title' } };
+  const { outcome: act } = await engine.commitAct([{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'renamed' } }] }],
+    { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: title }] }] }] } });
+  await engine.send(); await engine.pull();
+  assert.equal(engine.device.activeReplica.journal[0].sourceEntries[0].attempts[0].outcome, 'ok');
+  env.transport.response = () => new Promise(() => {});
+  const requested = await engine.requestInverse(act.gestureId);
+  assert.deepEqual([requested.kind, requested.localChanged], ['pending', true]);
+  assert.equal(engine.observe('self/probe').getSnapshot().drawn.find((record) => record.t === 'card').f.title[0], 'secret');
+  engine.close();
+  env.transport.response = null;
+  const reopened = await open(env);
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), requested);
+  await reopened.send(); await reopened.pull();
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), { kind: 'settled', requestId: requested.requestId,
+    inverseActId: requested.inverseActId, changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(reopened.device.activeReplica.confirmedRows('self/probe')[0].f.title[0], 'secret');
+  const inverse = env.events.filter(({ name }) => name === 'sync-inverse').map(({ props }) => props);
+  assert.equal(inverse.length, 3);
+  assert.deepEqual(inverse[0], { outcome: 'pending' });
+  assert.deepEqual(Object.keys(inverse[1]).sort(), ['ageMs', 'outcome', 'waiting']);
+  assert.deepEqual([inverse[1].outcome, inverse[1].waiting], ['pending', 1]);
+  assert.ok(Number.isSafeInteger(inverse[1].ageMs) && inverse[1].ageMs >= 0);
+  assert.deepEqual(inverse[2], { outcome: 'settled', applied: 1, skipped: 0 });
+  assert.deepEqual(reopened.device.activeReplica.journal, []);
+  assert.equal(await reopened.releaseReversibleAct(act.gestureId), false);
+  reopened.close();
+});
