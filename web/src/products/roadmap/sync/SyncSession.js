@@ -10,6 +10,7 @@ import { materialize } from './materialize.js';
 import { MAX_FRAME_BYTES, UNSENDABLE_FROM_BYTES, bytesOf, frameRoom, framesOf, stampedPerFrame, stampsOf } from './frames.js';
 import { UNSENDABLE, isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
+import { buildRetirement } from './retirement.js';
 import { frameWrites, outboxStamps, outboxWrites, pendingGestures, pendingRecordCount, retainedGestures, writeStamps } from './pendingWrites.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
@@ -77,8 +78,10 @@ const UNSET_STAMP = parseHlc('');
 export class SyncSession {
   // `subtree` says the tree is a subtree: its name is its owning step's label, which only its parent's room writes.
   constructor({ url = DEFAULT_URL, treeId, title = '', guide = '', subtree = false, registry = new LocalTreeRegistry(), store = new SyncStore(),
-    reportFailure = reportRoadmapFailure, chunkBytes = MAX_FRAME_BYTES, timers = globalThis } = {}) {
+    reportFailure = reportRoadmapFailure, chunkBytes = MAX_FRAME_BYTES, timers = globalThis, retirement = buildRetirement } = {}) {
     this.url = url;
+    this.retirement = retirement;
+    this.unenlist = null;
     this.subtree = subtree;
     this.owned = new Map();                         // step → the subtree it owns, as the server told this session: {id, depth, fresh}
     this.timers = timers;
@@ -489,11 +492,36 @@ export class SyncSession {
       window.addEventListener('offline', this.onOffline);
     }
     this.emitStatus();
+    this.unenlist = this.retirement.enlist(this);
     this.connect();
     return this;
   }
 
+  // The server has retired this build: no socket and no send from now on. Everything unsent stays in the lattice and is
+  // saved, for the next build to carry over; the room stands offline.
+  retire() {
+    const socket = this.ws;
+    this.ws = null;
+    this.timers.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.stopHeartbeat();
+    this.clearDeliveryTimers();
+    this.inFlight.clear();
+    this.progressInFlight.clear();
+    this.sent.clear();
+    this.phase = 'offline';
+    try { socket?.close(); } catch { /* the socket is let go either way */ }
+    this.persistNow((error) => this.reportFailure('roadmap-sync-persist', error));
+    this.emitStatus();
+  }
+
+  // Whether an act is held, as a delete waiting out its Undo: a reload would cut it short.
+  holdsAct() {
+    return this.heldAct !== null;
+  }
+
   connect() {
+    if (this.retirement.retired) return this;
     this.timers.clearTimeout(this.reconnectTimer);
     this.clearDeliveryTimers();
     this.inFlight.clear();
@@ -501,7 +529,9 @@ export class SyncSession {
     this.unansweredSince ??= Date.now();
     const socket = new WebSocket(this.url);
     this.ws = socket;
+    let opened = false;
     socket.addEventListener('open', () => {
+      opened = true;
       if (this.closed || this.discardPending || this.ws !== socket) return;
       this.phase = 'syncing';
       this.emitStatus();
@@ -534,6 +564,8 @@ export class SyncSession {
       this.progressInFlight.clear();
       this.emitStatus();
       this.noteUnanswered();
+      // A browser cannot read why an upgrade failed: a socket that never opened asks its path whether the build is retired.
+      if (!opened) this.retirement.probeSocket(this.url, this.reportFailure);
       if (!this.closed && !this.discardPending) this.scheduleReconnect();
     });
     socket.addEventListener('error', () => { try { socket.close(); } catch { /* close handler reconnects */ } });
@@ -1483,6 +1515,8 @@ export class SyncSession {
 
   close() {
     this.closed = true;
+    this.unenlist?.();
+    this.unenlist = null;
     this.clearDeliveryTimers();
     this.unsubscribeEpochs?.();
     this.unsubscribeEpochs = null;

@@ -4,6 +4,7 @@
 import { AuthError } from '../../../shell/auth/AuthClient.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { LocalTreeRegistry, resolveDeviceOwner } from './LocalTreeRegistry.js';
+import { buildRetirement, saysRetired } from '../sync/retirement.js';
 
 // One row per owned roadmap: { id, title, done, total, updatedAt }.
 export async function listTrees() {
@@ -91,22 +92,33 @@ function timestampOf(updatedAt) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+// One write through a door of the roadmap's own, credentialed by cookie. A retired build sends none, and the server's word
+// that it is retired retires it: either way the door answers as a request that never arrived, so each caller falls back
+// as it does offline.
+async function sendWrite(url, init) {
+  const unreachable = () => new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  if (buildRetirement.retired) throw unreachable();
+  let response;
+  try {
+    response = await fetch(url, { ...init, credentials: 'include' });
+  } catch {
+    throw unreachable();
+  }
+  if (!await saysRetired(response)) return response;
+  buildRetirement.declare('write');
+  throw unreachable();
+}
+
 // Plants a roadmap → { treeId, existed }. `request` is the starting TreeData; omit `nodes`/`kinds`
 // for an empty tree with the default legend. A client-minted `id` (t_ + 16 hex) is kept by the
 // server: `existed: true` is its idempotent resume, 409 { code: 'id-taken' } a remap signal, and
 // 409 { code: 'id-retired' } an id this account deleted, which must be let go of, never remapped.
 export async function createTree(request) {
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/v1/trees`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-      credentials: 'include',
-    });
-  } catch {
-    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
-  }
+  const response = await sendWrite(`${API_BASE}/v1/trees`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
   if (response.ok) return response.json();
   if (response.status === 401) throw new AuthError('Sign in to plant a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
@@ -116,17 +128,11 @@ export async function createTree(request) {
 // One register of a roadmap, its owner's alone (PATCH /v1/trees/:id, 204): `refused` names the 401 and `failed`
 // every other refusal, which keeps the server's code, sentence and detail.
 async function patchTree(treeId, change, { refused, failed }) {
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/v1/trees/${treeId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(change),
-      credentials: 'include',
-    });
-  } catch {
-    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
-  }
+  const response = await sendWrite(`${API_BASE}/v1/trees/${treeId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(change),
+  });
   if (response.ok) return;
   if (response.status === 401) throw new AuthError(refused, { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
@@ -167,15 +173,7 @@ export async function readGuides(treeId, signal) {
 
 // Retire a roadmap (DELETE /v1/trees/:id — a soft delete; it leaves every list). Any 2xx is success; no reply body is read.
 export async function deleteTree(treeId) {
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/v1/trees/${treeId}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
-  } catch {
-    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
-  }
+  const response = await sendWrite(`${API_BASE}/v1/trees/${treeId}`, { method: 'DELETE' });
   if (response.ok) return;
   if (response.status === 401) throw new AuthError('Sign in to delete a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
