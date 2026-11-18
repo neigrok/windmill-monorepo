@@ -319,7 +319,7 @@ public struct PushPlanner: Sendable {
       replica.update { $0.admit(entry.intent.deltas.flatMap(\.lattice.stamps)) }
       if let effects {
         if let write { try applyScopedWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
-        try applyReceipt(effects, write: write ?? [], of: entry.localId, in: &replica, instance: instance)
+        applyReceipt(effects, write: write ?? [], of: entry.localId, in: &replica, instance: instance)
       } else if let write {
         try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance)
       }
@@ -522,7 +522,7 @@ public struct PushPlanner: Sendable {
   // once, a scope only the receipt names gets an empty projection), then the versions applied. The origin's write map
   // gives its versions too, for slots the receipt leaves out.
   func applyReceipt(_ effects: [EffectReceipt], write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica,
-                    instance: Instance) throws {
+                    instance: Instance) {
     guard let command = replica.entry(commandId) else { return }
     let previous = command.acceptedEffects ?? []
     replica.update(entry: commandId) { entry in
