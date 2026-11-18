@@ -7,7 +7,7 @@ import SyncTesting
 // corpus over the product's rule book.
 
 // §15.3 a product's corpus under `packages/api-contract/<product>/`: each LOCAL rule's cases (`domain/values.json`), each
-// action's and draft save's decisions (`domain/<feature>-actions.json`) and each derived read's results
+// action's, act's and draft save's decisions (`domain/<feature>-actions.json`) and each derived read's results
 // (`rules/<read>.json`), run over the book that declares them.
 public struct ProductCorpus {
   let book: RuleBook
@@ -50,6 +50,25 @@ public struct ProductCorpus {
     let loaded = try decider.load(Reader(context, scope: decider.scope, moment: moment, registry: book.registry))
     let decision = decider.decision(loaded, ids: IDSource(context: context))
     return ["decision": try decision.form(in: decider.scope, registry: book.registry, result: result, refusal: refusal)]
+  }
+
+  // An act's case (§9.5), a scene of several scopes, `{scopes: {<scope>: {drawn, stored?}}, device?, ids?, now,
+  // offsetSeconds}` → `{decision}`: the act's load through a reader of each scope's records, one decision minting the
+  // listed ids in order across scopes, a violation its decide throws folded into its refusal, and each segment's gesture
+  // in its scope.
+  public func act<A: ActAction>(_ action: A, _ vector: Vector, result: (A.Result) -> JSON, refusal: (A.Refusal) -> JSON) throws -> JSON {
+    let moment = try Moment(form: vector.input)
+    let scene = try VectorScene(vector.input, now: moment.now.ms, registry: book.registry)
+    let read = ActReader(scene, registry: book.registry, moment: moment)
+    let loaded: A.Loaded = try action.load(read)
+    read.end()
+    let decision: ActDecision<A.Result, A.Refusal>
+    do throws(Violation) {
+      decision = try action.decide(loaded, ids: ActIDSource(context: scene))
+    } catch {
+      decision = .refuse(A.Refusal(error))
+    }
+    return ["decision": try decision.form(registry: book.registry, result: result, refusal: refusal)]
   }
 
   // An editor opens the drawn entity or starts a new draft, edits its current value, then decides its save (§10.2).
@@ -183,6 +202,47 @@ package final class VectorReader: CommitContext {
 
   func visible(_ records: [Record], _ type: String) -> [Record] {
     records.filter { $0.type == type && $0.isVisible }.sorted { $0.id < $1.id }
+  }
+}
+
+// An act's scene: each scope's records as the engine's readers of that scope answer them, `stored` defaulting to `drawn`
+// and a scope the scene leaves out holding none, the device rows every scope shares, and the ids it lists, minted in order
+// across scopes and no other.
+package final class VectorScene: ActContext {
+  let scopes: JSON.Object
+  let device: JSON?
+  let registry: Registry
+  let pulled: Bool
+  var ids: [RecordID]
+  package let now: Int64
+  package let replica = "rp_00000000000000000000000000000001"
+  package var actor: String { replica }
+  package let isAnonymous = false
+
+  package init(_ input: JSON, now: Int64, registry: Registry) throws {
+    scopes = try input["scopes"]?.asObject() ?? [:]
+    device = input["device"]
+    self.registry = registry
+    pulled = try input["firstPullComplete"]?.asBool() ?? true
+    ids = try (input["ids"]?.asArray() ?? []).map { (id: JSON) throws -> RecordID in try RecordID(json: id) }
+    self.now = now
+  }
+
+  package func finishLoad() throws {}
+
+  package func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
+    let rows: JSON = scopes[scope.text] ?? ["drawn": []]
+    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: device, registry: registry)
+    return try body(VectorReader(records: records, now: now, firstPullComplete: pulled, scope: (scope, registry)))
+  }
+
+  package func mintID(_ type: String, in scope: ScopeRef) throws -> RecordID {
+    guard !ids.isEmpty else { throw CommitFailure.malformed("the vector lists no id left to mint a \(type) in \(scope)") }
+    return ids.removeFirst()
+  }
+
+  package func opaqueID() throws -> String {
+    throw CommitFailure.malformed("an act case mints no opaque id")
   }
 }
 
