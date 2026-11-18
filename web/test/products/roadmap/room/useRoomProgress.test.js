@@ -20,6 +20,7 @@ function roomFixture(t, { restoreError = null, overrides = {}, mine = true } = {
     treeRef: { current: tree }, seedRef: { current: { id: 'sail', mine } },
     sceneRef: { current: { announceCeremony: (message, options) => calls.push(['ceremony', message, options]) } },
     sessionRef: { current: { markProgress: (ids, status) => calls.push(['write', ids, status]) } },
+    replicaRef: { current: null },
     returnLedger: { load: () => null, save: (id, value) => calls.push(['ledger', id, value.completed]) },
     milestoneLedger: { has: (treeId, id) => offered.has(id), markOffered: (treeId, id) => offered.add(id) },
     emit: (event) => calls.push(['emit', event.verb, event.nodeId]),
@@ -262,4 +263,12 @@ test('a structure-only rebaseline accepts completion and its Undo into the separ
     ['emit', 'completed', 'wind'], ['emit', 'unlocked', 'dock'],
     ['write', 'wind', 'none'], ['ledger', 'sail', []],
   ]);
+});
+
+test('a room that reads the replica marks nothing until the domain’s Complete and Reset are wired: no mark shows, nothing is written or said', (t) => {
+  const { acts, calls } = roomFixture(t, { overrides: { replicaRef: { current: {} } } });
+  acts.adoptLoaded({ completed: new Set(['wind']), completedAt: { wind: 1 } });
+  assert.deepEqual({ complete: acts.complete('dock', { at: 100 }), reset: acts.reset('wind'), bulk: acts.markDone(new Set(['dock'])) },
+    { complete: false, reset: false, bulk: undefined });
+  assert.deepEqual({ completed: acts.snapshot.completed, calls }, { completed: new Set(['wind']), calls: [] });
 });

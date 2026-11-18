@@ -79,13 +79,15 @@ import { frontierTarget } from './graph/viewport.js';
 
 const handle = () => ({ current: null });
 // What the seams reach for after render: the live objects, the chrome's DOM, and what the camera has been asked to frame.
-const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), viewRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
+const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), replicaRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), viewRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
 const chromeAnchors = () => ({ canvasRef: handle(), rootRef: handle(), identityRef: handle(), boardLayerRef: handle(), legendDockRef: handle() });
 const cameraFraming = () => ({ insetsRef: handle(), firstFrameRef: handle(), graphRevealRef: handle() });
 
 const leavesWithItsView = (toast) => toast.surface === 'board' || toast.surface === 'graph';
 
-export function SkillTreeView({ treeId, demo = false }) {
+// `replica` reads the roadmap from the device's copy through the sync engine (room/ReplicaReading.js); the route table
+// turns it on only where the build says so.
+export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const openSignInDoor = useSignInDoor();
   const draftHost = useStepDraft();
   const { breakpoint, shared } = useViewMode();
@@ -111,7 +113,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { toast, showToast, toastShown, pauseToast, dismissToast, dismissToastIf, runToastAction } = useRoadmapToast();
   const legendKit = useLegend(room);
   const { legend, legendRef, highlightedKindId, highlightedKindIdRef, clearHighlightedKind } = legendKit;
-  const { workspaceByNode, hydrateWorkspaces, pushArcs, ...workspaceActions } = useWorkspace(room);
+  const { workspaceByNode, hydrateWorkspaces, adoptWorkspaces, pushArcs, ...workspaceActions } = useWorkspace(room);
   const activity = useActivity({ sceneRef, selectedId });
   const { emit, ticker, feedVisible, feedSummonedRef, closeActivity } = activity;
   const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
@@ -137,8 +139,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { scene, graphAvailability, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, onNodeActivate: activateGraphNode, showToast });
   const graphUnavailable = graphAvailability === 'unavailable';
   const load = useRoomLoad({
-    treeId, accountId: account?.id ?? null, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
-    legend: legendKit, workspace: { hydrateWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
+    treeId, accountId: account?.id ?? null, demo, shared, demotion, replica, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
+    legend: legendKit, workspace: { hydrateWorkspaces, adoptWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
     onRemoteProgress: (remote) => {
       const said = progressActs.adoptRemote(remote);
       if (!said) return;
@@ -219,7 +221,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [boardOverall, setBoardOverall] = useState(null);
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
-  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef });
+  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef, held: load.guides });
   const guideView = boardActive ? 'board' : 'graph';
   const guideEntry = guide && !boardAwaitsRoadmap ? (
     <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>
@@ -348,6 +350,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const verbs = useRowVerbs({
     treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable, address: stepAddress,
     graphStepReturnRef: stepPage.graphStepReturnRef, anchors, room, revealOnGraph, setSelectedId, setShareOpen, showToast,
+    listTrees: load.listTrees,
   });
   const legendWithCounts = useMemo(() => withCounts(legend, tree?.nodes ?? []), [legend, tree]);
   const legendVisible = useMemo(() => inUseCount(legend, tree?.nodes ?? []) >= 2, [legend, tree]) || legendKit.legendForceOpen;

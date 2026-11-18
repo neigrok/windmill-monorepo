@@ -1,5 +1,6 @@
 // The lattice is the authority: each edit is dispatched as one gesture and the displayed kinds
-// re-derive from the projection. Only the open flag is a local preference (LegendStore).
+// re-derive from the projection. Only the open flag is a local preference (LegendStore). With no session, as in a room
+// that reads the replica, an edit writes and says nothing.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../../../telemetry/beacon.js';
@@ -54,18 +55,24 @@ export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
 
 
   const onRenameKind = useCallback((id, label) => {
-    sessionRef.current?.dispatch({ kind: 'RenameKind', id, label });
+    const session = sessionRef.current;
+    if (!session) return;
+    session.dispatch({ kind: 'RenameKind', id, label });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'rename' });
   }, [sessionRef]);
   const onDescribeKind = useCallback((id, description) => {
-    sessionRef.current?.dispatch({ kind: 'DescribeKind', id, description });
+    const session = sessionRef.current;
+    if (!session) return;
+    session.dispatch({ kind: 'DescribeKind', id, description });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'describe' });
   }, [sessionRef]);
   const onAddKind = useCallback((hue) => {
     const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
     if (next === legendRef.current) return; // hue taken or palette full — nothing added
     const added = next[next.length - 1];
-    sessionRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
+    const session = sessionRef.current;
+    if (!session) return;
+    session.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'add' });
   }, [sessionRef]);
 
@@ -74,7 +81,9 @@ export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
     const nodes = projectionRef.current?.nodes ?? [];
     const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
     if (!target || target.count > 0) return;
-    sessionRef.current?.dispatch({ kind: 'RemoveKind', id });
+    const session = sessionRef.current;
+    if (!session) return;
+    session.dispatch({ kind: 'RemoveKind', id });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'remove' });
   }, [sessionRef, projectionRef]);
 
@@ -82,7 +91,9 @@ export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
   const onRecolorKind = useCallback((id, targetHue) => {
     const { newHue } = recolorKind(legendRef.current, id, targetHue);
     if (!newHue) return;
-    sessionRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
+    const session = sessionRef.current;
+    if (!session) return;
+    session.dispatch({ kind: 'RecolorKind', id, hue: newHue });
     track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'recolor' });
   }, [sessionRef]);
 

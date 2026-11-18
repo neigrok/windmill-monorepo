@@ -4,7 +4,7 @@ import { NewTreeBirth } from './paste/NewTreeBirth.jsx';
 import { QuestShelf } from './quests/QuestShelf.jsx';
 import { listAllTrees } from './persistence/TreeRegistry.js';
 
-export function SkillTreeApp({ treeId, birth, start, demo = false }) {
+export function SkillTreeApp({ treeId, birth, start, demo = false, replica = false }) {
   useEffect(() => {
     if (birth || start || treeId) return undefined;
     let cancelled = false;
@@ -19,7 +19,7 @@ export function SkillTreeApp({ treeId, birth, start, demo = false }) {
   if (birth) return <NewTreeBirth />;
   if (!treeId) return <Resolving />;
   // Keyed by treeId so per-tree state dies with the tree instead of leaking across.
-  return <SkillTreeView key={treeId} treeId={treeId} demo={demo} />;
+  return <SkillTreeView key={treeId} treeId={treeId} demo={demo} replica={replica} />;
 }
 
 export default SkillTreeApp;
