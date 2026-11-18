@@ -9,7 +9,9 @@ client's design, whose public API the kit binds to.
 
 **Status:** Built in Swift (`apps/ios/Domain`); Kotlin implements it from this spec. Each
 implementation passes the shared vectors of §15. `WindmillKit` supplies the product-neutral AI
-client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there.
+client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there. Undo of an act (§9.6)
+is built in the web kit (`web/src/platform/domain-kit`) over the browser engine; the Swift and Kotlin kits
+port it, with the rename of the held-only `undo` to `cancelHeld`, from `run/undo.json`.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;
@@ -964,6 +966,8 @@ public struct Plan: Sendable {
   public mutating func move<E: Ordered>(_ id: ID<E>, below anchor: ID<E>?)
   public mutating func guardRead<E: Entity>(_ id: ID<E>, fields: [String])
   public mutating func device(_ key: String, _ value: JSON?)
+  public mutating func undoBy(_ recipes: UndoRecipe...)                                    // §9.6
+  public var undo: (version: Int, recipes: [UndoRecipe])? { get }
 }
 ```
 
@@ -983,6 +987,8 @@ public struct Plan: Sendable {
   step 10).
 - An action builds a plan from the value it loaded and names only the fields its caller set, never
   every field, so a value another writer stored is never rewritten by normalisation.
+- `undoBy` opts the plan's act into Undo after its hold with the recipes an Undo runs (§9.6); `undo` is
+  them as engine §7.3's `{version: 1, recipes}`, or nil.
 
 ### §8.2 Translation to one gesture
 
@@ -1046,7 +1052,12 @@ when:
    names a const, time or text field;
 8. an update names no field, or a keyed create writes no field, except a create of a keyed type with
    life that declares no field, which writes the record's presence alone;
-9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4).
+9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4);
+10. a plan names Undo recipes in a single action that is not `reversible` (§9.6).
+
+A malformed Undo recipe (a target outside its restore command's types, an unset target without its default,
+a created record that exists before the act) fails the act as a programming fault, before anything is
+written (engine §7.3).
 
 A revival of a type without `revivable: true` is also a `PlanError`.
 
@@ -1135,7 +1146,11 @@ public final class ActionRunner: Sendable {
   public init(replica: any Replica, registry: Registry, zone: any Zone)
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal>
   public func read<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T
-  public func undo(_ gestureId: String) throws -> Bool
+  public func cancelHeld(_ gestureId: String) throws -> Bool
+  public func undo(_ actId: String) throws -> InverseResult                                  // §9.6
+  public func redo(_ requestId: String, productSlots: [ProductSlot]? = nil) throws -> InverseResult
+  public func inverseResult(_ requestId: String) -> InverseResult
+  public func release(_ actId: String) throws
   public func mint<E: Entity>(_ type: E.Type, in scope: ScopeRef) -> ID<E>
   public func mint<E: ProductEntity>(_ type: E.Type) -> ID<E>
   public func moment() throws -> Moment
@@ -1170,8 +1185,9 @@ public final class ActionRunner: Sendable {
    once, from this outcome, and a draft saved again at every pause piles up no notices. A dismissal
    that throws rethrows from `run`.
 
-`read` builds a reader over `Replica.read`. `undo` is `Replica.undo`: true iff every entry of the
-gesture was still held (engine §7.3). `mint` is `Replica.mintID`. `moment` is `Replica.physNow()`
+`read` builds a reader over `Replica.read`. `cancelHeld` is `Replica.cancelHeld`, the engine's held-only
+`undo`: true iff every entry of the gesture was still held (engine §7.3). `undo`, `redo`, `inverseResult` and
+`release` are §9.6's. `mint` is `Replica.mintID`. `moment` is `Replica.physNow()`
 with the runner's zone.
 
 `run` is synchronous and not cancellable (engine §7.1). The UI calls it from a non-cancellable
@@ -1248,6 +1264,52 @@ gesture IDs, and the shared release deadline. A predicted refusal, engine refusa
 failure leaves no segment, device write, clock tick, reservation or notice from the act durable.
 Remote admission remains separate for each intent. Existing `Action`, `Plan`, `run`, `Outcome` and
 `CommitReceipt` retain their single-scope contracts.
+
+### §9.6 Undo of an act (K-3)
+
+```swift
+public struct UndoTarget: Sendable {                    // a slot of a record, in its scope or the plan's
+  public static func field<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> UndoTarget
+  public static func text<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> UndoTarget
+  public static func life<E: Entity>(_ id: ID<E>, in scope: ScopeRef? = nil) -> UndoTarget
+}
+public enum UndoRecipe: Sendable {
+  case fields(restoreCommand: String, targets: [(UndoTarget, default: JSON?)])
+  case createdRecord(restoreCommand: String, id: AnyID)
+  case command(String, input: JSON, ownedFields: [UndoTarget], unchangedCreatedRecords: [(AnyID, ScopeRef?)],
+               unchangedCreatedScopes: [ScopeRef])
+}
+public enum InverseResult: Sendable, Equatable {
+  case cancelled(requestId: String, inverseActId: String, changed: Bool)
+  case pending(requestId: String, inverseActId: String, localChanged: Bool)
+  case settled(requestId: String, inverseActId: String, changed: Bool, appliedCount: Int, skippedCount: Int)
+  case unavailable(requestId: String?, reason: String)
+}
+public struct ProductSlot: Sendable { public let index: Int; public let scope: ScopeRef; public let plan: Plan }
+```
+
+- **Opting in.** A plan names its Undo recipes with `undoBy`: earlier values of client fields, texts and
+  lives restored by the scope's `engine: "restore"` command; a record the plan creates, deleted again while
+  its own writes are all that changed it; or a product `inverse: true` command over evidence the engine builds
+  (owned fields, created records, created scopes; engine §6.4). A target unset before the act carries the
+  value equivalent to unset as its default. A target or record without a scope lives in the plan's.
+- **Acts.** `runAct` translates each segment's recipes into `ActRequest.undo = {version: 1, segments: [{index,
+  recipes}]}`, so the engine journals the act (engine §7.3 Undo of an act). A single action declares
+  `reversible: true` (JS `reversible`, Swift and Kotlin the `Decider` requirement of the same name) and then runs
+  through the same one-segment act path, its loads, decision, `firstGone` and result unchanged, its receipt the
+  one segment's. A plan that opts into Undo from any other single action is a `PlanError` (rule 10).
+- **Undo** is `undo(actId)`, `actId` the act's gesture id: an act whose entries are all still held is
+  cancelled in place (`cancelled`); otherwise the engine reserves the inverse at once (`pending`, with whether
+  the device's view changed) and it settles as the act's sources do (`settled`, with whether accepted effects
+  changed anything and how many operations applied and skipped). An act that did not opt in is
+  `unavailable`. `inverseResult(requestId)` reads the result as it stands.
+- **Redo** is `redo(requestId)`: the inverse of the Undo, which takes back only what the Undo applied, and
+  re-creates no terminal record. `productSlots` replaces the stored recipes whole, by the inverse act's source
+  ordinal, each with the scope that source wrote: a product's Redo of a creation names its own command and a
+  fresh id.
+- `release(actId)` tells the engine the product's stack no longer holds the act, so its journal and values go.
+  A product keeps its own stack of acts for its Undo and Redo keys; the engine keeps no stack.
+- The kit corpus's `run/undo.json` holds these results over the real engine and the reference server.
 
 ## §10 Drafts
 
@@ -1366,7 +1428,7 @@ field refuses `stale` against this device's write.
   `runner.save(draft, Routine, GymRefusals) { draft = it }` is an editor's save. The write-back runs
   once, before `save` returns, with the draft after the save, whatever the result. `save` traps on a
   thread other than the one the draft was opened on, which the draft carries, and `edit` traps on a
-  change that returns another id. `mint`, `run`, `undo` and `moment` follow §9.2.
+  change that returns another id. `mint`, `run`, `cancelHeld` and `moment` follow §9.2.
 - An Android editor opens, edits and saves its draft on the main thread, so its commit runs there: one
   local commit that never awaits the network (engine §7.1). The Swift engine budgets 8 ms p95 (Swift
   engine §4.6); the Kotlin engine's budget is owed (ER-10).
@@ -1479,8 +1541,8 @@ extension SaveDraft where E: Ordered { public init(creating value: E, in scope: 
   done. A drop in place writes nothing, so it never reverts another device's reorder.
 - `Remove` reads `drawn`: a record the person cannot see, including one inside a delete window, is not
   removed again. Its receipt carries `gestureId` and `releaseAt` for Undo.
-- **Undo** is `runner.undo(gestureId)` while the engine offers it (engine §7.3). After release the
-  delete stands.
+- **Undo** of a held removal is `runner.cancelHeld(gestureId)` while the engine offers it (engine §7.3).
+  After release the delete stands, unless its action is reversible (§9.6).
 - **Referential consequences** of a removal (a routine's proposals, a session's sets) are the
   server's (engine §2.2). The client writes none of them.
 
@@ -1689,7 +1751,7 @@ the engine's test support (ER-9). Kotlin's `Harness` has the same members over `
 - **Deterministic.** No engine loop starts; `sync`, `advance` and `leave` call step functions on one
   thread of control. The clock is `SimClock`, ids come from a seeded random source, the zone is fixed.
 - **Reads.** `drawn` and `stored` list in `Repository.all` order. An `UndoOffer`'s `id` is its gesture
-  id, which `runner.undo` takes; `advance(ms: Constants.holdMs)` (`SyncCore`, engine Appendix B
+  id, which `runner.cancelHeld` takes; `advance(ms: Constants.holdMs)` (`SyncCore`, engine Appendix B
   `HOLD_MS`) releases every hold committed before it.
 - **The store** is the engine's real store held in memory (ER-9, ER-10).
 - **The server** is the engine's `ModelServer`. Its generic core passes the engine's server corpus.
@@ -1889,6 +1951,7 @@ stated here; ER-10 is the Kotlin engine owner's.
 | ER-16 | `Registry` makes public what the kit reads: per type, its identity class, life, cap and each field's kind, writer, domain, quantum and `parent`; per command, its arguments with their domains, and `predicts`. | engine §2.4 |
 | ER-17 | `SyncTesting` publicly offers `Record(confirmed: Row, registry:)`: a confirmed row that no outbox entry touches, as the engine's readers hand it to a product (visible by the registry's rule, nothing pending or held, each text merged as the row says), so a product's tests build a vector's records from the modules `<P>DomainTests` may import (§2.1). | engine §7.6, §9.1 |
 | ER-18 | `CommitOutcome.refused(code, detail:, notice:)`: `notice` names the notice a commit wrote while refusing its gesture (`too-large`), and is nil for every other refusal. The `Replica` port offers `dismissNotice(_ id:)`. | engine §7.1 step 8, D-17 |
+| ER-19 | `ActRequest.undo` journals an act; the `Replica` port offers `cancelHeld(gestureId) -> Bool` (the engine's held-only `undo`), `requestInverse(actId, slots:) -> InverseResult`, `readInverseResult(requestId)` and `releaseReversibleAct(actId)`. | engine §7.3 Undo of an act |
 
 ## Appendix A: Example: the gym routine editor
 
@@ -2032,7 +2095,7 @@ case .failed(let error): showNotSaved(error)                                    
 // Keep mine → draft = draft.rebased(onto: theirs!), then Save; Take theirs → draft = Draft(opening: theirs!)
 
 if case .committed(_, let receipt) = try runner.run(DeleteRoutine(routine.id)) {       // held 9 s
-  undoTransient.show(receipt.gestureId, until: receipt.releaseAt!)                     // Undo → runner.undo(gestureId)
+  undoTransient.show(receipt.gestureId, until: receipt.releaseAt!)                     // Undo → runner.cancelHeld(gestureId)
 }
 ```
 
