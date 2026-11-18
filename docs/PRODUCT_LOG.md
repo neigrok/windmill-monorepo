@@ -7,7 +7,9 @@ daily reflection, and gym for training. One account connects the products. The
 The bet ledger lives in the dogfood tree, `t_9362d9bc883e0a1e`. Each bet's node carries its
 scope, progress, outcome and follow-ups. Implementation plans and delivery history belong there.
 The go-to-market plan, its funnels, benchmarks and per-action reports live in
-[marketing/](marketing/README.md).
+[marketing/](marketing/README.md). The [iOS release tree](https://windmill.works/app/roadmap#/app/t_4549f1f8cc783f1b)
+is the launch source of truth; [marketing’s launch contract](marketing/strategy.md#launch-contract) translates
+its readiness gates into public claims and acquisition work.
 
 ## Shared principles
 

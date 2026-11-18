@@ -219,7 +219,7 @@ TEST(sync_live_sends_same_admission_final_owner_changes_before_death_without_dis
   } rules;
   SyncCatalog catalog(world.catalog().registry());
   for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "board" ? &rules : world.catalog().rules(type.name));
-  for (const auto& command : catalog.registry().commands()) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  for (const auto& command : catalog.registry().commands()) if (!command.engine) catalog.bindCommand(command.name, world.catalog().command(command.name));
   catalog.seal();
   SyncLive live(catalog, world.store(), Limits{});
   struct RecordedFeed final : ChangeFeed {

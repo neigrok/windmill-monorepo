@@ -11,13 +11,15 @@
 
 namespace wm::probe {
 
-// The probe's receipts in probe_start_receipts and probe_copy_receipts (db/probe.sql).
+// The probe's receipts in probe_start_receipts, probe_copy_receipts and probe_branch_receipts (db/probe.sql).
 class PgProbeReceipts final : public ProbeReceipts {
 public:
   std::optional<std::string> startedRun(sync::SyncTxn&, const sync::ScopeKey& scope, const std::string& called) override;
   void recordStart(sync::SyncTxn&, const sync::ScopeKey& scope, const std::string& called, const std::string& resolved) override;
   std::optional<std::string> copiedFrom(sync::SyncTxn&, const sync::ScopeKey& scope, const std::string& destination) override;
   void recordCopy(sync::SyncTxn&, const sync::ScopeKey& scope, const std::string& destination, const std::string& source) override;
+  std::optional<BranchReceipt> branched(sync::SyncTxn&, const sync::ScopeKey& scope, const std::string& child) override;
+  void recordBranch(sync::SyncTxn&, const sync::ScopeKey& scope, const std::string& child, const BranchReceipt& receipt) override;
 };
 
 // The probe on Postgres: a PgTableType per registry type over db/probe.sql, its receipts, and the product

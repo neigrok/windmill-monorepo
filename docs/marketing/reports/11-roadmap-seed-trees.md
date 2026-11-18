@@ -1,6 +1,6 @@
 # 11 · Can twenty builders make a starter their own and return?
 
-**Free web pilot, weeks 2–4.** Recruit in week 1, November 12–18. Start with Windmill's original **Ship v1**
+**Free web pilot, planned until recruitment is recorded.** Set actual intake start, close and read dates before invitations. Start with Windmill's original **Ship v1**
 starter for builders with an active small project. Its opening steps ask the builder to write a one-sentence
 promise and cut the scope to one core flow. That gives participants something they can finish now and a
 reason to reopen the tree when the project moves.
@@ -20,8 +20,7 @@ verify its signed-out link and measure that intake separately. [Open the starter
 > learn whether you use it again as the work moves on.
 
 Recruit builders new to Windmill who are already working toward a release, through direct introductions or a
-community that permits feedback requests. Aim to have people try the starter in week 2 so their return
-windows can close by the end of week 4. Track how many were invited, consented and personally tried the
+community that permits feedback requests. Close the read only after the last eligible signup has had 14 days. Track how many were invited, consented and personally tried the
 starter. Lock the trial group at the first 20 who try it, including people who never claim a tree. Exclude
 staff, founder-run demos and trees built on someone's behalf. A participant may use an external assistant
 later. MCP tool access follows per-product, per-level grants for Roadmap and Gym. Normal external tool
@@ -35,5 +34,6 @@ Guest-only participants cannot meet the account-backed measures. Show immature a
 separately. Delay a decision if outstanding observations could change it. At **8/20 activated and 4/20
 returning, or better on both**, repeat the starter with a new source. With **fewer than 4 activated or fewer
 than 2 returning** after maturation, pause expansion and interview at the first point of loss. Other
-combinations are inconclusive. Add another original starter only when the first cohort shows a job and an
-audience worth repeating. [Funnel definitions and limitations](02-measurement.md)
+combinations are inconclusive. Expand this behavior experiment only when the first cohort shows a job and an
+audience worth repeating. Useful tutorials and distinct resources can publish alongside it under the
+[editorial plan](17-distribution-and-editorial.md). [Funnel definitions and limitations](02-measurement.md)

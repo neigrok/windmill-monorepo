@@ -84,6 +84,11 @@ document, its four implementations and its corpus, made before the registry is b
   An opted-in command returns the accepted versions of its changed slots and the before/after scope
   and row sequences, without values. These receipts support conditional Undo and survive retries
   unchanged; they describe the caller's own effects, never another reader's private overlay.
+- **E-8 Typed references inside values.** A registry MAY declare literal object paths to record
+  identities and the scope each names. Dependency tracking and ID remapping use those declarations,
+  so a queued descendant's `parent.tree` follows a redirected subtree ID and a command's `step`
+  names a node in its declared tree. Unannotated JSON and text stay untouched; references do not
+  grant access or authorize effects in another scope.
 
 And of the domain kit:
 

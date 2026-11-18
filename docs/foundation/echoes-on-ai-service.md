@@ -6,12 +6,13 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified; not approved, and nothing is built. Echoes derives, on the server, links
-between a person's past journal pages ([Echoes](../../backend/products/journal/ECHOES.md)). Its
-two model calls, one that cuts a page into passages and one that judges pairings, are made by the
-backend with its own provider key and metered by the backend's ledger against the person's own AI
-allowance. The build order lives in the Echoes on the AI service roadmap tree, which the dogfood
-tree (`t_9362d9bc883e0a1e`) opens from the node `echoes-on-ai-service`.
+**Status:** Approved by the owner on 2026-11-17, with the amounts of R-4 still open; nothing is
+built. Echoes derives, on the server, links between a person's past journal pages
+([Echoes](../../backend/products/journal/ECHOES.md)). Its two model calls, one that cuts a page into
+passages and one that judges pairings, are made by the backend with its own provider key and metered
+by the backend's ledger against the person's own AI allowance. The build order lives in the Echoes
+on the AI service roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node
+`echoes-on-ai-service`.
 
 **Scope:** Moving those two calls onto the [AI service](ai-service.md): the backend as a caller,
 the pass it signs for itself, the budgets that pay, what an answer does to the work, the two

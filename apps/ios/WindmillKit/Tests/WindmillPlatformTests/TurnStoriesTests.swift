@@ -44,6 +44,7 @@ extension JSON {
   var repeats = 0
   var generation: UInt64 = 0
   var exists = false
+  var connected: Bool
   var state = "running"
   var controlIndices: Set<Int> = []
   var requests: [JSON] = []
@@ -67,7 +68,9 @@ extension JSON {
       seat: Seat(kind: Seat.Kind(rawValue: try value.field("seat").field("kind").string)!, key: try value.field("seat").field("key").string),
       question: try value.field("question").string, pictures: try Self.pictures(value.field("pictures")))
     nowMs = try story.field("runtime").field("nowMs").integer
-    client = ServiceAiClient(transport: self, clock: self, diagnostics: self, credentials: { _ in AiCredentials(session: "session", installation: "installation") })
+    connected = try story.field("runtime").field("connected").asBool()
+    client = ServiceAiClient(transport: self, clock: self, diagnostics: self, credentials: { _ in AiCredentials(session: "session", installation: "installation") },
+      connection: { [unowned self] in self.connected })
     turn = Turn(host: self, client: client, telemetry: self, runtime: self)
   }
 
@@ -91,6 +94,7 @@ extension JSON {
         await Task.yield()
       case "delete": exists = false
       case "stale": state = "interrupted"
+      case "disconnect": connected = false
       default: throw AiTransportFailure.invalidResponse
       }
     }
@@ -209,6 +213,7 @@ extension JSON {
     let exchange = exchanges[index]
     repeats += 1
     if repeats >= Int(try exchange.field("repeat").integer) { exchangeIndex += 1; repeats = 0 }
+    if exchange.field("transport") == "offline" { throw AiTransportFailure.offline }
     if exchange.field("http") != .null {
       let http = exchange.field("http")
       return response(status: Int(try http.field("status").integer), type: try http.field("contentType").string,

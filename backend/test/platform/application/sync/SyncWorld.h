@@ -244,6 +244,12 @@ public:
       for (const std::string& destination : product["copies"][key].getMemberNames())
         db.copyReceipts[{storeKey(key), destination}] = product["copies"][key][destination].asString();
     }
+    for (const std::string& key : product["branches"].getMemberNames()) {
+      for (const std::string& child : product["branches"][key].getMemberNames()) {
+        const Json::Value& receipt = product["branches"][key][child];
+        db.branchReceipts[{storeKey(key), child}] = probe::BranchReceipt{receipt["parent"].asString(), receipt["title"].asString()};
+      }
+    }
     store_.db = std::move(db);
   }
 
@@ -292,6 +298,10 @@ public:
     state["product"] = Json::Value(Json::objectValue);
     for (const auto& [key, resolved] : db.startReceipts) state["product"]["receipts"][aliasKey(key.first)][key.second] = resolved;
     for (const auto& [key, source] : db.copyReceipts) state["product"]["copies"][aliasKey(key.first)][key.second] = source;
+    for (const auto& [key, receipt] : db.branchReceipts) {
+      state["product"]["branches"][aliasKey(key.first)][key.second]["parent"] = receipt.parent;
+      state["product"]["branches"][aliasKey(key.first)][key.second]["title"] = receipt.title;
+    }
     if (gym_) {
       state["product"] = db.gym;
       for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].empty()) state["product"].removeMember(key);

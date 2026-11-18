@@ -1189,7 +1189,27 @@ export function scopedReceipts() {
     effectPlan: { check: { [PROBE_A]: [{ t: 'lap', id: 'lap00001', born: s(1000), v: { no: 2 } }] } },
   });
   assert.deepEqual(serial.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'lap', id: 'lap00001', beforeRowSeq: 3, rowSeq: 4, slots: [] }]);
-  return [created, updated, noop, absent, invalid, emptyTree, death, text, noText, fullText, ...boundary, branch, ...responseBounds, serial];
+  const consequence = admitted('capture owns the version a consequence gives a register its ordinary write also wrote', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(7000), { title: 'Mine' })], { cmd: capture }),
+    effectPlan: { check: { [PROBE_A]: [{ t: 'card', id: 'card0001', born: s(5000), f: { title: ['Normalized', null] } }] } },
+  });
+  assert.deepEqual(consequence.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'card', id: 'card0001', beforeRowSeq: 2, rowSeq: 3,
+    slots: [{ slot: { kind: 'field', name: 'title' }, version: { kind: 'stamp', stamp: SRV(NOW) } }] }]);
+  const newReplica = { kind: 'replica', account: owner, replica: 'rp_0000000000000000000000000000000c', n: 1 };
+  const replay = admitted('a probe.branch replayed from a new replica resolves by its receipt and changes no row', {
+    state: branch.expect.state, origin: newReplica, intent: branch.input.intent,
+  });
+  const branched = branch.expect.state;
+  assert.deepEqual(replay.expect.result, { s: 'ok', seq: 2, write: [{ t: 'board', id: 'b_00000002', born: SRV(NOW) }], detail: {
+    windmillKit: { v: 1, effects: [['self/probe', 2], [`tree/${BOARD}`, 1], ['tree/b_00000002', 1]].map(([scope, seq]) => ({ scope, beforeSeq: seq, seq, rows: [] })) },
+    command: { created: false } } });
+  assert.deepEqual(replay.expect.state, branched);
+  assert.deepEqual(branched.product.branches, { [`acct:${owner}/probe`]: { b_00000002: { parent: BOARD, title: 'Branch' } } });
+  const retitled = admitted('a probe.branch whose receipt names other arguments answers id-taken', {
+    state: branched, origin: newReplica, intent: { ...branch.input.intent, cmd: { name: 'probe.branch', args: { parent: BOARD, child: 'b_00000002', title: 'Other' } } },
+  });
+  assert.deepEqual(retitled.expect.result, { s: 'refused', code: 'id-taken' });
+  return [created, updated, noop, absent, invalid, emptyTree, death, text, noText, fullText, ...boundary, branch, ...responseBounds, serial, consequence, replay, retitled];
 }
 
 export function files() {

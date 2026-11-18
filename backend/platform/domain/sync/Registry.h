@@ -208,12 +208,16 @@ struct ArgDef {
   std::optional<Domain> domain;
 };
 
+enum class EngineCommand { capture };
+
 struct CommandDef {
   std::string name;
   RegistryScope scope;
   Origins origins;
   bool serverInternal = false;
   bool beforePull = false;  // §6.7: runs in its own admission before every pull of its scope
+  bool scopedEffects = false;
+  std::optional<EngineCommand> engine;
   std::map<std::string, ArgDef> args;
   std::vector<std::string> predicts;
 };

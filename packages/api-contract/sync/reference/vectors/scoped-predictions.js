@@ -6,6 +6,7 @@ import { Cursor, intentDigest } from '../core/wire.js';
 import { pull } from '../server/pull.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
+import { EffectPlanProduct } from './effect-plan.js';
 import { product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
 import { runSteps, settle, stepsVector } from './steps.js';
 
@@ -272,7 +273,27 @@ export function scopedReconciliation() {
     steps: [guarded, { op: 'epochChange', epoch: 'ep-2' }, { op: 'push' }, replayAck],
   });
   assert.equal(receiptOnly.expect.device.replicas[0].outbox[1].intent.guard[0].stamp, st(12000));
-  return [mapped, replay, deletion, withoutPrediction, receiptOnly];
+  const card = row({ t: 'card', id: 'card0001', born: st(1000), life: ['alive', st(1000)], f: { title: ['Before', st(1000)] }, seq: 1 });
+  const carded = settle({ active: replica, replicas: [{ meta: freshMeta(replica, 'bound', 'A'), confirmed: { [origin]: [card] } }] });
+  const titleGuarded = (deviceNow, body) => ({ op: 'commit', scope: origin, deviceNow, changes: [{ op: 'update', t: 'card', id: 'card0001', f: { body } }],
+    opts: { guard: [{ t: 'card', id: 'card0001', field: 'title' }] } });
+  const captured = [{ op: 'commit', scope: origin, deviceNow: 2000, changes: [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Mine' } }],
+    opts: { cmd: { name: 'probe.capture', args: {} } } }, titleGuarded(2001, 'Queued'), { op: 'push', deviceNow: 2002 }];
+  const normalizing = new EffectPlanProduct({ check: { 'acct:A/probe': [{ t: 'card', id: 'card0001', born: st(1000), f: { title: ['Normalized', null] } }] } });
+  const admitted = push({ state: new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A', { seq: 1 }) }, rows: { 'acct:A/probe': [card] } })),
+    registry, product: normalizing, account: 'A', request: runSteps({ device: carded, steps: captured }).returns[2], serverNow: 3000 });
+  const accepted = admitted.response.body.results[0].detail.windmillKit.effects[0].rows[0].slots[0].version.stamp;
+  assert.equal(accepted, '3000:0:srv');
+  const ordinary = stepsVector('a capture\'s ordinary write draws and guards at the version its receipt accepted', { device: carded, steps: [...captured,
+    { op: 'pushResponse', deviceNow: 3000, response: admitted.response }, { op: 'view', scope: origin, withHeld: true }, titleGuarded(3001, 'Next'), { op: 'push', deviceNow: 3002 }],
+  });
+  assert.equal(ordinary.expect.returns[4].records[0].f.title[1], accepted);
+  assert.deepEqual(ordinary.expect.device.replicas[0].outbox[0].intent.d[0].f.title[1], st(2000));
+  const guards = ordinary.expect.returns[6].intents.map(({ guard }) => guard[0].stamp);
+  assert.deepEqual(guards, [accepted, accepted]);
+  const next = push({ state: admitted.state, registry, product, account: 'A', request: ordinary.expect.returns[6], serverNow: 3003 });
+  assert.deepEqual(next.response.body.results.map(({ s }) => s), ['ok', 'ok']);
+  return [mapped, replay, deletion, withoutPrediction, receiptOnly, ordinary];
 }
 
 export function scopedReplay() {
@@ -321,7 +342,30 @@ export function scopedReplay() {
     assert.deepEqual(sample.expect.device, ordinary.expect.device);
     return sample;
   });
-  return [ordinary, first, last, ...malformed];
+  const parent = 'b_00000001', child = 'b_00000002', tree = `tree/${parent}`, nextTree = `tree/${child}`;
+  const board = row({ t: 'board', id: parent, born: st(1000), life: ['alive', st(1000)], seq: 1 });
+  const meta = row({ t: 'meta', id: 'meta', f: { title: ['Parent', st(1000)] }, seq: 5 });
+  const boarded = settle({ active: replica, replicas: [{ meta: freshMeta(replica, 'bound', 'A'), confirmed: { [scope]: [board], [tree]: [meta] } }] });
+  const branch = { op: 'commit', scope, deviceNow: 2000, changes: [], opts: { cmd: { name: 'probe.branch', args: { parent, child, title: 'Branch' } }, scopedPredict: [
+    { scope, changes: [{ op: 'create', t: 'board', id: child }] },
+    ...[tree, nextTree].map((target) => ({ scope: target, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Branch' } }] })),
+  ] } };
+  const renewed = { ids: ['rp_00000000000000000000000000000002'], actors: ['r_bbbbbbbbbbbb'] };
+  const sent = [branch, { op: 'push', deviceNow: 2000 }, { op: 'reidentify' }, { op: 'push', deviceNow: 2500 }];
+  const requests = runSteps({ device: boarded, ...renewed, steps: sent }).returns;
+  const lost = push({ state: new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A', { seq: 1 }), [`tree:${parent}`]: treeScope('A', parent, { seq: 5 }) },
+    rows: { 'acct:A/probe': [board], [`tree:${parent}`]: [meta] } })), registry, product, account: 'A', request: requests[1], serverNow: 2100 });
+  const replayed = push({ state: lost.state, registry, product, account: 'A', request: requests[3], serverNow: 3000 });
+  assert.deepEqual(replayed.response.body.results.map(({ s, write }) => [s, write]), [['ok', lost.response.body.results[0].write]]);
+  const receive = (target) => [{ op: 'pull', scopes: [target] }, { op: 'pullResponse',
+    response: pull({ state: replayed.state, registry, product, account: 'A', request: { scopes: [{ scope: target, cursor: null }] }, serverNow: 3001 }).response }];
+  const branched = stepsVector('a lost probe.branch result replays from a new replica and settles by its receipt', { device: boarded, ...renewed, steps: [...sent,
+    { op: 'pushResponse', deviceNow: 3000, response: replayed.response }, ...[scope, tree, nextTree].flatMap(receive), { op: 'push', deviceNow: 3002 }],
+  });
+  assert.equal(branched.expect.device.replicas[0].outbox, undefined);
+  assert.equal(branched.expect.device.replicas[0].notices, undefined);
+  assert.equal(branched.expect.returns.at(-1), null);
+  return [ordinary, first, last, ...malformed, branched];
 }
 
 export function scopedDependencies() {

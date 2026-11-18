@@ -182,8 +182,8 @@ create table if not exists probe_marks_revisions (
   primary key (scope_key, id, field, rev)
 );
 
--- The receipts the probe's commands resolve their replays by: the run a probe.start id resolved to, and
--- the board a probe.copy destination was copied from.
+-- The receipts the probe's commands resolve their replays by: the run a probe.start id resolved to, the
+-- board a probe.copy destination was copied from, and the arguments a probe.branch child was created with.
 create table if not exists probe_start_receipts (
   scope_key text not null references sync_scopes(key) on delete cascade,
   called    text not null,
@@ -196,6 +196,14 @@ create table if not exists probe_copy_receipts (
   destination text not null,
   source      text not null,
   primary key (scope_key, destination)
+);
+
+create table if not exists probe_branch_receipts (
+  scope_key text not null references sync_scopes(key) on delete cascade,
+  child     text not null,
+  parent    text not null,
+  title     text not null,
+  primary key (scope_key, child)
 );
 
 do $$

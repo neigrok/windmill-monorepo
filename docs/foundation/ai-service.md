@@ -7,7 +7,8 @@ and roadmap nodes can cite them.
 ## §0 Status and scope
 
 **Status:** Implemented in [services/ai](../../services/ai/ARCHITECTURE.md), with product integrations
-still outside the build. The C++ backend continues to hold its AI allowance ledger
+still outside the build. Background work (§3) is specified and not built: the service believes a
+pass whose `client` is `server` as it believes any other. The C++ backend continues to hold its AI allowance ledger
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)), provider keys and existing product calls.
 The service's default deployment has no pinned pass key and admits nobody. Production acceptance
 and provider-billing evidence are tracked in the AI service roadmap tree, which the dogfood tree

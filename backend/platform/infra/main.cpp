@@ -619,7 +619,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                            configured("AI_PASS_MIN_VERSIONS", ""));
     aiPassApi = std::make_shared<AiPassApi>(passes, authService, aiInstallations, entitlements,
         std::make_shared<RateLimiter>(30.0 / 60.0, 30.0), *systemClock, allowedOrigins, installationProxy);
-    aiPassWorkers = std::make_shared<WorkerPool>("ai-pass-http", 2, 16);
+    aiPassWorkers = std::make_shared<WorkerPool>("ai-pass-http", 2, 16,
+                                                 std::make_shared<FailureWindow>(*sentry, "worker_pool.saturated"));
     lifetime.onStop([aiPassWorkers] { aiPassWorkers->stopAndJoin(); }, aiPassApi, authService, aiInstallations,
                     entitlements, systemClock, sentry);
   }

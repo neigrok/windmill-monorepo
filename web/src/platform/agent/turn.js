@@ -110,6 +110,7 @@ export class TurnRunner {
           if (turn.done) return turn.end;
           if (turn.stop) return await this.finish(turn, 'stopped');
           if (turn.seatChanged) return await this.finish(turn, 'interrupted');
+          if (round === 0 && !this.ai.connected()) return await this.finish(turn, 'interrupted', { withdraw: true });
           const callId = this.runtime.newId();
           const mark = { turnId: input.turnId, callId, textBytesBeforeRound: bytes(turn.text) };
           await this.mutate(() => this.host.beginRound(turn.lease, turn.text, mark));

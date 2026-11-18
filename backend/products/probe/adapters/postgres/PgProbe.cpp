@@ -64,6 +64,18 @@ void PgProbeReceipts::recordCopy(sync::SyncTxn& txn, const sync::ScopeKey& scope
                         pqxx::params{scope.text(), destination, source});
 }
 
+std::optional<BranchReceipt> PgProbeReceipts::branched(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::string& child) {
+  const pqxx::result rows = sync::sqlOf(txn).exec("select parent, title from probe_branch_receipts where scope_key = $1 and child = $2",
+                                                  pqxx::params{scope.text(), child});
+  if (rows.empty()) return std::nullopt;
+  return BranchReceipt{rows[0]["parent"].as<std::string>(), rows[0]["title"].as<std::string>()};
+}
+
+void PgProbeReceipts::recordBranch(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::string& child, const BranchReceipt& receipt) {
+  sync::sqlOf(txn).exec("insert into probe_branch_receipts (scope_key, child, parent, title) values ($1, $2, $3, $4) on conflict do nothing",
+                        pqxx::params{scope.text(), child, receipt.parent, receipt.title});
+}
+
 PgProbe::PgProbe(const sync::Registry& registry) : product_(receipts_) {
   for (const sync::TypeDef& type : registry.types()) tables_.push_back(std::make_unique<sync::PgTableType>(type, tableOf(type.name)));
 }

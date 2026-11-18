@@ -7,8 +7,8 @@ them.
 ## §0 Status and scope
 
 **Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. The iPhone app carries journal and gym.
-Roadmap's design for it is [Roadmap · iOS, wave 1](../design/ios/roadmap.md), with its boards in
-the Roadmap Figma file; some are approved and some are proposals. The build order lives in the
+Roadmap's design for it is [Roadmap · iOS](../design/ios/roadmap.md), with its boards in
+the Roadmap Figma file; every board is a proposal until the owner approves it. The build order lives in the
 Roadmap on iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node
 `roadmap-ios`.
 
@@ -18,9 +18,9 @@ tested.
 
 **Out of scope:** What a person sees, which the design holds. Roadmap's records and rules, which
 [Roadmap on the sync engine](roadmap-on-the-engine.md) holds. Coach's abilities, records and turn,
-which [Roadmap Coach](roadmap-coach.md) holds. What the design leaves for later waves: ceremonies,
-quests and paste, share settings and export, reminders, widgets and App Intents, editing on the
-canvas, and iPad.
+which [Roadmap Coach](roadmap-coach.md) holds. What the design leaves out, which its section 13
+lists: ceremonies, presence, editing on the canvas, keyboard shortcuts and iPad, widgets and App
+Intents, and the reminder switch.
 
 **Depends on:**
 
@@ -153,25 +153,27 @@ guide and the guides above it, and an owner edits their own.
 
 - These are the domain's actions and reads, the web's own.
 - Forking first needs a connection, as every fork does.
-- The iPhone design draws none of it, so each state is drawn and approved before it is built.
+- Each state is drawn as a proposal and is approved before it is built.
 
 ## §7 A roadmap and its kinds
 
 A person renames and deletes a roadmap on the phone, and adds, renames, recolours and removes its
 kinds (R-6). These are the domain's actions, the web's own: a delete is held with Undo, and
-recolouring a kind is the server's command. The iPhone design draws none of it, so each state is
-drawn and approved before it is built.
+recolouring a kind is the server's command. Each state is drawn as a proposal and is approved
+before it is built.
 
 ## §8 Coach
 
-Coach is the room's third tab, as the design rules, with Search beside it.
+Coach is on the open screen, as the design rules: a composer at the foot of the Board, the Graph, a
+step page and the step form, and a sheet for its answers.
 
 - It runs on the Coach engine's Swift libraries with roadmap's profile, and its abilities run on
   the phone's copy through `RoadmapDomain`.
 - Its conversations, proposals and receipts are roadmap's synced records, so a conversation begun
   in a browser is the same one on the phone.
 - It ships in the room's first release (R-2) and opens to people when Roadmap Coach opens on the
-  web: once gym's server Coach has closed (Roadmap Coach R-11). Until that day the tab is not shown.
+  web: once gym's server Coach has closed (Roadmap Coach R-11). Until that day the composer is not
+  shown.
 - [Roadmap Coach](roadmap-coach.md) specifies it for both surfaces.
 
 ## §9 Forms, colour and words
@@ -236,19 +238,15 @@ makes it false.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.
-- The Board, the room's entry screens, the New step form and the held delete are proposals in
-  Figma. Not drawn for the iPhone at all: nested roadmaps and guides, renaming and deleting a
-  roadmap, managing kinds, the list of what could not
-  land, a gesture a limit refuses, a fork in progress, a link that cannot be opened, History with
-  no connection, and the sign-in question that names roadmaps and conversations.
+- Every board of the room is a proposal in Figma until the owner approves it.
 
 ## §14 Rulings
 
 | | Question | Ruling |
 |---|---|---|
 | R-1 | What the room syncs through | The shared sync engine and the Swift domain kit, not a client of roadmap's former sync. (2026-11-17) |
-| R-2 | Coach on the iPhone | In the first release, as the room's third tab. (2026-11-17) |
+| R-2 | Coach on the iPhone | In the first release, on the open screen as the design draws it. (2026-11-17) |
 | R-3 | Nested roadmaps and guides | Full parity with the web in the first version. (2026-11-17) |
 | R-4 | Which links open the app | Shared links and a person's own links. (2026-11-17) |
 | R-5 | Where a form commits | In the toolbar, as every other form. (2026-11-17) |
-| R-6 | Renaming and deleting a roadmap, and managing kinds, on the iPhone | All are in the first version: rename and delete a roadmap, and add, rename, recolour and remove a kind. The design draws none, so each is drawn and approved first. (2026-11-17) |
+| R-6 | Renaming and deleting a roadmap, and managing kinds, on the iPhone | All are in the first version: rename and delete a roadmap, and add, rename, recolour and remove a kind. Each is drawn as a proposal and approved first. (2026-11-17) |
