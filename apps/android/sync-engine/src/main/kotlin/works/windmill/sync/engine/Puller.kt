@@ -31,6 +31,7 @@ internal fun Engine.endScope(replica: ReplicaState, scope: ScopeRef, kind: Strin
     val scopes = if (replica.state == "bound" && scope.kind is ScopeRef.Kind.Tree) listOf(scope, ScopeRef.overlay(scope.tree!!)) else listOf(scope)
     for (endedScope in scopes) {
         forgetScope(replica, endedScope)
+        replica.forgetJournalScope(endedScope, ended)
         if (replica.known[endedScope.text] != Json.of("gone")) replica.known[endedScope.text] = Json.of(kind)
     }
 }
@@ -91,7 +92,7 @@ internal fun Engine.receiveRows(replica: ReplicaState, scope: ScopeRef, rows: Li
                 val spent = replica.spent[scope.text]?.arr().orEmpty().filter { it.recordKey != row.key }
                 replica.spent[scope.text] = Json.Arr((spent + Json.objectOf("t" to Json.of(row.key.type), "id" to row.key.id.json, "born" to row.lattice.born!!.json)).sortedWith { a, b -> a.recordKey.compareTo(b.recordKey) })
             }
-            governed.forEach { replica.known[it.text] = Json.of("gone"); endScopeProjections(replica, it) }
+            governed.forEach { replica.known[it.text] = Json.of("gone"); replica.forgetJournalScope(it, ended); endScopeProjections(replica, it) }
             if (staging) { store.removeStaging(replica.id, scope, row.key) } else store.remove(replica.id, scope, row.key)
             digest = digest.replacing(previous?.json, null)
         } else {

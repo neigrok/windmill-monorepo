@@ -45,7 +45,10 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
             val outcome = intent.command?.let { when (it.definition.engine) {
                 "capture" -> CommandOutcome(product = state.product)
                 "restore" -> restore(it.restore!!)
-                else -> rules.run(it, context())
+                else -> rules.run(it, context()).also { outcome ->
+                    // An inverse command answers its one outcome; a handler that reports none is a contract fault, and commits nothing.
+                    if (it.definition.inverse) try { InverseOutcome.read(outcome.detail, 1) } catch (missing: JsonError) { throw AdmissionFault(missing) }
+                }
             } }
             outcome?.let { state.product = it.product }
             val commandEffects = outcome?.into.orEmpty().toMutableMap()

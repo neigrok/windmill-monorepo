@@ -84,8 +84,11 @@ renames each delta, guard, receipt row and argument in two passes, global leaves
 scope-local ones, and a proposed creation moves only with its own retained target.
 
 An act opted into Undo (engine §7.3 Undo of an act, `ActRequest.undo`) journals each segment's source
-entry with its recipes and first local preimages, and each `ok` or terminal refusal in the result's own
-transaction. The `Replica` port's `cancelHeld` is the held-only Undo; its `requestInverse` cancels a
+entry with its recipes, its first local preimages (each with the confirmed row and epoch it was read at)
+and the values it left, and each `ok` or terminal refusal in the result's own transaction. An Undo skips
+a field unless the journal's own receipts chain from that row to the act's last write; a Redo writes back
+the values the act left. An `ok` whose receipt or inverse outcomes the replica cannot read still
+acknowledges its entry, ends its projections and reports `sync-push-malformed`. The `Replica` port's `cancelHeld` is the held-only Undo; its `requestInverse` cancels a
 wholly held act, or reserves inverse slots at the end of commit order that stop the sender until the
 act's sources are authoritative, then binds them into restore or product inverse commands;
 `readInverseResult` and `releaseReversibleAct` answer and release. The kit's `ActionRunner` offers them as

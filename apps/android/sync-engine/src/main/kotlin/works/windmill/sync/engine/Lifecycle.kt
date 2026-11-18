@@ -100,7 +100,10 @@ internal fun Engine.epochChange(replica: ReplicaState, epoch: String) {
 }
 fun Engine.epochChange(epoch: String) { write(EngineOperation.lifecycle) { epochChange(it, epoch) } }
 fun Engine.start(backupGuard: Json? = null): Json = write(EngineOperation.lifecycle) {
-    for (replica in device.replicas) replica.entries().filter { it.state == "held" }.forEach { replica.move(it, "release", ended) }
+    for (replica in device.replicas) {
+        replica.entries().filter { it.state == "held" }.forEach { replica.move(it, "release", ended) }
+        replica.releaseJournal()
+    }
     actor = identities.actorID()
     var reidentified = false
     if (backupGuard != null) {
@@ -163,7 +166,6 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
         if (decisions[product] != "discard") continue
         entriesOf(anon!!, product).forEach { anon.move(it, "discard", ended) }
         anon.discardJournal(registry, product)
-        anon.settleEnded("discarded", withdraw = true)
         anon.device.remove(product)
     }
     val dormant = device.replicas.firstOrNull { it.state == "dormant" && it.account == account }

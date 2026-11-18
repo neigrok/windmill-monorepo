@@ -3,15 +3,24 @@ package works.windmill.sync.engine
 import works.windmill.sync.api.InverseResult
 import works.windmill.sync.core.*
 
-// K-3 the journal of reversible acts (§7.3 Undo of an act): each act's source entries with their recipes, first local preimages and
-// the receipts or refusals their ACK transactions record, beside the inverse requests and cancellation receipts that read them; their
-// retention, epochs, lifecycle and settlement. The journal is the replica's local user data: its values and ids never leave the device
-// but in a restore's own arguments, and never enter telemetry.
+// K-3 the journal of reversible acts (§7.3 Undo of an act): each act's source entries with their recipes, first local preimages, the
+// values the act wrote and the receipts or refusals their ACK transactions record, beside the inverse requests and cancellation receipts
+// that read them; their retention, epochs, lifecycle and settlement. The journal is the replica's local user data: its values and ids
+// never leave the device but in a restore's own arguments, and never enter telemetry.
 
 // A local id's ordinal: its position in its act's commit order.
 internal fun ordinalOf(localId: String): Int = localId.substringAfterLast('/').toInt()
 
-internal data class Preimage(val target: RecordSlot, val value: Json) {
+// A target's value before the act, with the confirmed row it was read over (null where none was) and the epoch that row counts in. An
+// inverse act's preimage is anchored at its restore's ACK to the row the restore wrote over.
+internal data class Preimage(val target: RecordSlot, val value: Json, val rowSeq: Long? = null, val epoch: String? = null) {
+    constructor(json: Json) : this(RecordSlot(json.member("target")), json.member("value"), json["rowSeq"]?.orNull()?.long(), json["epoch"]?.orNull()?.str())
+    val json: Json get() = Json.objectOf("target" to target.json, "value" to value, "rowSeq" to (rowSeq?.let(Json::of) ?: Json.Null),
+        "epoch" to (epoch?.let(Json::of) ?: Json.Null))
+}
+
+// The value an act left in a target, which a Redo writes back.
+internal data class Written(val target: RecordSlot, val value: Json) {
     constructor(json: Json) : this(RecordSlot(json.member("target")), json.member("value"))
     val json: Json get() = Json.objectOf("target" to target.json, "value" to value)
 }
@@ -24,14 +33,16 @@ internal data class Attempt(val epoch: String, val n: Long, val ok: Boolean, val
         .with("acceptedEffects" to acceptedEffects?.let { Json.Arr(it.map(EffectReceipt::json)) })
 }
 
-// An act's entry, as its segment left it: the recipes that undo it, the values its targets read before the act, and its answers.
-// `unavailable` marks a source whose history an epoch change took.
+// An act's entry, as its segment left it: the recipes that undo it, the values its targets read before the act and the values it left,
+// and its answers. `unavailable` marks a source whose history is lost: an epoch change took it, its `ok` came without a readable receipt,
+// or its scope ended.
 internal class SourceEntry(val localId: String, var originScope: ScopeRef, var recipes: List<UndoRecipe>, var preimages: List<Preimage>,
-    var attempts: List<Attempt> = emptyList(), var unavailable: Boolean = false) {
+    var written: List<Written> = emptyList(), var attempts: List<Attempt> = emptyList(), var unavailable: Boolean = false) {
     constructor(json: Json) : this(json.member("localId").str(), ScopeRef(json.member("originScope")), json.items("recipes").map(UndoRecipe::read),
-        json.items("preimages").map(::Preimage), json.items("attempts").map(::Attempt), json.flag("unavailable"))
+        json.items("preimages").map(::Preimage), json.items("written").map(::Written), json.items("attempts").map(::Attempt), json.flag("unavailable"))
     val json: Json get() = Json.objectOf("localId" to Json.of(localId), "originScope" to originScope.json, "recipes" to Json.Arr(recipes.map(UndoRecipe::json)),
-        "preimages" to Json.Arr(preimages.map(Preimage::json)), "attempts" to Json.Arr(attempts.map(Attempt::json))).with("unavailable" to Json.of(true).takeIf { unavailable })
+        "preimages" to Json.Arr(preimages.map(Preimage::json)), "written" to Json.Arr(written.map(Written::json)),
+        "attempts" to Json.Arr(attempts.map(Attempt::json))).with("unavailable" to Json.of(true).takeIf { unavailable })
     // The receipts this source's accepted answer in `epoch` holds, or null without one.
     fun accepted(epoch: String?): List<EffectReceipt>? = attempts.firstOrNull { it.ok && it.epoch == epoch }?.let { it.acceptedEffects.orEmpty() }
 }
@@ -59,6 +70,10 @@ internal sealed interface VersionReference {
     data class RecordAbsent(val epoch: String?) : VersionReference {
         override val json: Json get() = Json.objectOf("kind" to Json.of("recordAbsent"), "epoch" to epoch.json)
     }
+    // A pending entry acknowledged without a version for the target: its operation skips `reference-unbound`.
+    data object Unbound : VersionReference {
+        override val json: Json get() = Json.objectOf("kind" to Json.of("unbound"))
+    }
 
     // The pending entries the reference waits on for their accepted versions.
     val waitsOn: List<String> get() = when (this) {
@@ -73,6 +88,7 @@ internal sealed interface VersionReference {
         is Pending -> this
         is FieldAbsent -> copy(epoch = this.epoch ?: epoch, recordBirth = recordBirth?.bound(epoch))
         is RecordAbsent -> copy(epoch = this.epoch ?: epoch)
+        Unbound -> this
     }
 
     companion object {
@@ -81,6 +97,7 @@ internal sealed interface VersionReference {
             "accepted" -> Accepted(json.member("epoch").orNull()?.str(), SlotVersion(json.member("version")))
             "pending" -> Pending(json.member("localId").str(), RecordSlot(json.member("target")))
             "fieldAbsent" -> FieldAbsent(json.member("epoch").orNull()?.str(), json.member("recordBirth").orNull()?.let { VersionReference(it) })
+            "unbound" -> Unbound
             else -> RecordAbsent(json.member("epoch").orNull()?.str())
         }
     }
@@ -138,28 +155,33 @@ internal sealed interface SlotRecipe {
     }
 }
 
-// One outbox entry an inverse request reserved: waiting for its sources, materialized with bound arguments, or settled.
-internal class InverseSlot(val localId: String, val commitOrder: Long, var recipe: SlotRecipe, var state: String = "waiting",
-    var outcomes: List<InverseOutcome>? = null, var changed: Boolean? = null) {
-    constructor(json: Json) : this(json.member("localId").str(), json.member("commitOrder").long(), SlotRecipe(json.member("recipe")), json.member("state").str(),
+// One outbox entry an inverse request reserved in `originScope`: waiting for its sources, materialized with bound arguments, or settled.
+// `skipped` holds the codes of the operations it skipped before sending.
+internal class InverseSlot(val localId: String, val commitOrder: Long, val originScope: ScopeRef, var recipe: SlotRecipe, var state: String = "waiting",
+    var skipped: List<String>? = null, var outcomes: List<InverseOutcome>? = null, var changed: Boolean? = null) {
+    constructor(json: Json) : this(json.member("localId").str(), json.member("commitOrder").long(), ScopeRef(json.member("originScope")),
+        SlotRecipe(json.member("recipe")), json.member("state").str(), json["skipped"]?.arr()?.map { it.member("code").str() },
         json["outcomes"]?.arr()?.map(::InverseOutcome), json["changed"]?.bool())
-    val json: Json get() = Json.objectOf("localId" to Json.of(localId), "commitOrder" to Json.of(commitOrder), "recipe" to recipe.json, "state" to Json.of(state))
-        .with("outcomes" to outcomes?.let { Json.Arr(it.map(InverseOutcome::json)) }, "changed" to changed?.let(Json::of))
+    val json: Json get() = Json.objectOf("localId" to Json.of(localId), "commitOrder" to Json.of(commitOrder), "originScope" to originScope.json,
+        "recipe" to recipe.json, "state" to Json.of(state)).with("skipped" to skipped?.let { codes -> Json.Arr(codes.map { Json.objectOf("code" to Json.of(it)) }) },
+        "outcomes" to outcomes?.let { Json.Arr(it.map(InverseOutcome::json)) }, "changed" to changed?.let(Json::of))
 
-    // The slot's answer: its outcomes, or every operation skipped by `code`.
+    // The slot's answer: its outcomes, or every operation skipped by `code`. A settled slot keeps no values: its recipe gives way to its
+    // command's name.
     fun settle(answered: List<InverseOutcome>?, code: String? = null) {
         outcomes = answered ?: List(recipe.count) { InverseOutcome(it, code) }
+        recipe = SlotRecipe.Withdrawn(recipe.command)
         state = "settled"
     }
 }
 
-// One Undo or Redo of an act, its slots in commit order.
-internal class InverseRequest(val requestId: String, val sourceActId: String, val inverseActId: String, var state: String, val localChanged: Boolean?,
-    val slots: List<InverseSlot>, var result: InverseResult? = null) {
+// One Undo or Redo of an act, asked for at device time `requestedAt`, its slots in commit order.
+internal class InverseRequest(val requestId: String, val sourceActId: String, val inverseActId: String, var state: String, val requestedAt: Long,
+    val localChanged: Boolean?, var slots: List<InverseSlot>, var result: InverseResult? = null) {
     constructor(json: Json) : this(json.member("requestId").str(), json.member("sourceActId").str(), json.member("inverseActId").str(), json.member("state").str(),
-        json["localChanged"]?.bool(), json.items("slots").map(::InverseSlot), json["result"]?.let { InverseResult(it) })
+        json.member("requestedAt").long(0), json["localChanged"]?.bool(), json.items("slots").map(::InverseSlot), json["result"]?.let { InverseResult(it) })
     val json: Json get() = Json.objectOf("version" to Json.of(1), "requestId" to Json.of(requestId), "sourceActId" to Json.of(sourceActId),
-        "inverseActId" to Json.of(inverseActId), "state" to Json.of(state), "slots" to Json.Arr(slots.map(InverseSlot::json)))
+        "inverseActId" to Json.of(inverseActId), "state" to Json.of(state), "requestedAt" to Json.of(requestedAt), "slots" to Json.Arr(slots.map(InverseSlot::json)))
         .with("localChanged" to localChanged?.let(Json::of), "result" to result?.json)
     val answer: InverseResult get() = result ?: InverseResult.Pending(requestId, inverseActId, localChanged == true)
 }
@@ -170,10 +192,12 @@ internal sealed interface CancellationUnit {
     val record: RecordAddress
     val restored: VersionReference
     val json: Json
-    data class Field(override val ownerLocalId: String, val target: RecordSlot, val redoValue: Json, override val restored: VersionReference) : CancellationUnit {
+    // A register the act wrote, the value it wrote, and what the cancellation left there: its version and, where set, its value.
+    data class Field(override val ownerLocalId: String, val target: RecordSlot, val redoValue: Json, override val restored: VersionReference,
+        val restoredValue: Json? = null) : CancellationUnit {
         override val record: RecordAddress get() = target.record
         override val json: Json get() = Json.objectOf("kind" to Json.of("field"), "ownerLocalId" to Json.of(ownerLocalId), "target" to target.json,
-            "redoValue" to redoValue, "restored" to restored.json)
+            "redoValue" to redoValue, "restored" to restored.json).with("restoredValue" to restoredValue)
     }
     data class CreatedRecord(override val ownerLocalId: String, override val record: RecordAddress, val redoValues: CreationValues,
         override val restored: VersionReference) : CancellationUnit {
@@ -182,27 +206,36 @@ internal sealed interface CancellationUnit {
     }
     companion object {
         operator fun invoke(json: Json): CancellationUnit = if (json.member("kind").str() == "field")
-            Field(json.member("ownerLocalId").str(), RecordSlot(json.member("target")), json.member("redoValue"), VersionReference(json.member("restored")))
+            Field(json.member("ownerLocalId").str(), RecordSlot(json.member("target")), json.member("redoValue"), VersionReference(json.member("restored")), json["restoredValue"])
             else CreatedRecord(json.member("ownerLocalId").str(), RecordAddress(json.member("record")), CreationValues(json.member("redoValues")), VersionReference(json.member("restored")))
     }
 }
 
-// A held cancellation's receipt, by the inverse act a Redo names it with.
-internal class CancellationReceipt(val inverseActId: String, val cancelledActId: String, var units: List<CancellationUnit>, var retained: Boolean = true) {
-    constructor(json: Json) : this(json.member("inverseActId").str(), json.member("cancelledActId").str(), json.items("units").map { CancellationUnit(it) },
-        json["retained"]?.bool() ?: true)
+// One entry a held cancellation took out; `command` marks one that ran a product command, which has no generic Redo.
+internal data class CancelledEntry(val localId: String, val originScope: ScopeRef, val command: Boolean) {
+    constructor(json: Json) : this(json.member("localId").str(), ScopeRef(json.member("originScope")), json.flag("command"))
+    val json: Json get() = Json.objectOf("localId" to Json.of(localId), "originScope" to originScope.json).with("command" to Json.of(true).takeIf { command })
+}
+
+// A held cancellation's receipt, by the inverse act a Redo names it with: the entries it took out and what they took out of `drawn`.
+internal class CancellationReceipt(val inverseActId: String, val cancelledActId: String, var sourceEntries: List<CancelledEntry>, var units: List<CancellationUnit>,
+    var retained: Boolean = true) {
+    constructor(json: Json) : this(json.member("inverseActId").str(), json.member("cancelledActId").str(), json.items("sourceEntries").map(::CancelledEntry),
+        json.items("units").map { CancellationUnit(it) }, json["retained"]?.bool() ?: true)
     val json: Json get() = Json.objectOf("version" to Json.of(1), "inverseActId" to Json.of(inverseActId), "cancelledActId" to Json.of(cancelledActId),
-        "units" to Json.Arr(units.map(CancellationUnit::json))).with("retained" to Json.of(false).takeIf { !retained })
+        "sourceEntries" to Json.Arr(sourceEntries.map(CancelledEntry::json)), "units" to Json.Arr(units.map(CancellationUnit::json))).with("retained" to Json.of(false).takeIf { !retained })
 }
 
 internal fun ReplicaState.sourceOf(localId: String): Pair<ReversibleAct, SourceEntry>? =
     journal.firstNotNullOfOrNull { act -> act.sourceEntries.firstOrNull { it.localId == localId }?.let { act to it } }
 
 // The ACK transaction's retention point (§7.4): a source keeps its accepted receipt, or its refusal, under the answer's epoch, before its
-// entry can settle or be collected. One attempt an epoch: a replay's replaces it.
+// entry can settle or be collected. One attempt an epoch: a replay's replaces it. An `ok` without a readable receipt proves nothing of what
+// the act wrote: the source's history is unavailable.
 internal fun ReplicaState.retainOutcome(localId: String, attempt: Attempt) {
     val source = sourceOf(localId)?.second ?: return
     source.attempts = source.attempts.filter { it.epoch != attempt.epoch } + attempt
+    if (attempt.ok && attempt.acceptedEffects == null) source.unavailable = true
 }
 
 // §7.5 step 1: a restored server invalidates each source's proofs from another epoch. A source still in the outbox replays and earns its
@@ -214,10 +247,44 @@ internal fun ReplicaState.invalidateEpochs(epoch: String) {
     }
 }
 
-// §7.10: a Discard of a product's work removes the journal's whole source entries of that product, values included; an act left with none goes.
+// §7.10: a Discard of a product's work removes the journal's whole source entries of that product, values included, and its cancellations'
+// units and inverse requests; a record left with nothing of its own goes. The discarded slots settle skipped first.
 internal fun ReplicaState.discardJournal(registry: Registry, product: String) {
-    for (act in journal) act.sourceEntries = act.sourceEntries.filter { registry.product(it.originScope) != product }
+    fun theirs(scope: ScopeRef) = registry.product(scope) == product
+    for (act in journal) act.sourceEntries = act.sourceEntries.filter { !theirs(it.originScope) }
     journal.removeAll { it.sourceEntries.isEmpty() }
+    settleEnded("discarded")
+    for (cancellation in cancellations) {
+        cancellation.sourceEntries = cancellation.sourceEntries.filter { !theirs(it.originScope) }
+        val kept = cancellation.sourceEntries.map { it.localId }.toSet()
+        cancellation.units = cancellation.units.filter { it.ownerLocalId in kept }
+    }
+    val gone = cancellations.filter { it.sourceEntries.isEmpty() }.map { it.inverseActId }.toSet()
+    cancellations.removeAll { it.inverseActId in gone }
+    inverses.removeAll { request -> if (request.slots.isNotEmpty()) request.slots.all { theirs(it.originScope) } else request.inverseActId in gone }
+}
+
+// §7.5 step 2: a scope that ends (its `gone` or `not-found`, or a dead governing row) keeps none of its values in the journal. Its sources
+// keep their receipts and become unavailable; a cancellation's units there go; a slot still waiting there vacates, skipped `scope-gone`.
+internal fun ReplicaState.forgetJournalScope(scope: ScopeRef, ended: MutableList<Json>) {
+    for (source in journal.flatMap { it.sourceEntries }.filter { it.originScope == scope }) {
+        source.recipes = emptyList(); source.preimages = emptyList(); source.written = emptyList(); source.unavailable = true
+    }
+    for (cancellation in cancellations) cancellation.units = cancellation.units.filter { it.record.scope != scope }
+    for (request in inverses.filter { it.state != "settled" }) {
+        for (slot in request.slots.filter { it.state == "waiting" && it.originScope == scope }) {
+            entry(slot.localId)?.let { move(it, "vacate", ended) }
+            slot.settle(null, "scope-gone")
+        }
+        settleRequest(request)
+    }
+}
+
+// §7.3 engine start: no product stack outlives its process, so every act and cancellation no unsettled request reads goes.
+internal fun ReplicaState.releaseJournal() {
+    journal.forEach { it.retained = false }
+    cancellations.forEach { it.retained = false }
+    collectJournal()
 }
 
 // An Add moves a replica's journal into another, keeping act and local ids.
@@ -247,24 +314,23 @@ internal fun ReplicaState.collectJournal() {
     journal.removeAll { act -> !act.retained && act.actId !in unsettled && act.sourceEntries.none { it.localId in referenced } }
 }
 
-// A request settles once every slot has: changed is whether any slot's accepted effects changed a row.
+// A request settles once every slot has: changed is whether any slot's accepted effects changed a row, and the counts take every operation
+// a slot sent and every one it skipped before sending.
 internal fun ReplicaState.settleRequest(request: InverseRequest) {
     if (request.state == "settled" || request.slots.any { it.state != "settled" }) return
-    val outcomes = request.slots.flatMap { it.outcomes.orEmpty() }
+    val outcomes = request.slots.flatMap { slot -> slot.outcomes.orEmpty().map { it.applied } + slot.skipped.orEmpty().map { false } }
     request.state = "settled"
     request.result = InverseResult.Settled(request.requestId, request.inverseActId, request.slots.any { it.changed == true },
-        outcomes.count { it.applied }, outcomes.count { !it.applied })
+        outcomes.count { it }, outcomes.count { !it })
     collectJournal()
 }
 
-// The slots whose entries ended without a result (a fold, or a Discard) settle skipped by `code`. A Discard also withdraws their values:
-// the slot keeps only its outcomes.
-internal fun ReplicaState.settleEnded(code: String, withdraw: Boolean = false) {
+// The slots whose entries ended without a result (a fold, or a Discard) settle skipped by `code`.
+internal fun ReplicaState.settleEnded(code: String) {
     for (request in inverses.filter { it.state != "settled" }) {
         for (slot in request.slots) {
             if (slot.state == "settled" || entry(slot.localId) != null) continue
             slot.settle(null, code)
-            if (withdraw) slot.recipe = SlotRecipe.Withdrawn(slot.recipe.command)
         }
         settleRequest(request)
     }
@@ -285,6 +351,7 @@ internal fun Registry.remapJournal(replica: ReplicaState, map: RecordMap) {
                 EvidenceSelection(recipe.evidence.ownedFields.map(::target), recipe.evidence.unchangedCreatedRecords.map(::address), recipe.evidence.unchangedCreatedScopes.map(map::scope)))
         } }
         source.preimages = source.preimages.map { it.copy(target = target(it.target)) }
+        source.written = source.written.map { it.copy(target = target(it.target)) }
         source.attempts = source.attempts.map { attempt -> attempt.copy(acceptedEffects = attempt.acceptedEffects?.map { effect ->
             EffectReceipt(map.scope(effect.scope), effect.beforeSeq, effect.seq, effect.rows.map { row -> EffectRow(references.remapRecord(effect.scope, row.json, map)) })
         }) }

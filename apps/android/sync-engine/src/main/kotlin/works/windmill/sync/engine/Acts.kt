@@ -76,7 +76,8 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
 private class UndoPlan(val scope: ScopeRef, val recipes: List<UndoRecipe>, val preimages: List<Preimage>)
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's initial snapshot (§7.3 Undo of
-// an act). A slot unset there takes the target's explicit default; with none, the act fails before anything changes. By segment index.
+// an act), each with the confirmed row it was read over (null where none is) and the epoch that row counts in. A slot unset there takes the
+// target's explicit default; with none, the act fails before anything changes. By segment index.
 private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int, UndoPlan>? {
     val segments = request.undo ?: return null
     val plan = linkedMapOf<Int, UndoPlan>()
@@ -89,19 +90,23 @@ private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int
             if (recipe is UndoRecipe.CreatedRecord && recipe.record.key in view) throw CommitFailure.malformed("undo-created-record-exists")
         }
         val preimages = segment.recipes.filterIsInstance<UndoRecipe.Fields>().flatMap { it.targets }.map { (target, defaultValue) ->
-            Preimage(target, view[target.key]?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"))
+            Preimage(target, view[target.key]?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"),
+                store.row(replica.id, target.scope, target.key)?.seq, replica.meta["serverEpoch"]?.orNull()?.str())
         }
         plan[segment.index] = UndoPlan(scope, segment.recipes, preimages)
     }
     return plan
 }
 
-// The act's journal record, from the segments that left an entry: one source entry each, in commit order. An act that left none records nothing.
-private fun recordAct(replica: ReplicaState, actId: String, plan: Map<Int, UndoPlan>, receipts: List<ActSegmentReceipt>) {
+// The act's journal record, from the segments that left an entry: one source entry each, in commit order, with the value the act left in
+// each target, which a Redo writes back. An act that left none records nothing.
+private fun Engine.recordAct(replica: ReplicaState, actId: String, plan: Map<Int, UndoPlan>, receipts: List<ActSegmentReceipt>) {
     val sources = plan.toSortedMap().mapNotNull { (index, segment) ->
         val localIds = receipts[index].localIds
         if (localIds.size > 1) throw CommitFailure.malformed("undo-segment-intents")
-        localIds.singleOrNull()?.let { SourceEntry(it, segment.scope, segment.recipes, segment.preimages) }
+        val view = drawn(replica, segment.scope)
+        val written = segment.preimages.mapNotNull { (target) -> view[target.key]?.drawnValue(target.slot)?.let { Written(target, it) } }
+        localIds.singleOrNull()?.let { SourceEntry(it, segment.scope, segment.recipes, segment.preimages, written) }
     }
     if (sources.isNotEmpty()) replica.journal.add(ReversibleAct(actId, true, sources))
 }

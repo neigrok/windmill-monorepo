@@ -198,7 +198,8 @@ class StorageLayoutTests {
             "recipes" to Json.array(Json.objectOf("kind" to Json.of("fields"), "restoreCommand" to Json.of("probe.restore"), "targets" to Json.array(Json.objectOf("target" to target())))),
             "preimages" to Json.array(Json.objectOf("target" to target(), "value" to Json.of("Old"))), "attempts" to Json.array())))).json
     private fun request(id: String) = InverseRequest(Json.objectOf("version" to Json.of(1), "requestId" to Json.of(id), "sourceActId" to Json.of("a"), "inverseActId" to Json.of("i1"),
-        "state" to Json.of("waiting"), "localChanged" to Json.of(true), "slots" to Json.array(Json.objectOf("localId" to Json.of("i1/0"), "commitOrder" to Json.of(2),
+        "state" to Json.of("waiting"), "requestedAt" to Json.of(9_000), "localChanged" to Json.of(true), "slots" to Json.array(Json.objectOf("localId" to Json.of("i1/0"),
+            "commitOrder" to Json.of(2), "originScope" to Json.of(scope.text),
             "recipe" to Json.objectOf("kind" to Json.of("restore"), "command" to Json.of("probe.restore"),
                 "operations" to Json.array(Json.objectOf("kind" to Json.of("field"), "target" to target(), "before" to Json.of("Old")))), "state" to Json.of("waiting"))))).json
     private fun cancellation(id: String) = CancellationReceipt(Json.objectOf("version" to Json.of(1), "inverseActId" to Json.of(id), "cancelledActId" to Json.of("z"),

@@ -156,7 +156,7 @@ class AndroidSqliteTests {
         }
     }
 
-    @Test fun aReservedUndoKeepsItsJournalAndBarrierAcrossReopen() = database { file ->
+    @Test fun aReservedUndoKeepsItsBarrierAcrossReopenAndStartKeepsOnlyTheActItInverts() = database { file ->
         val vector = Json.parse(File(System.getProperty("windmill.contract"), "sync/corpus/undo/restore.json").readBytes()).arr()
             .single { it.member("name").str().startsWith("an inverse slot whose source is still held stops numbering") }
         val steps = vector.member("input").member("steps").arr()
@@ -183,11 +183,12 @@ class AndroidSqliteTests {
             assertEquals(listOf("g1", "g2"), engine.snapshot().member("replicas").arr().single().member("journal").arr().map { it.member("actId").str() })
             assertNull(engine.nextPush())
             engine.start()
+            assertEquals(listOf("g1"), engine.snapshot().member("replicas").arr().single().member("journal").arr().map { it.member("actId").str() })
             assertEquals(listOf(ScopeRef.tree("b_00000001").json), engine.nextPush()!!.member("intents").arr().map { it.member("scope") })
         }
         SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
             val stored = listOf("reversible_act", "inverse_request").map { table -> db.rawQuery("SELECT COUNT(*) FROM $table", null).use { it.moveToFirst(); it.getInt(0) } }
-            assertEquals(listOf(2, 1), stored)
+            assertEquals(listOf(1, 1), stored)
         }
     }
     @Test fun anAcknowledgedScopedCommandKeepsEachProjectionAndReceiptAcrossReopenAndSettlesOneTargetAtATime() = database { file ->

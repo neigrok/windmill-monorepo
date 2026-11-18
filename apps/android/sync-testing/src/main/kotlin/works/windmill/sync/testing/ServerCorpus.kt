@@ -130,7 +130,7 @@ internal class EffectPlanRules(val plan: Json) : ServerRules {
         val result = probe.run(command, context)
         val into = result.into.toMutableMap()
         for ((scope, deltas) in effects("command", context)) into[scope] = into[scope].orEmpty() + deltas
-        return result.copy(into = into)
+        return result.copy(into = into, detail = if ("detail" in plan.obj()) plan["detail"] else result.detail)
     }
     override fun effects(changes: List<RecordChange>, context: RuleContext): Effects {
         val byScope = super<ServerRules>.effects(changes, context).byScope.toMutableMap()
