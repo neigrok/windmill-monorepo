@@ -362,7 +362,7 @@ void runRead(const std::string& file, Json::ArrayIndex index) {
 const std::set<std::string> kDevices{"board.json",           "landing.json",           "roadmaps-actions.json",
                                      "steps-actions.json",   "kinds-actions.json",     "progress-actions.json",
                                      "workspace-actions.json", "landing-actions.json", "rules.json",
-                                     "values.json"};
+                                     "values.json",          "undo.json"};
 
 }
 
