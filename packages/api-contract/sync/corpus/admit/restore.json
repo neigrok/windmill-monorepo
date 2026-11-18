@@ -10090,5 +10090,297 @@
         }
       }
     }
+  },
+  {
+    "name": "an inverse command whose detail reports no outcome is a technical contract fault, and commits nothing",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "995086725ede8d0c614b01500bf1252204e16978ed95c084608c4e920a1be469"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "2ae44c8776715bfe14d6d343ddd178e372cde15086a689e79085e2499a06f2c4",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "121a001283554e97235823cdf95c2f5b31bff0fc3e648f9a2bff372431822a00",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "5000:0:srv"
+              ],
+              "born": "5000:0:srv",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Branch",
+                  "5000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Branch",
+                  "5000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.unbranch",
+          "args": {
+            "input": {
+              "parent": "b_00000001",
+              "child": "b_00000002",
+              "title": "Root"
+            },
+            "evidence": {
+              "expectedEpoch": "ep-1",
+              "ownedFields": [
+                {
+                  "target": {
+                    "scope": "tree/b_00000001",
+                    "t": "meta",
+                    "id": "meta",
+                    "slot": {
+                      "kind": "field",
+                      "name": "title"
+                    }
+                  },
+                  "version": {
+                    "kind": "stamp",
+                    "stamp": "5000:0:srv"
+                  }
+                }
+              ],
+              "unchangedCreatedRecords": [
+                {
+                  "record": {
+                    "scope": "self/probe",
+                    "t": "board",
+                    "id": "b_00000002"
+                  },
+                  "rowSeq": 2,
+                  "footprint": [
+                    {
+                      "slot": {
+                        "kind": "born"
+                      },
+                      "version": {
+                        "kind": "stamp",
+                        "stamp": "5000:0:srv"
+                      }
+                    },
+                    {
+                      "slot": {
+                        "kind": "life"
+                      },
+                      "version": {
+                        "kind": "stamp",
+                        "stamp": "5000:0:srv"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "unchangedCreatedScopes": [
+                {
+                  "scope": "tree/b_00000002",
+                  "seq": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "serverNow": 1000000,
+      "effectPlan": {
+        "detail": {
+          "created": true
+        },
+        "fault": true
+      }
+    },
+    "expect": {
+      "fault": true,
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "995086725ede8d0c614b01500bf1252204e16978ed95c084608c4e920a1be469"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "2ae44c8776715bfe14d6d343ddd178e372cde15086a689e79085e2499a06f2c4",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "121a001283554e97235823cdf95c2f5b31bff0fc3e648f9a2bff372431822a00",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "5000:0:srv"
+              ],
+              "born": "5000:0:srv",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Branch",
+                  "5000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Branch",
+                  "5000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
   }
 ]

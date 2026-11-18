@@ -10,7 +10,7 @@ import { Registry } from '../core/registry.js';
 import { orderedScopes, receiptRow, scopedResponseBytes } from '../core/receipts.js';
 import { compactRow, compareRecords, isAlive, latticeOf, recordKey, stampsOf, thinRow } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
-import { evaluateRestore, evidenceFault, restoreArgumentsFault } from '../core/restore.js';
+import { evaluateRestore, evidenceFault, InverseOutcomesError, inverseOutcomes, restoreArgumentsFault } from '../core/restore.js';
 import { checkArgument, checkFieldValue, checkId, lengthIn } from '../core/values.js';
 import { holdsNul } from '../core/wire.js';
 import { accessOf, scopeKeyOf } from './access.js';
@@ -394,6 +394,12 @@ class Admission {
     if (this.command.engine === 'capture') { this.write = []; return; }
     if (this.command.engine === 'restore') return this.restore(cmd.args);
     const outcome = this.product.runCommand(this.context(), cmd);
+    if (this.command.inverse) {
+      try { inverseOutcomes(outcome.detail, 1); } catch (error) {
+        if (error instanceof InverseOutcomesError) throw new Error('an inverse command reports no outcome');
+        throw error;
+      }
+    }
     const byScope = { [this.scopeKey]: [...outcome.deltas] };
     for (const { scopeKey, deltas } of outcome.into ?? []) (byScope[scopeKey] ??= []).push(...deltas);
     this.admitEffects({ byScope }, 'command');

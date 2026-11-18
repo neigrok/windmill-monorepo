@@ -161,6 +161,7 @@ public:
     Effects effects;
     effects_.append(effects, "command", ctx.caller.account, ctx.serverNow);
     for (auto& [key, deltas] : effects.byScope) result.into.push_back(IntoScope{key, std::move(deltas)});
+    if (plan_.isMember("detail")) result.detail = plan_["detail"];
     return result;
   }
 

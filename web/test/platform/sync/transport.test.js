@@ -139,6 +139,18 @@ test('writer measurements are bounded numeric labels and never forward content o
   assert.deepEqual(events, [{ name: 'sync-writer', props: { durationMs: 60000, queueMs: 12 } }, { name: 'sync-writer', props: {} }]);
 });
 
+test('inverse settlement and waiting counts are bounded numeric labels with no id or value', () => {
+  const events = [];
+  const telemetry = syncTelemetry({ event: (name, props) => events.push({ name, props }) });
+  telemetry.event('sync-inverse', { outcome: 'settled', applied: 2, skipped: 5000, requestId: 'g3', before: 'secret' });
+  telemetry.event('sync-inverse', { outcome: 'pending', count: 1, ageMs: 9e12, actId: 'g1' });
+  telemetry.event('sync-inverse', { outcome: 'settled', applied: -1, skipped: 0.5, ageMs: Infinity });
+  assert.deepEqual(events, [
+    { name: 'sync-inverse', props: { outcome: 'settled', applied: 2, skipped: 1000 } },
+    { name: 'sync-inverse', props: { outcome: 'pending', count: 1, ageMs: 2_592_000_000 } },
+    { name: 'sync-inverse', props: { outcome: 'settled' } }]);
+});
+
 test('the default browser fetch preserves its global receiver', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async function () {
