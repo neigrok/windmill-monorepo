@@ -143,7 +143,7 @@ test('a step deleted on another device ends its subtree\'s standing, and a chang
     await a.sync();
     const b = await a.device();
     await a.sync();
-    const reach = (phone) => phone.drawn(RoadmapMeta, RoadmapScopes.tree(subtree)).map((value) => value.reach);
+    const reach = (/** @type {Harness} */ phone) => phone.drawn(RoadmapMeta, RoadmapScopes.tree(subtree)).map((value) => value.reach);
     assert.deepEqual([reach(a), reach(b)], [['unlisted'], ['unlisted']]);
     committed(await b.runner.runAct(new DeleteStep(tree, basics)));
     await a.advance(CONSTANTS.HOLD_MS);
