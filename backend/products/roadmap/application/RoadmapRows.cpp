@@ -209,7 +209,7 @@ TreeRows RoadmapRows::tree(sync::SyncTxn& txn, const std::string& tree, const st
 read::TreeRecords recordsOf(const TreeRows& rows, const AccountRows& account) {
   read::TreeRecords records;
   records.id = rows.tree;
-  records.present = rows.exists() && account.isAlive(rows.tree);
+  records.present = rows.exists() && account.isAlive(rows.tree) && (account.placeOf(rows.tree) || rows.meta.has_value());
   records.parent = account.placeOf(rows.tree);
   if (rows.meta) {
     records.meta.title = textOf(*rows.meta, "title");

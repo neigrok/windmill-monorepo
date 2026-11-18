@@ -26,9 +26,10 @@ public:
   ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens, Clock& clock);
 
   // noSource is only an absent, hidden or unreadable source; an infrastructure failure throws, so the door reports it.
-  // One `roadmap_tree_fork` line counts the trees a fork copied.
+  // One `roadmap_tree_fork` line counts the trees a fork copied. The rooms' fork stores its copies in one transaction
+  // and takes no request key: a resend forks again.
   Result fork(const TreeId& source, const std::string& requestedId, const std::string& requestedTitle,
-              const UserId& owner) override;
+              const UserId& owner, const std::optional<std::string>& requestKey) override;
   // The source's live face, read under the room's strand; a source that can't be opened yields nullopt.
   std::optional<Description> describe(const TreeId& source) override;
 

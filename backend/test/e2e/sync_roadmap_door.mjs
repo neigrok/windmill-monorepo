@@ -6,7 +6,8 @@
 // - MCP plants a roadmap and two steps, each call under a requestId, and sends each again: the copy is answered as the
 //   first was and writes nothing.
 // - The browser engine, signed in as the same account, pulls the roadmap and its steps and the link between them.
-// - The fork route copies the roadmap: the copy's record and its steps reach the browser by sync, under a new id.
+// - The fork route copies the roadmap under a requestId, and the same fork sent again answers the same copy: the copy's
+//   record and its steps reach the browser by sync, under a new id.
 // - Everything converges: no entry stays pending, no notice is written, and every scope's confirmed rows match the
 //   server's digest.
 // The output names checks only, never a record id or a title.
@@ -149,10 +150,17 @@ try {
     'the browser holds both steps and the link between them', `${steps(tree).length} steps`);
 
   // ── the fork, through the route ──
-  const forked = await fetch(`${base}/v1/trees/${root}/fork`, { method: 'POST', signal: AbortSignal.timeout(REQUEST_MS),
-    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' }, body: '{}' });
-  const copy = forked.status === 201 ? (await forked.json()).data?.id : null;
+  const fork = async () => {
+    const forked = await fetch(`${base}/v1/trees/${root}/fork`, { method: 'POST', signal: AbortSignal.timeout(REQUEST_MS),
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: 'e2e-fork' }) });
+    return { status: forked.status, id: forked.status === 201 ? (await forked.json()).data?.id : null };
+  };
+  const forked = await fork();
+  const copy = forked.id;
   check(typeof copy === 'string' && copy !== root, 'the fork route answers 201 with a new roadmap', `status ${forked.status}`);
+  const resent = await fork();
+  check(resent.id === copy && count(`select count(*) from roadmap_trees where scope_key = '${accountScope}' and life = 'alive'`) === 2,
+    'the same fork sent again answers the same copy and plants no other', `status ${resent.status}`);
   await settle();
   const copied = `tree/${copy}`;
   engine.observe(copied);

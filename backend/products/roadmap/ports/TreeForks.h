@@ -16,7 +16,9 @@ namespace wm {
 // roadmap's rooms; DoorForks through the engine's door, where ROADMAP_ENGINE_ENABLED serves roadmap's scopes.
 class TreeForks {
 public:
-  enum class Outcome { forked, noSource, conflict, notARoot };
+  // `busy`: the engine could not take the fork now, nothing new written; `requestConflict`: its request key was sent
+  // before with another source, id or title.
+  enum class Outcome { forked, noSource, conflict, notARoot, busy, requestConflict };
   struct Result {
     Outcome outcome;
     TreeData data;                     // the root copy's document, its id and title the copy's
@@ -31,9 +33,11 @@ public:
   virtual ~TreeForks() = default;
 
   // `requestedId` and `requestedTitle` may be empty: the id is then minted, the title the source's. `noSource` is an
-  // absent, hidden or unreadable source alike; an infrastructure failure throws, so the door reports it.
+  // absent, hidden or unreadable source alike; an infrastructure failure throws, so the door reports it. A fork sent
+  // with a `requestKey` is one fork however often it is sent: a resend completes what the first did not and answers the
+  // same copy.
   virtual Result fork(const TreeId& source, const std::string& requestedId, const std::string& requestedTitle,
-                      const UserId& owner) = 0;
+                      const UserId& owner, const std::optional<std::string>& requestKey) = 0;
   // A source a stranger may read by its id, a root; none otherwise.
   virtual std::optional<Description> describe(const TreeId& source) = 0;
 };

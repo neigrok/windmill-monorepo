@@ -56,7 +56,7 @@ TEST(the_door_over_postgres_forks_a_roadmap_into_the_callers_account) {
   REQUIRE(!h.call("create_node", step("a", "A")).isError);
   REQUIRE(!h.call("create_node", step("b", "B", {"a"})).isError);
   DoorForks forks(h.door, h.tokens);
-  const TreeForks::Result forked = forks.fork(TreeId{h.tree}, "", "", h.caller);
+  const TreeForks::Result forked = forks.fork(TreeId{h.tree}, "", "", h.caller, std::nullopt);
   REQUIRE(forked.outcome == TreeForks::Outcome::forked);
   Json::Value read(Json::objectValue);
   read["treeId"] = forked.data.id.str();
@@ -90,4 +90,28 @@ TEST(the_door_over_postgres_makes_exactly_the_rest_of_a_call_cut_short_between_i
   read["nodeIds"] = list({"opener"});
   read["fields"] = list({"id", "opens"});
   CHECK_EQ(body(h.call("get_nodes", read))["nodes"][0]["opens"]["treeId"].asString(), other);
+}
+
+TEST(the_door_over_postgres_finishes_a_fork_cut_short_after_its_record_under_its_request_key) {
+  if (!sync::test::postgresEnabled()) SKIP(sync::test::kNeedsPostgres);
+  PgDoor h;
+  REQUIRE(!h.call("create_node", step("a", "A")).isError);
+  REQUIRE(!h.call("create_node", step("b", "B", {"a"})).isError);
+  const auto listed = [&] { return body(h.call("list_trees", kNoArgs))["trees"].size(); };
+  const std::size_t roots = listed();
+  sync::fake::FaultingStore cut(h.world.store(), {{}, {{2, sync::FaultClass::transient}}});
+  roadmap::RoadmapDoor brittle(h.world.catalog(), cut, h.world.feed, h.world.clock(), h.clock, h.world.failures);
+  CHECK(DoorForks(brittle, h.tokens).fork(TreeId{h.tree}, "", "", h.caller, "fork-pg").outcome == TreeForks::Outcome::busy);
+  CHECK_EQ(listed(), roots);
+
+  h.clock.ms += sync::Limits{}.requestLeaseMs + 1;
+  DoorForks forks(h.door, h.tokens);
+  const TreeForks::Result finished = forks.fork(TreeId{h.tree}, "", "", h.caller, "fork-pg");
+  REQUIRE(finished.outcome == TreeForks::Outcome::forked);
+  Json::Value read(Json::objectValue);
+  read["treeId"] = finished.data.id.str();
+  CHECK_EQ(body(h.call("get_tree", read))["count"].asUInt64(), 2u);
+  CHECK_EQ(listed(), roots + 1);
+  CHECK_EQ(forks.fork(TreeId{h.tree}, "", "", h.caller, "fork-pg").data.id, finished.data.id);
+  CHECK_EQ(listed(), roots + 1);
 }

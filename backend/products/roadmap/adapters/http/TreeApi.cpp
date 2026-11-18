@@ -234,7 +234,25 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
 
-  TreeForks::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller);
+  // A fork sent with a request key — `requestId` in the body or the Idempotency-Key header — is one fork however often
+  // it is sent: a resend after a lost answer or a cut-short copy answers the same new roadmap.
+  std::string requestKey = json ? json->get("requestId", "").asString() : "";
+  if (requestKey.empty()) requestKey = req->getHeader("Idempotency-Key");
+  if (requestKey.size() > 128 || requestKey.find_first_of(std::string("#\0", 2)) != std::string::npos) {
+    callback(error(drogon::k400BadRequest, "requestId must be at most 128 characters, holding no \"#\"", "bad-request-id"));
+    return;
+  }
+
+  TreeForks::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller,
+                                         requestKey.empty() ? std::nullopt : std::optional<std::string>(requestKey));
+  if (forked.outcome == TreeForks::Outcome::busy) {
+    callback(error(drogon::k503ServiceUnavailable, "the fork could not be made just now; send it again", "busy"));
+    return;
+  }
+  if (forked.outcome == TreeForks::Outcome::requestConflict) {
+    callback(error(drogon::k409Conflict, "this requestId was sent before for another fork", "request-conflict"));
+    return;
+  }
   if (forked.outcome == TreeForks::Outcome::noSource) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;

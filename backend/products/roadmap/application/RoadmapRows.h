@@ -75,7 +75,9 @@ private:
   sync::SyncStore& store_;
 };
 
-// The read domain's records of one roadmap, its place and presence as `account` holds them.
+// The read domain's records of one roadmap, its place and presence as `account` holds them. A root stands only once its
+// tree scope holds its `meta`: one whose record has landed and whose meta has not — a creation or a fork cut short —
+// is present nowhere until the call that made it is sent again and finishes it.
 read::TreeRecords recordsOf(const TreeRows& rows, const AccountRows& account);
 // A step's or a kind's present state as a reply reads it.
 TreeData documentOf(const TreeRows& rows, const std::string& title);

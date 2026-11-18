@@ -917,6 +917,9 @@ What the door answers otherwise, each pinned by `golden/wire_corpus_door.json` o
 - `delete_tree` answers in `removed` the steps of the owner's other roadmaps whose pointer opened it, which the engine
   deletes with it; their links stay, read through while the steps are absent.
 - `list_trees` answers `updatedAt` as the newest write among a roadmap's records and the caller's marks, newest first.
+- A root stands only once its tree scope holds its `meta`: a `create_tree`, or a fork (`application/DoorForks`), cut
+  short after its record and before its meta is listed, counted and opened nowhere until the same call sent again
+  finishes it.
 - Nothing is written to `tree_ops`.
 
 ## Build

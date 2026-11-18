@@ -268,7 +268,7 @@ TEST(door_fork_copies_a_branch_under_new_ids_clears_status_and_keeps_only_the_ow
   }()).isError);
 
   DoorForks forks(h.door, h.tokens);
-  const TreeForks::Result mine = forks.fork(TreeId{h.tree}, "", "", h.caller);
+  const TreeForks::Result mine = forks.fork(TreeId{h.tree}, "", "", h.caller, std::nullopt);
   REQUIRE(mine.outcome == TreeForks::Outcome::forked);
   CHECK(mine.data.id.str() != h.tree);
   Json::Value copied(Json::objectValue);
@@ -288,9 +288,9 @@ TEST(door_fork_copies_a_branch_under_new_ids_clears_status_and_keeps_only_the_ow
   REQUIRE_EQ(below["nodes"].size(), 1u);
   CHECK_EQ(below["nodes"][0]["id"].asString(), std::string("deep"));
 
-  CHECK(forks.fork(TreeId{h.tree}, "", "", h.reader).outcome == TreeForks::Outcome::noSource);
+  CHECK(forks.fork(TreeId{h.tree}, "", "", h.reader, std::nullopt).outcome == TreeForks::Outcome::noSource);
   publish(h, h.tree);
-  const TreeForks::Result theirs = forks.fork(TreeId{h.tree}, "", "", h.reader);
+  const TreeForks::Result theirs = forks.fork(TreeId{h.tree}, "", "", h.reader, std::nullopt);
   REQUIRE(theirs.outcome == TreeForks::Outcome::forked);
   Json::Value read(Json::objectValue);
   read["treeId"] = theirs.data.id.str();
@@ -300,7 +300,7 @@ TEST(door_fork_copies_a_branch_under_new_ids_clears_status_and_keeps_only_the_ow
   CHECK_EQ(forked["guide"]["yours"].asBool(), false);
   REQUIRE_EQ(forked["nodes"].size(), 3u);
   CHECK(!forked["nodes"][0].isMember("opens"));
-  const TreeForks::Result alone = forks.fork(TreeId{subtree}, "", "", h.caller);
+  const TreeForks::Result alone = forks.fork(TreeId{subtree}, "", "", h.caller, std::nullopt);
   REQUIRE(alone.outcome == TreeForks::Outcome::notARoot);
   CHECK_EQ(alone.notARoot->owningStep.step.str(), std::string("c"));
 }
@@ -435,10 +435,95 @@ TEST(door_the_fork_at_sign_up_plants_a_readable_roadmap_in_the_new_account) {
   const std::optional<std::string> planted = signup.plant(h.tree, h.reader);
   REQUIRE(planted.has_value());
   CHECK(*planted != h.tree);
+  CHECK(signup.plant(h.tree, h.reader) == planted);
   Json::Value read(Json::objectValue);
   read["treeId"] = *planted;
   const Json::Value copy = body(h.as(h.reader, "get_tree", read));
   CHECK_EQ(copy["count"].asUInt64(), 3u);
   CHECK_EQ(copy["tree"]["title"].asString(), std::string("Test Roadmap"));
   CHECK(h.call("get_tree", read).isError);
+}
+
+namespace {
+
+// A roadmap a fork copies whole: the chain a → b → c, a subtree under c holding one step, and a's pointer at another
+// roadmap of the owner's.
+void branchy(DoorHarness& h) {
+  chain(h);
+  const std::string subtree = body(h.call("create_subtree", with("nodeId", "c")))["subtree"]["id"].asString();
+  Json::Value deep = step("deep", "Deep");
+  deep["treeId"] = subtree;
+  REQUIRE(!h.call("create_node", deep).isError);
+  const std::string other = h.plant(h.caller, "Other");
+  Json::Value opener = with("nodeId", "a");
+  opener["opens"] = other;
+  REQUIRE(!h.call("update_nodes", asUpdate(opener)).isError);
+}
+
+std::size_t listed(DoorHarness& h) { return body(h.call("list_trees", kNoArgs))["trees"].size(); }
+
+// How many admits a call made under its request key: the parts the store keeps for it.
+std::size_t partsOf(DoorHarness& h, const std::string& key) {
+  std::size_t parts = 0;
+  for (const auto& [id, row] : h.world.db().requests)
+    if (id.second.starts_with(key + "#")) ++parts;
+  return parts;
+}
+
+// The copy a fork answered, read back whole as its owner reads it: its steps, and the steps of the subtree under c.
+void readsWhole(DoorHarness& h, const std::string& copy) {
+  Json::Value read(Json::objectValue);
+  read["treeId"] = copy;
+  read["fields"] = list({"id", "subtree"});
+  const Json::Value tree = body(h.call("get_tree", read));
+  REQUIRE_EQ(tree["count"].asUInt64(), 3u);
+  Json::Value below(Json::objectValue);
+  below["treeId"] = tree["tree"]["nodes"][2]["subtree"]["id"];
+  CHECK_EQ(body(h.call("get_tree", below))["count"].asUInt64(), 1u);
+}
+
+}
+
+TEST(door_a_fork_cut_short_after_its_record_is_listed_nowhere_and_its_resend_finishes_the_same_copy) {
+  DoorHarness h;
+  branchy(h);
+  const std::size_t roots = listed(h);
+  CutShort cut(h, 2);
+  CHECK(DoorForks(cut.door, h.tokens).fork(TreeId{h.tree}, "", "", h.caller, "fork-once").outcome == TreeForks::Outcome::busy);
+  CHECK_EQ(listed(h), roots);
+
+  h.clock.ms += sync::Limits{}.requestLeaseMs + 1;
+  DoorForks forks(h.door, h.tokens);
+  const TreeForks::Result finished = forks.fork(TreeId{h.tree}, "", "", h.caller, "fork-once");
+  REQUIRE(finished.outcome == TreeForks::Outcome::forked);
+  readsWhole(h, finished.data.id.str());
+  CHECK_EQ(listed(h), roots + 1);
+
+  const TreeForks::Result again = forks.fork(TreeId{h.tree}, "", "", h.caller, "fork-once");
+  REQUIRE(again.outcome == TreeForks::Outcome::forked);
+  CHECK_EQ(again.data.id, finished.data.id);
+  CHECK_EQ(listed(h), roots + 1);
+  CHECK(forks.fork(TreeId{h.tree}, "", "Another name", h.caller, "fork-once").outcome == TreeForks::Outcome::requestConflict);
+}
+
+TEST(door_a_fork_cut_short_before_its_last_write_is_listed_nowhere_until_its_resend) {
+  DoorHarness reference;
+  branchy(reference);
+  REQUIRE(DoorForks(reference.door, reference.tokens).fork(TreeId{reference.tree}, "", "", reference.caller, "measured").outcome ==
+          TreeForks::Outcome::forked);
+  const int last = static_cast<int>(partsOf(reference, "measured"));
+  REQUIRE(last > 2);
+
+  DoorHarness h;
+  branchy(h);
+  const std::size_t roots = listed(h);
+  CutShort cut(h, last);
+  CHECK(DoorForks(cut.door, h.tokens).fork(TreeId{h.tree}, "", "", h.caller, "fork-late").outcome == TreeForks::Outcome::busy);
+  CHECK_EQ(listed(h), roots);
+
+  h.clock.ms += sync::Limits{}.requestLeaseMs + 1;
+  const TreeForks::Result finished = DoorForks(h.door, h.tokens).fork(TreeId{h.tree}, "", "", h.caller, "fork-late");
+  REQUIRE(finished.outcome == TreeForks::Outcome::forked);
+  readsWhole(h, finished.data.id.str());
+  CHECK_EQ(listed(h), roots + 1);
 }

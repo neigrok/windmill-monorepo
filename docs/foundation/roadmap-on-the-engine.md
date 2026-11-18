@@ -279,7 +279,11 @@ What a device tells a person when a change of theirs met one made elsewhere.
 - **Fork is the server's.** It copies the branch of a readable roadmap into the caller's account
   under new ids and new stamps, so a step's created time is when it joined the copy. `status` is
   cleared, the guide is marked inherited when it was another person's, and pointers are copied only
-  into the owner's own fork. A device forks with a connection and receives the copy by sync.
+  into the owner's own fork. A device forks with a connection and receives the copy by sync. A fork sent with a
+  request key is one fork however often it is sent: its copies take ids derived from the caller, the key and the
+  source, and a resend completes the writes the first left undone and answers the same copy. The fork at sign-up
+  takes its key from the sign-up. A root stands only once its tree scope holds its `meta`, which a fork writes last: a
+  fork cut short — like a creation cut short — is listed, counted and opened nowhere until its resend finishes it.
 - **The activity feed** keeps `tree_ops`. The binding writes one row for each gesture that leaves a
   deed, with who made it. Until now it was one row a frame.
 - **Other read models** are fed from the typed tables: the gallery and the share page; the owner's

@@ -19,7 +19,8 @@ std::optional<std::string> ForkSignup::plant(const std::string& source, const Us
   WriteObservation observation("roadmap.signup.fork", "roadmap", "server-origin");
   WriteContext context(observation);
   try {
-    TreeForks::Result r = fork_.fork(TreeId{source}, "", "", user);
+    // One sign-up plants one copy of its source, however often its answer is asked for again.
+    TreeForks::Result r = fork_.fork(TreeId{source}, "", "", user, "signup-" + source);
     if (r.outcome == TreeForks::Outcome::forked) { observation.finish(); return r.data.id.str(); }
     observation.finish("source-missing-or-id-taken");
     LOG_WARN << "pending signup fork refused";
