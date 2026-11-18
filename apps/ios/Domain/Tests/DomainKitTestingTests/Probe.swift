@@ -26,6 +26,26 @@ extension ProbeEntity {
   }
 }
 
+// A board writes no client field: its `parent` is the server's.
+struct Board: ProductEntity, ProbeEntity, Removable {
+  static let type = "board"
+  static let scope = Probe.scope
+  static let heldRemoval = true
+
+  let id: ID<Board>
+
+  init(id: ID<Board>) {
+    self.id = id
+  }
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+  }
+
+  var fields: [String: JSON] { [:] }
+  static let checks: [Check<Board>] = []
+}
+
 struct Card: ProductEntity, ProbeEntity, Draftable, Removable, Ordered {
   static let type = "card"
   static let scope = Probe.scope
@@ -287,7 +307,7 @@ struct Tag: ProbeEntity, Removable {
 // The entity a vector names by its registry type.
 func probeEntity(_ type: String) throws -> any ProbeEntity.Type {
   if type == "guardedMeta" { return GuardedMeta.self }
-  let entities: [any ProbeEntity.Type] = [Card.self, Day.self, Fact.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
+  let entities: [any ProbeEntity.Type] = [Board.self, Card.self, Day.self, Fact.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
   guard let entity = entities.first(where: { $0.type == type }) else { throw ContractError("no probe entity \(type)") }
   return entity
 }
@@ -308,6 +328,12 @@ struct ProbeEnd: ServerCommand {
 
 struct ProbeCopy: ServerCommand {
   static let name = "probe.copy"
+  static let specs: [any ValueSpec] = []
+  let args: [String: JSON]
+}
+
+struct ProbeBranch: ServerCommand {
+  static let name = "probe.branch"
   static let specs: [any ValueSpec] = []
   let args: [String: JSON]
 }

@@ -41,7 +41,7 @@ public final class ActReader {
   public let moment: Moment
   var isOpen = true
 
-  init(_ context: any ActContext, registry: Registry, moment: Moment) {
+  package init(_ context: any ActContext, registry: Registry, moment: Moment) {
     self.context = context; self.registry = registry; self.moment = moment
   }
 
@@ -49,10 +49,19 @@ public final class ActReader {
     precondition(isOpen, "an act reads only during load")
     return try context.inScope(scope) { try body(Reader($0, scope: scope, moment: moment, registry: registry)) }
   }
+
+  // The load is over: a read after it traps.
+  package func end() {
+    isOpen = false
+  }
 }
 
 public struct ActIDSource {
   let context: any ActContext
+
+  package init(context: any ActContext) {
+    self.context = context
+  }
 
   public func mint<E: Entity>(_ type: E.Type, inScope scope: ScopeRef) -> ID<E> {
     precondition(EntityFacts(type).scope.map { $0 == scope } ?? true, "an identity names its entity's scope")
@@ -77,8 +86,8 @@ extension ActionRunner {
           let read = ActReader(context, registry: registry, moment: Moment(now: Instant(ms: context.now), zone: zone))
           let loaded: A.Loaded
           do { loaded = try action.load(read) }
-          catch { read.isOpen = false; throw error }
-          read.isOpen = false
+          catch { read.end(); throw error }
+          read.end()
           try context.finishLoad()
           let decision: ActDecision<A.Result, A.Refusal>
           do throws(Violation) { decision = try action.decide(loaded, ids: ActIDSource(context: context)) }

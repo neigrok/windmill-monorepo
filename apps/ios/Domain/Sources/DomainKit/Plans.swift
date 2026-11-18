@@ -167,7 +167,9 @@ public protocol ServerCommand: Sendable {
   var args: [String: JSON] { get }
 }
 
-// The values a product expects its command to write, server-written fields included, drawn until the result arrives.
+// The values a product expects its command to write, server-written fields included, drawn until the result arrives. A
+// prediction names its scope when that is not the plan's: a command with scoped effects (engine E-7) may predict records
+// in every scope it changes.
 public struct Prediction: Sendable {
   enum Kind: Sendable {
     case create, update, write, remove
@@ -178,21 +180,23 @@ public struct Prediction: Sendable {
   let id: RecordID
   let values: [String: JSON]
   var texts: [String: String] = [:]
+  var scope: ScopeRef?
 
-  public static func write<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], texts: [String: String] = [:]) -> Prediction {
-    Prediction(kind: .write, type: E.type, id: id.record, values: values, texts: texts)
+  public static func write<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], texts: [String: String] = [:],
+                                      in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .write, type: E.type, id: id.record, values: values, texts: texts, scope: scope)
   }
 
-  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction {
-    Prediction(kind: .create, type: E.type, id: id.record, values: values)
+  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .create, type: E.type, id: id.record, values: values, scope: scope)
   }
 
-  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction {
-    Prediction(kind: .update, type: E.type, id: id.record, values: values)
+  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .update, type: E.type, id: id.record, values: values, scope: scope)
   }
 
-  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>) -> Prediction {
-    Prediction(kind: .remove, type: E.type, id: id.record, values: [:])
+  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>, in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .remove, type: E.type, id: id.record, values: [:], scope: scope)
   }
 }
 
