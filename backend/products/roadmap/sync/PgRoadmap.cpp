@@ -1,13 +1,19 @@
 #include "products/roadmap/sync/PgRoadmap.h"
 
+#include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/application/WriteObservation.h"
+#include "products/roadmap/adapters/json/CommandJson.h"
+#include "platform/adapters/json/JsonText.h"
+#include "products/roadmap/sync/RoadmapDeeds.h"
+
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace wm::roadmap::engine {
 
-using sync::SqlType;
-using sync::TableMap;
+using namespace sync;
 
 namespace {
 
@@ -76,16 +82,58 @@ TableMap tableOf(const std::string& type) {
   return table->second;
 }
 
+// The deed's commands, a Batch's members each.
+std::vector<Command> membersOf(const Command& command) {
+  if (const Batch* batch = std::get_if<Batch>(&command)) return batch->commands;
+  return {command};
+}
+
+// §7's activity feed in tree_ops: one row a gesture leaves a deed in a roadmap, at the roadmap's seq once its first
+// intent there commits, `created_at` the time the server received it; a later intent of the gesture folds its deed into
+// that row. A row that already holds the seq is a roadmap whose engine seq did not continue above its old head (§8.1):
+// the intent still lands, and the deed is reported lost rather than written over another.
+class PgDeeds final : public Deeds {
+public:
+  void record(SyncTxn& txn, const Deed& deed) override {
+    dynamic_cast<PgSyncTxn&>(txn).beforeCommit([&txn, deed] {
+      pqxx::transaction_base& sql = sqlOf(txn);
+      const pqxx::result scope = sql.exec("select seq from sync_scopes where key = $1", pqxx::params{ScopeKey::tree(deed.tree).text()});
+      const long long seq = scope.at(0).at(0).as<long long>();
+      const std::string op = deed.gesture ? "gesture:" + *deed.gesture : "seq:" + std::to_string(seq);
+      const pqxx::result held = sql.exec("select kind, payload::text from tree_ops where tree_id = $1 and op_id = $2 for update",
+                                         pqxx::params{pgText(deed.tree), pgText(op)});
+      if (!held.empty()) {
+        std::vector<Command> members;
+        if (std::optional<Command> earlier = commandFromJson(held[0][0].as<std::string>(), parse(held[0][1].as<std::string>())))
+          members = membersOf(*earlier);
+        for (Command& member : membersOf(deed.what)) members.push_back(std::move(member));
+        const Command folded{Batch{std::move(members)}};
+        sql.exec("update tree_ops set kind = $3, payload = $4::jsonb where tree_id = $1 and op_id = $2",
+                 pqxx::params{pgText(deed.tree), pgText(op), commandKind(folded), dump(commandPayload(folded))});
+        return;
+      }
+      const pqxx::result written = sql.exec(
+          "insert into tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) values ($1, $2, $3, $4, $5, $6::jsonb, '') "
+          "on conflict do nothing",
+          pqxx::params{pgText(deed.tree), seq, deed.actor.str(), pgText(op), commandKind(deed.what), dump(commandPayload(deed.what))});
+      if (written.affected_rows() == 0)
+        reportWriteFailure("roadmap.activity.record", "roadmap", currentWriteDoor(), "seq-taken", currentWriteRequestId(), {});
+    });
+  }
+};
+
 }
 
 // Roadmap's types are those of its product scope and of the trees and overlays its `tree` records govern, the only
 // governed scopes of the composition.
-PgRoadmap::PgRoadmap(const sync::Registry& registry) {
+PgRoadmap::PgRoadmap(const sync::Registry& registry) : deeds_(std::make_unique<PgDeeds>()), product_(*deeds_) {
   for (const sync::TypeDef& type : registry.types()) {
     if (type.scope == sync::RegistryScope{sync::ScopeKind::product, "roadmap"} || type.scope.kind != sync::ScopeKind::product)
       tables_.push_back(std::make_unique<sync::PgTableType>(type, tableOf(type.name)));
   }
 }
+
+PgRoadmap::~PgRoadmap() = default;
 
 void PgRoadmap::bindTo(sync::SyncCatalog& catalog) {
   std::map<std::string, sync::TypeStore*> stores;

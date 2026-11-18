@@ -144,6 +144,7 @@ add_library(windmill_roadmap
   products/roadmap/application/ReminderSweep.cpp
   products/roadmap/sync/RoadmapRules.cpp
   products/roadmap/sync/RoadmapProduct.cpp
+  products/roadmap/sync/RoadmapDeeds.cpp
   products/roadmap/sync/PgRoadmap.cpp)
 target_include_directories(windmill_roadmap PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
@@ -323,6 +324,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/application/ScopedToolHostTest.cpp
   test/products/roadmap/application/TendingServiceTest.cpp
   test/products/roadmap/application/ReminderSweepTest.cpp
+  test/products/roadmap/sync/RoadmapDeedsTest.cpp
   test/products/journal/domain/PageTest.cpp
   test/products/journal/domain/NudgePlanTest.cpp
   test/products/journal/domain/PassageTest.cpp

@@ -86,3 +86,101 @@ TEST(the_production_composition_serves_roadmap_only_where_a_deployment_says_so) 
   CHECK_EQ(after["rows"]["tree:t_0000000000000001"][0]["f"]["title"][0].asString(), "Learn Rust");
   CHECK_EQ(after["scopes"]["tree:t_0000000000000002"]["state"].asString(), "alive");
 }
+
+// §7's activity: the binding writes one tree_ops row for each gesture that leaves a deed in a roadmap, in the
+// transaction that admits it, made by the intent's account and at the roadmap's seq as the gesture's first intent there
+// left it; a later intent of the same gesture folds its deed into that row, and an intent that leaves no deed writes
+// none.
+TEST(a_roadmaps_activity_keeps_one_row_a_gesture_that_leaves_a_deed_with_who_made_it) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  test::PgWorld world(test::WorldProduct::roadmap);
+  const std::string tree = "t_00000000000000d1";
+  Json::Value state = parseJson(R"({"epoch": "ep-1", "clock": {"ms": 3000, "counter": 0}, "accounts": {"A": {"name": "Ann"}},
+      "scopes": {"tree:t_00000000000000d1": {"kind": "tree", "owner": "A", "governedBy": "acct:A/roadmap#tree#t_00000000000000d1",
+                                             "state": "alive", "seq": 0, "counters": {},
+                                             "digest": "0000000000000000000000000000000000000000000000000000000000000000"}}})");
+  const Json::Value root = parseJson(R"({"t": "tree", "id": "t_00000000000000d1", "born": "1000:0:r_aaaaaaaaaaaa",
+      "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "seq": 1, "rc": 100, "ru": 100})");
+  state["scopes"]["acct:A/roadmap"] = parseJson(R"({"kind": "product", "owner": "A", "state": "alive", "seq": 1, "counters": {}})");
+  state["scopes"]["acct:A/roadmap"]["digest"] = scopeDigest({root}).hex();
+  state["rows"]["acct:A/roadmap"].append(root);
+  world.seed(state);
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work sql{*conn};
+    sql.exec("delete from tree_ops where tree_id = $1", pqxx::params{tree});
+    sql.commit();
+  }
+
+  const auto served = productCatalog(RoadmapServing::served);
+  Admission admission(*served, world.store(), world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService sync(*served, world.store(), admission, clock);
+  TimeBudget budget(60'000);
+  const std::string scope = "tree/" + tree;
+  const char* stamp = "2000:0:r_aaaaaaaaaaaa";
+  auto node = [&](const std::string& id, const std::string& label, const std::string& ord) {
+    Json::Value delta = parseJson(R"({"t": "node", "life": ["alive", "2000:0:r_aaaaaaaaaaaa"], "born": "2000:0:r_aaaaaaaaaaaa"})");
+    delta["id"] = id;
+    delta["f"]["label"] = parseJson("[\"" + label + "\", \"" + stamp + "\"]");
+    delta["f"]["ord"] = parseJson("[\"" + ord + "\", \"" + stamp + "\"]");
+    return delta;
+  };
+  Json::Value request(Json::objectValue);
+  request["replica"] = "rp_00000000000000000000000000000d1a";
+  request["account"] = world.account("A").str();
+  request["ackThrough"] = 0;
+  Json::Value made = parseJson(R"({"n": 1, "gestureId": "g-made", "d": [
+      {"t": "meta", "id": "meta", "f": {"title": ["Learn Rust", "2000:0:r_aaaaaaaaaaaa"]}},
+      {"t": "kind", "id": "build", "born": "2000:0:r_aaaaaaaaaaaa", "life": ["alive", "2000:0:r_aaaaaaaaaaaa"],
+       "f": {"hue": ["terracotta", "2000:0:r_aaaaaaaaaaaa"], "label": ["Build", "2000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "2000:0:r_aaaaaaaaaaaa"]}},
+      {"t": "edge", "id": ["basics", "ownership"], "life": ["alive", "2000:0:r_aaaaaaaaaaaa"]}]})");
+  made["scope"] = scope;
+  for (const auto& [id, label, ord] : {std::tuple{"basics", "Basics", "a0"}, std::tuple{"ownership", "Ownership", "a1"}, std::tuple{"traits", "Traits", "a2"}})
+    made["d"].append(node(id, label, ord));
+  request["intents"].append(made);
+  Json::Value renamed = parseJson(R"({"n": 2, "gestureId": "g-two", "d": [
+      {"t": "node", "id": "basics", "life": ["alive", "2100:0:r_aaaaaaaaaaaa"], "born": "2000:0:r_aaaaaaaaaaaa",
+       "f": {"label": ["Foundations", "2100:0:r_aaaaaaaaaaaa"]}}]})");
+  renamed["scope"] = scope;
+  request["intents"].append(renamed);
+  Json::Value linked = parseJson(R"({"n": 3, "gestureId": "g-two", "d": [{"t": "edge", "id": ["ownership", "traits"], "life": ["alive", "2100:0:r_aaaaaaaaaaaa"]}]})");
+  linked["scope"] = scope;
+  request["intents"].append(linked);
+  Json::Value annotated = parseJson(R"({"n": 4, "gestureId": "g-note", "d": [
+      {"t": "node", "id": "traits", "life": ["alive", "2200:0:r_aaaaaaaaaaaa"], "born": "2000:0:r_aaaaaaaaaaaa",
+       "f": {"description": ["Shared behaviour", "2200:0:r_aaaaaaaaaaaa"]}}]})");
+  annotated["scope"] = scope;
+  request["intents"].append(annotated);
+
+  const SyncReply pushed = sync.push(Credential::sent(world.account("A")), jcs(request), budget);
+
+  CHECK_EQ(jcs(pushed.body["results"]), jcs(parseJson(R"([{"n": 1, "s": "ok", "seq": 1}, {"n": 2, "s": "ok", "seq": 2},
+      {"n": 3, "s": "ok", "seq": 3}, {"n": 4, "s": "ok", "seq": 4}])")));
+  Json::Value rows(Json::arrayValue);
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work sql{*conn};
+    const pqxx::result kept = sql.exec("select seq, actor_id, op_id, kind, payload::text, hlc from tree_ops where tree_id = $1 order by seq", pqxx::params{tree});
+    for (std::size_t i = 0; i < kept.size(); ++i) {
+      Json::Value row(Json::arrayValue);
+      row.append(kept[i][0].as<long long>());
+      row.append(kept[i][1].as<std::string>() == world.account("A").str() ? "A" : "someone else");
+      row.append(kept[i][2].as<std::string>());
+      row.append(kept[i][3].as<std::string>());
+      row.append(parseJson(kept[i][4].as<std::string>()));
+      row.append(kept[i][5].as<std::string>());
+      rows.append(row);
+    }
+  }
+  CHECK_EQ(jcs(rows), jcs(parseJson(R"([
+      [1, "A", "gesture:g-made", "Batch", {"commands": [
+          {"kind": "CreateNode", "payload": {"id": "basics", "label": "Basics", "icon": "", "color": "terracotta"}},
+          {"kind": "CreateNode", "payload": {"id": "ownership", "label": "Ownership", "icon": "", "color": "terracotta"}},
+          {"kind": "CreateNode", "payload": {"id": "traits", "label": "Traits", "icon": "", "color": "terracotta"}}]}, ""],
+      [2, "A", "gesture:g-two", "Batch", {"commands": [
+          {"kind": "RenameNode", "payload": {"id": "basics", "label": "Foundations"}},
+          {"kind": "AddEdge", "payload": {"from": "ownership", "to": "traits"}}]}, ""]])")));
+}
