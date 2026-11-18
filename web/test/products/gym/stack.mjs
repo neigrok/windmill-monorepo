@@ -5,7 +5,7 @@ import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { chromium } from 'playwright';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
@@ -101,7 +101,7 @@ async function run() {
 
     // The phone is a second replica of the account and writes the way the native apps do: commands and
     // record changes pushed through the engine, never a gym REST door.
-    phone = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), name: 'stack-phone', registry, document: null, window: null,
+    phone = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), keyRange: IDBKeyRange, name: 'stack-phone', registry, document: null, window: null,
       telemetry: { event() {}, failure() {} },
       transport: new HttpTransport({ schema: registry.version, base, timers: globalThis,
         reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: 'stack-phone' }),

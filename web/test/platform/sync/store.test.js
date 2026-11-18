@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IDBFactory } from 'fake-indexeddb';
-import { IndexedDBStore } from '../../../src/platform/sync/store.js';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { IndexedDBStore, WriterSlice } from '../../../src/platform/sync/store.js';
 import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { registry } from './oracle-adapters/fixtures.js';
@@ -15,19 +15,19 @@ const gesture = (device) => commit(device.activeReplica, context(device), 'self/
 
 test('an aborted IndexedDB commit restores every row, clock, outbox and device change after reopen', async () => {
   const indexedDB = new IDBFactory();
-  let store = await IndexedDBStore.open({ indexedDB, newReplicaId: () => id });
+  let store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id });
   const before = (await store.read()).device.toJSON();
   await assert.rejects(store.transact((device) => {
     gesture(device);
     device.activeReplica.deviceRows('probe').rack = { secret: 'private words' };
   }, { beforeCommit: ({ transaction }) => transaction.abort() }));
   store.close();
-  store = await IndexedDBStore.open({ indexedDB, newReplicaId: () => assert.fail('already initialized') });
+  store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail('already initialized') });
   assert.deepEqual((await store.read()).device.toJSON(), before);
   await store.transact(gesture);
   const committed = (await store.read()).device.toJSON();
   store.close();
-  store = await IndexedDBStore.open({ indexedDB, newReplicaId: () => assert.fail('already initialized') });
+  store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail('already initialized') });
   assert.deepEqual((await store.read()).device.toJSON(), committed);
   assert.equal(committed.replicas[0].outbox[0].state, 'held');
   store.close();
@@ -35,7 +35,7 @@ test('an aborted IndexedDB commit restores every row, clock, outbox and device c
 
 test('concurrent tab read-and-commit transactions cannot overwrite each other', async () => {
   const indexedDB = new IDBFactory();
-  const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ indexedDB, newReplicaId: () => id })));
+  const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id })));
   await Promise.all(stores.map((store, index) => store.transact((device) => {
     const rows = device.activeReplica.deviceRows('probe');
     rows.rack = (rows.rack ?? 0) + 1;
@@ -48,8 +48,52 @@ test('concurrent tab read-and-commit transactions cannot overwrite each other', 
   stores.forEach((store) => store.close());
 });
 
+test('a store forgets the rows it held of a generation another tab let go', async () => {
+  const indexedDB = new IDBFactory();
+  const [kept, other] = await Promise.all([1, 2].map(() => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id })));
+  await kept.transact((device) => device.activeReplica.putConfirmed('self/probe', { t: 'card', id: 'card0001', seq: 1 }));
+  const [generation] = kept.generations.keys();
+  assert.equal((await kept.read(['self/probe'])).device.activeReplica.confirmedRows('self/probe').length, 1);
+  await other.transact((device) => device.activeReplica.forgetScope('self/probe'));
+  assert.deepEqual((await kept.read(['self/probe'])).device.activeReplica.confirmedRows('self/probe'), []);
+  assert.equal(kept.generations.has(generation), false);
+  [kept, other].forEach((store) => store.close());
+});
+
+test('a write edits only copies the store owns: a value handed in, an aborted edit or a swapped object never reaches the next write', async () => {
+  const indexedDB = new IDBFactory();
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id });
+  const held = { label: 'kept' };
+  await store.transact((device) => {
+    gesture(device);
+    device.activeReplica.deviceRows('probe').rack = held;
+  });
+  held.label = 'edited after the commit';
+  const rack = (device) => device.activeReplica.deviceRows('probe').rack;
+  assert.deepEqual(await store.transact((device) => structuredClone(rack(device))).then(({ result }) => result), { label: 'kept' });
+  await assert.rejects(store.transact((device) => {
+    device.activeReplica.outbox[0].state = 'ready';
+    rack(device).label = 'aborted';
+  }, { beforeCommit: ({ transaction }) => transaction.abort() }));
+  await store.transact((device) => {
+    const [entry] = device.activeReplica.outbox;
+    const original = structuredClone(entry);
+    entry.releaseAt = -1;
+    device.activeReplica.outbox = [original];
+  });
+  const { result } = await store.transact((device) => structuredClone({ rack: rack(device), entry: device.activeReplica.outbox[0] }));
+  assert.deepEqual(result.rack, { label: 'kept' });
+  assert.equal(result.entry.state, 'held');
+  assert.notEqual(result.entry.releaseAt, -1);
+  store.close();
+  const reopened = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail('already initialized') });
+  const { device } = await reopened.read();
+  assert.deepEqual([rack(device), device.activeReplica.outbox[0].state, device.activeReplica.outbox[0].releaseAt], [{ label: 'kept' }, 'held', result.entry.releaseAt]);
+  reopened.close();
+});
+
 test('re-identify persists new metadata without changing confirmed row keys or bytes', async () => {
-  const store = await IndexedDBStore.open({ indexedDB: new IDBFactory(), newReplicaId: () => id });
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id });
   await store.transact((device) => device.activeReplica.putConfirmed('self/probe',
     { t: 'card', id: 'card0001', seq: 1, rc: 1, ru: 1, life: ['alive', '1:0:srv'], born: '1:0:srv' }));
   const before = await store.read();
@@ -64,7 +108,7 @@ test('re-identify persists new metadata without changing confirmed row keys or b
 });
 
 test('throwing or asynchronous transaction callbacks persist nothing', async () => {
-  const store = await IndexedDBStore.open({ indexedDB: new IDBFactory(), newReplicaId: () => id });
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id });
   const before = (await store.read()).device.toJSON();
   await assert.rejects(store.transact((device) => { gesture(device); throw new Error('abort'); }));
   await assert.rejects(store.transact(async (device) => { gesture(device); }));
@@ -73,23 +117,32 @@ test('throwing or asynchronous transaction callbacks persist nothing', async () 
 });
 
 test('offline storage denial fails explicitly and never replaces durable work with an empty store', async () => {
-  await assert.rejects(IndexedDBStore.open({ indexedDB: null, newReplicaId: () => id }), /unavailable/);
+  await assert.rejects(IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: null, newReplicaId: () => id }), /unavailable/);
+  await assert.rejects(IndexedDBStore.open({ indexedDB: new IDBFactory(), newReplicaId: () => id }), /unavailable/);
 });
 
 test('scoped writers read only selected rows; generation swaps and forgets do not rewrite a large cache', async (t) => {
-  const store = await IndexedDBStore.open({ indexedDB: new IDBFactory(), newReplicaId: () => id });
+  const indexedDB = new IDBFactory();
+  const writer = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id });
   const row = (n) => ({ t: 'card', id: `card${String(n).padStart(5, '0')}`, seq: 1, rc: 1, ru: 1, born: '1:0:srv', life: ['alive', '1:0:srv'] });
-  await store.transact((device) => {
+  await writer.transact((device) => {
     for (let n = 0; n < 1024; n++) device.activeReplica.putConfirmed('self/probe', row(n));
     device.activeReplica.putConfirmed('tree/b_00000001', row(0));
   });
+  writer.close();
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail('already initialized') });
   const result = await store.transact((device) => {
     assert.equal(device.activeReplica.confirmedRows('self/probe').length, 1);
     assert.equal(device.activeReplica.confirmedRows('tree/b_00000001').length, 0);
-    device.activeReplica.confirmedRows('self/probe')[0].seq++;
+    device.activeReplica.putConfirmed('self/probe', { ...row(0), seq: 2 });
   }, { scopes: [{ scope: 'self/probe', keys: ['["card","card00000"]'] }] });
   assert.equal(result.measurement.rowReads, 1);
   assert.equal(result.measurement.rowWrites, 1);
+  const again = await store.transact((device) => {
+    assert.deepEqual(device.activeReplica.confirmedRows('self/probe'), [{ ...row(0), seq: 2 }]);
+  }, { scopes: [{ scope: 'self/probe', keys: ['["card","card00000"]'] }] });
+  assert.equal(again.measurement.rowReads, 0);
+  assert.equal(again.measurement.rowWrites, 0);
   await store.transact((device) => { device.activeReplica.staging['self/probe'] = { digest: 'replacement', rows: { 'card/card09999': row(9999) } }; });
   const swap = await store.transact((device) => {
     const replica = device.activeReplica;
@@ -114,7 +167,7 @@ test('scoped writers read only selected rows; generation swaps and forgets do no
 
 test('an aborted staging pointer swap leaves both generations usable after reopening', async () => {
   const indexedDB = new IDBFactory();
-  let store = await IndexedDBStore.open({ indexedDB, newReplicaId: () => id });
+  let store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id });
   await store.transact((device) => {
     device.activeReplica.confirmed['self/probe'] = { old: { t: 'card', id: 'old', seq: 1 } };
     device.activeReplica.staging['self/probe'] = { digest: 'new', rows: { replacement: { t: 'card', id: 'replacement', seq: 2 } } };
@@ -124,18 +177,21 @@ test('an aborted staging pointer swap leaves both generations usable after reope
     device.activeReplica.confirmed['self/probe'] = device.activeReplica.staging['self/probe'].rows;
     delete device.activeReplica.staging['self/probe'];
   }, { beforeCommit: ({ transaction }) => transaction.abort() }));
-  store.close(); store = await IndexedDBStore.open({ indexedDB, newReplicaId: () => assert.fail() });
+  store.close(); store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail() });
   assert.deepEqual((await store.read()).device.toJSON(), before);
   assert.equal(await store.cleanup(), 0);
   store.close();
 });
 
 test('governing-type index reads omit unrelated product rows and preserve them on commit', async () => {
-  const store = await IndexedDBStore.open({ indexedDB: new IDBFactory(), newReplicaId: () => id });
-  await store.transact((device) => {
+  const indexedDB = new IDBFactory();
+  const writer = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id });
+  await writer.transact((device) => {
     for (let n = 0; n < 100; n++) device.activeReplica.putConfirmed('self/probe', { t: 'card', id: `c${n}`, seq: 1 });
     device.activeReplica.putConfirmed('self/probe', { t: 'board', id: 'b_00000001', seq: 1 });
   });
+  writer.close();
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail('already initialized') });
   const answer = await store.transact((device) => {
     assert.deepEqual(device.activeReplica.confirmedRows('self/probe'), [{ t: 'board', id: 'b_00000001', seq: 1 }]);
     device.activeReplica.meta.authPaused = true;
@@ -163,7 +219,7 @@ for (const blocked of [false, true]) test(`every version-one row survives ${bloc
   });
   if (blocked) {
     let request, abandoned;
-    const opening = IndexedDBStore.open({ indexedDB: { open(name, version) {
+    const opening = IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: { open(name, version) {
       request = indexedDB.open(name, version);
       request.addEventListener('upgradeneeded', () => { abandoned = request.result; });
       return request;
@@ -194,11 +250,11 @@ for (const blocked of [false, true]) test(`every version-one row survives ${bloc
     } finally { database.close(); abandoned?.close(); }
   } else database.close();
   for (let opened = 0; opened < 2; opened++) {
-    const store = await IndexedDBStore.open({ indexedDB, name: 'migration', newReplicaId: () => assert.fail('existing device must survive') });
+    const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, name: 'migration', newReplicaId: () => assert.fail('existing device must survive') });
     try {
       assert.equal(store.database.version, 2);
-      assert.deepEqual((await store.read()).device.toJSON(), expected);
       assert.equal((await store.read([{ scope: 'self/probe', type: 'card' }])).measurement.rowReads, 12);
+      assert.deepEqual((await store.read()).device.toJSON(), expected);
     } finally { store.close(); }
   }
 });
@@ -213,7 +269,7 @@ test('a rejected open closes a late successful connection without initializing i
   });
   const request = { result: database };
   try {
-    const opening = IndexedDBStore.open({ indexedDB: { open: () => request }, name: 'late-success',
+    const opening = IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: { open: () => request }, name: 'late-success',
       newReplicaId: () => assert.fail('a rejected open must not initialize storage') });
     request.onblocked();
     await assert.rejects(opening, /sync storage blocked/);
@@ -224,7 +280,7 @@ test('a rejected open closes a late successful connection without initializing i
 
 test('versionchange releases every open store so a later upgrade can complete', async () => {
   const indexedDB = new IDBFactory();
-  const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ indexedDB, newReplicaId: () => id })));
+  const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id })));
   let upgraded;
   try {
     upgraded = await new Promise((resolve, reject) => {
@@ -237,4 +293,15 @@ test('versionchange releases every open store so a later upgrade can complete', 
     assert.deepEqual(stores.map((store) => store.closed), [true, true]);
     for (const store of stores) await assert.rejects(store.read(), /sync store closed/);
   } finally { stores.forEach((store) => store.close()); }
+});
+
+test('a writer slice doubles while under half the slice, fits the aim past it, and never shrinks below its start', () => {
+  const slice = new WriterSlice(64);
+  const sizes = [[64, 2], [128, 0], [256, 6.25], [512, 50], [256, 100], [64, 400], [0, 400]].map(([taken, heldMs]) => {
+    slice.record(taken, heldMs);
+    return slice.size;
+  });
+  assert.deepEqual(sizes, [128, 256, 512, 128, 64, 64, 64]);
+  for (let step = 0; step < 12; step++) slice.record(slice.size, 1);
+  assert.equal(slice.size, 4096);
 });

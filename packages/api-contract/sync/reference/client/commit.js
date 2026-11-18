@@ -15,7 +15,7 @@ import { checkId, roundToDomain } from '../core/values.js';
 import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { predictionsOf } from './projections.js';
-import { drawn, foldDelta, stored, visibleCount } from './views.js';
+import { drawn, foldDelta, RecordView, stored, visibleCount } from './views.js';
 
 // §7.1's three failures before the transaction commits: `not-writable`, `malformed` (a programming
 // error) and `store`, the device's store failing to commit, which only the browser engine raises.
@@ -312,7 +312,7 @@ function refusalOfScope(replica, registry, scope) {
   if (replica.known[scope] || replica.known[`tree/${tree}`]) return 'scope-dead';
   const governing = registry.governingType;
   const productScope = `self/${registry.productOfScopeKind(governing.scope)}`;
-  const record = stored(replica, registry, productScope).get(recordKey(governing.type, tree));
+  const record = new RecordView(replica, registry, productScope, { withHeld: false }).get(recordKey(governing.type, tree));
   return record?.life?.[0] === 'dead' ? 'scope-dead' : null;
 }
 
@@ -361,6 +361,7 @@ function groupIntents(scope, deltas, guards, opts, cmd, gestureId) {
 // §7.1 step 8: the capped type the gesture's deltas, applied to `stored`, grow past its cap by the growth
 // rule, or undefined. A held delete still occupies its slot.
 function cappedType(registry, storedView, deltas) {
+  if (!deltas.some((delta) => registry.type(delta.t).cap !== undefined)) return undefined;
   const after = new Map(storedView);
   for (const delta of deltas) foldDelta(after, registry, delta);
   return [...new Set(deltas.map((delta) => delta.t))].find((t) => {
@@ -440,10 +441,10 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   if (act && opts.supersede?.includes(opts.gestureId)) throw new CommitError('an act cannot supersede itself');
   const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
   const ending = [...new Set([...retiring, ...superseding])];
-  const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
+  const folded = ending.length === 0 ? [] : silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
   const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? predictionsOf(entry).flatMap(({ d }) => d) : [])])]);
-  const drawnView = drawn(replica, registry, scope, gone);
-  const storedView = stored(replica, registry, scope, gone);
+  const drawnView = new RecordView(replica, registry, scope, { withHeld: true, except: gone });
+  const storedView = new RecordView(replica, registry, scope, { withHeld: false, except: gone });
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
   const built = changes.map((change) => ({ change, delta: builder.delta(change) }));
   const deltas = oneDeltaPerRecord(built.filter(({ delta }) => delta !== null));
@@ -469,7 +470,8 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
     }
     predictions = orderedScopes(scope, groups.keys()).map((target) => {
       const targetBuilder = target === scope ? builder : new DeltaBuilder({ registry, replica, scope: target, stamp, physNow,
-        drawnView: drawn(replica, registry, target, gone), storedView: stored(replica, registry, target, gone), draw: ctx.draw });
+        drawnView: new RecordView(replica, registry, target, { withHeld: true, except: gone }),
+        storedView: new RecordView(replica, registry, target, { withHeld: false, except: gone }), draw: ctx.draw });
       const changes = groups.get(target);
       if (changes.some((change) => !definition.predicts?.includes(change.t))) throw new CommitError('prediction type is not declared by the command');
       const d = oneDeltaPerRecord(changes.map((change) => ({ change, delta: targetBuilder.predicted(change) })));
