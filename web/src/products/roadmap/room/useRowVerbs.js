@@ -12,7 +12,9 @@ import { deleteDeviceTree, deleteLocalTree, readDeviceTrees, renameLocalTree } f
 import { withDeviceOpeners } from '../identity/deleteCost.js';
 
 // What the identity row reads and does: Find's handoff, the Next chip, the switcher, the phone's sheet and its verbs.
-export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast }) {
+// `listTrees` reads the account's roadmaps where the room keeps its own list (the replica's); without it the switcher
+// and the sheet read the server's and the device's.
+export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast, listTrees = null }) {
   const { owner, phone, breakpoint } = who;
   const { boardActive, canvasView, switchView } = view;
   const { completed, completedAt } = progress;
@@ -126,16 +128,16 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
     ? { groups: activityGroups, nodesById: tree?.nodesById ?? new Map(), onOpenStep: openActivityStep }
     : null, [owner, phone, activityGroups, tree, openActivityStep]);
   const identitySheet = useMemo(() => ({
-    listTrees: listAllTrees, current: currentRoadmap,
+    listTrees: listTrees ?? listAllTrees, current: currentRoadmap,
     onPickTree: (id, transaction) => transaction ? transaction.navigate(`#/app/${id}`) : navigate(`#/app/${id}`),
     onNewRoadmap: newRoadmap,
     onBrowse: (transaction) => transaction ? transaction.navigate('#/browse') : navigate('#/browse'),
     activity: sheetActivity,
-  }), [currentRoadmap, sheetActivity]);
+  }), [currentRoadmap, sheetActivity, listTrees]);
 
   const switcher = {
     current: currentRoadmap,
-    listTrees: listSwitcherTrees,
+    listTrees: listTrees ?? listSwitcherTrees,
     onNew: newRoadmap,
     onPreviewTitle: (id, title) => {
       if (id === treeId) document.title = t('roadmap.room.pageTitle', { title: title.trim() || t('roadmap.common.untitled') });

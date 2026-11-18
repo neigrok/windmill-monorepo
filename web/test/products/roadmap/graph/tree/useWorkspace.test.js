@@ -11,7 +11,7 @@ test('useWorkspace — checking the last subtask fills the gauge and never compl
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const calls = [];
   const sceneRef = { current: new Proxy({}, { get: (_, name) => (arcs) => calls.push([name, Object.fromEntries(arcs)]) }) };
-  const hook = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-checked' } }, sceneRef, treeRef: { current: null } }));
+  const hook = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-checked' } }, sceneRef, treeRef: { current: null }, replicaRef: { current: null } }));
 
   hook.tree.onAddSubtask('rig', 'Raise the mast');
   hook.tree.onAddSubtask('rig', 'Bend on the sails');
@@ -46,7 +46,7 @@ test('useWorkspace — unchecking a subtask on a full gauge reopens only the gau
   const sceneRef = { current: new Proxy({}, { get: (_, name) => (arcs) => calls.push([name, Object.fromEntries(arcs)]) }) };
   const seedRef = { current: { id: 'tree-unchecked' } };
   const treeRef = { current: null };
-  const hook = renderHook(t, () => useWorkspace({ seedRef, sceneRef, treeRef }));
+  const hook = renderHook(t, () => useWorkspace({ seedRef, sceneRef, treeRef, replicaRef: { current: null } }));
 
   hook.tree.onAddSubtask('dock', 'Cast off the bow line');
   const [bow] = hook.tree.workspaceByNode.dock.subtasks;
@@ -60,7 +60,7 @@ test('useWorkspace — unchecking a subtask on a full gauge reopens only the gau
     ['setArcs', { dock: 0 }],
   ]);
 
-  const reopened = renderHook(t, () => useWorkspace({ seedRef, sceneRef, treeRef }));
+  const reopened = renderHook(t, () => useWorkspace({ seedRef, sceneRef, treeRef, replicaRef: { current: null } }));
   reopened.tree.hydrateWorkspaces('tree-unchecked');
   assert.deepEqual(reopened.tree.workspaceByNode, {
     dock: { subtasks: [{ id: bow.id, label: 'Cast off the bow line', done: false }], note: '', links: [] },
@@ -81,11 +81,29 @@ test('useWorkspace — a step that opens a tree gauges that tree in place of its
     { id: 'bike', opening: Opening.fromWire({ treeId: 't_gone', missing: true }) },
     { id: 'late', opening: Opening.unread('t_late') },
   ] } };
-  const hook = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-opening' } }, sceneRef, treeRef }));
+  const hook = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-opening' } }, sceneRef, treeRef, replicaRef: { current: null } }));
 
   hook.tree.onAddSubtask('plan', 'Pick three things');
   hook.tree.onAddSubtask('sail', 'Join the club');
   hook.tree.onAddSubtask('bike', 'Order the chain');
 
   assert.deepEqual(calls.at(-1), ['setArcs', { plan: 0, sail: 3 / 8, book: 0 }]);
+});
+
+test('useWorkspace — a room that reads the replica seats the replica’s workspaces and takes no edit until its actions are wired', async (t) => {
+  browserWith();
+  const { useWorkspace } = await import('../../../../../src/products/roadmap/graph/tree/useWorkspace.js');
+  const calls = [];
+  const sceneRef = { current: new Proxy({}, { get: (_, name) => (arcs) => calls.push([name, Object.fromEntries(arcs)]) }) };
+  const hook = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-replica' } }, sceneRef, treeRef: { current: null }, replicaRef: { current: {} } }));
+  const held = { rig: { subtasks: [{ id: 'mast', label: 'Raise the mast', done: true }], note: 'Calm day', links: [] } };
+  hook.tree.adoptWorkspaces(held);
+  hook.tree.pushArcs();
+  hook.tree.onAddSubtask('rig', 'Bend on the sails');
+  hook.tree.onToggleSubtask('rig', 'mast');
+  hook.tree.onSetNote('rig', 'Rough day');
+  const reopened = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-replica' } }, sceneRef, treeRef: { current: null }, replicaRef: { current: null } }));
+  reopened.tree.hydrateWorkspaces('tree-replica');
+  assert.deepEqual({ shown: hook.tree.workspaceByNode, calls, kept: reopened.tree.workspaceByNode },
+    { shown: held, calls: [['setArcs', { rig: 1 }], ['setArcs', { rig: 1 }], ['setArcs', { rig: 1 }]], kept: {} });
 });

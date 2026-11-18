@@ -24,17 +24,18 @@ function roomProps(treeId) {
   const scene = new Proxy({}, { get: () => nothing });
   return {
     treeId, demo: false, shared: false, demotion: null, breakpoint: 'desktop', placeKept: false,
-    room: { sceneRef: handle(scene), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), seedRef: handle(), peersRef: handle(new Map()) },
+    room: { sceneRef: handle(scene), sessionRef: handle(), replicaRef: handle(), projectionRef: handle(), treeRef: handle(), seedRef: handle(), peersRef: handle(new Map()) },
     scene: null, framing: { firstFrameRef: handle(), insetsRef: handle() }, structure: { layoutRef: handle(), layoutPositions: () => new Map(), install: nothing },
-    progressActs: { adoptLoaded: nothing }, activity: { seedActivity: nothing }, legend: { hydrateLegend: nothing },
-    workspace: { hydrateWorkspaces: nothing, pushArcs: nothing }, selection: { selectedId: null, selectedIdRef: handle(), setSelectedId: nothing },
+    progressActs: { adoptLoaded: nothing }, activity: { seedActivity: nothing, addServerActivity: nothing }, legend: { hydrateLegend: nothing },
+    workspace: { hydrateWorkspaces: nothing, adoptWorkspaces: nothing, pushArcs: nothing }, selection: { selectedId: null, selectedIdRef: handle(), setSelectedId: nothing },
     dismissToast: nothing, desktopEditorRef: handle(false), onRemoteProgress: nothing,
   };
 }
 
 // Bundle the real read boundary with a counting Sentry sink, sharing React and device state with the harness.
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const bundled = new Set(['products/roadmap/room/useRoomLoad.js', 'products/roadmap/persistence/HttpTreeRepository.js', 'products/roadmap/reportFailure.js']
+const bundled = new Set(['products/roadmap/room/useRoomLoad.js', 'products/roadmap/room/LatticeReading.js', 'products/roadmap/room/ReplicaReading.js',
+  'products/roadmap/persistence/HttpTreeRepository.js', 'products/roadmap/reportFailure.js']
   .map((path) => resolve(root, 'src', path)));
 const require = createRequire(import.meta.url);
 const result = await build({ configFile: false, root, logLevel: 'silent', plugins: [{
