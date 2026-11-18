@@ -159,28 +159,41 @@ export function settleEnded(replica, code) {
   }
 }
 
-// §7.7 write map and E-8: a journal's scoped references follow the same logical map as the queue.
+// §7.7 write map and E-8: the journal, its inverse requests and its cancellations follow the same logical map as
+// the queue. Each record a holder names is renamed in the scope it names, and a command input in the scope its
+// holder had, before that scope moves.
 export function remapJournal(registry, replica, map) {
   const { references } = registry;
   const target = (holder) => {
     references.remapRecord(holder.scope, holder, map);
     holder.scope = map.scope(holder.scope);
   };
+  const reference = (named) => {
+    if (named?.kind === 'pending') target(named.target);
+    if (named?.kind === 'fieldAbsent') reference(named.recordBirth);
+  };
+  const recipe = (scope, item) => {
+    if (item.kind === 'fields') item.targets.forEach((each) => target(each.target));
+    if (item.kind === 'createdRecord') target(item.record);
+    if (item.kind === 'restore') {
+      for (const op of item.operations) {
+        target(op.kind === 'field' ? op.target : op.record);
+        reference(op.reference);
+      }
+    }
+    if (item.kind === 'command') {
+      const cmd = { name: item.command, args: { input: item.input } };
+      references.remapCommand(scope, cmd, map);
+      item.input = cmd.args.input;
+      item.evidence.ownedFields.forEach(target);
+      item.evidence.unchangedCreatedRecords.forEach(target);
+      item.evidence.unchangedCreatedScopes = item.evidence.unchangedCreatedScopes.map((each) => map.scope(each));
+    }
+  };
   for (const act of replica.journal) {
     for (const source of act.sourceEntries) {
+      for (const item of source.recipes) recipe(source.originScope, item);
       source.originScope = map.scope(source.originScope);
-      for (const recipe of source.recipes) {
-        if (recipe.kind === 'fields') recipe.targets.forEach((item) => target(item.target));
-        if (recipe.kind === 'createdRecord') target(recipe.record);
-        if (recipe.kind === 'command') {
-          const cmd = { name: recipe.command, args: { input: recipe.input } };
-          references.remapCommand(source.originScope, cmd, map);
-          recipe.input = cmd.args.input;
-          recipe.evidence.ownedFields.forEach(target);
-          recipe.evidence.unchangedCreatedRecords.forEach(target);
-          recipe.evidence.unchangedCreatedScopes = recipe.evidence.unchangedCreatedScopes.map((scope) => map.scope(scope));
-        }
-      }
       source.preimages.forEach((preimage) => target(preimage.target));
       (source.written ?? []).forEach((item) => target(item.target));
       for (const attempt of source.attempts) {
@@ -189,6 +202,19 @@ export function remapJournal(registry, replica, map) {
           effect.scope = map.scope(effect.scope);
         }
       }
+    }
+  }
+  for (const request of replica.inverses) {
+    for (const slot of request.slots) {
+      recipe(slot.originScope, slot.recipe);
+      slot.originScope = map.scope(slot.originScope);
+    }
+  }
+  for (const cancellation of replica.cancellations) {
+    for (const source of cancellation.sourceEntries) source.originScope = map.scope(source.originScope);
+    for (const unit of cancellation.units) {
+      target(unit.kind === 'field' ? unit.target : unit.record);
+      reference(unit.restored);
     }
   }
 }

@@ -1308,7 +1308,9 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   later work goes on; a Discard at sign-in settles a pending inverse skipped with its values withdrawn; a
   segment named with no recipes journals its receipts, which prove a tree the act created to its Undo,
   while an act whose Undo names no recipe at all throws; an Undo of a delete whose death the replica already
-  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had.
+  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had; an Undo
+  requested, and a held act's cancellation, in the tree of a child board the server redirects follow it into
+  the redirected tree.
 
 ### refusal/*.json
 

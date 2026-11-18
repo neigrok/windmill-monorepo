@@ -780,11 +780,48 @@ function revival() {
   return [offline, redrawn];
 }
 
+// A write map that redirects a governor moves the journal with the queue: an Undo requested, or a held act
+// cancelled, in the tree of a child board the server redirects follows it into the redirected tree.
+function redirected() {
+  const child = 'b_00000002';
+  const owned = 'b_00000009';
+  const sprout = { op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [], opts: {
+    cmd: { name: 'probe.sprout', args: { board: BOARD, tag: 'oak', child } },
+    predict: [{ op: 'create', t: 'board', id: child, f: { parent: { board: BOARD, tag: 'oak' } } }] } };
+  const ownedElsewhere = (session) => session.elsewhere({ scope: 'self/probe', cmd: { name: 'probe.sprout', args: { board: BOARD, tag: 'oak', child: owned } } });
+
+  const titled = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: `tree/${child}`, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Mine' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree',
+      targets: [{ target: target(`tree/${child}`, 'meta', 'meta', 'field', 'title'), defaultValue: '' }] }] }] } } };
+  const undone = ownedElsewhere(new Session(world())).local(sprout, titled, requestStep('g2', 5200));
+  undone.flush();
+  undone.pull([`tree/${owned}`]);
+  const followed = undone.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('an Undo requested before a write map redirects its act\'s tree follows the act into the redirected tree');
+  assert.deepEqual(followed.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(serverValue(undone, `tree:${owned}`, 'meta', 'meta', (r) => r.f.title[0]), '');
+  assert.ok(!JSON.stringify(activeOf(followed).inverses).includes(`tree/${child}`));
+
+  const created = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: `tree/${child}`, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }], opts: { hold: true } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: `tree/${child}`, t: 'tag', id: 'elm' } }] }] } } };
+  const redone = ownedElsewhere(new Session(world())).local(sprout, created, requestStep('g2', 5200));
+  redone.flush();
+  redone.local(requestStep('g3', 9500));
+  redone.flush();
+  redone.pull([`tree/${owned}`]);
+  const moved = redone.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a cancellation of a held act in a tree a write map then redirects keeps its Redo in the redirected tree');
+  assert.deepEqual(moved.expect.returns.at(-1), { kind: 'settled', requestId: 'g6', inverseActId: 'g5', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(serverValue(redone, `tree:${owned}`, 'tag', 'elm', (r) => r.f.label[0]), 'Elm');
+  assert.ok(!JSON.stringify(activeOf(moved).cancellations).includes(`tree/${child}`));
+  return [followed, moved];
+}
+
 export function files() {
   return {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...redirected()],
   };
 }

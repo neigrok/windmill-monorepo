@@ -32818,5 +32818,1872 @@
         }
       ]
     }
+  },
+  {
+    "name": "an Undo requested before a write map redirects its act's tree follows the act into the redirected tree",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "5049be7243ed15ccd6f806bd3dc89a276c5a7a42f076d4b7020c70861c7ad11c",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "deviceNow": 5000,
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.sprout",
+              "args": {
+                "board": "b_00000001",
+                "tag": "oak",
+                "child": "b_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000002",
+                "f": {
+                  "parent": {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commitAct",
+          "deviceNow": 5100,
+          "segments": [
+            {
+              "scope": "tree/b_00000002",
+              "changes": [
+                {
+                  "op": "write",
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": "Mine"
+                  }
+                }
+              ]
+            }
+          ],
+          "opts": {
+            "undo": {
+              "version": 1,
+              "segments": [
+                {
+                  "index": 0,
+                  "recipes": [
+                    {
+                      "kind": "fields",
+                      "restoreCommand": "probe.restoreTree",
+                      "targets": [
+                        {
+                          "target": {
+                            "scope": "tree/b_00000002",
+                            "t": "meta",
+                            "id": "meta",
+                            "slot": {
+                              "kind": "field",
+                              "name": "title"
+                            }
+                          },
+                          "defaultValue": ""
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g2",
+          "deviceNow": 5200
+        },
+        {
+          "op": "push",
+          "deviceNow": 7000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 8000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 3,
+                  "write": [
+                    {
+                      "t": "board",
+                      "id": "b_00000009",
+                      "from": "b_00000002",
+                      "born": "7000:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 7000
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 9000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000009",
+                          "beforeSeq": 0,
+                          "seq": 1,
+                          "rows": [
+                            {
+                              "t": "meta",
+                              "id": "meta",
+                              "beforeRowSeq": null,
+                              "rowSeq": 1,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "title"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "5100:0:r_aaaaaaaaaaaa"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 8000
+        },
+        {
+          "op": "push",
+          "deviceNow": 9000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 10000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000009",
+                          "beforeSeq": 1,
+                          "seq": 2,
+                          "rows": [
+                            {
+                              "t": "meta",
+                              "id": "meta",
+                              "beforeRowSeq": 1,
+                              "rowSeq": 2,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "title"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "10000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 9000
+        },
+        {
+          "op": "push",
+          "deviceNow": 10000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000009"
+          ],
+          "deviceNow": 10000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 11000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000009",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "",
+                          "10000:0:srv"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 9000,
+                      "ru": 10000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "6b62a4eb007e713e2fe34f46d4404e2eec32e50990be8ad657fd3b41e2bc3c68",
+                  "total": 1,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 10000
+        },
+        {
+          "op": "readInverseResult",
+          "requestId": "g4"
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "gestureId": "g2",
+          "segments": [
+            {
+              "scope": "tree/b_00000002",
+              "stamp": "5100:0:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g2/0"
+              ],
+              "ids": [
+                "meta"
+              ]
+            }
+          ],
+          "retired": [],
+          "superseded": [],
+          "releaseAt": null
+        },
+        {
+          "kind": "pending",
+          "requestId": "g4",
+          "inverseActId": "g3",
+          "localChanged": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.sprout",
+                "args": {
+                  "board": "b_00000001",
+                  "tag": "oak",
+                  "child": "b_00000002"
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "tree/b_00000009",
+              "d": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Mine",
+                      "5100:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "cmd": {
+                "name": "probe.captureTree",
+                "args": {}
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "tree/b_00000009",
+              "cmd": {
+                "name": "probe.restoreTree",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "field",
+                      "t": "meta",
+                      "id": "meta",
+                      "slot": {
+                        "kind": "field",
+                        "name": "title"
+                      },
+                      "expected": {
+                        "kind": "stamp",
+                        "stamp": "5100:0:r_aaaaaaaaaaaa"
+                      },
+                      "before": ""
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000009",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000009",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "settled",
+          "requestId": "g4",
+          "inverseActId": "g3",
+          "changed": true,
+          "appliedCount": 1,
+          "skippedCount": 0
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 10000,
+                "counter": 0
+              },
+              "hlcHigh": "10000:0:srv",
+              "admittedHigh": "10000:0:srv",
+              "serverOffsetMs": 1000,
+              "offsetSamples": [
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 10000,
+                "mono": 10000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000009": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "",
+                      "10000:0:srv"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 9000,
+                  "ru": 10000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "5049be7243ed15ccd6f806bd3dc89a276c5a7a42f076d4b7020c70861c7ad11c",
+                "booted": true
+              },
+              "tree/b_00000009": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "6b62a4eb007e713e2fe34f46d4404e2eec32e50990be8ad657fd3b41e2bc3c68",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.sprout",
+                    "args": {
+                      "board": "b_00000001",
+                      "tag": "oak",
+                      "child": "b_00000002"
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "board",
+                    "id": "b_00000009",
+                    "born": "7000:0:srv",
+                    "life": [
+                      "alive",
+                      "7000:0:srv"
+                    ],
+                    "f": {
+                      "parent": [
+                        {
+                          "board": "b_00000001",
+                          "tag": "oak"
+                        },
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "2fa09fa63439f56ba7c20ea9390c69c3d020fec31b7ff49d9193d4e693842e16",
+                "resultSeq": 3,
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "board",
+                    "from": "b_00000002",
+                    "id": "b_00000009",
+                    "born": "7000:0:srv"
+                  }
+                ]
+              }
+            ],
+            "journal": [
+              {
+                "version": 1,
+                "actId": "g2",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g2/0",
+                    "originScope": "tree/b_00000009",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000009",
+                              "t": "meta",
+                              "id": "meta",
+                              "slot": {
+                                "kind": "field",
+                                "name": "title"
+                              }
+                            },
+                            "defaultValue": ""
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000009",
+                          "t": "meta",
+                          "id": "meta",
+                          "slot": {
+                            "kind": "field",
+                            "name": "title"
+                          }
+                        },
+                        "value": "",
+                        "rowSeq": null,
+                        "epoch": "ep-1"
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000009",
+                          "t": "meta",
+                          "id": "meta",
+                          "slot": {
+                            "kind": "field",
+                            "name": "title"
+                          }
+                        },
+                        "value": "Mine"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 2,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000009",
+                            "beforeSeq": 0,
+                            "seq": 1,
+                            "rows": [
+                              {
+                                "t": "meta",
+                                "id": "meta",
+                                "beforeRowSeq": null,
+                                "rowSeq": 1,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "title"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "5100:0:r_aaaaaaaaaaaa"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "version": 1,
+                "actId": "g3",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g3/0",
+                    "originScope": "tree/b_00000009",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000009",
+                              "t": "meta",
+                              "id": "meta",
+                              "slot": {
+                                "kind": "field",
+                                "name": "title"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000009",
+                          "t": "meta",
+                          "id": "meta",
+                          "slot": {
+                            "kind": "field",
+                            "name": "title"
+                          }
+                        },
+                        "value": "Mine",
+                        "rowSeq": 1,
+                        "epoch": "ep-1"
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000009",
+                          "t": "meta",
+                          "id": "meta",
+                          "slot": {
+                            "kind": "field",
+                            "name": "title"
+                          }
+                        },
+                        "value": ""
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 3,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000009",
+                            "beforeSeq": 1,
+                            "seq": 2,
+                            "rows": [
+                              {
+                                "t": "meta",
+                                "id": "meta",
+                                "beforeRowSeq": 1,
+                                "rowSeq": 2,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "title"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "10000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "inverses": [
+              {
+                "version": 1,
+                "requestId": "g4",
+                "sourceActId": "g2",
+                "inverseActId": "g3",
+                "state": "settled",
+                "requestedAt": 5200,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g3/0",
+                    "commitOrder": 3,
+                    "originScope": "tree/b_00000009",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restoreTree"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g4",
+                  "inverseActId": "g3",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a cancellation of a held act in a tree a write map then redirects keeps its Redo in the redirected tree",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "5049be7243ed15ccd6f806bd3dc89a276c5a7a42f076d4b7020c70861c7ad11c",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "deviceNow": 5000,
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.sprout",
+              "args": {
+                "board": "b_00000001",
+                "tag": "oak",
+                "child": "b_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000002",
+                "f": {
+                  "parent": {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commitAct",
+          "deviceNow": 5100,
+          "segments": [
+            {
+              "scope": "tree/b_00000002",
+              "changes": [
+                {
+                  "op": "create",
+                  "t": "tag",
+                  "id": "elm",
+                  "f": {
+                    "label": "Elm"
+                  }
+                }
+              ],
+              "opts": {
+                "hold": true
+              }
+            }
+          ],
+          "opts": {
+            "undo": {
+              "version": 1,
+              "segments": [
+                {
+                  "index": 0,
+                  "recipes": [
+                    {
+                      "kind": "createdRecord",
+                      "restoreCommand": "probe.restoreTree",
+                      "record": {
+                        "scope": "tree/b_00000002",
+                        "t": "tag",
+                        "id": "elm"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g2",
+          "deviceNow": 5200
+        },
+        {
+          "op": "push",
+          "deviceNow": 7000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 8000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 3,
+                  "write": [
+                    {
+                      "t": "board",
+                      "id": "b_00000009",
+                      "from": "b_00000002",
+                      "born": "7000:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 7000
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g3",
+          "deviceNow": 9500
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 9000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000009",
+                          "beforeSeq": 0,
+                          "seq": 1,
+                          "rows": [
+                            {
+                              "t": "tag",
+                              "id": "elm",
+                              "beforeRowSeq": null,
+                              "rowSeq": 1,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "born"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "label"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 8000
+        },
+        {
+          "op": "push",
+          "deviceNow": 9000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000009"
+          ],
+          "deviceNow": 9000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 10000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000009",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "tag",
+                      "id": "elm",
+                      "life": [
+                        "alive",
+                        "9000:0:srv"
+                      ],
+                      "born": "9000:0:srv",
+                      "f": {
+                        "label": [
+                          "Elm",
+                          "9000:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 9000,
+                      "ru": 9000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "892a3d418212965c0375765550556400c48589d8e99c0b243d560cde6c7903b5",
+                  "total": 1,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 9000
+        },
+        {
+          "op": "readInverseResult",
+          "requestId": "g6"
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "gestureId": "g2",
+          "segments": [
+            {
+              "scope": "tree/b_00000002",
+              "stamp": "5100:0:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g2/0"
+              ],
+              "ids": [
+                "elm"
+              ]
+            }
+          ],
+          "retired": [],
+          "superseded": [],
+          "releaseAt": 14100
+        },
+        {
+          "kind": "cancelled",
+          "requestId": "g4",
+          "inverseActId": "g3",
+          "changed": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.sprout",
+                "args": {
+                  "board": "b_00000001",
+                  "tag": "oak",
+                  "child": "b_00000002"
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "kind": "pending",
+          "requestId": "g6",
+          "inverseActId": "g5",
+          "localChanged": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "tree/b_00000009",
+              "cmd": {
+                "name": "probe.restoreTree",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "createRecord",
+                      "t": "tag",
+                      "id": "elm",
+                      "values": {
+                        "f": {
+                          "label": "Elm"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g5",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000009",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000009",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "settled",
+          "requestId": "g6",
+          "inverseActId": "g5",
+          "changed": true,
+          "appliedCount": 1,
+          "skippedCount": 0
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 10500,
+                "counter": 0
+              },
+              "hlcHigh": "10500:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "9000:0:srv",
+              "serverOffsetMs": 1000,
+              "offsetSamples": [
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 9000,
+                "mono": 9000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000009": [
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "alive",
+                    "9000:0:srv"
+                  ],
+                  "born": "9000:0:srv",
+                  "f": {
+                    "label": [
+                      "Elm",
+                      "9000:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 9000,
+                  "ru": 9000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "5049be7243ed15ccd6f806bd3dc89a276c5a7a42f076d4b7020c70861c7ad11c",
+                "booted": true
+              },
+              "tree/b_00000009": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "892a3d418212965c0375765550556400c48589d8e99c0b243d560cde6c7903b5",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.sprout",
+                    "args": {
+                      "board": "b_00000001",
+                      "tag": "oak",
+                      "child": "b_00000002"
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "board",
+                    "id": "b_00000009",
+                    "born": "7000:0:srv",
+                    "life": [
+                      "alive",
+                      "7000:0:srv"
+                    ],
+                    "f": {
+                      "parent": [
+                        {
+                          "board": "b_00000001",
+                          "tag": "oak"
+                        },
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "2fa09fa63439f56ba7c20ea9390c69c3d020fec31b7ff49d9193d4e693842e16",
+                "resultSeq": 3,
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "board",
+                    "from": "b_00000002",
+                    "id": "b_00000009",
+                    "born": "7000:0:srv"
+                  }
+                ]
+              }
+            ],
+            "journal": [
+              {
+                "version": 1,
+                "actId": "g5",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g5/0",
+                    "originScope": "tree/b_00000009",
+                    "recipes": [
+                      {
+                        "kind": "createdRecord",
+                        "restoreCommand": "probe.restoreTree",
+                        "record": {
+                          "scope": "tree/b_00000009",
+                          "t": "tag",
+                          "id": "elm"
+                        }
+                      }
+                    ],
+                    "preimages": [],
+                    "written": [],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 2,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000009",
+                            "beforeSeq": 0,
+                            "seq": 1,
+                            "rows": [
+                              {
+                                "t": "tag",
+                                "id": "elm",
+                                "beforeRowSeq": null,
+                                "rowSeq": 1,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "born"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  },
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  },
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "label"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "inverses": [
+              {
+                "version": 1,
+                "requestId": "g4",
+                "sourceActId": "g2",
+                "inverseActId": "g3",
+                "state": "settled",
+                "requestedAt": 5200,
+                "slots": [],
+                "result": {
+                  "kind": "cancelled",
+                  "requestId": "g4",
+                  "inverseActId": "g3",
+                  "changed": true
+                }
+              },
+              {
+                "version": 1,
+                "requestId": "g6",
+                "sourceActId": "g3",
+                "inverseActId": "g5",
+                "state": "settled",
+                "requestedAt": 9500,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g5/0",
+                    "commitOrder": 2,
+                    "originScope": "tree/b_00000009",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restoreTree"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g6",
+                  "inverseActId": "g5",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              }
+            ],
+            "cancellations": [
+              {
+                "version": 1,
+                "inverseActId": "g3",
+                "cancelledActId": "g2",
+                "sourceEntries": [
+                  {
+                    "localId": "g2/0",
+                    "originScope": "tree/b_00000009"
+                  }
+                ],
+                "units": [
+                  {
+                    "kind": "createdRecord",
+                    "ownerLocalId": "g2/0",
+                    "record": {
+                      "scope": "tree/b_00000009",
+                      "t": "tag",
+                      "id": "elm"
+                    },
+                    "redoValues": {
+                      "f": {
+                        "label": "Elm"
+                      }
+                    },
+                    "restored": {
+                      "kind": "recordAbsent",
+                      "epoch": "ep-1"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g2/0",
+          "outcome": "undone",
+          "event": "undo"
+        },
+        {
+          "localId": "g5/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
   }
 ]
