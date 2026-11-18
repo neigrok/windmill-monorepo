@@ -13,6 +13,7 @@ import { release, releaseAll, releaseDue, undo } from '../../../../../packages/a
 import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../../packages/api-contract/sync/reference/client/refusal.js';
+import { readInverseResult, requestInverse } from '../../../../../packages/api-contract/sync/reference/client/inverse.js';
 import { releaseReversibleAct } from '../../../../../packages/api-contract/sync/reference/client/journal.js';
 import { Device } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
 import { nextPush, onHello, onPushResponse, ResponseError } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
@@ -153,6 +154,12 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           break;
         case 'undo':
           answer(undo(replica, registry, ended, step.gestureId));
+          break;
+        case 'requestInverse':
+          answer(requestInverse(replica, ctx, step.actId, step.slots));
+          break;
+        case 'readInverseResult':
+          answer(readInverseResult(replica, step.requestId));
           break;
         case 'releaseReversibleAct':
           answer(releaseReversibleAct(replica, step.actId));
