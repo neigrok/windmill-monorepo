@@ -96,8 +96,8 @@ Outstanding design gaps are tracked in the [consistency ledger](design/consisten
 
 ## Roadmap · iOS
 
-Roadmap · iOS: [wave 1](design/ios/roadmap.md), ✅ ruled by the owner 2026-11-08, with the owner's later changes 🧪 until reviewed — page [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) in the Roadmap file. Not built.
-Roadmap Coach: ✅ [ruled by the owner 2026-11-08](design/roadmap-coach.md), with the boards redrawn for the owner's changes 🧪 until reviewed — page [🧪 Roadmap Coach](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5126) in the Roadmap file; the chat that replaces tending (Ask AI) on iOS, web desktop and web phone.
+Roadmap · iOS: [the room](design/ios/roadmap.md), 🧪 Proposal, every board waiting for the owner's review — page [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) in the Roadmap file: Start here, 00 to 13 and the kit. Not built.
+Roadmap Coach: [rules ✅ ruled by the owner 2026-11-08](design/roadmap-coach.md). The web's boards are on the page [Roadmap Coach](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5126) in the Roadmap file; the iPhone's are [section 11](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1449-15828) of Roadmap · iOS, 🧪 Proposal. The chat that replaces tending (Ask AI) on iOS, web desktop and web phone.
 
 ## Journal · iOS
 

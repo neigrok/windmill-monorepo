@@ -1,0 +1,77 @@
+# 20 · What each room competes with
+
+**Windmill competes with established ways to plan, remember and train, not only with other three-room apps.** The practical opportunity is a useful next task delivered with little setup, followed by a reason to return. AI generation, templates, recaps and assistant integrations are already visible elsewhere; none alone establishes a unique position.
+
+Primary product pages and the US App Store observations below were checked on **November 17, 2026**. This is a selected landscape of ten relevant alternatives, not a market census. “Strategy” is our inference from observed product and distribution surfaces. It is not a claim about a competitor's internal plan, acquisition performance or retention. [Growth decisions](18-growth-options.md) and [product-content proposals](19-product-generated-content.md) remain the decision homes.
+
+## Roadmap: executing a project versus collecting another plan
+
+roadmap.sh is closest on visual learning paths. Habitica, Amazing Marvin and Todoist are adjacent alternatives for the underlying job of choosing and doing the next thing. They are not feature-equivalent substitutes for Windmill's graph.
+
+| Alternative and job | Observed presence, distribution and content loop | Business model | Inferred strategy and Windmill decision |
+|---|---|---|---|
+| **roadmap.sh** · choose a learning path and practice a skill | Public role/skill roadmaps, projects and interview resources; AI roadmaps, courses, guides and quizzes; Pro and team offerings. [Public resources](https://roadmap.sh/), [AI](https://roadmap.sh/ai), [teams](https://roadmap.sh/teams) | Free public resources and limited AI; paid Pro/team capabilities. [Premium](https://roadmap.sh/premium) | **Inference:** useful searchable artifacts acquire learners, while deeper learning and team use create expansion paths. Windmill should demonstrate execution of a person's next project, not compete with a generic “AI makes a plan” claim or attempt to out-publish its catalog. |
+| **Habitica** · turn recurring tasks into a game | Avatars, equipment, pets, party quests and community challenges give tasks a shared game context; public contribution paths broaden participation. [Features](https://habitica.com/static/features) | Free core with optional paid elements. | **Inference:** identity and social accountability encourage returning to the task list. Test whether Windmill's actual completed-step artifact is satisfying; do not import guilt, loss mechanics or streak pressure, or assume RPG visuals prove motivation. |
+| **Amazing Marvin** · find a planning method that fits how someone works | Selectable workflows, task breakdown, focus/gamification tools and saved templates; public workshops, writing and community links explain methods. [Product](https://amazingmarvin.com/), [templates](https://help.amazingmarvin.com/amazing-marvin/saved-itemstemplates) | Full trial, then paid subscription; no permanent free plan described. [Pricing](https://amazingmarvin.com/pricing/) | **Inference:** problem-specific education and configurable workflows attract people frustrated with generic planners. Windmill can offer a small bounded starter; do not turn flexibility into a large setup exercise or make an ADHD efficacy claim. |
+| **Todoist** · capture tasks and organize work/life | A template library includes named creators and work, life and education use cases; integrations include APIs and assistant connections. [Templates](https://www.todoist.com/templates), [integrations](https://www.todoist.com/integrations) | Free Beginner and paid Pro/Business tiers. [Pricing](https://www.todoist.com/pricing) | **Inference:** templates meet existing intent and integrations put the task system inside existing workflows. A host companion and a concrete assistant recipe are plausible Windmill routes; “has AI/MCP” is not sufficient differentiation. |
+
+## Journal: private memory versus interpretation
+
+The relevant alternatives differ in their promise. Windmill's exact-quotation, non-interpretive approach is a product boundary to explain honestly, not evidence that it is better for every writer.
+
+| Alternative and job | Observed presence, distribution and content loop | Business model | Inferred strategy and Windmill decision |
+|---|---|---|---|
+| **Day One** · keep an enduring record and revisit memories | Templates, prompts, media, On This Day, privately invited shared journals and printed books; current Gold offering includes AI summaries, prompts, titles and image generation. [Current plans](https://dayoneapp.com/plans/), [shared-journal help](https://dayoneapp.com/guides/shared-journals/shared-journals/) | Free Basic plus paid Silver/Gold; physical books are a separate offering. | **Inference:** accumulated memories create return value, while family participation and physical artifacts extend use. Test whether exact-source retrieval helps Windmill writers. Day One's social/media features do not override Windmill Journal's private/no-share canon. |
+| **Rosebud** · reflect with an AI journal | AI follow-up/context and weekly reports; owned journal/problem articles, web-account referrals and an affiliate program provide discovery routes. [Product](https://www.rosebud.app/), [reports](https://help.rosebud.app/ai-analysis/weekly-report), [blog](https://www.rosebud.app/blog), [referrals](https://help.rosebud.app/getting-started/referral-program), [affiliates](https://help.rosebud.app/about-us/affiliate-program) | Paid Bloom/Thrive; no ongoing free plan. The paid tiers share core features and differ in usage/model access. [Free-plan change](https://help.rosebud.app/account/changes-to-the-free-plan), [usage tiers](https://help.rosebud.app/ai-analysis/usage-limits) | **Inference:** personalized feedback supplies return occasions, while education and recommendations can supply entry. A weekly AI report is not a novel category claim for Windmill. Keep our proposal grounded in selected words and retrieval; do not copy interpretation or position Talk as an AI companion. |
+| **stoic** · use guided reflection and mental-health-oriented exercises | Morning/evening routines, prompts, weekly themes, guided journals, breathing exercises and optional AI package reflection as a recognizable practice. [Features](https://www.getstoic.com/features), [US listing](https://apps.apple.com/us/app/stoic-journal-mental-health/id1312926037) | Free entry with paid Premium. [Product](https://www.getstoic.com/) | **Inference:** philosophy and authored rituals lower the blank-page barrier and supply repeat occasions. Windmill can test one optional prompt that never interrupts free writing; no therapeutic outcome claim follows from a competitor's positioning. |
+
+## Gym: record continuity versus a program destination
+
+Hevy and Strong are close logging alternatives. Boostcamp combines logging with a program/coach distribution surface; its program catalog is especially relevant to the proposed host-companion route.
+
+| Alternative and job | Observed presence, distribution and content loop | Business model | Inferred strategy and Windmill decision |
+|---|---|---|---|
+| **Hevy** · log training and share it | Routine/folder sharing, social workout artifacts and monthly reports make records portable. Its documented MCP connects ChatGPT/Claude to history and routine creation/updates. [MCP](https://www.hevyapp.com/hevy-mcp/), [routine sharing](https://www.hevyapp.com/features/share-folders-routines/), [workout sharing](https://help.hevyapp.com/hc/en-us/articles/34953501503895-How-to-Share-Workouts-and-Routines-in-Hevy), [monthly report](https://www.hevyapp.com/features/monthly-report) | Free app with paid Pro offering. [Product](https://www.hevyapp.com/) | **Inference:** familiar logging plus reusable routines and social artifacts can support acquisition and repeat use. Test a requested useful receipt; generic sharing and MCP are not unique positions. Do not assume any competitor feature proves retention or that Windmill's existing full-workout link is sanitized. |
+| **Strong** · keep a reliable record of workouts | Speed, simple logging and history across phone/Watch form the pitch. Help documents template/workout sharing and CSV export. [Product](https://www.strong.app/), [sharing help](https://help.strongapp.io/article/109-share-workout-or-template), [export help](https://help.strongapp.io/article/235-export-workout-data) | Free download with paid Pro offering. [US listing](https://apps.apple.com/us/app/strong-workout-tracker-gym-log/id464254577) | **Inference:** simple utility and accumulated history can sustain a clear proposition without a broad content ecosystem. Windmill should first invite the next planned workout without migration; interview active switchers before building an importer. The existence of CSV export does not establish import compatibility. |
+| **Boostcamp** · follow a training program from a known coach | A public program finder and named-coach/community catalogs let people choose a program before committing to the app. [Programs](https://www.boostcamp.app/programs), [coaches](https://www.boostcamp.app/all-coaches) | Free library/logging plus Pro personalized program generation, analytics and exclusive programs. [Pro](https://www.boostcamp.app/pro) | **Inference:** trusted programs give people an entry point before they care about a logging tool. Test one coach's existing program as a source for Windmill's Gym cohort; do not build a marketplace or claim access to another platform's audience. |
+
+## A comparable slice of visible presence
+
+These eight US App Store pages were opened directly on November 17. The figures are Apple's displayed **ratings counts**, not written review counts, downloads, current users, revenue, retention or market share. “K” is the store's rounded display. Storefront, platform, age and audience differ; this table is a presence signal, not a ranking of products or an estimate of Windmill's reachable market.
+
+| Product | US rating | Displayed ratings count | Direct source |
+|---|---:|---:|---|
+| Habitica | 4.3 | 3.7K | [US App Store](https://apps.apple.com/us/app/habitica-gamified-taskmanager/id994882113) |
+| Amazing Marvin | 4.0 | 130 | [US App Store](https://apps.apple.com/us/app/amazing-marvin-adhd-planner/id1314511546) |
+| Todoist | 4.8 | 131K | [US App Store](https://apps.apple.com/us/app/todoist-to-do-list-calendar/id572688855) |
+| Day One | 4.8 | 119K | [US App Store](https://apps.apple.com/us/app/day-one-daily-journal-diary/id1044867788) |
+| stoic | 4.8 | 36K | [US App Store](https://apps.apple.com/us/app/stoic-journal-mental-health/id1312926037) |
+| Hevy | 4.9 | 104K | [US App Store](https://apps.apple.com/us/app/hevy-workout-tracker-gym-log/id1458862350) |
+| Strong | 4.9 | 109K | [US App Store](https://apps.apple.com/us/app/strong-workout-tracker-gym-log/id464254577) |
+| Boostcamp | 4.9 | 11K | [US App Store](https://apps.apple.com/us/app/boostcamp-workout-tracker/id1529354455) |
+
+[Rosebud's listing](https://apps.apple.com/us/app/rosebud-ai-journal-diary/id6451135127) returned HTTP 429 to the direct check. Its older indexed snippet is excluded from this same-day comparison. roadmap.sh has no equivalent verified native listing in this research; no store proxy is substituted. A missing comparable observation means unknown, not small or absent.
+
+The public catalogs, documentation, creator names, communities and working listing pages are direct evidence of discovery surfaces. They do not show which channel delivers paying or returning users. This review did not obtain comparable traffic, paid acquisition, revenue or active-user data. Vendor audience claims are not independently audited here; no market-share chart can be supported.
+
+## Windmill's observed presence gap
+
+The latest recorded provider inspection is November 12: Google had the homepage indexed and the other priority pages in earlier discovery/indexing states; Bing reported zero indexed among the six inspected priority URLs. These are dated observations, not a claim about today's search results. On November 17, the six public routes served HTTP 200 with expected canonicals, but the public “Learn to sail” tree still had homepage heading/structured-data text. [Full search evidence and reinspection schedule](06-brand-search-identity.md)
+
+Windmill has a useful starter, an owner-listed example, an assistant connection path and native beta capabilities to demonstrate. The marketing record has planned cohorts and routes, not measured acquisition/retention successes or a verified public three-room iOS launch. Its store identity must follow [release readiness](../strategy.md#launch-contract). The immediate gap is a reliable, readable route from discovery to one own action and then a second use. A fresh search query, a competitor's ratings count or an HTTP success cannot fill those behavioral cells.
+
+## Three implications across the rooms
+
+1. **A useful artifact and trusted context beat a generic generation claim.** roadmap.sh's resources, Todoist's creator templates and Boostcamp's coaches each show a concrete way to enter a product through an existing job. The proposed companion kit and query tutorial test this mechanism for Windmill without presuming the same outcome.
+2. **Generated content needs a factual job and a product-specific boundary.** Recaps, AI journal reports and playful task systems already exist. A grounded next step, an honest workout receipt and an exact-source private memory are three different contracts. They can be enjoyable without combining private data, scoring the person or creating a feed.
+3. **Make the first attempt small and match its destination.** A next-project/session/page trial avoids requiring migration before value. A broad three-room identity can coexist with a room-specific resource or Custom Product Page. Decide with useful first actions, second use and actual effort/cost; do not infer a winner from the largest competitor audience.
+
+These implications feed the existing [three strategic recommendations](18-growth-options.md#three-recommendations); they are not three additional projects. The companion and content trials stay within the two-cohort limit, and paid expansion keeps the existing [One and contribution gates](../strategy.md#when-money-enters-the-plan).
+
+## Source quality and refresh rules
+
+- Prefer current help/plan pages for a capability or entitlement. Day One's older shared-journal page conflicts with its current help; the current help is the basis here. Recheck before publishing a comparison.
+- Habitica's older listing language about guilds is not used. Strong's export help is older than this research, so it supports a documented format only, not a claim that an import path has been tested. Conflicting vendor user counts are excluded.
+- roadmap.sh uses different registered/active wording for its own scale claims without a comparable activity window. Boostcamp's catalog size is not a measured audience for Windmill. Neither supplies market size or market share.
+- Feature availability and pricing vary by plan, platform and region. This comparison uses high-level business models, not an exhaustive entitlement or price audit. Exact customer-facing comparison claims require a fresh check of the intended plan and build.
+- Store counts are a dated snapshot. Any later snapshot must name its date/storefront and use the same direct-read method; do not silently mix old snippets with new page readings.

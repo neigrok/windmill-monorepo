@@ -16,7 +16,8 @@ import works.windmill.sync.core.Json
 
 class CoachAiClient(private val transport: AiTransport, private val telemetry: Telemetry,
     private val now: () -> Long = { System.nanoTime() / 1_000_000 },
-    private val wait: suspend (Long, StopSignal) -> Boolean = { ms, stop -> stop.wait(ms) }) : AiClient {
+    private val wait: suspend (Long, StopSignal) -> Boolean = { ms, stop -> stop.wait(ms) },
+    private val connection: () -> Boolean = { true }) : AiClient {
     private class Pass(val value: String, val until: Long, val use: String, val version: Long)
     @Volatile private var passLock = Mutex()
     private val state = Any()
@@ -24,6 +25,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
     private var pass: Pass? = null
     private val uploads = mutableSetOf<String>()
     override fun clearPass() = synchronized(state) { generation++; pass = null; passLock = Mutex(); uploads.clear() }
+    override fun connected() = connection()
     private fun report(operation: FailureOperation) { try { telemetry.failure(operation) } catch (_: Exception) {} }
 
     private suspend fun <T : Any> withStop(stop: StopSignal?, discard: (T) -> Unit = {}, dispatch: suspend () -> T): T {

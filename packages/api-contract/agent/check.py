@@ -11,12 +11,22 @@ spec.loader.exec_module(wire)
 def check(story):
     wire.fields(story, 'format name profile input runtime host service controls expected')
     wire.require(story['format'] == 'coach-turn/v1', 'unknown story format')
+    wire.fields(story['runtime'], 'nowMs callIds lockAvailable connected')
+    wire.require(type(story['runtime']['connected']) is bool, 'connected is the device\'s report, true or false')
+    for control in story['controls']:
+        wire.fields(control, 'at action')
+        wire.require(control['action'] in ['stop', 'seat', 'delete', 'stale', 'disconnect'], 'unknown control action')
     wire.fields(story['expected'], 'requests hostCalls gateRefusals marks waitsMs telemetry end')
+    if not story['runtime']['connected'] and story['host']['recovery'] is None:
+        wire.require(story['expected']['requests'] == [], 'a turn begun with no connection sends nothing')
     end = story['expected']['end']
     if end is not None and end['state'] == 'failed':
         wire.require(isinstance(end['code'], str) and bool(end['code']), 'failed end requires a code; an unknown outcome is interrupted')
     for exchange in story['service']['exchanges']:
-        wire.fields({key: value for key, value in exchange.items() if key != 'http'}, 'events refusal broken repeat')
+        wire.fields({key: value for key, value in exchange.items() if key not in ['http', 'transport']}, 'events refusal broken repeat')
+        if 'transport' in exchange:
+            wire.require(exchange['transport'] == 'offline', 'transport failure')
+            wire.require('http' not in exchange and not exchange['events'] and exchange['refusal'] is None and not exchange['broken'], 'a request that fails as offline has no answer')
         if 'http' in exchange:
             wire.fields(exchange['http'], 'status contentType body')
             wire.require(exchange['http']['status'] in [502, 503, 504], 'proxy status')

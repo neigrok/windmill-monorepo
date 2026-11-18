@@ -38,7 +38,7 @@ def refusal(code):
 def story(name):
     return {'format': 'coach-turn/v1', 'name': name, 'profile': copy.deepcopy(PROFILE),
         'input': {'turnId': TURN, 'seat': {'kind': 'bound', 'key': 'seat-1'}, 'question': 'Help', 'pictures': []},
-        'runtime': {'nowMs': 0, 'callIds': CALLS, 'lockAvailable': True},
+        'runtime': {'nowMs': 0, 'callIds': CALLS, 'lockAvailable': True, 'connected': True},
         'host': {'open': {'history': 'Earlier', 'context': ['Now'], 'pictures': []}, 'checks': {}, 'executions': {}, 'recovery': None},
         'service': {'passes': [{'pass': 'vector-pass', 'expiresIn': 600000}], 'exchanges': [], 'pictures': []}, 'controls': [],
         'expected': {'requests': [], 'hostCalls': [], 'gateRefusals': [], 'marks': [], 'waitsMs': [], 'telemetry': [], 'end': None}}
@@ -290,6 +290,22 @@ def stories():
     s=story('offline-before-pass'); opened(s); begin(s,0,'',[first(s)])
     s['service']['passes']=[{'transport':'offline'}]; s['expected']['requests']=[]
     finish(s,'interrupted','',withdraw=True); out.append(s)
+    for name, door, pictures in [('no-connection-pass-ready', {'pass':'vector-pass','expiresIn':600000}, []), ('no-connection-no-pass', {'transport':'offline'}, []), ('no-connection-picture', {'pass':'vector-pass','expiresIn':600000}, [picture])]:
+        s=story(name); s['runtime']['connected']=False; s['input']['pictures']=pictures; s['host']['open']['pictures']=pictures
+        s['service']['passes']=[{**door,'elapsedMs':1000}]
+        opened(s); finish(s,'interrupted','',rounds=0,withdraw=True); out.append(s)
+    s=story('offline-send-asked-again'); opened(s); begin(s,0,'',[first(s)])
+    s['service']['exchanges']=[{**exchange(),'transport':'offline'},exchange(events())]
+    s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
+    text_write(s,'Hello'); finish(s,duration=1000); out.append(s)
+    s=story('connection-lost-after-check'); s['controls']=[{'at':'beginRound:beforeCommit','action':'disconnect'}]; opened(s); begin(s,0,'',[first(s)])
+    s['service']['exchanges']=[{**exchange(),'transport':'offline'},exchange(refusal=refusal('subject_exhausted'))]
+    s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
+    finish(s,'failed','','subject_exhausted',duration=1000); out.append(s)
+    s=tool_story('no-connection-later-round',[{}]); s['controls']=[{'at':'execute:tool-0:beforeCommit','action':'disconnect'}]
+    s['service']['exchanges'].insert(1,{**exchange(),'transport':'offline'})
+    s['expected']['requests'].append(copy.deepcopy(s['expected']['requests'][1])); s['expected']['waitsMs']=[1000]
+    s['expected']['telemetry'][-1]['durationMs']=1000; out.append(s)
     return out
 
 if __name__ == '__main__':

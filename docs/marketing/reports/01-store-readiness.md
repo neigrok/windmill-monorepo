@@ -1,8 +1,8 @@
-# 01 · From a November tester invitation to a December App Store install
+# 01 · From beta access to a verified App Store install
 
-**November 12–18.** The founder checks the invitation before recruiting ten lifters. Today’s iOS
+**Before recruitment.** The founder checks the invitation before recruiting ten lifters. The available iOS
 TestFlight app carries Gym and Journal. The signed Android APK carries Gym. The 20-builder Ship v1
-pilot uses Roadmap on the web. Keep both pilots running while preparing the public iPhone release.
+pilot uses Roadmap on the web. Record actual intake dates before starting either pilot; prepare the public iPhone release alongside them.
 [Product roles](../../PRODUCT_LOG.md) · [Gym cohort](08-gym-demand-cohort.md) · [Ship v1 pilot](11-roadmap-seed-trees.md)
 
 1. Follow the TestFlight invitation on a supported iPhone as an external tester. Install the build offered
@@ -12,16 +12,15 @@ pilot uses Roadmap on the web. Keep both pilots running while preparing the publ
 3. Record date, platform, build, destination and the outcome. Recruit on each route once it passes. Exclude
    internal checks from both pilot counts. If installation fails, fix access before interpreting demand.
 
-## Public iPhone release in early December 2026
+## Public iPhone release readiness
 
-December 1–5 is an internal working window, not a committed date. The release carries Windmill One and
-waits until Apple has approved its subscription with the app version and the owner has opened the paid
-line. The founder owns the public listing and records these steps separately, so an invite or announcement
+The [launch contract](../strategy.md#launch-contract) defines the required scope and its readiness gates;
+there is no release date. Apple approval and the owner opening the paid line are required. The founder owns the public listing and records these steps separately, so an invite or announcement
 can always point to something the reader can use.
 
 | When | What to prepare or verify |
 |---|---|
-| November 12–18 | Choose intended storefronts. Outline the Roadmap story and collect support and privacy links, reviewer instructions and sign-in details where required. Record who can submit the build and who will check the live listing. [Listing brief](05-aso-and-featuring.md) · [App submission](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-app/) |
+| Preparation | Choose intended storefronts. Outline the Roadmap story and collect support and privacy links, reviewer instructions and sign-in details where required. Record who can submit the build and who will check the live listing. [Listing brief](05-aso-and-featuring.md) · [App submission](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-app/) |
 | Before submission | On the candidate iPhone build, mark a Roadmap step complete, close the app, reopen the tree and verify that the same step is still marked complete. Check the Journal and Gym actions named in the listing. Capture the build number and screenshots with founder-owned example data. Submit the Windmill One subscription with this version; Apple reviews a first subscription only together with an app version. [Windmill One readiness](04-gym-demo-and-checkout.md) |
 | At review | The release workflow uploads the archive to App Store Connect and checks TestFlight availability. Select the candidate for public App Review, submit the matching materials, track the review decision and record the release option for that version. [Release workflow](../../../.github/workflows/ios-release.yml) · [Apple release options](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/select-an-app-store-version-release-option/) |
 | On public availability | Open the public product page in each storefront named in the announcement. Download the app on a supported iPhone without TestFlight, verify the version, then repeat the completion and reopen check before announcing native Roadmap. Record storefront, URL, date, version and result. Publish each store link after its download passes. |
@@ -29,7 +28,9 @@ can always point to something the reader can use.
 If the public listing is pending, invite builders to try Ship v1 on the web and send beta testers the
 tested TestFlight invitation. If the native Roadmap check fails, take the result to the owner for the
 release decision. Describe only the rooms demonstrated on any build the owner releases. If payment
-verification is pending, keep the message on the free actions available in that build.
+verification fails on the public install, hold the purchase announcement and wider distribution while the
+release owner resolves it. Beta invitations describe only verified free actions.
+Android and Play do not gate the iOS release; verify the APK only when actually offering that route.
 
 Android’s distribution target remains the signed Gym APK. For a future Play release, check the account
 type first. Personal accounts created after November 13, 2023 need a closed test with at least 12 testers

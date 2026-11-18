@@ -15,15 +15,41 @@
 
 A locally successful action can teach us about usability even when it cannot be credited to the account-backed activation gate. Show the observed, self-reported and unknown counts. If enough outcomes are missing to change the decision, hold the decision and improve observation before repeating the test. An immature cohort is pending. Avoid forcing sign-in to improve measurement.
 
+For publishing and distribution, also record placements, attributable first actions, mature returns and actual founder time in the [editorial scorecard](reports/17-distribution-and-editorial.md#continue-rework-and-expand). Keep reach and behavior separate.
+
+## Growth mechanism measures
+
+The [Balanced Scorecard](reports/18-growth-options.md#balanced-scorecard-test-the-causal-chain) owns strategic owners, proposed targets and review dates across learning, delivery, customer behavior and economics. It is a causal hypothesis, with no invented baseline. Use these definitions when recording a host/artifact trial:
+
+- **Placement:** the host actually makes the agreed artifact available. Accepted, drafted and sent are separate statuses; a placement is not an audience count.
+- **Own first action:** one predeclared task completed in the recipient's own plan, log or journal, among distinct observed starters from that route. Name the task and clock before distribution. A read, download, template duplication or assisted demo is a separate outcome.
+- **Second use:** the same person performs the relevant task again in its declared return window. Show the same starter denominator, mature windows, assisted use and unknowns. Use the existing Roadmap/Gym definitions for cohort gates; do not combine rooms into one activation rate.
+- **Cost per returning person:** attributable founder hours or cash divided by observed returning people for the same source/window. If nobody returns, report cost and zero people; the ratio is undefined. Source attribution requires a verified join or labelled consented observation.
+
+For a future [generated-content test](reports/19-product-generated-content.md#measure-value-burden-and-cost), keep usefulness, amusement, unwanted/creepy reactions, factual errors, acceptance, next action and second use separate. Count costs per accepted artifact and per useful next action; views, shares and regeneration are not activation. No such events or baseline are claimed here.
+
+A host trial stays inside one of the two cohorts or replaces a finished slot. A readable public resource requires no signup; its product action may need an account or access. Record that requirement without forcing sign-in for measurement. No marketing record contains participant plans, private exports, workout names, journal text or contact details.
+
 ## Public iOS launch
 
-Day 0 is the first verified public install date for the announced storefront. Open a new cohort for the first seven days of the App Store release. Keep the November web builders and beta lifters in their original cohorts. Windmill One goes on sale inside the iOS app with this release, so its purchase window also starts on day 0.
+The [launch contract](strategy.md#launch-contract) defines release readiness. Day 0 is the first verified public install date for the announced storefront. Open a new cohort for the first seven days of the App Store release. Keep prelaunch web builders and beta lifters in their original cohorts. Windmill One goes on sale inside the iOS app with this release, so its purchase window also starts on day 0.
 
 | Question | Readout |
 |---|---|
-| Did people find and install Windmill? | At day 7 record App Store product-page views and first-time downloads for the same dates and storefront, with source where available. Keep store totals and in-app totals in their own columns. |
+| Did people find and install Windmill? | At day 7 record App Store product-page views and first-time downloads for the same dates and storefront, with source where available. Keep store totals and in-app totals in their own columns. Campaign analytics require Apple's reporting eligibility and privacy thresholds; missing reports are unknown, not zero. Do not assume a person-level web-to-install join. [Store attribution limits](reports/05-aso-and-featuring.md#read-results-without-inventing-attribution) |
 | Did the iPhone Roadmap give them a reason to return? | Among observable first-time native Roadmap starters, count distinct people who complete a step within 48 hours of starting and whose progress persists. For the same starters count returns to their tree on days 7 through 13 after starting. Report observed starters, mature windows and unknowns beside each count. Until a native cohort query is verified, use opt-in observations and label that sample. |
+| Did Gym Coach help on the iPhone? | Proposed readout: among distinct eligible users who attempt a Coach task in the launch cohort, count those receiving a completed result and those confirming it was useful, separately. Record direct new-routine creation separately from a proposed change to an existing routine and from that proposal being applied. For the same first-attempt users, count a repeat useful task from day 7 inclusive to day 14 exclusive after the first attempt; show mature windows and unknowns. A proposal displayed is not an applied change. |
+| Did Journal Talk work and get used again? | Proposed readout: among distinct eligible users who attempt live Talk in the launch cohort, count those completing a successful live transcription on the verified build. For those same first-attempt users, count another successful Talk use from day 7 inclusive to day 14 exclusive after the first attempt. Show mature windows and unknowns. Count only task outcomes, never audio or transcript text. |
+| Did manual Journal use lead to retrieval? | Proposed separate readouts: among distinct manual-writing starters, count people with a first saved page and writing on two distinct local dates within seven days of that first save. Among a separately recorded group attempting to find a past page, count successful retrievals. Keep the retrieval denominator, clock and assistance visible; neither a save nor a Talk session establishes retrieval. |
 | Did anyone buy One and get what they paid for? | From day 0, count distinct genuine paying accounts, refunds, successful entitlement and funded-period delivery. A genuine purchase is an App Store production purchase. Exclude sandbox purchases, owner and team access, and team verification purchases. Calculate offer-to-purchase conversion only for a measured group that saw the offer. [One launch checks](reports/04-gym-demo-and-checkout.md) |
+
+These native readouts are proposals, not claims that events or cohort queries exist. Engineering verifies
+coverage before using an automated count; until then use opt-in observations and label the sample. For
+Coach and Talk, show successful outcomes, expected refusals, technical failures and unknowns separately,
+using bounded static reason labels. Record ineligible attempts separately from eligible-user denominators.
+Boundary failures go through the surface's failure reporting; marketing records no questions, answers,
+notes, workout details, audio or writing. Attribute outcomes to a source only when the join is verified;
+show unattributed activity and self-reported evidence explicitly.
 
 At the first weekly review, pick one issue from the stage with the strongest observed loss. Close the native return read only once the last starter has had 14 days. Use the billing period to date the first renewal read. Store downloads, signed-in activations and settled buyers each have a different denominator.
 
@@ -32,12 +58,12 @@ At the first weekly review, pick one issue from the stage with the strongest obs
 1. **Five minutes on access.** Can a stranger open the link and start? Did the right canonical get indexed? Record each engine's last inspection date and reason for an exclusion. Search impressions, AI citations and a human click have different meanings.
 2. **Ten minutes on people.** For each source fill in the row below. Use distinct people for pilot gates. Read counts before percentages, separate assisted and unaided outcomes, and note the last date on which each cohort can mature.
 3. **Ten minutes on the largest loss.** Review two opt-in observations from that step. Choose one change to the invitation, first task, distribution source or product. Technical failures go to the owning team with their static operation and outcome.
-4. **Five minutes on the decision.** Apply the continue, repeat or rework rules in the [90-day plan](strategy.md). Write the result on the dogfood node with its denominator, dates, evidence type, founder hours and next owner. If both pass, compare returning people per founder hour within each channel and repeat with an independent group.
+4. **Five minutes on the decision.** Apply the continue, repeat or rework rules in the [strategy](strategy.md). Write the result on the dogfood node with its denominator, dates, evidence type, founder hours and next owner. If both pass, compare returning people per founder hour within each channel and repeat with an independent group.
 
 | Cohort / dates | Source / surface | Invited / opted in / tried | Activated / fixed cohort | Returned / fixed cohort | Unknown / still maturing | Founder hours / cash | Decision / owner / next read |
 |---|---|---|---|---|---|---|---|
 | Ship v1 · batch 1 | Fill at recruitment | Pending | Pending / 20 target | Pending | Pending | Record actuals | Founder · 14 days after final eligible signup |
-| Repeat routine · batch 1 | Fill at recruitment | Pending | Pending / 10 target | Second qualifying workout is the activation | Pending | Record actuals | Founder · seven days after Nov 25 first-set cutoff |
+| Repeat routine · batch 1 | Fill at recruitment | Pending | Pending / 10 target | Second qualifying workout is the activation | Pending | Record actuals | Founder · seven days after the recorded first-set cutoff |
 
 For comparison, engineering can run the aggregate weekly queries in the [database funnel guide](../../backend/db/FUNNEL.md). `trees.forked_from` records a real fork. A share click, copy or fork attempt is intent. Sitewide weekly counts include other traffic. No source-to-payer join is assumed.
 

@@ -1,4 +1,4 @@
-# 04 · Demonstrate Gym in November and prepare Windmill One for December
+# 04 · Demonstrate Gym and prepare the Windmill One offer
 
 **Free pilot preparation.** On each build admitted by [the access check](01-store-readiness.md), prepare
 one short demonstration using a founder-owned example program. Show where to find a routine, start the
@@ -22,9 +22,9 @@ Give the invitation before showing the demo. Observe unaided use first and recor
 The demonstration is available on request. Ask what the lifter would use again and what they already use or
 pay for. Label answers as interview evidence. [Gym cohort](08-gym-demand-cohort.md)
 
-## Windmill One for the early-December launch
+## Windmill One for the iOS launch
 
-One is the optional paid entitlement shared by Roadmap, Journal and Gym. The ordinary editor, journal
+The [launch contract](../strategy.md#launch-contract) owns timing and scope. One is the optional paid entitlement shared by Roadmap, Journal and Gym. The ordinary editor, journal
 and training log are free. One is sold first as a monthly App Store subscription inside the iOS app, at
 the App Store price point $12.00, with no free trial; a person signs in to buy. It goes on sale with
 the public iOS release, which waits until Apple has approved the subscription with the app version and the
@@ -43,14 +43,14 @@ wording out of public creative until One is on sale. [Product principles](../../
    open gaps in refunds and customer billing management. [Billing and funding](../../AI_USAGE_REVIEW.md)
 3. After the owner opens the paid line, verify a real App Store purchase in the iOS app, effective One
    access and funding for that period. Keep the verification purchase outside demand counts. Point a public
-   offer only to the iOS app, with its actual terms. If this check is pending, the launch copy can still
-   invite people to the available free actions.
+   offer only to the iOS app, with its actual terms. Until this public-install check passes, hold the
+   purchase announcement and wider distribution; beta invitations describe their verified free actions.
 
 ## Later paid-demand experiment
 
 Invite 50 qualified lifters to the working offer as a separate cohort. Five genuine non-refunded buyers
 and a second useful Coach task in a later week for at least half those buyers are the proposed learning
-thresholds. Report eligible renewals when observed. November’s ten free testers and general launch sales
+thresholds. Report eligible renewals when observed. The ten free testers and general launch sales
 have their own denominators. Quote One's App Store price for each participant's storefront and keep
 incremental campaign spend at $0 under this plan.
 [Demand and economics](../strategy.md) · [Cohort definitions](../funnels.md)
