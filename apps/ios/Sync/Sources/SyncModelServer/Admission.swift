@@ -403,7 +403,12 @@ struct AdmissionRun {
     switch command.definition.engine {
     case .capture?: return CommandOutcome(product: state.product)
     case .restore?: return try restore(registry.restoreArguments(.object(command.args), of: command.definition))
-    case nil: return try admission.rules.run(command, in: context())
+    case nil:
+      let outcome = try admission.rules.run(command, in: context())
+      if command.definition.inverse, (try? InverseOutcome.reported(in: outcome.detail, count: 1)) == nil {
+        throw AdmissionFault(description: "an inverse command reports no outcome")
+      }
+      return outcome
     }
   }
 

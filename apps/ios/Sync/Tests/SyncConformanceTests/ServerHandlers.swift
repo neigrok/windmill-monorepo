@@ -289,6 +289,7 @@ struct EffectPlanRules: ServerRules {
     for (scope, deltas) in try effects("command", context: context, source: .command) {
       result.into[scope, default: []] += deltas
     }
+    if let detail = plan["detail"] { result.detail = detail }
     return result
   }
 
