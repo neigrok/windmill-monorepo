@@ -68,7 +68,12 @@ class EngineTrainingTests {
             permitted = false
             assertTrue(refused { room.training.pinnedOn(pin) { it.runAct(action) } })
             assertTrue(refused { room.training.holding(1200).commitAct(emptyList()) })
+            assertTrue(refused { room.training.pinnedOn(pin) { it.undo("act") } })
+            assertTrue(refused { room.training.pinnedOn(pin) { it.release("act") } })
+            assertTrue(refused { room.training.holding(1200).requestInverse("act") })
             permitted = true
+            assertEquals(InverseResult.Unavailable(null, "not-reversible"), room.training.pinnedOn(pin) { it.undo("act") })
+            assertEquals(Unit, room.training.pinnedOn(pin) { it.release("act") })
             assertTrue(refused { room.training.pinnedOn(pin.copy(anonymous = !pin.anonymous)) { it.runAct(action) } })
             assertTrue(room.training.pinnedOn(pin) { it.runAct(action) } is ActOutcome.Unchanged)
             val segments = (1..2).map { index -> ScopedGesture(scope, Gesture(listOf(Change.create(Gym.Types.routine,

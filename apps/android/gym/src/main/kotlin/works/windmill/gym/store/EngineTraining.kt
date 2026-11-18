@@ -64,6 +64,8 @@ import works.windmill.sync.api.Replica
 import works.windmill.sync.api.ActContext
 import works.windmill.sync.api.ActRequest
 import works.windmill.sync.api.ActCommitOutcome
+import works.windmill.sync.api.InverseResult
+import works.windmill.sync.api.UndoSegment
 import works.windmill.sync.api.ScopeReader
 import works.windmill.sync.api.Record
 import works.windmill.sync.api.ViewMode
@@ -127,6 +129,14 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         override fun cancelHeld(gestureId: String): Boolean {
             requireWriteAuthority()
             return engine.cancelHeld(gestureId)
+        }
+        override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult {
+            requireWriteAuthority()
+            return engine.requestInverse(actId, slots)
+        }
+        override fun releaseReversibleAct(actId: String): Boolean {
+            requireWriteAuthority()
+            return engine.releaseReversibleAct(actId)
         }
     }
     private fun requireSeat(pin: ReplicaPin, reader: ScopeReader) {
