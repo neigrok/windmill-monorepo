@@ -617,8 +617,7 @@ export class BrowserSyncEngine {
         handle = device.activeReplica.storageHandle;
         if (!current(device) || device.activeReplica.meta.authPaused || device.activeReplica.meta.state !== 'bound'
           || this.signOutPaused(device) || (device.activeReplica.meta.pushRetryAt ?? 0) > this.now() || device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true) return null;
-        return nextPush(device.activeReplica, ctx, { ...(this.pushLimit ? { limit: this.pushLimit } : {}),
-        });
+        return structuredClone(nextPush(device.activeReplica, ctx, this.pushLimit ? { limit: this.pushLimit } : {}));
       });
       if (!request) return;
       if (leave) {

@@ -30,19 +30,18 @@ shared `wm-tab` lock. Querying independently in simultaneous tab starts can desi
 tabs and release a current Undo window. Delayed push replies must also match their request's wire
 replica ID, even though storage retains the same replica handle.
 
-Writer transactions parse the control records the store last committed or read, while the head
-revision holds, and hydrate explicitly selected row keys/scopes, with a type index for governing
-records; rows a connection has read stay in memory, frozen, per generation version. Row generations
+Writer transactions edit working copies of the control records the store last committed or read,
+while the head revision holds, and hydrate explicitly selected row keys/scopes, with a type index for
+governing records; rows a connection has read stay in memory, frozen, per generation version. Row generations
 keep staging swaps and cache removal independent of cache size. Queue-to-durability timings are
 measured; 128-key cleanup batches bound storage work. An observation folds again only the records a
 publication changed; its first read of a scope is proportional to the scope.
 
-At roadmap's size (the browser harness in `packages/api-contract/sync/benchmarks`), what remains
-proportional to a scope or a queue sits outside this folder: the reference commit builds the whole
-scope's drawn and stored views for every gesture, and walks every pending entry for a silent fold
-even when nothing retires or supersedes. A write still parses and re-encodes every control record,
-so a queue of 10,000 entries costs each write tens of milliseconds. A first pull is bound by
-IndexedDB writing each row with its two secondary indexes, and a cold open by reading each row.
+At roadmap's size (the browser harness in `packages/api-contract/sync/benchmarks`), a write still
+re-encodes every control record to find what changed, because the reference edits outbox entries in
+place: a few milliseconds per write for a queue of 10,000 entries. A commit folds a whole scope only
+to mint an id, place an anchored move or count a capped type. A first pull is bound by IndexedDB
+writing each row with its two secondary indexes, and a cold open by reading each row.
 
 Both runtime replays register all 20 seeds as separate test cases, each with a 60-second limit,
 so the timeout bounds one seed's work. Every persisted seed exercises all 34 faults and checks

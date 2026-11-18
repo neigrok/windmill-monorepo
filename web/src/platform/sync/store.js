@@ -37,12 +37,14 @@ class ScopeDemand extends Error {
   constructor(scope) { super('scope hydration required'); this.scope = scope; }
 }
 
-// One control record as the store last committed or read it: its key's parts and its JSON text, which a write
-// parses afresh and readers share frozen.
+// One control record as the store last committed or read it: its key's parts and its JSON text. Readers share
+// it frozen; writes share one working copy, which a write may edit in place and keeps while the record's text
+// holds, so a write parses only the records that changed since the last one.
 class ControlRecord {
   constructor(text, parts) { Object.assign(this, { text, parts }); }
   get value() { return JSON.parse(this.text); }
   get shared() { return (this.frozen ??= frozen(this.value)); }
+  get working() { return (this.copy ??= this.value); }
 }
 
 class Generation {
@@ -80,7 +82,7 @@ function controlsOf(device, revision) {
 }
 
 function deviceOf(controls, { shared }) {
-  const valueFrom = (record) => (shared ? record.shared : record.value);
+  const valueFrom = (record) => (shared ? record.shared : record.working);
   const head = controls.records.get(HEAD)?.value;
   if (!head) return null;
   const replicas = new Map();
@@ -110,6 +112,7 @@ function deviceOf(controls, { shared }) {
     } else if (kind === 'device') (replica.device[scope] ??= {})[id] = value;
     else if (kind === 'cursors' || kind === 'known') replica[kind][scope] = value;
   }
+  for (const replica of replicas.values()) replica.outbox = replica.entries();
   const device = new Device({ replicas: [], active: null, meta: head.meta });
   device.replicas = [...replicas.values()];
   device.activeReplica = replicas.get(head.active);
@@ -331,28 +334,30 @@ export class IndexedDBStore {
           alive.add(state.generation);
           after.set(keyOf('cache', replica.storageHandle, kind, scope), { generation: state.generation, count, version, ...(kind === 'staging' ? { digest: cache.digest } : {}) });
         }
-        const texts = new Map([...after].map(([key, value]) => [key, JSON.stringify(value)]));
-        const differs = (key) => {
+        const records = new Map(), differing = [];
+        for (const [key, value] of after) {
           const before = controls.records.get(key);
-          return !before || !equal({ text: texts.get(key), value: after.get(key) }, before);
-        };
+          const encoded = json(value);
+          if (before && equal(encoded, before)) {
+            if (before.copy !== value) before.copy = undefined;
+            records.set(key, before);
+            continue;
+          }
+          records.set(key, new ControlRecord(encoded.text, before?.parts ?? JSON.parse(key)));
+          differing.push(key);
+        }
         const removed = [...controls.records.keys()].filter((key) => !after.has(key));
         const dead = [...controls.records.values()].filter(({ parts: [kind] }) => kind === 'cache')
           .map((record) => record.shared.generation).filter((generation) => !alive.has(generation));
-        const differing = [...after.keys()].filter(differs);
         const changed = rowWrites > 0 || removed.length > 0 || differing.length > 0;
         if (!changed) return { changed, revision: loaded.revision, records: after };
         const revision = loaded.revision + 1;
         after.get(HEAD).revision = revision;
-        texts.set(HEAD, JSON.stringify(after.get(HEAD)));
+        records.set(HEAD, new ControlRecord(JSON.stringify(after.get(HEAD)), JSON.parse(HEAD)));
         for (const key of removed) table.delete(key);
         for (const key of new Set([HEAD, ...differing])) table.put({ key, value: after.get(key) });
         for (const generation of dead) table.put({ key: keyOf('garbage', generation), value: generation });
         committed = () => {
-          const records = new Map([...texts].map(([key, text]) => {
-            const before = controls.records.get(key);
-            return [key, before?.text === text ? before : new ControlRecord(text, before?.parts ?? JSON.parse(key))];
-          }));
           if ((this.controls?.revision ?? -1) <= revision) this.controls = { revision, records };
           for (const generation of dead) { this.generations.delete(generation); this.garbage.add(generation); }
           for (const { generation, from, version, created, written } of rowChanges) {
@@ -393,7 +398,10 @@ export class IndexedDBStore {
         this.lastTransaction = { rowReads, rowWrites, queueMs: started - queued, writerMs: performance.now() - queued };
         resolve({ ...answer, measurement: this.lastTransaction });
       };
-      transaction.onabort = () => reject(failure ?? transaction.error ?? new Error('sync transaction aborted'));
+      transaction.onabort = () => {
+        if (!readonly) for (const record of controls?.records.values() ?? []) record.copy = undefined;
+        reject(failure ?? transaction.error ?? new Error('sync transaction aborted'));
+      };
       transaction.onerror = () => { failure ??= transaction.error; };
     });
   }

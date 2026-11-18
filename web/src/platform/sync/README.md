@@ -62,9 +62,12 @@ head record's revision is unchanged; any other tab's write moves the revision an
 reads them again. It keeps each cache generation's rows it has read, frozen, while the generation's
 version is unchanged, and reads a whole generation along the `[generation, id]` primary key, so
 `open` takes the `IDBKeyRange` of the same IndexedDB implementation (`keyRange`, the global by
-default). A write materializes the controls afresh, shares the rows, and compares only rows whose
-identity changed; a read shares frozen values, so unchanged state keeps its identity from one
-publication to the next. A row is a value: a change replaces it and never edits it.
+default). A write edits one working copy of each control record, kept while the record's text is
+unchanged, so it parses only the records that changed since the last write; a record a write
+changes, a value a caller handed in and an aborted write's edits never reach the next write. It
+shares the rows and compares only rows whose identity changed; a read shares frozen values, so
+unchanged state keeps its identity from one publication to the next. A row is a value: a change
+replaces it and never edits it. The push request a write numbers leaves it as a copy.
 
 IndexedDB store versions are independent of the wire registry version:
 

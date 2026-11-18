@@ -60,6 +60,38 @@ test('a store forgets the rows it held of a generation another tab let go', asyn
   [kept, other].forEach((store) => store.close());
 });
 
+test('a write edits only copies the store owns: a value handed in, an aborted edit or a swapped object never reaches the next write', async () => {
+  const indexedDB = new IDBFactory();
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id });
+  const held = { label: 'kept' };
+  await store.transact((device) => {
+    gesture(device);
+    device.activeReplica.deviceRows('probe').rack = held;
+  });
+  held.label = 'edited after the commit';
+  const rack = (device) => device.activeReplica.deviceRows('probe').rack;
+  assert.deepEqual(await store.transact((device) => structuredClone(rack(device))).then(({ result }) => result), { label: 'kept' });
+  await assert.rejects(store.transact((device) => {
+    device.activeReplica.outbox[0].state = 'ready';
+    rack(device).label = 'aborted';
+  }, { beforeCommit: ({ transaction }) => transaction.abort() }));
+  await store.transact((device) => {
+    const [entry] = device.activeReplica.outbox;
+    const original = structuredClone(entry);
+    entry.releaseAt = -1;
+    device.activeReplica.outbox = [original];
+  });
+  const { result } = await store.transact((device) => structuredClone({ rack: rack(device), entry: device.activeReplica.outbox[0] }));
+  assert.deepEqual(result.rack, { label: 'kept' });
+  assert.equal(result.entry.state, 'held');
+  assert.notEqual(result.entry.releaseAt, -1);
+  store.close();
+  const reopened = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail('already initialized') });
+  const { device } = await reopened.read();
+  assert.deepEqual([rack(device), device.activeReplica.outbox[0].state, device.activeReplica.outbox[0].releaseAt], [{ label: 'kept' }, 'held', result.entry.releaseAt]);
+  reopened.close();
+});
+
 test('re-identify persists new metadata without changing confirmed row keys or bytes', async () => {
   const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id });
   await store.transact((device) => device.activeReplica.putConfirmed('self/probe',
