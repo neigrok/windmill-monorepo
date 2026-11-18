@@ -9,12 +9,17 @@ import works.windmill.sync.api.RecordRef
 import works.windmill.sync.api.RegisterRef
 import works.windmill.sync.api.ScopedPrediction
 import works.windmill.sync.api.TextEdit
+import works.windmill.sync.api.UndoSegment
 import works.windmill.sync.core.Command
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.EvidenceSelection
+import works.windmill.sync.core.RecordAddress
 import works.windmill.sync.core.RecordKey
+import works.windmill.sync.core.RecordSlot
 import works.windmill.sync.core.Registry
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.Slot
 import works.windmill.sync.core.TypeDef
 import works.windmill.sync.core.compareBytes
 import works.windmill.sync.core.lives
@@ -49,6 +54,33 @@ data class Prediction(val kind: Kind, val type: String, val id: RecordID, val va
 
 class PlanError(val rule: Int, val reason: String) : IllegalArgumentException("plan rule $rule: $reason")
 
+// §9.6: one slot of a record an Undo recipe names (a field, a text or its life) in its own scope or, null, the plan's.
+class UndoTarget private constructor(val ref: RecordRef, val slot: Slot, val scope: ScopeRef?) {
+    // The slot in the engine's form, in `scope` unless the target names its own.
+    fun address(scope: ScopeRef): RecordSlot = RecordSlot(RecordAddress(this.scope ?: scope, ref.key), slot)
+    companion object {
+        fun <E : Entity<E>> field(id: Id<E>, name: String, scope: ScopeRef? = null) = UndoTarget(id.ref, Slot(Slot.Kind.field, name), scope)
+        fun <E : Entity<E>> text(id: Id<E>, name: String, scope: ScopeRef? = null) = UndoTarget(id.ref, Slot(Slot.Kind.text, name), scope)
+        fun <E : Entity<E>> life(id: Id<E>, scope: ScopeRef? = null) = UndoTarget(id.ref, Slot(Slot.Kind.life), scope)
+    }
+}
+
+// §9.6: a field target and the value its product treats as unset, for a slot unset before the act; null names none, Json.Null the value null.
+data class UndoField(val target: UndoTarget, val defaultValue: Json? = null)
+
+// §9.6: what an Undo of a plan's writes runs (engine §7.3 Undo of an act): earlier values of client fields, texts and lives by the scope's
+// restore command, a record the plan creates deleted again while unchanged, or a product inverse command over evidence the engine builds.
+sealed interface UndoRecipe {
+    data class Fields(val restoreCommand: String, val targets: List<UndoField>) : UndoRecipe
+    data class CreatedRecord(val restoreCommand: String, val ref: RecordRef, val scope: ScopeRef? = null) : UndoRecipe
+    data class Product(val command: String, val input: Json, val ownedFields: List<UndoTarget> = emptyList(),
+        val unchangedCreatedRecords: List<Pair<RecordRef, ScopeRef?>> = emptyList(), val unchangedCreatedScopes: List<ScopeRef> = emptyList()) : UndoRecipe
+    companion object {
+        fun fields(restoreCommand: String, vararg targets: UndoTarget): UndoRecipe = Fields(restoreCommand, targets.map { UndoField(it) })
+        fun <E : Entity<E>> createdRecord(restoreCommand: String, id: Id<E>): UndoRecipe = CreatedRecord(restoreCommand, id.ref)
+    }
+}
+
 class Plan {
     private val writing: MutableList<Operation> = mutableListOf()
     val operations: List<Operation> get() = writing.toList()
@@ -58,6 +90,9 @@ class Plan {
     val deviceWrites: MutableList<DeviceWrite> = mutableListOf()
     var supersededGestures: List<String> = emptyList()
         private set
+    private val undoRecipes: MutableList<UndoRecipe> = mutableListOf()
+    // §9.6: the recipes an Undo of the plan's act runs, or null when the plan does not opt into Undo.
+    val undo: List<UndoRecipe>? get() = undoRecipes.toList().takeIf { it.isNotEmpty() }
     constructor()
     constructor(running: ServerCommand, predicting: List<Prediction> = emptyList()) {
         var args: Json = Json.Obj(running.args.toList())
@@ -92,6 +127,19 @@ class Plan {
     fun <E : Entity<E>> guardRead(id: Id<E>, fields: List<String>) { writing += Operation(Operation.Kind.GuardRead(fields.uniqueInByteOrder()), EntityFacts(id.entity), id.record) }
     fun supersede(gestureIds: List<String>) { supersededGestures = gestureIds.toList() }
     fun device(key: String, value: Json?) { deviceWrites += DeviceWrite(key, value) }
+    // §9.6: opts the plan's act into Undo after its hold, with the recipes an Undo runs.
+    fun undoBy(vararg recipes: UndoRecipe) {
+        check(recipes.isNotEmpty()) { "undoBy takes Undo recipes" }
+        undoRecipes += recipes
+    }
+    // The plan's recipes in the engine's form as act segment `index` (engine §7.3); a target or record without a scope lives in `scope`.
+    fun undoSegment(index: Int, scope: ScopeRef): UndoSegment? = undo?.let { recipes -> UndoSegment(index, recipes.map { recipe -> when (recipe) {
+        is UndoRecipe.Fields -> works.windmill.sync.core.UndoRecipe.Fields(recipe.restoreCommand,
+            recipe.targets.map { works.windmill.sync.core.UndoRecipe.FieldTarget(it.target.address(scope), it.defaultValue) })
+        is UndoRecipe.CreatedRecord -> works.windmill.sync.core.UndoRecipe.CreatedRecord(recipe.restoreCommand, RecordAddress(recipe.scope ?: scope, recipe.ref.key))
+        is UndoRecipe.Product -> works.windmill.sync.core.UndoRecipe.Product(recipe.command, recipe.input, EvidenceSelection(recipe.ownedFields.map { it.address(scope) },
+            recipe.unchangedCreatedRecords.map { (ref, at) -> RecordAddress(at ?: scope, ref.key) }, recipe.unchangedCreatedScopes))
+    } }) }
     private fun <E : Writable<E>> append(kind: Operation.Kind, value: Valid<E>) {
         writing += Operation(kind, EntityFacts(value.type), value.id.record, value.written, value.checked)
     }

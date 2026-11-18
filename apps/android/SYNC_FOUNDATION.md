@@ -85,9 +85,11 @@ scope-local ones, and a proposed creation moves only with its own retained targe
 
 An act opted into Undo (engine §7.3 Undo of an act, `ActRequest.undo`) journals each segment's source
 entry with its recipes and first local preimages, and each `ok` or terminal refusal in the result's own
-transaction. `requestInverse` cancels a wholly held act, or reserves inverse slots at the end of commit
-order that stop the sender until the act's sources are authoritative, then binds them into restore or
-product inverse commands; `readInverseResult` and `releaseReversibleAct` answer and release. The journal,
+transaction. The `Replica` port's `cancelHeld` is the held-only Undo; its `requestInverse` cancels a
+wholly held act, or reserves inverse slots at the end of commit order that stop the sender until the
+act's sources are authoritative, then binds them into restore or product inverse commands;
+`readInverseResult` and `releaseReversibleAct` answer and release. The kit's `ActionRunner` offers them as
+`cancelHeld`, `undo`, `redo`, `inverseResult` and `release` (domain-kit §9.6). The journal,
 inverse requests and cancellation receipts are replica JSON (`journal`, `inverses`, `cancellations`);
 SQLite schema version 2 keeps each as one row of its replica in `reversible_act`, `inverse_request` and
 `cancellation`, written only when it changes. A version 1 store gains the three empty tables when it

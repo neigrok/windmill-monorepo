@@ -13,6 +13,8 @@ import works.windmill.sync.core.Stamp
 import works.windmill.sync.core.Delta
 import works.windmill.sync.core.Command
 import works.windmill.sync.core.lives
+import works.windmill.sync.engine.subscribe
+import works.windmill.sync.modelserver.ProbeServerRules
 
 internal fun fields(json: Json?): Map<String, Json> = json?.obj() ?: emptyMap()
 internal fun names(json: Json) = json.arr().map { it.str() }
@@ -152,7 +154,7 @@ internal object WriteVectors {
             val outcome = when (result) {
                 is ActOutcome.Committed -> {
                     stamps = result.receipt.segments.map { it.stamp }
-                    if (input["undo"]?.bool() == true) runner.undo(result.receipt.gestureId)
+                    if (input["undo"]?.bool() == true) runner.cancelHeld(result.receipt.gestureId)
                     Json.objectOf("kind" to Json.of("committed"), "scopes" to Json.Arr(result.receipt.segments.map { it.scope.json }),
                         "counts" to Json.Arr(result.receipt.segments.map { Json.of(it.localIds.size) }), "held" to Json.of(result.receipt.releaseAt != null))
                 }
@@ -174,6 +176,89 @@ internal object WriteVectors {
             Json.objectOf("outcome" to outcome, "records" to Json.Arr(records))
         }
     } }
+    // K-3 run/undo.json (§9.6): an act opted into Undo over the real engine and the reference server, then its Undo and Redo. Each
+    // result drops the ids the engine draws.
+    fun undo(input: Json): Json = runBlocking { withActionContext { context ->
+        val registry = probeRegistry()
+        SteppedEngine(registry, Probe.start, rules = ProbeServerRules()).use { phone ->
+            val runner = ActionRunner(phone.replica, registry, FixedZone(0), context)
+            input["observe"]?.arr().orEmpty().forEach { phone.engine.subscribe(ScopeRef(it)) }
+            fun plans(segments: Json) = segments.arr().map { item -> ScopedPlan(ScopeRef(item.member("scope")), build(item, runner.moment()).also { plan ->
+                item["undo"]?.arr()?.map(::undoRecipe)?.let { plan.undoBy(*it.toTypedArray()) } }) }
+            fun writing(plans: List<ScopedPlan>) = object : ActAction<Unit, Unit, ProbeRefusal> {
+                override val refusals = ProbeRefusals
+                override fun load(read: ActReader) = Unit
+                override fun decide(loaded: Unit, ids: ActIDSource): ActDecision<Unit, ProbeRefusal> = ActDecision.Write(ActPlan(plans), Unit)
+            }
+            for (setup in input["before"]?.arr().orEmpty()) {
+                check(runner.runAct(writing(plans(setup))) is ActOutcome.Committed) { "a setup act commits" }
+                phone.sync()
+            }
+            val (outcome, actId) = try {
+                val declared = input["reversible"]?.bool()
+                if (declared != null) {
+                    val segment = plans(input.member("segments")).single()
+                    when (val ran = runner.run(object : Action<Unit, Unit, ProbeRefusal> {
+                        override val scope = segment.scope
+                        override val refusals = ProbeRefusals
+                        override val reversible: Boolean = declared
+                        override fun load(read: Reader) = Unit
+                        override fun decide(loaded: Unit, ids: IDSource): Decision<Unit, ProbeRefusal> = Decision.Write(segment.plan, Unit)
+                    })) {
+                        is Outcome.Committed -> Json.objectOf("kind" to Json.of("committed"), "count" to Json.of(ran.receipt.localIds.size)) to ran.receipt.gestureId
+                        is Outcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged")) to null
+                        is Outcome.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                    }
+                } else when (val ran = runner.runAct(writing(plans(input.member("segments"))))) {
+                    is ActOutcome.Committed -> Json.objectOf("kind" to Json.of("committed"), "counts" to Json.Arr(ran.receipt.segments.map { Json.of(it.localIds.size) }),
+                        "held" to Json.of(ran.receipt.releaseAt != null)) to ran.receipt.gestureId
+                    is ActOutcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged")) to null
+                    is ActOutcome.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                }
+            } catch (_: PlanError) { return@use Json.objectOf("error" to Json.of(true)) }
+              catch (_: ProgrammingFault) { return@use Json.objectOf("error" to Json.of(true)) }
+            var requestId: String? = null
+            val results = input.member("steps").arr().mapNotNull { step ->
+                when (step.str()) {
+                    "sync" -> { phone.sync(); null }
+                    "read" -> runner.inverseResult(checkNotNull(requestId)).form
+                    else -> {
+                        val result = if (step.str() == "undo") runner.undo(checkNotNull(actId)) else runner.redo(checkNotNull(requestId))
+                        result.form.also { (result.json["requestId"] as? Json.Str)?.let { requestId = it.value } }
+                    }
+                }
+            }
+            val records = input.member("inspect").arr().map { item ->
+                Json.Arr(phone.replica.read(ScopeRef(item.member("scope"))) { it.drawn(item.member("t").str()) }.filter { it.isVisible }
+                    .map { Json.objectOf("id" to it.id.json, "title" to (it.values["title"] ?: Json.Null)) })
+            }
+            Json.objectOf("outcome" to outcome, "results" to Json.Arr(results), "records" to Json.Arr(records))
+        }
+    } }
+    // An InverseResult as the vectors compare it: without the ids the engine draws.
+    private val InverseResult.form: Json get() = Json.Obj(json.obj().filterKeys { it != "requestId" && it != "inverseActId" }.toList())
+    // A recipe in the vector language: each target or record by type and id, in its own scope or its segment's.
+    private fun undoRecipe(recipe: Json): UndoRecipe {
+        fun ref(item: Json) = RecordRef(item.member("t").str(), RecordID(item.member("id")))
+        fun target(item: Json): UndoTarget {
+            val id = Id(RecordID(item.member("id")), Probe.entity(item.member("t").str()))
+            val scope = item["scope"]?.let(::ScopeRef)
+            val slot = item.member("slot")
+            return when (slot.member("kind").str()) {
+                "field" -> UndoTarget.field(id, slot.member("name").str(), scope)
+                "text" -> UndoTarget.text(id, slot.member("name").str(), scope)
+                else -> UndoTarget.life(id, scope)
+            }
+        }
+        return when (recipe.member("kind").str()) {
+            "fields" -> UndoRecipe.Fields(recipe.member("restoreCommand").str(), recipe.member("targets").arr().map { UndoField(target(it), it["defaultValue"]) })
+            "createdRecord" -> UndoRecipe.CreatedRecord(recipe.member("restoreCommand").str(), ref(recipe))
+            else -> recipe.member("evidence").let { evidence -> UndoRecipe.Product(recipe.member("command").str(), recipe.member("input"),
+                evidence.member("ownedFields").arr().map(::target),
+                evidence.member("unchangedCreatedRecords").arr().map { ref(it) to it["scope"]?.let(::ScopeRef) },
+                evidence.member("unchangedCreatedScopes").arr().map(::ScopeRef)) }
+        }
+    }
     private fun answer(input: Json): CommitOutcome? {
         input["receipt"]?.let { receipt -> return CommitOutcome.Committed(CommitReceipt(receipt.member("gestureId").str(), Stamp.UNSET,
             names(receipt.member("localIds")), emptyList(), receipt["releaseAt"]?.orNull()?.long(), names(receipt.member("retired")))) }

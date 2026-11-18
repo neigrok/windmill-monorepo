@@ -70,7 +70,7 @@ object NetworkCorpus {
                         "releaseDue" -> { engine.releaseHeld(); Json.Null }
                         "commitAct" -> ClientCorpus.act(engine, step).also { if (it == null || it is ActCommitOutcome.Refused) { gestures = beforeGestures; consumed.putAll(beforeConsumed) } }
                             ?.let(ClientCorpus::outcome) ?: Json.Null
-                        "undo" -> Json.of(engine.undo(step.member("gestureId").str()))
+                        "undo" -> Json.of(engine.cancelHeld(step.member("gestureId").str()))
                         "requestInverse" -> engine.requestInverse(step.member("actId").str(), step["slots"]?.let(ClientCorpus::undoSegments)).json
                         "readInverseResult" -> engine.readInverseResult(step.member("requestId").str()).json
                         "releaseReversibleAct" -> Json.of(engine.releaseReversibleAct(step.member("actId").str()))

@@ -76,7 +76,7 @@ class EngineTrainingTests {
             val receipt = (room.training.holding(1200).commitAct(segments) as ActCommitOutcome.Committed).receipt
             assertEquals(room.engine.physNow() + 1200, receipt.releaseAt)
             assertEquals(2, receipt.localIds.size)
-            assertTrue(room.engine.undo(receipt.gestureId))
+            assertTrue(room.engine.cancelHeld(receipt.gestureId))
         }
     }
 
@@ -187,7 +187,7 @@ class EngineTrainingTests {
             val held = room.engine.commit(ScopeRef(Gym.scope), Gesture(
                 listOf(Change.delete(Gym.Types.session, RecordID(session.id))), hold = true)) as CommitOutcome.Committed
             assertThrows(TrainingUnanswered::class.java) { room.training.restoredSession(session.id) }
-            room.engine.undo(held.receipt.gestureId)
+            room.engine.cancelHeld(held.receipt.gestureId)
             assertEquals(detail, room.training.restoredSession(session.id))
             room.training.discardSession(session.id)
             assertNull(room.training.restoredSession(session.id))

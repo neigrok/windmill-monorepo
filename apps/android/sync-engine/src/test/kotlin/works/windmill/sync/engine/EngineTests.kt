@@ -149,7 +149,7 @@ class EngineTests {
             assertEquals(listOf("${receipt.gestureId}/0", "${receipt.gestureId}/1"), receipt.localIds)
             assertEquals(listOf(scope, scope), receipt.segments.map { it.scope })
             assertTrue(receipt.segments[0].stamp!! < receipt.segments[1].stamp!!)
-            assertTrue(engine.undo(receipt.gestureId))
+            assertTrue(engine.cancelHeld(receipt.gestureId))
             assertTrue(engine.read(scope) { it.drawn("card").isEmpty() })
         }
     }
@@ -192,7 +192,7 @@ class EngineTests {
             )) as ActCommitOutcome.Committed
             assertTrue(engine.release(result.receipt.localIds[0]))
             assertTrue(engine.undoOffers().isEmpty())
-            assertFalse(engine.undo(result.receipt.gestureId))
+            assertFalse(engine.cancelHeld(result.receipt.gestureId))
         }
     }
 
@@ -377,9 +377,9 @@ class EngineTests {
             assertEquals(listOf("del"), result.receipt.retired)
             assertEquals(Json.of(2), engine.read(scope) { it.drawn("card", id)!!.values["size"] })
             assertEquals(Json.of("Changed"), engine.read(scope) { it.drawn("card", id)!!.values["title"] })
-            assertFalse(engine.undo("del"))
+            assertFalse(engine.cancelHeld("del"))
             engine.commit(scope, Gesture(listOf(Change.delete("card", id)), hold = true, gestureId = "later"))
-            assertTrue(engine.release("later/0")); assertFalse(engine.release("later/0")); assertFalse(engine.undo("later"))
+            assertTrue(engine.release("later/0")); assertFalse(engine.release("later/0")); assertFalse(engine.cancelHeld("later"))
             assertThrows(CommitFailure::class.java) { engine.dismissNotice("missing") }
         }
     }
@@ -511,7 +511,7 @@ class EngineTests {
                         "code" to Json.of("invalid"))))), timing)
             } else {
                 assertNull(engine.nextPush())
-                assertTrue(engine.undo(receipt.gestureId))
+                assertTrue(engine.cancelHeld(receipt.gestureId))
             }
             val remaining = engine.device.current().entries().single()
             assertEquals("later/0", remaining.id); assertEquals("ready", remaining.state)

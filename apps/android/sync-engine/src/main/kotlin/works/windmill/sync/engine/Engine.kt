@@ -255,7 +255,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     override fun mintID(type: String): RecordID = lock.withLock {
         ensureOpen(); RecordID((registry.type(type)?.mint ?: throw CommitFailure.malformed("not-minted")).id(::draw))
     }
-    override fun undo(gestureId: String): Boolean = write(EngineOperation.undo) { replica ->
+    override fun cancelHeld(gestureId: String): Boolean = write(EngineOperation.undo) { replica ->
         val entries = replica.entries().filter { it.gestureId == gestureId }
         if (entries.isEmpty() || entries.any { it.state != "held" }) return@write false
         undoHeld(replica, entries)
@@ -268,15 +268,14 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         applySilentFold(replica, folded)
         replica.settleEnded("undone")
     }
-    // §7.3 Undo of an act: cancels a wholly held act, or reserves, projects and, once its sources are authoritative, materializes its
-    // inverse slots. `inverseSlots`, by source ordinal, replaces the stored recipes whole (a product's Redo).
-    fun requestInverse(sourceActId: String, inverseSlots: List<UndoSegment>? = null): InverseResult = write(EngineOperation.undo) { replica ->
+    // `slots`, by source ordinal, replaces the stored recipes whole (a product's Redo).
+    override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult = write(EngineOperation.undo) { replica ->
         if (replica.state !in setOf("anon", "bound")) throw CommitFailure(CommitFailure.Kind.notWritable, replica.state)
-        requestInverse(replica, sourceActId, inverseSlots)
+        requestInverse(replica, actId, slots)
     }
-    fun readInverseResult(requestId: String): InverseResult = lock.withLock { ensureOpen(); device.current().readInverseResult(requestId) }
-    // The product's stack no longer needs the act: its journal record and values go, once no unsettled inverse request reads them.
-    fun releaseReversibleAct(actId: String): Boolean = write(EngineOperation.undo) { it.releaseReversibleAct(actId) }
+    override fun readInverseResult(requestId: String): InverseResult = lock.withLock { ensureOpen(); device.current().readInverseResult(requestId) }
+    // Its journal record and values go once no unsettled inverse request reads them.
+    override fun releaseReversibleAct(actId: String): Boolean = write(EngineOperation.undo) { it.releaseReversibleAct(actId) }
     // A gesture id no entry, notice or journal record of the device carries yet.
     internal fun freshGestureId(): String = generateSequence { opaqueID() }.first { !device.carriesGesture(it) }
     override fun dismissNotice(id: String) { write(EngineOperation.dismiss) { replica ->

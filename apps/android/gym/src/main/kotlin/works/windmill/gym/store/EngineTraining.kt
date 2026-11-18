@@ -124,9 +124,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             engine.commit(scope) { context -> requireWriteAuthority(); body(context) }
         override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
             engine.commitAct({ context -> requireWriteAuthority(); prepare(context) }, segment)
-        override fun undo(gestureId: String): Boolean {
+        override fun cancelHeld(gestureId: String): Boolean {
             requireWriteAuthority()
-            return engine.undo(gestureId)
+            return engine.cancelHeld(gestureId)
         }
     }
     private fun requireSeat(pin: ReplicaPin, reader: ScopeReader) {
@@ -826,7 +826,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 if (holdMs == null) {
                     try { outcome.receipt.localIds.forEach { releaseIntent(it) } }
                     catch (failure: Exception) {
-                        val restored = try { engine.undo(outcome.receipt.gestureId) }
+                        val restored = try { engine.cancelHeld(outcome.receipt.gestureId) }
                         catch (rollback: Exception) { failure.addSuppressed(rollback); false }
                         if (!restored) throw TrainingDeleteUnconfirmed(failure)
                         throw failure

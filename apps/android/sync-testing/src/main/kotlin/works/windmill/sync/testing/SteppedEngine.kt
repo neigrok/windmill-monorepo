@@ -200,7 +200,7 @@ object ClientCorpus {
                             if (result == null || result is ActCommitOutcome.Refused) { stepped.gestures = beforeGesture; stepped.drawIndex = beforeDraw }
                             result?.let(::outcome) ?: Json.Null
                         }
-                        "undo" -> Json.of(stepped.engine.undo(step.member("gestureId").str()))
+                        "undo" -> Json.of(stepped.engine.cancelHeld(step.member("gestureId").str()))
                         "releaseAll" -> { stepped.engine.releaseHeld(true); Json.Null }
                         "releaseDue" -> { stepped.engine.releaseHeld(); Json.Null }
                         "release" -> Json.of(stepped.engine.release(step.member("localId").str()))
