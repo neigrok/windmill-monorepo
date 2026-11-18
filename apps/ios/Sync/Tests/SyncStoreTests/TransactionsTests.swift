@@ -19,19 +19,10 @@ struct TransactionsTests {
 
   @Test(arguments: vectors)
   func everyClientStepVectorHoldsThroughTheStore(_ vector: CorpusVector) throws {
-    guard let fault = Corpus.knownIssues[vector.description] else {
-      let answer = try ClientSteps.run(vector.input, registry: Self.probe) { device, limits in
-        try StoredDevice(seeding: device, registry: Self.probe, limits: limits)
-      }
-      #expect(answer == vector.expect, "\(vector)")
-      return
+    let answer = try ClientSteps.run(vector.input, registry: Self.probe) { device, limits in
+      try StoredDevice(seeding: device, registry: Self.probe, limits: limits)
     }
-    withKnownIssue(Comment(rawValue: fault)) {
-      let answer = try ClientSteps.run(vector.input, registry: Self.probe) { device, limits in
-        try StoredDevice(seeding: device, registry: Self.probe, limits: limits)
-      }
-      #expect(answer == vector.expect, "\(vector)")
-    }
+    #expect(answer == vector.expect, "\(vector)")
   }
 
   // Steps beyond the corpus, each run through the planners and through the store: the two must agree exactly, and
