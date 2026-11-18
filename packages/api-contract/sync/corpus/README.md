@@ -70,7 +70,7 @@ Device scope `device/probe`: rows `rack` and `picture:<id>` (`localOnly`). Every
 declares its `mint` recipe: `board` is `b_` and 8 of `0-9a-f`; `card`, `run` and `lap` are 16 base-62
 characters; `tag` is 12 of `0-9a-z`.
 
-**Commands** (all in `self/probe`):
+**Commands** (in `self/probe` unless named otherwise):
 
 - `probe.start {id: ref<run>, label?, startedAt: time, join}` — replica and server origin.
   1. A start receipt for `id` exists (the run it created or joined): `ok`, no change. When that run is
@@ -100,10 +100,26 @@ characters; `tag` is 12 of `0-9a-z`.
 - `probe.tick {}` — server-internal, `beforePull`: it runs in its own admission before every pull of
   `self/probe` (§6.7). Every open run whose `startedAt ≤ serverNow − 600000` gets
   `endedAt := serverNow` at the server stamp; write `[]`.
+- `probe.capture {}` (`self/probe`, predicts `board`, `card`, `run`, `lap`, `day`),
+  `probe.captureTree {}` (`tree/<T>`, predicts `meta`, `tag`, `link`) and `probe.captureOverlay {}`
+  (`self/overlay/<T>`, predicts `mark`) — replica and server origin; `scopedEffects` and
+  `engine: "capture"` (engine.md §2.4): the platform runs the intent's ordinary deltas, checks and
+  consequences with no product command, write `[]`, and the result carries the scoped receipt (§6.4).
+- `probe.branch {parent: ref<board>, child: ref<board>, title}` — replica and server origin;
+  `scopedEffects`, predicts `board` and `meta`. Discovery declares `tree:parent` and `tree:child`,
+  replay or not.
+  1. A branch receipt for `child` naming the same `parent` and `title`: `ok`, no change; write
+     `[{t: "board", id: child, born}]` when that board is alive, otherwise `[]`; detail
+     `{created: false}`. This is the command's replay rule, from any replica (it skips the guards).
+  2. `parent = child` → `invalid`; a stored `child` board, alive or dead → `id-taken`.
+  3. Otherwise create board `child` at the server stamp, which creates `tree:child`; write
+     `meta.title := title` at the server stamp into `tree:parent` and `tree:child`; record the receipt
+     `child → {parent, title}`; write `[{t: "board", id: child, born}]`; detail `{created: true}`.
 
 A command's `ok` result always carries `write`, possibly `[]`. Start receipts live in the server state
 as `product.receipts[<scope key>][<called run id>] = <resolved run id>`, copy receipts as
-`product.copies[<scope key>][<dst>] = <src>`.
+`product.copies[<scope key>][<dst>] = <src>`, branch receipts as
+`product.branches[<scope key>][<child>] = {parent, title}`.
 
 **Checks** (§6.1 step 10, on the joined records):
 
@@ -621,8 +637,9 @@ type ServerStateJson = {
   results?: {[replica]: {n, digest, result: Result|null, faults}[]},   // sync_results
   requests?: {[account]: {requestId, digest, state: 'running'|'done', startedAt,
                           parts: {k, result}[], result?}[]},     // sync_requests, parts are requestId#k
-  product?: {receipts: {[scopeKey]: {[calledRunId]: resolvedRunId}}}  // the probe's start receipts
-                                                   // (gym and journal: their product sections)
+  product?: {receipts?: {[scopeKey]: {[calledRunId]: resolvedRunId}},    // the probe's command receipts
+             copies?: {[scopeKey]: {[dst]: src}},
+             branches?: {[scopeKey]: {[child]: {parent, title}}}}  // (gym and journal: their product sections)
 }
 ```
 
@@ -789,17 +806,19 @@ configure a named limit fails those vectors.
 - `pull/serve.json`: `PULL_PAGE_BYTES` and `PULL_MAX_BYTES`.
 - `push/serve.json`: `PUSH_MAX_INTENTS` and `PUSH_MAX_BYTES`.
 - `admit/record-bound.json`: `MAX_RECORD_BYTES`.
-- `admit/cross-scope-effects.json`: `EFFECT_MAX_BYTES`.
+- `admit/cross-scope.json`: `EFFECT_MAX_BYTES`.
 - `admit/scoped-receipts.json`: `RECEIPT_MAX_BYTES` and `SCOPED_RESPONSE_MAX_BYTES`.
 - `write/scoped-predictions.json`: `EFFECT_MAX_BYTES` for the canonical grouped prediction bytes.
 
 The three effect/receipt limits are positive and shrink-only. `admit/scoped-receipts.json` covers
-platform capture, actual changed-slot versions, owned lifecycle watermarks, serial-only rows and
-atomic receipt/response budget refusals. Its effect-plan fixture may supply internal serial `v`
-values: remove them before ordinary wire shaping, then restore them to the internal delta for
-normal generated-effect validation. `write/scoped-predictions.json` uses ordinary client steps to
-assert persisted projections, per-scope coverage, replay batching, scoped maps and dependencies.
-Probe command metadata and receipt shapes are specified in engine.md §§2.4, 6.4 and 7.1.
+platform capture, actual changed-slot versions (a consequence's version of a register an ordinary
+delta also wrote included), owned lifecycle watermarks, serial-only rows, atomic receipt/response
+budget refusals and `probe.branch`'s replay by its receipt. Its effect-plan fixture may supply
+internal serial `v` values: remove them before ordinary wire shaping, then restore them to the
+internal delta for normal generated-effect validation. `write/scoped-predictions.json` uses ordinary
+client steps to assert persisted projections, per-scope coverage, replay batching (a new replica's
+replay included), scoped maps, the accepted versions ordinary deltas draw and guard at, and
+dependencies. Receipt shapes are specified in engine.md §6.4 and the scoped commit options in §7.1.
 
 ### pull/serve.json and pull/hello.json (server)
 

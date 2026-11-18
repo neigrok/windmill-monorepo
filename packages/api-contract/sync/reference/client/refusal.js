@@ -25,25 +25,26 @@ function moveRegister(replica, entry, delta, register, n, scope = entry.scope, q
   const current = register === 'life' ? delta.life : delta.f?.[register];
   if (!current || current[1] === n) return;
   const o = current[1];
-  if (register === 'life') {
-    const createsRecord = delta.life[0] === 'alive' && delta.born === o;
-    delta.life = [delta.life[0], n];
-    if (createsRecord) delta.born = n;
-    for (const later of laterUnacked(replica, entry)) {
-      if ((queuedOnly || entry.predictions) && !isQueued(later)) continue;
-      for (const other of effectsOf(later).filter((effect) => effect.scope === scope).flatMap(({ d }) => d)) {
-        if (other.t !== delta.t || !sameJson(other.id, delta.id)) continue;
+  const createsRecord = register === 'life' && delta.life[0] === 'alive' && delta.born === o;
+  if (register === 'life') delta.life = [delta.life[0], n];
+  else delta.f[register] = [delta.f[register][0], n];
+  if (createsRecord) delta.born = n;
+  followRegister(replica, entry, scope, delta, register, o, n, { createsRecord, queuedOnly: queuedOnly || entry.predictions !== undefined });
+}
+
+// What follows a record's register from stamp `o` to `n` in the entries after `entry`, in `scope`: the
+// borns of a record it creates and the lives that carry it, or the guards on a field.
+function followRegister(replica, entry, scope, record, register, o, n, { createsRecord = false, queuedOnly = false } = {}) {
+  const sameRecord = (other) => other.t === record.t && sameJson(other.id, record.id);
+  for (const later of laterUnacked(replica, entry)) {
+    if (queuedOnly && !isQueued(later)) continue;
+    if (register === 'life') {
+      for (const other of effectsOf(later).filter((effect) => effect.scope === scope).flatMap(({ d }) => d).filter(sameRecord)) {
         if (createsRecord && other.born === o) other.born = n;
         if (other.life?.[1] === o) other.life = [other.life[0], n];
       }
-    }
-    return;
-  }
-  delta.f[register] = [delta.f[register][0], n];
-  for (const later of laterUnacked(replica, entry)) {
-    if (later.scope !== scope || ((queuedOnly || entry.predictions) && !isQueued(later))) continue;
-    for (const guard of later.intent.guard ?? []) {
-      if (guard.t === delta.t && sameJson(guard.id, delta.id) && guard.field === register && guard.stamp === o) guard.stamp = n;
+    } else if (later.scope === scope) {
+      for (const guard of later.intent.guard ?? []) if (sameRecord(guard) && guard.field === register && guard.stamp === o) guard.stamp = n;
     }
   }
 }
@@ -388,6 +389,10 @@ function applyScopedWriteMap(replica, ctx, command, write) {
   }
 }
 
+// The receipt's accepted versions reach what the command wrote at its own stamps: its predictions move
+// to them, and what later queued entries carry of its ordinary deltas, of its predictions and, on a
+// replay, of its previous receipt follows them. The numbered ordinary deltas themselves never change;
+// views draw them at these versions (effectsOf). Later queued writes of a versioned register reclock.
 export function applyAcceptedVersions(replica, ctx, command, effects, previous = []) {
   const stamps = effects.flatMap(({ rows }) => rows.flatMap(({ slots }) => slots.filter(({ version }) => version.kind === 'stamp').map(({ version }) => version.stamp)));
   replica.observe(stamps);
@@ -401,39 +406,30 @@ export function applyAcceptedVersions(replica, ctx, command, effects, previous =
       return stamp !== undefined && Stamp.compare(stamp, entry.stamp) >= 0 ? [{ delta, register, scope }] : [];
     });
   }))]));
+  const stampIn = (delta, slot) => slot.kind === 'born' ? delta.born : slot.kind === 'life' ? delta.life?.[1] : delta.f?.[slot.name]?.[1];
   for (const { scope, rows } of effects) for (const row of rows) {
     const matches = (delta) => delta.t === row.t && sameJson(delta.id, row.id);
+    const ordinary = scope === command.scope ? (command.intent.d ?? []).filter(matches) : [];
     const predicted = predictionsOf(command).filter((group) => group.scope === scope).flatMap(({ d }) => d).filter(matches);
+    const prior = previous.find((effect) => effect.scope === scope)?.rows.find(matches)?.slots ?? [];
     for (const { slot, version } of row.slots) {
       if (version.kind !== 'stamp') continue;
-      const prior = previous.find((effect) => effect.scope === scope)?.rows.find(matches)?.slots
-        .find((item) => item.slot.kind === slot.kind && item.slot.name === slot.name)?.version;
-      if (prior?.kind === 'stamp' && prior.stamp !== version.stamp) for (const entry of later) {
-        for (const group of effectsOf(entry)) {
-          if (group.scope !== scope) continue;
-          for (const delta of group.d.filter(matches)) {
-            if (slot.kind === 'born' && delta.born === prior.stamp) delta.born = version.stamp;
-            if ((slot.kind === 'born' || slot.kind === 'life') && delta.life?.[1] === prior.stamp) delta.life[1] = version.stamp;
-          }
-        }
-        if (slot.kind === 'field' && entry.scope === scope) for (const guard of entry.intent.guard ?? []) {
-          if (matches(guard) && guard.field === slot.name && guard.stamp === prior.stamp) guard.stamp = version.stamp;
-        }
-      }
+      const n = version.stamp;
+      const register = slot.kind === 'field' ? slot.name : 'life';
+      const follow = (o) => {
+        if (o !== undefined && o !== n) followRegister(replica, command, scope, row, register, o, n, { createsRecord: slot.kind === 'born', queuedOnly: true });
+      };
+      const before = prior.find((item) => item.slot.kind === slot.kind && item.slot.name === slot.name)?.version;
+      if (before?.kind === 'stamp') follow(before.stamp);
+      for (const delta of ordinary) follow(stampIn(delta, slot));
       for (const delta of predicted) {
-        if (slot.kind === 'born' && delta.born !== undefined) {
+        if (slot.kind !== 'born') moveRegister(replica, command, delta, register, n, scope, true);
+        else if (delta.born !== undefined) {
           const old = delta.born;
-          delta.born = version.stamp;
-          if (delta.life?.[0] === 'alive' && delta.life[1] === old) delta.life[1] = version.stamp;
-          for (const entry of later) for (const group of effectsOf(entry)) {
-            if (group.scope !== scope) continue;
-            for (const other of group.d.filter(matches)) {
-              if (other.born === old) other.born = version.stamp;
-              if (other.life?.[1] === old) other.life[1] = version.stamp;
-            }
-          }
+          delta.born = n;
+          if (delta.life?.[0] === 'alive' && delta.life[1] === old) delta.life = ['alive', n];
+          follow(old);
         }
-        if (slot.kind === 'life' || slot.kind === 'field') moveRegister(replica, command, delta, slot.kind === 'life' ? 'life' : slot.name, version.stamp, scope, true);
       }
     }
   }
