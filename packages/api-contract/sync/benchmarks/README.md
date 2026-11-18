@@ -37,9 +37,14 @@ node packages/api-contract/sync/benchmarks/browser.mjs \
 
 The runner serves an isolated Vite page, uses Chromium's real IndexedDB, and sends HTTP requests to
 the JavaScript model server. Timers are disabled so explicit engine pull rounds cannot race a sender.
-`--scenario large|many|pending` selects one case. Each case has a fresh browser context and database.
-The report includes the source commit, dirty-tree flag, browser/host versions, client timings, and
-individual model-server request times. The server and browser close on completion or failure.
+`--scenario large|many|pending` selects one case. Each case has a fresh browser profile and database.
+`--storage disk`, the default, keeps that profile in a temporary directory, so IndexedDB writes to
+disk as a person's browser does. `--storage memory` uses an ephemeral context instead, whose in-memory
+IndexedDB costs more per row as the database grows. `--profile DIRECTORY` writes one V8 CPU profile per
+measured phase, `<scenario>-<phase>.cpuprofile`, which DevTools opens; profiled timings include the
+sampler's overhead. The report includes the source commit, dirty-tree flag, storage, browser/host
+versions, client timings, and individual model-server request times. The server, browser and
+profile directory close on completion or failure.
 
 ## Swift
 

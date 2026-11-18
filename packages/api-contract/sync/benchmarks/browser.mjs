@@ -9,11 +9,15 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const { values } = parseArgs({ options: {
   fixtures: { type: 'string' }, output: { type: 'string' },
-  port: { type: 'string', default: '5347' }, scenario: { type: 'string' },
+  port: { type: 'string', default: '5347' }, scenario: { type: 'string' }, profile: { type: 'string' },
+  storage: { type: 'string', default: 'disk' },
 } });
-if (!values.fixtures || !values.output) throw new Error('usage: node browser.mjs --fixtures DIRECTORY --output FILE [--port PORT] [--scenario NAME]');
+if (!values.fixtures || !values.output) throw new Error('usage: node browser.mjs --fixtures DIRECTORY --output FILE [--port PORT] [--scenario NAME] [--storage disk|memory] [--profile DIRECTORY]');
+assert(['disk', 'memory'].includes(values.storage), 'storage is disk or memory');
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const fixtureDirectory = resolve(values.fixtures), reportPath = resolve(values.output);
+const profileDirectory = values.profile ? resolve(values.profile) : null;
+if (profileDirectory) mkdirSync(profileDirectory, { recursive: true });
 const port = Number(values.port);
 assert(Number.isInteger(port) && port > 0 && port <= 65535);
 const manifest = JSON.parse(readFileSync(join(fixtureDirectory, 'manifest.json'), 'utf8'));
@@ -54,18 +58,31 @@ server = await createServer({ configFile: false, root: `${root}/web`, cacheDir: 
   } }], server: { host: '127.0.0.1', port, strictPort: true, fs: { allow: [root] } } });
 const listening = once(server.httpServer, 'listening'); server.httpServer.listen(port, '127.0.0.1'); await listening;
 let browser;
+const storage = { disk: 'Chromium IndexedDB in a persistent profile on disk', memory: 'Chromium IndexedDB in an ephemeral in-memory context' }[values.storage];
 const sourceHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 let results = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, 'utf8')) : [];
 try {
-  browser = await chromium.launch({ channel: 'chromium', headless: true });
+  if (values.storage === 'memory') browser = await chromium.launch({ channel: 'chromium', headless: true });
   for (const scenario of (values.scenario ? [values.scenario] : Object.keys(manifest.scenarios))) {
     assert(Object.hasOwn(manifest.scenarios, scenario));
     state = new ServerState(JSON.parse(readFileSync(join(fixtureDirectory, `${scenario}.json`), 'utf8'))); serverTimes.length = 0;
-    const context = await browser.newContext();
+    const profileHome = mkdtempSync(join(tmpdir(), 'windmill-scale-chromium-'));
+    const context = values.storage === 'memory' ? await browser.newContext()
+      : await chromium.launchPersistentContext(profileHome, { channel: 'chromium', headless: true });
     try {
       const page = await context.newPage();
+      if (profileDirectory) {
+        const profiler = await context.newCDPSession(page);
+        await profiler.send('Profiler.enable');
+        await profiler.send('Profiler.setSamplingInterval', { interval: 200 });
+        await page.exposeFunction('scaleProfile', async (phase, action) => {
+          if (action === 'start') { await profiler.send('Profiler.start'); return; }
+          const { profile } = await profiler.send('Profiler.stop');
+          writeFileSync(join(profileDirectory, `${scenario}-${phase}.cpuprofile`), JSON.stringify(profile));
+        });
+      }
       await page.goto(`http://127.0.0.1:${port}/scale`);
-      const measured = await page.evaluate(async ({ scenario, reference, probe, pendingEntries, expected, tree }) => {
+      const measured = await page.evaluate(async ({ scenario, reference, probe, pendingEntries, expected, tree, profiling }) => {
         const { BrowserSyncEngine } = await import('/src/platform/sync/engine.js');
         const { Registry } = await import(`/@fs${reference}core/registry.js`);
         const registry = new Registry(probe), name = `scale-${scenario}`;
@@ -89,12 +106,17 @@ try {
         let engine = await BrowserSyncEngine.open(options);
         const scope = tree;
         const check = (ok, message) => { if (!ok) throw new Error(message); };
-        const result = { scenario, storage: 'Chromium IndexedDB', transport: 'HTTP to JS reference server; explicit engine rounds', browser: navigator.userAgent };
+        const result = { scenario, transport: 'HTTP to JS reference server; explicit engine rounds', browser: navigator.userAgent };
         const measure = async (key, body) => {
-          const previous = operation; operation = key.replace(/Ms$/, '');
+          const previous = operation, phase = key.replace(/Ms$/, '');
+          operation = phase;
+          if (profiling) await window.scaleProfile(phase, 'start');
           const start = performance.now();
           try { const value = await body(); result[key] = +(performance.now() - start).toFixed(1); return value; }
-          finally { operation = previous; }
+          finally {
+            operation = previous;
+            if (profiling) await window.scaleProfile(phase, 'stop');
+          }
         };
         if (scenario === 'pending') {
           operation = 'fixtureSeed';
@@ -174,7 +196,9 @@ try {
         result.failures = failures; result.events = [...new Set(events)];
         engine.close(); return result;
       }, { scenario, reference, probe: JSON.parse(readFileSync(join(root, 'packages/api-contract/sync/probe.registry.json'), 'utf8')),
-        pendingEntries: scenario === 'pending' ? pendingEntries : [], expected: manifest.scenarios[scenario], tree: manifest.tree });
+        pendingEntries: scenario === 'pending' ? pendingEntries : [], expected: manifest.scenarios[scenario], tree: manifest.tree,
+        profiling: profileDirectory !== null });
+      measured.storage = storage;
       measured.serverRequests = serverTimes.length;
       measured.serverMs = +serverTimes.reduce((sum, item) => sum + item.ms, 0).toFixed(1);
       measured.sourceHead = sourceHead;
@@ -185,6 +209,6 @@ try {
       results = results.filter((item) => item.scenario !== scenario);
       results.push(measured); console.log(JSON.stringify(measured));
       writeFileSync(reportPath, JSON.stringify(results, null, 2) + '\n');
-    } finally { await context.close(); }
+    } finally { await context.close(); rmSync(profileHome, { recursive: true, force: true }); }
   }
 } finally { await browser?.close(); await server?.close(); rmSync(cache, { recursive: true, force: true }); }
