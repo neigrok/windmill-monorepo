@@ -91,8 +91,9 @@ class Plan {
     var supersededGestures: List<String> = emptyList()
         private set
     private val undoRecipes: MutableList<UndoRecipe> = mutableListOf()
-    // §9.6: the recipes an Undo of the plan's act runs, or null when the plan does not opt into Undo.
-    val undo: List<UndoRecipe>? get() = undoRecipes.toList().takeIf { it.isNotEmpty() }
+    private var undoEvidence = false
+    // §9.6: the recipes an Undo of the plan's act runs, empty for a segment named as evidence alone, or null when the plan does not opt in.
+    val undo: List<UndoRecipe>? get() = undoRecipes.toList().takeIf { it.isNotEmpty() || undoEvidence }
     constructor()
     constructor(running: ServerCommand, predicting: List<Prediction> = emptyList()) {
         var args: Json = Json.Obj(running.args.toList())
@@ -132,6 +133,9 @@ class Plan {
         check(recipes.isNotEmpty()) { "undoBy takes Undo recipes" }
         undoRecipes += recipes
     }
+    // §9.6: names the plan's segment for its act's Undo with no recipe of its own. The engine journals the segment's receipts, which prove
+    // what another segment's command recipe names as evidence, such as a scope the act created and this segment wrote.
+    fun evidenceForUndo() { undoEvidence = true }
     // The plan's recipes in the engine's form as act segment `index` (engine §7.3); a target or record without a scope lives in `scope`.
     fun undoSegment(index: Int, scope: ScopeRef): UndoSegment? = undo?.let { recipes -> UndoSegment(index, recipes.map { recipe -> when (recipe) {
         is UndoRecipe.Fields -> works.windmill.sync.core.UndoRecipe.Fields(recipe.restoreCommand,

@@ -184,7 +184,7 @@ internal object WriteVectors {
             val runner = ActionRunner(phone.replica, registry, FixedZone(0), context)
             input["observe"]?.arr().orEmpty().forEach { phone.engine.subscribe(ScopeRef(it)) }
             fun plans(segments: Json) = segments.arr().map { item -> ScopedPlan(ScopeRef(item.member("scope")), build(item, runner.moment()).also { plan ->
-                item["undo"]?.arr()?.map(::undoRecipe)?.let { plan.undoBy(*it.toTypedArray()) } }) }
+                item["undo"]?.arr()?.map(::undoRecipe)?.let { recipes -> if (recipes.isEmpty()) plan.evidenceForUndo() else plan.undoBy(*recipes.toTypedArray()) } }) }
             fun writing(plans: List<ScopedPlan>) = object : ActAction<Unit, Unit, ProbeRefusal> {
                 override val refusals = ProbeRefusals
                 override fun load(read: ActReader) = Unit
@@ -196,7 +196,17 @@ internal object WriteVectors {
             }
             val (outcome, actId) = try {
                 val declared = input["reversible"]?.bool()
-                if (declared != null) {
+                val save = input["save"]
+                if (save != null) {
+                    val type = draftable(save.member("t").str())
+                    val id = Id(RecordID(save.member("id")), type)
+                    val opened = runner.open(type, id, save["scope"]?.let(::ScopeRef) ?: type.fixtureScope) ?: throw ContractError("a save opens a record the phone holds")
+                    when (val saved = runner.save(opened.edit { (type as ProbeType).entity(id.record, fields(save.member("current"))) }, type, ProbeRefusals) { }) {
+                        is SaveResult.Saved -> Json.objectOf("kind" to Json.of("saved")) to saved.receipt?.gestureId
+                        is SaveResult.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                        is SaveResult.Failed -> Json.objectOf("kind" to Json.of("failed")) to null
+                    }
+                } else if (declared != null) {
                     val segment = plans(input.member("segments")).single()
                     when (val ran = runner.run(object : Action<Unit, Unit, ProbeRefusal> {
                         override val scope = segment.scope
@@ -229,8 +239,9 @@ internal object WriteVectors {
                 }
             }
             val records = input.member("inspect").arr().map { item ->
-                Json.Arr(phone.replica.read(ScopeRef(item.member("scope"))) { it.drawn(item.member("t").str()) }.filter { it.isVisible }
-                    .map { Json.objectOf("id" to it.id.json, "title" to (it.values["title"] ?: Json.Null)) })
+                val field = item["field"]?.str() ?: "title"
+                Json.Arr(runner.read(ScopeRef(item.member("scope"))) { it.repository(Probe.entity(item.member("t").str())).all(ViewMode.drawn) }
+                    .map { Json.objectOf("id" to it.id.json, field to (it.values[field] ?: Json.Null)) })
             }
             Json.objectOf("outcome" to outcome, "results" to Json.Arr(results), "records" to Json.Arr(records))
         }
@@ -306,9 +317,7 @@ internal object WriteVectors {
             SaveDraft.fromDraft(draft, type, ProbeRefusals)
         } else SaveDraft(probe.entity(id, fields(form["f"])), type, ProbeRefusals, placement(form["placement"]), type.fixtureScope)
         val source = VectorReader(VectorRecords(input["drawn"], input["stored"], registry), moment(input).now.ms)
-        val drawn = source.drawn(type.type, id)?.takeIf { it.isVisible }?.let { type.decode(Fields(it)) }
-        val stored = source.stored(type.type, id)
-        val loaded = SaveDraftLoaded(drawn, stored?.takeIf { it.isVisible }?.let { type.decode(Fields(it)) }, stored?.let { type.decode(Fields(it)) }, recordID(input["anchor"]), moment(input), registry.type(type.type)!!)
+        val loaded = save.load(Reader(source, type.fixtureScope, moment(input), registry)).copy(anchor = recordID(input["anchor"]))
         return Json.objectOf("decision" to save.decision(loaded, IDSource(source)).form(type.fixtureScope, registry, { it.form }, { it.form }))
     }
     fun script(input: Json): Json = runBlocking { withActionContext { script(input, it) } }

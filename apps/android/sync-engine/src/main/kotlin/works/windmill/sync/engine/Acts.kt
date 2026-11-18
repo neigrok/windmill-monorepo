@@ -76,13 +76,14 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
 private class UndoPlan(val scope: ScopeRef, val recipes: List<UndoRecipe>, val preimages: List<Preimage>)
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's initial snapshot (§7.3 Undo of
-// an act), each with the confirmed row it was read over (null where none is) and the epoch that row counts in. A slot unset there takes the
-// target's explicit default; with none, the act fails before anything changes. By segment index.
+// an act), each with the confirmed row it was read over (null where none is) and the epoch that row counts in; a life's also keeps the record
+// as read, which a revival draws. A slot unset there takes the target's explicit default; with none, the act fails before anything changes.
+// A segment named with no recipes is journaled for its receipts alone, as evidence, and an act names at least one recipe. By segment index.
 private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int, UndoPlan>? {
     val segments = request.undo ?: return null
     val plan = linkedMapOf<Int, UndoPlan>()
     for (segment in segments) {
-        if (segment.index !in request.scopes.indices || segment.index in plan || segment.recipes.isEmpty()) throw CommitFailure.malformed("undo-segment")
+        if (segment.index !in request.scopes.indices || segment.index in plan) throw CommitFailure.malformed("undo-segment")
         val scope = request.scopes[segment.index]
         val view = drawn(replica, scope)
         for (recipe in segment.recipes) {
@@ -90,11 +91,14 @@ private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int
             if (recipe is UndoRecipe.CreatedRecord && recipe.record.key in view) throw CommitFailure.malformed("undo-created-record-exists")
         }
         val preimages = segment.recipes.filterIsInstance<UndoRecipe.Fields>().flatMap { it.targets }.map { (target, defaultValue) ->
-            Preimage(target, view[target.key]?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"),
-                store.row(replica.id, target.scope, target.key)?.seq, replica.meta["serverEpoch"]?.orNull()?.str())
+            val read = view[target.key]
+            Preimage(target, read?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"),
+                store.row(replica.id, target.scope, target.key)?.seq, replica.meta["serverEpoch"]?.orNull()?.str(),
+                read?.takeIf { target.slot.kind == Slot.Kind.life }?.drawnRecord())
         }
         plan[segment.index] = UndoPlan(scope, segment.recipes, preimages)
     }
+    if (segments.all { it.recipes.isEmpty() }) throw CommitFailure.malformed("undo-recipes")
     return plan
 }
 

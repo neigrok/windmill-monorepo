@@ -27,16 +27,16 @@ internal fun Engine.drawn(replica: ReplicaState, scope: ScopeRef): Map<RecordKey
 private data class PlannedSlot(val scope: ScopeRef, val recipe: SlotRecipe)
 
 // An Undo's slots from its sources' recipes, the last source's first: one restore slot a source for its generic recipes, each target in
-// one slot only, back to its first preimage, and one slot each product recipe.
+// one slot only, back to its first preimage (a revived life with the record that preimage read), and one slot each product recipe.
 private fun plannedSlots(sources: List<SourceEntry>): List<PlannedSlot> {
-    val firstPreimages = linkedMapOf<RecordSlot, Json>()
-    for (preimage in sources.flatMap { it.preimages }) firstPreimages.putIfAbsent(preimage.target, preimage.value)
+    val firstPreimages = linkedMapOf<RecordSlot, Preimage>()
+    for (preimage in sources.flatMap { it.preimages }) firstPreimages.putIfAbsent(preimage.target, preimage)
     val named = mutableSetOf<Any>()
     return sources.asReversed().flatMap { source ->
         val products = source.recipes.filterIsInstance<UndoRecipe.Product>().map { PlannedSlot(source.originScope, SlotRecipe.Product(it)) }
         val operations = source.recipes.flatMap { recipe -> when (recipe) {
             is UndoRecipe.CreatedRecord -> listOf(PlannedOperation.CreatedRecord(recipe.record))
-            is UndoRecipe.Fields -> recipe.targets.map { (target) -> PlannedOperation.Field(target, firstPreimages.getValue(target)) }
+            is UndoRecipe.Fields -> recipe.targets.map { (target) -> firstPreimages.getValue(target).let { PlannedOperation.Field(target, it.value, drawn = it.drawn) } }
             is UndoRecipe.Product -> emptyList()
         } }.filter { named.add(if (it is PlannedOperation.Field) it.target else it.record) }
         val command = source.recipes.mapNotNull { (it as? UndoRecipe.Fields)?.restoreCommand ?: (it as? UndoRecipe.CreatedRecord)?.restoreCommand }.lastOrNull()
@@ -78,10 +78,13 @@ private fun Engine.redoSlots(cancellation: CancellationReceipt): List<PlannedSlo
     return byScope.values.toList()
 }
 
-// The optimistic projection of a restore over `view` at `stamp`: each operation as the restore would write it, one delta a record. An
-// operation whose record the view lacks projects nothing; a create projects only while the record is absent.
+// The optimistic projection of a restore over `view` at `stamp`: each operation as the restore would write it, one delta a record. A
+// record the view lacks is drawn only where a life operation revives it, with the values its preimage read; any other operation on it
+// projects nothing, and a create projects only while the record is absent.
 private fun Engine.projectionOf(view: Map<RecordKey, Json>, operations: List<PlannedOperation>, stamp: Stamp): List<Delta> {
     val deltas = linkedMapOf<RecordKey, Delta>()
+    val revived = operations.filterIsInstance<PlannedOperation.Field>().filter { it.target.slot.kind == Slot.Kind.life && it.drawn != null }
+        .associate { it.target.key to it.drawn!! }
     for (op in operations) {
         val key = op.record.key
         val type = registry.type(key.type)!!
@@ -91,8 +94,10 @@ private fun Engine.projectionOf(view: Map<RecordKey, Json>, operations: List<Pla
                 op.values.texts.mapValues { TextWrite(it.value, TextBase.Text("")) })
             continue
         }
-        val current = view[key] ?: continue
-        val delta = deltas[key] ?: Delta(key, Lattice(born = Lattice(current).born.takeIf { type.hasBorn }))
+        val current = view[key] ?: revived[key] ?: continue
+        val delta = deltas[key] ?: if (key in view) Delta(key, Lattice(born = Lattice(current).born.takeIf { type.hasBorn }))
+            else Delta(key, Lattice(born = Lattice(current).born.takeIf { type.hasBorn }, fields = Lattice(current).fields),
+                current["x"]?.obj().orEmpty().mapValues { TextWrite(it.value.str(), TextBase.Text("")) })
         deltas[key] = when {
             op is PlannedOperation.CreatedRecord -> delta.copy(lattice = Lattice(Life("dead", stamp), delta.lattice.born, delta.lattice.fields))
             op !is PlannedOperation.Field -> delta
@@ -107,14 +112,16 @@ private fun Engine.projectionOf(view: Map<RecordKey, Json>, operations: List<Pla
 // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces, the values the inverted act
 // wrote (`forward`), never what a later local edit shows. A created record comes back by its life only where a write can bring it back, and
 // one the inverse creates goes again by its strict recipe; a product slot has no generic recipe, and its Redo is the product's. A
-// preimage's row is the one its restore writes over, anchored at the restore's ACK.
-private fun Engine.inverseJournal(inverseActId: String, slots: List<Pair<String, PlannedSlot>>, forward: Map<RecordSlot, Json>): ReversibleAct =
+// preimage's row is the one its restore writes over, anchored at the restore's ACK; a created record's keeps the record as `before` drew it.
+private fun Engine.inverseJournal(inverseActId: String, slots: List<Pair<String, PlannedSlot>>, forward: Map<RecordSlot, Json>,
+    before: Map<ScopeRef, Map<RecordKey, Json>>): ReversibleAct =
     ReversibleAct(inverseActId, true, slots.map { (localId, slot) ->
         val recipe = slot.recipe as? SlotRecipe.Restore ?: return@map SourceEntry(localId, slot.scope, emptyList(), emptyList())
         val taken = recipe.operations.mapNotNull { op -> when (op) {
             is PlannedOperation.Field -> forward[op.target]?.let { Preimage(op.target, it) to Written(op.target, op.before) }
             is PlannedOperation.CreatedRecord -> registry.type(op.record.key.type)!!.takeIf { it.identity == "keyed" || it.revivable }
-                ?.let { RecordSlot(op.record, Slot(Slot.Kind.life)).let { target -> Preimage(target, Json.of("alive")) to Written(target, Json.of("dead")) } }
+                ?.let { RecordSlot(op.record, Slot(Slot.Kind.life)).let { target ->
+                    Preimage(target, Json.of("alive"), drawn = before.getValue(slot.scope)[target.key]?.drawnRecord()) to Written(target, Json.of("dead")) } }
             is PlannedOperation.CreateRecord -> null
         } }
         val restorable = taken.takeIf { it.isNotEmpty() }?.let { listOf(UndoRecipe.Fields(recipe.command, it.map { (preimage) -> UndoRecipe.FieldTarget(preimage.target) })) }.orEmpty()
@@ -156,7 +163,7 @@ internal fun Engine.requestInverse(replica: ReplicaState, sourceActId: String, r
     val firstOrder = (replica.outbox.maxOfOrNull { it.order } ?: 0) + 1
     val slots = planned.mapIndexed { k, slot -> "$inverseActId/$k" to slot }
     val before = planned.map { it.scope }.distinct().associateWith { drawn(replica, it) }
-    val journal = inverseJournal(inverseActId, slots, act?.forward() ?: cancellation!!.forward())
+    val journal = inverseJournal(inverseActId, slots, act?.forward() ?: cancellation!!.forward(), before)
     val touched = mutableSetOf<Pair<ScopeRef, RecordKey>>()
     for ((k, pair) in slots.withIndex()) {
         val (localId, slot) = pair
@@ -475,7 +482,10 @@ private fun keepProjection(entry: Entry, operations: List<PlannedOperation>) {
         when {
             kept.isEmpty() -> null
             kept.any { it is PlannedOperation.CreateRecord } -> delta
-            else -> kept.fold(Delta(delta.key, Lattice(born = delta.lattice.born))) { next, op ->
+            else -> kept.fold(Delta(delta.key, Lattice(born = delta.lattice.born))) { built, op ->
+                // A revival keeps the record it draws.
+                val next = if ((op as? PlannedOperation.Field)?.drawn == null) built else Delta(built.key,
+                    Lattice(built.lattice.life, built.lattice.born, delta.lattice.fields + built.lattice.fields), delta.texts + built.texts)
                 val slot = (op as? PlannedOperation.Field)?.target?.slot
                 when (slot?.kind) {
                     null, Slot.Kind.life -> next.copy(lattice = Lattice(delta.lattice.life, next.lattice.born, next.lattice.fields))

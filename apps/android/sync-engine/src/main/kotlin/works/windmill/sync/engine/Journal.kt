@@ -12,12 +12,16 @@ import works.windmill.sync.core.*
 internal fun ordinalOf(localId: String): Int = localId.substringAfterLast('/').toInt()
 
 // A target's value before the act, with the confirmed row it was read over (null where none was) and the epoch that row counts in. An
-// inverse act's preimage is anchored at its restore's ACK to the row the restore wrote over.
-internal data class Preimage(val target: RecordSlot, val value: Json, val rowSeq: Long? = null, val epoch: String? = null) {
-    constructor(json: Json) : this(RecordSlot(json.member("target")), json.member("value"), json["rowSeq"]?.orNull()?.long(), json["epoch"]?.orNull()?.str())
+// inverse act's preimage is anchored at its restore's ACK to the row the restore wrote over. A life's keeps the record as `drawn` read it
+// (`drawn`: its birth, field registers and texts), which a revival draws.
+internal data class Preimage(val target: RecordSlot, val value: Json, val rowSeq: Long? = null, val epoch: String? = null, val drawn: Json? = null) {
+    constructor(json: Json) : this(RecordSlot(json.member("target")), json.member("value"), json["rowSeq"]?.orNull()?.long(), json["epoch"]?.orNull()?.str(), json["record"])
     val json: Json get() = Json.objectOf("target" to target.json, "value" to value, "rowSeq" to (rowSeq?.let(Json::of) ?: Json.Null),
-        "epoch" to (epoch?.let(Json::of) ?: Json.Null))
+        "epoch" to (epoch?.let(Json::of) ?: Json.Null)).with("record" to drawn)
 }
+
+// A record in its view form as a revival draws it: its birth, field registers and texts, never its life.
+internal fun Json.drawnRecord(): Json = Json.objectOf().with("born" to this["born"], "f" to this["f"], "x" to this["x"])
 
 // The value an act left in a target, which a Redo writes back.
 internal data class Written(val target: RecordSlot, val value: Json) {
@@ -108,9 +112,11 @@ internal sealed interface VersionReference {
 internal sealed interface PlannedOperation {
     val record: RecordAddress
     val json: Json
-    data class Field(val target: RecordSlot, val before: Json, val reference: VersionReference? = null) : PlannedOperation {
+    // A field back to `before`; a revived life also carries the record its preimage read (`drawn`).
+    data class Field(val target: RecordSlot, val before: Json, val reference: VersionReference? = null, val drawn: Json? = null) : PlannedOperation {
         override val record: RecordAddress get() = target.record
-        override val json: Json get() = Json.objectOf("kind" to Json.of("field"), "target" to target.json, "before" to before).with("reference" to reference?.json)
+        override val json: Json get() = Json.objectOf("kind" to Json.of("field"), "target" to target.json, "before" to before)
+            .with("reference" to reference?.json, "record" to drawn)
     }
     data class CreatedRecord(override val record: RecordAddress) : PlannedOperation {
         override val json: Json get() = Json.objectOf("kind" to Json.of("createdRecord"), "record" to record.json)
@@ -120,7 +126,7 @@ internal sealed interface PlannedOperation {
     }
     companion object {
         operator fun invoke(json: Json): PlannedOperation = when (json.member("kind").str()) {
-            "field" -> Field(RecordSlot(json.member("target")), json.member("before"), json["reference"]?.let { VersionReference(it) })
+            "field" -> Field(RecordSlot(json.member("target")), json.member("before"), json["reference"]?.let { VersionReference(it) }, json["record"])
             "createdRecord" -> CreatedRecord(RecordAddress(json.member("record")))
             else -> CreateRecord(RecordAddress(json.member("record")), CreationValues(json.member("values")), VersionReference(json.member("reference")))
         }

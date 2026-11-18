@@ -46,7 +46,19 @@ internal object Probe {
     val run: ProbeType = object : ProbeType("run", scope, mapOf("startedAt" to Json.Null, "label" to Json.Null), listOf(TextSpec("run.label", MeasureUnit.chars, 0, 12, true, true))), RemovableType<ProbeEntity> { override val heldRemoval = false }
     val link: ProbeType = object : ProbeType("link", null, mapOf("strength" to Json.Null), listOf(NumberSpec("link.strength", 0.0, 9.0, integer = true))), RemovableType<ProbeEntity> { override val heldRemoval = true }
     val tag: ProbeType = object : ProbeType("tag", null, mapOf("label" to Json.of("")), listOf(TextSpec("tag.label", MeasureUnit.chars, 0, 24, false, false))), RemovableType<ProbeEntity> { override val heldRemoval = false }
-    fun entity(type: String): ProbeType = if (type == "guardedMeta") guardedMeta else listOf(board, card, day, fact, mark, meta, lap, run, link, tag).firstOrNull { it.type == type } ?: throw ContractError("no probe entity $type")
+    // Card, Day and Mark with `savesReversibly` (§10.2): the card unguarded and checking title and body only.
+    val reversibleCard: ProbeType = object : ProbeType("card", scope, mapOf("title" to Json.of(""), "body" to Json.of(""), "size" to Json.Null, "claim" to Json.Null, "tier" to Json.of("draft")),
+        listOf(TextSpec("card.title", MeasureUnit.chars, 1, 12, true, true), TextSpec("card.body", MeasureUnit.bytes, 0, 24, true, true))), DraftableType<ProbeEntity>, OrderedType<ProbeEntity> {
+        override val savesGuarded = false; override val savesReversibly = true; override val orderField = "ord"
+    }
+    val reversibleDay: ProbeType = object : ProbeType("day", scope, mapOf("score" to Json.Null), listOf(NumberSpec("day.score", 0.0, 10.0, integer = true))), DraftableType<ProbeEntity>, RemovableType<ProbeEntity> {
+        override val savesGuarded = false; override val savesReversibly = true; override val heldRemoval = true
+    }
+    val reversibleMark: ProbeType = object : ProbeType("mark", null, mapOf("done" to Json.Null, "memo" to Json.of("")), listOf(TextSpec("mark.memo", MeasureUnit.bytes, 0, 40, false, false))), DraftableType<ProbeEntity> {
+        override val savesGuarded = false; override val savesReversibly = true
+    }
+    private val aliases = mapOf("guardedMeta" to guardedMeta, "reversibleCard" to reversibleCard, "reversibleDay" to reversibleDay, "reversibleMark" to reversibleMark)
+    fun entity(type: String): ProbeType = aliases[type] ?: listOf(board, card, day, fact, mark, meta, lap, run, link, tag).firstOrNull { it.type == type } ?: throw ContractError("no probe entity $type")
 }
 internal sealed interface ProbeRefusal {
     data class Invalid(val violation: Violation) : ProbeRefusal

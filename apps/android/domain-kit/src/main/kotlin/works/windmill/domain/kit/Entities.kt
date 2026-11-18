@@ -23,7 +23,11 @@ fun EntityType<*>.boundScope(actual: ScopeRef? = scope): ScopeRef {
 interface WritableType<E : Writable<E>> : EntityType<E> { val checks: List<Check<E>> }
 interface RemovableType<E : Entity<E>> : EntityType<E> { val heldRemoval: Boolean }
 interface OrderedType<E : Entity<E>> : EntityType<E> { val orderField: String }
-interface DraftableType<E : Writable<E>> : WritableType<E> { val savesGuarded: Boolean }
+interface DraftableType<E : Writable<E>> : WritableType<E> {
+    val savesGuarded: Boolean
+    // §10.2: every save of the type opts into Undo of an act (§9.6).
+    val savesReversibly: Boolean get() = false
+}
 typealias DraftType<E> = DraftableType<E>
 interface TimestampedType<E : Writable<E>> : DraftableType<E> { val timestampField: String }
 interface ValueType<V : ValueObject<V>> { fun decode(f: Fields): V }

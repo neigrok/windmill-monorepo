@@ -64,13 +64,16 @@ interface ActionContext {
 /** The caller injects its coroutine-context element; runners in that context share the nesting flag. */
 class ActionRunner(private val replica: Replica, val registry: Registry, private val zone: Zone,
     private val context: ActionContext) {
-    fun <L, T, R> run(action: Action<L, T, R>): Outcome<T, R> {
-        if (!action.reversible) return perform(action)
-        val scope = action.scope
+    fun <L, T, R> run(action: Action<L, T, R>): Outcome<T, R> = perform(action)
+    // One decider's run: a reversible one through the one-segment act path, so its receipt's gesture id is the act an Undo names (§9.6),
+    // and any other as one commit.
+    internal fun <L, T, R> perform(decider: Decider<L, T, R>): Outcome<T, R> {
+        if (!decider.reversible) return commitOne(decider)
+        val scope = decider.scope
         val outcome = runAct(object : ActAction<L, T, R> {
-            override val refusals = action.refusals
-            override fun load(read: ActReader): L = read.inScope(scope, action::load)
-            override fun decide(loaded: L, ids: ActIDSource): ActDecision<T, R> = when (val decided = action.decision(loaded, ids.inScope(scope))) {
+            override val refusals = decider.refusals
+            override fun load(read: ActReader): L = read.inScope(scope, decider::load)
+            override fun decide(loaded: L, ids: ActIDSource): ActDecision<T, R> = when (val decided = decider.decision(loaded, ids.inScope(scope))) {
                 is Decision.Write -> ActDecision.Write(ActPlan(listOf(ScopedPlan(scope, decided.plan))), decided.result)
                 is Decision.Unchanged -> ActDecision.Unchanged(decided.result)
                 is Decision.Refuse -> ActDecision.Refuse(decided.refusal)
@@ -149,7 +152,7 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
     }
     fun moment(): Moment = Moment(Instant(replica.physNow()), zone)
 
-    internal fun <L, T, R> perform(decider: Decider<L, T, R>): Outcome<T, R> {
+    private fun <L, T, R> commitOne(decider: Decider<L, T, R>): Outcome<T, R> {
         check(!context.insideRun) { "a run cannot enter inside a run" }
         context.insideRun = true
         try {
