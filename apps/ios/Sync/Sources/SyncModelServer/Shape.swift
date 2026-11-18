@@ -165,6 +165,16 @@ public struct CheckedCommand: Sendable, Hashable {
     hasher.combine(Array(name.utf8))
     hasher.combine(args)
   }
+
+  // A string argument, "" when it holds none.
+  func string(_ argument: String) -> String {
+    (try? args[argument]?.asString()) ?? ""
+  }
+
+  // A string member of an inverse command's `input`, "" when it holds none.
+  func input(_ member: String) -> String {
+    (try? args["input"]?[member]?.asString()) ?? ""
+  }
 }
 
 public struct CheckedIntent: Sendable, Hashable {

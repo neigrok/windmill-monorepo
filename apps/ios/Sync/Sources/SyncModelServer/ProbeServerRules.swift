@@ -66,14 +66,8 @@ public struct ProbeServerRules: ServerRules {
       .map { PlannedDelta.serverDelete($0.key, born: $0.lattice.born) }
   }
 
-  // Revisions sort by record, field and rev, so each field's latest is the last of its run.
   public func keptRevisions(_ revisions: [Revision]) -> [Revision] {
-    var latest: [Revision] = []
-    for revision in revisions.sorted() {
-      if let last = latest.last, last.key == revision.key, last.field.isSameID(as: revision.field) { latest.removeLast() }
-      latest.append(revision)
-    }
-    return latest
+    Revision.latestOfEachField(revisions)
   }
 
   // MARK: - Commands
@@ -288,16 +282,5 @@ public struct ProbeServerRules: ServerRules {
     tables[context.scope.text] = .object(entries)
     product[table] = .object(tables)
     return product
-  }
-}
-
-extension CheckedCommand {
-  func string(_ argument: String) -> String {
-    (try? args[argument]?.asString()) ?? ""
-  }
-
-  // A member of an inverse command's `input`.
-  func input(_ member: String) -> String {
-    (try? args["input"]?[member]?.asString()) ?? ""
   }
 }

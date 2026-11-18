@@ -137,18 +137,25 @@ public struct RuleContext: Sendable {
   // §6.4 the first condition a product inverse command's evidence breaks against the scopes as stored, or nil: another
   // epoch, an owned field another write moved, a created record or a created scope changed since.
   public func skip(by evidence: Evidence) throws(AdmissionFault) -> String? {
+    try skip(by: evidence) { (key: RecordKey, scope: ScopeKey) throws(AdmissionFault) -> Row? in try stored(key, in: scope) }
+  }
+
+  // The same against rows `row` reads, each in the scope its reference names for this account.
+  func skip(by evidence: Evidence, reading row: (RecordKey, ScopeKey) throws(AdmissionFault) -> Row?) throws(AdmissionFault) -> String? {
     guard evidence.expectedEpoch.isSameID(as: epoch) else { return "epoch-changed" }
     for owned in evidence.ownedFields {
-      let row: Row? = try ScopeKey(owned.target.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
-        try stored(owned.target.key, in: key)
+      let found: Row? = try ScopeKey(owned.target.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
+        try row(owned.target.key, key)
       }
-      guard row?.version(of: owned.target.slot) == owned.version else { return "version-changed" }
+      guard found?.version(of: owned.target.slot) == owned.version else { return "version-changed" }
     }
     for created in evidence.unchangedCreatedRecords {
-      let row: Row? = try ScopeKey(created.record.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
-        try stored(created.record.key, in: key)
+      let found: Row? = try ScopeKey(created.record.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
+        try row(created.record.key, key)
       }
-      guard let row, row.lattice.life?.isAlive == true, row.seq == created.rowSeq, row.footprint == created.footprint else { return "record-changed" }
+      guard let found, found.lattice.life?.isAlive == true, found.seq == created.rowSeq, found.footprint == created.footprint else {
+        return "record-changed"
+      }
     }
     for created in evidence.unchangedCreatedScopes where ScopeKey(created.scope, account: account).flatMap(seq(of:)) != created.seq {
       return "scope-changed"

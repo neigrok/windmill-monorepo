@@ -9,6 +9,7 @@ enum ServerHandlers {
   static let probe = try! Corpus.probeRegistry()
   static let journal = try! Registry(json: Corpus.registryFile("journal"))
   static let gym = try! Registry(json: Corpus.registryFile("gym"))
+  static let roadmap = try! Registry(json: Corpus.registryFile("roadmap"))
 
   static let table: [String: @Sendable (JSON) throws -> JSON] = files.merging(admitFiles) { $1 }
 
@@ -41,6 +42,7 @@ enum ServerHandlers {
       return ["kept": .array(JournalServerRules.prune(rows, days: days, serverNow: try input.member("serverNow").asInteger()).map { JSON($0.rev) })]
     },
     "gym/admit.json": { try admit($0, registry: gym, rules: GymServerRules()) },
+    "roadmap/admit.json": { try admit($0, registry: roadmap, rules: RoadmapServerRules()) },
     "push/serve.json": { try push($0) },
     "pull/serve.json": { try pull($0) },
     "live/death.json": { input in
