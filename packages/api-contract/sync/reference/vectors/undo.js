@@ -719,11 +719,72 @@ function startRelease() {
   return [sample];
 }
 
+// A segment named with no recipes runs as a scoped intent and journals its receipts for evidence: a creation in
+// two segments proves the tree it created to its Undo only through the second segment's receipt.
+function evidenceOnly() {
+  const child = 'b_00000002';
+  const childTree = `tree/${child}`;
+  const unbranch = { kind: 'command', command: 'probe.unbranch', input: { parent: BOARD, child, title: 'Root' },
+    evidence: { ownedFields: [], unchangedCreatedRecords: [{ scope: 'self/probe', t: 'board', id: child }], unchangedCreatedScopes: [childTree] } };
+  const create = (named) => ({ op: 'commitAct', deviceNow: 5000, segments: [
+    { scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: child }] },
+    { scope: childTree, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Child' } }] },
+  ], opts: { undo: { version: 1, segments: [{ index: 0, recipes: [unbranch] }, ...(named ? [{ index: 1, recipes: [] }] : [])] } } });
+  const run = (named) => {
+    const session = new Session(world()).local(create(named));
+    session.flush();
+    session.local(requestStep('g1'));
+    session.flush();
+    session.pull(['self/probe']);
+    return session.local({ op: 'readInverseResult', requestId: 'g3' }, viewStep('self/probe'));
+  };
+  const proven = run(true).vector('a segment named with no recipes journals its receipts, which prove the tree its act created to the act\'s Undo');
+  assert.deepEqual(journalOf(proven)[0].sourceEntries.map(({ originScope, recipes }) => [originScope, recipes.length]), [['self/probe', 1], [childTree, 0]]);
+  assert.deepEqual(proven.expect.returns.at(-2), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.ok(!proven.expect.returns.at(-1).records.some((record) => record.t === 'board' && record.id === child));
+  const unproven = run(false).vector('a created tree another segment of the act wrote is unproven without that segment\'s receipt, and the Undo skips');
+  assert.deepEqual(unproven.expect.returns.at(-2), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: false, appliedCount: 0, skippedCount: 1 });
+  const bare = new Session(world()).local({ ...titleAct({ recipes: false }), opts: { undo: { version: 1, segments: [{ index: 0, recipes: [] }, { index: 1, recipes: [] }] } } })
+    .vector('an act whose Undo names no recipe at all throws malformed before anything changes');
+  assert.deepEqual(bare.expect.returns, [{ throws: true }]);
+  return [proven, unproven, bare];
+}
+
+// A restore that revives a record draws it at once with the values its preimage read, though the replica already
+// pulled its death; a Redo of a created record's Undo draws it back the same way.
+function revival() {
+  const labelOf = (returned, id) => returned.records.find((record) => record.t === 'tag' && record.id === id && record.life?.[0] === 'alive')?.f?.label?.[0] ?? null;
+  const remove = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'oak' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'oak', 'life') }] }] }] } } };
+  const undone = new Session(world()).local(remove);
+  undone.flush();
+  undone.pull([TREE]);
+  const at = undone.steps.length;
+  undone.local(viewStep(TREE), requestStep('g1'), viewStep(TREE));
+  const offline = undone.vector('an Undo of a delete whose death the replica already pulled draws the record back at once, with the fields it had');
+  const [before, , after] = offline.expect.returns.slice(at);
+  assert.deepEqual([labelOf(before, 'oak'), labelOf(after, 'oak')], [null, 'Oak']);
+
+  const create = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: TREE, t: 'tag', id: 'elm' } }] }] } } };
+  const redone = new Session(world()).local(create);
+  redone.flush();
+  redone.local(requestStep('g1'));
+  redone.flush();
+  redone.pull([TREE]);
+  const from = redone.steps.length;
+  redone.local(viewStep(TREE), requestStep('g2', 9500), viewStep(TREE));
+  const redrawn = redone.vector('a Redo of a created record\'s Undo draws the record back at once, with the fields the Undo took away');
+  const [gone, , back] = redrawn.expect.returns.slice(from);
+  assert.deepEqual([labelOf(gone, 'elm'), labelOf(back, 'elm')], [null, 'Elm']);
+  return [offline, redrawn];
+}
+
 export function files() {
   return {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival()],
   };
 }

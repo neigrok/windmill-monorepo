@@ -1383,8 +1383,8 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   under its own scopedEffects command or its scope kind's capture command when it writes a delta; the
   act's `ReversibleAct` holds one source entry per named segment that left an entry, with the first
   local preimages read before any segment changed a projection, each with the confirmed row sequence and
-  epoch it was read at (an unset slot takes the target's `defaultValue`, and with none the act throws),
-  and the value the act left in each target. A malformed recipe throws before anything changes. Each
+  epoch it was read at (an unset slot takes the target's `defaultValue`, and with none the act throws), a
+  life's with the record it read, and the value the act left in each target. A malformed recipe throws before anything changes. Each
   source's ACK records `{epoch, n, outcome, acceptedEffects?}` in the result's transaction, one attempt an
   epoch; a death before the ACK records nothing and the resend's replayed result is retained; settling
   collects the entry, never the attempt. An epoch change drops other-epoch attempts: a requeued source
@@ -1413,7 +1413,10 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   pending entry's accepted version, binds an ordinary pending edit's own write, and restores nothing for a
   write a later local edit masked; a cancelled product command has no generic Redo, and takes the
   product's slots when given; a result whose inverse outcomes are malformed settles its slot skipped and
-  later work goes on; a Discard at sign-in settles a pending inverse skipped with its values withdrawn.
+  later work goes on; a Discard at sign-in settles a pending inverse skipped with its values withdrawn; a
+  segment named with no recipes journals its receipts, which prove a tree the act created to its Undo,
+  while an act whose Undo names no recipe at all throws; an Undo of a delete whose death the replica already
+  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had.
 
 ### refusal/*.json
 

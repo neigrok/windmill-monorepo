@@ -67,7 +67,8 @@ export function sameJson(a, b) {
 
 // An entity's declaration (§3.1): its registry type, optional fixed scope, decoder, and
 // the protocols it takes. `checks` makes it Writable, `heldRemoval` Removable, `orderField` Ordered,
-// `savesGuarded` Draftable and `timestampField` Timestamped.
+// `savesGuarded` Draftable and `timestampField` Timestamped. `savesReversibly` opts a Draftable's saves into
+// Undo of an act (§10.2).
 /**
  * @template E
  * @template {string | null} [S=string | null]
@@ -75,11 +76,12 @@ export function sameJson(a, b) {
 export class EntityType {
   /**
    * @param {{ type: string, scope: S, decode: (f: Fields) => E, checks?: import('./validation.js').Check<E>[],
-   *   heldRemoval?: boolean, orderField?: string, savesGuarded?: boolean, timestampField?: string }} declaration
+   *   heldRemoval?: boolean, orderField?: string, savesGuarded?: boolean, savesReversibly?: boolean, timestampField?: string }} declaration
    */
-  constructor({ type, scope, decode, checks, heldRemoval, orderField, savesGuarded, timestampField }) {
+  constructor({ type, scope, decode, checks, heldRemoval, orderField, savesGuarded, savesReversibly, timestampField }) {
     precondition(savesGuarded === undefined || checks !== undefined, `${type}: a Draftable entity is Writable`);
     precondition(timestampField === undefined || savesGuarded !== undefined, `${type}: a Timestamped entity is Draftable`);
+    precondition(savesReversibly === undefined || savesGuarded !== undefined, `${type}: a reversible save is a Draftable's`);
     this.type = type;
     this.scope = scope;
     this.decode = decode;
@@ -87,6 +89,7 @@ export class EntityType {
     this.heldRemoval = heldRemoval ?? null;
     this.orderField = orderField ?? null;
     this.savesGuarded = savesGuarded ?? null;
+    this.savesReversibly = savesReversibly === true;
     this.timestampField = timestampField ?? null;
     Object.freeze(this);
   }

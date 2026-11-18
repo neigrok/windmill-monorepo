@@ -363,7 +363,10 @@ public protocol Writable: Entity {
 }
 public protocol Removable: Entity { static var heldRemoval: Bool { get } }
 public protocol Ordered: Entity { static var orderField: String { get } }
-public protocol Draftable: Writable { static var savesGuarded: Bool { get } }
+public protocol Draftable: Writable {
+  static var savesGuarded: Bool { get }
+  static var savesReversibly: Bool { get }         // false unless declared (§10.2)
+}
 public protocol Timestamped: Draftable { static var timestampField: String { get } }
 
 public struct ID<E: Entity>: Hashable, Comparable, Sendable {
@@ -388,7 +391,10 @@ interface EntityType<E : Entity<E>> {                             // the entity'
 interface WritableType<E : Writable<E>> : EntityType<E> { val checks: List<Check<E>> }
 interface RemovableType<E : Entity<E>> : EntityType<E> { val heldRemoval: Boolean }
 interface OrderedType<E : Entity<E>> : EntityType<E> { val orderField: String }
-interface DraftType<E : Writable<E>> : WritableType<E> { val savesGuarded: Boolean }
+interface DraftType<E : Writable<E>> : WritableType<E> {
+    val savesGuarded: Boolean
+    val savesReversibly: Boolean get() = false    // §10.2
+}
 interface TimestampedType<E : Writable<E>> : DraftType<E> { val timestampField: String }
 @JvmInline value class Id<E>(val record: RecordId) { constructor(day: LocalDay) : this(RecordId(day.text)) }
 ```
@@ -435,6 +441,7 @@ Rules:
   delete it. `heldRemoval` is true iff the binding holds that delete (engine Appendix A, "Held").
 - `Ordered.orderField` names a client `lww` field whose domain is `fracKey`.
 - `Draftable.savesGuarded` is true iff the binding guards the type's editor save.
+- `Draftable.savesReversibly` is true iff every save of the type opts into Undo of an act (§10.2, §9.6).
 - A registry type flagged `wholePut` (engine §2.4) is one fact, saved whole: its entity writes every
   client-written field of the type, and a `Draftable` of it saves unguarded (§10.2 step 1).
 - `Timestamped.timestampField` names the field that records each save's own moment: a client `lww`
@@ -967,6 +974,7 @@ public struct Plan: Sendable {
   public mutating func guardRead<E: Entity>(_ id: ID<E>, fields: [String])
   public mutating func device(_ key: String, _ value: JSON?)
   public mutating func undoBy(_ recipes: UndoRecipe...)                                    // §9.6
+  public mutating func evidenceForUndo()                                                    // §9.6
   public var undo: (version: Int, recipes: [UndoRecipe])? { get }
 }
 ```
@@ -987,8 +995,9 @@ public struct Plan: Sendable {
   step 10).
 - An action builds a plan from the value it loaded and names only the fields its caller set, never
   every field, so a value another writer stored is never rewritten by normalisation.
-- `undoBy` opts the plan's act into Undo after its hold with the recipes an Undo runs (§9.6); `undo` is
-  them as engine §7.3's `{version: 1, recipes}`, or nil.
+- `undoBy` opts the plan's act into Undo after its hold with the recipes an Undo runs (§9.6); `evidenceForUndo`
+  names the plan's segment for that Undo with no recipe of its own; `undo` is them as engine §7.3's
+  `{version: 1, recipes}`, with `recipes` empty for evidence alone, or nil.
 
 ### §8.2 Translation to one gesture
 
@@ -1293,6 +1302,9 @@ public struct ProductSlot: Sendable { public let index: Int; public let scope: S
   its own writes are all that changed it; or a product `inverse: true` command over evidence the engine builds
   (owned fields, created records, created scopes; engine §6.4). A target unset before the act carries the
   value equivalent to unset as its default. A target or record without a scope lives in the plan's.
+- **Evidence.** A plan whose segment writes what another segment's command recipe must prove, such as the
+  first writes of a scope the act created, calls `evidenceForUndo()`: the engine journals that segment's
+  receipts with no recipe of its own, so the evidence holds. An act names at least one recipe.
 - **Acts.** `runAct` translates each segment's recipes into `ActRequest.undo = {version: 1, segments: [{index,
   recipes}]}`, so the engine journals the act (engine §7.3 Undo of an act). A single action declares
   `reversible: true` (JS `reversible`, Swift and Kotlin the `Decider` requirement of the same name) and then runs
@@ -1302,7 +1314,9 @@ public struct ProductSlot: Sendable { public let index: Int; public let scope: S
   cancelled in place (`cancelled`); otherwise the engine reserves the inverse at once (`pending`, with whether
   the device's view changed) and it settles as the act's sources do (`settled`, with whether accepted effects
   changed anything and how many operations applied and skipped). An Undo never erases a write the device had
-  not seen when it acted: such an operation skips, and counts. An act that did not opt in is `unavailable`.
+  not seen when it acted: such an operation skips, and counts. A restore that revives a record draws it at
+  once, with the values it had, though its death was already pulled. An act that did not opt in is
+  `unavailable`.
   `inverseResult(requestId)` reads the result as it stands.
 - **Redo** is `redo(requestId)`: the inverse of the Undo, which writes back the values the act wrote, only
   where the Undo applied, and re-creates no terminal record. `productSlots` replaces the stored recipes whole,
@@ -1446,8 +1460,19 @@ field refuses `stale` against this device's write.
 ### §10.2 Save: `SaveDraft<E, R>`
 
 **Load:** `drawn := find(id, in: .drawn)`, `stored := find(id, in: .stored)`, `folded :=` the record
-of `id` in `stored`, visible or not (ER-3), the reader's moment, and for a new draft of an `Ordered`
-type, `anchor := anchor(placement ?? .bottom)`.
+of `id` in `stored`, visible or not (ER-3), the reader's moment, for a new draft of an `Ordered`
+type, `anchor := anchor(placement ?? .bottom)`, and, when `E.savesReversibly`, the `engine: "restore"`
+command of the type's scope kind that restores the type (none is a programming fault).
+
+**Reversible.** A save of a type that `savesReversibly` is a reversible action (§9.6): `ActionRunner.save`
+runs it through the one-segment act path, and its receipt's gesture id is the act an Undo names. Every plan
+it writes below also names its Undo: a record it creates where no record was (`drawn` and `folded` nil, steps 4
+and 5), where the type has life, governs no tree and is not whole-put, by `createdRecord`; otherwise each field
+it writes by `fields`, a text by its `text` slot, each with the draft base's value as its default, and, for a
+record it brings back to life (present again, a keyed or revivable type with life), its life, `dead` by
+default. A whole-put type, or a written field that is not a client `lww` field or text, is a programming
+fault. Its text restores under engine §7.3's history
+rule: it skips when anything the device had not seen changed the record since it read it.
 
 **Decide**, in order. A `Saved` names the fields the draft takes, a written field at its validated
 value, and `exists`, whether the record is in `stored` after the save:
