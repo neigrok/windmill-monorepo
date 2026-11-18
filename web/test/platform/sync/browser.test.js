@@ -648,7 +648,8 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
       window.sentSaves = [];
       const transport = { async request(endpoint, request) {
         if (endpoint === 'hello') return { response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(),
-          schema: registry.version, minSchema: registry.version, holdsRecords: { gym: false, journal: false } } }, timing: timing() };
+          schema: registry.version, minSchema: registry.version,
+          holdsRecords: Object.fromEntries(Object.keys(registry.products).map((product) => [product, false])) } }, timing: timing() };
         if (endpoint === 'push') {
           sentSaves.push(...request.intents.filter((intent) => intent.cmd?.name === 'journal.savePage').map((intent) => intent.cmd.args));
           return { response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(),

@@ -275,6 +275,7 @@ class Admission {
         return work.rowsOf(key).filter((row) => row.t === t);
       },
       scopedChanges: (key) => [...this.records.values()].filter((record) => record.scopeKey === key),
+      declared: (key) => this.declared === undefined || this.declared.has(key),
       idState: (t, id) => this.idStateOf(scopeKey, registry.type(t), id),
       stored: (t, id) => work.stored(scopeKey, t, id),
       rowsOf: (t) => work.rowsOf(scopeKey).filter((row) => row.t === t),

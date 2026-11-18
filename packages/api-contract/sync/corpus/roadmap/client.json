@@ -1,0 +1,4142 @@
+[
+  {
+    "name": "an offline subtree draws its record, meta, genesis kinds and the step's branch, and settles by the server's answer and pull",
+    "input": {
+      "device": {
+        "active": "rp_0000000000000000000000000000000a",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_0000000000000000000000000000000a",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/roadmap": [
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000002",
+                  "life": [
+                    "alive",
+                    "2000:0:srv"
+                  ],
+                  "born": "2000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "ownership"
+                      },
+                      "2000:0:srv"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000003",
+                  "life": [
+                    "alive",
+                    "3000:0:srv"
+                  ],
+                  "born": "3000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000002",
+                        "step": "lifetimes"
+                      },
+                      "3000:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000004",
+                  "life": [
+                    "alive",
+                    "1500:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1500:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 400,
+                  "ru": 400
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000005",
+                  "life": [
+                    "alive",
+                    "2500:0:srv"
+                  ],
+                  "born": "2500:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "macros"
+                      },
+                      "2500:0:srv"
+                    ]
+                  },
+                  "seq": 5,
+                  "rc": 500,
+                  "ru": 500
+                }
+              ],
+              "tree/t_0000000000000001": [
+                {
+                  "t": "edge",
+                  "id": [
+                    "basics",
+                    "ownership"
+                  ],
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "build",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "terracotta",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "build",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "learn",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "learn",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "milestone",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "gold",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "milestone",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a2",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "reach": [
+                      "public",
+                      "1100:0:srv"
+                    ],
+                    "title": [
+                      "Learn Rust",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "1100:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "node",
+                  "id": "basics",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "basics",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "node",
+                  "id": "ownership",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "branch": [
+                      "t_0000000000000002",
+                      "2000:0:srv"
+                    ],
+                    "color": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "ownership",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                }
+              ]
+            },
+            "cursors": {
+              "self/roadmap": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                "digest": "074ba1b0fcef8ead463d5ffdf8b3288b98848c9b5aa4f954aa81232bf066a8a4",
+                "booted": true
+              },
+              "tree/t_0000000000000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "5b181dce0de22a1226fade80e1bbedd09195ead5930981669e19eb45770b8dc0",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/roadmap",
+          "deviceNow": 5000,
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "roadmap.createSubtree",
+              "args": {
+                "tree": "t_0000000000000001",
+                "root": "t_0000000000000001",
+                "step": "basics",
+                "subtree": "t_00000000000000a1"
+              }
+            },
+            "scopedPredict": [
+              {
+                "scope": "self/roadmap",
+                "changes": [
+                  {
+                    "op": "create",
+                    "t": "tree",
+                    "id": "t_00000000000000a1",
+                    "f": {
+                      "parent": {
+                        "tree": "t_0000000000000001",
+                        "step": "basics"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "scope": "tree/t_00000000000000a1",
+                "changes": [
+                  {
+                    "op": "write",
+                    "t": "meta",
+                    "id": "meta",
+                    "f": {
+                      "root": "t_0000000000000001",
+                      "parent": {
+                        "tree": "t_0000000000000001",
+                        "step": "basics"
+                      },
+                      "depth": 1,
+                      "reach": "public"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "build",
+                    "f": {
+                      "hue": "terracotta",
+                      "label": "Build",
+                      "description": "Things you make",
+                      "ord": "a0"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "learn",
+                    "f": {
+                      "hue": "olive",
+                      "label": "Learn",
+                      "description": "Things you figure out",
+                      "ord": "a1"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "milestone",
+                    "f": {
+                      "hue": "gold",
+                      "label": "Milestone",
+                      "description": "Moments that matter",
+                      "ord": "a2"
+                    }
+                  }
+                ]
+              },
+              {
+                "scope": "tree/t_0000000000000001",
+                "changes": [
+                  {
+                    "op": "update",
+                    "t": "node",
+                    "id": "basics",
+                    "f": {
+                      "branch": "t_00000000000000a1"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "op": "view",
+          "scope": "tree/t_0000000000000001",
+          "withHeld": true
+        },
+        {
+          "op": "view",
+          "scope": "tree/t_00000000000000a1",
+          "withHeld": true
+        },
+        {
+          "op": "view",
+          "scope": "self/roadmap",
+          "withHeld": true
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "deviceNow": 6000,
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 6000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 7,
+                  "write": [
+                    {
+                      "t": "tree",
+                      "id": "t_00000000000000a1",
+                      "born": "6000:0:srv",
+                      "f": {
+                        "parent": "6000:0:srv"
+                      }
+                    }
+                  ],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "self/roadmap",
+                          "beforeSeq": 6,
+                          "seq": 7,
+                          "rows": [
+                            {
+                              "t": "tree",
+                              "id": "t_00000000000000a1",
+                              "beforeRowSeq": null,
+                              "rowSeq": 7,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "born"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "parent"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "scope": "self/overlay/t_0000000000000001",
+                          "beforeSeq": 1,
+                          "seq": 1,
+                          "rows": []
+                        },
+                        {
+                          "scope": "tree/t_0000000000000001",
+                          "beforeSeq": 4,
+                          "seq": 5,
+                          "rows": [
+                            {
+                              "t": "node",
+                              "id": "basics",
+                              "beforeRowSeq": 1,
+                              "rowSeq": 5,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "branch"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "scope": "tree/t_00000000000000a1",
+                          "beforeSeq": null,
+                          "seq": 1,
+                          "rows": [
+                            {
+                              "t": "kind",
+                              "id": "build",
+                              "beforeRowSeq": null,
+                              "rowSeq": 1,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "born"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "description"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "hue"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "label"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "ord"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "t": "kind",
+                              "id": "learn",
+                              "beforeRowSeq": null,
+                              "rowSeq": 1,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "born"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "description"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "hue"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "label"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "ord"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "t": "kind",
+                              "id": "milestone",
+                              "beforeRowSeq": null,
+                              "rowSeq": 1,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "born"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "description"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "hue"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "label"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "ord"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "t": "meta",
+                              "id": "meta",
+                              "beforeRowSeq": null,
+                              "rowSeq": 1,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "depth"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "parent"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "reach"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "root"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "6000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/roadmap",
+            "self/overlay/t_0000000000000001",
+            "tree/t_0000000000000001",
+            "tree/t_00000000000000a1"
+          ]
+        },
+        {
+          "op": "pullResponse",
+          "deviceNow": 6001,
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 6001,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/roadmap",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "tree",
+                      "id": "t_0000000000000001",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "seq": 1,
+                      "rc": 100,
+                      "ru": 100
+                    },
+                    {
+                      "t": "tree",
+                      "id": "t_0000000000000002",
+                      "life": [
+                        "alive",
+                        "2000:0:srv"
+                      ],
+                      "born": "2000:0:srv",
+                      "f": {
+                        "parent": [
+                          {
+                            "tree": "t_0000000000000001",
+                            "step": "ownership"
+                          },
+                          "2000:0:srv"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 200,
+                      "ru": 200
+                    },
+                    {
+                      "t": "tree",
+                      "id": "t_0000000000000003",
+                      "life": [
+                        "alive",
+                        "3000:0:srv"
+                      ],
+                      "born": "3000:0:srv",
+                      "f": {
+                        "parent": [
+                          {
+                            "tree": "t_0000000000000002",
+                            "step": "lifetimes"
+                          },
+                          "3000:0:srv"
+                        ]
+                      },
+                      "seq": 3,
+                      "rc": 300,
+                      "ru": 300
+                    },
+                    {
+                      "t": "tree",
+                      "id": "t_0000000000000004",
+                      "life": [
+                        "alive",
+                        "1500:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1500:0:r_aaaaaaaaaaaa",
+                      "seq": 4,
+                      "rc": 400,
+                      "ru": 400
+                    },
+                    {
+                      "t": "tree",
+                      "id": "t_0000000000000005",
+                      "life": [
+                        "alive",
+                        "2500:0:srv"
+                      ],
+                      "born": "2500:0:srv",
+                      "f": {
+                        "parent": [
+                          {
+                            "tree": "t_0000000000000001",
+                            "step": "macros"
+                          },
+                          "2500:0:srv"
+                        ]
+                      },
+                      "seq": 5,
+                      "rc": 500,
+                      "ru": 500
+                    },
+                    {
+                      "t": "tree",
+                      "id": "t_00000000000000a1",
+                      "life": [
+                        "alive",
+                        "6000:0:srv"
+                      ],
+                      "born": "6000:0:srv",
+                      "f": {
+                        "parent": [
+                          {
+                            "tree": "t_0000000000000001",
+                            "step": "basics"
+                          },
+                          "6000:0:srv"
+                        ]
+                      },
+                      "seq": 7,
+                      "rc": 6000,
+                      "ru": 6000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30",
+                  "more": false,
+                  "seq": 7,
+                  "digest": "3164c229921a1f3c7c0beab3082f6dd2fab091a22db4f2b600d45df72022d02d",
+                  "total": 6
+                },
+                {
+                  "scope": "self/overlay/t_0000000000000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "progress",
+                      "id": "basics",
+                      "f": {
+                        "mark": [
+                          {
+                            "status": "complete",
+                            "outOfOrder": false
+                          },
+                          "1200:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 100,
+                      "ru": 100
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "28bf5cc793a4f419e0c336324802cb9592f1fb7a8ff4f91797faa035d21fd4c6",
+                  "total": 1
+                },
+                {
+                  "scope": "tree/t_0000000000000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "edge",
+                      "id": [
+                        "basics",
+                        "ownership"
+                      ],
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "seq": 1,
+                      "rc": 100,
+                      "ru": 100
+                    },
+                    {
+                      "t": "kind",
+                      "id": "build",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "description": [
+                          "",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "hue": [
+                          "terracotta",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "label": [
+                          "build",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "ord": [
+                          "a0",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 100,
+                      "ru": 100
+                    },
+                    {
+                      "t": "kind",
+                      "id": "learn",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "description": [
+                          "",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "hue": [
+                          "olive",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "label": [
+                          "learn",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "ord": [
+                          "a1",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 100,
+                      "ru": 100
+                    },
+                    {
+                      "t": "kind",
+                      "id": "milestone",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "description": [
+                          "",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "hue": [
+                          "gold",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "label": [
+                          "milestone",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "ord": [
+                          "a2",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 100,
+                      "ru": 100
+                    },
+                    {
+                      "t": "node",
+                      "id": "ownership",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "branch": [
+                          "t_0000000000000002",
+                          "2000:0:srv"
+                        ],
+                        "color": [
+                          "olive",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "label": [
+                          "ownership",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "ord": [
+                          "a1",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 200,
+                      "ru": 200
+                    },
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "reach": [
+                          "public",
+                          "1100:0:srv"
+                        ],
+                        "title": [
+                          "Learn Rust",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1100:0:srv"
+                        ]
+                      },
+                      "seq": 3,
+                      "rc": 300,
+                      "ru": 300
+                    },
+                    {
+                      "t": "node",
+                      "id": "macros",
+                      "life": [
+                        "dead",
+                        "2600:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "seq": 4
+                    },
+                    {
+                      "t": "node",
+                      "id": "basics",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "branch": [
+                          "t_00000000000000a1",
+                          "6000:0:srv"
+                        ],
+                        "label": [
+                          "basics",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "ord": [
+                          "a0",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 5,
+                      "rc": 100,
+                      "ru": 6000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                  "more": false,
+                  "seq": 5,
+                  "digest": "92f0c196a73bc1baf295b21cfabf4e96cd0d408eea58403ee68968e128620ffd",
+                  "total": 8,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "tree/t_00000000000000a1",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "kind",
+                      "id": "build",
+                      "life": [
+                        "alive",
+                        "6000:0:srv"
+                      ],
+                      "born": "6000:0:srv",
+                      "f": {
+                        "description": [
+                          "Things you make",
+                          "6000:0:srv"
+                        ],
+                        "hue": [
+                          "terracotta",
+                          "6000:0:srv"
+                        ],
+                        "label": [
+                          "Build",
+                          "6000:0:srv"
+                        ],
+                        "ord": [
+                          "a0",
+                          "6000:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 6000,
+                      "ru": 6000
+                    },
+                    {
+                      "t": "kind",
+                      "id": "learn",
+                      "life": [
+                        "alive",
+                        "6000:0:srv"
+                      ],
+                      "born": "6000:0:srv",
+                      "f": {
+                        "description": [
+                          "Things you figure out",
+                          "6000:0:srv"
+                        ],
+                        "hue": [
+                          "olive",
+                          "6000:0:srv"
+                        ],
+                        "label": [
+                          "Learn",
+                          "6000:0:srv"
+                        ],
+                        "ord": [
+                          "a1",
+                          "6000:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 6000,
+                      "ru": 6000
+                    },
+                    {
+                      "t": "kind",
+                      "id": "milestone",
+                      "life": [
+                        "alive",
+                        "6000:0:srv"
+                      ],
+                      "born": "6000:0:srv",
+                      "f": {
+                        "description": [
+                          "Moments that matter",
+                          "6000:0:srv"
+                        ],
+                        "hue": [
+                          "gold",
+                          "6000:0:srv"
+                        ],
+                        "label": [
+                          "Milestone",
+                          "6000:0:srv"
+                        ],
+                        "ord": [
+                          "a2",
+                          "6000:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 6000,
+                      "ru": 6000
+                    },
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "depth": [
+                          1,
+                          "6000:0:srv"
+                        ],
+                        "parent": [
+                          {
+                            "tree": "t_0000000000000001",
+                            "step": "basics"
+                          },
+                          "6000:0:srv"
+                        ],
+                        "reach": [
+                          "public",
+                          "6000:0:srv"
+                        ],
+                        "root": [
+                          "t_0000000000000001",
+                          "6000:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 6000,
+                      "ru": 6000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "e037d852c058b7135026661a48ac025dc2b5d86d5eddaa1892b055b47f5a97f7",
+                  "total": 4,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "view",
+          "scope": "tree/t_0000000000000001",
+          "withHeld": true
+        },
+        {
+          "op": "view",
+          "scope": "tree/t_00000000000000a1",
+          "withHeld": true
+        },
+        {
+          "op": "view",
+          "scope": "self/roadmap",
+          "withHeld": true
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "records": [
+            {
+              "t": "edge",
+              "id": [
+                "basics",
+                "ownership"
+              ],
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            {
+              "t": "kind",
+              "id": "build",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "terracotta",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "build",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "learn",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "learn",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "milestone",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "gold",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "milestone",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "reach": [
+                  "public",
+                  "1100:0:srv"
+                ],
+                "title": [
+                  "Learn Rust",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "visibility": [
+                  "public",
+                  "1100:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "node",
+              "id": "basics",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_00000000000000a1",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "basics",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "node",
+              "id": "ownership",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000002",
+                  "2000:0:srv"
+                ],
+                "color": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "ownership",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {
+            "node": 2,
+            "edge": 1,
+            "kind": 3
+          }
+        },
+        {
+          "records": [
+            {
+              "t": "kind",
+              "id": "build",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "Things you make",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "terracotta",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "Build",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "learn",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "Things you figure out",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "olive",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "Learn",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "milestone",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "Moments that matter",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "gold",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "Milestone",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  1,
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "basics"
+                  },
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "reach": [
+                  "public",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {
+            "node": 0,
+            "edge": 0,
+            "kind": 3
+          }
+        },
+        {
+          "records": [
+            {
+              "t": "tree",
+              "id": "t_0000000000000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa"
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000002",
+              "life": [
+                "alive",
+                "2000:0:srv"
+              ],
+              "born": "2000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "ownership"
+                  },
+                  "2000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000003",
+              "life": [
+                "alive",
+                "3000:0:srv"
+              ],
+              "born": "3000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000002",
+                    "step": "lifetimes"
+                  },
+                  "3000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000004",
+              "life": [
+                "alive",
+                "1500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1500:0:r_aaaaaaaaaaaa"
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000005",
+              "life": [
+                "alive",
+                "2500:0:srv"
+              ],
+              "born": "2500:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "macros"
+                  },
+                  "2500:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "tree",
+              "id": "t_00000000000000a1",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "basics"
+                  },
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        {
+          "replica": "rp_0000000000000000000000000000000a",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/roadmap",
+              "cmd": {
+                "name": "roadmap.createSubtree",
+                "args": {
+                  "tree": "t_0000000000000001",
+                  "root": "t_0000000000000001",
+                  "step": "basics",
+                  "subtree": "t_00000000000000a1"
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/roadmap",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0"
+            },
+            {
+              "scope": "self/overlay/t_0000000000000001",
+              "cursor": null
+            },
+            {
+              "scope": "tree/t_0000000000000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30"
+            },
+            {
+              "scope": "tree/t_00000000000000a1",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/roadmap",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/t_0000000000000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/t_0000000000000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/t_00000000000000a1",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [
+            {
+              "t": "edge",
+              "id": [
+                "basics",
+                "ownership"
+              ],
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            {
+              "t": "kind",
+              "id": "build",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "terracotta",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "build",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "learn",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "learn",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "milestone",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "gold",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "milestone",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "reach": [
+                  "public",
+                  "1100:0:srv"
+                ],
+                "title": [
+                  "Learn Rust",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "visibility": [
+                  "public",
+                  "1100:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "node",
+              "id": "basics",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_00000000000000a1",
+                  "6000:0:srv"
+                ],
+                "label": [
+                  "basics",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "node",
+              "id": "ownership",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000002",
+                  "2000:0:srv"
+                ],
+                "color": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "ownership",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {
+            "node": 2,
+            "edge": 1,
+            "kind": 3
+          }
+        },
+        {
+          "records": [
+            {
+              "t": "kind",
+              "id": "build",
+              "life": [
+                "alive",
+                "6000:0:srv"
+              ],
+              "born": "6000:0:srv",
+              "f": {
+                "description": [
+                  "Things you make",
+                  "6000:0:srv"
+                ],
+                "hue": [
+                  "terracotta",
+                  "6000:0:srv"
+                ],
+                "label": [
+                  "Build",
+                  "6000:0:srv"
+                ],
+                "ord": [
+                  "a0",
+                  "6000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "learn",
+              "life": [
+                "alive",
+                "6000:0:srv"
+              ],
+              "born": "6000:0:srv",
+              "f": {
+                "description": [
+                  "Things you figure out",
+                  "6000:0:srv"
+                ],
+                "hue": [
+                  "olive",
+                  "6000:0:srv"
+                ],
+                "label": [
+                  "Learn",
+                  "6000:0:srv"
+                ],
+                "ord": [
+                  "a1",
+                  "6000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "kind",
+              "id": "milestone",
+              "life": [
+                "alive",
+                "6000:0:srv"
+              ],
+              "born": "6000:0:srv",
+              "f": {
+                "description": [
+                  "Moments that matter",
+                  "6000:0:srv"
+                ],
+                "hue": [
+                  "gold",
+                  "6000:0:srv"
+                ],
+                "label": [
+                  "Milestone",
+                  "6000:0:srv"
+                ],
+                "ord": [
+                  "a2",
+                  "6000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  1,
+                  "6000:0:srv"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "basics"
+                  },
+                  "6000:0:srv"
+                ],
+                "reach": [
+                  "public",
+                  "6000:0:srv"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "6000:0:srv"
+                ]
+              }
+            }
+          ],
+          "capCount": {
+            "node": 0,
+            "edge": 0,
+            "kind": 3
+          }
+        },
+        {
+          "records": [
+            {
+              "t": "tree",
+              "id": "t_0000000000000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa"
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000002",
+              "life": [
+                "alive",
+                "2000:0:srv"
+              ],
+              "born": "2000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "ownership"
+                  },
+                  "2000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000003",
+              "life": [
+                "alive",
+                "3000:0:srv"
+              ],
+              "born": "3000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000002",
+                    "step": "lifetimes"
+                  },
+                  "3000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000004",
+              "life": [
+                "alive",
+                "1500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1500:0:r_aaaaaaaaaaaa"
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000005",
+              "life": [
+                "alive",
+                "2500:0:srv"
+              ],
+              "born": "2500:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "macros"
+                  },
+                  "2500:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "tree",
+              "id": "t_00000000000000a1",
+              "life": [
+                "alive",
+                "6000:0:srv"
+              ],
+              "born": "6000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "basics"
+                  },
+                  "6000:0:srv"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        }
+      ],
+      "device": {
+        "active": "rp_0000000000000000000000000000000a",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_0000000000000000000000000000000a",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 6000,
+                "counter": 0
+              },
+              "hlcHigh": "6000:0:srv",
+              "admittedHigh": "6000:0:srv",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 6001,
+                "mono": 6001,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/overlay/t_0000000000000001": [
+                {
+                  "t": "progress",
+                  "id": "basics",
+                  "f": {
+                    "mark": [
+                      {
+                        "status": "complete",
+                        "outOfOrder": false
+                      },
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                }
+              ],
+              "self/roadmap": [
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000002",
+                  "life": [
+                    "alive",
+                    "2000:0:srv"
+                  ],
+                  "born": "2000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "ownership"
+                      },
+                      "2000:0:srv"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000003",
+                  "life": [
+                    "alive",
+                    "3000:0:srv"
+                  ],
+                  "born": "3000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000002",
+                        "step": "lifetimes"
+                      },
+                      "3000:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000004",
+                  "life": [
+                    "alive",
+                    "1500:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1500:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 400,
+                  "ru": 400
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000005",
+                  "life": [
+                    "alive",
+                    "2500:0:srv"
+                  ],
+                  "born": "2500:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "macros"
+                      },
+                      "2500:0:srv"
+                    ]
+                  },
+                  "seq": 5,
+                  "rc": 500,
+                  "ru": 500
+                },
+                {
+                  "t": "tree",
+                  "id": "t_00000000000000a1",
+                  "life": [
+                    "alive",
+                    "6000:0:srv"
+                  ],
+                  "born": "6000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "basics"
+                      },
+                      "6000:0:srv"
+                    ]
+                  },
+                  "seq": 7,
+                  "rc": 6000,
+                  "ru": 6000
+                }
+              ],
+              "tree/t_0000000000000001": [
+                {
+                  "t": "edge",
+                  "id": [
+                    "basics",
+                    "ownership"
+                  ],
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "build",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "terracotta",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "build",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "learn",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "learn",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "milestone",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "gold",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "milestone",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a2",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "reach": [
+                      "public",
+                      "1100:0:srv"
+                    ],
+                    "title": [
+                      "Learn Rust",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "1100:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "node",
+                  "id": "basics",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "branch": [
+                      "t_00000000000000a1",
+                      "6000:0:srv"
+                    ],
+                    "label": [
+                      "basics",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 5,
+                  "rc": 100,
+                  "ru": 6000
+                },
+                {
+                  "t": "node",
+                  "id": "ownership",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "branch": [
+                      "t_0000000000000002",
+                      "2000:0:srv"
+                    ],
+                    "color": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "ownership",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                }
+              ],
+              "tree/t_00000000000000a1": [
+                {
+                  "t": "kind",
+                  "id": "build",
+                  "life": [
+                    "alive",
+                    "6000:0:srv"
+                  ],
+                  "born": "6000:0:srv",
+                  "f": {
+                    "description": [
+                      "Things you make",
+                      "6000:0:srv"
+                    ],
+                    "hue": [
+                      "terracotta",
+                      "6000:0:srv"
+                    ],
+                    "label": [
+                      "Build",
+                      "6000:0:srv"
+                    ],
+                    "ord": [
+                      "a0",
+                      "6000:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 6000,
+                  "ru": 6000
+                },
+                {
+                  "t": "kind",
+                  "id": "learn",
+                  "life": [
+                    "alive",
+                    "6000:0:srv"
+                  ],
+                  "born": "6000:0:srv",
+                  "f": {
+                    "description": [
+                      "Things you figure out",
+                      "6000:0:srv"
+                    ],
+                    "hue": [
+                      "olive",
+                      "6000:0:srv"
+                    ],
+                    "label": [
+                      "Learn",
+                      "6000:0:srv"
+                    ],
+                    "ord": [
+                      "a1",
+                      "6000:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 6000,
+                  "ru": 6000
+                },
+                {
+                  "t": "kind",
+                  "id": "milestone",
+                  "life": [
+                    "alive",
+                    "6000:0:srv"
+                  ],
+                  "born": "6000:0:srv",
+                  "f": {
+                    "description": [
+                      "Moments that matter",
+                      "6000:0:srv"
+                    ],
+                    "hue": [
+                      "gold",
+                      "6000:0:srv"
+                    ],
+                    "label": [
+                      "Milestone",
+                      "6000:0:srv"
+                    ],
+                    "ord": [
+                      "a2",
+                      "6000:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 6000,
+                  "ru": 6000
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "depth": [
+                      1,
+                      "6000:0:srv"
+                    ],
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "basics"
+                      },
+                      "6000:0:srv"
+                    ],
+                    "reach": [
+                      "public",
+                      "6000:0:srv"
+                    ],
+                    "root": [
+                      "t_0000000000000001",
+                      "6000:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 6000,
+                  "ru": 6000
+                }
+              ]
+            },
+            "spentIds": {
+              "tree/t_0000000000000001": [
+                {
+                  "t": "node",
+                  "id": "macros",
+                  "born": "1000:0:r_aaaaaaaaaaaa"
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/t_0000000000000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "28bf5cc793a4f419e0c336324802cb9592f1fb7a8ff4f91797faa035d21fd4c6",
+                "booted": true
+              },
+              "self/roadmap": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30",
+                "digest": "3164c229921a1f3c7c0beab3082f6dd2fab091a22db4f2b600d45df72022d02d",
+                "booted": true
+              },
+              "tree/t_0000000000000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                "digest": "92f0c196a73bc1baf295b21cfabf4e96cd0d408eea58403ee68968e128620ffd",
+                "booted": true
+              },
+              "tree/t_00000000000000a1": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "e037d852c058b7135026661a48ac025dc2b5d86d5eddaa1892b055b47f5a97f7",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a step that already owns a subtree answers it: the write map renames the proposed subtree, and the work queued in it follows",
+    "input": {
+      "device": {
+        "active": "rp_0000000000000000000000000000000a",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_0000000000000000000000000000000a",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/roadmap": [
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000002",
+                  "life": [
+                    "alive",
+                    "2000:0:srv"
+                  ],
+                  "born": "2000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "ownership"
+                      },
+                      "2000:0:srv"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000003",
+                  "life": [
+                    "alive",
+                    "3000:0:srv"
+                  ],
+                  "born": "3000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000002",
+                        "step": "lifetimes"
+                      },
+                      "3000:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000004",
+                  "life": [
+                    "alive",
+                    "1500:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1500:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 400,
+                  "ru": 400
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000005",
+                  "life": [
+                    "alive",
+                    "2500:0:srv"
+                  ],
+                  "born": "2500:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "macros"
+                      },
+                      "2500:0:srv"
+                    ]
+                  },
+                  "seq": 5,
+                  "rc": 500,
+                  "ru": 500
+                }
+              ],
+              "tree/t_0000000000000001": [
+                {
+                  "t": "edge",
+                  "id": [
+                    "basics",
+                    "ownership"
+                  ],
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "build",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "terracotta",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "build",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "learn",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "learn",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "milestone",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "gold",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "milestone",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a2",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "reach": [
+                      "public",
+                      "1100:0:srv"
+                    ],
+                    "title": [
+                      "Learn Rust",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "1100:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "node",
+                  "id": "basics",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "basics",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "node",
+                  "id": "ownership",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "branch": [
+                      "t_0000000000000002",
+                      "2000:0:srv"
+                    ],
+                    "color": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "ownership",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                }
+              ]
+            },
+            "cursors": {
+              "self/roadmap": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                "digest": "074ba1b0fcef8ead463d5ffdf8b3288b98848c9b5aa4f954aa81232bf066a8a4",
+                "booted": true
+              },
+              "tree/t_0000000000000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "5b181dce0de22a1226fade80e1bbedd09195ead5930981669e19eb45770b8dc0",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/roadmap",
+          "deviceNow": 5000,
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "roadmap.createSubtree",
+              "args": {
+                "tree": "t_0000000000000001",
+                "root": "t_0000000000000001",
+                "step": "ownership",
+                "subtree": "t_00000000000000a1"
+              }
+            },
+            "scopedPredict": [
+              {
+                "scope": "self/roadmap",
+                "changes": [
+                  {
+                    "op": "create",
+                    "t": "tree",
+                    "id": "t_00000000000000a1",
+                    "f": {
+                      "parent": {
+                        "tree": "t_0000000000000001",
+                        "step": "ownership"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "scope": "tree/t_00000000000000a1",
+                "changes": [
+                  {
+                    "op": "write",
+                    "t": "meta",
+                    "id": "meta",
+                    "f": {
+                      "root": "t_0000000000000001",
+                      "parent": {
+                        "tree": "t_0000000000000001",
+                        "step": "ownership"
+                      },
+                      "depth": 1,
+                      "reach": "public"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "build",
+                    "f": {
+                      "hue": "terracotta",
+                      "label": "Build",
+                      "description": "Things you make",
+                      "ord": "a0"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "learn",
+                    "f": {
+                      "hue": "olive",
+                      "label": "Learn",
+                      "description": "Things you figure out",
+                      "ord": "a1"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "milestone",
+                    "f": {
+                      "hue": "gold",
+                      "label": "Milestone",
+                      "description": "Moments that matter",
+                      "ord": "a2"
+                    }
+                  }
+                ]
+              },
+              {
+                "scope": "tree/t_0000000000000001",
+                "changes": [
+                  {
+                    "op": "update",
+                    "t": "node",
+                    "id": "ownership",
+                    "f": {
+                      "branch": "t_00000000000000a1"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "tree/t_00000000000000a1",
+          "deviceNow": 5001,
+          "changes": [
+            {
+              "op": "create",
+              "t": "node",
+              "id": "first",
+              "f": {
+                "label": "First",
+                "ord": "a0"
+              }
+            }
+          ]
+        },
+        {
+          "op": "commit",
+          "scope": "self/roadmap",
+          "deviceNow": 5002,
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "roadmap.createSubtree",
+              "args": {
+                "tree": "t_00000000000000a1",
+                "root": "t_0000000000000001",
+                "step": "first",
+                "subtree": "t_00000000000000a2"
+              }
+            },
+            "scopedPredict": [
+              {
+                "scope": "self/roadmap",
+                "changes": [
+                  {
+                    "op": "create",
+                    "t": "tree",
+                    "id": "t_00000000000000a2",
+                    "f": {
+                      "parent": {
+                        "tree": "t_00000000000000a1",
+                        "step": "first"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "scope": "tree/t_00000000000000a2",
+                "changes": [
+                  {
+                    "op": "write",
+                    "t": "meta",
+                    "id": "meta",
+                    "f": {
+                      "root": "t_0000000000000001",
+                      "parent": {
+                        "tree": "t_00000000000000a1",
+                        "step": "first"
+                      },
+                      "depth": 1,
+                      "reach": "public"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "build",
+                    "f": {
+                      "hue": "terracotta",
+                      "label": "Build",
+                      "description": "Things you make",
+                      "ord": "a0"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "learn",
+                    "f": {
+                      "hue": "olive",
+                      "label": "Learn",
+                      "description": "Things you figure out",
+                      "ord": "a1"
+                    }
+                  },
+                  {
+                    "op": "create",
+                    "t": "kind",
+                    "id": "milestone",
+                    "f": {
+                      "hue": "gold",
+                      "label": "Milestone",
+                      "description": "Moments that matter",
+                      "ord": "a2"
+                    }
+                  }
+                ]
+              },
+              {
+                "scope": "tree/t_00000000000000a1",
+                "changes": [
+                  {
+                    "op": "update",
+                    "t": "node",
+                    "id": "first",
+                    "f": {
+                      "branch": "t_00000000000000a2"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 5003
+        },
+        {
+          "op": "pushResponse",
+          "deviceNow": 6000,
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 6000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 6,
+                  "write": [
+                    {
+                      "t": "tree",
+                      "id": "t_0000000000000002",
+                      "from": "t_00000000000000a1",
+                      "born": "2000:0:srv"
+                    }
+                  ],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "self/roadmap",
+                          "beforeSeq": 6,
+                          "seq": 6,
+                          "rows": []
+                        },
+                        {
+                          "scope": "self/overlay/t_0000000000000001",
+                          "beforeSeq": 1,
+                          "seq": 1,
+                          "rows": []
+                        },
+                        {
+                          "scope": "tree/t_0000000000000001",
+                          "beforeSeq": 4,
+                          "seq": 4,
+                          "rows": []
+                        },
+                        {
+                          "scope": "tree/t_0000000000000002",
+                          "beforeSeq": 2,
+                          "seq": 2,
+                          "rows": []
+                        },
+                        {
+                          "scope": "tree/t_0000000000000003",
+                          "beforeSeq": 2,
+                          "seq": 2,
+                          "rows": []
+                        },
+                        {
+                          "scope": "tree/t_00000000000000a1",
+                          "beforeSeq": null,
+                          "seq": null,
+                          "rows": []
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 6001
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g3/0"
+          ],
+          "retired": [],
+          "stamp": "5002:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_0000000000000000000000000000000a",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/roadmap",
+              "cmd": {
+                "name": "roadmap.createSubtree",
+                "args": {
+                  "tree": "t_0000000000000001",
+                  "root": "t_0000000000000001",
+                  "step": "ownership",
+                  "subtree": "t_00000000000000a1"
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_0000000000000000000000000000000a",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "tree/t_0000000000000002",
+              "d": [
+                {
+                  "t": "node",
+                  "id": "first",
+                  "born": "5001:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "alive",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "label": [
+                      "First",
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 2
+            },
+            {
+              "scope": "self/roadmap",
+              "cmd": {
+                "name": "roadmap.createSubtree",
+                "args": {
+                  "tree": "t_0000000000000002",
+                  "root": "t_0000000000000001",
+                  "step": "first",
+                  "subtree": "t_00000000000000a2"
+                }
+              },
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        }
+      ],
+      "device": {
+        "active": "rp_0000000000000000000000000000000a",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_0000000000000000000000000000000a",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5002,
+                "counter": 0
+              },
+              "hlcHigh": "5002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "2000:0:srv",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 6000,
+                "mono": 6000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/roadmap": [
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000002",
+                  "life": [
+                    "alive",
+                    "2000:0:srv"
+                  ],
+                  "born": "2000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "ownership"
+                      },
+                      "2000:0:srv"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000003",
+                  "life": [
+                    "alive",
+                    "3000:0:srv"
+                  ],
+                  "born": "3000:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000002",
+                        "step": "lifetimes"
+                      },
+                      "3000:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000004",
+                  "life": [
+                    "alive",
+                    "1500:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1500:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 400,
+                  "ru": 400
+                },
+                {
+                  "t": "tree",
+                  "id": "t_0000000000000005",
+                  "life": [
+                    "alive",
+                    "2500:0:srv"
+                  ],
+                  "born": "2500:0:srv",
+                  "f": {
+                    "parent": [
+                      {
+                        "tree": "t_0000000000000001",
+                        "step": "macros"
+                      },
+                      "2500:0:srv"
+                    ]
+                  },
+                  "seq": 5,
+                  "rc": 500,
+                  "ru": 500
+                }
+              ],
+              "tree/t_0000000000000001": [
+                {
+                  "t": "edge",
+                  "id": [
+                    "basics",
+                    "ownership"
+                  ],
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "build",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "terracotta",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "build",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "learn",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "learn",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "kind",
+                  "id": "milestone",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "description": [
+                      "",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "hue": [
+                      "gold",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "milestone",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a2",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "reach": [
+                      "public",
+                      "1100:0:srv"
+                    ],
+                    "title": [
+                      "Learn Rust",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "1100:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 300,
+                  "ru": 300
+                },
+                {
+                  "t": "node",
+                  "id": "basics",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "basics",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 100,
+                  "ru": 100
+                },
+                {
+                  "t": "node",
+                  "id": "ownership",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "branch": [
+                      "t_0000000000000002",
+                      "2000:0:srv"
+                    ],
+                    "color": [
+                      "olive",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "label": [
+                      "ownership",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "ord": [
+                      "a1",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 200,
+                  "ru": 200
+                }
+              ]
+            },
+            "cursors": {
+              "self/roadmap": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                "digest": "074ba1b0fcef8ead463d5ffdf8b3288b98848c9b5aa4f954aa81232bf066a8a4",
+                "booted": true
+              },
+              "tree/t_0000000000000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "5b181dce0de22a1226fade80e1bbedd09195ead5930981669e19eb45770b8dc0",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/roadmap",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/roadmap",
+                  "cmd": {
+                    "name": "roadmap.createSubtree",
+                    "args": {
+                      "tree": "t_0000000000000001",
+                      "root": "t_0000000000000001",
+                      "step": "ownership",
+                      "subtree": "t_00000000000000a1"
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predictions": [
+                  {
+                    "scope": "self/roadmap",
+                    "d": [
+                      {
+                        "t": "tree",
+                        "id": "t_0000000000000002",
+                        "born": "2000:0:srv",
+                        "life": [
+                          "alive",
+                          "2000:0:srv"
+                        ],
+                        "f": {
+                          "parent": [
+                            {
+                              "tree": "t_0000000000000001",
+                              "step": "ownership"
+                            },
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      }
+                    ],
+                    "resultSeq": 6
+                  },
+                  {
+                    "scope": "self/overlay/t_0000000000000001",
+                    "d": [],
+                    "resultSeq": 1
+                  },
+                  {
+                    "scope": "tree/t_0000000000000001",
+                    "d": [
+                      {
+                        "t": "node",
+                        "id": "ownership",
+                        "born": "1000:0:r_aaaaaaaaaaaa",
+                        "f": {
+                          "branch": [
+                            "t_0000000000000002",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      }
+                    ],
+                    "resultSeq": 4
+                  },
+                  {
+                    "scope": "tree/t_0000000000000002",
+                    "d": [
+                      {
+                        "t": "meta",
+                        "id": "meta",
+                        "f": {
+                          "depth": [
+                            1,
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "parent": [
+                            {
+                              "tree": "t_0000000000000001",
+                              "step": "ownership"
+                            },
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "reach": [
+                            "public",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "root": [
+                            "t_0000000000000001",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      },
+                      {
+                        "t": "kind",
+                        "id": "build",
+                        "born": "5000:0:r_aaaaaaaaaaaa",
+                        "life": [
+                          "alive",
+                          "5000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "f": {
+                          "description": [
+                            "Things you make",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "hue": [
+                            "terracotta",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "label": [
+                            "Build",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "ord": [
+                            "a0",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      },
+                      {
+                        "t": "kind",
+                        "id": "learn",
+                        "born": "5000:0:r_aaaaaaaaaaaa",
+                        "life": [
+                          "alive",
+                          "5000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "f": {
+                          "description": [
+                            "Things you figure out",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "hue": [
+                            "olive",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "label": [
+                            "Learn",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "ord": [
+                            "a1",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      },
+                      {
+                        "t": "kind",
+                        "id": "milestone",
+                        "born": "5000:0:r_aaaaaaaaaaaa",
+                        "life": [
+                          "alive",
+                          "5000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "f": {
+                          "description": [
+                            "Moments that matter",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "hue": [
+                            "gold",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "label": [
+                            "Milestone",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ],
+                          "ord": [
+                            "a2",
+                            "5000:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      }
+                    ],
+                    "resultSeq": 2
+                  },
+                  {
+                    "scope": "tree/t_0000000000000003",
+                    "d": [],
+                    "resultSeq": 2
+                  },
+                  {
+                    "scope": "tree/t_00000000000000a1",
+                    "d": [],
+                    "covered": true
+                  }
+                ],
+                "n": 1,
+                "digest": "999df2d45ddf79548354e83bbe929efdb14b7a02293dc297aef41aa24e5eace3",
+                "resultSeq": 6,
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "tree",
+                    "from": "t_00000000000000a1",
+                    "id": "t_0000000000000002",
+                    "born": "2000:0:srv"
+                  }
+                ],
+                "acceptedEffects": [
+                  {
+                    "scope": "self/roadmap",
+                    "beforeSeq": 6,
+                    "seq": 6,
+                    "rows": []
+                  },
+                  {
+                    "scope": "self/overlay/t_0000000000000001",
+                    "beforeSeq": 1,
+                    "seq": 1,
+                    "rows": []
+                  },
+                  {
+                    "scope": "tree/t_0000000000000001",
+                    "beforeSeq": 4,
+                    "seq": 4,
+                    "rows": []
+                  },
+                  {
+                    "scope": "tree/t_0000000000000002",
+                    "beforeSeq": 2,
+                    "seq": 2,
+                    "rows": []
+                  },
+                  {
+                    "scope": "tree/t_0000000000000003",
+                    "beforeSeq": 2,
+                    "seq": 2,
+                    "rows": []
+                  },
+                  {
+                    "scope": "tree/t_00000000000000a1",
+                    "beforeSeq": null,
+                    "seq": null,
+                    "rows": []
+                  }
+                ]
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "tree/t_0000000000000002",
+                "state": "sent",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/t_0000000000000002",
+                  "d": [
+                    {
+                      "t": "node",
+                      "id": "first",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "label": [
+                          "First",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "ord": [
+                          "a0",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2",
+                  "n": 2
+                },
+                "n": 2,
+                "digest": "f7de964d855138bf6d237c31462ca4781b323b3d9480bf30f69722056bebe6f6"
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "A",
+                "scope": "self/roadmap",
+                "state": "sent",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "5002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/roadmap",
+                  "cmd": {
+                    "name": "roadmap.createSubtree",
+                    "args": {
+                      "tree": "t_0000000000000002",
+                      "root": "t_0000000000000001",
+                      "step": "first",
+                      "subtree": "t_00000000000000a2"
+                    }
+                  },
+                  "gestureId": "g3",
+                  "n": 3
+                },
+                "predictions": [
+                  {
+                    "scope": "self/roadmap",
+                    "d": [
+                      {
+                        "t": "tree",
+                        "id": "t_00000000000000a2",
+                        "born": "5002:0:r_aaaaaaaaaaaa",
+                        "life": [
+                          "alive",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ],
+                        "f": {
+                          "parent": [
+                            {
+                              "tree": "t_0000000000000002",
+                              "step": "first"
+                            },
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "scope": "tree/t_0000000000000002",
+                    "d": [
+                      {
+                        "t": "node",
+                        "id": "first",
+                        "born": "5001:0:r_aaaaaaaaaaaa",
+                        "f": {
+                          "branch": [
+                            "t_00000000000000a2",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "scope": "tree/t_00000000000000a2",
+                    "d": [
+                      {
+                        "t": "meta",
+                        "id": "meta",
+                        "f": {
+                          "depth": [
+                            1,
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "parent": [
+                            {
+                              "tree": "t_0000000000000002",
+                              "step": "first"
+                            },
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "reach": [
+                            "public",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "root": [
+                            "t_0000000000000001",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      },
+                      {
+                        "t": "kind",
+                        "id": "build",
+                        "born": "5002:0:r_aaaaaaaaaaaa",
+                        "life": [
+                          "alive",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ],
+                        "f": {
+                          "description": [
+                            "Things you make",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "hue": [
+                            "terracotta",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "label": [
+                            "Build",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "ord": [
+                            "a0",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      },
+                      {
+                        "t": "kind",
+                        "id": "learn",
+                        "born": "5002:0:r_aaaaaaaaaaaa",
+                        "life": [
+                          "alive",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ],
+                        "f": {
+                          "description": [
+                            "Things you figure out",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "hue": [
+                            "olive",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "label": [
+                            "Learn",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "ord": [
+                            "a1",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      },
+                      {
+                        "t": "kind",
+                        "id": "milestone",
+                        "born": "5002:0:r_aaaaaaaaaaaa",
+                        "life": [
+                          "alive",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ],
+                        "f": {
+                          "description": [
+                            "Moments that matter",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "hue": [
+                            "gold",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "label": [
+                            "Milestone",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "ord": [
+                            "a2",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "n": 3,
+                "digest": "5d41b863e16c4e78b2612003ddd97284ae76d7bbc220fc0a43c9765134ee1750"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  }
+]
