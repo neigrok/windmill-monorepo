@@ -66,7 +66,7 @@ public struct Inverses: Sendable {
     for slot in slots where before[slot.originScope] == nil {
       before[slot.originScope] = try ScopeView(replica, slot.originScope, .drawn, registry: registry)
     }
-    let journal = inverseJournal(inverseActId, slots: slots, forward: forward)
+    let journal = inverseJournal(inverseActId, slots: slots, forward: forward, drawn: before)
     var touched: [ScopedKey] = []
     for slot in slots {
       let scope = slot.originScope
@@ -304,11 +304,11 @@ public struct Inverses: Sendable {
   }
 
   // An Undo's slots from the act's own recipes: one restore slot a source for its generic recipes, a target restored once
-  // from its first preimage, and one slot each product command recipe. Undo runs the act backwards: the last source's slots
-  // come first.
+  // from its first preimage, a revived life with the record that preimage read, and one slot each product command recipe.
+  // Undo runs the act backwards: the last source's slots come first.
   func plannedSlots(of sources: [JournalSource]) -> [(scope: ScopeRef, recipe: SlotRecipe)] {
-    var firstOf: [Target: JSON] = [:]
-    for preimage in sources.flatMap(\.preimages) where firstOf[preimage.target] == nil { firstOf[preimage.target] = preimage.value }
+    var firstOf: [Target: Preimage] = [:]
+    for preimage in sources.flatMap(\.preimages) where firstOf[preimage.target] == nil { firstOf[preimage.target] = preimage }
     var named: Set<JSON> = []
     var slots: [(scope: ScopeRef, recipe: SlotRecipe)] = []
     for source in sources.reversed() {
@@ -322,12 +322,14 @@ public struct Inverses: Sendable {
           operations.append(.createdRecord(record))
         case .fields(let restore, let targets):
           command = restore
-          operations += targets.map { (item: RestoreTarget) -> PlannedOperation in .field(item.target, before: firstOf[item.target], reference: nil) }
+          operations += targets.map { (item: RestoreTarget) -> PlannedOperation in
+            .field(item.target, before: firstOf[item.target]?.value, reference: nil, record: firstOf[item.target]?.record)
+          }
         }
       }
       let unique = operations.filter { (operation: PlannedOperation) -> Bool in
         let key: JSON = switch operation {
-        case .field(let target, _, _): target.json
+        case .field(let target, _, _, _): target.json
         case .createdRecord, .createRecord: operation.address.json
         }
         return named.insert(key).inserted
@@ -358,7 +360,8 @@ public struct Inverses: Sendable {
         commands[scope] = command.name
       }
       switch unit {
-      case .field(_, let target, let value, let restored, _): operations[scope, default: []].append(.field(target, before: value, reference: restored))
+      case .field(_, let target, let value, let restored, _):
+        operations[scope, default: []].append(.field(target, before: value, reference: restored, record: nil))
       case .createdRecord(_, let record, let values, let restored):
         operations[scope, default: []].append(.createRecord(record, values: values, reference: restored))
       }
@@ -374,8 +377,13 @@ public struct Inverses: Sendable {
   }
 
   // The optimistic projection of a restore slot over `view`, at `stamp`: each operation as the restore would write it, one
-  // delta a record. An operation whose record the view lacks projects nothing.
+  // delta a record. A record the view lacks is drawn only where a life operation revives it, with the values its preimage
+  // read; any other operation on it projects nothing.
   func projection(of operations: [PlannedOperation], over view: ScopeView, at stamp: Stamp) -> [Delta] {
+    var revived: [RecordKey: ViewRecord] = [:]
+    for case .field(let target, _, _, let record?) in operations where target.slot == .life {
+      revived[target.key] = ViewRecord(key: target.key, lattice: Lattice(born: record.born, fields: record.fields), texts: record.texts)
+    }
     var order: [RecordKey] = []
     var deltas: [RecordKey: Delta] = [:]
     for operation in operations {
@@ -394,11 +402,16 @@ public struct Inverses: Sendable {
         deltas[key] = created
         continue
       }
-      guard let current = view.record(key) else { continue }
+      let absent = view.record(key) == nil
+      guard let current = view.record(key) ?? revived[key] else { continue }
       var delta = deltas[key] ?? Delta(key: key, lattice: Lattice(born: type.hasBorn ? current.lattice.born : nil))
+      if deltas[key] == nil, absent {
+        delta.lattice.fields = current.lattice.fields
+        delta.texts = current.texts.mapValues { (text: String) -> TextWrite in TextWrite(text: text, base: .text("")) }
+      }
       switch operation {
       case .createdRecord: delta.lattice.life = Life(.dead, stamp)
-      case .field(let target, let before, _):
+      case .field(let target, let before, _, _):
         switch target.slot {
         case .life: delta.lattice.life = Life(before == "alive" ? .alive : .dead, stamp)
         case .field(let name): delta.lattice.fields[name] = Register(before ?? .null, stamp)
@@ -421,10 +434,10 @@ public struct Inverses: Sendable {
 
   // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces, from the
   // values the inverted act wrote (`forward`), never what a later local edit shows. A created record comes back by its life
-  // only where a write can bring it back, and one the inverse creates goes again by its strict recipe; a product slot has
-  // no generic recipe, and its Redo is the product's. A preimage's row sequence is the row its restore wrote over, which
-  // the restore's version check proved held it (`anchor`).
-  func inverseJournal(_ inverseActId: String, slots: [InverseSlot], forward: [Target: JSON]) -> ReversibleAct {
+  // only where a write can bring it back, with the record as `drawn` held it, and one the inverse creates goes again by its
+  // strict recipe; a product slot has no generic recipe, and its Redo is the product's. A preimage's row sequence is the
+  // row its restore wrote over, which the restore's version check proved held it (`anchor`).
+  func inverseJournal(_ inverseActId: String, slots: [InverseSlot], forward: [Target: JSON], drawn: [ScopeRef: ScopeView]) -> ReversibleAct {
     let sources = slots.map { (slot: InverseSlot) -> JournalSource in
       guard case .restore(let command, let operations) = slot.recipe else {
         return JournalSource(localId: slot.localId, originScope: slot.originScope, recipes: [], preimages: [])
@@ -439,9 +452,9 @@ public struct Inverses: Sendable {
         case .createdRecord(let record):
           guard let type = registry.type(record.key.type), type.identity == .keyed || type.revivable == true else { continue }
           let target = Target(record, .life)
-          preimages.append(Preimage(target: target, value: "alive"))
+          preimages.append(Preimage(target: target, value: "alive", record: drawn[record.scope]?.record(record.key).map(RecordValues.init)))
           written.append(WrittenValue(target: target, value: "dead"))
-        case .field(let target, let before, _):
+        case .field(let target, let before, _, _):
           guard let value = forward[target] else { continue }
           preimages.append(Preimage(target: target, value: value))
           written.append(WrittenValue(target: target, value: before ?? .null))
@@ -641,10 +654,10 @@ public struct Inverses: Sendable {
   func bound(_ operation: PlannedOperation, of act: ReversibleAct, history: [(lost: Bool, effects: [EffectReceipt])], epoch: String,
              in replica: LoadedReplica) -> Bound? {
     switch operation {
-    case .field(let target, let before, let reference?):
+    case .field(let target, let before, let reference?, _):
       guard let expected = expected(of: reference, in: replica) else { return .skip("reference-unbound") }
       return .send(.field(target.key, slot: target.slot, expected: expected, before: before ?? .null))
-    case .field(let target, let before, nil):
+    case .field(let target, let before, nil, _):
       guard let version = Inverses.latestOwned(history, target) else { return history.contains(where: \.lost) ? .skip("history-changed") : nil }
       let preimage = act.sourceEntries.flatMap(\.preimages).first { $0.target == target }
       if !(preimage?.epoch ?? epoch).isSameID(as: epoch) { return .skip("epoch-changed") }
@@ -719,7 +732,8 @@ public struct Inverses: Sendable {
     return stamp.map { VersionReference.accepted(epoch: epoch, version: .stamp($0)) } ?? .unbound
   }
 
-  // The projection of the operations a slot still holds, the rest withdrawn.
+  // The projection of the operations a slot still holds, the rest withdrawn; a revived record keeps the values it is drawn
+  // with.
   static func keep(_ operations: [PlannedOperation], in entry: inout OutboxEntry) {
     guard var predictions = entry.predictions else { return }
     for index in predictions.indices {
@@ -732,7 +746,11 @@ public struct Inverses: Sendable {
         for operation in kept {
           switch operation {
           case .createdRecord: next.lattice.life = delta.lattice.life
-          case .field(let target, _, _):
+          case .field(let target, _, _, let record):
+            if record != nil {
+              next.lattice.fields.merge(delta.lattice.fields) { (kept: Register, _: Register) -> Register in kept }
+              next.texts.merge(delta.texts) { (kept: TextWrite, _: TextWrite) -> TextWrite in kept }
+            }
             switch target.slot {
             case .life: next.lattice.life = delta.lattice.life
             case .field(let name): next.lattice.fields[name] = delta.lattice.fields[name]

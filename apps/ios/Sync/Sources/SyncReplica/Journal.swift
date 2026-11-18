@@ -8,31 +8,70 @@ import SyncCore
 
 // MARK: - Reversible acts
 
+// A record as a view read it, kept for a revival to draw: its birth, field registers and texts, never its life.
+public struct RecordValues: Sendable, Hashable {
+  public let born: Stamp?
+  public let fields: [String: Register]
+  public let texts: [String: String]
+
+  public init(_ record: ViewRecord) {
+    born = record.lattice.born
+    fields = record.lattice.fields
+    texts = record.texts
+  }
+
+  init(json: JSON) throws {
+    let object = try json.asObject()
+    try object.expectKeys(required: [], optional: ["born", "f", "x"])
+    var registers = object
+    registers["x"] = nil
+    let lattice = try Lattice(json: .object(registers))
+    born = lattice.born
+    fields = lattice.fields
+    var texts: [String: String] = [:]
+    for (name, text) in try object["x"]?.asObject().members ?? [] { texts[name] = try text.asString() }
+    self.texts = texts
+  }
+
+  var json: JSON {
+    guard case .object(var object) = Lattice(born: born, fields: fields).json else { return [:] }
+    if !texts.isEmpty { object["x"] = .object(JSON.Object(uniqueKeysWithValues: texts.map { ($0.key, JSON.string($0.value)) })) }
+    return .object(object)
+  }
+}
+
 // What a slot read before an act changed it: a field, a text or a life, as a logical value, with the sequence of the
-// confirmed row it was read over (nil where none was confirmed) and the epoch that sequence counts in.
+// confirmed row it was read over (nil where none was confirmed) and the epoch that sequence counts in. A life's
+// preimage keeps the record it read, which a revival draws.
 public struct Preimage: Sendable, Hashable {
   public var target: Target
   public let value: JSON
   public var rowSeq: Int64?
   public var epoch: String?
+  public let record: RecordValues?
 
-  public init(target: Target, value: JSON, rowSeq: Int64? = nil, epoch: String? = nil) {
+  public init(target: Target, value: JSON, rowSeq: Int64? = nil, epoch: String? = nil, record: RecordValues? = nil) {
     self.target = target
     self.value = value
     self.rowSeq = rowSeq
     self.epoch = epoch
+    self.record = record
   }
 
   init(json: JSON) throws {
     let object = try json.asObject()
-    try object.expectKeys(required: ["target", "value"], optional: ["rowSeq", "epoch"])
+    try object.expectKeys(required: ["target", "value"], optional: ["rowSeq", "epoch", "record"])
     self.init(target: try Target(json: object.member("target")), value: try object.member("value"),
               rowSeq: try object["rowSeq"]?.nullable { (seq: JSON) throws -> Int64 in try seq.asInteger() },
-              epoch: try object["epoch"]?.nullable { (epoch: JSON) throws -> String in try epoch.asString() })
+              epoch: try object["epoch"]?.nullable { (epoch: JSON) throws -> String in try epoch.asString() },
+              record: try object["record"].map { (record: JSON) throws -> RecordValues in try RecordValues(json: record) })
   }
 
   var json: JSON {
-    ["target": target.json, "value": value, "rowSeq": rowSeq.map { JSON($0) } ?? .null, "epoch": epoch.map(JSON.string) ?? .null]
+    var object: JSON.Object = ["target": target.json, "value": value, "rowSeq": rowSeq.map { JSON($0) } ?? .null,
+                               "epoch": epoch.map(JSON.string) ?? .null]
+    object["record"] = record?.json
+    return .object(object)
   }
 }
 
@@ -367,7 +406,8 @@ public struct CancellationReceipt: Sendable, Hashable {
 
 // A restore operation as an Undo or a Redo plans it, before materialization binds its expectation.
 public enum PlannedOperation: Sendable, Hashable {
-  case field(Target, before: JSON?, reference: VersionReference?)
+  // `record`: for a life it revives, the record its preimage read, which the projection draws where the view lacks it.
+  case field(Target, before: JSON?, reference: VersionReference?, record: RecordValues?)
   case createdRecord(RecordAddress)
   case createRecord(RecordAddress, values: JSON.Object, reference: VersionReference)
 
@@ -376,7 +416,8 @@ public enum PlannedOperation: Sendable, Hashable {
     switch try object.member("kind").asString() {
     case "field":
       self = .field(try Target(json: object.member("target")), before: object["before"],
-                    reference: try object["reference"].map { (reference: JSON) throws -> VersionReference in try VersionReference(json: reference) })
+                    reference: try object["reference"].map { (reference: JSON) throws -> VersionReference in try VersionReference(json: reference) },
+                    record: try object["record"].map { (record: JSON) throws -> RecordValues in try RecordValues(json: record) })
     case "createdRecord": self = .createdRecord(try RecordAddress(json: object.member("record")))
     case "createRecord":
       self = .createRecord(try RecordAddress(json: object.member("record")), values: try object.member("values").asObject(),
@@ -387,10 +428,11 @@ public enum PlannedOperation: Sendable, Hashable {
 
   var json: JSON {
     switch self {
-    case .field(let target, let before, let reference):
+    case .field(let target, let before, let reference, let record):
       var object: JSON.Object = ["kind": "field", "target": target.json]
       object["before"] = before
       object["reference"] = reference?.json
+      object["record"] = record?.json
       return .object(object)
     case .createdRecord(let record): return ["kind": "createdRecord", "record": record.json]
     case .createRecord(let record, let values, let reference):
@@ -400,14 +442,14 @@ public enum PlannedOperation: Sendable, Hashable {
 
   public var address: RecordAddress {
     switch self {
-    case .field(let target, _, _): target.address
+    case .field(let target, _, _, _): target.address
     case .createdRecord(let record), .createRecord(let record, _, _): record
     }
   }
 
   var reference: VersionReference? {
     switch self {
-    case .field(_, _, let reference): reference
+    case .field(_, _, let reference, _): reference
     case .createRecord(_, _, let reference): reference
     case .createdRecord: nil
     }
@@ -415,7 +457,7 @@ public enum PlannedOperation: Sendable, Hashable {
 
   func bound(to epoch: String?) -> PlannedOperation {
     switch self {
-    case .field(let target, let before, let reference): .field(target, before: before, reference: reference?.bound(to: epoch))
+    case .field(let target, let before, let reference, let record): .field(target, before: before, reference: reference?.bound(to: epoch), record: record)
     case .createRecord(let record, let values, let reference): .createRecord(record, values: values, reference: reference.bound(to: epoch))
     case .createdRecord: self
     }
@@ -423,7 +465,8 @@ public enum PlannedOperation: Sendable, Hashable {
 
   func resolving(_ localId: String, by bind: (Target) -> VersionReference) -> PlannedOperation {
     switch self {
-    case .field(let target, let before, let reference): .field(target, before: before, reference: reference?.resolving(localId, by: bind))
+    case .field(let target, let before, let reference, let record):
+      .field(target, before: before, reference: reference?.resolving(localId, by: bind), record: record)
     case .createRecord(let record, let values, let reference):
       .createRecord(record, values: values, reference: reference.resolving(localId, by: bind))
     case .createdRecord: self
@@ -931,13 +974,14 @@ extension ViewRecord {
 extension CommitPlanner {
   // §7.3 capture: the act's undo request checked against its scopes, each segment's first local preimages read from
   // `drawn` before any segment changes it, each with the sequence of the confirmed row it was read over and the epoch
-  // that sequence counts in. An unset slot takes its target's default; with none, and for any malformed recipe, the act
-  // throws before anything changes.
+  // that sequence counts in, a life's with the record it read. An unset slot takes its target's default; with none, and
+  // for any malformed recipe, the act throws before anything changes. A segment named with no recipes is journaled for
+  // its receipts alone, as evidence, and an act names at least one recipe.
   public func undoPlan(_ undo: ActUndo?, scopes: [ScopeRef], in replica: LoadedReplica) throws -> UndoPlan? {
     guard let undo else { return nil }
     var segments: [Int: UndoPlan.Segment] = [:]
     for segment in undo.segments {
-      guard scopes.indices.contains(segment.index), segments[segment.index] == nil, !segment.recipes.isEmpty else {
+      guard scopes.indices.contains(segment.index), segments[segment.index] == nil else {
         throw CommitFailure.malformed("an undo segment names one act segment and its recipes")
       }
       let scope = scopes[segment.index]
@@ -950,15 +994,18 @@ extension CommitPlanner {
         }
         guard case .fields(_, let targets) = recipe else { continue }
         for item in targets {
-          guard let value = view.record(item.target.key)?.value(of: item.target.slot) ?? item.defaultValue else {
+          let read = view.record(item.target.key)
+          guard let value = read?.value(of: item.target.slot) ?? item.defaultValue else {
             throw CommitFailure.malformed("an unset undo target needs its default")
           }
           let rowSeq: Int64? = replica.rows(scope).row(item.target.key)?.seq
-          preimages.append(Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch))
+          let record: RecordValues? = item.target.slot == .life ? read.map(RecordValues.init) : nil
+          preimages.append(Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch, record: record))
         }
       }
       segments[segment.index] = UndoPlan.Segment(scope: scope, recipes: segment.recipes, preimages: preimages)
     }
+    guard undo.segments.contains(where: { !$0.recipes.isEmpty }) else { throw CommitFailure.malformed("an act opts into Undo with at least one recipe") }
     return UndoPlan(segments: segments)
   }
 
