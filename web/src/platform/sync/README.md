@@ -83,6 +83,9 @@ version changes. Fixture reads wait for transaction completion before closing th
 
 Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
 scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.
+An observation (`observation.js`) keeps its scope's records between publications and folds again only
+the records whose confirmed row changed identity or whose pending entries changed; a record no held
+entry touches is one frozen object in both `drawn` and `stored`.
 The default beacon adapter maps spec event labels to the intake's snake_case names.
 Writer telemetry measures transaction enqueue to durable completion, with bounded numeric timings.
 The 25 ms writer slice is a latency target, not a hardware-independent correctness assertion.
