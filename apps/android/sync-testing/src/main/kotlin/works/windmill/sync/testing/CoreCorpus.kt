@@ -160,7 +160,7 @@ fun main(args: Array<String>) {
     val contract = File(args[0])
     val corpus = Corpus(File(contract, "sync/corpus"))
     val probe = Registry(Json.parse(File(contract, "sync/probe.registry.json").readBytes()))
-    val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + JournalCorpus.handlers(contract) + ProtocolCorpus.handlers(probe)
+    val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + NetworkCorpus.productHandlers(contract) + JournalCorpus.handlers(contract) + ProtocolCorpus.handlers(probe)
     val paths = corpus.clientPaths
     val supported = paths.filter { it in handlers }
     println("client corpus: ${supported.size}/${paths.size} files, ${supported.sumOf { corpus.vectors(it).size }}/${paths.sumOf { corpus.vectors(it).size }} vectors")

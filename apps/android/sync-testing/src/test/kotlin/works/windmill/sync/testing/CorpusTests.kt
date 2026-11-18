@@ -15,7 +15,7 @@ class CorpusTests(private val vector: Vector) {
         val root = File(System.getProperty("windmill.contract"))
         val corpus = Corpus(File(root, "sync/corpus"))
         val probe = Registry(Json.parse(File(root, "sync/probe.registry.json").readBytes()))
-        val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + JournalCorpus.handlers(root) + ProtocolCorpus.handlers(probe)
+        val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + NetworkCorpus.productHandlers(root) + JournalCorpus.handlers(root) + ProtocolCorpus.handlers(probe)
         @JvmStatic @Parameterized.Parameters(name = "{0}")
         fun vectors(): List<Array<Any>> = handlers.keys.sorted().flatMap { corpus.vectors(it) }.map { arrayOf(it) }
     }
@@ -59,7 +59,7 @@ class CoverageTests {
         val composition = Json.parse(File(contract, "composition.json").readBytes())
         val registries = composition.member("registries").arr().map { Registry(Json.parse(File(contract, it.str()).readBytes())) }
         assertEquals(Registry.compose(composition.member("composition").str(), registries).json, SyncSchema.registry.json)
-        assertEquals(12L, SyncSchema.version)
+        assertEquals(13L, SyncSchema.version)
         assertEquals(11L, SyncSchema.registry.minVersion)
         assertEquals(registries.flatMap { it.products.keys }.toSet(), SyncSchema.registry.products.keys)
     }

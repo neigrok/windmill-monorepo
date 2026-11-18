@@ -59,8 +59,40 @@ sealed interface CommitOutcome {
     data class Refused(val code: RefusalCode, val detail: Json?, val notice: String? = null) : CommitOutcome
 }
 
+// An act's request; `undo` opts named segments into Undo after the hold (K-3), each by its index among `scopes`.
 data class ActRequest(val scopes: List<ScopeRef>, val hold: Boolean = false, val gestureId: String? = null,
-    val holdMs: Long = works.windmill.sync.core.Constants.HOLD_MS)
+    val holdMs: Long = works.windmill.sync.core.Constants.HOLD_MS, val undo: List<UndoSegment>? = null)
+// One act segment's Undo recipes, by the segment's index; a Redo's explicit slots replace a source's recipes by the same index.
+data class UndoSegment(val index: Int, val recipes: List<UndoRecipe>)
+// What an Undo or Redo of an act has come to (§7.3 Undo of an act).
+sealed interface InverseResult {
+    val json: Json
+    // A wholly held act cancelled in place; `changed` says whether anything drawn changed.
+    data class Cancelled(val requestId: String, val inverseActId: String, val changed: Boolean) : InverseResult {
+        override val json: Json get() = Json.objectOf("kind" to Json.of("cancelled"), "requestId" to Json.of(requestId), "inverseActId" to Json.of(inverseActId), "changed" to Json.of(changed))
+    }
+    // Reserved and projected, not yet answered by the server; a transport failure stays here.
+    data class Pending(val requestId: String, val inverseActId: String, val localChanged: Boolean) : InverseResult {
+        override val json: Json get() = Json.objectOf("kind" to Json.of("pending"), "requestId" to Json.of(requestId), "inverseActId" to Json.of(inverseActId), "localChanged" to Json.of(localChanged))
+    }
+    // Every slot answered: `changed` from accepted effects, the counts over every conditional operation.
+    data class Settled(val requestId: String, val inverseActId: String, val changed: Boolean, val appliedCount: Int, val skippedCount: Int) : InverseResult {
+        override val json: Json get() = Json.objectOf("kind" to Json.of("settled"), "requestId" to Json.of(requestId), "inverseActId" to Json.of(inverseActId),
+            "changed" to Json.of(changed), "appliedCount" to Json.of(appliedCount), "skippedCount" to Json.of(skippedCount))
+    }
+    data class Unavailable(val requestId: String?, val reason: String) : InverseResult {
+        override val json: Json get() = Json.objectOf("kind" to Json.of("unavailable"), "requestId" to (requestId?.let(Json::of) ?: Json.Null), "reason" to Json.of(reason))
+    }
+    companion object {
+        operator fun invoke(json: Json): InverseResult = when (json.member("kind").str()) {
+            "cancelled" -> Cancelled(json.member("requestId").str(), json.member("inverseActId").str(), json.member("changed").bool())
+            "pending" -> Pending(json.member("requestId").str(), json.member("inverseActId").str(), json.member("localChanged").bool())
+            "settled" -> Settled(json.member("requestId").str(), json.member("inverseActId").str(), json.member("changed").bool(),
+                json.member("appliedCount").long(0).toInt(), json.member("skippedCount").long(0).toInt())
+            else -> Unavailable(json.member("requestId").orNull()?.str(), json.member("reason").str())
+        }
+    }
+}
 data class ScopedGesture(val scope: ScopeRef, val gesture: Gesture)
 data class ActSegmentReceipt(val scope: ScopeRef, val stamp: Stamp?, val localIds: List<String>, val ids: List<RecordID?> = emptyList())
 data class ActReceipt(val gestureId: String, val segments: List<ActSegmentReceipt>, val retired: List<String> = emptyList(),

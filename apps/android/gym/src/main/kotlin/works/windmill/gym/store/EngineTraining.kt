@@ -64,6 +64,8 @@ import works.windmill.sync.api.Replica
 import works.windmill.sync.api.ActContext
 import works.windmill.sync.api.ActRequest
 import works.windmill.sync.api.ActCommitOutcome
+import works.windmill.sync.api.InverseResult
+import works.windmill.sync.api.UndoSegment
 import works.windmill.sync.api.ScopeReader
 import works.windmill.sync.api.Record
 import works.windmill.sync.api.ViewMode
@@ -124,9 +126,17 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             engine.commit(scope) { context -> requireWriteAuthority(); body(context) }
         override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
             engine.commitAct({ context -> requireWriteAuthority(); prepare(context) }, segment)
-        override fun undo(gestureId: String): Boolean {
+        override fun cancelHeld(gestureId: String): Boolean {
             requireWriteAuthority()
-            return engine.undo(gestureId)
+            return engine.cancelHeld(gestureId)
+        }
+        override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult {
+            requireWriteAuthority()
+            return engine.requestInverse(actId, slots)
+        }
+        override fun releaseReversibleAct(actId: String): Boolean {
+            requireWriteAuthority()
+            return engine.releaseReversibleAct(actId)
         }
     }
     private fun requireSeat(pin: ReplicaPin, reader: ScopeReader) {
@@ -826,7 +836,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 if (holdMs == null) {
                     try { outcome.receipt.localIds.forEach { releaseIntent(it) } }
                     catch (failure: Exception) {
-                        val restored = try { engine.undo(outcome.receipt.gestureId) }
+                        val restored = try { engine.cancelHeld(outcome.receipt.gestureId) }
                         catch (rollback: Exception) { failure.addSuppressed(rollback); false }
                         if (!restored) throw TrainingDeleteUnconfirmed(failure)
                         throw failure

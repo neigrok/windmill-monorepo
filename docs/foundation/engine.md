@@ -2009,7 +2009,7 @@ unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsB
 applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
-its size cap, and a `200` whose receipts the replica cannot accept) — so a product can tell a server
+its size cap, and a `200` whose continuation metadata or scoped size the replica cannot accept) — so a product can tell a server
 it never reached from one that answered with a failure.
 Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
 with a `5xx`, so a product can tell the log's outage from a refusal.

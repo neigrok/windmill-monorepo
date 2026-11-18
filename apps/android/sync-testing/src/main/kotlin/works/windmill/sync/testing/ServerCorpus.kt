@@ -57,6 +57,7 @@ object ServerCorpus {
             },
             "gym/admit.json" to { input -> admit(input, registry("gym"), GymServerRules()) },
             "journal/admit.json" to { input -> admit(input, registry("journal"), JournalServerRules()) },
+            "roadmap/admit.json" to { input -> admit(input, registry("roadmap"), RoadmapServerRules()) },
             "journal/revisions.json" to { input ->
                 val rows = input.member("revisions").arr().map { row -> Json.objectOf("t" to Json.of("page"), "id" to row.member("day"), "field" to Json.of("body"), "rev" to row.member("rev"), "text" to Json.of("x".repeat(row.member("bytes").long().toInt())), "archivedAt" to row.member("archivedAt")) }
                 Json.objectOf("kept" to Json.Arr(JournalServerRules.prune(rows, input.member("days").arr().map(::RecordID).toSet(), input.member("serverNow").long()).map { it.member("rev") }))
@@ -130,7 +131,7 @@ internal class EffectPlanRules(val plan: Json) : ServerRules {
         val result = probe.run(command, context)
         val into = result.into.toMutableMap()
         for ((scope, deltas) in effects("command", context)) into[scope] = into[scope].orEmpty() + deltas
-        return result.copy(into = into)
+        return result.copy(into = into, detail = if ("detail" in plan.obj()) plan["detail"] else result.detail)
     }
     override fun effects(changes: List<RecordChange>, context: RuleContext): Effects {
         val byScope = super<ServerRules>.effects(changes, context).byScope.toMutableMap()
