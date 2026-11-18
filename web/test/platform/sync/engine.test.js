@@ -1168,8 +1168,8 @@ test('an opted act journals in IndexedDB, and its Undo survives a reopen, report
   const inverse = env.events.filter(({ name }) => name === 'sync-inverse').map(({ props }) => props);
   assert.equal(inverse.length, 3);
   assert.deepEqual(inverse[0], { outcome: 'pending' });
-  assert.deepEqual(Object.keys(inverse[1]).sort(), ['ageMs', 'count', 'outcome']);
-  assert.deepEqual([inverse[1].outcome, inverse[1].count], ['pending', 1]);
+  assert.deepEqual(Object.keys(inverse[1]).sort(), ['ageMs', 'outcome', 'waiting']);
+  assert.deepEqual([inverse[1].outcome, inverse[1].waiting], ['pending', 1]);
   assert.ok(Number.isSafeInteger(inverse[1].ageMs) && inverse[1].ageMs >= 0);
   assert.deepEqual(inverse[2], { outcome: 'settled', applied: 1, skipped: 0 });
   assert.deepEqual(reopened.device.activeReplica.journal, []);

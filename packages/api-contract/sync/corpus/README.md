@@ -65,7 +65,7 @@ journal.
 | `meta` | `tree/<T>` | singleton `meta` | none | `title` lww; `visibility` server-written, whose `opens` values `unlisted` and `public` open the tree to every reader (D-4) |
 | `tag` | `tree/<T>` | derived, fallback `tag`, scope id space | revivable, keep | D-26 ids, revive, thin dead rows and spent ids on clients |
 | `link` | `tree/<T>` | keyed `[from, to]`, each `ref<tag>` | yes, keep | keyed with life, a tuple key, `strength` lww (an edit carries the drawn life register unchanged) |
-| `mark` | `self/overlay/<T>` | keyed `ref<tag>` | none; `visibleWhen [done, memo]` | keyed without life, `memo` text (≤ 40 bytes), replica origin only |
+| `mark` | `self/overlay/<T>` | keyed `ref<tag>` | none; `visibleWhen [done, memo]` | keyed without life, `memo` text (≤ 40 bytes), `opens` a client `lww` `ref<board>` (as roadmap's `pointer.opens` is a `ref<tree>`), replica origin only |
 
 Device scope `device/probe`: rows `rack` and `picture:<id>` (`localOnly`). Every minted or derived type
 declares its `mint` recipe: `board` is `b_` and 8 of `0-9a-f`; `card`, `run` and `lap` are 16 base-62
@@ -1416,7 +1416,10 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   later work goes on; a Discard at sign-in settles a pending inverse skipped with its values withdrawn; a
   segment named with no recipes journals its receipts, which prove a tree the act created to its Undo,
   while an act whose Undo names no recipe at all throws; an Undo of a delete whose death the replica already
-  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had.
+  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had; an Undo
+  requested, and a held act's cancellation, in the tree of a child board the server redirects follow it into
+  the redirected tree; a mark's `opens` restored, written back or redone after the server redirects the board
+  it names takes the redirected id, and a cancelled lap's Redo takes the run the server joined.
 
 ### refusal/*.json
 

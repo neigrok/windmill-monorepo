@@ -34,8 +34,8 @@ replica changes after durable commits and persisted-page suspension, restoration
 `readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a
 journal record the product's stack no longer needs. The journal, inverse requests and cancellation receipts
 are control records of the replica's store, beside its outbox. The first tab's engine start releases every
-act no unsettled request reads, and reports the waiting requests' count and oldest age; each request that
-settles reports its applied and skipped counts.
+act no unsettled request reads, and reports how many requests are `waiting` and the oldest one's age; each
+request that settles reports its applied and skipped counts.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
 

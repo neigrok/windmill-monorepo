@@ -1857,7 +1857,13 @@ type UndoRecipe =
   changed-epoch answer that records its results before the change keeps those, which are the new epoch's.
   Adopting a first epoch drops nothing.
 - **Maps.** A write map's logical map (§7.7) renames the journal's scopes, targets, records, typed inputs and
-  receipts with the queue.
+  receipts with the queue, and so the scopes, targets, records, references and typed inputs of its inverse
+  requests and cancellation receipts: an Undo requested, or a held act cancelled, in a tree whose governor
+  the server redirects follows it into the redirected tree. A command input is renamed in the scope its
+  holder had, before that scope moves. A value recorded for a field (a preimage, a written value, a default,
+  an operation's earlier value, a redo value, a revival's registers) is renamed as that record's field
+  would be, so a typed reference it holds follows the map: an Undo of a `ref<tree>` field whose tree the
+  server redirects restores the redirected id.
 - **Release.** `releaseReversibleAct(actId)` says the product's stack no longer needs the act: its record and
   values go, once no unsettled inverse request reads it, with a settled request whose inverse act it is. No
   product stack outlives its process: engine start releases every act and cancellation that no unsettled
