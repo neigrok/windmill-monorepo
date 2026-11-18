@@ -58,14 +58,15 @@ Json::Value markedOverlay() {
 
 TEST(every_registered_sync_command_logs_one_bounded_command_and_admission_outcome) {
   BlockingThread::Mark blocking;
-  for (int product = 0; product != 3; ++product) {
-    test::FakeWorld world(product == 1, product == 2);
+  for (const test::WorldProduct product : {test::WorldProduct::probe, test::WorldProduct::gym, test::WorldProduct::journal, test::WorldProduct::roadmap}) {
+    test::FakeWorld world(product);
     Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+    const std::string tree = product == test::WorldProduct::roadmap ? "t_0000000000000001" : "b_00000001";
     for (const CommandDef& command : world.catalog().registry().commands()) {
       WriteCapture capture;
       Json::Value intent(Json::objectValue);
       intent["scope"] = command.scope.kind == ScopeKind::product ? "self/" + command.scope.product
-          : command.scope.kind == ScopeKind::tree ? "tree/b_00000001" : "self/overlay/b_00000001";
+          : command.scope.kind == ScopeKind::tree ? "tree/" + tree : "self/overlay/" + tree;
       intent["cmd"]["name"] = command.name;
       intent["cmd"]["args"]["private_content"] = "PRIVATE-JOURNAL-WORKOUT-TOKEN";
       const auto outcome = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);

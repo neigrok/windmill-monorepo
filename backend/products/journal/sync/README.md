@@ -1,8 +1,8 @@
 # Journal sync binding
 
-`platform/infra/SyncProducts` seals gym and journal into one catalog at registry version 8, minimum
-version 4 (`packages/api-contract/sync/composition.json`), and `windmill_server` always serves it at
-`/v1/sync`. Journal binds its two types and two commands independently, over the same rules on fakes
+`platform/infra/SyncProducts` seals gym, journal and roadmap into one catalog at registry version 13,
+minimum version 11 (`packages/api-contract/sync/composition.json`), and `windmill_server` always serves
+journal's scope in it at `/v1/sync`. Journal binds its two types and two commands independently, over the same rules on fakes
 and Postgres: `page`, keyed by the local day, the `journalState` singleton, `journal.savePage` and
 `journal.claimPage`. `journalState` is ranked and never establishes primary occupancy.
 `documentStamp` is product data; future content clocks do not advance an engine envelope clock.

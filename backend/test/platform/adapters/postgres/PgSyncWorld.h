@@ -6,6 +6,7 @@
 #include "products/probe/adapters/postgres/PgProbe.h"
 #include "products/gym/sync/PgGym.h"
 #include "products/journal/sync/PgJournal.h"
+#include "products/roadmap/sync/PgRoadmap.h"
 #include "test/PgTestPool.h"
 #include "test/platform/application/sync/SyncWorld.h"
 
@@ -19,7 +20,7 @@
 #include <vector>
 
 // The sync engine over the isolated WM_SYNC_DATABASE_URL database (RUNNING.md §7).
-// Seeding wipes sync, probe and product rows; schema.sql and probe.sql must be applied.
+// Seeding wipes sync, probe and product rows (roadmap's go with their scopes); schema.sql and probe.sql must be applied.
 
 namespace wm::sync::test {
 
@@ -31,9 +32,13 @@ inline bool postgresEnabled() {
 
 class PgWorld final : public SyncWorld {
 public:
-  PgWorld(bool gym = false, bool journal = false) : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(wm::gym::engine::registry()), journalProduct_(wm::journal::engine::registry()), catalog_(journal ? wm::journal::engine::registry() : gym ? wm::gym::engine::registry() : probe::registry()), gym_(gym), journal_(journal) {
-    if (journal_) journalProduct_.bindTo(catalog_);
-    else if (gym_) gymProduct_.bindTo(catalog_);
+  explicit PgWorld(WorldProduct product = WorldProduct::probe)
+      : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(wm::gym::engine::registry()),
+        journalProduct_(wm::journal::engine::registry()), roadmapProduct_(wm::roadmap::engine::registry()), catalog_(registryOf(product)),
+        bound_(product) {
+    if (bound_ == WorldProduct::journal) journalProduct_.bindTo(catalog_);
+    else if (bound_ == WorldProduct::gym) gymProduct_.bindTo(catalog_);
+    else if (bound_ == WorldProduct::roadmap) roadmapProduct_.bindTo(catalog_);
     else probe_.bindTo(catalog_);
     catalog_.seal();
     resetClock(Json::Value(Json::objectValue));
@@ -76,7 +81,7 @@ public:
                               "sync_requests", "sync_replicas", "sync_scopes"}) {
       sql.exec(std::string("delete from ") + table);
     }
-    if (gym_) {
+    if (bound_ == WorldProduct::gym) {
       sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_proposal_applies,gym_workout_proposal_applies,gym_correction_receipts,gym_routine_creations,gym_note_saves,gym_exercise_updates,gym_threads,gym_messages cascade");
       for (const auto& id : state["product"]["seeds"].getMemberNames()) {
         const Json::Value& seed = state["product"]["seeds"][id];
@@ -87,7 +92,7 @@ public:
       productSeed_ = state["product"];
 
     }
-    if (journal_) {
+    if (bound_ == WorldProduct::journal) {
       sql.exec("truncate journal_page_revision,journal_page,journal_sync_state,journal_claim_receipts,journal_content_clock cascade");
       productSeed_ = state["product"];
       journalInitial_.clear();
@@ -123,7 +128,7 @@ public:
         }
       }
     }
-    if (gym_) {
+    if (bound_ == WorldProduct::gym) {
       // Some corpus fixtures retain an old set after omitting its session. A non-sync parent
       // satisfies the relational FK without adding a row to the engine's state or open session.
       for (const auto& key : state["rows"].getMemberNames()) {
@@ -142,13 +147,13 @@ public:
     }
     for (const std::string& key : state["revisions"].getMemberNames()) {
       for (const Json::Value& revision : state["revisions"][key]) {
-        if (journal_) {
+        if (bound_ == WorldProduct::journal) {
           const auto& stamp = revision["documentStamp"];
           sql.exec("insert into journal_page_revision(user_id,day,body,stamp_ms,stamp_counter,stamp_actor,superseded_at,engine_rev) values($1::uuid,$2::date,$3,$4,$5,$6,to_timestamp($7::numeric/1000),$8)",
             pqxx::params{storeKey(key).account().str(), revision["id"].asString(), revision["text"].asString(), stamp["ms"].asInt64(), stamp["counter"].asInt64(), stamp["actor"].asString(), revision["archivedAt"].asInt64(), revision["rev"].asInt64()});
           continue;
         }
-        sql.exec("insert into probe_marks_revisions (scope_key, id, field, rev, text) values ($1, $2, $3, $4, $5)",
+        sql.exec("insert into " + std::string(revisionTable().table) + " (scope_key, id, field, rev, text) values ($1, $2, $3, $4, $5)",
                  pqxx::params{storeKey(key).text(), RecordId(revision["id"]).column(), revision["field"].asString(), revision["rev"].asInt64(),
                               revision["text"].asString()});
       }
@@ -196,7 +201,7 @@ public:
                  pqxx::params{storeKey(key).text(), child, receipt["parent"].asString(), receipt["title"].asString()});
       }
     }
-    if (gym_) {
+    if (bound_ == WorldProduct::gym) {
       wm::gym::engine::PgGymState gymState;
       const Json::Value& product = state["product"];
       for (const char* kind : wm::gym::engine::kReceiptBooks) {
@@ -206,7 +211,7 @@ public:
       }
 
     }
-    if (journal_) {
+    if (bound_ == WorldProduct::journal) {
       wm::journal::engine::PgJournalState journalState;
       for (const auto& key : product["journalClaims"].getMemberNames())
         for (const auto& id : product["journalClaims"][key].getMemberNames()) journalState.receipt(*txn, storeKey(key), id, product["journalClaims"][key][id]);
@@ -255,9 +260,10 @@ public:
     }
 
     state["revisions"] = Json::Value(Json::objectValue);
-    for (const auto& row : sql.exec("select scope_key, id, field, rev, text from probe_marks_revisions order by scope_key, id collate \"C\", field, rev")) {
+    for (const auto& row : sql.exec("select scope_key, id, field, rev, text from " + std::string(revisionTable().table) +
+                                    " order by scope_key, id collate \"C\", field, rev")) {
       Json::Value revision(Json::objectValue);
-      revision["t"] = "mark";
+      revision["t"] = revisionTable().type;
       revision["id"] = row["id"].template as<std::string>();
       revision["field"] = row["field"].template as<std::string>();
       revision["rev"] = Json::UInt64(row["rev"].template as<std::uint64_t>());
@@ -265,7 +271,7 @@ public:
       state["revisions"][aliasKey(*ScopeKey::parse(row["scope_key"].template as<std::string>()))].append(revision);
     }
 
-    if (journal_) {
+    if (bound_ == WorldProduct::journal) {
       for (const auto& row : sql.exec("select user_id::text, to_char(day,'YYYY-MM-DD') as day,body,engine_rev,stamp_ms,stamp_counter,stamp_actor,floor(extract(epoch from superseded_at)*1000)::bigint as archived_at from journal_page_revision order by user_id,day,engine_rev")) {
         const auto scope = aliasKey(ScopeKey::product(UserId(row["user_id"].template as<std::string>()), "journal"));
         Json::Value revision(Json::objectValue);
@@ -311,7 +317,7 @@ public:
       receipt["parent"] = row["parent"].template as<std::string>();
       receipt["title"] = row["title"].template as<std::string>();
     }
-    if (gym_) {
+    if (bound_ == WorldProduct::gym) {
       state["product"] = Json::Value(Json::objectValue);
       state["product"]["seeds"] = productSeed_["seeds"];
       wm::gym::engine::PgGymState gymState;
@@ -324,7 +330,7 @@ public:
       }
       for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].isNull() || state["product"][key].empty()) state["product"].removeMember(key);
     }
-    if (journal_) {
+    if (bound_ == WorldProduct::journal) {
       state["product"] = productSeed_.isNull() ? Json::Value(Json::objectValue) : productSeed_;
       for (const char* kind : {"journalClaims", "journalContentClocks", "journalPages", "journalRevisionProjection"}) state["product"].removeMember(kind);
       // Corpus-only provenance follows retained revisions; it is not stored in Postgres.
@@ -359,6 +365,15 @@ public:
   }
 
 private:
+  // The one text type of the probe or roadmap world, and the table its superseded heads sit in.
+  struct RevisionTable {
+    const char* table;
+    const char* type;
+  };
+  RevisionTable revisionTable() const {
+    return bound_ == WorldProduct::roadmap ? RevisionTable{"roadmap_step_notes_revisions", "stepNote"} : RevisionTable{"probe_marks_revisions", "mark"};
+  }
+
   // Every account the state names: its accounts, its scopes' owners, its replicas' and requests' accounts.
   std::vector<std::string> aliasesIn(const Json::Value& state) const {
     std::set<std::string> aliases;
@@ -374,12 +389,12 @@ private:
   probe::PgProbe probe_;
   wm::gym::engine::PgGym gymProduct_;
   wm::journal::engine::PgJournal journalProduct_;
+  wm::roadmap::engine::PgRoadmap roadmapProduct_;
   SyncCatalog catalog_;
   Json::Value accounts_;
   Json::Value productSeed_;
   std::map<std::pair<std::string, std::string>, Seq> journalInitial_;
-  bool gym_;
-  bool journal_;
+  WorldProduct bound_;
 };
 
 }

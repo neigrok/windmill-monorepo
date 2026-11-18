@@ -13,8 +13,9 @@ on `/v1/sync`, and the engine is the only writer of their records: web (gym,
 journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's Coach among them, and MCP,
 the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract. The source composition also
-names roadmap (A.1), whose rules the JS reference model server carries; `windmill_server`'s build refuses that
-composition until roadmap's binding is registered beside gym's and journal's.
+names roadmap (A.1), whose rules the JS reference model server and the C++ binding carry; `windmill_server` binds
+roadmap and withholds its scopes (§9.2) unless its deployment serves them, which production does not until roadmap's
+cutover.
 
 **Registry contract:** The composed source registry is version 13 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
@@ -2890,6 +2891,11 @@ query over visible rows (§6.5). A row of a `visibleWhen` type counts only while
 holds a value, so an account whose rows are all empty holds none. A sign-in's lineage rule uses the
 hello that precedes it (§7.10).
 
+A deployment MAY compose and bind a product it withholds: it holds nothing of it. Its `holdsRecords` is false and
+its `holdings` count 0; a pull answers its product scope as an absent one (§6.7 step 2) and its trees and overlays
+`not-found`, as does a `sub` to them; and admission refuses an intent in its product scope `forbidden` and in its
+trees and overlays `not-found`, before step 3 takes any lock or inserts a scope.
+
 `holdings` is present iff `holdsRecords` is, from the same snapshot. `holdings[p]` is present iff `p`
 declares a `headline` type (§2.4): `count` is the number of rows of that type in `acct:A/<p>` that
 `visible` accepts, and `lastWrittenAt` is the greatest `ru` among them (the server's receipt of the
@@ -3200,7 +3206,7 @@ own changes revived, until the person has been told, [Roadmap on the sync engine
 §7's. **Subscriptions** (§7.9): a tree and its overlay for each `tree` record the replica holds; a reader's
 roadmap and its subtrees are subscribed explicitly as the person opens them (Roadmap on the sync engine §5).
 **Adoption:** the cutover of Roadmap on the sync engine §8.1. **Binding:** the JS reference model server
-(`packages/api-contract/sync/reference/roadmap/`); the C++ binding is not built.
+(`packages/api-contract/sync/reference/roadmap/`) and the C++ server's (`backend/products/roadmap/sync/`).
 
 `tree` mints `t_` and 16 of `0-9a-f`. `node` and `kind` take ids by `idDomain`, 1–128 chars (§2.4), mint 16 of `0-9a-z` and derive with the fallbacks `step` and `kind` (D-26). `subtask` and
 `stepLink` mint 16 base-62 characters in their overlay's id space, matching `^[A-Za-z0-9_-]{8,64}$`; Coach's

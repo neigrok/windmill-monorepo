@@ -7,6 +7,7 @@
 #include "products/probe/ProbeRegistry.h"
 #include "products/gym/sync/GymProduct.h"
 #include "products/journal/sync/JournalProduct.h"
+#include "products/roadmap/sync/RoadmapProduct.h"
 #include "test/products/journal/sync/JournalFakes.h"
 #include "test/products/gym/sync/GymFakes.h"
 #include "products/probe/application/ProbeProduct.h"
@@ -25,6 +26,19 @@
 // accounts "A" and "B"; a world maps them to the ids its store keeps.
 
 namespace wm::sync::test {
+
+// The product a world's engine binds, each under its own registry.
+enum class WorldProduct { probe, gym, journal, roadmap };
+
+inline const Registry& registryOf(WorldProduct product) {
+  switch (product) {
+    case WorldProduct::gym: return wm::gym::engine::registry();
+    case WorldProduct::journal: return wm::journal::engine::registry();
+    case WorldProduct::roadmap: return wm::roadmap::engine::registry();
+    case WorldProduct::probe: break;
+  }
+  return probe::registry();
+}
 
 class SyncWorld {
 public:
@@ -153,20 +167,22 @@ private:
   std::optional<ServerClock> clock_;
 };
 
-// The engine over the in-memory probe, gym or journal binding.
+// The engine over the in-memory probe, gym, journal or roadmap binding.
 class FakeWorld final : public SyncWorld {
 public:
-  FakeWorld(bool gym = false, bool journal = false) : catalog_(journal ? wm::journal::engine::registry() : gym ? wm::gym::engine::registry() : probe::registry()), product_(receipts_), gymProduct_(gymState_), journalProduct_(journalState_), gym_(gym), journal_(journal) {
+  explicit FakeWorld(WorldProduct product = WorldProduct::probe)
+      : catalog_(registryOf(product)), probeProduct_(receipts_), gymProduct_(gymState_), journalProduct_(journalState_), bound_(product) {
     std::map<std::string, TypeStore*> stores;
     for (const TypeDef& type : catalog_.registry().types()) {
-      if (journal_) types_.push_back(std::make_unique<wm::journal::engine::test::FakeJournalType>(type));
-      else if (gym_) types_.push_back(std::make_unique<wm::gym::engine::test::FakeGymType>(type));
+      if (bound_ == WorldProduct::journal) types_.push_back(std::make_unique<wm::journal::engine::test::FakeJournalType>(type));
+      else if (bound_ == WorldProduct::gym) types_.push_back(std::make_unique<wm::gym::engine::test::FakeGymType>(type));
       else types_.push_back(std::make_unique<fake::FakeTypeStore>(type, 1));
       stores.emplace(type.name, types_.back().get());
     }
-    if (journal_) journalProduct_.bindTo(catalog_, stores);
-    else if (gym_) gymProduct_.bindTo(catalog_, stores);
-    else product_.bindTo(catalog_, stores);
+    if (bound_ == WorldProduct::journal) journalProduct_.bindTo(catalog_, stores);
+    else if (bound_ == WorldProduct::gym) gymProduct_.bindTo(catalog_, stores);
+    else if (bound_ == WorldProduct::roadmap) roadmapProduct_.bindTo(catalog_, stores);
+    else probeProduct_.bindTo(catalog_, stores);
     catalog_.seal();
     seed(Json::Value(Json::objectValue));
   }
@@ -234,8 +250,8 @@ public:
       }
     }
     const Json::Value& product = state["product"];
-    if (gym_) db.gym = product;
-    if (journal_) db.journal = product;
+    if (bound_ == WorldProduct::gym) db.gym = product;
+    if (bound_ == WorldProduct::journal) db.journal = product;
     for (const std::string& key : product["receipts"].getMemberNames()) {
       for (const std::string& called : product["receipts"][key].getMemberNames())
         db.startReceipts[{storeKey(key), called}] = product["receipts"][key][called].asString();
@@ -302,11 +318,11 @@ public:
       state["product"]["branches"][aliasKey(key.first)][key.second]["parent"] = receipt.parent;
       state["product"]["branches"][aliasKey(key.first)][key.second]["title"] = receipt.title;
     }
-    if (gym_) {
+    if (bound_ == WorldProduct::gym) {
       state["product"] = db.gym;
       for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].empty()) state["product"].removeMember(key);
     }
-    if (journal_) {
+    if (bound_ == WorldProduct::journal) {
       state["product"] = db.journal;
       for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].empty()) state["product"].removeMember(key);
     }
@@ -319,13 +335,13 @@ private:
   fake::FakeProbeReceipts receipts_;
   std::vector<std::unique_ptr<TypeStore>> types_;
   SyncCatalog catalog_;
-  probe::ProbeProduct product_;
+  probe::ProbeProduct probeProduct_;
   wm::gym::engine::test::FakeGymState gymState_;
   wm::gym::engine::GymProduct gymProduct_;
   wm::journal::engine::test::FakeJournalState journalState_;
   wm::journal::engine::JournalProduct journalProduct_;
-  bool gym_;
-  bool journal_;
+  wm::roadmap::engine::RoadmapProduct roadmapProduct_;
+  WorldProduct bound_;
 };
 
 }

@@ -425,6 +425,23 @@ class DeployProductionTest(unittest.TestCase):
                          (1, "", "FAIL sync compatibility verification could not complete\n"))
         self.assertFalse(output.exists())
 
+    def test_the_shipped_composition_names_roadmap_at_its_interval_and_production_never_serves_it(self):
+        root = SCRIPT.parents[2]
+        contract = root / "packages/api-contract/sync"
+        output = self.bin.parent / "shipped.json"
+        result = subprocess.run([sys.executable, str(SCRIPT.with_name("sync_compatibility.py")), "metadata", str(contract), str(output)],
+                                capture_output=True, text=True, timeout=20)
+        names = json.loads((contract / "composition.json").read_text())["registries"]
+        self.assertEqual((result.returncode, result.stdout, result.stderr, names),
+                         (0, "", "", ["gym.registry.json", "journal.registry.json", "roadmap.registry.json"]))
+        # Roadmap joins additively: the composed version rises and the minimum a released gym or journal client meets
+        # does not.
+        self.assertEqual(json.loads(output.read_text()), {"schema": 13, "minSchema": 11})
+        # The server serves roadmap's scopes only where ROADMAP_ENGINE_ENABLED reaches it; production's compose file and
+        # deploy workflow pass no such variable, so production withholds them until roadmap's cutover.
+        for path in ("backend/deploy/docker-compose.yml", ".github/workflows/deploy.yml"):
+            self.assertNotIn("ROADMAP_ENGINE_ENABLED", (root / path).read_text(), path)
+
     def test_an_unchanged_caddyfile_keeps_the_running_caddy(self):
         (self.work / "Caddyfile.next").write_text("# live Caddyfile\n")
         result = self.deploy()

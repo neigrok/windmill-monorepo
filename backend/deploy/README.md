@@ -322,6 +322,12 @@ The run before it, 41319412052, failed mid-rsync with no space left on the VPS; 
 is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
 
+Schema 13 composes roadmap's registry beside gym's and journal's, and the server binds it
+(`products/roadmap/sync/`). The compose file passes no `ROADMAP_ENGINE_ENABLED`, so production withholds roadmap's
+scopes: hello says roadmap holds nothing and every roadmap intent is refused. The `roadmap_*` tables `db/schema.sql`
+creates beside roadmap's own stay empty until roadmap's cutover
+([roadmap on the engine](../../docs/foundation/roadmap-on-the-engine.md) §8.1) fills them and turns the switch on.
+
 1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
    refuses a candidate minimum that differs from the live server.
 2. Prepare schema 11 readers on every surface. Preserve stored equipment/count values, exact zero,

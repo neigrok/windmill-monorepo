@@ -55,6 +55,12 @@ void SyncCatalog::bindCommand(const std::string& name, SyncCommand& command) {
   if (!commands_.emplace(name, &command).second) throw CatalogError("the command " + name + " is bound twice");
 }
 
+void SyncCatalog::withhold(const std::string& product) {
+  if (sealed_) throw CatalogError("a product was withheld after the catalog was sealed");
+  if (!registry_.products().contains(product)) throw CatalogError("the registry declares no product " + product);
+  withheld_.insert(product);
+}
+
 void SyncCatalog::seal() {
   for (const TypeDef& type : registry_.types()) {
     if (!types_.contains(type.name)) throw CatalogError("the registry type " + type.name + " has no binding");
@@ -118,6 +124,16 @@ std::string SyncCatalog::observationProduct(const Json::Value& intent, const Use
   if (!intent.isObject() || !intent["scope"].isString()) return "platform";
   const std::optional<ScopeKey> scope = resolve(registry_, intent["scope"].asString(), caller);
   return scope ? observationProduct(scope->registryScope()) : "platform";
+}
+
+bool SyncCatalog::serves(const RegistryScope& scope) const {
+  if (scope.kind == ScopeKind::product) return serves(scope.product);
+  const TypeDef* governing = registry_.governingType();
+  return !governing || serves(governing->scope.product);
+}
+
+bool SyncCatalog::serves(const std::string& product) const {
+  return !withheld_.contains(product);
 }
 
 std::string SyncCatalog::observationOutcome(const Json::Value& result) const {
