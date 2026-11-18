@@ -31,15 +31,17 @@ import * as pullVectors from './vectors/pull.js';
 import * as refusalVectors from './vectors/refusal.js';
 import * as referenceVectors from './vectors/references.js';
 import * as registryVectors from './vectors/registry.js';
+import * as restoreVectors from './vectors/restore.js';
 import * as stampVectors from './vectors/stamp.js';
 import * as scopedPredictionVectors from './vectors/scoped-predictions.js';
 import * as textVectors from './vectors/text.js';
+import * as undoVectors from './vectors/undo.js';
 import * as viewVectors from './vectors/view.js';
 import * as writeVectors from './vectors/write.js';
 
 const BUILDERS = [
   scopedPredictionVectors,
-  stampVectors, hlcVectors, jcsVectors, joinVectors, deriveVectors, identityVectors, fracindexVectors, digestVectors, machineVectors, textVectors, admitVectors, credentialsVectors, pushVectors, pullVectors, liveVectors, pagesVectors, viewVectors, commitVectors, actVectors, holdVectors, refusalVectors, referenceVectors, registryVectors, writeVectors, lineageVectors, protocolVectors, gymVectors, journalVectors, journalClaimVectors,
+  stampVectors, hlcVectors, jcsVectors, joinVectors, deriveVectors, identityVectors, fracindexVectors, digestVectors, machineVectors, textVectors, admitVectors, credentialsVectors, pushVectors, pullVectors, liveVectors, pagesVectors, viewVectors, commitVectors, actVectors, holdVectors, refusalVectors, referenceVectors, registryVectors, writeVectors, lineageVectors, protocolVectors, gymVectors, journalVectors, journalClaimVectors, undoVectors, restoreVectors,
 ];
 
 export const CORPUS = fileURLToPath(new URL('../corpus/', import.meta.url));

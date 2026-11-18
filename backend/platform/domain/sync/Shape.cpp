@@ -2,6 +2,7 @@
 
 #include "platform/domain/sync/Identity.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/Restore.h"
 
 #include <algorithm>
 #include <initializer_list>
@@ -144,8 +145,13 @@ Cmd commandOf(const Registry& registry, const ScopeKey& scope, const Json::Value
   const CommandDef* def = wire["name"].isString() ? registry.command(wire["name"].asString()) : nullptr;
   const Json::Value& args = wire["args"];
   if (!def || def->scope != scope.registryScope() || !args.isObject()) invalid();
+  if (def->engine == EngineCommand::restore) {
+    if (!admitsRestoreArguments(registry, *def, args)) invalid();
+    return Cmd{def->name, args};
+  }
+  if (def->inverse && (!args.isMember("evidence") || !admitsEvidence(registry, args["evidence"]))) invalid();
   for (const std::string& name : args.getMemberNames()) {
-    if (!def->args.contains(name)) invalid();
+    if (!def->args.contains(name) && !(def->inverse && name == "evidence")) invalid();
   }
   for (const auto& [name, arg] : def->args) {
     if (!args.isMember(name)) {

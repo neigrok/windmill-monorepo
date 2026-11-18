@@ -8,6 +8,7 @@ import { receiptEffects } from '../core/receipts.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
+import { retainOutcome } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
 import { applyAcceptedVersions, applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
@@ -185,6 +186,7 @@ export function applyPushResult(replica, ctx, result, body) {
   meta.serverEpoch ??= body.epoch;
   if (result.s === 'refused') {
     onRefused(replica, ctx, entry, result, body);
+    if (replica.entry(entry.localId) !== entry) retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'refused' });
     return;
   }
   moveEntry(replica, ctx.ended, entry, 'ok');
@@ -193,6 +195,7 @@ export function applyPushResult(replica, ctx, result, body) {
   replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
   if (result.write) applyWriteMap(replica, ctx, entry, result.write);
   if (effects) applyReceipt(replica, ctx, entry, effects, result.write ?? []);
+  retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'ok', acceptedEffects: entry.acceptedEffects });
   resolveIfCovered(replica, ctx, entry);
 }
 

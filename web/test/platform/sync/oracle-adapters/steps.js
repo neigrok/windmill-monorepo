@@ -13,6 +13,7 @@ import { release, releaseAll, releaseDue, undo } from '../../../../../packages/a
 import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../../packages/api-contract/sync/reference/client/refusal.js';
+import { releaseReversibleAct } from '../../../../../packages/api-contract/sync/reference/client/journal.js';
 import { Device } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
 import { nextPush, onHello, onPushResponse, ResponseError } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
 import { reconcile, subscribe, subscriptionsOf } from '../../../../../packages/api-contract/sync/reference/client/subscriptions.js';
@@ -152,6 +153,9 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           break;
         case 'undo':
           answer(undo(replica, registry, ended, step.gestureId));
+          break;
+        case 'releaseReversibleAct':
+          answer(releaseReversibleAct(replica, step.actId));
           break;
         case 'dismiss':
           dismiss(replica, step.id);

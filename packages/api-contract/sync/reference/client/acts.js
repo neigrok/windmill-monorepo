@@ -2,6 +2,7 @@ import { CONSTANTS } from '../core/constants.js';
 import { mintId } from '../core/derive.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError, commitGesture } from './commit.js';
+import { optedGesture, planUndo, recordAct } from './journal.js';
 import { drawn, stored } from './views.js';
 
 function newActScope(replica, registry, scope) {
@@ -80,10 +81,11 @@ export class ActCommit {
     }
     if (!this.working) {
       if (request.gestureId !== undefined && request.gestureId !== null && ctx.device.carriesGesture(request.gestureId)) throw new CommitError('the act gesture id is taken');
+      this.undoPlan = planUndo(replica, ctx.registry, request);
       this.gestureId = request.gestureId ?? ctx.nextGestureId();
       this.working = Object.assign(Object.create(Object.getPrototypeOf(replica)), replica, {
         meta: structuredClone(replica.meta), outbox: structuredClone(replica.outbox),
-        notices: structuredClone(replica.notices), device: structuredClone(replica.device),
+        notices: structuredClone(replica.notices), device: structuredClone(replica.device), journal: structuredClone(replica.journal),
       });
       this.firstOrder = replica.nextCommitOrder();
       this.index = 0; this.offset = 0; this.receipts = []; this.retired = new Set(); this.superseded = new Set(); this.ended = [];
@@ -104,7 +106,7 @@ export class ActCommit {
         finally { loan = false; }
       }
       const gesture = this.segment;
-      const opts = gesture.opts ?? {};
+      const opts = this.undoPlan?.has(this.index) ? optedGesture(ctx.registry, scope, gesture.opts ?? {}) : gesture.opts ?? {};
       if (opts.gestureId !== undefined && opts.gestureId !== this.gestureId || opts.hold && !request.hold) throw new CommitError('a segment uses its act identity and hold');
       const before = structuredClone(working.meta);
       const result = commitGesture(working, { ...ctx, actor: this.actor, deviceNow: this.deviceNow, ended: this.ended }, this.now,
@@ -120,7 +122,8 @@ export class ActCommit {
       delete this.segment;
     }
     if (!this.wrote) return { outcome: null, value };
-    for (const key of ['meta', 'outbox', 'notices', 'device']) replica[key] = working[key];
+    recordAct(working, this.gestureId, this.undoPlan, this.receipts);
+    for (const key of ['meta', 'outbox', 'notices', 'device', 'journal']) replica[key] = working[key];
     ctx.ended.push(...this.ended);
     return { outcome: { gestureId: this.gestureId, segments: this.receipts, retired: [...this.retired], superseded: [...this.superseded],
       releaseAt: request.hold && this.offset > 0 ? this.deviceNow + (ctx.limits ?? CONSTANTS).HOLD_MS : null }, value };
