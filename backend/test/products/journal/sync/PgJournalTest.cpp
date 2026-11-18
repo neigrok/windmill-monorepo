@@ -78,7 +78,7 @@ struct CountingWatcher final : PageWatcher {
 };
 
 Json::Value retentionVector(const Json::Value& input) {
-  static test::PgWorld world(false, true);
+  static test::PgWorld world(test::WorldProduct::journal);
   world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
   const auto scope = ScopeKey::product(world.account("A"), "journal");
   auto txn = world.store().begin(TxnMode::write);
@@ -109,7 +109,7 @@ Json::Value retentionVector(const Json::Value& input) {
   for (const std::string name : {"page", "journalState"})
     ::testing::Register{"journal_store_round_trip/" + name, [name, vectors] {
       if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
-      test::PgWorld world(false, true);
+      test::PgWorld world(test::WorldProduct::journal);
       bool exercised = false;
       for (const auto& vector : vectors) {
         const auto state = vector["input"]["state"];
@@ -158,7 +158,7 @@ Json::Value retentionVector(const Json::Value& input) {
 
 TEST(journal_claim_receipts_and_content_clock_are_transactional_and_purged) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
-  test::PgWorld world(false, true);
+  test::PgWorld world(test::WorldProduct::journal);
   world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
   journal::engine::PgJournalState book;
   const auto scope = ScopeKey::product(world.account("A"), "journal");
@@ -190,7 +190,7 @@ TEST(journal_claim_receipts_and_content_clock_are_transactional_and_purged) {
 TEST(journal_admitted_pages_read_back_through_the_rest_reads_with_their_notices_and_revisions) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   BlockingThread::Mark blocking;
-  test::PgWorld world(false, true);
+  test::PgWorld world(test::WorldProduct::journal);
   world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
   const auto user = world.account("A");
   const LocalDate day("2026-10-01");
@@ -266,7 +266,7 @@ TEST(journal_admitted_pages_read_back_through_the_rest_reads_with_their_notices_
 TEST(journal_pages_are_visible_and_tallied_in_postgres_exactly_as_the_engine_reads_a_blank_body) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   BlockingThread::Mark blocking;
-  test::PgWorld world(false, true);
+  test::PgWorld world(test::WorldProduct::journal);
   world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
   const auto user = world.account("A");
   CountingWatcher watcher;
@@ -308,7 +308,7 @@ TEST(journal_pages_are_visible_and_tallied_in_postgres_exactly_as_the_engine_rea
 TEST(journal_partial_first_run_retirement_allows_a_later_state_save_page_save_and_claim) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   BlockingThread::Mark blocking;
-  test::PgWorld world(false, true);
+  test::PgWorld world(test::WorldProduct::journal);
   world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
   const auto user = world.account("A");
   const Ms now = 1'760'000'000'000;
@@ -371,7 +371,7 @@ TEST(journal_partial_first_run_retirement_allows_a_later_state_save_page_save_an
 TEST(journal_claim_replays_without_a_write_and_a_changed_claim_conflicts) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   BlockingThread::Mark blocking;
-  test::PgWorld world(false, true);
+  test::PgWorld world(test::WorldProduct::journal);
   world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
   const auto user = world.account("A");
   const Ms now = 1'760'000'000'000;

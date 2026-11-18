@@ -86,8 +86,13 @@ test('registry.schema.json refuses broken registries', () => {
     'no types': broken((r) => delete r.types),
     'capture without scoped effects': broken((r) => delete command(r, 'probe.capture').scopedEffects),
     'capture with arguments': broken((r) => { command(r, 'probe.capture').args.id = { type: 'ref<card>' }; }),
-    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'restore'; }),
+    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'replay'; }),
     'false scoped effects': broken((r) => { command(r, 'probe.capture').scopedEffects = false; }),
+    'a restore without predictions': broken((r) => { delete command(r, 'probe.restore').predicts; }),
+    'a restore with typed references': broken((r) => { command(r, 'probe.restore').refPaths = [{ path: ['x'], type: 'card', scope: { kind: 'origin' } }]; }),
+    'an inverse command without scoped effects': broken((r) => { delete command(r, 'probe.unbranch').scopedEffects; }),
+    'an inverse command with another argument': broken((r) => { command(r, 'probe.unbranch').args.evidence = { type: 'json' }; }),
+    'an inverse engine command': broken((r) => { command(r, 'probe.unbranch').engine = 'restore'; }),
     'an unknown identity class': broken((r) => { card(r).identity = 'random'; }),
     'a ranked field without ranks': broken((r) => { delete card(r).fields.tier.rank; }),
     'a serial field written by clients': broken((r) => { r.types.find((t) => t.type === 'lap').fields.no.writer = 'client'; }),
@@ -127,8 +132,11 @@ test('the Registry refuses what the schema cannot express', () => {
   const cases = {
     'capture without scoped effects': broken((r) => delete command(r, 'probe.capture').scopedEffects),
     'capture with arguments': broken((r) => { command(r, 'probe.capture').args.id = { type: 'ref<card>' }; }),
-    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'restore'; }),
+    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'replay'; }),
     'false scoped effects': broken((r) => { command(r, 'probe.capture').scopedEffects = false; }),
+    'a restore of a governing type': broken((r) => { command(r, 'probe.restore').predicts.push('board'); }),
+    'a restore of a type in another scope': broken((r) => { command(r, 'probe.restore').predicts.push('meta'); }),
+    'an inverse command with an optional input': broken((r) => { command(r, 'probe.unbranch').args.input.optional = true; }),
     'unknown scoped prediction type': broken((r) => { command(r, 'probe.capture').predicts.push('missing'); }),
     'a ref to an unknown type': broken((r) => { card(r).fields.attachment.ref = 'ghost'; }),
     'origins without replica': broken((r) => { card(r).origins = ['server']; }),
@@ -214,17 +222,17 @@ test('the product registries are gym, journal and roadmap, each valid against re
 
 // A deployment composes the registries composition.json names into one registry: one version, the version every
 // request carries (§9.1), and no product, type, command or refusal code a second registry declares again. It names
-// gym and journal (§2.4).
-test('composition.json names the composed registries: gym and journal, each a product registry', () => {
+// gym, journal and roadmap (§2.4).
+test('composition.json names the composed registries: gym, journal and roadmap, each a product registry', () => {
   assert.deepEqual(Object.keys(COMPOSITION).sort(), ['composition', 'registries']);
-  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json']);
+  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json', 'roadmap.registry.json']);
   for (const name of COMPOSITION.registries) assert.ok(PRODUCTS.some((registry) => `${registry.registry}.registry.json` === name), name);
 });
 
 // So a product registry joins the composition without a rename, no two product registries, composed or not, declare a
 // name twice.
 test('the composed registries declare one version, and no product registry declares a name another does', () => {
-  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[12, 11], [12, 11]]);
+  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[13, 11], [13, 11], [13, 11]]);
   const names = (pick) => PRODUCTS.flatMap(pick);
   const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
   for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {

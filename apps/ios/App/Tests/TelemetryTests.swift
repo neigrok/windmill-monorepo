@@ -102,6 +102,18 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func anUndoOfAnActReportsOutcomesAndCountsAndDropsItsIds() {
+    #expect(TelemetryPrivacy.events.contains("sync_inverse"))
+    for outcome in ["ok", "pending", "unavailable", "failed"] {
+      #expect(TelemetryPrivacy.properties(["outcome": outcome, "requestId": "g_private0001"]) == ["outcome": .label(outcome)])
+    }
+    let settled: [String: EventValue] = ["outcome": .label("settled"), "applied": .number(2), "skipped": .number(1)]
+    #expect(TelemetryPrivacy.properties(["outcome": "settled", "applied": "2", "skipped": "1", "inverseActId": "g_private0002"]) == settled)
+    let waiting: [String: EventValue] = ["outcome": .label("pending"), "waiting": .number(3), "age_ms": .number(10_000_000)]
+    #expect(TelemetryPrivacy.properties(["outcome": "pending", "waiting": "3", "age_ms": "86400000", "actId": "card0001"]) == waiting)
+    #expect(TelemetryPrivacy.properties(["outcome": "settled", "applied": "card0001"]) == ["outcome": .label("settled")])
+  }
+
   @Test func receiptAndConfirmationStepsRetainOnlyBoundedActionLabels() {
     #expect(TelemetryPrivacy.properties(["screen": "workout", "action": "share", "sessionId": "private-id", "question": "private-text"]) ==
             ["screen": .label("workout"), "action": .label("share")])

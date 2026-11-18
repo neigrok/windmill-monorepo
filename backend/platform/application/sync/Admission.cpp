@@ -5,6 +5,7 @@
 
 #include "platform/domain/sync/Admit.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/Restore.h"
 #include "platform/domain/sync/Shape.h"
 
 #include <algorithm>
@@ -28,6 +29,12 @@ std::string partId(const CallPart& call) {
 // A record's id as an advisory lock names it (§6.1 step 3.6).
 std::pair<std::string, std::string> globalIdOf(const std::string& type, const RecordId& id) {
   return {type, id.column()};
+}
+
+// A product the deployment withholds admits nothing: its product scope reads empty and takes no write, and its trees
+// and overlays read as absent (SyncCatalog::withhold).
+const std::string& withheldRefusal(const ScopeKey& scope) {
+  return scope.kind() == ScopeKind::product ? code::forbidden : code::notFound;
 }
 
 }
@@ -117,6 +124,7 @@ private:
     } catch (const std::exception& error) {
       return answerFault(error);
     }
+    if (!a_.catalog_.serves(scope().registryScope())) return answerRefusal(Refused{withheldRefusal(scope()), {}});
     std::unique_lock<std::timed_mutex> stripe;
     AdmitOutcome outcome = [this, &stripe]() -> AdmitOutcome {
       try {
@@ -163,6 +171,8 @@ public:
   std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query) override {
     return a_.catalog_.store(type).feed(*txn_, key, query);
   }
+
+  bool declared(const ScopeKey& key) override { return effectScopes_.contains(key); }
 
 private:
   void observeCommand(const Json::Value& wire) {
@@ -447,6 +457,7 @@ private:
     if (!intent().cmd) return;
     CommandCtx ctx = commandCtx();
     CommandOutcome outcome = a_.catalog_.command(intent().cmd->name).run(ctx);
+    if (registry_.command(intent().cmd->name)->inverse && !reportsInverseOutcome(outcome.detail)) throw std::logic_error("an inverse command reports no outcome");
     changes_->setWriteMap(std::move(outcome.write));
     detail_ = std::move(outcome.detail);
     Effects effects{{{scope(), std::move(outcome.deltas)}}};
@@ -457,12 +468,20 @@ private:
     admitEffects(effects, Source::command);
   }
 
+  // 8's discovery: the rules of every type the intent's deltas write, and of every type a restore writes back, whose
+  // checks its deltas trigger; then the command's own.
   void discoverEffectScopes() {
     effectScopes_.insert(scope());
     const CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this, *txn_, intent()};
+    std::vector<std::string> written;
+    for (const Delta& delta : intent().d) written.push_back(delta.t);
+    if (intent().cmd) {
+      const CommandDef& command = *registry_.command(intent().cmd->name);
+      if (command.engine == EngineCommand::restore) written.insert(written.end(), command.predicts.begin(), command.predicts.end());
+    }
     std::set<TypeRules*> discovered;
-    for (const Delta& delta : intent().d) {
-      TypeRules* rules = a_.catalog_.rules(delta.t);
+    for (const std::string& type : written) {
+      TypeRules* rules = a_.catalog_.rules(type);
       if (!rules || !discovered.insert(rules).second) continue;
       const auto targets = rules->discoverEffectScopes(ctx);
       effectScopes_.insert(targets.begin(), targets.end());
@@ -806,7 +825,8 @@ private:
 
   CommandCtx commandCtx() {
     const Json::Value& wire = builtWire_ ? *builtWire_ : wire_;
-    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire["cmd"]["args"]};
+    if (!epoch_) epoch_ = store().epoch(*txn_);
+    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire["cmd"]["args"], *epoch_};
   }
 
   // The records a command's `ref<t>` arguments name.
@@ -882,6 +902,7 @@ private:
   const Origin& origin_;
   const Json::Value& wire_;
   std::optional<Json::Value> builtWire_;
+  std::optional<std::string> epoch_;
   const Ms now_;
   const Sender caller_;
   const ServerBuilder* builder_;

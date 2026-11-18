@@ -117,7 +117,8 @@ std::map<ScopeKey, std::optional<ScopeRow>> SyncLive::readTrees(const std::vecto
 }
 
 // Folds each snapshot row into the cache unless a newer change was published, then decides every ref by D-4 as
-// the socket's principal now reads: readable subscribes and sends nothing, anything else answers.
+// the socket's principal now reads: readable subscribes and sends nothing, anything else answers. A tree or overlay
+// of a product the deployment withholds is not-found, as a pull answers it.
 void SyncLive::decide(const LiveSocket& socket, const std::vector<Wanted>& wanted, const std::map<ScopeKey, std::optional<ScopeRow>>& trees) {
   std::lock_guard lock(mutex_);
   for (const auto& [tree, row] : trees) {
@@ -125,7 +126,7 @@ void SyncLive::decide(const LiveSocket& socket, const std::vector<Wanted>& wante
   }
   if (const auto subscriber = sockets_.find(&socket); subscriber != sockets_.end()) {
     for (const Wanted& one : wanted) {
-      if (!one.key) {
+      if (!one.key || (one.key->kind() != ScopeKind::product && !catalog_.serves(one.key->registryScope()))) {
         answer(subscriber->second, "not-found", one.ref);
         continue;
       }

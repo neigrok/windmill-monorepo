@@ -15,7 +15,8 @@ export class EffectPlanProduct extends ProbeProduct {
 
   runCommand(ctx, cmd) {
     const result = super.runCommand(ctx, cmd);
-    return { ...result, into: [...(result.into ?? []), ...Object.entries(this.plan.command ?? {}).map(([scopeKey, deltas]) => ({ scopeKey, deltas }))] };
+    return { ...result, into: [...(result.into ?? []), ...Object.entries(this.plan.command ?? {}).map(([scopeKey, deltas]) => ({ scopeKey, deltas }))],
+      ...(Object.hasOwn(this.plan, 'detail') ? { detail: this.plan.detail } : {}) };
   }
 
   effects(ctx, changes) {

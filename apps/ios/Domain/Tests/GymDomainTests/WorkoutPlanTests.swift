@@ -87,7 +87,7 @@ struct WorkoutPlanTests {
     #expect(try Self.revise(a, [.setRest(index: 0, restSeconds: 150)]).receipt != nil)
     let removal = try #require(try a.runner.run(DeleteSet(pull.id)).receipt)
     #expect(try Self.revise(a, [.setRest(index: 1, restSeconds: 90)]).refusal == locked)
-    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.runner.cancelHeld(removal.gestureId))
     _ = try #require(try a.runner.run(DeleteSet(pull.id)).receipt)
     a.advance(ms: Constants.holdMs)
     a.sync()

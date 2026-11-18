@@ -291,12 +291,95 @@ public enum CommitOutcome: Hashable, Sendable {
   case refused(RefusalCode, detail: JSON?, notice: String? = nil)
 }
 
+// §7.3 an act's opt-in to Undo: each named segment's recipes, by its index in the act.
+public struct ActUndo: Sendable, Hashable {
+  public struct Segment: Sendable, Hashable {
+    public let index: Int
+    public let recipes: [ActUndoRecipe]
+
+    public init(index: Int, recipes: [ActUndoRecipe]) {
+      self.index = index
+      self.recipes = recipes
+    }
+  }
+
+  public let segments: [Segment]
+
+  public init(segments: [Segment]) {
+    self.segments = segments
+  }
+
+  // `{version: 1, segments: [{index, recipes}]}`.
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    try object.expectKeys(required: ["version", "segments"])
+    guard try object.member("version").asInteger() == 1 else { throw JSONError.shape("an act undo is version 1") }
+    segments = try object.member("segments").asArray().map { (segment: JSON) throws -> Segment in
+      let fields = try segment.asObject()
+      try fields.expectKeys(required: ["index", "recipes"])
+      return Segment(index: Int(try fields.member("index").asInteger()),
+                     recipes: try fields.member("recipes").asArray().map { (recipe: JSON) throws -> ActUndoRecipe in try ActUndoRecipe(json: recipe) })
+    }
+  }
+}
+
+// §7.3 Undo of an act (K-3): what an Undo or a Redo came to. A pending one says whether the device's view changed; a
+// settled one whether accepted effects changed anything and how many conditional operations applied and skipped.
+public enum InverseResult: Sendable, Hashable {
+  case cancelled(requestId: String, inverseActId: String, changed: Bool)
+  case pending(requestId: String, inverseActId: String, localChanged: Bool)
+  case settled(requestId: String, inverseActId: String, changed: Bool, appliedCount: Int, skippedCount: Int)
+  case unavailable(requestId: String?, reason: String)
+
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    let text = { (key: String) throws -> String in try object.member(key).asString() }
+    switch try text("kind") {
+    case "cancelled": self = .cancelled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool())
+    case "pending":
+      self = .pending(requestId: try text("requestId"), inverseActId: try text("inverseActId"), localChanged: try object.member("localChanged").asBool())
+    case "settled":
+      self = .settled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool(),
+                      appliedCount: Int(try object.member("appliedCount").asInteger()), skippedCount: Int(try object.member("skippedCount").asInteger()))
+    case "unavailable":
+      self = .unavailable(requestId: try object.member("requestId").nullable { (id: JSON) throws -> String in try id.asString() }, reason: try text("reason"))
+    default: throw JSONError.shape("an unknown inverse result")
+    }
+  }
+
+  // Its kind as telemetry may name it: cancelled, pending, settled or unavailable, never an id.
+  public var kindName: String {
+    switch self {
+    case .cancelled: "cancelled"
+    case .pending: "pending"
+    case .settled: "settled"
+    case .unavailable: "unavailable"
+    }
+  }
+
+  public var json: JSON {
+    switch self {
+    case .cancelled(let requestId, let inverseActId, let changed):
+      return ["kind": "cancelled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed)]
+    case .pending(let requestId, let inverseActId, let localChanged):
+      return ["kind": "pending", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "localChanged": .bool(localChanged)]
+    case .settled(let requestId, let inverseActId, let changed, let applied, let skipped):
+      return ["kind": "settled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed),
+              "appliedCount": JSON(applied), "skippedCount": JSON(skipped)]
+    case .unavailable(let requestId, let reason):
+      return ["kind": "unavailable", "requestId": requestId.map(JSON.string) ?? .null, "reason": .string(reason)]
+    }
+  }
+}
+
 public struct ActRequest: Sendable {
   public let scopes: [ScopeRef]
   public let hold: Bool
   public let gestureId: String?
-  public init(scopes: [ScopeRef], hold: Bool = false, gestureId: String? = nil) {
-    self.scopes = scopes; self.hold = hold; self.gestureId = gestureId
+  // §7.3: the act's opt-in to Undo after its hold, nil for an act that keeps only the held Undo.
+  public let undo: ActUndo?
+  public init(scopes: [ScopeRef], hold: Bool = false, gestureId: String? = nil, undo: ActUndo? = nil) {
+    self.scopes = scopes; self.hold = hold; self.gestureId = gestureId; self.undo = undo
   }
 }
 

@@ -3,6 +3,7 @@ import SyncAPI
 import SyncCore
 import SyncEngine
 import SyncReplica
+import SyncSchema
 import SyncStore
 import SyncTesting
 import Synchronization
@@ -1189,6 +1190,15 @@ struct PullerTests {
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, digestOf: [card]), Rig.rows(in: Self.tree, seq: 0)]))
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, Self.tree))
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, Self.live(1)), Self.pulled(Self.tree, nil), Self.pulled(Self.overlay, nil)]))
+  }
+
+  // §7.9: a bound replica pulls the products its build carries for its surface, as the iPhone carries gym and journal of a
+  // registry that also composes roadmap.
+  @Test func aBoundReplicaPullsOnlyTheProductsItsBuildCarries() async throws {
+    let rig = try Rig(account: "A", registry: SyncSchema.registry, carried: ["gym", "journal"])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Gym.scope, seq: 0), Rig.rows(in: Journal.scope, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Gym.scope, Journal.scope))
+    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Gym.scope, nil), Self.pulled(Journal.scope, nil)])])
   }
 
   @Test func a401PausesTheReplicaUntilReauthentication() async throws {

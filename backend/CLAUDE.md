@@ -33,9 +33,10 @@ recorded either way.
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
 with four shared layers: `domain/` (pure), `application/` (services over
 ports), `ports/` (the abstractions), `adapters/` (one subfolder per messy edge — `http` and `postgres`
-everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them). Gym and journal each keep their
-small engine binding together in `sync/`: rules, state port, product registry/binding and Postgres
-stores, plus gym's server write door and journal's change feed. Each builds into its product library.
+everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them). Gym, journal and roadmap each keep
+their small engine binding together in `sync/`: rules, product registry/binding and Postgres stores, plus
+gym's and journal's state ports, gym's server write door and journal's change feed. Each builds into its
+product library.
 
 Composition roots: `platform/infra/main.cpp` (REST, the collab socket, MCP and the sync engine in one
 process; it builds `windmill_server`, the harness-clocked `windmill_server_test_clock` and the probe's
@@ -99,14 +100,17 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym and journal bindings against registry v12/minimum 11 and composition.json. `windmill_sync_tests` replays the server's files again
-over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
+(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v13/minimum 11 and composition.json.
+`windmill_sync_tests` replays the server's files again over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
-`products/gym/sync/` binds gym's thirteen types and nine commands, and `products/journal/sync/` binds
-journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`.
-`platform/infra/SyncProducts` seals the two into the gym + journal v12/minimum-11 catalog. `windmill_server`
-always serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, and the engine is the only
-writer of gym and journal client data. Every gym write the server makes for a lifter — the MCP gym
+`products/gym/sync/` binds gym's thirteen types and nine commands, `products/journal/sync/` binds
+journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`, and
+`products/roadmap/sync/` binds roadmap's fourteen types and five product commands on `roadmap_*` tables of
+their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v13/minimum-11 catalog.
+`windmill_server` serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, roadmap's scopes only
+where `ROADMAP_ENGINE_ENABLED` is `true` or `1`: production passes no such variable, so it withholds them, and
+they read as absent and admit nothing, until roadmap's cutover. The engine is the only writer of gym and
+journal client data. Every gym write the server makes for a lifter — the MCP gym
 tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, the
 proposal unlink a Coach conversation's delete makes, and the `interrupted` a dropped phone Coach turn
 leaves — goes through `GymDoor`, the one `GymWriteDoor`, as a server-origin intent; it builds its own
@@ -117,8 +121,8 @@ weigh-in reads use repository ports directly. The gym repositories only read, bu
 Coach threads. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
 `PageWatcher` (echo derivation) after the live feed, reporting a failure of either after the commit.
 
-The admission corpus of both products runs over fakes and over Postgres, and so do journal's revision
-retention vectors. Postgres cases run under `WM_PG_TEST` against two databases that `db/schema.sql`
+The admission corpus of gym, journal and roadmap runs over fakes and over Postgres, and so do journal's
+revision retention vectors. Postgres cases run under `WM_PG_TEST` against two databases that `db/schema.sql`
 builds: `DATABASE_URL`, and `WM_SYNC_DATABASE_URL` with `db/probe.sql` beside it, which the `sync` suite
 and every gym case that writes through `GymDoor` use (`RUNNING.md` §7).
 
@@ -129,7 +133,7 @@ and every gym case that writes through `GymDoor` use (`RUNNING.md` §7).
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:
-that server mounts the engine over the probe instead of gym and journal and refuses to start where
+that server mounts the engine over the probe instead of the product composition and refuses to start where
 `WINDMILL_APP_URL` is https, and the Dockerfile fails the image if a probe symbol reaches
 `windmill_server` or `windmill_mcp_http`.
 

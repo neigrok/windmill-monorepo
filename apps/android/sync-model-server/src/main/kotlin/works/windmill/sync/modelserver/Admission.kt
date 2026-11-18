@@ -39,10 +39,17 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
             intent.command?.definition?.let { if (it.serverInternal && origin.isReplica || origin.kind !in it.origins) throw Refusal("forbidden") }
             if (intent.deltas.any { origin.kind !in registry.type(it.key.type)!!.json.member("origins").arr().map(Json::str) }) throw Refusal("forbidden")
             val client = lockIdentities(intent.deltas, scope, "intent")
-            if (intent.command?.takeUnless { it.definition.engine == "capture" }?.let { rules.replays(it, context()) } != true) checkGuards(client)
+            if (intent.command?.takeIf { it.definition.engine == null }?.let { rules.replays(it, context()) } != true) checkGuards(client)
             discoverEffectScopes()
             // `engine: "capture"` runs no product command: the intent's own deltas, checks and consequences are what it receipts.
-            val outcome = intent.command?.let { if (it.definition.engine == "capture") CommandOutcome(product = state.product) else rules.run(it, context()) }
+            val outcome = intent.command?.let { when (it.definition.engine) {
+                "capture" -> CommandOutcome(product = state.product)
+                "restore" -> restore(it.restore!!)
+                else -> rules.run(it, context()).also { outcome ->
+                    // An inverse command answers its one outcome; a handler that reports none is a contract fault, and commits nothing.
+                    if (it.definition.inverse) try { InverseOutcome.read(outcome.detail, 1) } catch (missing: JsonError) { throw AdmissionFault(missing) }
+                }
+            } }
             outcome?.let { state.product = it.product }
             val commandEffects = outcome?.into.orEmpty().toMutableMap()
             commandEffects[scope] = outcome?.deltas.orEmpty() + commandEffects[scope].orEmpty()
@@ -63,6 +70,13 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
             if (receipted.member("detail").member("windmillKit").jcs.encodeToByteArray().size > limits.receiptMaxBytes ||
                 EffectReceipt.responseBytes(receipted, state.epoch, origin.account) > limits.scopedResponseMaxBytes) throw Refusal("too-large")
             return receipted
+        }
+        // §6.4 restore: each operation holds or skips by its own condition against the scope as stored, and what holds writes back its
+        // earlier value as the command's own delta, under the stamp step 9 mints.
+        private fun restore(args: RestoreArguments): CommandOutcome {
+            val evaluation = args.evaluate(registry, { key -> state.rows[scope.text]?.get(key)?.let(::Row) },
+                { key -> state.idState(key, scope, registry).state != "none" }, state.epoch)
+            return CommandOutcome(evaluation.deltas.map { IntentShape.effect(it, scope, "command", registry) }, detail = InverseOutcome.detail(evaluation.outcomes), product = state.product)
         }
         // §6.4: the caller's own committed effects, scope by scope: every declared target, every scope this admission created, and every
         // owned scope a death ended, with their watermarks and changed rows. Another reader's overlay never appears.

@@ -7,9 +7,12 @@ import works.windmill.sync.api.CommitContext
 import works.windmill.sync.api.CommitFailure
 import works.windmill.sync.api.CommitOutcome
 import works.windmill.sync.api.CommitReceipt
+import works.windmill.sync.api.InverseResult
 import works.windmill.sync.api.Record
+import works.windmill.sync.api.RecordID
 import works.windmill.sync.api.RecordRef
 import works.windmill.sync.api.Replica
+import works.windmill.sync.api.UndoSegment
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RefusalCode
 import works.windmill.sync.core.Registry
@@ -19,6 +22,8 @@ import works.windmill.sync.core.lives
 interface Decider<L, T, R> {
     val scope: ScopeRef
     val refusals: Refusals<R>
+    // §9.6: a reversible action runs through the one-segment act path, so its plan may opt into Undo after its hold.
+    val reversible: Boolean get() = false
     fun load(read: Reader): L
     fun decide(loaded: L, ids: IDSource): Decision<T, R>
     fun decision(loaded: L, ids: IDSource): Decision<T, R> =
@@ -44,10 +49,11 @@ val <T, R> Outcome<T, R>.refusal: R? get() = (this as? Outcome.Refused<R>)?.refu
 
 class ProgrammingFault(message: String, cause: Exception) : IllegalStateException(message, cause)
 
-class IDSource(val context: CommitContext) {
-    fun opaqueID(): String = try { context.opaqueID() }
+class IDSource internal constructor(private val opaque: () -> String, private val minting: (String) -> RecordID) {
+    constructor(context: CommitContext) : this(context::opaqueID, context::mintID)
+    fun opaqueID(): String = try { opaque() }
         catch (failure: Exception) { throw ProgrammingFault("minting an opaque identity failed", failure) }
-    fun <E : Entity<E>> mint(type: EntityType<E>): Id<E> = try { Id(context.mintID(type.type), type) }
+    fun <E : Entity<E>> mint(type: EntityType<E>): Id<E> = try { Id(minting(type.type), type) }
         catch (failure: Exception) { throw ProgrammingFault("minting an entity identity failed", failure) }
 }
 
@@ -59,6 +65,30 @@ interface ActionContext {
 class ActionRunner(private val replica: Replica, val registry: Registry, private val zone: Zone,
     private val context: ActionContext) {
     fun <L, T, R> run(action: Action<L, T, R>): Outcome<T, R> = perform(action)
+    // One decider's run: a reversible one through the one-segment act path, so its receipt's gesture id is the act an Undo names (§9.6),
+    // and any other as one commit.
+    internal fun <L, T, R> perform(decider: Decider<L, T, R>): Outcome<T, R> {
+        if (!decider.reversible) return commitOne(decider)
+        val scope = decider.scope
+        val outcome = runAct(object : ActAction<L, T, R> {
+            override val refusals = decider.refusals
+            override fun load(read: ActReader): L = read.inScope(scope, decider::load)
+            override fun decide(loaded: L, ids: ActIDSource): ActDecision<T, R> = when (val decided = decider.decision(loaded, ids.inScope(scope))) {
+                is Decision.Write -> ActDecision.Write(ActPlan(listOf(ScopedPlan(scope, decided.plan))), decided.result)
+                is Decision.Unchanged -> ActDecision.Unchanged(decided.result)
+                is Decision.Refuse -> ActDecision.Refuse(decided.refusal)
+            }
+        })
+        return when (outcome) {
+            is ActOutcome.Committed -> outcome.receipt.let { receipt ->
+                val segment = receipt.segments.single()
+                Outcome.Committed(outcome.result, CommitReceipt(receipt.gestureId, checkNotNull(segment.stamp), segment.localIds, segment.ids, receipt.releaseAt,
+                    receipt.retired, receipt.superseded))
+            }
+            is ActOutcome.Unchanged -> Outcome.Unchanged(outcome.result)
+            is ActOutcome.Refused -> Outcome.Refused(outcome.refusal)
+        }
+    }
     fun <L, T, R> runAct(action: ActAction<L, T, R>): ActOutcome<T, R> {
         check(!context.insideRun) { "a run cannot enter inside a run" }
         context.insideRun = true
@@ -67,7 +97,9 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
                 when (val decision = action.decision(source, registry, Moment(Instant(source.now), zone))) {
                     is ActDecision.Refuse -> null to ActStep.Done(ActOutcome.Refused(decision.refusal))
                     is ActDecision.Unchanged -> null to ActStep.Done(ActOutcome.Unchanged(decision.result))
-                    is ActDecision.Write -> ActRequest(decision.plan.segments.map { it.scope }, decision.plan.segments.any { it.plan.isHeld }) to ActStep.Writing(decision.plan, decision.result)
+                    is ActDecision.Write -> ActRequest(decision.plan.segments.map { it.scope }, decision.plan.segments.any { it.plan.isHeld },
+                        undo = decision.plan.segments.mapIndexedNotNull { index, segment -> segment.plan.undoSegment(index, segment.scope) }.takeIf { it.isNotEmpty() }) to
+                        ActStep.Writing(decision.plan, decision.result)
                 }
             }, { step, index, source ->
                 check(step is ActStep.Writing)
@@ -94,7 +126,24 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
         val moment = moment()
         return replica.read(scope) { body(Reader(it, scope, moment, registry)) }
     }
-    fun undo(gestureId: String): Boolean = replica.undo(gestureId)
+    // Engine §7.3: cancels a gesture while every entry of it is still held; true iff it did.
+    fun cancelHeld(gestureId: String): Boolean = replica.cancelHeld(gestureId)
+    // §9.6: the inverse of an act opted into Undo. A wholly held act is cancelled in place; otherwise the inverse is reserved at once and
+    // settles as its sources do.
+    fun undo(actId: String): InverseResult = replica.requestInverse(actId)
+    // The inverse of an Undo, restoring only what it applied, or what `productSlots` name instead (a product's Redo of a terminal creation).
+    fun redo(requestId: String, productSlots: List<ProductSlot>? = null): InverseResult {
+        val inverseActId = when (val undone = inverseResult(requestId)) {
+            is InverseResult.Unavailable -> return undone
+            is InverseResult.Cancelled -> undone.inverseActId
+            is InverseResult.Pending -> undone.inverseActId
+            is InverseResult.Settled -> undone.inverseActId
+        }
+        return replica.requestInverse(inverseActId, productSlots?.map { slot -> slot.plan.undoSegment(slot.index, slot.scope) ?: UndoSegment(slot.index, emptyList()) })
+    }
+    fun inverseResult(requestId: String): InverseResult = replica.readInverseResult(requestId)
+    // The product's stack no longer holds the act: its journal record and values go.
+    fun release(actId: String) { replica.releaseReversibleAct(actId) }
     fun <E : Entity<E>> mint(type: EntityType<E>, scope: ScopeRef = type.boundScope()): Id<E> {
         type.boundScope(scope)
         check(registry.lives(type.type, scope)) { "${type.type} is outside $scope" }
@@ -103,7 +152,7 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
     }
     fun moment(): Moment = Moment(Instant(replica.physNow()), zone)
 
-    internal fun <L, T, R> perform(decider: Decider<L, T, R>): Outcome<T, R> {
+    private fun <L, T, R> commitOne(decider: Decider<L, T, R>): Outcome<T, R> {
         check(!context.insideRun) { "a run cannot enter inside a run" }
         context.insideRun = true
         try {
@@ -114,6 +163,7 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
                         is Decision.Refuse -> null to Step.Done(Outcome.Refused(decision.refusal))
                         is Decision.Unchanged -> null to Step.Done(Outcome.Unchanged(decision.result))
                         is Decision.Write -> {
+                            if (decision.plan.undo != null) throw PlanError(10, "only a reversible action opts its plan into Undo")
                             val gone = decision.plan.firstGone(context, decider.scope, registry)
                             if (gone != null) null to Step.Done(Outcome.Refused(decider.refusals.of(gone)))
                             else decision.plan.gesture(decider.scope, registry) to Step.Writing(decision.plan, decision.result)

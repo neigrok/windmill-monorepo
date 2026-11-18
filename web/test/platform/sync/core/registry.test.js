@@ -206,10 +206,10 @@ test('the product registries are gym, journal and roadmap, each valid against re
 
 // A deployment composes the registries composition.json names into one registry: one version, the version every
 // request carries (§9.1), and no product, type, command or refusal code a second registry declares again. It names
-// gym and journal (§2.4).
-test('composition.json names the composed registries: gym and journal, each a product registry', () => {
+// gym, journal and roadmap (§2.4).
+test('composition.json names the composed registries: gym, journal and roadmap, each a product registry', () => {
   assert.deepEqual(Object.keys(COMPOSITION).sort(), ['composition', 'registries']);
-  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json']);
+  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json', 'roadmap.registry.json']);
   for (const name of COMPOSITION.registries) assert.ok(PRODUCTS.some((registry) => `${registry.registry}.registry.json` === name), name);
 });
 

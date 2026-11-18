@@ -61,7 +61,19 @@ final class VectorReplica: Replica {
     throw ContractError("act vectors use the real engine")
   }
 
-  func undo(_ gestureId: String) throws -> Bool { false }
+  func cancelHeld(_ gestureId: String) throws -> Bool { false }
+
+  func requestInverse(_ actId: String, slots: [ActUndo.Segment]?) throws -> InverseResult {
+    throw ContractError("Undo of an act runs on the real engine")
+  }
+
+  func readInverseResult(_ requestId: String) throws -> InverseResult {
+    throw ContractError("Undo of an act runs on the real engine")
+  }
+
+  func releaseReversibleAct(_ actId: String) throws -> Bool {
+    throw ContractError("Undo of an act runs on the real engine")
+  }
 
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
     try body(VectorReader(records: scopes[scope] ?? records, now: now, scope: (scope, registry)))

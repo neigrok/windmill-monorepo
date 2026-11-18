@@ -12,8 +12,10 @@ import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { environment } from '../sync/fakes.js';
 import { Decision, IDSource, decision, refusalSubject } from '../../../src/platform/domain-kit/actions.js';
 import { Draft, SaveDraft } from '../../../src/platform/domain-kit/drafts.js';
-import { DecodeError, Fields, Id } from '../../../src/platform/domain-kit/entities.js';
-import { Plan, PlanError, Prediction } from '../../../src/platform/domain-kit/plans.js';
+import { DecodeError, Id } from '../../../src/platform/domain-kit/entities.js';
+import { Plan, PlanError, Prediction, UndoRecipe, UndoTarget } from '../../../src/platform/domain-kit/plans.js';
+import { ProbeProduct } from '../../../../packages/api-contract/sync/reference/probe/product.js';
+import { Harness } from './harness.js';
 import { Capacity, Reader } from '../../../src/platform/domain-kit/reading.js';
 import { DomainNotice } from '../../../src/platform/domain-kit/refusals.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
@@ -236,7 +238,7 @@ async function actVector(input) {
     let outcome;
     if (result.kind === 'committed') {
       outcome = { kind: result.kind, scopes: result.receipt.segments.map((item) => item.scope), counts: result.receipt.segments.map((item) => item.localIds.length), held: result.receipt.releaseAt !== null };
-      if (input.undo) await runner.undo(result.receipt.gestureId);
+      if (input.undo) await runner.cancelHeld(result.receipt.gestureId);
     } else outcome = result.kind === 'refused' ? { kind: result.kind, refusal: refusalForm(result.refusal) } : { kind: result.kind };
     const records = input.inspect.map((/** @type {any} */ item) => runner.read(item.scope, (read) => read.repository(probeEntity(item.t)).all('drawn')
       .map((record) => {
@@ -247,6 +249,88 @@ async function actVector(input) {
       })));
     return { outcome, records };
   } finally { engine.close(); }
+}
+
+// K-3: Undo recipes in the vector language, each target or record named by type and id, in its own scope or
+// its segment's.
+/** @param {any} recipe */
+function undoRecipeOf(recipe) {
+  const idOf = (/** @type {any} */ item) => new Id(item.id, probeEntity(item.t));
+  const targetOf = (/** @type {any} */ item) => new UndoTarget(idOf(item), item.slot, item.scope ?? null);
+  if (recipe.kind === 'fields') return UndoRecipe.fields(recipe.restoreCommand, recipe.targets.map((/** @type {any} */ item) =>
+    (Object.hasOwn(item, 'defaultValue') ? { target: targetOf(item), defaultValue: item.defaultValue } : targetOf(item))));
+  if (recipe.kind === 'createdRecord') return UndoRecipe.createdRecord(recipe.restoreCommand, idOf(recipe));
+  return UndoRecipe.command(recipe.command, recipe.input, { ownedFields: recipe.evidence.ownedFields.map(targetOf),
+    unchangedCreatedRecords: recipe.evidence.unchangedCreatedRecords.map((/** @type {any} */ item) => ({ id: idOf(item), scope: item.scope ?? null })),
+    unchangedCreatedScopes: recipe.evidence.unchangedCreatedScopes });
+}
+
+// An InverseResult without the ids the engine draws.
+/** @param {import('../../../src/platform/domain-kit/runner.js').InverseResult} result */
+function inverseForm(result) {
+  const { requestId, inverseActId, ...rest } = /** @type {any} */ (result);
+  return rest;
+}
+
+// run/undo.json: an act opted into Undo over the real engine and the reference server, then its Undo and Redo.
+/** @param {any} input */
+async function undoVector(input) {
+  const phone = await Harness.open({ registry: probeRegistry, product: new ProbeProduct(), scope: PROBE_SCOPE });
+  try {
+    for (const scope of input.observe ?? []) phone.observe(scope);
+    const plans = (/** @type {any[]} */ segments) => segments.map((item) => {
+      const plan = build(item, phone.runner.moment());
+      if (item.undo?.length) plan.undoBy(...item.undo.map(undoRecipeOf));
+      else if (item.undo) plan.evidenceForUndo();
+      return new ScopedPlan(item.scope, plan);
+    });
+    for (const setup of input.before ?? []) {
+      const done = await phone.runner.runAct({ refusals: ProbeRefusals, load: () => null, decide: () => ActDecision.write(new ActPlan(plans(setup)), null) });
+      assert.equal(done.kind, 'committed');
+      await phone.sync();
+    }
+    let actId = null;
+    let outcome;
+    try {
+      if (input.save) {
+        const type = probeEntity(input.save.t);
+        const opened = phone.runner.open(type, new Id(input.save.id, type), input.save.scope ?? probeScope(type));
+        if (opened === null) throw new ContractError('a save opens a record the phone holds');
+        const saved = await phone.runner.save(opened.edit(() => probeValue(type, input.save.id, input.save.current)), ProbeRefusals);
+        outcome = { kind: saved.result.kind };
+        if (saved.result.kind === 'saved' && saved.result.receipt !== null) actId = saved.result.receipt.gestureId;
+      } else if (input.reversible !== undefined) {
+        const segment = plans(input.segments)[0];
+        if (segment === undefined) throw new ContractError('a single action names one segment');
+        const ran = await phone.runner.run({ scope: segment.scope, refusals: ProbeRefusals, reversible: input.reversible,
+          load: () => null, decide: () => Decision.write(segment.plan, null) });
+        outcome = ran.kind === 'committed' ? { kind: ran.kind, count: ran.receipt.localIds.length } : { kind: ran.kind };
+        if (ran.kind === 'committed') actId = ran.receipt.gestureId;
+      } else {
+        const ran = await phone.runner.runAct({ refusals: ProbeRefusals, load: () => null, decide: () => ActDecision.write(new ActPlan(plans(input.segments)), null) });
+        outcome = ran.kind === 'committed' ? { kind: ran.kind, counts: ran.receipt.segments.map((item) => item.localIds.length), held: ran.receipt.releaseAt !== null } : { kind: ran.kind };
+        if (ran.kind === 'committed') actId = ran.receipt.gestureId;
+      }
+    } catch (error) {
+      if (error instanceof PlanError || error instanceof Fault) return { error: true };
+      throw error;
+    }
+    const results = [];
+    let requestId = null;
+    for (const step of input.steps) {
+      if (step === 'sync') await phone.sync();
+      else if (step === 'read') results.push(inverseForm(phone.runner.inverseResult(/** @type {string} */ (requestId))));
+      else {
+        /** @type {import('../../../src/platform/domain-kit/runner.js').InverseResult} */
+        const result = step === 'undo' ? await phone.runner.undo(/** @type {string} */ (actId)) : await phone.runner.redo(/** @type {string} */ (requestId));
+        if (result.kind !== 'unavailable') requestId = result.requestId;
+        results.push(inverseForm(result));
+      }
+    }
+    const records = input.inspect.map((/** @type {any} */ item) => phone.runner.read(item.scope, (read) => read.repository(probeEntity(item.t)).all('drawn')
+      .map((record) => ({ id: record.id.json, [item.field ?? 'title']: record.fields()[item.field ?? 'title'] ?? null }))));
+    return { outcome, results, records };
+  } finally { for (const each of phone.world.phones) each.engine.close(); }
 }
 
 /** @param {any} input */
@@ -292,16 +376,7 @@ function saveVector(input) {
       .edit(() => probeValue(type, form.id, form.current ?? {})), ProbeRefusals)
     : SaveDraft.creating(probeValue(type, form.id, form.f ?? {}), ProbeRefusals, placementOf(form.placement), probeScope(type));
   const views = vectorViews({ drawn: input.drawn, stored: input.stored });
-  const repository = new Reader(views, probeScope(type), momentOf(input)).repository(type);
-  const folded = repository.record(form.id, 'stored');
-  const loaded = {
-    drawn: repository.find(save.id, 'drawn'),
-    stored: repository.find(save.id, 'stored'),
-    folded: folded ? type.decode(Fields.record(folded)) : null,
-    anchor: recordID(input.anchor),
-    moment: momentOf(input),
-    definition: /** @type {NonNullable<ReturnType<typeof probeRegistry.type>>} */ (probeRegistry.type(type.type)),
-  };
+  const loaded = { ...save.load(new Reader(views, probeScope(type), momentOf(input))), anchor: recordID(input.anchor) };
   return { decision: decisionForm(decision(save, loaded, new IDSource(views)), probeScope(type), savedForm, refusalForm) };
 }
 
@@ -436,6 +511,7 @@ const handlers = {
   'run/pipeline.json': pipelineVector,
   'run/acts.json': actVector,
   'run/act-decisions.json': actDecisionVector,
+  'run/undo.json': undoVector,
   'draft/save.json': saveVector,
   'draft/script.json': scriptVector,
   'scope/bindings.json': scriptVector,

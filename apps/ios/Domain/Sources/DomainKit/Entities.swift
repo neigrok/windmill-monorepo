@@ -31,6 +31,12 @@ public protocol Ordered: Entity {
 
 public protocol Draftable: Writable {
   static var savesGuarded: Bool { get }
+  // §10.2 Reversible: every save of the type opts into Undo of an act.
+  static var savesReversibly: Bool { get }
+}
+
+extension Draftable {
+  public static var savesReversibly: Bool { false }
 }
 
 // A record that is one fact (engine §2.4 `wholePut`) whose every save records its own moment: the save writes

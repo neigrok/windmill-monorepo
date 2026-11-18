@@ -6,12 +6,17 @@ so reviews, code and roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Approved by the owner on 2026-11-17. Engine prerequisites are under development in
-[draft PR #290](https://github.com/neigrok/windmill-monorepo/pull/290), kept unmerged for review.
-Roadmap syncs through a sync of its own:
+**Status:** Approved by the owner on 2026-11-17. Engine prerequisites, roadmap's registry and the
+rest of this build are under development in
+[draft PR #290](https://github.com/neigrok/windmill-monorepo/pull/290), kept unmerged for review:
+there the registry is pinned (`packages/api-contract/sync/roadmap.registry.json`, composed beside
+gym's and journal's) and the engine's JavaScript reference model server carries its rules
+([engine](engine.md) Appendix A.1). Roadmap syncs through a sync of its own:
 a lattice and a socket described in [graph sync](../GRAPH_SYNC_DESIGN.md) and
 [the roadmap tree engine](../../backend/SPEC.md), on the web only. The [sync engine](engine.md)
-serves gym and journal, and its tree and overlay scopes have run only against its test product. The
+serves gym and journal in production; on the review branch the C++ server binds roadmap
+(`backend/products/roadmap/sync/`) and serves its scopes only where `ROADMAP_ENGINE_ENABLED` is set,
+which production's configuration leaves unset. The
 build order lives in the Roadmap on the engine roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `roadmap-on-the-engine`.
 
@@ -108,9 +113,9 @@ units (D-9).
 
 | Type | Scope | Identity | Life | Fields | Cap |
 |---|---|---|---|---|---|
-| `tree` | self/roadmap | minted global `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | `parent` const server `{tree, step}`, null for a root | — |
-| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `guide` lww ≤5,000 chars; `guideInherited` server; `visibility` lww server ∈ {private, unlisted, public}; `visibilitySetBy` lww server; `reach` lww server ∈ {private, unlisted, public}, which `opens` at {unlisted, public}; `root` const server `ref<tree>`; `parent` const server `{tree, step}`, null for a root; `depth` const server; `forkedFrom` const server | — |
-| `node` | tree/T | derived, ids by domain (E-2) ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord`, `status`, `description` ≤16,000 chars, `links` (at most 32 of {url ≤2,048 chars, label ≤200 chars}); `branch` lww server nullable `ref<tree>` | 10,000 |
+| `tree` | self/roadmap | minted global `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | `parent` const server `{tree, step}`, null for a root; `tree` names a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | — |
+| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `guide` lww ≤5,000 chars; `guideInherited` server; `visibility` lww ∈ {private, unlisted, public}, a root's only; `reach` lww server ∈ {private, unlisted, public}, which `opens` at {unlisted, public}; `root` const server `ref<tree>`; `parent` const server `{tree, step}` as `tree.parent`, null for a root; `depth` const server 0–`MAX_DEPTH`; `forkedFrom` const server | — |
+| `node` | tree/T | derived, ids by domain (E-2) ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord`, `status` nullable ∈ {none, complete}, `description` ≤16,000 chars, `links` (at most 32 of {url ≤2,048 chars, label ≤200 chars}); `branch` lww server nullable `ref<tree>` | 10,000 |
 | `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20,000 |
 | `kind` | tree/T | derived, ids by domain ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` | 6 |
 | `progress` | self/overlay/T | keyed (`ref<node>`) | none | `mark` lww `{status: complete\|none, outOfOrder: bool}` | — |
@@ -125,13 +130,20 @@ Roadmap Coach's records join this registry as [Roadmap Coach](roadmap-coach.md) 
   step's or kind's id at random, so two devices that add the same title with no connection never
   collide. The server derives an id from a label (D-26) only for what it builds itself.
 - **Order.** `ord` is a fractional key. The product compares it among the steps of one trunk
-  parent, and among a roadmap's kinds, and places a moved step by the sibling above it.
+  parent, and among a roadmap's kinds, and places a moved step by the sibling above it; it is the
+  product's order, not one of the engine's order lists. Every create of a step or a kind writes its
+  `ord`, so a first move has an earlier value for Undo to write back.
 - **A pointer and the workspace are the owner's.** `pointer`, `subtask`, `stepLink` and `stepNote`
-  are admitted only in the overlay of the roadmap's owner. A reader therefore never receives a
-  pointer, and has no workspace; a reader's overlay holds their marks alone. (R-3)
+  are admitted only in the overlay of the roadmap's owner; in any other overlay the binding refuses
+  them `forbidden`. A reader therefore never receives a pointer, and has no workspace; a reader's
+  overlay holds their marks alone. (R-3)
 - **A subtree is said in the roadmap that holds its step:** `node.branch` names it, so a reader can
   go in. Its `meta` says where it sits, so a reader can come back: `root`, `parent` and `depth`. A
-  subtree's name is its owning step's label; its own `title` is not read.
+  root's `root` is unset and reads as its own id. A subtree's name is its owning step's label; its
+  own `title` is not read.
+- **A root's visibility is the owner's field,** written under the gesture's stamp like any field, so
+  of two devices' choices the newer stands whenever it arrives, and an older "public" never undoes a
+  newer "private". A visibility written on a subtree is refused `not-a-root`.
 - **`reach` decides who may read.** It is the root's `visibility` while the subtree stands (D-3),
   and `private` otherwise. A root's `reach` is its `visibility`.
 - **A kind's hue** is checked where a kind is made or changed. Where two present kinds still wear
@@ -140,27 +152,36 @@ Roadmap Coach's records join this registry as [Roadmap Coach](roadmap-coach.md) 
 - `guideInherited` is cleared by the server when the owner writes the guide.
 - The list of a person's roadmaps is their own `tree` records. A.1's `track` is not built.
 - The registry joins the composition beside gym's and journal's, and the composition's version
-  rises. Nothing a gym or journal client relies on changes, so the minimum version does not.
+  rises to 13. Nothing a gym or journal client relies on changes, so the minimum version stays 11.
 
 **Commands**
 
-- `roadmap.setVisibility {visibility, stamp}` in a root's `tree/<T>`, by the owner. It writes the
-  root's `visibility`, `visibilitySetBy` and `reach`, and the `reach` of every standing subtree of
-  the branch (E-1). A replay, whose `stamp` is `visibilitySetBy`, and a call whose `stamp` is older
-  than it, answer ok and write nothing.
-- `roadmap.createSubtree {tree, root, step, subtree}` in `self/roadmap`. It creates the `tree`
-  record with its `parent`, the subtree's `meta`, and writes `node.branch` (E-1). A retry answers
-  the subtree the step already owns. It refuses a step that is gone, a step that opens a roadmap,
-  and a depth past `MAX_DEPTH`. A device predicts it, so a subtree is made with no connection.
+- `roadmap.createSubtree {tree, root, step, subtree}` in `self/roadmap`; `tree`, `root` and `step`
+  are typed references and `subtree` a proposed id (E-8). It creates the `tree` record with its
+  `parent`, the subtree's `meta` and its genesis kinds, and writes `node.branch` (E-1), reviving
+  the step when it was deleted elsewhere (INV-1). A retry, or another device's subtree on the same
+  step, answers the subtree the step already owns. It refuses a step that opens a roadmap, and a
+  depth past `MAX_DEPTH`. A device predicts it, so a subtree is made with no connection.
 - `roadmap.recolourKind {kind, hue}` in `tree/<T>`. It writes the kind's hue and the colour of
-  every step that wears it, present or not, and revives none.
+  every step that wears it, present or not. It revives the kind when it was deleted elsewhere, and
+  no step.
+
+Each scope kind has the engine's capture command and restore command (K-3), and Undo runs these
+product inverses, each all or nothing on the evidence the engine builds from the act's receipts:
+
+- `roadmap.undoCreateRoadmap {input: {tree}}` kills a root while its record, its tree scope and
+  its owner's overlay of it are as the creation left them.
+- `roadmap.undoCreateSubtree {input: {tree, step, subtree}}` and `roadmap.redoCreateSubtree
+  {input: {tree, root, step, subtree}}` (R-8, §5).
 
 **Consequences** (E-1)
 
+- A change of a root's `visibility`, by the owner or by an Undo, writes its `reach` and the
+  `reach` of every subtree of its branch: the visibility where it stands, `private` elsewhere.
 - A step's death that ends a subtree's standing writes `reach` `private` on every subtree under it,
   and the step's revival writes it back.
-- A root's death kills its subtrees, and deletes each step of the owner's other roadmaps whose
-  pointer opened it.
+- A roadmap's death kills every subtree under it. A root's also deletes each step of the owner's
+  other roadmaps whose pointer opened it.
 
 ## §5 Gestures and reading
 
@@ -172,7 +193,9 @@ Every gesture is an action on the domain kit, the same in each language.
 - **Any change to a step or a kind** carries the record's life as alive, under the gesture's stamp,
   so it is admitted whether or not the record was deleted elsewhere. Where the record is still dead
   once it has joined, the server revives it. So a step a person changed is present, whichever of
-  the change and the delete was made first. (P-4)
+  the change and the delete was made first. (P-4) Making a subtree on a step and recolouring a
+  kind the device holds as deleted revive it by an ordinary revive in the same act, ahead of the
+  command; the command itself revives one deleted where the device did not know.
 - **Delete a step** is held, and writes the step's death and nothing else. Its links stay, unread
   while it is absent, and return with it. Undo, before release or after, is the step's revival.
 - **What a step follows is read through absent steps** (D-5). So a step that followed a deleted
@@ -181,9 +204,11 @@ Every gesture is an action on the domain kit, the same in each language.
   step.
 - **Delete a roadmap** is held, and writes the `tree` record's death. The server does the rest
   (§4). Undo cancels it only during its 9-second hold; after the hold ends the deletion is permanent.
-- **Complete and Reset** write the step's `progress` mark. A step that opens a roadmap or owns a
-  subtree is complete exactly when that roadmap is, and takes no mark. That is a rule of reading:
-  a mark on such a step is kept and not read.
+- **Complete and Reset** write the step's `progress` mark. A step that owns a subtree, or whose
+  pointer opens a standing roadmap, is complete exactly when that roadmap is, and the gesture
+  refuses to mark it. Whether the pointer opens a standing roadmap is read first, from the scopes
+  that say, and given to the action as input; a step whose pointer opens nothing standing is
+  marked. That is also a rule of reading: a mark on such a step is kept and not read.
 - **Import and paste** commit intents of at most `IMPORT_CHUNK` records and half the engine's push
   limit each, prerequisites before what follows them. One Undo takes back every chunk.
 - **Limits are checked where the gesture is made:** the caps and bounds of §4, a cycle among what
@@ -192,10 +217,16 @@ Every gesture is an action on the domain kit, the same in each language.
   close between them lands, is read without harm, and is reported by diagnostics, as today.
 - **Undo** of an act is the kit's (K-3). A surface keeps its own stack of acts for its keyboard's
   Undo and Redo. A roadmap deletion leaves that stack when its hold ends and cannot be restored.
+  What a client writes, the engine's restore commands write back; what the server writes, a
+  product inverse does (§4). Undo of a visibility change is the restore of that field, and the
+  server writes the branch's reach back. Undo creating a roadmap deletes it while nothing has
+  changed in it since. A product inverse draws nothing on the device until the server answers it:
+  with no connection, such an Undo waits, and the roadmap or subtree stays as it is until then.
 - **Undo creating a subtree** conditionally clears its step's `branch` and deletes the created
   subtree together, only while both the connection and subtree contents remain unchanged since
-  creation. Otherwise it changes neither. Redo creates a new subtree under a fresh id and
-  conditionally reconnects it; it never revives the deleted subtree. (R-8)
+  creation, the owner's marks and workspace in it included. Otherwise it changes neither. Redo
+  creates a new subtree under a fresh id and connects it while the step's `branch` is still the
+  one Undo cleared; it never revives the deleted subtree. (R-8)
 - **Hidden.** A subtree that does not stand is hidden on every device, the owner's included: it is
   in no list, no count and no address.
 - **A reader** subscribes a readable roadmap when a person opens its link, signed in or not, and a
@@ -219,11 +250,14 @@ What a device tells a person when a change of theirs met one made elsewhere.
   new link turns out to follow through an absent step, the person is told once, where the step is
   listed and on its page. The device notes its own new steps and links in a device row when it
   makes them and clears the note once it has said so.
-- **A step that came back.** When a device's change revived a step, the person is told once.
+- **A step that came back.** When a device's own change found the step absent on the device and
+  so revived it, the person is told once; the device notes it as it notes a new step. A revival
+  the device never saw, of a step it still held present when the change was made, is not told.
 - **What still cannot land:** a change to a roadmap deleted on another device; one that would pass
   a cap another device filled first; one made after write access ended; a note whose two versions,
   merged, pass its bound. The engine keeps each as a notice with its content. The product lists
-  them in one place with the reason, and the person may copy what they hold or discard them.
+  them in one place with the reason, with any workspace item the carry-over found past a bound
+  (§8.2), and the person may copy what they hold or discard them.
   Nothing else is ever shown as refused. (R-2)
 
 - **INV-1.** No gesture of a person's on a step is refused because the step, or a step it links,
@@ -281,7 +315,8 @@ maintenance for its length and a verified backup to return to. (R-5)
   for each field.
 - **Stamps.** A stamp roadmap holds is kept where it is a stamp as the engine writes one. An unset
   register stays unset. A register that holds a value under a malformed stamp takes the lowest
-  server stamp, so nothing made later loses to it.
+  server stamp, so nothing made later loses to it; so does a root's `visibility`, which today
+  holds no stamp.
 - **Life.** A step, link or kind is alive when its add stamp is set and not older than its remove
   stamp, and dead when the remove stamp is the newer; its life's stamp is the greater of the two. A
   row with neither set is not adopted.
@@ -289,7 +324,10 @@ maintenance for its length and a verified backup to return to. (R-5)
   feed's cursor, tending's runs and MCP's `expectedSeq` stay in order. `tree_ops` is kept as it is.
 - **Times.** A mark's `rc` and `ru` are its recorded time. A step's, link's and kind's `rc` is its
   add stamp's time, and `ru` its newest stamp's, neither later than the roadmap's own.
-- An empty `ord` becomes a key that keeps today's order, and a kind's `rank` becomes an `ord`.
+- An empty or malformed `ord` becomes a key that keeps today's order, and a kind's `rank` becomes
+  an `ord`.
+- A step's `status` keeps `none` and `complete`; `active` and `inProgress` become `none`, as today.
+  The audit counts every other value, and the move stops on any.
 - A pointer moves from its step to a `pointer` record in its owner's overlay. A subtree's place
   becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and `node.branch`, and every
   `reach` is computed.
@@ -325,7 +363,8 @@ the outbox entry or notice it became.
 - **Workspaces** become `subtask`, `stepLink` and `stepNote` records, in the account the device's
   index names for the roadmap, or the `anon` replica's. Each carried item's id is derived from the
   old one's, so carrying twice writes nothing twice. A workspace of a roadmap the person does not
-  own is not carried.
+  own is not carried. An item past a bound of §4 is not cut short: it goes to §6's one list, where
+  the person may copy it.
 - An old store is deleted once the ledger shows every entry of it durable in the replica's outbox.
   The stores that are not sync's stay: the last place, the view, the legend and the ledgers.
 
@@ -421,8 +460,8 @@ What changes is built only from boards marked ✅ Ready for dev:
   warning, both against canon.
 - The server and the browser break a tie between two marks differently.
 - A step's workspace lives in one browser.
-- The engine's tree and overlay scopes have run only against its test product, and production's
-  build refuses any composition but gym and journal.
+- The engine's tree and overlay scopes have run only against its test product, and production serves
+  no composition but gym and journal.
 - Roadmap's MCP write tools take no `requestId`.
 
 ## §15 Rulings

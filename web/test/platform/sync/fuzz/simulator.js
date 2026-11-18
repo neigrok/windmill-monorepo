@@ -13,7 +13,10 @@ import { jcs, sameJson } from '../../../../../packages/api-contract/sync/referen
 import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
 import { compareRecords, isAlive, isVisible, recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { ProbeProduct } from '../../../../../packages/api-contract/sync/reference/probe/product.js';
+import { commitAct } from '../../../../../packages/api-contract/sync/reference/client/acts.js';
 import { commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { requestInverse } from '../../../../../packages/api-contract/sync/reference/client/inverse.js';
+import { releaseReversibleAct } from '../../../../../packages/api-contract/sync/reference/client/journal.js';
 import { releaseAll, releaseDue, undo, undoOffered } from '../../../../../packages/api-contract/sync/reference/client/hold.js';
 import { engineStart, signIn, signOut } from '../../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
@@ -262,8 +265,56 @@ export class World {
     if (roll < 0.94) {
       device.skew = this.rng.int(1_200_000) - 600_000;
       this.count('device clock jumped');
+      return undefined;
     }
+    if (roll < 0.965) return this.optedAct(device);
+    if (roll < 0.99) return this.inverse(device);
     return undefined;
+  }
+
+  // K-3: an act opted into Undo: a card's title, or a held removal of a tag whose life a Redo brings back.
+  optedAct(device) {
+    const replica = device.replica;
+    if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') return undefined;
+    const ctx = device.ctx();
+    const cards = [...drawn(replica, this.registry, 'self/probe').values()].filter((record) => record.t === 'card' && isAlive(record));
+    const boards = [...drawn(replica, this.registry, 'self/probe').values()].filter((record) => record.t === 'board' && isAlive(record));
+    const treeScope = boards.length ? `tree/${this.rng.pick(boards).id}` : null;
+    const tags = treeScope ? [...drawn(replica, this.registry, treeScope).values()].filter((record) => record.t === 'tag' && isAlive(record)) : [];
+    const recipe = (scope, restoreCommand, target, defaultValue) => ({ undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand, targets: [{ target, defaultValue }] }] }] } });
+    let outcome;
+    if (tags.length && this.rng.chance(0.4)) {
+      const tag = this.rng.pick(tags).id;
+      outcome = commitAct(replica, ctx, [{ scope: treeScope, changes: [{ op: 'delete', t: 'tag', id: tag }], opts: { hold: true } }],
+        recipe(treeScope, 'probe.restoreTree', { scope: treeScope, t: 'tag', id: tag, slot: { kind: 'life' } }, 'dead'));
+    } else if (cards.length) {
+      const card = this.rng.pick(cards).id;
+      outcome = commitAct(replica, ctx, [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: card, f: { title: this.rng.pick(WORDS) } }] }],
+        recipe('self/probe', 'probe.restore', { scope: 'self/probe', t: 'card', id: card, slot: { kind: 'field', name: 'title' } }, WORDS[0]));
+    }
+    if (!outcome || outcome.refused) return undefined;
+    device.committed.push(...outcome.segments.flatMap(({ localIds }) => localIds));
+    this.count('opted act');
+    return outcome;
+  }
+
+  // An Undo of a journaled act, a Redo of an inverse act, or a release the product's stack makes.
+  inverse(device) {
+    const replica = device.replica;
+    if (replica.journal.length === 0 && replica.cancellations.length === 0) return undefined;
+    if (this.rng.chance(0.2)) {
+      releaseReversibleAct(replica, this.rng.pick([...replica.journal.map((act) => act.actId), ...replica.cancellations.map(({ inverseActId }) => inverseActId)]));
+      this.count('reversible act released');
+      return undefined;
+    }
+    const ids = [...replica.journal.map((act) => act.actId), ...replica.cancellations.map(({ inverseActId }) => inverseActId)];
+    const actId = this.rng.pick(ids);
+    const redo = replica.inverses.some((request) => request.inverseActId === actId);
+    const before = new Set(replica.outbox.map((entry) => entry.localId));
+    const result = requestInverse(replica, device.ctx(), actId);
+    device.committed.push(...replica.outbox.map((entry) => entry.localId).filter((localId) => !before.has(localId)));
+    this.count(`${redo ? 'redo' : 'undo'} ${result.kind}`);
+    return result;
   }
 
   // Gestures a person makes, on the views the person sees.
@@ -888,6 +939,10 @@ export class World {
         if (end.outcome !== 'refused') continue;
         const holder = end.orphanOf ?? end.localId;
         if (!notices.has(`notice:${holder}`)) this.violations.push(`INV-3 ${tag}: ${end.localId} refused (${end.event}) with no notice holding it`);
+      }
+      for (const request of replica.inverses) {
+        if (request.state !== 'settled') this.violations.push(`K-3 ${tag}: inverse ${request.requestId} is still ${request.state} after quiescence`);
+        else this.count(`inverse ${request.result.kind}${request.result.appliedCount ? ' applied' : ''}${request.result.skippedCount ? ' skipped' : ''}`);
       }
       if (replica.meta.state !== 'bound') continue;
       for (const [scope, kind] of Object.entries(replica.known)) {

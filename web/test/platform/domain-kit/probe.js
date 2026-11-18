@@ -36,7 +36,7 @@ export class ProbeEntity {
 // and whose checks apply the README's specs to their fields in order.
 /**
  * @param {{ type: string, scope: string | null, defaults: Record<string, Json>, specs: ValueSpec[], heldRemoval?: boolean,
- *   orderField?: string, savesGuarded?: boolean, timestampField?: string }} declaration
+ *   orderField?: string, savesGuarded?: boolean, savesReversibly?: boolean, timestampField?: string }} declaration
  * @returns {EntityType<ProbeEntity>}
  */
 function probeType({ type, scope, defaults, specs, ...protocols }) {
@@ -83,6 +83,13 @@ export const Probe = Object.freeze({
     savesGuarded: false, heldRemoval: true, timestampField: 'at' }),
   mark: probeType({ type: 'mark', scope: null, defaults: { done: null, memo: '' },
     specs: [new TextSpec('mark.memo', { unit: 'bytes', min: 0, max: 40, trim: false, nfc: false })], savesGuarded: false }),
+  reversibleCard: probeType({ type: 'card', scope: PROBE_SCOPE, defaults: { title: '', body: '', size: null, claim: null, tier: 'draft' },
+    specs: [chars('card.title', 1, 12), new TextSpec('card.body', { unit: 'bytes', min: 0, max: 24, trim: true, nfc: true })],
+    savesGuarded: false, savesReversibly: true, orderField: 'ord' }),
+  reversibleDay: probeType({ type: 'day', scope: PROBE_SCOPE, defaults: { score: null }, specs: [new NumberSpec('day.score', { min: 0, max: 10, integer: true })],
+    savesGuarded: false, savesReversibly: true, heldRemoval: true }),
+  reversibleMark: probeType({ type: 'mark', scope: null, defaults: { done: null, memo: '' },
+    specs: [new TextSpec('mark.memo', { unit: 'bytes', min: 0, max: 40, trim: false, nfc: false })], savesGuarded: false, savesReversibly: true }),
   guardedMeta: probeType({ type: 'meta', scope: null, defaults: { title: '' }, specs: [chars('meta.title', 0, 12)], savesGuarded: true }),
   meta: probeType({ type: 'meta', scope: null, defaults: { title: '' }, specs: [chars('meta.title', 0, 12)], savesGuarded: false }),
   lap: probeType({ type: 'lap', scope: PROBE_SCOPE, defaults: { runId: '', at: null, weight: null },

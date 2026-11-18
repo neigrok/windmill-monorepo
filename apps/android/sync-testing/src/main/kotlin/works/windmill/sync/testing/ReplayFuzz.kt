@@ -459,7 +459,7 @@ object ReplayFuzz {
                     3 -> {
                         var held = outbox().filter { it["state"] == Json.of("held") }
                         if (held.isEmpty()) { put(hold = true); held = outbox().filter { it["state"] == Json.of("held") } }
-                        check(engine.undo(held[random.nextInt(held.size)].member("gestureId").str())); count("undo")
+                        check(engine.cancelHeld(held[random.nextInt(held.size)].member("gestureId").str())); count("undo")
                     }
                     4 -> { val target = day(); commit(Gesture(listOf(Change.put("day", target, false)), hold = true)); commit(Gesture(listOf(Change.put("day", target, true, mapOf("score" to Json.of(1)))), retire = listOf(RecordRef("day", target)))) }
                     5 -> {

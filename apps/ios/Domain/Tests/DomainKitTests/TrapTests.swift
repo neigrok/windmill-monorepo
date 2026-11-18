@@ -190,7 +190,10 @@ enum Kit {
     func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T), segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
       throw CommitFailure.malformed("act vectors use the real engine")
     }
-    func undo(_ gestureId: String) throws -> Bool { false }
+    func cancelHeld(_ gestureId: String) throws -> Bool { false }
+    func requestInverse(_ actId: String, slots: [ActUndo.Segment]?) throws -> InverseResult { .unavailable(requestId: nil, reason: "not-reversible") }
+    func readInverseResult(_ requestId: String) throws -> InverseResult { .unavailable(requestId: requestId, reason: "unknown-request") }
+    func releaseReversibleAct(_ actId: String) throws -> Bool { false }
     func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try body(Context(records: records)) }
     func mintID(_ type: String) throws -> RecordID { throw CommitFailure.malformed("\(type) mints no id here") }
     func physNow() throws -> Int64 { Kit.moment.now.ms }

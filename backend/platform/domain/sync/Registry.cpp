@@ -532,7 +532,7 @@ TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
 }
 
 CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
-  const Reader element(json, elementPath, {"name", "scope", "origins", "serverInternal", "beforePull", "args", "predicts", "scopedEffects", "engine", "refPaths"});
+  const Reader element(json, elementPath, {"name", "scope", "origins", "serverInternal", "beforePull", "args", "predicts", "scopedEffects", "engine", "inverse", "refPaths"});
   static const Pattern commandNames{"^[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*$"};
   const std::string name = element.name("name", commandNames);
   const Reader reader = element.under("registry.commands." + name);
@@ -545,7 +545,9 @@ CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
       .scopedEffects = reader.optionalBoolean("scopedEffects"),
   };
   if (reader.has("scopedEffects") && !command.scopedEffects) reader.fail("scopedEffects is true or absent");
-  if (reader.has("engine")) command.engine = reader.oneOf<EngineCommand>("engine", {{"capture", EngineCommand::capture}});
+  if (reader.has("engine")) command.engine = reader.oneOf<EngineCommand>("engine", {{"capture", EngineCommand::capture}, {"restore", EngineCommand::restore}});
+  command.inverse = reader.optionalBoolean("inverse");
+  if (reader.has("inverse") && !command.inverse) reader.fail("inverse is true or absent");
   if (reader.has("predicts")) command.predicts = reader.names("predicts", &memberNames(), false);
   const Json::Value& args = reader.value("args");
   if (!args.isObject()) reader.fail("has \"args\" that are not an object");
@@ -573,7 +575,14 @@ CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
   }
   if (command.serverInternal && command.origins.replica) reader.fail("is server-internal with a replica origin");
   if (command.beforePull && !command.serverInternal) reader.fail("runs before pulls without being server-internal");
-  if (command.engine && (!command.scopedEffects || !command.args.empty())) reader.fail("engine capture requires scopedEffects and empty args");
+  if (command.engine && (!command.scopedEffects || !command.args.empty())) reader.fail("an engine command requires scopedEffects and empty args");
+  if (command.engine == EngineCommand::restore && (command.predicts.empty() || !command.refPaths.empty()))
+    reader.fail("a restore command predicts the types it restores and has fixed arguments");
+  if (command.inverse) {
+    const auto input = command.args.find("input");
+    if (!command.scopedEffects || command.engine || command.args.size() != 1 || input == command.args.end() || input->second.type != ArgType::json || input->second.optional)
+      reader.fail("an inverse command is a scopedEffects product command declaring only its required json input");
+  }
   return command;
 }
 
@@ -762,6 +771,8 @@ Registry::Registry(const Json::Value& document) {
     for (const std::string& predicted : command.predicts) {
       requireType(predicted, where + ".predicts");
       if (type(predicted)->wholePut) throw RegistryError(where + " predicts the wholePut type \"" + predicted + "\", which only deltas write");
+      if (command.engine == EngineCommand::restore && (!(type(predicted)->scope == command.scope) || type(predicted)->governsTree))
+        throw RegistryError(where + " restores \"" + predicted + "\", which is outside its scope or governs a tree");
     }
   }
 

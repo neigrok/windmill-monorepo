@@ -4,7 +4,7 @@
 request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
 requests persistent storage and starts synchronization. No product or UI imports this engine.
 
-The registry composes the shared gym and journal registries at version 12, minimum 11. The deterministic
+The registry composes the shared gym, journal and roadmap registries at version 13, minimum 11. The deterministic
 core and replica rules import `packages/api-contract/sync/reference/core` and `client` directly.
 The shared modules use `TextEncoder`, canonical base64url and vendored synchronous SHA-256, with no
 dependencies. `core/encoding.js` exposes the shared encoding helpers to web consumers;
@@ -29,6 +29,13 @@ before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`)
 drawn/stored records, notices, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and
 the records it changes) and `firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
 replica changes after durable commits and persisted-page suspension, restoration and restore failure.
+`commitAct(segments, {undo})` journals an act opted into Undo after its hold (engine.md §7.3 Undo of an act);
+`requestInverse(actId, slots?)` asks for its inverse in one transaction and answers an `InverseResult`,
+`readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a
+journal record the product's stack no longer needs. The journal, inverse requests and cancellation receipts
+are control records of the replica's store, beside its outbox. The first tab's engine start releases every
+act no unsettled request reads, and reports how many requests are `waiting` and the oldest one's age; each
+request that settles reports its applied and skipped counts.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
 
@@ -75,8 +82,13 @@ IndexedDB store versions are independent of the wire registry version:
 |---|---|---|
 | 1 | Control and cache rows together in `records` | Legacy upgrade input; its shipping date is not recorded in the retained Git history. |
 | 2 | Control records plus generation-indexed `rows` | The browser sync release, `082e971d`, dated 2026-10-05; the earliest retained implementation, `76b82e9c` on 2026-10-04, already opens version 2. |
+| 3 | Version 2's layout, holding Undo of an act's `journal`, `inverse` and `cancellation` control records | Introduced with Undo of an act (engine.md §7.3, K-3). |
 
-A version-one database upgrades in one atomic IndexedDB version-change transaction. Every replica's
+Version 3 changes no object store. It shuts out every bundle older than Undo of an act, whose writes
+would drop the journal's control records and number its waiting inverse slots unbound: such a tab
+closes at the upgrade's `versionchange`, and such a bundle's later open fails with `VersionError`. A
+version-two database upgrades with every record unchanged. A version-one database upgrades in one atomic
+IndexedDB version-change transaction. Every replica's
 confirmed, spent and staged rows move to their cache generations; controls, outboxes, notices and device
 work survive unchanged. An aborted upgrade closes its connection and retains the complete version-one
 store for retry. A blocked open rejects and abandons its request: a later upgrade aborts before migration,

@@ -192,7 +192,7 @@ struct SyncEngineTests {
   @Test func anEngineWriteInsideACommitsBodyStopsInsteadOfHanging() async {
     await #expect(processExitsWith: .failure) {
       let rig = try Rig()
-      _ = try rig.engine.commit(Rig.scope) { _ -> (Gesture?, Bool) in (nil, try rig.engine.undo("g1")) }
+      _ = try rig.engine.commit(Rig.scope) { _ -> (Gesture?, Bool) in (nil, try rig.engine.cancelHeld("g1")) }
     }
   }
 
@@ -253,14 +253,14 @@ struct SyncEngineTests {
     let rig = try Rig()
     var events = rig.engine.events().makeAsyncIterator()
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], hold: true, gestureId: "g1"))
-    #expect(try rig.engine.undo("g1"))
+    #expect(try rig.engine.cancelHeld("g1"))
     #expect(try rig.outbox() == [])
     #expect(await events.next() == .ended(localId: "g1/0", outcome: .undone, event: .undo, orphanOf: nil))
     try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], hold: true, gestureId: "g2"))
     rig.clock.advance(ms: Constants.holdMs)
     #expect(rig.engine.releaser.step() == .again)
-    #expect(try rig.engine.undo("g2") == false)
-    #expect(try rig.engine.undo("g3") == false)
+    #expect(try rig.engine.cancelHeld("g2") == false)
+    #expect(try rig.engine.cancelHeld("g3") == false)
     #expect(try rig.outbox() == ["g2/0 ready"])
   }
 
@@ -273,7 +273,7 @@ struct SyncEngineTests {
       changes: [.update("card", "card0001", ["title": "Edited"]), Rig.card("card0002", "Mine")], atomic: true, gestureId: "g2"))
     #expect(await rig.engine.sender.step() == .idle)
     let kicks = rig.engine.sender.wake.kicks
-    #expect(try rig.engine.undo("g1"))
+    #expect(try rig.engine.cancelHeld("g1"))
     #expect(rig.engine.sender.wake.kicks == kicks + 1)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
     #expect(await rig.engine.sender.step() == .again)
@@ -300,7 +300,7 @@ struct SyncEngineTests {
     try rig.engine.leave()
     #expect(try rig.outbox() == ["g1/0 ready", "g2/0 ready"])
     #expect(rig.engine.sender.wake.kicks == kicks + 1)
-    #expect(try rig.engine.undo("g1") == false)
+    #expect(try rig.engine.cancelHeld("g1") == false)
   }
 
   // MARK: Ids and time

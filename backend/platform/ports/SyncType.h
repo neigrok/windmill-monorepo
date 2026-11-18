@@ -66,6 +66,8 @@ public:
   // Another scope's row: a tree a command argument names, as step 3.5 locked it.
   virtual std::optional<ScopeRow> scope(const ScopeKey& key) = 0;
   virtual std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query = {}) = 0;
+  // Whether discovery declared `key` for this intent (§2.3), the intent's own scope included: lockIn reads only these.
+  virtual bool declared(const ScopeKey& key) = 0;
 };
 
 class ScopeReader final : public SyncReader {
@@ -76,6 +78,7 @@ public:
   std::vector<Row> scan(const std::string& type, const FeedQuery& query = {}) override { return reader_.scanScope(key_, type, query); }
   std::optional<ScopeRow> scope(const ScopeKey& key) override { return reader_.scope(key); }
   std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query = {}) override { return reader_.scanScope(key, type, query); }
+  bool declared(const ScopeKey& key) override { return reader_.declared(key); }
 
 private:
   SyncReader& reader_;
@@ -127,6 +130,7 @@ struct CommandCtx {
   SyncReader& read;
   SyncTxn& txn;
   const Json::Value& rawArgs;
+  const std::string& epoch;  // the server's epoch, which a restore and an inverse command's evidence name
 };
 
 // Deltas a command writes into another owned live scope, or one this intent creates.

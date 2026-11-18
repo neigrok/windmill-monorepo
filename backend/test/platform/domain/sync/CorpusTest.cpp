@@ -438,8 +438,10 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"identity/table.json", identityTable},
       {"machine/scope.json", scopeMachine},
       {"admit/", admitOverFakes},
-      {"gym/admit.json", [](const Json::Value& input) { test::FakeWorld world(true); return test::gymAdmitVector(world, input); }},
-      {"journal/admit.json", [](const Json::Value& input) { test::FakeWorld world(false, true); return test::journalAdmitVector(world, input); }},
+      {"gym/admit.json", [](const Json::Value& input) { test::FakeWorld world(test::WorldProduct::gym); return test::gymAdmitVector(world, input); }},
+      {"journal/admit.json", [](const Json::Value& input) { test::FakeWorld world(test::WorldProduct::journal); return test::journalAdmitVector(world, input); }},
+      {"roadmap/admit.json", [](const Json::Value& input) { test::FakeWorld world(test::WorldProduct::roadmap); return test::admitVector(world, input); }},
+      {"roadmap/client.json", corpus::ClientRole{"A.1 roadmap replica"}},
       {"journal/revisions.json", wm::journal::engine::retainedRevisions},
       {"journal/client.json", corpus::ClientRole{"A.3 journal replica"}},
       {"journal/content-clock.json", corpus::ClientRole{"A.3 durable content clock"}},
@@ -464,6 +466,7 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"write/", corpus::ClientRole{"§7.7 write maps"}},
       {"refs/", corpus::ClientRole{"E-8 compiled reference traversal"}},
       {"lineage/", corpus::ClientRole{"§7.10 lineage"}},
+      {"undo/", corpus::ClientRole{"§7.3 Undo of an act"}},
   });
   return true;
 }();

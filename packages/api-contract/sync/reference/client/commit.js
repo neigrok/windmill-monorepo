@@ -14,6 +14,7 @@ import { isVisible, recordKey } from '../core/rows.js';
 import { checkId, roundToDomain } from '../core/values.js';
 import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
+import { settleEnded } from './journal.js';
 import { predictionsOf } from './projections.js';
 import { drawn, foldDelta, RecordView, stored, visibleCount } from './views.js';
 
@@ -373,11 +374,12 @@ function cappedType(registry, storedView, deltas) {
 }
 
 // §7.1 step 4: the held gestures of the scope that carry no command and whose every delta removes
-// (life → dead) a record `retire` names, as their entries.
-function retiringEntries(replica, scope, retire) {
+// (life → dead) a record `retire` names, as their entries. A capture command is the ordinary deltas' own.
+function retiringEntries(replica, registry, scope, retire) {
   if (retire.length === 0) return [];
   const named = new Set(retire.map(({ t, id }) => recordKey(t, id)));
-  const removes = (entry) => entry.intent.cmd === undefined && (entry.intent.d ?? []).length > 0
+  const commandFree = (entry) => entry.intent.cmd === undefined || registry.command(entry.intent.cmd.name)?.engine === 'capture';
+  const removes = (entry) => commandFree(entry) && (entry.intent.d ?? []).length > 0
     && entry.intent.d.every((delta) => delta.life?.[0] === 'dead' && named.has(recordKey(delta.t, delta.id)));
   const gestures = new Map();
   for (const entry of replica.entries()) gestures.set(entry.gestureId, [...(gestures.get(entry.gestureId) ?? []), entry]);
@@ -437,7 +439,7 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   clock.observe(replica.meta.hlcHigh);
   const stamp = clock.tick();
 
-  const retiring = retiringEntries(replica, scope, opts.retire ?? []).filter((entry) => !act || entry.gestureId !== opts.gestureId);
+  const retiring = retiringEntries(replica, registry, scope, opts.retire ?? []).filter((entry) => !act || entry.gestureId !== opts.gestureId);
   if (act && opts.supersede?.includes(opts.gestureId)) throw new CommitError('an act cannot supersede itself');
   const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
   const ending = [...new Set([...retiring, ...superseding])];
@@ -450,7 +452,8 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   const deltas = oneDeltaPerRecord(built.filter(({ delta }) => delta !== null));
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
-  const cmd = opts.cmd === undefined ? undefined : roundedCommand(registry, opts.cmd);
+  const command = opts.cmd ?? (opts.capture !== undefined && deltas.length ? { name: opts.capture, args: {} } : undefined);
+  const cmd = command === undefined ? undefined : roundedCommand(registry, command);
   const definition = cmd && registry.command(cmd.name);
   let predictions;
   if (opts.scopedPredict !== undefined && (!definition?.scopedEffects || !Array.isArray(opts.scopedPredict))) throw new CommitError('scopedPredict requires a scopedEffects command');
@@ -502,6 +505,7 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   for (const entry of retiring) moveEntry(replica, ctx.ended, entry, 'retire');
   for (const entry of superseding) if (replica.entry(entry.localId)) moveEntry(replica, ctx.ended, entry, 'silent-fold');
   foldSilently(replica, ctx.ended, folded);
+  settleEnded(replica, 'undone');
   replica.meta.hlc = clock.pair;
   const firstOrder = act ? act.firstOrder + act.offset : replica.nextCommitOrder();
   const entries = intents.map((intent, k) => {

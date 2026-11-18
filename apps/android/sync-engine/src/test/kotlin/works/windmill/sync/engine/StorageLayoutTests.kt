@@ -121,8 +121,9 @@ class StorageLayoutTests {
                     val tables = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>'android_metadata'", null).use { rows ->
                         buildSet { while (rows.moveToNext()) add(rows.getString(0)) }
                     }
-                    assertEquals(setOf("device", "replica", "row_set", "set_row", "set_ref", "spent", "cursor", "known_scope", "outbox", "outbox_touch", "notice", "device_row"), tables)
-                    for ((pragma, expected) in listOf("foreign_keys" to "1", "synchronous" to "2", "journal_mode" to if (Build.VERSION.SDK_INT >= 28) "wal" else "delete", "user_version" to "1")) {
+                    assertEquals(setOf("device", "replica", "row_set", "set_row", "set_ref", "spent", "cursor", "known_scope", "outbox", "outbox_touch", "notice", "device_row",
+                        "reversible_act", "inverse_request", "cancellation"), tables)
+                    for ((pragma, expected) in listOf("foreign_keys" to "1", "synchronous" to "2", "journal_mode" to if (Build.VERSION.SDK_INT >= 28) "wal" else "delete", "user_version" to "2")) {
                         assertEquals(expected, db.rawQuery("PRAGMA $pragma", null).use { it.moveToFirst(); it.getString(0) })
                     }
                     val before = db.rawQuery("SELECT handle FROM replica", null).use { it.moveToFirst(); it.getLong(0) }
@@ -182,12 +183,47 @@ class StorageLayoutTests {
                 "known" to Json.objectOf("tree/b_00000000" to Json.of("not-found")),
                 "spentIds" to Json.objectOf(scope.text to Json.array(Json.objectOf("t" to Json.of("tag"), "id" to Json.of("spent"), "born" to Json.of("1:0:a")))),
                 "cursors" to Json.objectOf(scope.text to Json.objectOf("cursor" to Json.Null, "digest" to Json.of(ScopeDigest.ZERO.hex), "booted" to Json.of(false))),
-                "device" to Json.objectOf("probe" to Json.objectOf("rack" to Json.array(Json.of(1), Json.of(2)))))))
+                "device" to Json.objectOf("probe" to Json.objectOf("rack" to Json.array(Json.of(1), Json.of(2)))),
+                "journal" to Json.array(act("a", retained = true), act("z", retained = true)), "inverses" to Json.array(request("r1")), "cancellations" to Json.array(cancellation("c1")))))
         store.transaction { store.metadata(next) }
         assertEquals(next, store.metadata())
-        val updated = next.with("replicas" to Json.array(next.member("replicas").arr().single().with("notices" to Json.array(notice("notice:z/0").with("dismissed" to Json.of(true)), notice("notice:a/0")))))
+        val updated = next.with("replicas" to Json.array(next.member("replicas").arr().single().with("notices" to Json.array(notice("notice:z/0").with("dismissed" to Json.of(true)), notice("notice:a/0")),
+            "journal" to Json.array(act("a", retained = false)), "cancellations" to null)))
         store.transaction { store.metadata(updated) }
         assertEquals(updated, store.metadata())
+    }
+    private fun target() = Json.objectOf("scope" to Json.of(scope.text), "t" to Json.of("card"), "id" to Json.of("card0001"), "slot" to Json.objectOf("kind" to Json.of("field"), "name" to Json.of("title")))
+    private fun act(id: String, retained: Boolean) = ReversibleAct(Json.objectOf("version" to Json.of(1), "actId" to Json.of(id), "retained" to Json.of(retained),
+        "sourceEntries" to Json.array(Json.objectOf("localId" to Json.of("$id/0"), "originScope" to Json.of(scope.text),
+            "recipes" to Json.array(Json.objectOf("kind" to Json.of("fields"), "restoreCommand" to Json.of("probe.restore"), "targets" to Json.array(Json.objectOf("target" to target())))),
+            "preimages" to Json.array(Json.objectOf("target" to target(), "value" to Json.of("Old"))), "attempts" to Json.array())))).json
+    private fun request(id: String) = InverseRequest(Json.objectOf("version" to Json.of(1), "requestId" to Json.of(id), "sourceActId" to Json.of("a"), "inverseActId" to Json.of("i1"),
+        "state" to Json.of("waiting"), "requestedAt" to Json.of(9_000), "localChanged" to Json.of(true), "slots" to Json.array(Json.objectOf("localId" to Json.of("i1/0"),
+            "commitOrder" to Json.of(2), "originScope" to Json.of(scope.text),
+            "recipe" to Json.objectOf("kind" to Json.of("restore"), "command" to Json.of("probe.restore"),
+                "operations" to Json.array(Json.objectOf("kind" to Json.of("field"), "target" to target(), "before" to Json.of("Old")))), "state" to Json.of("waiting"))))).json
+    private fun cancellation(id: String) = CancellationReceipt(Json.objectOf("version" to Json.of(1), "inverseActId" to Json.of(id), "cancelledActId" to Json.of("z"),
+        "units" to Json.array(Json.objectOf("kind" to Json.of("field"), "ownerLocalId" to Json.of("z/0"), "target" to target(), "redoValue" to Json.of("New"),
+            "restored" to Json.objectOf("kind" to Json.of("accepted"), "epoch" to Json.Null, "version" to Json.objectOf("kind" to Json.of("stamp"), "stamp" to Json.of("1:0:a"))))))).json
+    @Test fun aVersionOneStoreGainsTheJournalTablesAndKeepsItsContent() {
+        val file = File.createTempFile("windmill-upgrade-", ".sqlite").also { it.delete() }
+        val stored = initial.with("replicas" to Json.array(freshReplica("replica").json().with("device" to Json.objectOf("probe" to Json.objectOf("rack" to Json.of(1))))))
+        try {
+            AndroidSqliteStore(SQLiteDatabase.openOrCreateDatabase(file, null), registry).use { store -> store.transaction { store.metadata(stored) } }
+            SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+                for (table in listOf("reversible_act", "inverse_request", "cancellation")) db.execSQL("DROP TABLE $table")
+                db.version = 1
+            }
+            SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+                AndroidSqliteStore(db, registry).use { store ->
+                    assertEquals(2, db.version)
+                    assertEquals(stored, store.metadata())
+                    val journaled = stored.with("replicas" to Json.array(stored.member("replicas").arr().single().with("journal" to Json.array(act("a", retained = true)))))
+                    store.transaction { store.metadata(journaled) }
+                    assertEquals(journaled, store.metadata())
+                }
+            }
+        } finally { file.delete(); File(file.path + "-wal").delete(); File(file.path + "-shm").delete() }
     }
     @Test fun unsupportedVersionAndForeignUnversionedSchemaFailWithoutChangingTheFile() {
         val file = File.createTempFile("windmill-foreign-", ".sqlite").also { it.delete() }
@@ -197,9 +233,9 @@ class StorageLayoutTests {
                 assertThrows(StoreFailure::class.java) { AndroidSqliteStore(db, registry) }
                 assertEquals("preserved", db.rawQuery("SELECT value FROM todays_store", null).use { it.moveToFirst(); it.getString(0) })
                 assertEquals(0, db.version)
-                db.version = 2
+                db.version = 3
                 assertThrows(StoreFailure::class.java) { AndroidSqliteStore(db, registry) }
-                assertEquals(2, db.version)
+                assertEquals(3, db.version)
             }
         } finally { file.delete(); File(file.path + "-wal").delete(); File(file.path + "-shm").delete() }
     }

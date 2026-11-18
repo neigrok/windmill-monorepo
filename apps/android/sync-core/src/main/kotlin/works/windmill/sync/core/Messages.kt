@@ -45,26 +45,66 @@ data class PushResult(val n: Long, val verdict: Verdict, val detail: Json? = nul
     }, json["detail"])
 }
 
-// §6.4 scoped effect receipts: the versions one opted admission committed, scope by scope, and never a value.
-data class EffectSlot(val kind: Kind, val name: String?, val version: Version) {
+// §6.4 a register of a record in E-7's encoding: born, life, or a field or a text by its name.
+data class Slot(val kind: Kind, val name: String? = null) {
     enum class Kind(val order: String) { born("0"), life("1"), field("2"), text("3") }
-    sealed interface Version {
-        val json: Json
-        data class Stamped(val stamp: Stamp) : Version {
-            override val json: Json get() = Json.objectOf("kind" to Json.of("stamp"), "stamp" to stamp.json)
-        }
-        data class Revision(val revision: Long) : Version {
-            override val json: Json get() = Json.objectOf("kind" to Json.of("text"), "revision" to Json.of(revision))
-        }
-    }
-    constructor(json: Json) : this(Kind.valueOf(json.member("slot").member("kind").str()), json.member("slot")["name"]?.str(),
-        json.member("version").let { version -> if (version.member("kind").str() == "text") Version.Revision(version.member("revision").long())
-            else Version.Stamped(Stamp(version.member("stamp").str())) })
+    init { require((kind == Kind.field || kind == Kind.text) == (name != null)) }
     // The lattice register a slot versions: `life`, or a field by its name. A born moves with its life, and a text has no register.
     val register: String? get() = when (kind) { Kind.life -> "life"; Kind.field -> name; Kind.born, Kind.text -> null }
-    val stamp: Stamp? get() = (version as? Version.Stamped)?.stamp
+    // E-7 lists a row's slots born, life, then fields and texts by name.
     val order: String get() = kind.order + (name ?: "")
-    val json: Json get() = Json.objectOf("slot" to Json.objectOf("kind" to Json.of(kind.name)).with("name" to name?.let(Json::of)), "version" to version.json)
+    val json: Json get() = Json.objectOf("kind" to Json.of(kind.name)).with("name" to name?.let(Json::of))
+    constructor(json: Json) : this(Kind.valueOf(json.member("kind").str()), json["name"]?.str())
+
+    companion object {
+        // The exact wire shape: born and life name nothing, a field or a text names its field.
+        fun read(json: Json): Slot {
+            val kind = Kind.entries.firstOrNull { it.name == json.member("kind").str() } ?: throw JsonError("slot")
+            if (kind == Kind.born || kind == Kind.life) json.expectKeys(listOf("kind")) else json.expectKeys(listOf("kind", "name"))
+            return Slot(kind, json["name"]?.str())
+        }
+    }
+}
+
+// The version a slot holds: a register's stamp, or a text's revision.
+sealed interface SlotVersion {
+    val json: Json
+    data class Stamped(val stamp: Stamp) : SlotVersion {
+        override val json: Json get() = Json.objectOf("kind" to Json.of("stamp"), "stamp" to stamp.json)
+    }
+    data class Revision(val revision: Long) : SlotVersion {
+        override val json: Json get() = Json.objectOf("kind" to Json.of("text"), "revision" to Json.of(revision))
+    }
+    companion object {
+        operator fun invoke(json: Json): SlotVersion = if (json.member("kind").str() == "text") Revision(json.member("revision").long()) else Stamped(Stamp(json.member("stamp").str()))
+        // The exact wire shape of a slot's version: a text's positive revision, any other slot's set stamp.
+        fun read(slot: Slot, json: Json): SlotVersion {
+            if (slot.kind == Slot.Kind.text) {
+                json.expectKeys(listOf("kind", "revision")); if (json.member("kind") != Json.of("text")) throw JsonError("slot-version")
+                return Revision(json.member("revision").long(1))
+            }
+            json.expectKeys(listOf("kind", "stamp")); if (json.member("kind") != Json.of("stamp")) throw JsonError("slot-version")
+            return Stamped(Stamp(json.member("stamp").str()).also { if (it == Stamp.UNSET) throw JsonError("slot-version") })
+        }
+    }
+}
+
+// §6.4 scoped effect receipts: the versions one opted admission committed, scope by scope, and never a value.
+data class EffectSlot(val slot: Slot, val version: SlotVersion) {
+    constructor(json: Json) : this(Slot(json.member("slot")), SlotVersion(json.member("version")))
+    val kind: Slot.Kind get() = slot.kind
+    val name: String? get() = slot.name
+    val stamp: Stamp? get() = (version as? SlotVersion.Stamped)?.stamp
+    val json: Json get() = Json.objectOf("slot" to slot.json, "version" to version.json)
+
+    companion object {
+        // The exact wire shape of `{slot, version}`.
+        fun read(json: Json): EffectSlot {
+            json.expectKeys(listOf("slot", "version"))
+            val slot = Slot.read(json.member("slot"))
+            return EffectSlot(slot, SlotVersion.read(slot, json.member("version")))
+        }
+    }
 }
 
 data class EffectRow(val key: RecordKey, val beforeRowSeq: Long?, val rowSeq: Long, val slots: List<EffectSlot>) {
@@ -72,20 +112,32 @@ data class EffectRow(val key: RecordKey, val beforeRowSeq: Long?, val rowSeq: Lo
         json.member("rowSeq").long(), json.member("slots").arr().map(::EffectSlot))
     val json: Json get() = Json.objectOf("t" to Json.of(key.type), "id" to key.id.json, "beforeRowSeq" to (beforeRowSeq?.let(Json::of) ?: Json.Null),
         "rowSeq" to Json.of(rowSeq), "slots" to Json.Arr(slots.map(EffectSlot::json)))
-    fun slot(kind: EffectSlot.Kind, name: String?): EffectSlot? = slots.firstOrNull { it.kind == kind && it.name == name }
+    fun slot(slot: Slot): EffectSlot? = slots.firstOrNull { it.slot == slot }
 
     companion object {
         // A committed row's receipt: born, life, then changed fields and texts by name; a created row lists its whole footprint.
         fun committed(before: Row?, after: Row): EffectRow = EffectRow(after.key, before?.seq, after.seq, buildList {
-            after.lattice.born?.takeIf { it != before?.lattice?.born }?.let { add(EffectSlot(EffectSlot.Kind.born, null, EffectSlot.Version.Stamped(it))) }
-            after.lattice.life?.takeIf { it != before?.lattice?.life }?.let { add(EffectSlot(EffectSlot.Kind.life, null, EffectSlot.Version.Stamped(it.stamp))) }
+            after.lattice.born?.takeIf { it != before?.lattice?.born }?.let { add(EffectSlot(Slot(Slot.Kind.born), SlotVersion.Stamped(it))) }
+            after.lattice.life?.takeIf { it != before?.lattice?.life }?.let { add(EffectSlot(Slot(Slot.Kind.life), SlotVersion.Stamped(it.stamp))) }
             for ((name, register) in after.lattice.fields.toSortedMap(::compareBytes)) if (register != before?.lattice?.fields?.get(name))
-                add(EffectSlot(EffectSlot.Kind.field, name, EffectSlot.Version.Stamped(register.stamp)))
+                add(EffectSlot(Slot(Slot.Kind.field, name), SlotVersion.Stamped(register.stamp)))
             for ((name, text) in after.texts.toSortedMap(::compareBytes)) if (text != before?.texts?.get(name))
-                add(EffectSlot(EffectSlot.Kind.text, name, EffectSlot.Version.Revision(text.rev)))
+                add(EffectSlot(Slot(Slot.Kind.text, name), SlotVersion.Revision(text.rev)))
         })
     }
 }
+
+// A stored row's version of a slot, or null while the register is unset.
+fun Row.version(slot: Slot): SlotVersion? = when (slot.kind) {
+    Slot.Kind.born -> lattice.born?.let(SlotVersion::Stamped)
+    Slot.Kind.life -> lattice.life?.let { SlotVersion.Stamped(it.stamp) }
+    Slot.Kind.field -> lattice.fields[slot.name]?.let { SlotVersion.Stamped(it.stamp) }
+    Slot.Kind.text -> texts[slot.name]?.let { SlotVersion.Revision(it.rev) }
+}
+
+// A stored row's complete versioned footprint, in E-7's slot order.
+val Row.footprint: List<EffectSlot> get() = (listOf(Slot(Slot.Kind.born), Slot(Slot.Kind.life)) + lattice.fields.keys.map { Slot(Slot.Kind.field, it) } +
+    texts.keys.map { Slot(Slot.Kind.text, it) }).mapNotNull { slot -> version(slot)?.let { EffectSlot(slot, it) } }.sortedWith { a, b -> compareBytes(a.slot.order, b.slot.order) }
 
 data class EffectReceipt(val scope: ScopeRef, val beforeSeq: Long?, val seq: Long?, val rows: List<EffectRow>) {
     constructor(json: Json) : this(ScopeRef(json.member("scope")), json.member("beforeSeq").orNull()?.long(), json.member("seq").orNull()?.long(),
@@ -135,14 +187,14 @@ data class EffectReceipt(val scope: ScopeRef, val beforeSeq: Long?, val seq: Lon
                 check(type.scope == kind && registry.isId(row.key.id.json, type))
                 check(row.rowSeq > 0 && row.rowSeq == receipt.seq && receipt.beforeSeq != receipt.seq)
                 check(row.beforeRowSeq == null || receipt.beforeSeq != null && row.beforeRowSeq < row.rowSeq && row.beforeRowSeq <= receipt.beforeSeq)
-                check(row.slots.zipWithNext().all { (a, b) -> compareBytes(a.order, b.order) < 0 })
+                check(row.slots.zipWithNext().all { (a, b) -> compareBytes(a.slot.order, b.slot.order) < 0 })
                 for (slot in row.slots) when (slot.kind) {
-                    EffectSlot.Kind.born -> check(type.hasBorn)
-                    EffectSlot.Kind.life -> check(type.life)
-                    EffectSlot.Kind.field -> check(type.fields[slot.name]?.isLattice == true)
-                    EffectSlot.Kind.text -> check(type.fields[slot.name]?.kind == "text" && (slot.version as EffectSlot.Version.Revision).revision <= row.rowSeq)
+                    Slot.Kind.born -> check(type.hasBorn)
+                    Slot.Kind.life -> check(type.life)
+                    Slot.Kind.field -> check(type.fields[slot.name]?.isLattice == true)
+                    Slot.Kind.text -> check(type.fields[slot.name]?.kind == "text" && (slot.version as SlotVersion.Revision).revision <= row.rowSeq)
                 }
-                if (row.beforeRowSeq == null) check((!type.hasBorn || row.slot(EffectSlot.Kind.born, null) != null) && (!type.life || row.slot(EffectSlot.Kind.life, null) != null))
+                if (row.beforeRowSeq == null) check((!type.hasBorn || row.slot(Slot(Slot.Kind.born)) != null) && (!type.life || row.slot(Slot(Slot.Kind.life)) != null))
             }
             return receipt
         }
@@ -151,17 +203,7 @@ data class EffectReceipt(val scope: ScopeRef, val beforeSeq: Long?, val seq: Lon
         private fun checkRow(json: Json) {
             json.expectKeys(listOf("t", "id", "beforeRowSeq", "rowSeq", "slots"))
             json.member("t").str(); json.member("beforeRowSeq").orNull()?.long(0); json.member("rowSeq").long(0)
-            for (item in json.member("slots").arr()) {
-                item.expectKeys(listOf("slot", "version"))
-                val slot = item.member("slot"); val version = item.member("version")
-                val kind = checkNotNull(EffectSlot.Kind.entries.firstOrNull { it.name == slot.member("kind").str() })
-                if (kind == EffectSlot.Kind.born || kind == EffectSlot.Kind.life) slot.expectKeys(listOf("kind")) else { slot.expectKeys(listOf("kind", "name")); slot.member("name").str() }
-                if (kind == EffectSlot.Kind.text) {
-                    version.expectKeys(listOf("kind", "revision")); check(version.member("kind") == Json.of("text")); version.member("revision").long(1)
-                } else {
-                    version.expectKeys(listOf("kind", "stamp")); check(version.member("kind") == Json.of("stamp") && Stamp(version.member("stamp").str()) != Stamp.UNSET)
-                }
-            }
+            json.member("slots").arr().forEach { EffectSlot.read(it) }
         }
     }
 }

@@ -307,7 +307,7 @@ the grace that container was created with, so a changed value holds from the dep
 
 ## Coordinated client cutoff
 
-The repository registry is schema 12 / minimum 11. Every schema in that interval carries explicit gym
+The repository registry is schema 13 / minimum 11. Every schema in that interval carries explicit gym
 `other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
 schema 12 / minimum 11, verified on 2026-11-01 after
 [deployment 41306516632](https://github.com/neigrok/windmill-monorepo/actions/runs/41306516632).
@@ -321,6 +321,12 @@ once the live hello admits it. The last complete promotion is
 The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
 is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
+
+Schema 13 composes roadmap's registry beside gym's and journal's, and the server binds it
+(`products/roadmap/sync/`). The compose file passes no `ROADMAP_ENGINE_ENABLED`, so production withholds roadmap's
+scopes: hello says roadmap holds nothing and every roadmap intent is refused. The `roadmap_*` tables `db/schema.sql`
+creates beside roadmap's own stay empty until roadmap's cutover
+([roadmap on the engine](../../docs/foundation/roadmap-on-the-engine.md) §8.1) fills them and turns the switch on.
 
 1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
    refuses a candidate minimum that differs from the live server.

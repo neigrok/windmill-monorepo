@@ -18,7 +18,8 @@ val Saved.form: Json get() = Json.objectOf("values" to Json.Obj(values.toList())
 val Placement.form: Json get() = when (this) { Placement.Top -> Json.of("top"); Placement.Bottom -> Json.of("bottom"); is Placement.Below -> Json.objectOf("below" to id.json) }
 val <E : Writable<E>> Draft<E>.form: Json get() = Json.objectOf("id" to id.json, "base" to Json.Obj(base.fields().toList()), "current" to Json.Obj(current.fields().toList()), "isNew" to Json.of(isNew), "placement" to (placement?.form ?: Json.Null))
 fun <T, R> Decision<T, R>.form(scope: ScopeRef, registry: Registry, result: (T) -> Json, refusal: (R) -> Json): Json = when (this) {
-    is Decision.Write -> Json.objectOf("write" to Json.objectOf("gesture" to plan.gesture(scope, registry).form, "result" to result(this.result)))
+    is Decision.Write -> Json.objectOf("write" to Json.objectOf("gesture" to plan.gesture(scope, registry).form, "result" to result(this.result))
+        .with("undo" to plan.undoSegment(0, scope)?.let { segment -> Json.Arr(segment.recipes.map { it.json }) }))
     is Decision.Unchanged -> Json.objectOf("unchanged" to Json.objectOf("result" to result(this.result)))
     is Decision.Refuse -> Json.objectOf("refuse" to refusal(this.refusal))
 }

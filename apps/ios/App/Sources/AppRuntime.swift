@@ -181,7 +181,7 @@ final class AppRuntime {
     let reach: any Connectivity = connectivity ?? PathConnectivity()
     #endif
     self.connectivity = reach
-    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
+    engine = try SyncEngine(config: Self.engineConfig, bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
                             forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
@@ -201,6 +201,11 @@ final class AppRuntime {
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     background = BackgroundActivity(time: ApplicationBackgroundTime())
   }
+
+  // The engine as the iPhone runs it: the registry composes roadmap too, and the iPhone carries gym and journal, so it
+  // subscribes no roadmap scope.
+  nonisolated static let engineConfig = EngineConfig(
+    appVersion: "0.2.0", surface: .ios, carried: Set([Gym.scope, Journal.scope].compactMap { SyncSchema.registry.product(of: $0) }))
 
   nonisolated static let commandResultWrites: CommandResultDeviceWrites = { command, result, epoch, rows in
     JournalWriting.resultWrites(command, result, epoch, rows) + RoutineRemovalReceipt.resultWrites(command, result, epoch, rows)

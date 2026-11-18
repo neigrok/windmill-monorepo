@@ -74,6 +74,9 @@ extension Store {
         guard let request, !request.scopes.isEmpty else { return Written(value: (nil, prepared), events: [], change: StoreChange()) }
         if let id = request.gestureId, try tx.carries(gestureId: id) { throw CommitFailure.malformed("the act gesture id is taken") }
         let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
+        let undoReads = UndoPlan.reads(of: request.undo, scopes: request.scopes)
+        let undoPlan = try planners.commits.undoPlan(request.undo, scopes: request.scopes,
+                                                     in: try loaded(active, in: tx, reads: undoReads, entries: EntrySelection()))
         let gestureId = try request.gestureId ?? identities.gestureID()
         let firstOrder = try loaded(active, in: tx).nextCommitOrder
         var receipts: [ActSegmentReceipt] = []
@@ -89,13 +92,14 @@ extension Store {
           }
           gesture.gestureId = gestureId
           gesture.hold = request.hold
+          let capture = undoPlan?.opts(index) == true ? try planners.commits.capture(for: gesture, in: scope) : nil
           var reads = planners.commits.reads(of: gesture, in: scope)
           var draws: [Draw] = []
           while true {
             var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
             do {
               let outcome = try planners.commits.commit(gesture, in: scope, to: &replica, as: instance,
-                identities: identities, gestureIdTaken: false, draws: draws, actOffset: localCount, actFirstOrder: firstOrder)
+                identities: identities, gestureIdTaken: false, draws: draws, actOffset: localCount, actFirstOrder: firstOrder, capture: capture)
               switch outcome {
               case .refused(let code, let detail, _): throw ActRefusal(segment: index, code: code, detail: detail)
               case .committed(let receipt):
@@ -118,12 +122,51 @@ extension Store {
             }
           }
         }
+        if wrote, undoPlan != nil {
+          var replica = try loaded(active, in: tx, reads: undoReads, entries: EntrySelection())
+          try planners.commits.record(act: gestureId, plan: undoPlan, receipts: receipts, in: &replica)
+          try BatchWriter(db: db, registry: registry).apply(replica.batch)
+          change.merge(replica.batch.change)
+        }
         let receipt = ActReceipt(gestureId: gestureId, segments: receipts, retired: retired, superseded: superseded,
           releaseAt: request.hold && localCount > 0 ? instance.deviceNow + limits.holdMs : nil)
         return Written(value: (wrote ? .committed(receipt) : nil, prepared), events: events, change: change)
       }
     } catch let refusal as ActRefusal {
       return Written(value: (.refused(segment: refusal.segment, code: refusal.code, detail: refusal.detail), value!), events: [], change: StoreChange())
+    }
+  }
+
+  // MARK: Undo of an act (§7.3, K-3)
+
+  // requestInverse(sourceActId, inverseSlots?): a held cancellation, or the inverse slots reserved, projected and, where
+  // the act's sources are authoritative, materialized, in one transaction.
+  public func requestInverse(_ sourceActId: String, replacing slots: [ActUndo.Segment]? = nil, instance: Instance,
+                             identities: IdentitySource) throws -> Written<InverseResult> {
+    try write(.inverse) { tx in
+      let active = try tx.activeReplica()
+      let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
+      let reads = planners.inverses.reads(of: sourceActId, in: try loaded(active, in: tx))
+      var replica = try loaded(active, in: tx, reads: reads)
+      let result = try planners.inverses.request(sourceActId, replacing: slots, in: &replica, as: instance, identities: identities)
+      return Planned(result, replica.batch)
+    }
+  }
+
+  // readInverseResult(requestId).
+  public func readInverseResult(_ requestId: String) throws -> InverseResult {
+    try read { tx in
+      let replica = try loaded(try tx.activeReplica(), in: tx, entries: EntrySelection())
+      return planners.inverses.read(requestId, in: replica)
+    }
+  }
+
+  // releaseReversibleAct(actId): false when the active replica's journal holds no such act.
+  public func releaseReversibleAct(_ actId: String) throws -> Written<Bool> {
+    try write(.inverse) { tx in
+      var replica = try loaded(try tx.activeReplica(), in: tx, entries: EntrySelection())
+      let released = planners.inverses.release(actId, in: &replica)
+      return Planned(released, replica.batch)
     }
   }
 

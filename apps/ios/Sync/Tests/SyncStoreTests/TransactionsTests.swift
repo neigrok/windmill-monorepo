@@ -145,9 +145,13 @@ struct TransactionsTests {
         + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '"# + type + #"' AND outbox_touch.id = '""# + id
         + #""' AND outbox.replica = 1"#
     }
-    let carried = { (gestureId: String) in
-      [#"SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = '"# + gestureId + "')",
-       #"SELECT id FROM notice WHERE id >= 'notice:"# + gestureId + #"/' AND id < 'notice:"# + gestureId + "0'"]
+    let carried = { (gestureId: String) -> [String] in
+      let journal: String = """
+        SELECT EXISTS (SELECT 1 FROM journal_act WHERE act_id = '\(gestureId)') OR EXISTS (SELECT 1 FROM inverse_request WHERE request_id = '\(gestureId)')
+          OR EXISTS (SELECT 1 FROM inverse_request WHERE inverse_act_id = '\(gestureId)') OR EXISTS (SELECT 1 FROM cancellation WHERE inverse_act_id = '\(gestureId)')
+        """
+      return [#"SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = '"# + gestureId + "')",
+              #"SELECT id FROM notice WHERE id >= 'notice:"# + gestureId + #"/' AND id < 'notice:"# + gestureId + "0'", journal]
     }
     let cards = #"SELECT row FROM set_row WHERE row_set = 1 AND type = 'card'"#
     let touchingCards = "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
@@ -719,13 +723,20 @@ struct StoredDevice: ClientDevice {
     take(try store.commit(in: scope, instance: instance, identities: identities) { _ in (gesture, ()) }).outcome
   }
 
-  mutating func commitAct(_ segments: [ScopedGesture]?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
+  mutating func commitAct(_ segments: [ScopedGesture]?, undo: ActUndo?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
     let written = try store.commitAct(instance: instance, identities: identities, prepare: { _ in
-      (segments.map { ActRequest(scopes: $0.map(\.scope), hold: $0.contains { $0.gesture.hold }) }, segments)
+      (segments.map { ActRequest(scopes: $0.map(\.scope), hold: $0.contains { $0.gesture.hold }, undo: undo) }, segments)
     }, segment: { values, index, _, _ in values![index].gesture })
     events += written.events
     return written.value.outcome
   }
+
+  mutating func requestInverse(_ actId: String, slots: [ActUndo.Segment]?, instance: Instance, identities: IdentitySource) throws -> InverseResult {
+    take(try store.requestInverse(actId, replacing: slots, instance: instance, identities: identities))
+  }
+
+  func readInverseResult(_ requestId: String) throws -> InverseResult { try store.readInverseResult(requestId) }
+  mutating func releaseReversibleAct(_ actId: String) throws -> Bool { take(try store.releaseReversibleAct(actId)) }
 
   mutating func release(_ localId: String) throws -> Bool { take(try store.release(localId)) }
   mutating func releaseAll() throws { _ = take(try store.releaseAll()) }

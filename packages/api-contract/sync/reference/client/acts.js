@@ -1,8 +1,87 @@
 import { CONSTANTS } from '../core/constants.js';
 import { mintId } from '../core/derive.js';
+import { recipeFault, recordValues, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError, commitGesture } from './commit.js';
 import { drawn, stored } from './views.js';
+
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// The one capture command of a scope's kind (§2.4). None or several is a programming error, never a choice
+// by name.
+function captureCommandOf(registry, scope) {
+  const kind = registry.scopeKindOf(scope);
+  const found = [...registry.commands.values()].filter((command) => command.engine === 'capture' && command.scope === kind);
+  if (found.length !== 1) throw new CommitError(`${kind} has no single capture command`);
+  return found[0].name;
+}
+
+// ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
+// initial snapshot (§7.1 Ordered local acts), each with the sequence of the confirmed row it was read over (null
+// where none is confirmed) and the server epoch that sequence counts in; a life's preimage also keeps the record
+// as read, which a revival draws. A slot unset there takes the recipe's explicit default; with none, the act
+// fails before anything changes. A segment named with no recipes is journaled for its receipts alone, as
+// evidence, and an act names at least one recipe. Answers the plan by segment index, or null.
+function planUndo(replica, registry, request) {
+  const { undo } = request;
+  if (undo === undefined || undo === null) return null;
+  if (!isObject(undo) || Object.keys(undo).sort().join() !== 'segments,version' || undo.version !== 1 || !Array.isArray(undo.segments))
+    throw new CommitError('an act undo is {version: 1, segments}');
+  const plan = new Map();
+  for (const segment of undo.segments) {
+    if (!isObject(segment) || Object.keys(segment).sort().join() !== 'index,recipes' || !Number.isSafeInteger(segment.index)
+      || segment.index < 0 || segment.index >= request.scopes.length || plan.has(segment.index)
+      || !Array.isArray(segment.recipes)) throw new CommitError('an undo segment names one act segment and its recipes');
+    const scope = request.scopes[segment.index];
+    const view = drawn(replica, registry, scope);
+    const preimages = [];
+    for (const recipe of segment.recipes) {
+      const fault = recipeFault(registry, scope, recipe);
+      if (fault) throw new CommitError(`an undo recipe is malformed: ${fault}`);
+      if (recipe.kind === 'createdRecord' && view.has(recordKey(recipe.record.t, recipe.record.id))) throw new CommitError('a created record exists before its act');
+      if (recipe.kind !== 'fields') continue;
+      for (const { target, defaultValue } of recipe.targets) {
+        const read = view.get(recordKey(target.t, target.id));
+        const value = valueIn(read, target.slot);
+        if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
+        preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue),
+          rowSeq: replica.confirmedRow(target.scope, target.t, target.id)?.seq ?? null, epoch: replica.meta.serverEpoch,
+          ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) });
+      }
+    }
+    plan.set(segment.index, { scope, recipes: structuredClone(segment.recipes), preimages });
+  }
+  if (undo.segments.every((segment) => segment.recipes.length === 0)) throw new CommitError('an act opts into Undo with at least one recipe');
+  return plan;
+}
+
+// An opted segment's gesture runs its own scopedEffects command, or else the capture command, which joins it
+// only when the segment writes a delta.
+function optedGesture(registry, scope, opts) {
+  if (opts.cmd === undefined) return { ...opts, capture: captureCommandOf(registry, scope) };
+  if (!registry.command(opts.cmd.name)?.scopedEffects) throw new CommitError('an opted command returns scoped effects');
+  return opts;
+}
+
+// The act's journal record, from the segments that left an entry: one source entry each, in commit order, with
+// the value the act left in each target, which a Redo writes back.
+function recordAct(replica, registry, actId, plan, receipts) {
+  if (plan === null) return;
+  const sourceEntries = [];
+  for (const [index, { scope, recipes, preimages }] of [...plan].sort(([a], [b]) => a - b)) {
+    const { localIds } = receipts[index];
+    if (localIds.length === 0) continue;
+    if (localIds.length > 1) throw new CommitError('an opted segment commits one intent');
+    const view = drawn(replica, registry, scope);
+    const written = preimages.flatMap(({ target }) => {
+      const value = valueIn(view.get(recordKey(target.t, target.id)), target.slot);
+      return value === undefined ? [] : [{ target: structuredClone(target), value: structuredClone(value) }];
+    });
+    sourceEntries.push({ localId: localIds[0], originScope: scope, recipes, preimages, written, attempts: [] });
+  }
+  if (sourceEntries.length) replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
+}
+
 
 function newActScope(replica, registry, scope) {
   const kind = registry.scopeKindOf(scope);
@@ -80,10 +159,11 @@ export class ActCommit {
     }
     if (!this.working) {
       if (request.gestureId !== undefined && request.gestureId !== null && ctx.device.carriesGesture(request.gestureId)) throw new CommitError('the act gesture id is taken');
+      this.undoPlan = planUndo(replica, ctx.registry, request);
       this.gestureId = request.gestureId ?? ctx.nextGestureId();
       this.working = Object.assign(Object.create(Object.getPrototypeOf(replica)), replica, {
         meta: structuredClone(replica.meta), outbox: structuredClone(replica.outbox),
-        notices: structuredClone(replica.notices), device: structuredClone(replica.device),
+        notices: structuredClone(replica.notices), device: structuredClone(replica.device), journal: structuredClone(replica.journal),
       });
       this.firstOrder = replica.nextCommitOrder();
       this.index = 0; this.offset = 0; this.receipts = []; this.retired = new Set(); this.superseded = new Set(); this.ended = [];
@@ -104,7 +184,7 @@ export class ActCommit {
         finally { loan = false; }
       }
       const gesture = this.segment;
-      const opts = gesture.opts ?? {};
+      const opts = this.undoPlan?.has(this.index) ? optedGesture(ctx.registry, scope, gesture.opts ?? {}) : gesture.opts ?? {};
       if (opts.gestureId !== undefined && opts.gestureId !== this.gestureId || opts.hold && !request.hold) throw new CommitError('a segment uses its act identity and hold');
       const before = structuredClone(working.meta);
       const result = commitGesture(working, { ...ctx, actor: this.actor, deviceNow: this.deviceNow, ended: this.ended }, this.now,
@@ -120,7 +200,8 @@ export class ActCommit {
       delete this.segment;
     }
     if (!this.wrote) return { outcome: null, value };
-    for (const key of ['meta', 'outbox', 'notices', 'device']) replica[key] = working[key];
+    recordAct(working, ctx.registry, this.gestureId, this.undoPlan, this.receipts);
+    for (const key of ['meta', 'outbox', 'notices', 'device', 'journal']) replica[key] = working[key];
     ctx.ended.push(...this.ended);
     return { outcome: { gestureId: this.gestureId, segments: this.receipts, retired: [...this.retired], superseded: [...this.superseded],
       releaseAt: request.hold && this.offset > 0 ? this.deviceNow + (ctx.limits ?? CONSTANTS).HOLD_MS : null }, value };

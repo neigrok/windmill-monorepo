@@ -2,7 +2,9 @@
 
 Each JSON file holds `{name,input,expect}` cases, except `rules.json`, the pinned rule book. The web
 corpus (`web/test/products/roadmap/domain/corpus.test.js`) claims every file by name and compares
-complete outputs. The pure reads below take normalized domain records; the actions, `values.json`
+complete outputs. The server's read domain (`backend/products/roadmap/domain/read/`) claims the reads
+the table marks as the server's, by JCS, in `backend/test/products/roadmap/domain/read/ReadVectorsTest.cpp`,
+which fails on a file it neither claims nor names as a device's. The pure reads below take normalized domain records; the actions, `values.json`
 and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
 rows and `../../sync/roadmap.registry.json` (see [Actions](#actions)). No operation reads storage,
 time, randomness or localization.
@@ -20,7 +22,7 @@ Authored and sibling order is `(ord, born, id)`, missing birth normalized to `St
 (zero). Empty order sorts first. Other ties keep authored order unless an operation specifies
 ID byte order.
 
-| Operation | Complete result | Later server claim |
+| Operation | Complete result | The server claims it |
 | --- | --- | --- |
 | `graph` | Present IDs and states in authored order; requested subjects with followed prerequisites, unmet IDs, owed IDs/count and completion-unlocks | yes |
 | `account` | Trees by ID with standing, place/path/title, counts, completion and openings; pointer-loop components | yes |
@@ -126,6 +128,7 @@ the registry its caller composes). Files:
 | `progress-actions.json` | Complete and Reset; a step that opens or owns a roadmap takes no mark; pointers |
 | `workspace-actions.json` | Subtasks and links in their step's order; the note saved as text |
 | `landing-actions.json` | The landing read and its clearing; the one list of what cannot land |
+| `undo.json` | Each gesture's Undo and Redo on the kit's harness over the reference server with roadmap's binding (K-3) |
 
 **Scenes.** An action case is, as the kit's act form reads it (`ProductCorpus.act`), `{action, input, scopes: {<scope>: {drawn, stored?}}, device?, ids?, now,
 offsetSeconds}`: each scope's records are engine rows (`stored` defaults to `drawn`), `device` holds
@@ -138,7 +141,7 @@ Scopes are `self/roadmap`, `tree/<T>` and `self/overlay/<T>`; the device row is 
 |---|---|---|
 | `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2`, and the steps, chunked |
 | `DeleteRoadmap` | `{tree}` | `null`; held; a subtree's record refuses `notARoot` |
-| `SetVisibility` | `{tree, visibility}` | `null`; `roadmap.setVisibility {visibility}` in the root's tree, predicting its `visibility` and `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); a subtree refuses `notARoot` |
+| `SetVisibility` | `{tree, visibility}` | `null`; a write of the root's `meta.visibility` under `roadmap.captureTree`, predicting the root's `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); the visibility the root holds writes nothing; a subtree refuses `notARoot` |
 | `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step `drawn` holds dead is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |
 | `WriteRoadmap` | `{tree, title?, guide?}` | `null`; the changed fields of `meta` |
 | `CreateStep` | `{tree, step: {label, icon?, color?, description?, links?}, prerequisites}` | the step's id; the step after the steps its first prerequisite leads to (or after the first steps), one link from each prerequisite, and the landing note |
@@ -151,8 +154,8 @@ Scopes are `self/roadmap`, `tree/<T>` and `self/overlay/<T>`; the device row is 
 | `RecolourKind` | `{tree, kind, hue}` | `null`; the command, predicting the kind's hue and every step wearing the old hue, present or not, by id; a kind `drawn` holds dead is revived in a segment before it |
 | `Complete`, `Reset` | `{tree, step, outOfOrder?, opensStanding?}`, `{tree, step}` | `null`; the step's `mark`; `opensStanding`, read by the caller from the account, says the step's pointer opens a standing roadmap |
 | `SetPointer`, `ClearPointer` | `{tree, step, opens}`, `{tree, step}` | `null` |
-| `AddSubtask`, `ChangeSubtask`, `MoveSubtask`, `DeleteSubtask` | `{tree, step, label}`, `{tree, subtask, changes}`, `{tree, subtask, below}`, `{tree, subtask}` | the subtask's id, or `null`; a move lands below another of its step's subtasks |
-| `AddStepLink`, `ChangeStepLink`, `MoveStepLink`, `DeleteStepLink` | `{tree, step, link: {url, title?}}`, `{tree, link, changes}`, `{tree, link, below}`, `{tree, link}` | as subtasks |
+| `AddSubtask`, `ChangeSubtask`, `MoveSubtask`, `DeleteSubtask` | `{tree, step, label}`, `{tree, subtask, changes}`, `{tree, subtask, below}`, `{tree, subtask}` | the subtask's id, or `null`; a move lands below another of its step's subtasks; a delete is held |
+| `AddStepLink`, `ChangeStepLink`, `MoveStepLink`, `DeleteStepLink` | `{tree, step, link: {url, title?}}`, `{tree, link, changes}`, `{tree, link, below}`, `{tree, link}` | as subtasks; a delete is held |
 | `SaveStepNote` | `{tree, step, text}` | the draft save's `{values, exists}`, decided as `{write: {gesture, result}}`; the note opened from `drawn` or new |
 | `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; the note less what was told, or no row |
 | read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the note's steps and links, and its revived steps now present |
@@ -171,5 +174,40 @@ depthLimit | other: {code, subject, detail, path}}`.
 
 The web runs every action case through the kit's `ProductCorpus.act`, each with its records reversed too.
 `web/test/products/roadmap/domain/harness.test.js` runs the held deletes and their Undo, a subtree and a
-visibility predicted across scopes, and a change against another device's delete (INV-1) over the real engine.
+visibility predicted across scopes, and a change against another device's delete (INV-1) over the real engine;
+against roadmap's reference binding it lands a subtree and a visibility as the server writes them, keeps a newer
+private over a stale public sent after it, and ends and restores a subtree's standing with its step.
+
+## Undo (K-3)
+
+Each segment of an action case's write that opts into Undo carries `undo`, its recipes as the engine journals them
+(the kit's `translateUndo`): `fields` naming targets `{scope, t, id, slot}` and, for a field unset before the act, the
+value equivalent to unset; `createdRecord`; or a product `command` with its evidence. What each gesture names:
+
+| Gesture | Undo | Redo |
+|---|---|---|
+| A change of a step or a kind, a move of either | `roadmap.restoreTree` of each changed field, and of the life where the device held the record as deleted | writes the change back |
+| Create a step, a link, a kind; an import's steps and links | `createdRecord` of each, deleted again while its own writes are all that changed it; one act, so one Undo takes every chunk | revives the step, link or kind |
+| Delete a step or a kind; remove a link | the life (`roadmap.restoreTree`); a step's delete is held, and an Undo in its hold cancels it in place | deletes it again |
+| A roadmap's title, guide or visibility | the field (`meta`, unset `""` and `private`); the server writes the branch's reach back | writes the change back |
+| Recolour a kind | the kind's `hue` and the `color` of each step that wore it; a revival before the command, its life | writes them back |
+| Complete, Reset | `roadmap.restoreOverlay` of the `mark`, unset `{status: none, outOfOrder: false}` | writes the mark back |
+| Set or clear a pointer | `opens` and the life, or `createdRecord` of a pointer the overlay never held | writes it back |
+| Add, change or move a subtask or a link | `createdRecord`, or the changed fields and `ord` | the change; a deleted subtask or link is terminal, so the Redo of an add brings nothing back |
+| Delete a subtask or a link | none: the type is terminal. The delete is held nine seconds, and `cancelHeld` in the hold is its one Undo | — |
+| Create a roadmap | `roadmap.undoCreateRoadmap {tree}` over the record and its tree scope, unchanged since: the roadmap dies while nothing changed in it, its owner's overlay included. Each tree segment is the Undo's evidence (`evidenceForUndo`, `undo: []`), journaled so its receipts prove the scope | none: a new roadmap is a new creation |
+| Create a subtree | `roadmap.undoCreateSubtree {tree, step, subtree}` over the step's `branch`, the subtree's record and its tree scope; a step revived before it, its life | `redoCreateSubtree`: the product's slots (`redoCreateSubtree(creation, fresh)` in `roadmaps.js`) plant a new subtree under a fresh id while the `branch` is still the one the Undo cleared (R-8) |
+| Delete a roadmap | none after its hold (R-7); `cancelHeld` in the hold | — |
+| Save a step's note | the note's `text`, from the text the draft was saved from (`""` for a first note): `StepNote` saves reversibly, so each save is an act; it skips where a write the device had not seen changed the note | writes the saved text back |
+| The landing note | none: device rows are the device's | — |
+
+**Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
+binding. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
+<role>}` (`subtree: true` gives a Redo the product's slots), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
+input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
+`{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id
+`<new>`. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
+answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:
+fields and texts written back, a created record deleted, and a record revived (the Undo of a delete, the Redo of a
+creation).
 

@@ -4,6 +4,7 @@
 import { sameJson } from '../core/jcs.js';
 import { isAlive } from '../core/rows.js';
 import { ownValue, setOwn } from '../core/maps.js';
+import { evidenceSkip } from '../core/restore.js';
 import { Refusal } from '../server/admit.js';
 
 export const TICK_AFTER_MS = 600_000;
@@ -45,6 +46,7 @@ export class ProbeProduct {
 
   discoverEffectScopes(ctx, cmd) {
     if (cmd?.name === 'probe.branch') return [`tree:${cmd.args.parent}`, `tree:${cmd.args.child}`];
+    if (cmd?.name === 'probe.unbranch') return [`tree:${cmd.args.input.parent}`, `tree:${cmd.args.input.child}`];
     if (cmd?.name !== 'probe.copy' || ownValue(ctx.productState.copies?.[ctx.scopeKey], cmd.args.dst) === cmd.args.src) return [];
     if (ctx.idState('board', cmd.args.dst).state !== 'none') return [];
     return [`tree:${cmd.args.dst}`];
@@ -73,6 +75,8 @@ export class ProbeProduct {
         return this.sprout(ctx, cmd.args);
       case 'probe.adopt':
         return this.adopt(ctx, cmd.args);
+      case 'probe.unbranch':
+        return this.unbranch(ctx, cmd.args);
       case 'probe.tick':
         return this.tick(ctx);
       default:
@@ -95,6 +99,26 @@ export class ProbeProduct {
     const meta = { t: 'meta', id: 'meta', f: { title: [title, null] } };
     return { deltas: [board], into: [parent, child].map((id) => ({ scopeKey: `tree:${id}`, deltas: [meta] })),
       write: [{ t: 'board', id: child, born: null }], detail: { created: true } };
+  }
+
+  // K-3: the inverse of probe.branch, all or nothing. While the created board and its tree are unchanged
+  // since the branch, and the parent's title is still the one the branch wrote where it wrote one, the board
+  // dies, killing its tree, and the parent takes back its earlier title. The evidence must prove the board
+  // and its tree; an owned parent title is restored only when the evidence names it.
+  unbranch(ctx, { input: { parent, child, title }, evidence }) {
+    const proves = evidence.unchangedCreatedRecords.some(({ record }) => record.scope === 'self/probe' && record.t === 'board' && record.id === child)
+      && evidence.unchangedCreatedScopes.some(({ scope }) => scope === `tree/${child}`);
+    if (!proves || parent === child) throw new Refusal('invalid');
+    const outcome = (s, code) => ({ inverse: { outcomes: [{ index: 0, s, ...(code ? { code } : {}) }] } });
+    const skip = evidenceSkip({ epoch: ctx.epoch, row: (scope, t, id) => ctx.storedIn(ctx.keyOf(scope), t, id),
+      seq: (scope) => ctx.scope(ctx.keyOf(scope))?.seq ?? null }, evidence);
+    if (skip) return { deltas: [], write: [], detail: outcome('skipped', skip) };
+    const restoresTitle = evidence.ownedFields.some(({ target }) => target.scope === `tree/${parent}` && target.t === 'meta' && target.slot.name === 'title');
+    return {
+      deltas: [{ t: 'board', id: child, born: ctx.stored('board', child).born, life: ['dead', null] }],
+      into: restoresTitle ? [{ scopeKey: `tree:${parent}`, deltas: [{ t: 'meta', id: 'meta', f: { title: [title, null] } }] }] : [],
+      write: [], detail: outcome('applied'),
+    };
   }
 
   // Creates board `child` owned by the step `{board, tag}`, its `parent`. A step that already owns an

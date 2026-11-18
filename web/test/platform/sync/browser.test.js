@@ -169,7 +169,7 @@ for (const abort of [false, true]) test(`Chromium: every real v1 row survives ${
       }
       return { aborted, snapshots };
     }, { records, abort });
-    assert.deepEqual(result, { aborted: abort ? 'AbortError' : null, snapshots: [{ version: 2, device: expected }, { version: 2, device: expected }] });
+    assert.deepEqual(result, { aborted: abort ? 'AbortError' : null, snapshots: [{ version: 3, device: expected }, { version: 3, device: expected }] });
   } finally { await context.close(); }
 });
 
@@ -244,7 +244,7 @@ test('Chromium: a blocked open abandons its upgrade, preserves v1 rows and relea
       const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ name, newReplicaId })));
       const snapshots = await Promise.all(stores.map(async (store) => (await store.read()).device.toJSON()));
       await new Promise((resolve, reject) => {
-        const request = indexedDB.open(name, 3);
+        const request = indexedDB.open(name, 4);
         request.onsuccess = () => { request.result.close(); resolve(); };
         request.onerror = () => reject(request.error);
         request.onblocked = () => reject(new Error('retry connections did not close on versionchange'));
@@ -254,6 +254,41 @@ test('Chromium: a blocked open abandons its upgrade, preserves v1 rows and relea
     assert.deepEqual(result, { blocked: 'sync storage blocked', failures: ['storage'], abandonedResult: 'AbortError',
       closed: 'InvalidStateError', retained: records.toSorted((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
       snapshots: [expected, expected], storesClosed: [true, true] });
+  } finally { await context.close(); }
+});
+
+test('Chromium: version 3 closes a version-two tab at its upgrade and refuses a version-two open', async () => {
+  const context = await freshContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/sync-test`);
+    const result = await page.evaluate(async () => {
+      const { IndexedDBStore } = await import('/src/platform/sync/store.js');
+      const name = 'older-bundle';
+      const older = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, 2);
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore('records', { keyPath: 'key' });
+          const rows = request.result.createObjectStore('rows', { keyPath: 'key' });
+          rows.createIndex('generation', 'generation');
+          rows.createIndex('type', 'type');
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      let olderClosed = false;
+      older.onversionchange = () => { olderClosed = true; older.close(); };
+      const store = await IndexedDBStore.open({ name, newReplicaId: () => 'rp_00000000000000000000000000000001' });
+      const version = store.database.version;
+      const refused = await new Promise((resolve) => {
+        const request = indexedDB.open(name, 2);
+        request.onsuccess = () => { request.result.close(); resolve('opened'); };
+        request.onerror = () => resolve(request.error.name);
+      });
+      store.close();
+      return { olderClosed, version, refused };
+    });
+    assert.deepEqual(result, { olderClosed: true, version: 3, refused: 'VersionError' });
   } finally { await context.close(); }
 });
 
@@ -648,7 +683,8 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
       window.sentSaves = [];
       const transport = { async request(endpoint, request) {
         if (endpoint === 'hello') return { response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(),
-          schema: registry.version, minSchema: registry.version, holdsRecords: { gym: false, journal: false } } }, timing: timing() };
+          schema: registry.version, minSchema: registry.version,
+          holdsRecords: Object.fromEntries(Object.keys(registry.products).map((product) => [product, false])) } }, timing: timing() };
         if (endpoint === 'push') {
           sentSaves.push(...request.intents.filter((intent) => intent.cmd?.name === 'journal.savePage').map((intent) => intent.cmd.args));
           return { response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(),

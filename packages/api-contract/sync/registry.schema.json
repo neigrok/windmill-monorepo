@@ -1056,8 +1056,12 @@
           "const": true
         },
         "engine": {
-          "description": "The platform runs the command: `capture` admits the intent's ordinary deltas, checks and consequences with no product mutation (§2.4). Requires scopedEffects and no args.",
-          "const": "capture"
+          "description": "The platform runs the command: `capture` admits the intent's ordinary deltas, checks and consequences with no product mutation; `restore` writes back earlier values of the types it predicts, each operation under its own condition, with §6.4's fixed arguments (K-3). Requires scopedEffects and no declared args.",
+          "enum": ["capture", "restore"]
+        },
+        "inverse": {
+          "description": "K-3: a product command an Undo or Redo recipe runs. Its wire arguments are the declared `input` and the engine-built `evidence` (§6.4). Requires scopedEffects, no engine, and exactly the one required json argument `input`.",
+          "const": true
         },
         "beforePull": {
           "description": "A server-internal command that runs before every pull of its scope, in its own admission (§6.7).",
@@ -1078,6 +1082,18 @@
           "then": {
             "required": ["scopedEffects"],
             "properties": { "scopedEffects": { "const": true }, "args": { "additionalProperties": false } }
+          }
+        },
+        {
+          "if": { "required": ["engine"], "properties": { "engine": { "const": "restore" } } },
+          "then": { "required": ["predicts"], "not": { "required": ["refPaths"] } }
+        },
+        {
+          "if": { "required": ["inverse"] },
+          "then": {
+            "required": ["scopedEffects"],
+            "not": { "required": ["engine"] },
+            "properties": { "args": { "required": ["input"], "additionalProperties": false, "properties": { "input": { "$ref": "#/$defs/argument" } } } }
           }
         },
         {

@@ -10,6 +10,7 @@ import { Registry } from '../core/registry.js';
 import { orderedScopes, receiptRow, scopedResponseBytes } from '../core/receipts.js';
 import { compactRow, compareRecords, isAlive, latticeOf, recordKey, stampsOf, thinRow } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
+import { evaluateRestore, evidenceFault, InverseOutcomesError, inverseOutcomes, restoreArgumentsFault } from '../core/restore.js';
 import { checkArgument, checkFieldValue, checkId, lengthIn } from '../core/values.js';
 import { holdsNul } from '../core/wire.js';
 import { accessOf, scopeKeyOf } from './access.js';
@@ -192,7 +193,12 @@ class Admission {
     const def = isObject(cmd) ? this.registry.command(cmd.name) : undefined;
     if (!def || def.scope !== this.scopeKind || !isObject(cmd.args)) throw new Refusal('invalid');
     this.command = def;
-    for (const name of Object.keys(cmd.args)) if (!Object.hasOwn(def.args, name)) throw new Refusal('invalid');
+    if (def.engine === 'restore') {
+      if (restoreArgumentsFault(this.registry, def, cmd.args)) throw new Refusal('invalid');
+      return;
+    }
+    if (def.inverse && (!Object.hasOwn(cmd.args, 'evidence') || evidenceFault(this.registry, cmd.args.evidence))) throw new Refusal('invalid');
+    for (const name of Object.keys(cmd.args)) if (!Object.hasOwn(def.args, name) && !(def.inverse && name === 'evidence')) throw new Refusal('invalid');
     for (const [name, arg] of Object.entries(def.args)) {
       if (!Object.hasOwn(cmd.args, name)) {
         if (arg.optional) continue;
@@ -269,11 +275,18 @@ class Admission {
         return work.rowsOf(key).filter((row) => row.t === t);
       },
       scopedChanges: (key) => [...this.records.values()].filter((record) => record.scopeKey === key),
+      declared: (key) => this.declared === undefined || this.declared.has(key),
       idState: (t, id) => this.idStateOf(scopeKey, registry.type(t), id),
       stored: (t, id) => work.stored(scopeKey, t, id),
       rowsOf: (t) => work.rowsOf(scopeKey).filter((row) => row.t === t),
       readableTree: (tree) => accessOf(registry, work, { kind: 'tree', key: `tree:${tree}`, tree }, this.origin.account).read === true,
       treeRows: (tree) => work.rowsOf(`tree:${tree}`),
+      epoch: work.epoch,
+      keyOf: (ref) => scopeKeyOf(registry, ref, this.origin.account)?.key ?? null,
+      storedIn: (key, t, id) => {
+        if (this.declared && !this.declared.has(key)) throw new Error('undeclared effect read');
+        return work.stored(key, t, id);
+      },
     };
   }
 
@@ -364,7 +377,7 @@ class Admission {
   // already carries the stamp this intent writes to it.
   checkGuards() {
     const cmd = this.intent.cmd;
-    if (cmd && this.command.engine !== 'capture' && this.product.isReplay(this.context(), cmd)) return;
+    if (cmd && this.command.engine === undefined && this.product.isReplay(this.context(), cmd)) return;
     for (const guard of this.intent.guard ?? []) {
       const current = this.work.stored(this.scopeKey, guard.t, guard.id)?.f?.[guard.field];
       const currentStamp = current ? current[1] : null;
@@ -380,12 +393,32 @@ class Admission {
     const cmd = this.intent.cmd;
     if (!cmd) return;
     if (this.command.engine === 'capture') { this.write = []; return; }
+    if (this.command.engine === 'restore') return this.restore(cmd.args);
     const outcome = this.product.runCommand(this.context(), cmd);
+    if (this.command.inverse) {
+      try { inverseOutcomes(outcome.detail, 1); } catch (error) {
+        if (error instanceof InverseOutcomesError) throw new Error('an inverse command reports no outcome');
+        throw error;
+      }
+    }
     const byScope = { [this.scopeKey]: [...outcome.deltas] };
     for (const { scopeKey, deltas } of outcome.into ?? []) (byScope[scopeKey] ??= []).push(...deltas);
     this.admitEffects({ byScope }, 'command');
     this.write = outcome.write;
     this.detail = outcome.detail;
+  }
+
+  // §6.4 restore: each operation holds or skips on its own condition, and the operations that hold write
+  // back their earlier values as the command's own deltas, under the stamp step 9 mints.
+  restore(args) {
+    const { deltas, outcomes } = evaluateRestore(this.registry, {
+      stored: (t, id) => this.work.stored(this.scopeKey, t, id),
+      spent: (t, id) => this.idStateOf(this.scopeKey, this.registry.type(t), id).state !== 'none',
+      epoch: this.work.epoch,
+    }, args);
+    this.admitEffects({ byScope: { [this.scopeKey]: deltas } }, 'command');
+    this.write = [];
+    this.detail = { inverse: { outcomes } };
   }
 
   // Step 9, one pass: a server stamp for the pass's server deltas (§10.3), then the record joins, text

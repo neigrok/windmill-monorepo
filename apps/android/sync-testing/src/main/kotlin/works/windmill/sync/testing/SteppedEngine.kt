@@ -97,10 +97,32 @@ class SteppedEngine private constructor(private val registry: Registry, snapshot
 }
 
 object ClientCorpus {
-    // A vector's next gesture id passes over every id an outbox entry or notice of the device already carries (corpus/README.md).
+    // A vector's next gesture id passes over every id an outbox entry, a notice, a reversible act, an inverse request or a cancellation of
+    // the device already carries (corpus/README.md).
     fun carriesGesture(device: Json, gestureId: String): Boolean = device.member("replicas").arr().any { replica ->
         replica["outbox"]?.arr().orEmpty().any { it.member("gestureId").str() == gestureId } ||
-            replica["notices"]?.arr().orEmpty().any { it.member("id").str().removePrefix("notice:").substringBeforeLast('/') == gestureId }
+            replica["notices"]?.arr().orEmpty().any { it.member("id").str().removePrefix("notice:").substringBeforeLast('/') == gestureId } ||
+            replica["journal"]?.arr().orEmpty().any { it.member("actId").str() == gestureId } ||
+            replica["inverses"]?.arr().orEmpty().any { it.member("requestId").str() == gestureId || it.member("inverseActId").str() == gestureId } ||
+            replica["cancellations"]?.arr().orEmpty().any { it.member("inverseActId").str() == gestureId }
+    }
+    // A `commitAct` step: its segments, each a scope's gesture, and the act's options (`undo`, K-3's opt-in).
+    fun act(engine: Engine, step: Json): ActCommitOutcome? {
+        val segments = step["segments"]?.orNull()?.arr()?.map { item -> ScopedGesture(ScopeRef(item.member("scope")), gesture(item["changes"] ?: Json.array(), item["opts"] ?: Json.objectOf())) }
+        val opts = step["opts"] ?: Json.objectOf()
+        opts.expectKeys(emptyList(), listOf("undo"))
+        val undo = opts["undo"]?.let { undo ->
+            undo.expectKeys(listOf("version", "segments"))
+            if (undo.member("version") != Json.of(1)) throw CommitFailure.malformed("undo-version")
+            undoSegments(undo.member("segments"))
+        }
+        return engine.commitAct({ segments?.let { ActRequest(it.map { item -> item.scope }, it.any { item -> item.gesture.hold }, undo = undo) } to segments },
+            { values, index, _ -> values!![index].gesture }).first
+    }
+    // `[{index, recipes}]`: an act's Undo segments, or a Redo's explicit slots by source ordinal.
+    fun undoSegments(json: Json): List<UndoSegment> = json.arr().map { segment ->
+        segment.expectKeys(listOf("index", "recipes"))
+        UndoSegment(segment.member("index").long(0).toInt(), segment.member("recipes").arr().map(UndoRecipe::read))
     }
     fun handlers(probe: Registry): Map<String, Handler> {
         val paths = listOf("commit/deltas.json", "commit/acts.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
@@ -174,14 +196,11 @@ object ClientCorpus {
                             stepped.engine.commit(ScopeRef(step.member("scope"))) { null to Unit }; Json.Null
                         } else outcome(stepped.engine.commit(ScopeRef(step.member("scope")), gesture(step["changes"] ?: Json.array(), step["opts"] ?: Json.objectOf())))
                         "commitAct" -> {
-                            val segments = step["segments"]?.orNull()?.arr()?.map { item ->
-                                ScopedGesture(ScopeRef(item.member("scope")), gesture(item["changes"] ?: Json.array(), item["opts"] ?: Json.objectOf())) }
-                            val result = stepped.engine.commitAct({ (segments?.let { ActRequest(it.map { it.scope }, it.any { it.gesture.hold }) }) to segments },
-                                { values, index, _ -> values!![index].gesture }).first
+                            val result = act(stepped.engine, step)
                             if (result == null || result is ActCommitOutcome.Refused) { stepped.gestures = beforeGesture; stepped.drawIndex = beforeDraw }
                             result?.let(::outcome) ?: Json.Null
                         }
-                        "undo" -> Json.of(stepped.engine.undo(step.member("gestureId").str()))
+                        "undo" -> Json.of(stepped.engine.cancelHeld(step.member("gestureId").str()))
                         "releaseAll" -> { stepped.engine.releaseHeld(true); Json.Null }
                         "releaseDue" -> { stepped.engine.releaseHeld(); Json.Null }
                         "release" -> Json.of(stepped.engine.release(step.member("localId").str()))

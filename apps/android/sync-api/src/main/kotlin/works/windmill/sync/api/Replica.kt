@@ -50,7 +50,13 @@ class CommitFailure(val kind: Kind, val description: String) : Exception(descrip
 interface Replica {
     fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T>
     fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T>
-    fun undo(gestureId: String): Boolean
+    // Engine §7.3: cancels a gesture while every entry of it is still held; true iff it did.
+    fun cancelHeld(gestureId: String): Boolean
+    // K-3, engine §7.3 Undo of an act: the inverse of an act opted into Undo or of a held cancellation, its answer by request, and the
+    // release of an act the product's stack no longer holds.
+    fun requestInverse(actId: String, slots: List<UndoSegment>? = null): InverseResult
+    fun readInverseResult(requestId: String): InverseResult
+    fun releaseReversibleAct(actId: String): Boolean
     fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T
     fun mintID(type: String): RecordID
     fun physNow(): Long
