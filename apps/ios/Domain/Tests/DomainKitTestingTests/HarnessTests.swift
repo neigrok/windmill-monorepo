@@ -324,6 +324,43 @@ struct HarnessCommandTests {
     #expect(try a.drawn(Sticky.self).map(\.title) == ["From Coach"])
   }
 
+  // §14.2: an act's intents in the tree its board creates settle on the server and reach a second device, which pulls
+  // the tree as the board governing it arrives.
+  @Test func anActOverAProductScopeAndTheTreeItCreatesSettlesOnEveryDevice() throws {
+    let a = try HarnessCommandTests.phone()
+    let board = ID<Board>("b_00000002")
+    let outcome = try a.runner.runAct(GrowBoard(board: board, title: "Child"))
+    guard case .committed = outcome else {
+      Issue.record("the act did not commit")
+      return
+    }
+    a.sync()
+    let b = a.device()
+    a.sync()
+    #expect(try b.drawn(Meta.self, in: .tree("b_00000002")).map(\.title) == ["Child"])
+    #expect(try b.drawn(Board.self).map(\.id) == [board])
+    #expect(try a.stored(Meta.self, in: .tree("b_00000002")).map(\.title) == ["Child"])
+  }
+
+  // §8.4 and engine E-7: a command with scoped effects draws its predictions in every scope they name until its result
+  // arrives, and then the server's writes stand in each, on every device.
+  @Test func aCommandWithScopedEffectsDrawsItsPredictionsInEveryScopeTheyName() throws {
+    let a = try HarnessCommandTests.phone()
+    let (parent, child) = (ID<Board>("b_00000001"), ID<Board>("b_00000002"))
+    let (parentTree, childTree) = (ScopeRef.tree("b_00000001"), ScopeRef.tree("b_00000002"))
+    #expect(try a.runner.run(CreateBoard(board: parent)).receipt != nil)
+    a.sync()
+    #expect(try a.runner.run(Branch(parent: parent, child: child, title: "Child")).receipt != nil)
+    #expect(try a.drawn(Board.self).map(\.id) == [parent, child])
+    #expect(try a.drawn(Meta.self, in: parentTree).map(\.title) == ["Child"])
+    #expect(try a.drawn(Meta.self, in: childTree).map(\.title) == ["Child"])
+    let b = a.device()
+    a.sync()
+    #expect(try a.notices(ProbeRefusal.self).isEmpty)
+    #expect(try b.drawn(Meta.self, in: parentTree).map(\.title) == ["Child"])
+    #expect(try b.drawn(Meta.self, in: childTree).map(\.title) == ["Child"])
+  }
+
   @Test func aDeviceRowWrittenAloneCommitsAndReadsBack() throws {
     let a = try HarnessCommandTests.phone()
     #expect(try a.runner.run(RackUp(rack: ["slot": 2])).receipt != nil)
@@ -372,6 +409,59 @@ struct HarnessCommandTests {
       case .unchanged: .unchanged(nil)
       case .refuse(let refusal): .unchanged(refusal)
       }
+    }
+  }
+
+  // A board, then the title of the tree it governs, in one act.
+  struct GrowBoard: ActAction {
+    let board: ID<Board>
+    let title: String
+
+    func load(_ read: ActReader) throws -> Moment {
+      try read.inScope(Probe.scope) { (_: Reader) -> Void in () }
+      return read.moment
+    }
+
+    func decide(_ moment: Moment, ids: ActIDSource) throws(Violation) -> ActDecision<Void, ProbeRefusal> {
+      var created = Plan()
+      created.create(try Valid(Board(id: board), at: moment))
+      var titled = Plan()
+      titled.update(try Valid(Meta(id: ID("meta"), title: title), at: moment), fields: ["title"])
+      return .write(ActPlan([ScopedPlan(Probe.scope, created), ScopedPlan(.tree(board.record.description), titled)]), ())
+    }
+  }
+
+  struct CreateBoard: Action {
+    let board: ID<Board>
+    var scope: ScopeRef { Probe.scope }
+
+    func load(_ read: Reader) throws -> Moment { read.moment }
+
+    func decide(_ moment: Moment, ids: IDSource) throws(Violation) -> Decision<Void, ProbeRefusal> {
+      var plan = Plan()
+      plan.create(try Valid(Board(id: board), at: moment))
+      return .write(plan)
+    }
+  }
+
+  // `probe.branch` creates the child board and titles the parent's tree and the child's; the plan predicts all three.
+  struct Branch: Action {
+    let parent: ID<Board>
+    let child: ID<Board>
+    let title: String
+    var scope: ScopeRef { Probe.scope }
+
+    func load(_ read: Reader) throws {}
+
+    func decide(_ loaded: Void, ids: IDSource) throws(Violation) -> Decision<Void, ProbeRefusal> {
+      let command = ProbeBranch(args: ["parent": parent.json, "child": child.json, "title": .string(title)])
+      let titled: [String: JSON] = ["title": .string(title)]
+      let predictions: [Prediction] = [
+        .create(Board.self, child, [:]),
+        .write(Meta.self, ID("meta"), titled, in: .tree("b_00000001")),
+        .write(Meta.self, ID("meta"), titled, in: .tree("b_00000002")),
+      ]
+      return .write(try Plan(running: command, predicting: predictions))
     }
   }
 

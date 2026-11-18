@@ -106,7 +106,8 @@ object ClientCorpus {
         val paths = listOf("commit/deltas.json", "commit/acts.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
         return paths.associateWith { { input: Json -> steps(probe, input) } } + mapOf(
             "view/drawn.json" to { input: Json -> view(probe, input, ViewMode.drawn) },
-            "view/stored.json" to { input: Json -> view(probe, input, ViewMode.stored) })
+            "view/stored.json" to { input: Json -> view(probe, input, ViewMode.stored) },
+            "refs/traversal.json" to { input: Json -> traversal(probe, input) })
     }
     fun change(json: Json, prediction: Boolean = false): Change {
         val type = json.member("t").str()
@@ -205,6 +206,21 @@ object ClientCorpus {
             }
             return Json.objectOf("returns" to Json.Arr(results), "device" to stepped.engine.snapshot(), "ended" to Json.Arr(stepped.engine.ended()))
         }
+    }
+    // The compiled traversal of one holder: every identity it resolves before any map, then the holder after each map in order.
+    fun traversal(registry: Registry, input: Json): Json {
+        val references = registry.references
+        val scope = ScopeRef(input.member("scope"))
+        val record = input["record"]
+        var holder = record ?: input.member("cmd")
+        val leaves = if (record != null) references.recordLeaves(record.member("t").str()) else references.commandLeaves(holder.member("name").str())
+        val found = references.resolve(leaves, holder, scope).map { Json.objectOf("role" to Json.of(it.leaf.role.name), "scope" to it.scope.json,
+            "t" to Json.of(it.key.type), "id" to it.key.id.json) }.sortedWith { a, b -> compareBytes(a.jcs, b.jcs) }
+        for (mappings in input.member("maps").arr()) {
+            val map = RecordMap(registry, mappings.arr().map(::Mapping))
+            holder = if (record != null) references.remapRecord(scope, holder, map) else references.remapCommand(scope, holder, map)
+        }
+        return Json.objectOf("references" to Json.Arr(found), "after" to holder)
     }
     fun view(registry: Registry, input: Json, mode: ViewMode): Json {
         val replica = input.member("replica")

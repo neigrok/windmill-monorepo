@@ -23,18 +23,17 @@ internal class Dependents(private val registry: Registry, private val replaced: 
             }
         }
     }
-    private fun names(scope: ScopeRef, key: RecordKey) = registry.scopeOfType(key.type, scope)?.let { (it to key) in created } ?: false
+    // A reference names the record its compiled leaf resolves to (E-8); a command's proposed creation names none.
+    private fun names(references: List<Reference>) = references.any { (it.scope to it.key) in created }
     private fun writesLife(scope: ScopeRef, delta: Delta) = delta.lattice.life?.let { Triple(scope, delta.key, it) in lives } == true
     private fun touches(scope: ScopeRef, delta: Delta) = (scope to delta.key) in created || writesLife(scope, delta) ||
-        registry.type(delta.key.type)?.references(delta.key.id, delta.lattice.fields.mapValues { it.value.value })?.any { names(scope, it) } == true
+        names(registry.references.ofRecord(scope, delta.json))
     fun of(entry: Entry): DependentPart {
         val intent = entry.intent
         val removed = intent.deltas.filter { delta -> entry.scope in governed || touches(entry.scope, delta) }
         val command = intent.command
-        val commandGone = command != null && (entry.scope in governed || registry.command(command.name)?.args?.values?.any { arg ->
-            val ref = arg.ref
-            ref != null && command.args[arg.name] is Json.Str && names(entry.scope, RecordKey(ref, RecordID(command.args.member(arg.name))))
-        } == true || entry.predictions != null && entry.predicted.any { (scope, deltas) -> scope in governed || deltas.any { touches(scope, it) } } ||
+        val commandGone = command != null && (entry.scope in governed || names(registry.references.ofCommand(entry.scope, command.json)) ||
+            entry.predictions != null && entry.predicted.any { (scope, deltas) -> scope in governed || deltas.any { touches(scope, it) } } ||
             entry.predict.any { writesLife(entry.scope, it) })
         return DependentPart(removed, commandGone, removed.size == intent.deltas.size && (command == null || commandGone),
             if (replaced) intent.guards.filter { (entry.scope to it.key) in created } else emptyList())

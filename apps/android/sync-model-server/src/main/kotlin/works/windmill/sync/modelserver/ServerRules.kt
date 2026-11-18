@@ -69,8 +69,14 @@ class ProbeServerRules : ServerRules {
     override fun replays(command: CheckedCommand, context: RuleContext) = when (command.name) {
         "probe.start" -> context.entry("receipts", command.string("id")) != null
         "probe.copy" -> context.entry("copies", command.string("dst")) == Json.of(command.string("src"))
-        "probe.branch" -> context.entry("branches", command.string("child")) == branchReceipt(command); else -> false
+        "probe.branch" -> context.entry("branches", command.string("child")) == branchReceipt(command)
+        "probe.sprout" -> aliveWhere(context, "board") { it.lattice.fields["parent"]?.value == step(command) } != null
+        "probe.adopt" -> aliveWhere(context, "tag") { it.lattice.fields["label"]?.value == command.args["label"] } != null
+        else -> false
     }
+    // The alive record of type `type` that `holds` picks, the least id first: the subtree a step owns, or the tag a label names.
+    private fun aliveWhere(context: RuleContext, type: String, holds: (Row) -> Boolean) = context.records(type).firstOrNull { it.isAlive && holds(it) }
+    private fun step(command: CheckedCommand) = Json.objectOf("board" to Json.of(command.string("board")), "tag" to Json.of(command.string("tag")))
     private fun branchReceipt(command: CheckedCommand) = Json.objectOf("parent" to Json.of(command.string("parent")), "title" to command.args.getValue("title"))
     override fun discoverEffectScopes(context: RuleContext, command: CheckedCommand?): Set<ScopeKey> {
         if (command?.name == "probe.branch") return setOf(ScopeKey("tree:${command.string("parent")}"), ScopeKey("tree:${command.string("child")}"))
@@ -133,6 +139,25 @@ class ProbeServerRules : ServerRules {
                     CommandOutcome(listOf(PlannedDelta.create(board)), listOf(WriteClaim(board, mintedBorn = true)), Json.objectOf("created" to Json.of(true)),
                         putEntry(c.product, "branches", c.scope, child, branchReceipt(command)), listOf(parent, child).associate { ScopeKey("tree:$it") to listOf(title) })
                 }
+            }
+            // Creates board `child` owned by the step `{board, tag}`, its `parent`; a step that already owns an alive board answers
+            // that board, so a retry, or another device's sprout of the same step, resolves to the subtree the step owns (E-8).
+            "probe.sprout" -> {
+                val board = RecordKey("board", RecordID(command.string("child")))
+                aliveWhere(c, "board") { it.lattice.fields["parent"]?.value == step(command) }?.let { owned -> CommandOutcome(write = listOf(joined(owned, command.string("child"))), product = c.product) }
+                    ?: run {
+                        if (c.idState(board).state != "none") throw Refusal("id-taken")
+                        CommandOutcome(listOf(PlannedDelta.create(board, mapOf("parent" to step(command)))), listOf(WriteClaim(board, mintedBorn = true, fields = listOf("parent"))), product = c.product)
+                    }
+            }
+            // Answers the tree's alive tag labelled `label`, else creates tag `tag` with that label: a command whose write map renames a scope-local id.
+            "probe.adopt" -> {
+                val tag = RecordKey("tag", RecordID(command.string("tag"))); val label = command.args.getValue("label")
+                aliveWhere(c, "tag") { it.lattice.fields["label"]?.value == label }?.let { named -> CommandOutcome(write = listOf(joined(named, command.string("tag"))), product = c.product) }
+                    ?: run {
+                        if (c.idState(tag).state != "none") throw Refusal("id-taken")
+                        CommandOutcome(listOf(PlannedDelta.create(tag, mapOf("label" to label))), listOf(WriteClaim(tag, mintedBorn = true, fields = listOf("label"))), product = c.product)
+                    }
             }
             "probe.tick" -> CommandOutcome(c.records("run").filter { isOpen(it) && (it.lattice.fields["startedAt"]?.value?.long() ?: Long.MAX_VALUE) <= c.serverNow - 600_000 }.map { PlannedDelta.update(it.key, it.lattice.born, mapOf("endedAt" to Json.of(c.serverNow))) }, product = c.product)
             else -> throw Refusal("invalid")

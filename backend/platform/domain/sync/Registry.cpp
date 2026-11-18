@@ -9,6 +9,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <set>
+#include <span>
 #include <utility>
 
 namespace wm::sync {
@@ -233,6 +234,88 @@ Domain domainOf(const Json::Value& json, const std::string& path) {
                 .nullable = reader.optionalBoolean("nullable")};
 }
 
+// A literal property path: a nonempty array of property names, outermost first.
+std::vector<std::string> propertyPath(const Reader& reader, const char* key) {
+  const Json::Value& parts = reader.value(key);
+  if (!parts.isArray() || parts.empty()) reader.fail("has a \"" + std::string(key) + "\" that is not a nonempty property path");
+  std::vector<std::string> path;
+  for (const Json::Value& part : parts) {
+    if (!part.isString() || !memberNames().matches(part.asString())) reader.fail("has a \"" + std::string(key) + "\" part that is not a property name");
+    path.push_back(part.asString());
+  }
+  return path;
+}
+
+// E-8: a field's or command's `refPaths`, each leaf's own shape; how leaves fit the registry is checked
+// once every type is known.
+std::vector<RefPath> refPathsOf(const Reader& reader, bool proposes) {
+  const Json::Value& list = reader.value("refPaths");
+  if (!list.isArray() || list.empty()) reader.fail("has \"refPaths\" that are not a nonempty array");
+  std::vector<RefPath> leaves;
+  for (Json::ArrayIndex i = 0; i < list.size(); ++i) {
+    const Reader entry(list[i], reader.at("refPaths[" + std::to_string(i) + "]"), {"path", "type", "scope", "nullable", "role"});
+    RefPath leaf{.path = propertyPath(entry, "path"), .type = entry.name("type", memberNames()), .nullable = entry.trueOrAbsent("nullable")};
+    if (entry.has("role")) {
+      if (!proposes) entry.fail("proposes a creation outside a command's arguments");
+      leaf.creation = entry.oneOf<bool>("role", {{"creation", true}});
+    }
+    const Reader scope(entry.value("scope"), entry.at("scope"), {"kind", "value", "path"});
+    leaf.scope.kind = scope.oneOf<RefScope::Kind>("kind", {{"origin", RefScope::Kind::origin},
+                                                             {"fixed", RefScope::Kind::fixed},
+                                                             {"treeFrom", RefScope::Kind::treeFrom}});
+    if (leaf.scope.kind == RefScope::Kind::origin && (scope.has("value") || scope.has("path"))) scope.fail("holds more than an origin kind");
+    if (leaf.scope.kind == RefScope::Kind::fixed) {
+      if (scope.has("path")) scope.fail("holds a path beside a fixed value");
+      leaf.scope.value = scope.string("value");
+    }
+    if (leaf.scope.kind == RefScope::Kind::treeFrom) {
+      if (scope.has("value")) scope.fail("holds a value beside a treeFrom path");
+      leaf.scope.path = propertyPath(scope, "path");
+    }
+    leaves.push_back(std::move(leaf));
+  }
+  return leaves;
+}
+
+// The domain a property path reaches through object domains: nullptr once a json domain, or no domain,
+// leaves the shape open; std::nullopt when the path runs into any other shape. A typed leaf's domain
+// holds a string.
+bool holdsStringLeaf(const Domain* domain, std::span<const std::string> path) {
+  const Domain* current = domain;
+  for (const std::string& part : path) {
+    if (!current || current->type == Domain::Type::json) return true;
+    if (current->type != Domain::Type::object) return false;
+    const auto property = std::find_if(current->properties.begin(), current->properties.end(),
+                                       [&part](const Domain::Property& candidate) { return candidate.name == part; });
+    if (property == current->properties.end()) return false;
+    current = &property->domain;
+  }
+  return !current || current->type == Domain::Type::string || current->type == Domain::Type::id || current->type == Domain::Type::json;
+}
+
+// A leaf's place in the value, outermost first: `absent`, `outerNull` (null on the way, which names nothing),
+// `null`, `value` (with `found`), or `malformed` (something other than an object where the path continues).
+enum class LeafState { absent, outerNull, null, value, malformed };
+
+LeafState findLeaf(const Json::Value& root, const std::vector<std::string>& path, const Json::Value** found) {
+  const Json::Value* node = &root;
+  for (const std::string& step : path) {
+    if (node->isNull()) return LeafState::outerNull;
+    if (!node->isObject()) return LeafState::malformed;
+    if (!node->isMember(step)) return LeafState::absent;
+    node = &(*node)[step];
+  }
+  if (node->isNull()) return LeafState::null;
+  *found = node;
+  return LeafState::value;
+}
+
+std::string joined(const std::vector<std::string>& path) {
+  std::string text;
+  for (const std::string& part : path) text += (text.empty() ? "" : ".") + part;
+  return text;
+}
+
 RegistryScope scopeOf(const Reader& reader) {
   const std::string text = reader.string("scope");
   if (text == "tree") return RegistryScope{ScopeKind::tree, ""};
@@ -254,7 +337,7 @@ Origins originsOf(const Reader& reader) {
 }
 
 FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::string& path) {
-  const Reader reader(json, path, {"kind", "writer", "ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens"});
+  const Reader reader(json, path, {"kind", "writer", "ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens", "refPaths"});
   FieldDef field{
       .name = name,
       .kind = reader.oneOf<FieldKind>("kind", {{"lww", FieldKind::lww},
@@ -272,6 +355,7 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
   if (reader.has("domain")) field.domain = domainOf(reader.value("domain"), reader.at("domain"));
   if (reader.has("serialNext")) field.serialNext = reader.names("serialNext", &memberNames(), false);
   if (reader.has("opens")) field.opens = reader.names("opens", nullptr, true);
+  if (reader.has("refPaths")) field.refPaths = refPathsOf(reader, false);
   if (reader.has("rank")) {
     const Json::Value& rank = reader.value("rank");
     if (!rank.isObject() || rank.empty()) reader.fail("has a \"rank\" that is not a non-empty object");
@@ -295,6 +379,13 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
   if (field.parent && !field.ref) reader.fail("is a parent without a \"ref\"");
   if (reader.has("default") && !field.isLattice()) reader.fail("has a default without being a lattice field");
   if (!field.opens.empty() && field.writer != Writer::server) reader.fail("opens a tree without the server as its writer");
+  if (!field.refPaths.empty()) {
+    if (field.ref) reader.fail("holds both a scalar ref and refPaths");
+    if (field.kind != FieldKind::lww && field.kind != FieldKind::fww && field.kind != FieldKind::const_) reader.fail("has refPaths without being lww, fww or const");
+    for (const RefPath& leaf : field.refPaths) {
+      if (!holdsStringLeaf(field.domain ? &*field.domain : nullptr, leaf.path)) reader.fail("has a refPath that is no object path to a string");
+    }
+  }
   for (const std::string& value : field.opens) {
     const bool inDomain = !field.domain || field.domain->oneOf.empty() ||
                           std::find(field.domain->oneOf.begin(), field.domain->oneOf.end(), value) != field.domain->oneOf.end();
@@ -441,7 +532,7 @@ TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
 }
 
 CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
-  const Reader element(json, elementPath, {"name", "scope", "origins", "serverInternal", "beforePull", "args", "predicts", "scopedEffects", "engine"});
+  const Reader element(json, elementPath, {"name", "scope", "origins", "serverInternal", "beforePull", "args", "predicts", "scopedEffects", "engine", "refPaths"});
   static const Pattern commandNames{"^[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*$"};
   const std::string name = element.name("name", commandNames);
   const Reader reader = element.under("registry.commands." + name);
@@ -472,6 +563,13 @@ CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
     }
     if (arg.has("domain")) def.domain = domainOf(arg.value("domain"), arg.at("domain"));
     command.args.emplace(argName, std::move(def));
+  }
+  if (reader.has("refPaths")) command.refPaths = refPathsOf(reader, true);
+  for (const RefPath& leaf : command.refPaths) {
+    const auto arg = command.args.find(leaf.path.front());
+    if (arg == command.args.end() || arg->second.type != ArgType::json) reader.fail("has a refPath into no json argument");
+    if (!holdsStringLeaf(arg->second.domain ? &*arg->second.domain : nullptr, std::span(leaf.path).subspan(1)))
+      reader.fail("has a refPath that is no object path to a string");
   }
   if (command.serverInternal && command.origins.replica) reader.fail("is server-internal with a replica origin");
   if (command.beforePull && !command.serverInternal) reader.fail("runs before pulls without being server-internal");
@@ -667,6 +765,25 @@ Registry::Registry(const Json::Value& document) {
     }
   }
 
+  for (const TypeDef& type : types_) {
+    for (const auto& [fieldName, field] : type.fields) checkRefPaths("registry.types." + type.name + ".fields." + fieldName, field.refPaths, type.scope, {});
+  }
+  for (const CommandDef& command : commands_) {
+    std::vector<RefPath> shorthands;
+    for (const auto& [argName, arg] : command.args) {
+      if (arg.type == ArgType::ref) shorthands.push_back(RefPath{.path = {argName}, .type = *arg.ref});
+    }
+    const std::string where = "registry.commands." + command.name;
+    checkRefPaths(where, command.refPaths, command.scope, shorthands);
+    for (const RefPath& leaf : command.refPaths) {
+      if (!leaf.creation) continue;
+      const TypeDef& created = *type(leaf.type);
+      const bool predicted = std::find(command.predicts.begin(), command.predicts.end(), leaf.type) != command.predicts.end();
+      if ((created.identity != Identity::minted && created.identity != Identity::derived) || !predicted)
+        throw RegistryError(where + "." + joined(leaf.path) + " proposes a record that is not a minted or derived type the command predicts");
+    }
+  }
+
   auto keyTypesOf = [](const TypeDef& keyed) {
     std::vector<std::string> named;
     if (keyed.keyRef) named.push_back(*keyed.keyRef);
@@ -755,7 +872,61 @@ bool Registry::admitsValue(const FieldDef& field, const Json::Value& value) cons
   if (field.ref && !value.isNull() && !isIdOf(*type(*field.ref), value)) return false;
   if (field.ref && value.isNull() && !(field.domain && field.domain->nullable)) return false;
   if (field.domain && !field.domain->admits(value)) return false;
+  if (!admitsLeaves(field.refPaths, value)) return false;
   return value.isNull() || withinBounds(field.bounds, value);
+}
+
+void Registry::checkRefPaths(const std::string& where, const std::vector<RefPath>& leaves, const RegistryScope& holder,
+                             const std::vector<RefPath>& shorthands) const {
+  for (const RefPath& leaf : leaves) {
+    const std::string at = where + "." + joined(leaf.path);
+    const TypeDef* target = type(leaf.type);
+    if (!target) throw RegistryError(at + " refers to the unknown type \"" + leaf.type + "\"");
+    if (!target->keyTuple.empty()) throw RegistryError(at + " names " + leaf.type + ", whose ids are tuples, never a string");
+    const bool local = target->scope.kind != ScopeKind::product;
+    if (leaf.scope.kind == RefScope::Kind::origin && local && holder.kind == ScopeKind::product)
+      throw RegistryError(at + " names " + leaf.type + " by an origin that holds no tree");
+    if (leaf.scope.kind == RefScope::Kind::fixed) {
+      const std::string product = leaf.scope.value.starts_with("self/") ? leaf.scope.value.substr(5) : "";
+      if (!productNames().matches(product) || !products_.contains(product)) throw RegistryError(at + " fixes a scope that is no declared product's");
+      if (target->scope.kind != ScopeKind::product || target->scope.product != product) throw RegistryError(at + " fixes a scope " + leaf.type + " does not live in");
+    }
+    if (leaf.scope.kind == RefScope::Kind::treeFrom && !local) throw RegistryError(at + " takes a tree for " + leaf.type + ", which lives in no tree");
+  }
+  std::vector<const RefPath*> declared;
+  for (const RefPath& leaf : shorthands) declared.push_back(&leaf);
+  for (const RefPath& leaf : leaves) declared.push_back(&leaf);
+  auto nests = [](const std::vector<std::string>& outer, const std::vector<std::string>& inner) {
+    return outer.size() <= inner.size() && std::equal(outer.begin(), outer.end(), inner.begin());
+  };
+  const TypeDef* governing = governingType();
+  for (const RefPath& leaf : leaves) {
+    const std::string at = where + "." + joined(leaf.path);
+    for (const RefPath* other : declared) {
+      if (other != &leaf && (nests(other->path, leaf.path) || nests(leaf.path, other->path))) throw RegistryError(at + " is declared twice or inside another leaf");
+    }
+    if (leaf.scope.kind != RefScope::Kind::treeFrom) continue;
+    const auto source = std::find_if(declared.begin(), declared.end(), [&leaf](const RefPath* other) { return other->path == leaf.scope.path; });
+    if (source == declared.end() || !governing || (*source)->type != governing->name || (*source)->creation)
+      throw RegistryError(at + " takes its tree from no ordinary leaf of the governing type");
+  }
+}
+
+bool Registry::admitsLeaves(const std::vector<RefPath>& leaves, const Json::Value& root) const {
+  for (const RefPath& leaf : leaves) {
+    const Json::Value* value = nullptr;
+    const LeafState state = findLeaf(root, leaf.path, &value);
+    if (state == LeafState::malformed || (state == LeafState::null && !leaf.nullable)) return false;
+    if (state != LeafState::value) continue;
+    if (!value->isString() || !isIdOf(*type(leaf.type), *value)) return false;
+    const Json::Value* source = nullptr;
+    if (leaf.scope.kind == RefScope::Kind::treeFrom && findLeaf(root, leaf.scope.path, &source) != LeafState::value) return false;
+  }
+  return true;
+}
+
+bool Registry::admitsArguments(const CommandDef& command, const Json::Value& args) const {
+  return admitsLeaves(command.refPaths, args);
 }
 
 bool Registry::admitsArgument(const ArgDef& arg, const Json::Value& value) const {

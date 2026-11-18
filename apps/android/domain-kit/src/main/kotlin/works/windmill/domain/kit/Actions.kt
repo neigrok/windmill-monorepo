@@ -64,12 +64,7 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
         context.insideRun = true
         try {
             val committed = replica.commitAct<ActStep<T, R>>({ source ->
-                val read = ActReader(source, registry, Moment(Instant(source.now), zone))
-                val loaded = try { action.load(read) } finally { read.open = false }
-                source.finishLoad()
-                val decision = try { action.decide(loaded, ActIDSource(source)) }
-                    catch (violation: Violation) { ActDecision.Refuse(action.refusals.of(violation)) }
-                when (decision) {
+                when (val decision = action.decision(source, registry, Moment(Instant(source.now), zone))) {
                     is ActDecision.Refuse -> null to ActStep.Done(ActOutcome.Refused(decision.refusal))
                     is ActDecision.Unchanged -> null to ActStep.Done(ActOutcome.Unchanged(decision.result))
                     is ActDecision.Write -> ActRequest(decision.plan.segments.map { it.scope }, decision.plan.segments.any { it.plan.isHeld }) to ActStep.Writing(decision.plan, decision.result)

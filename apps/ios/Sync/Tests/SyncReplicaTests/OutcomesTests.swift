@@ -316,8 +316,8 @@ struct OutcomesTests {
   }
 
   // A join of tagA into tagB in the tree a command wrote: the queued link keyed [tagA, tagX] resends with its guard on
-  // [tagB, tagX]. A tag's ids are its scope's, so the overlay's mark keyed by tagA keeps its key, and refused base-unknown
-  // falls back to the text it was edited from.
+  // [tagB, tagX], and the overlay's mark, whose key names the tag of its own tree, resends as tagB. Refused base-unknown,
+  // it falls back to the text it was edited from, which follows its key.
   @Test func aJoinRekeysGuardsAndBaseTextsOfRecordsKeyedByTheCalledId() throws {
     let zero = String(repeating: "0", count: 64)
     let input = try JSON(parsing: """
@@ -350,7 +350,7 @@ struct OutcomesTests {
     #expect(try link.member("guard") == [["t": "link", "id": ["tagB", "tagX"], "field": "strength", "stamp": "1:0:srv"]])
     #expect(try link.member("d").asArray()[0].member("id") == ["tagB", "tagX"])
     let mark = try returns[7].member("intents").asArray()[0].member("d").asArray()[0]
-    let expected: JSON = ["t": "mark", "id": "tagA", "x": ["memo": ["text": "old!", "base": ["text": "old"]]]]
+    let expected: JSON = ["t": "mark", "id": "tagB", "x": ["memo": ["text": "old!", "base": ["text": "old"]]]]
     #expect(mark == expected)
   }
 

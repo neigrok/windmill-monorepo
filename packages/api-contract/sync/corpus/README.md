@@ -45,7 +45,7 @@ for the `gym/` files, and `../journal.registry.json` for the `journal/` files.
 |---|---|
 | all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `registry/`, `identity/seeded.json`, `digest/`, `protocol/` |
 | server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json`, `gym/admit.json`, `journal/admit.json`, `journal/revisions.json` |
-| client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json`, `journal/client.json`, `journal/content-clock.json`, `journal/claim-edit.json` |
+| client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `refs/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json`, `journal/client.json`, `journal/content-clock.json`, `journal/claim-edit.json` |
 
 ## The probe product
 
@@ -55,7 +55,7 @@ journal.
 
 | Type | Scope | Identity | Life | Covers |
 |---|---|---|---|---|
-| `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary |
+| `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary; `parent` const server, a nullable `{board, tag}` (both required): the step that owns it, its typed leaves `board` (a board in `self/probe`) and `tag` (a tag in the tree `board` names) (E-8) |
 | `day` | `self/probe` | keyed, a date `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | yes, spent | a keyed type whose dead rows are spent: its `sync_spent` row has no born, and a newer put removes it; `score` lww 0–10 |
 | `fact` | `self/probe` | keyed, a date | yes, spent; `wholePut` | a record that is one fact: every put that leaves it present writes `value` (lww 0–500, quantum 0.1) and `at` (lww integer ≥ 0) and a fresh life at one stamp, so the newest save wins whole and beats an older delete; a delete carries its life alone |
 | `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary and headline |
@@ -116,6 +116,24 @@ characters; `tag` is 12 of `0-9a-z`.
   3. Otherwise create board `child` at the server stamp, which creates `tree:child`; write
      `meta.title := title` at the server stamp into `tree:parent` and `tree:child`; record the receipt
      `child → {parent, title}`; write `[{t: "board", id: child, born}]`; detail `{created: true}`.
+
+- `probe.sprout {board, tag, child}` — replica and server origin; predicts `board`. Each argument is a
+  json string and a typed leaf (E-8): `board` an ordinary board in `self/probe`, `tag` an ordinary tag in
+  the tree `board` names (`treeFrom [board]`), `child` a proposed board (`role: creation`). Neither
+  `board` nor `tag` need exist.
+  1. An alive board of the scope whose `parent` is `{board, tag}` (the least id when several): `ok`, no
+     change; write `[{t: "board", id: B, born}]`, with `from: child` when `B ≠ child`. This is the
+     command's replay rule (it skips the guards).
+  2. `child`'s board id state is not `none` → `id-taken`.
+  3. Otherwise create board `child` with `parent := {board, tag}` at the server stamp, which creates
+     `tree:child`; write `[{t: "board", id: child, born, f: {parent}}]`.
+- `probe.adopt {tag: ref<tag>, label}` (`tree/<T>`) — replica and server origin; predicts `tag`; `label`
+  a string of at most 24 chars.
+  1. An alive tag of the tree whose `label` is `label` (the least id when several): `ok`, no change;
+     write `[{t: "tag", id: G, born}]`, with `from: tag` when `G ≠ tag`, a map of a scope-local id. This is
+     the command's replay rule.
+  2. `tag`'s id state is not `none` → `id-taken`.
+  3. Otherwise create tag `tag` with `label` at the server stamp; write `[{t: "tag", id: tag, born, f: {label}}]`.
 
 A command's `ok` result always carries `write`, possibly `[]`. Start receipts live in the server state
 as `product.receipts[<scope key>][<called run id>] = <resolved run id>`, copy receipts as
@@ -491,6 +509,18 @@ their targets' domains. `key` is the admitted ID's storage identity, its JCS wit
 or null on refusal. Vectors cover Unicode code-point bounds, NUL and malformed surrogates;
 `idJson` keeps malformed Unicode out of the corpus document itself.
 
+### `registry/references.json` — all
+
+`input: {registry, field?: {type, name, value}, command?: {name, args}}` · `expect: {admitted}`: whether
+`registry` loads (engine.md §2.4 References) and, when a field value or command arguments are given,
+whether they are admitted. A field value is admitted by the field's whole value check (§6.1 step 2: kind,
+`ref`, domain, bounds, and every typed leaf). Arguments are admitted when every name is declared, every
+argument that is not `optional` is present, each present one passes its own check, and every typed leaf
+of the command holds. A typed leaf holds when it is absent, null under a null object on its path, null
+and `nullable`, or a string that is an ID of its type (pattern or domain, E-2's bounds included); a
+non-object where its path continues, or a present `treeFrom` leaf whose source is absent or null, fails.
+The load vectors break one §2.4 reference rule each beside an admitted document.
+
 ### `identity/seeded.json` — all
 
 - `input: {op: "make", type, seed, n}` · `expect: {id}` or `{error: true}`: the D-8 seeded id
@@ -686,6 +716,7 @@ admission mints one stamp per intent by §10.3 and puts it there and in the writ
 | `check.json` | the parent rule and the run-delete consequence (laps die only when the run's joined life turns dead) |
 | `serial.json`, `caps.json`, `lifecycle.json`, `text.json` | steps 11, 12, 15 and §6.11 through admission |
 | `server-stamps.json` | §10.3: one tick per pass of step 9, after observing the registers the server deltas write, as stored and as a same-intent client delta writes them |
+| `references.json` | E-8 through admission: `probe.sprout` creates its child with its `parent`, answers the subtree a step owns, admits a step in an absent tree, keeps the same step id in another tree apart, and refuses a taken proposed child; malformed typed leaves (a number, outside the tag pattern, empty, no board id) in arguments and in a nested `parent` are `invalid` with the state unchanged; a null `parent` names nothing; `probe.adopt` creates, answers a labelled tag of its own tree only, and refuses a taken id |
 
 The parent rule is checked against the joined records of the intent, so a lap under a run the same
 intent creates is admitted and a lap under a run it deletes is `parent-dead`.
@@ -1288,8 +1319,49 @@ target rebind their source arguments to it, even if its id stayed the same. The 
 `refusal/transport.json` exercise multiple joined targets, legacy prediction recovery, commands
 without predictions and partially restored receipts in both reconnect orders.
 
-The probe has no keyed type whose key names a command-resolved type, so no vector rewrites a key
-part through a write map. The reference does rewrite them.
+`probe.adopt` resolves a tag, a type that `mark`'s key and `link`'s key parts name, so
+`write/references.json` rewrites key parts through a write map.
+
+### write/references.json
+
+E-8's client steps, every reference read through the compiled traversal (`refs/traversal.json`):
+- a redirected `probe.sprout` child moves a queued grandchild's `parent.board`, its sprout's `board`
+  argument and the queued entries in the child's tree and overlay to the board the server answered,
+  and never `parent.tag`, a card title, an unannotated `attachment`, a meta title or a mark's text that
+  spell the same string; the numbered command keeps its intent and digest; the same map applied to the
+  persisted queue after a restart lands the same device;
+- a sprout depends on a queued tag create in the tree its `board` names and not on the same tag id in
+  another tree: an undo folds only the actual dependent silently, and a refusal folds only it into
+  its notice;
+- a proposed `child` depends on no earlier create of that id, while a later sprout whose `board` is that
+  child depends on the sprout that proposes it;
+- epoch replay rebuilds a retained sprout's target from its proposed child (the `creation` leaf of the
+  predicted type), not from its tree;
+- a commit whose typed leaf is malformed (a number, a predicted `parent` without its `board`, a `board`
+  that is no board id) throws and changes nothing;
+- `probe.adopt`'s scope-local map renames a mark key in that tree's overlay, a link's key parts in the
+  tree and a sprout's `tag` whose `board` names the tree, and leaves the same tag id in a sibling tree's
+  overlay and sprout;
+- a mark key renamed by that map keeps the text its write was edited from, so a later `base-unknown`
+  refusal resends `base: {text}` with it;
+- a governor redirect, then a tag map in the redirected tree, reach an overlay key and a sprout's step
+  through both.
+
+### refs/traversal.json (client)
+
+`input: {scope, record?: Delta, cmd?: Cmd, maps: Mapping[][]}` · `expect: {references, after}`. `scope`
+is the holder's scope. `references` is every identity the compiled traversal resolves in the holder
+before any map, each `{role, scope, t, id}`, sorted by the UTF-8 bytes of its JCS. `role` is `identity`
+for a record's own ID, `creation` for a command's proposed one and `ordinary` for every reference. A
+reference's scope is the declared one: `fixed`'s value; `treeFrom`'s `tree/<id>`, or `self/overlay/<id>`
+for an overlay type, from the ID its source holds; and, for `origin` (every key part, `ref` field and
+`ref<t>` argument), the product scope its type lives in, or the tree or overlay of the holder's own tree
+for a tree or overlay type. A record's own ID is in the holder's scope. `after` is the holder once each
+map in `maps` applied in order. A map is a list of `{t, from, id, scope?}`: a type of the global ID space
+maps in every scope; any other maps only in `scope`, which first follows the map's own governor mappings.
+A map applies atomically, in two passes that each read every leaf before writing one: the global types'
+leaves, then the scope-local leaves resolved again from the renamed values and the holder's scope after
+the governor mappings. A `creation` leaf is never renamed.
 
 ### lineage/signin.json, lineage/signout.json, lineage/start.json
 
@@ -1376,11 +1448,15 @@ one invocation: some number of seeds, each run for some number of steps.
   is made more frequent or listed at a larger size. It never leaves the list for that, and no fuzz
   chooses its first seed to pass.
 
-The reference's list, in `reference/test/fuzz/replay.test.js`, surveyed over 60 fuzzes of 60×160 and
-30 of 500×300; every event in the 60 × 160 column is produced by 10 or more seeds a fuzz on average,
-and every one in the 500 × 300 column by far more. The default `node --test` fuzz is 60×160, the
-gate fuzz 500×300. Each engine's list
-names its own events for the same faults and paths, at the sizes its own survey shows.
+The reference's list, in `reference/test/fuzz/replay.test.js`, was surveyed with `probe.sprout` and
+`probe.adopt` in its gesture mix over 60 fuzzes of 60×160 and 30 of 500×300, from first seeds 1, 1001,
+2001, …, with no miss and no broken invariant. Every event in the 60 × 160 column is produced by 10.85
+or more seeds a fuzz on average (`refused cap` the fewest), and every one in the 500 × 300 column by 41
+or more (`frame served as another account` the fewest). The default `node --test` fuzz is 60×160, the
+gate fuzz 500×300. The browser core's simulator, `web/test/platform/sync/fuzz/simulator.js`, differs
+from the reference's only in its import paths, runs every seed identically and keeps the same list.
+Each other engine's list names its own events for the same faults and paths, at the sizes its own
+survey shows.
 
 | §11.3 fault or engine path | 60 × 160 | 500 × 300 |
 |---|---|---|
@@ -1397,6 +1473,7 @@ names its own events for the same faults and paths, at the sizes its own survey 
 | epoch change | `server restored`, `epoch change` | |
 | a store restored or cloned | `store restored`, `store cloned` | `http 409 gap`, `http 409 replica-forked` |
 | engine paths | `activeReplicaChanged announced`, `ok with a joining write map`, `refused cap`, `http 413 request-too-large`, `retry` | `ended refused by target-merged`, `http 400 malformed` |
+| typed references (E-8): a redirected proposal, and the work that named it | `a pushed reference names a record a redirect resolved to` | `sprout answered with its step's subtree`, `adopt answered with a labelled tag` |
 
 The simulator reports its other counts, the other refusal codes and `page outside the subscription
 set` among them, without listing them.

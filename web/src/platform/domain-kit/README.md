@@ -29,6 +29,7 @@ fixture per rule, then type-checks the files using `tsconfig.domain.json`.
 | `plans.js` | §8.1, §8.4 | `Plan`, `Operation`, `Prediction`, `PlanError` |
 | `translation.js` | §8.2, §8.3 | `translate(plan, scope, registry)` → the engine gesture, `recordIdOf` |
 | `actions.js` | §9.1, §9.2 | `Decision`, `Outcome`, `IDSource`, `decision`, `firstGone`, `refusalSubject` |
+| `acts.js` | §9.5 | `ActPlan`, `ScopedPlan`, `ActDecision`, `ActReader`, `ActIDSource`: an act over several scopes |
 | `drafts.js` | §10 | `Draft`, `Saved`, `SaveResult`, `SaveDraft` (`ofDraft`, `creating`) |
 | `standardActions.js` | §11 | `Remove`, `Move` |
 | `refusals.js` | §12 | `Refused`, `commandSubject`, `DomainNotice` |
@@ -55,7 +56,9 @@ loader that does nothing.
 `IDSource.opaqueID()` mints a durable command identity through the engine's CSPRNG edge.
 `Plan.supersede(gestureIds)` replaces whole, never-numbered anonymous gestures in the same transaction
 as the new command and device writes. A receipt includes `superseded` when any were replaced. Device
-writes keep plan order; command text predictions carry `from: null` because they have no merge base.
+writes keep plan order; command text predictions carry `from: null` because they have no merge base. A `Prediction`
+names its scope when it is not the plan's (E-7): translation then groups every prediction in `scopedPredict`, the
+plan's scope first, and `EngineReplica` hands it to the engine.
 
 ## Binding
 

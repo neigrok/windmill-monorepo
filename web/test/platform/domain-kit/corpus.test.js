@@ -22,6 +22,8 @@ import { Instant, LocalDay } from '../../../src/platform/domain-kit/time.js';
 import { translate } from '../../../src/platform/domain-kit/translation.js';
 import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { CountSpec, Fault, NumberSpec, Path, TextSpec, Violation } from '../../../src/platform/domain-kit/values.js';
+import { RuleBook } from '../../../src/platform/domain-kit/rules.js';
+import { ProductCorpus } from './productCorpus.js';
 import { PROBE_SCOPE, ProbeRefusals, probeCommand, probeEntity, probeValue, probeScope, refusalForm } from './probe.js';
 import { Contract, ContractError, VectorReplica, applySpec, decisionForm, draftForm, listsRecords, momentOf, outcomeForm, placementOf,
   probeRegistry, savedForm, specOf, vectorViews, withRecordsReversed } from './vectors.js';
@@ -102,7 +104,10 @@ function dayVector(input) {
 function build(input, at) {
   const predictions = (input.predict ?? []).map((/** @type {any} */ prediction) => {
     const id = new Id(prediction.id, probeEntity(prediction.t));
-    return prediction.op === 'create' ? Prediction.create(id, prediction.f ?? {}) : Prediction.update(id, prediction.f ?? {});
+    const scope = prediction.scope ?? null;
+    if (prediction.op === 'create') return Prediction.create(id, prediction.f ?? {}, scope);
+    if (prediction.op === 'write') return Prediction.write(id, prediction.f ?? {}, {}, scope);
+    return Prediction.update(id, prediction.f ?? {}, scope);
   });
   const plan = input.cmd ? Plan.running(probeCommand(input.cmd.name, input.cmd.args ?? {}), predictions) : new Plan();
   for (const operation of input.plan) {
@@ -156,9 +161,10 @@ function build(input, at) {
 function translateVector(input) {
   try {
     let registry = probeRegistry;
-    if (input.tagField) {
+    if (input.tagField || input.linkFields) {
       const document = /** @type {any} */ (Contract.json('sync/probe.registry.json'));
-      document.types.find((/** @type {any} */ type) => type.type === 'tag').fields.label = input.tagField;
+      if (input.tagField) document.types.find((/** @type {any} */ type) => type.type === 'tag').fields.label = input.tagField;
+      if (input.linkFields) document.types.find((/** @type {any} */ type) => type.type === 'link').fields = input.linkFields;
       registry = new Registry(document);
     }
     return { gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(build(input, momentOf(input)), input.scope ?? PROBE_SCOPE, registry))) };
@@ -392,6 +398,31 @@ function subjectVector(input) {
   return form;
 }
 
+// §9.5 an act's decision as ProductCorpus.act gives it to a product's vectors: each scope of `loads` read for the ids
+// it draws, which is the result, and each segment built as in plan/translate.json, an operation with `mint` taking
+// the next id in its segment's scope.
+/** @param {any} input */
+function actDecisionVector(input) {
+  const corpus = new ProductCorpus(new RuleBook(probeRegistry, [], []), () => null);
+  /** @type {import('../../../src/platform/domain-kit/acts.js').ActAction<{ moment: import('../../../src/platform/domain-kit/time.js').Moment, drawn: Json }, Json, ProbeRefusal>} */
+  const act = {
+    refusals: ProbeRefusals,
+    load: (read) => ({
+      moment: read.moment,
+      drawn: Object.fromEntries((input.loads ?? []).map((/** @type {string} */ scope) => [scope,
+        read.inScope(scope, (reader) => [...reader.views.drawn.values()].map((record) => record.id))])),
+    }),
+    decide: ({ moment, drawn }, ids) => {
+      if (input.segments.length === 0) return ActDecision.unchanged(drawn);
+      return ActDecision.write(new ActPlan(input.segments.map((/** @type {any} */ segment) => {
+        const plan = segment.plan.map((/** @type {any} */ operation) => operation.mint ? { ...operation, id: ids.mint(probeEntity(operation.t), segment.scope).record } : operation);
+        return new ScopedPlan(segment.scope, build({ ...segment, plan }, moment));
+      })), drawn);
+    },
+  };
+  return corpus.act(act, { file: 'domain-kit/run/act-decisions.json', name: '', input, expect: null }, (result) => result, refusalForm);
+}
+
 /** @type {Record<string, (input: any) => Json | Promise<Json>>} */
 const handlers = {
   'value/text.json': valueVector,
@@ -404,6 +435,7 @@ const handlers = {
   'plan/translate.json': translateVector,
   'run/pipeline.json': pipelineVector,
   'run/acts.json': actVector,
+  'run/act-decisions.json': actDecisionVector,
   'draft/save.json': saveVector,
   'draft/script.json': scriptVector,
   'scope/bindings.json': scriptVector,

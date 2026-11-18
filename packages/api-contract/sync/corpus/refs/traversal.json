@@ -1,0 +1,666 @@
+[
+  {
+    "name": "a nested parent through global and scoped maps: one map, its scoped key named before the redirect",
+    "input": {
+      "scope": "self/probe",
+      "record": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000002",
+              "tag": "elm"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "board",
+            "from": "b_00000002",
+            "id": "b_00000009"
+          },
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000002"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "ordinary",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000002"
+        },
+        {
+          "role": "identity",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000004"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000002",
+          "t": "tag",
+          "id": "elm"
+        }
+      ],
+      "after": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000009",
+              "tag": "oak"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a nested parent through global and scoped maps: one map, its scoped key named after the redirect",
+    "input": {
+      "scope": "self/probe",
+      "record": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000002",
+              "tag": "elm"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "board",
+            "from": "b_00000002",
+            "id": "b_00000009"
+          },
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000009"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "ordinary",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000002"
+        },
+        {
+          "role": "identity",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000004"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000002",
+          "t": "tag",
+          "id": "elm"
+        }
+      ],
+      "after": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000009",
+              "tag": "oak"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a nested parent through global and scoped maps: the redirect, then the tag map in the redirected tree",
+    "input": {
+      "scope": "self/probe",
+      "record": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000002",
+              "tag": "elm"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "board",
+            "from": "b_00000002",
+            "id": "b_00000009"
+          }
+        ],
+        [
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000009"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "ordinary",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000002"
+        },
+        {
+          "role": "identity",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000004"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000002",
+          "t": "tag",
+          "id": "elm"
+        }
+      ],
+      "after": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000009",
+              "tag": "oak"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a nested parent through global and scoped maps: the tag map, then the redirect",
+    "input": {
+      "scope": "self/probe",
+      "record": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000002",
+              "tag": "elm"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000002"
+          }
+        ],
+        [
+          {
+            "t": "board",
+            "from": "b_00000002",
+            "id": "b_00000009"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "ordinary",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000002"
+        },
+        {
+          "role": "identity",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000004"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000002",
+          "t": "tag",
+          "id": "elm"
+        }
+      ],
+      "after": {
+        "t": "board",
+        "id": "b_00000004",
+        "born": "2000:0:r_aaaaaaaaaaaa",
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ],
+        "f": {
+          "parent": [
+            {
+              "board": "b_00000009",
+              "tag": "oak"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a plain ref<tag> key held in an overlay resolves into its tree",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "record": {
+        "t": "mark",
+        "id": "elm",
+        "f": {
+          "done": [
+            true,
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000001"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "identity",
+          "scope": "self/overlay/b_00000001",
+          "t": "mark",
+          "id": "elm"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000001",
+          "t": "tag",
+          "id": "elm"
+        }
+      ],
+      "after": {
+        "t": "mark",
+        "id": "oak",
+        "f": {
+          "done": [
+            true,
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a tag map of one tree leaves the same key in a sibling tree's overlay",
+    "input": {
+      "scope": "self/overlay/b_00000003",
+      "record": {
+        "t": "mark",
+        "id": "elm",
+        "f": {
+          "done": [
+            true,
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000001"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "identity",
+          "scope": "self/overlay/b_00000003",
+          "t": "mark",
+          "id": "elm"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000003",
+          "t": "tag",
+          "id": "elm"
+        }
+      ],
+      "after": {
+        "t": "mark",
+        "id": "elm",
+        "f": {
+          "done": [
+            true,
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "one map applies atomically: no mapping feeds another",
+    "input": {
+      "scope": "self/probe",
+      "record": {
+        "t": "lap",
+        "id": "lap00001",
+        "f": {
+          "runId": [
+            "run00001",
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "run",
+            "from": "run00001",
+            "id": "run00002"
+          },
+          {
+            "t": "run",
+            "from": "run00002",
+            "id": "run00003"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "identity",
+          "scope": "self/probe",
+          "t": "lap",
+          "id": "lap00001"
+        },
+        {
+          "role": "ordinary",
+          "scope": "self/probe",
+          "t": "run",
+          "id": "run00001"
+        }
+      ],
+      "after": {
+        "t": "lap",
+        "id": "lap00001",
+        "f": {
+          "runId": [
+            "run00002",
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a sprout names its tree and its step, and a redirect never renames its proposed child",
+    "input": {
+      "scope": "self/probe",
+      "cmd": {
+        "name": "probe.sprout",
+        "args": {
+          "board": "b_00000002",
+          "tag": "elm",
+          "child": "b_00000002"
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "board",
+            "from": "b_00000002",
+            "id": "b_00000009"
+          },
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000009"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "creation",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000002"
+        },
+        {
+          "role": "ordinary",
+          "scope": "self/probe",
+          "t": "board",
+          "id": "b_00000002"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000002",
+          "t": "tag",
+          "id": "elm"
+        }
+      ],
+      "after": {
+        "name": "probe.sprout",
+        "args": {
+          "board": "b_00000009",
+          "tag": "oak",
+          "child": "b_00000002"
+        }
+      }
+    }
+  },
+  {
+    "name": "a tuple key's parts resolve into the link's own tree",
+    "input": {
+      "scope": "tree/b_00000001",
+      "record": {
+        "t": "link",
+        "id": [
+          "elm",
+          "elm"
+        ],
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "maps": [
+        [
+          {
+            "t": "tag",
+            "from": "elm",
+            "id": "oak",
+            "scope": "tree/b_00000001"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000001",
+          "t": "tag",
+          "id": "elm"
+        },
+        {
+          "role": "ordinary",
+          "scope": "tree/b_00000001",
+          "t": "tag",
+          "id": "elm"
+        },
+        {
+          "role": "identity",
+          "scope": "tree/b_00000001",
+          "t": "link",
+          "id": [
+            "elm",
+            "elm"
+          ]
+        }
+      ],
+      "after": {
+        "t": "link",
+        "id": [
+          "oak",
+          "oak"
+        ],
+        "life": [
+          "alive",
+          "2000:0:r_aaaaaaaaaaaa"
+        ]
+      }
+    }
+  },
+  {
+    "name": "unannotated JSON and text are never read",
+    "input": {
+      "scope": "self/probe",
+      "record": {
+        "t": "card",
+        "id": "b_00000002",
+        "f": {
+          "title": [
+            "b_00000002",
+            "2000:0:r_aaaaaaaaaaaa"
+          ],
+          "attachment": [
+            {
+              "id": "b_00000002"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "maps": [
+        [
+          {
+            "t": "card",
+            "from": "card0009",
+            "id": "card0010"
+          },
+          {
+            "t": "board",
+            "from": "b_00000002",
+            "id": "b_00000009"
+          }
+        ]
+      ]
+    },
+    "expect": {
+      "references": [
+        {
+          "role": "identity",
+          "scope": "self/probe",
+          "t": "card",
+          "id": "b_00000002"
+        }
+      ],
+      "after": {
+        "t": "card",
+        "id": "b_00000002",
+        "f": {
+          "title": [
+            "b_00000002",
+            "2000:0:r_aaaaaaaaaaaa"
+          ],
+          "attachment": [
+            {
+              "id": "b_00000002"
+            },
+            "2000:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  }
+]

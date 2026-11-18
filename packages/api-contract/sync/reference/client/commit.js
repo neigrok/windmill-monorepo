@@ -480,6 +480,10 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
     if (holdsNul(predictions)) throw new CommitError('a string of the predictions holds U+0000');
     if (utf8(jcs(predictions)).length > Math.min(limits.EFFECT_MAX_BYTES, CONSTANTS.EFFECT_MAX_BYTES)) return { refused: 'too-large' };
   }
+  const { references } = registry;
+  const written = [...deltas, ...predict, ...(predictions ?? []).flatMap(({ d }) => d)];
+  if (written.some((delta) => Object.entries(delta.f ?? {}).some(([name, [value]]) => references.checkValue(registry.type(delta.t).field(name), value)))
+    || (definition && references.checkArguments(definition, cmd.args))) throw new CommitError('a typed reference is malformed');
   if (holdsNul({ scope, d: deltas, guard: guards, cmd, gestureId: opts.gestureId })) throw new CommitError('a string of the intents holds U+0000');
   const capped = cappedType(registry, storedView, deltas);
   if (capped !== undefined) return { refused: 'cap', detail: { type: capped, cap: registry.type(capped).cap } };

@@ -1,0 +1,5884 @@
+[
+  {
+    "name": "a sprout creates its child board, owned by the step, at the server stamp",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000001",
+            "tag": "pine",
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": "1000000:0:srv",
+            "f": {
+              "parent": "1000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "86a24f35e3d7c1fe633771385619df53f16755a84ed6616f5a82e2c9c2c9ab41"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "pine"
+                  },
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a sprout of a step that owns a subtree answers that board",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000001",
+            "tag": "oak",
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000009",
+            "from": "b_00000002",
+            "born": "1000:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "the same step id in another tree is another step",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000003",
+            "tag": "oak",
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": "1000000:0:srv",
+            "f": {
+              "parent": "1000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "f4a589149da06958416e30d4ea930410b5c2d142f14c0eb230b6eab632ae6485"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000003",
+                    "tag": "oak"
+                  },
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a step in an absent tree is admitted: a reference requires no record",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_0000000a",
+            "tag": "gone",
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": "1000000:0:srv",
+            "f": {
+              "parent": "1000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "8e07b4b43218d8897bc0608703e3b08d0e2669f7c96dee0d185bdfcf92b1dc2a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_0000000a",
+                    "tag": "gone"
+                  },
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a proposed child that exists is id-taken",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000001",
+            "tag": "pine",
+            "child": "b_00000003"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "id-taken"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a step that is a number is refused before any change",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000001",
+            "tag": 7,
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a step outside the tag pattern is refused",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000001",
+            "tag": "Oak!",
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "an empty step is refused",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000001",
+            "tag": "",
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a tree that is no board id is refused",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "oak",
+            "tag": "oak",
+            "child": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a proposed child that is no board id is refused",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.sprout",
+          "args": {
+            "board": "b_00000001",
+            "tag": "oak",
+            "child": "child-1"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a server create holds a nested parent",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": null,
+            "life": [
+              "alive",
+              null
+            ],
+            "f": {
+              "parent": [
+                {
+                  "board": "b_00000001",
+                  "tag": "oak"
+                },
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "46d68e5cb2d623192bf915395fd316747e4a58b37b58601f543e6d41b82b847c"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a null parent names no record",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": null,
+            "life": [
+              "alive",
+              null
+            ],
+            "f": {
+              "parent": [
+                null,
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "5b9ebb737a6e4c8e0c17b07d0ef4b72ec41e016f0e1e8ffc086ea9655af31eec"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "parent": [
+                  null,
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a nested parent whose step breaks the tag pattern is refused before any change",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": null,
+            "life": [
+              "alive",
+              null
+            ],
+            "f": {
+              "parent": [
+                {
+                  "board": "b_00000001",
+                  "tag": "Bad Tag"
+                },
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a nested parent whose tree is no board id is refused before any change",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": null,
+            "life": [
+              "alive",
+              null
+            ],
+            "f": {
+              "parent": [
+                {
+                  "board": "b_nothex0",
+                  "tag": "oak"
+                },
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "adopt creates its tag with its label",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "tree/b_00000001",
+        "cmd": {
+          "name": "probe.adopt",
+          "args": {
+            "tag": "ash",
+            "label": "Ash"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 2,
+        "write": [
+          {
+            "t": "tag",
+            "id": "ash",
+            "born": "1000000:0:srv",
+            "f": {
+              "label": "1000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "e2d146115e2977ead8b78cc8f815d55e151fd3c4948036f67fa2e8389c86ad1d",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "adopt answers the tree's tag already labelled, a scope-local id map",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "tree/b_00000001",
+        "cmd": {
+          "name": "probe.adopt",
+          "args": {
+            "tag": "elm",
+            "label": "Oak"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1,
+        "write": [
+          {
+            "t": "tag",
+            "id": "oak",
+            "from": "elm",
+            "born": "1000:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "adopt reads only its own tree",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "tree/b_00000003",
+        "cmd": {
+          "name": "probe.adopt",
+          "args": {
+            "tag": "elm",
+            "label": "Oak"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1,
+        "write": [
+          {
+            "t": "tag",
+            "id": "elm",
+            "born": "1000000:0:srv",
+            "f": {
+              "label": "1000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "b8acd6ab0e51651c766227994de9534ce3ce84444836b6ec1fb9a6268d7d768d",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000003": [
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "adopt of a taken id is id-taken",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "tree/b_00000001",
+        "cmd": {
+          "name": "probe.adopt",
+          "args": {
+            "tag": "oak",
+            "label": "Elm"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "id-taken"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8f9c5fee84329c2a9be0bf2ec4291ad1d2d32afa65af335c39c83d6e88791a02"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "1098d5ac8f600a380b5fdc419ff135ccbde051825dd2372ae420f7e77a763cf9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e60a640606e901140861fe360cba9ef7639d7ba09245a1fb0a2fa164c417c407",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "parent": [
+                  {
+                    "board": "b_00000001",
+                    "tag": "oak"
+                  },
+                  "1000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000009": [
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  }
+]

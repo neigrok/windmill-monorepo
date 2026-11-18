@@ -14,23 +14,29 @@ enum Plans {
   static func translate(_ vector: Vector) throws -> JSON {
     do {
       let plan = try build(vector, at: vector.moment)
-      var registry = try vector.registry
-      if let field = vector.input["tagField"] {
-        var document = try registry.json.asObject()
-        document["types"] = .array(try document["types"]!.asArray().map { type in
-          guard type["type"] == "tag" else { return type }
-          var tag = try type.asObject()
-          tag["fields"] = ["label": field]
-          return .object(tag)
-        })
-        registry = try Registry(json: .object(document))
-      }
-      return ["gesture": try plan.gesture(in: vector.scope, registry: registry).form]
+      return ["gesture": try plan.gesture(in: vector.scope, registry: try declared(vector)).form]
     } catch let violation as Violation {
       return ["violation": violation.form]
     } catch is PlanError {
       return ["error": true]
     }
+  }
+
+  // The probe registry, the tag's `label` declared as `tagField` and the link's fields as `linkFields` where a vector says.
+  static func declared(_ vector: Vector) throws -> Registry {
+    var fields: [String: JSON] = [:]
+    if let label = vector.input["tagField"] { fields["tag"] = ["label": label] }
+    if let link = vector.input["linkFields"] { fields["link"] = link }
+    let registry = try vector.registry
+    guard !fields.isEmpty else { return registry }
+    var document = try registry.json.asObject()
+    document["types"] = .array(try document.member("types").asArray().map { (type: JSON) throws -> JSON in
+      guard case .string(let name)? = type["type"], let declared = fields[name] else { return type }
+      var declaration = try type.asObject()
+      declaration["fields"] = declared
+      return .object(declaration)
+    })
+    return try Registry(json: .object(document))
   }
 
   static func pipeline(_ vector: Vector) throws -> JSON {
@@ -109,6 +115,59 @@ enum Plans {
     }
   }
 
+  // §9.5 an act's decision as `ProductCorpus.act` gives it to a product's vectors (README, run/act-decisions.json), at the
+  // probe's start in UTC where the case names no moment.
+  static func actDecision(_ vector: Vector) throws -> JSON {
+    var input = try vector.input.asObject()
+    if input["now"] == nil { input["now"] = JSON(Probe.start.ms) }
+    if input["offsetSeconds"] == nil { input["offsetSeconds"] = 0 }
+    let scene = Vector(file: vector.file, name: vector.name, input: .object(input), expect: vector.expect)
+    let corpus = ProductCorpus(RuleBook(registry: try vector.registry, entities: [], rules: []))
+    return try corpus.act(DecidingAct(vector: scene), scene, result: { $0 }, refusal: \.form)
+  }
+
+  // Each scope of `loads` read for the ids it draws, which is the result; each segment built as in plan/translate.json,
+  // an operation with `mint` taking the next id in its segment's scope.
+  struct DecidingAct: ActAction {
+    let vector: Vector
+
+    func load(_ read: ActReader) throws -> (moment: Moment, drawn: JSON) {
+      var drawn: JSON.Object = [:]
+      for scope in try (vector.input["loads"]?.asArray() ?? []).map({ (scope: JSON) throws -> ScopeRef in try ScopeRef(json: scope) }) {
+        drawn[scope.text] = try read.inScope(scope) { (reader: Reader) throws -> JSON in
+          let types: [TypeDef] = reader.registry.types.filter { reader.registry.lives($0.name, in: scope) }
+          return .array(try types.flatMap { (type: TypeDef) throws -> [JSON] in try reader.source.drawn(type.name).map(\.id.json) })
+        }
+      }
+      return (read.moment, .object(drawn))
+    }
+
+    func decide(_ loaded: (moment: Moment, drawn: JSON), ids: ActIDSource) throws(Violation) -> ActDecision<JSON, ProbeRefusal> {
+      do {
+        let segments: [JSON] = try vector.input.member("segments").asArray()
+        guard !segments.isEmpty else { return .unchanged(loaded.drawn) }
+        let plans: [ScopedPlan] = try segments.map { (segment: JSON) throws -> ScopedPlan in
+          let scope = try ScopeRef(json: segment.member("scope"))
+          var input = try segment.asObject()
+          input["plan"] = .array(try segment.member("plan").asArray().map { (operation: JSON) throws -> JSON in
+            guard operation["mint"] == true else { return operation }
+            var minted = try operation.asObject()
+            minted["id"] = DecidingAct.mint(try probeEntity(operation.member("t").asString()), ids: ids, in: scope).json
+            return .object(minted)
+          })
+          let built = Vector(file: vector.file, name: vector.name, input: .object(input), expect: .null)
+          return ScopedPlan(scope, try Plans.build(built, at: loaded.moment))
+        }
+        return .write(ActPlan(plans), loaded.drawn)
+      } catch let violation as Violation { throw violation }
+      catch { preconditionFailure("invalid act decision vector: \(error)") }
+    }
+
+    static func mint<E: ProbeEntity>(_ type: E.Type, ids: ActIDSource, in scope: ScopeRef) -> RecordID {
+      ids.mint(E.self, inScope: scope).record
+    }
+  }
+
   // The action a pipeline vector runs: it loads nothing and writes the vector's plan.
   struct VectorAction: Action {
     let vector: Vector
@@ -160,6 +219,7 @@ enum Plans {
     case ProbeStart.name: return try Plan(running: ProbeStart(args: args), predicting: predictions)
     case ProbeEnd.name: return try Plan(running: ProbeEnd(args: args), predicting: predictions)
     case ProbeCopy.name: return try Plan(running: ProbeCopy(args: args), predicting: predictions)
+    case ProbeBranch.name: return try Plan(running: ProbeBranch(args: args), predicting: predictions)
     case let name: throw ContractError("no probe command \(name)")
     }
   }
@@ -170,9 +230,15 @@ enum Plans {
     }
   }
 
+  // `{op: "create" | "update" | "write", t, id, f, scope?}`, `scope` naming a scope other than the plan's.
   static func prediction<E: ProbeEntity>(_ type: E.Type, _ json: JSON) throws -> Prediction {
     let (id, values) = (ID<E>(try RecordID(json: json.member("id"))), try fields(json["f"]))
-    return try json.member("op").asString() == "create" ? .create(E.self, id, values) : .update(E.self, id, values)
+    let scope: ScopeRef? = try json["scope"].map { (scope: JSON) throws -> ScopeRef in try ScopeRef(json: scope) }
+    switch try json.member("op").asString() {
+    case "create": return .create(E.self, id, values, in: scope)
+    case "write": return .write(E.self, id, values, in: scope)
+    default: return .update(E.self, id, values, in: scope)
+    }
   }
 
   static func apply<E: ProbeEntity>(_ type: E.Type, _ op: String, _ operation: JSON, to plan: inout Plan, at moment: Moment) throws {
