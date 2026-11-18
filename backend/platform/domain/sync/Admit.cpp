@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 namespace wm::sync {
@@ -113,6 +114,64 @@ std::string SerialWanted::key() const {
 
 ChangeSet::ChangeSet(const Registry& registry, ScopeKey intentScope, Ms serverNow, const Limits& limits)
     : registry_(registry), intentScope_(std::move(intentScope)), serverNow_(serverNow), limits_(limits) {}
+
+Json::Value ChangeSet::effectReceipt(const std::map<ScopeKey, ScopeWatermark>& scopes) const {
+  std::vector<ScopeKey> ordered;
+  for (const auto& [scope, watermark] : scopes) ordered.push_back(scope);
+  std::sort(ordered.begin(), ordered.end(), [&](const ScopeKey& a, const ScopeKey& b) {
+    if (a == b) return false;
+    if (a == intentScope_) return true;
+    if (b == intentScope_) return false;
+    return a.ref() < b.ref();
+  });
+  Json::Value effects(Json::arrayValue);
+  for (const ScopeKey& scope : ordered) {
+    const auto& watermark = scopes.at(scope);
+    Json::Value effect(Json::objectValue);
+    effect["scope"] = scope.ref();
+    effect["beforeSeq"] = watermark.beforeSeq ? Json::Value(Json::UInt64(*watermark.beforeSeq)) : Json::Value();
+    effect["seq"] = watermark.seq ? Json::Value(Json::UInt64(*watermark.seq)) : Json::Value();
+    effect["rows"] = Json::Value(Json::arrayValue);
+    std::vector<const Change*> rows;
+    for (const Change& change : changes_) if (change.scope == scope && change.changed()) rows.push_back(&change);
+    std::sort(rows.begin(), rows.end(), [](const Change* a, const Change* b) {
+      return std::tie(a->after.t, a->after.id) < std::tie(b->after.t, b->after.id);
+    });
+    for (const Change* change : rows) {
+      const Json::Value before = change->stored ? change->stored->toJson() : Json::Value();
+      const Json::Value after = change->storedAt(watermark.seq.value(), serverNow_).toJson();
+      Json::Value row(Json::objectValue);
+      row["t"] = after["t"];
+      row["id"] = after["id"];
+      row["beforeRowSeq"] = before["seq"];
+      row["rowSeq"] = after["seq"];
+      Json::Value slots(Json::arrayValue);
+      auto append = [&](const std::string& kind, const std::optional<std::string>& name, const Json::Value& version) {
+        Json::Value item(Json::objectValue);
+        item["slot"]["kind"] = kind;
+        if (name) item["slot"]["name"] = *name;
+        item["version"]["kind"] = kind == "text" ? "text" : "stamp";
+        item["version"][kind == "text" ? "revision" : "stamp"] = version;
+        slots.append(std::move(item));
+      };
+      if (after.isMember("born") && after["born"] != before["born"]) append("born", std::nullopt, after["born"]);
+      if (after.isMember("life") && after["life"] != before["life"]) append("life", std::nullopt, after["life"][1]);
+      for (const std::string& name : after["f"].getMemberNames()) {
+        if (jcs(after["f"][name]) != jcs(before["f"][name])) append("field", name, after["f"][name][1]);
+      }
+      for (const std::string& name : after["x"].getMemberNames()) {
+        if (jcs(after["x"][name]) != jcs(before["x"][name])) append("text", name, after["x"][name]["rev"]);
+      }
+      row["slots"] = std::move(slots);
+      effect["rows"].append(std::move(row));
+    }
+    effects.append(std::move(effect));
+  }
+  Json::Value receipt(Json::objectValue);
+  receipt["v"] = 1;
+  receipt["effects"] = std::move(effects);
+  return receipt;
+}
 
 void ChangeSet::admit(const TypeDef& type, const ScopeKey& scope, Delta delta, Source source, const Locked& locked) {
   const Op op = opOf(type, delta);

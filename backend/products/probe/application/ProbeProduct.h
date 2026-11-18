@@ -10,7 +10,7 @@
 
 namespace wm::probe {
 
-// The probe product on the engine: its run rule and its four commands, written once over the engine's
+// The probe product on the engine: its run rule and product commands, written once over the engine's
 // reader and the receipts port, so the same rules run over Postgres and over the test fakes.
 class ProbeProduct {
 public:
@@ -26,12 +26,14 @@ private:
   class End;
   class Copy;
   class Tick;
+  class Branch;
 
   std::unique_ptr<RunRules> runRules_;
   std::unique_ptr<Start> start_;
   std::unique_ptr<End> end_;
   std::unique_ptr<Copy> copy_;
   std::unique_ptr<Tick> tick_;
+  std::unique_ptr<Branch> branch_;
 };
 
 }

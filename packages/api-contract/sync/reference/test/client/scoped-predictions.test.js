@@ -15,11 +15,11 @@ test('scoped coverage survives partial cursors, restart, newer text and epoch re
 });
 
 test('scoped remaps and accepted versions never cross singleton scopes', () => {
-  assert.equal(scopedReconciliation().length, 5);
+  assert.equal(scopedReconciliation().length, 6);
 });
 
 test('exclusive replay batches keep acknowledgement pruning behind saved receipts', () => {
-  assert.equal(scopedReplay().length, 6);
+  assert.equal(scopedReplay().length, 7);
 });
 
 test('scoped target predictions retain record and governing dependencies', () => {

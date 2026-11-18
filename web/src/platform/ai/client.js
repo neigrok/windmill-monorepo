@@ -24,8 +24,8 @@ async function untilStopped(signal, operation) {
 }
 
 export class AiClient {
-  constructor({ transport, telemetry, now = () => performance.now(), wait = waitFor, client = 'web' }) {
-    Object.assign(this, { transport, now, wait, client });
+  constructor({ transport, telemetry, now = () => performance.now(), wait = waitFor, connected = () => globalThis.navigator?.onLine !== false, client = 'web' }) {
+    Object.assign(this, { transport, now, wait, connected, client });
     this.telemetry = { failure: (operation) => {
       try {
         if (telemetry) telemetry.failure(operation);

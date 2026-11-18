@@ -1728,7 +1728,8 @@ unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsB
 applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
-its size cap, and a `200` whose receipts the replica cannot accept) — so a product can tell a server it never reached from one that answered with a failure.
+its size cap, and a `200` whose receipts the replica cannot accept) — so a product can tell a server
+it never reached from one that answered with a failure.
 Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
 with a `5xx`, so a product can tell the log's outage from a refusal.
 
@@ -2000,8 +2001,10 @@ capCount(t) = |{ id : visible(stored(t, id)) }|
 - `stored` decides caps, guards and write positions (D-25's drop position), so a held delete still
   occupies its slot.
 - A scoped entry contributes only its uncovered projection for this scope, plus ordinary `d` while
-  its origin marker is uncovered. Stored all-scope effects remain available for dependencies,
-  adoption, identity recovery and retained notices after a projection deactivates.
+  its origin marker is uncovered. Once its receipt is applied, ordinary `d` draws each register the
+  origin receipt versions at that accepted version, so a guard read after the ACK holds what the
+  server stored. Stored all-scope effects remain available for dependencies, adoption, identity
+  recovery and retained notices after a projection deactivates.
 - Serial values start from confirmed rows; command predictions overlay their serial keys in commit
   order. Entries without serials preserve them, and `stored` excludes held predictions.
 - Unknown fields, and rows of unknown types, are preserved and ignored: a row of an unknown type is
@@ -2102,13 +2105,16 @@ entry `w`, then step 3 once for the map:
 For scoped entries, every record and slot mapping is keyed by `(scope, t, id, slot)`. Apply global-ID
 remaps, including governed ScopeRefs, before scoped accepted slot versions. Observe all accepted
 stamps and reclock later queued owned writes; numbered immutable intents are never rewritten by a
-scoped ACK. Repeated singleton IDs in two trees never share a slot map. The stored effects drive
-record, reference, born, life and governor dependencies, including a target update with no life
-register. Held-back numbering, refusal folding and unsourced-clock recovery use these scoped keys.
-Target read projections expose that scope's pending records, Undo offers and failed deltas. Command
-read lists remain owned by the origin. A projected notice preserves its identity and origin, while
-the durable notice retains all scoped content for global copy and discard; origin command arguments
-never infer a target singleton's failed record.
+scoped ACK. A predicted register moves to its accepted version. Where an accepted version differs
+from the stamp the command wrote (a consequence rewrote an ordinary register) or from the previous
+receipt's (a replay), later queued guards, borns and carried lives holding the old stamp follow it,
+for ordinary `d` and predictions alike. Repeated singleton IDs in two trees never share a slot map.
+The stored effects drive record, reference, born, life and governor dependencies, including a target
+update with no life register. Held-back numbering, refusal folding and unsourced-clock recovery use
+these scoped keys. Target read projections expose that scope's pending records, Undo offers and
+failed deltas. Command read lists remain owned by the origin. A projected notice preserves its
+identity and origin, while the durable notice retains all scoped content for global copy and
+discard; origin command arguments never infer a target singleton's failed record.
 
 No entry is `sent` behind a command (§7.4), so every queued reference, born and guard is rewritable.
 

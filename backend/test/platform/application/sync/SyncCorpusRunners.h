@@ -29,12 +29,16 @@ inline Limits limitsOf(const Json::Value& input) {
                                                   {"PUSH_MAX_INTENTS", &limits.pushMaxIntents},
                                                   {"PUSH_MAX_BYTES", &limits.pushMaxBytes},
                                                   {"EFFECT_MAX_BYTES", &limits.effectMaxBytes},
+                                                  {"RECEIPT_MAX_BYTES", &limits.receiptMaxBytes},
+                                                  {"SCOPED_RESPONSE_MAX_BYTES", &limits.scopedResponseMaxBytes},
                                                   {"PULL_PAGE_BYTES", &limits.pullPageBytes},
                                                   {"PULL_MAX_BYTES", &limits.pullMaxBytes}};
   for (const std::string& name : input["limits"].getMemberNames()) {
     const auto knob = knobs.find(name);
     if (knob == knobs.end()) throw std::logic_error("the runner configures no limit " + name);
     *knob->second = input["limits"][name].asUInt64();
+    if (name == "RECEIPT_MAX_BYTES" && (*knob->second == 0 || *knob->second > Limits{}.receiptMaxBytes)) throw std::logic_error("receipt budget only shrinks");
+    if (name == "SCOPED_RESPONSE_MAX_BYTES" && (*knob->second == 0 || *knob->second > Limits{}.scopedResponseMaxBytes)) throw std::logic_error("response budget only shrinks");
     if (name == "EFFECT_MAX_BYTES" && (*knob->second == 0 || *knob->second > Limits{}.effectMaxBytes)) throw std::logic_error("effect budget only shrinks");
   }
   return limits;
@@ -115,6 +119,7 @@ public:
         Json::Value wire(Json::objectValue);
         wire["scope"] = scope.ref();
         wire["d"].append(delta);
+        wire["d"][0].removeMember("v");
         std::map<std::string, TextWrite> replacements;
         for (const std::string& name : delta["x"].getMemberNames()) {
           const auto& text = delta["x"][name];
@@ -127,6 +132,7 @@ public:
         }
         auto shaped = shapeIntent(world_.catalog().registry(), wire, Sender{account, true}, now, 300'000);
         for (auto& [name, text] : replacements) shaped.intent.d.front().x[name] = std::move(text);
+        for (const std::string& name : delta["v"].getMemberNames()) shaped.intent.d.front().v[name] = delta["v"][name];
         result.byScope[scope].push_back(std::move(shaped.intent.d.front()));
       }
     }
@@ -183,6 +189,7 @@ inline Json::Value admitVector(SyncWorld& world, const Json::Value& input) {
   if (input.isMember("effectPlan")) {
     for (const TypeDef& type : catalog->registry().types()) planned.bindType(catalog->store(type.name), &effects);
     for (const CommandDef& command : catalog->registry().commands()) {
+      if (command.engine) continue;
       commands.push_back(std::make_unique<EffectPlanCommand>(catalog->command(command.name), effects, world, input["effectPlan"]));
       planned.bindCommand(command.name, *commands.back());
     }

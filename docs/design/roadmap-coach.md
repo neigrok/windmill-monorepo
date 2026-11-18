@@ -1,13 +1,13 @@
 # Roadmap Coach
 
-Status: ✅ Ready for dev, ruled by the owner on 2026-11-08. The boards for three changed rulings are 🧪
-until the owner sees them: Q4, mandatory review; Q6, signed out; Q7, one History. Those boards are 02.5,
-02.6, 03.1, 03.7, 04.4, 05.1, 06.1, 06.2, 07.1, 07.2 and 08.1. The boards are on the Roadmap file's
-[🧪 Roadmap Coach](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5126) page. The
+Status: the rules below are ✅ ruled by the owner on 2026-11-08. The web's boards are on the Roadmap
+file's [Roadmap Coach](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5126) page; each
+carries its own status. The iPhone's boards are 🧪 Proposal:
+[section 11 · Coach in the room](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1449-15828) of
+the Roadmap · iOS page ([written half](ios/roadmap.md)). The
 [wave NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4928) records the eleven rulings.
 How it is built is in [Roadmap Coach](../foundation/roadmap-coach.md), which replaces the
 [engineering NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) where they differ.
-Every caption and section NOTE names the SwiftUI or web element of each part.
 
 Roadmap Coach replaces tending, the roadmap's AI that edits the tree at once from one sentence. Coach is a
 chat that knows your roadmaps and your progress. It answers questions ("what should I do next", "is my
@@ -20,29 +20,22 @@ self-development, with roadmap tools as its local executors.
 
 | Section | Figma | Holds |
 |---|---|---|
-| 00 · Read me and map | [`689:4928`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=689-4928) | What the page holds, how to read it, the flow map |
-| 01 · Entry points | [`679:2393`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=679-2393) | The Coach tab, a step's context menu, the Graph's accessory, the step page, Coach about one step |
-| 02 · Conversation | [`677:1879`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=677-1879) | Fresh chat, an answer, a turn in progress, What Coach read, the shared History, a photo |
-| 03 · Proposals | [`673:5717`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=673-5717) | The card (Reject and Review), the review sheet (Graph and Changes views, where Apply lives), applied, rejected, out of date, a long proposal, every change kind, applied offline, synced after the roadmap changed elsewhere |
-| 04 · Direct writes and receipts | [`681:2964`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=681-2964) | Marked done, a step added, undone, a removal shown as a card |
-| 05 · Access, allowance and offline | [`681:3522`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=681-3522) | Signed out (everything works), allowance used (signed out and signed in, with Windmill One), shared capacity, offline, the Windmill One store sheet |
-| 06 · Largest text and iOS 18 | [`683:3632`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=683-3632) | AX5, the iOS 18 tab bar and buttons, the iOS 18 review sheet |
+| 00 · Read me | [`689:4928`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=689-4928) | What the page holds and how to read it |
+| The iPhone | [`1449:15828`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1449-15828) (Roadmap · iOS, section 11) | The composer, a turn, direct writes, the conversation sheet, History, the card and its review, a photo, access states |
 | 07 · Web desktop | [`685:43559`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=685-43559) | The docked panel; Review turns on Preview on the Board or Graph, with Apply in its review bar; panel states |
 | 08 · Web phone | [`686:4715`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=686-4715) | The Coach page, the review bottom sheet, the roadmap sheet entry, Coach about one step |
-| 🧩 Components | [`668:5160`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5160) | Tab bar with Coach, composer, change symbols, read receipt, graph diff |
+| 09 · Coach on the open screen, web | [`758:47973`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=758-47973) · [`763:10290`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=763-10290) · [`763:17577`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=763-17577) · [`763:19784`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=763-19784) | Managing the open screen with Coach on desktop (09, 09a, 09c) and on mobile web (09b) |
+| 🧩 Components | [`668:5160`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5160) | Composer, change symbols, read receipt, graph diff |
 
-Boards are drawn at iPhone 17 size (402 × 874 pt), web at 1440 × 960 and 390 × 844. Dark boards are on each
-section's top row, with Light twins below for the key screens. Fixture: *Learn to sail* (eight steps) and
-one proposal of three changes. The room's chrome comes from the [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2)
-page ([written half](ios/roadmap.md)). Those boards are copied into a local templates section; the page
-itself is never edited. The card and its states follow the Gym file's approved proposal pass
-([iOS 08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703): 08.2P, 08.12P, 08.13P,
-08.14P, 08.27P and 08.56P).
+Web boards are drawn at 1440 × 960 and 390 × 844, iPhone boards at 402 × 874. Fixture: *Learn to sail*
+(eight steps) and one proposal of three changes. The card and its states follow the Gym file's approved
+proposal pass ([iOS 08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703): 08.2P,
+08.12P, 08.13P, 08.14P, 08.27P and 08.56P).
 
 ## The owner's rulings (2026-11-08)
 
 1. **Name.** "Coach" inside the Roadmap room: the same name, symbol and allowance as Gym's. The word "tending" is removed from every surface.
-2. **Where it lives on iOS.** Coach is the room's third tab (Board · Graph · Coach, plus Search). Ask Coach also opens it from a step: the step's context menu, the Graph's accessory and the step page.
+2. **Where it lives on iOS.** On the open screen, not a tab: a composer at the foot of the Board, the Graph, a step page and the step form, and a sheet for its answers. Ask Coach also opens it about one step, from the step's long-press menu.
 3. **Which writes land at once.** Your own simple one-step commands apply at once, with a receipt and Undo. Everything else is a proposal card.
 4. **How a proposal is reviewed.** Graph first, and human review is mandatory:
    - A card never applies. It offers Reject and Review.
@@ -104,7 +97,7 @@ Everything else is a proposal card. That covers whatever Coach suggests on its o
 - Once applied, the change is your own work and always lands, like every roadmap edit:
   - A change made elsewhere before it syncs is merged.
   - A prerequisite deleted elsewhere is replaced by that step's own prerequisites.
-  - One quiet band says how: "Sail with an instructor synced · it now follows Leave the dock", with Show (03.10; Roadmap · iOS 01.7a–c).
+  - One quiet band says how: "Sail with an instructor synced · it now follows Leave the dock", with Show (Roadmap · iOS 10.2 to 10.4).
   - An applied proposal is never refused or discarded.
 - There is one pending proposal per roadmap.
 - Applied, rejected and out-of-date cards stay in the conversation as the record.
@@ -113,7 +106,7 @@ Everything else is a proposal card. That covers whatever Coach suggests on its o
 **Commits stay in reach.**
 
 - On a card, Reject and Review sit at the foot as an HStack, with Review trailing.
-- In the review sheet, Reject and Apply sit in `.safeAreaInset(edge: .bottom)`.
+- In the review sheet, Reject and Apply sit in the bottom safe area. Reject is not destructive: it is plain glass, and Apply is the sheet's one fill.
 - None of these buttons is ever in a toolbar.
 - At accessibility sizes they stack, with the primary button first.
 
@@ -151,5 +144,5 @@ Everything else is a proposal card. That covers whatever Coach suggests on its o
 **Platform.**
 
 - Only stock SwiftUI parts are used. The one custom part is the diff canvas, which sits in stock slots: the card's icon and the sheet's content.
-- Every iOS 26 API has an iOS 18 fallback, listed in section 06.
+- Every iOS 26 API has an iOS 18 fallback, listed in section 12 of the Roadmap · iOS page.
 - The web uses the same words in web parts.

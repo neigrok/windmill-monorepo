@@ -137,6 +137,11 @@ struct Governed {
   std::string governedBy;
 };
 
+struct ScopeWatermark {
+  std::optional<Seq> beforeSeq;
+  std::optional<Seq> seq;
+};
+
 // The records one intent writes, from steps 5–6 through 13.
 class ChangeSet {
 public:
@@ -164,6 +169,7 @@ public:
 
   std::vector<Change>& changes() { return changes_; }
   const std::vector<Change>& changes() const { return changes_; }
+  Json::Value effectReceipt(const std::map<ScopeKey, ScopeWatermark>& scopes) const;
 
   // Step 10's parent rule on the joined records, every create and update included, a command's and a check's:
   // the parents step 10 must look up outside the intent, then the rule (a create or update whose parent is not

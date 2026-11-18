@@ -1,9 +1,11 @@
 # 13 · Learn whether writers return to a manual Journal page
 
-**Deferred discovery option.** Journal is on the web and in the iOS TestFlight app. If one of the two active
-pilots closes and a Journal question merits the slot, ask whether someone who already writes will choose to
+**Deferred manual-retention experiment.** Journal is on the web and in the iOS TestFlight app. When one of the two initial
+pilot slots becomes free and a Journal question merits the slot, ask whether someone who already writes will choose to
 write again. Manual writing is a job that can be tested now. Talk requires Windmill One, which is not on
-sale. Automatic Echoes processing draws on the same individual USD AI allowance.
+sale. The current accounting contract describes automatic Echoes processing; the release moves it onto the new service.
+Live Journal Talk is required by the [launch contract](../strategy.md#launch-contract), independently of this
+research slot. Journal tutorials and store assets proceed under [the editorial plan](17-distribution-and-editorial.md).
 [Journal product role](../../PRODUCT_LOG.md#journal) · [Metered operations](../../AI_USAGE_REVIEW.md)
 
 **Proposed protocol.** Recruit people who already write several days a week and agree to try the supported

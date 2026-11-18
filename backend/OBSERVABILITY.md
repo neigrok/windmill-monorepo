@@ -365,7 +365,7 @@ listed separately because their only server writes are authentication refresh or
 | `ScopePull::page` each requested scope including reset/re-pull | `sync.scope.pull` | completion; scope result/reset | unexpected |
 | `SyncApi::onWorker` async exception boundary | route operation `sync.hello`, `sync.push`, `sync.pull` | completion; bounded refusal or result | unexpected |
 | `SyncUpgradeGate` credential resolution on a worker (`proveUpgrade`) | `sync.live.upgrade` | ERROR completion, door `websocket`, only when the credential cannot be resolved; the upgrade answers 503 | unexpected, with the exception type |
-| `WorkerPool::post` refused for a full queue (`sync`, `ai-installation-http`, `subscription-claim`) | `worker_pool.saturated` | none; the caller answers 503 | once per five minutes per pool |
+| `WorkerPool::post` refused for a full queue (`sync`, `ai-installation-http`, `ai-pass-http`, `subscription-claim`) | `worker_pool.saturated` | none; the caller answers 503 | once per five minutes per pool |
 | `ReplicaPush::bind` transient failure | `sync.push.bind_unavailable` | none; the push answers 503 `unavailable` | once per five minutes |
 | `products/gym/application/AskService.cpp ask admission + generation/thread persistence` (coach) | `ask.run` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp stop` (coach) | `ask.stop` | completion; bounded stage outcome | unexpected |

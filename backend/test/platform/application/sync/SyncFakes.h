@@ -44,6 +44,7 @@ struct FakeDb {
   std::map<std::tuple<RecordRef, std::string, Seq>, std::string> revisions;
   std::map<std::pair<ScopeKey, std::string>, std::string> startReceipts;
   std::map<std::pair<ScopeKey, std::string>, std::string> copyReceipts;
+  std::map<std::pair<ScopeKey, std::string>, probe::BranchReceipt> branchReceipts;
 };
 
 // A fault the test injects, which the fake store classifies as transient.
@@ -411,6 +412,13 @@ public:
   }
   void recordCopy(SyncTxn& txn, const ScopeKey& scope, const std::string& destination, const std::string& source) override {
     dbOf(txn).copyReceipts.insert_or_assign({scope, destination}, source);
+  }
+  std::optional<probe::BranchReceipt> branched(SyncTxn& txn, const ScopeKey& scope, const std::string& child) override {
+    const auto found = dbOf(txn).branchReceipts.find({scope, child});
+    return found == dbOf(txn).branchReceipts.end() ? std::nullopt : std::optional(found->second);
+  }
+  void recordBranch(SyncTxn& txn, const ScopeKey& scope, const std::string& child, const probe::BranchReceipt& receipt) override {
+    dbOf(txn).branchReceipts.insert_or_assign({scope, child}, receipt);
   }
 
 private:
