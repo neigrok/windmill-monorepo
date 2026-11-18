@@ -47,6 +47,18 @@ sealed class Json {
         if (!keys.containsAll(required) || keys.any { it !in required && it !in optional }) throw JsonError("keys")
     }
     fun orNull(): Json? = if (this === Null) null else this
+    // This object with `members` set, a null member removed.
+    fun with(vararg members: Pair<String, Json?>): Json = Obj(obj().toMutableMap().apply {
+        for ((key, value) in members) if (value == null) remove(key) else put(key, value)
+    }.toList())
+
+    // Whether any string or object key here holds U+0000, which no intent, prediction or receipt may carry.
+    val holdsNul: Boolean get() = when (this) {
+        is Str -> '\u0000' in value
+        is Arr -> values.any { it.holdsNul }
+        is Obj -> members.any { (key, value) -> '\u0000' in key || value.holdsNul }
+        else -> false
+    }
 
     // How many containers nest here: what the parser counts against MAX_DEPTH.
     val depth: Int get() = when (this) {

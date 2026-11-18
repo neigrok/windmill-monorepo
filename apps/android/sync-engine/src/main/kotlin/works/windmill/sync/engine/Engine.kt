@@ -180,7 +180,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
                     val changed = deviceChanged || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes
                     if (changed) {
                         version++
-                        changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.effects().flatMap { effect -> effect.deltas.map { effect.scope to it.key } } }.toSet() + changedRows,
+                        changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.effects.flatMap { effect -> effect.deltas.map { effect.scope to it.key } } }.toSet() + changedRows,
                             activeChanged || operation == EngineOperation.lifecycle || operation == EngineOperation.subscription, scopes = changedScopes.toSet(), firstPullScopes = cursorScopes, operation = operation,
                             replica = device.current().id, account = device.current().account))
                     }
@@ -315,9 +315,9 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     // The outbox deltas a scope's records draw, by record, in commit order: a view over many records
     // indexes the outbox once instead of walking it for each record.
     internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef): Map<RecordKey, List<OutboxDelta>> =
-        replica.entries().flatMap { entry -> entry.deltas(scope, active = true).map { OutboxDelta(entry, it) } }.groupBy { it.delta.key }
+        replica.entries().flatMap { entry -> entry.activeDeltas(scope).map { OutboxDelta(entry, it) } }.groupBy { it.delta.key }
     internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef, key: RecordKey): List<OutboxDelta> =
-        replica.entries().flatMap { entry -> entry.deltas(scope, active = true).filter { it.key == key }.map { OutboxDelta(entry, it) } }
+        replica.entries().flatMap { entry -> entry.activeDeltas(scope).filter { it.key == key }.map { OutboxDelta(entry, it) } }
     internal fun view(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet(),
         outbox: List<OutboxDelta> = outboxDeltas(replica, scope, key)): Record? {
         val row = store.row(replica.id, scope, key)
@@ -349,7 +349,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     internal fun keys(replica: ReplicaState, scope: ScopeRef, type: String, field: String? = null, id: RecordID? = null): Set<RecordKey> {
         val rows = if (field != null && id != null) store.matching(replica.id, scope, type, field, id) else store.rows(replica.id, scope, type)
-        return rows.map { it.key }.toSet() + replica.entries().flatMap { it.deltas(scope, active = true) }.filter { it.key.type == type }.map { it.key }
+        return rows.map { it.key }.toSet() + replica.entries().flatMap { it.activeDeltas(scope) }.filter { it.key.type == type }.map { it.key }
     }
     internal inner class Reader(private val replicaState: ReplicaState, private val scope: ScopeRef, override val now: Long) : CommitContext {
         private var open = true
@@ -422,7 +422,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     fun materialized(scope: ScopeRef, mode: ViewMode): Json = lock.withLock {
         ensureOpen()
         val replica = device.current()
-        val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().flatMap { it.deltas(scope, active = true) }.map { it.key }
+        val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().flatMap { it.activeDeltas(scope) }.map { it.key }
         val outbox = outboxDeltas(replica, scope)
         val records = allKeys.sorted().mapNotNull { key ->
             val record = view(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: return@mapNotNull null

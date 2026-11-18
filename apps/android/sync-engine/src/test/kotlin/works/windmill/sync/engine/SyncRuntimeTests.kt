@@ -20,6 +20,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
+import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class SyncRuntimeTests {
@@ -1023,6 +1024,20 @@ class SyncRuntimeTests {
             failing.await()
             assertEquals(mapOf(fixture.engine.activeReplica() to mapOf(product to PushFailure.unavailable)), fixture.engine.pushFailures)
             settles(setOf(product)) { fixture.engine.status.state.value.unavailablePushes }
+        }
+    }
+
+    @Test fun anOkWithoutTheReceiptItsOptedCommandNeedsChangesNothingAndBacksOffAsMalformed() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.engine.commit(product, Gesture(emptyList(), command = Command("probe.capture", Json.objectOf())))
+            val step = async { fixture.runtime.senderStep(leaving = true) }
+            val push = fixture.push()
+            val sent = fixture.engine.snapshot()
+            push.answer.complete(ok(push.request))
+            assertFalse(step.await())
+            assertEquals(sent, fixture.engine.snapshot())
+            settles(true) { EngineEvent(EngineOperation.push, EngineOutcome.failure, "malformed") in fixture.events }
+            settles(setOf(product)) { fixture.engine.status.state.value.unansweredPushes }
         }
     }
 

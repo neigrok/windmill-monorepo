@@ -154,7 +154,7 @@ internal class AndroidSqliteStore(private val db: SQLiteDatabase, private val re
             for (entry in replica.items("outbox")) {
                 val localId = entry.member("localId").str()
                 if (localId !in changedEntries) continue
-                for (effect in Entry(entry).effects()) for (key in effect.deltas.map { it.key }.distinct())
+                for (effect in Entry(entry).effects) for (key in effect.deltas.map { it.key }.distinct())
                     db.insertWithOnConflict("outbox_touch", null, values("local_id" to localId, "scope" to effect.scope.text, "type" to key.type, "id" to key.id.text), SQLiteDatabase.CONFLICT_IGNORE)
             }
             sync("notice", selected, replica.items("notices").associateBy { it.member("id").str() }, "id") { noticeId, notice ->

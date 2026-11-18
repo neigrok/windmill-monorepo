@@ -37,9 +37,46 @@ node packages/api-contract/sync/benchmarks/browser.mjs \
 
 The runner serves an isolated Vite page, uses Chromium's real IndexedDB, and sends HTTP requests to
 the JavaScript model server. Timers are disabled so explicit engine pull rounds cannot race a sender.
-`--scenario large|many|pending` selects one case. Each case has a fresh browser context and database.
-The report includes the source commit, dirty-tree flag, browser/host versions, client timings, and
-individual model-server request times. The server and browser close on completion or failure.
+`--scenario large|many|pending` selects one case. Each case has a fresh browser profile and database.
+`--storage disk`, the default, keeps that profile in a temporary directory, so IndexedDB writes to
+disk as a person's browser does. `--storage memory` uses an ephemeral context instead, whose in-memory
+IndexedDB costs more per row as the database grows. `--profile DIRECTORY` writes one V8 CPU profile per
+measured phase, `<scenario>-<phase>.cpuprofile`, which DevTools opens; profiled timings include the
+sampler's overhead. The report includes the source commit, dirty-tree flag, storage, browser/host
+versions, client timings, every write transaction's writer hold by phase (`transactions`: from its
+first request to its durable completion, queue excluded), the writer telemetry the engine delivered
+(`writer`, at most 100 events a minute), and individual model-server request times. The server,
+browser and profile directory close on completion or failure.
+
+## Browser budgets
+
+The browser engine's budgets at roadmap's size, which the engine meets before roadmap's registry is
+pinned ([roadmap-on-the-engine.md §10](../../../../docs/foundation/roadmap-on-the-engine.md), "Size").
+The reference machine is an Apple M3 Pro Mac running the harness's Chromium (HeadlessChrome 145)
+with `--storage disk`. A figure is the median of three runs on an otherwise quiet machine; the
+model server's time in the report is the load check. Every write transaction other than a commit
+holds the writer at most `WRITER_SLICE_MS` (25 ms, [engine.md §2.5](../../../../docs/foundation/engine.md)),
+as `transactions` reports it; adopting a signed-out queue at sign-in is one §7.10 transaction and the
+exception.
+
+| Case | Phase | Budget | a4670ed74 |
+|---|---|---|---|
+| large | one gesture | 50 ms | 22.8 ms |
+| large | open and first read | 250 ms | 202 ms |
+| large | sign-in (returning) | 50 ms | 10.5 ms |
+| large | first pull | 2.5 s | 2.20 s |
+| many | one gesture | 25 ms | 9.5 ms |
+| many | open and first read | 50 ms | 39.5 ms |
+| many | sign-in (returning) | 50 ms | 15.9 ms |
+| many | first pull | 1 s | 369 ms |
+| pending | one gesture | 100 ms | 37.1 ms |
+| pending | open and first read | 250 ms | 203 ms |
+| pending | sign-in (adoption of 10,002 entries) | 1 s | 503 ms |
+| pending | first pull | 250 ms | 54.5 ms |
+
+At a4670ed74 the largest writer hold of a transaction other than a commit was 25.7 ms in the large
+first pull (one chunk of 473 over the three runs; each run's p99 at most 18.7 ms), 12.6 ms in the
+many first pull and 21.4 ms in the pending case, whose adoption held the writer 412–461 ms.
 
 ## Swift
 

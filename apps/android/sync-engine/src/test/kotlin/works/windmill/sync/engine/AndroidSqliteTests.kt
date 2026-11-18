@@ -155,4 +155,31 @@ class AndroidSqliteTests {
             assertTrue(engine.device.current().notices.isEmpty())
         }
     }
+
+    @Test fun anAcknowledgedScopedCommandKeepsEachProjectionAndReceiptAcrossReopenAndSettlesOneTargetAtATime() = database { file ->
+        val vector = Json.parse(File(System.getProperty("windmill.contract"), "sync/corpus/write/scoped-predictions.json").readBytes()).arr()
+            .single { it.member("name").str() == "after restart a covering newer text deactivates only that target and reset does not revive it" }
+        val device = vector.member("input").member("device")
+        val origin = ScopeRef.overlay("b_00000001"); val target = ScopeRef.overlay("b_00000002")
+        fun reopen() = AndroidSqlite.open(file, registry, device, clock, ids, "actor")
+        fun memo(engine: Engine, scope: ScopeRef) = engine.read(scope) { it.drawn("mark", RecordID("oak"))!!.texts.getValue("memo").text }
+        reopen().use { engine ->
+            assertEquals(device, engine.snapshot())
+            assertEquals(listOf("mine origin", "mine target"), listOf(memo(engine, origin), memo(engine, target)))
+        }
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            val touched = db.rawQuery("SELECT scope FROM outbox_touch WHERE local_id='g1/0' ORDER BY scope", null).use { rows -> buildList { while (rows.moveToNext()) add(rows.getString(0)) } }
+            assertEquals(listOf(origin.text, target.text), touched)
+        }
+        reopen().use { engine ->
+            val timing = RequestTiming(ClockReading(6_000, 6_000, "boot"), ClockReading(6_000, 6_000, "boot"))
+            val page = vector.member("input").member("steps").arr()[1].member("response")
+            engine.onPullResponse(engine.pullRequest(listOf(target))!!, SyncResponse(page.member("status").long().toInt(), page.member("body")), timing)
+        }
+        reopen().use { engine ->
+            val projections = engine.snapshot().member("replicas").arr().single().member("outbox").arr().single().member("predictions").arr()
+            assertEquals(listOf(Json.Null, Json.of(true)), projections.map { it["covered"] ?: Json.Null })
+            assertEquals(listOf("mine origin", "newer target"), listOf(memo(engine, origin), memo(engine, target)))
+        }
+    }
 }

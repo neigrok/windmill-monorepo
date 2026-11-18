@@ -1760,12 +1760,14 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
 `authPaused`, `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope
 whose last push failed with anything but a `400`, `409` or `413`, until a push of that scope is
 answered `200` or one of those three (a `400` or `413` changes the next push, a `409` re-identifies or
-pauses). A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
+pauses). An opted command's records are listed under every scope it predicts, as its origin's push
+ended. A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
 unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsBack(scope, key)`
 applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
-its size cap) — so a product can tell a server it never reached from one that answered with a failure.
+its size cap, and a `200` whose receipts the replica cannot accept) — so a product can tell a server
+it never reached from one that answered with a failure.
 Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
 with a `5xx`, so a product can tell the log's outage from a refusal.
 
@@ -2110,8 +2112,9 @@ global type renames its id in every scope; a mapping of a scope-local type renam
 command's scope, keyed by that scope as the map's governor mappings leave it, so an overlay's key
 names the record of its own tree and the same id in a sibling tree stays. Each entry takes two passes,
 each reading every leaf before writing one: the global leaves and governed ScopeRefs, then the
-scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. A creation leaf
-moves only with its own command's retained target.
+scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. The entry's
+`baseTexts` keys follow their records, so a `base-unknown` recovery finds the text a renamed record's
+write was edited from. A creation leaf moves only with its own command's retained target.
 0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
    first move its previous resolved id to `w.id` in the command's prediction and its later held or
    ready dependents, including deletes, references, key parts and guards, and in device rows through
@@ -2908,8 +2911,11 @@ run, and against the real server and Postgres nightly.
 - a store restored from a snapshot, or cloned.
 
 **It checks at every answer and frame** that one served as anyone but the replica's account changes
-nothing the replica pulled (§9.1), and **at every step** that each change of a device's active replica
-id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12).
+nothing the replica pulled (§9.1), **at every step** that each change of a device's active replica
+id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12), and **at every push**
+that no intent a device sends names a proposal its retained write targets say was redirected, by the
+proposal's own id or by any typed reference (§2.4 References), but the command that proposed it and an
+id another retained command resolved to.
 
 **It checks after quiescence:**
 - INV-2: no resurrection without a revive or a newer keyed put.

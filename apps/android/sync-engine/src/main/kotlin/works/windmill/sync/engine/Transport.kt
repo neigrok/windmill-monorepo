@@ -112,9 +112,13 @@ internal fun failureKind(failure: Throwable): String? {
         else -> null
     }
 }
+// `scopedCommands`: the registry's opted command names (§2.4). A push carrying one may be answered with a whole receipt, so its answer may
+// reach `scopedResponseMaxBytes`, which a test may only shrink; every other non-pull answer keeps the 4 MiB bound.
 class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineTelemetry = NoEngineTelemetry,
     client: OkHttpClient = OkHttpClient(), private val requestTimeoutMs: Long = Constants.REQUEST_TIMEOUT_MS.toLong(),
-    webSocketFactory: WebSocket.Factory? = null) : SyncTransport, AutoCloseable {
+    webSocketFactory: WebSocket.Factory? = null, private val scopedCommands: Set<String> = emptySet(),
+    private val scopedResponseMaxBytes: Long = Constants.SCOPED_RESPONSE_MAX_BYTES.toLong()) : SyncTransport, AutoCloseable {
+    init { require(scopedResponseMaxBytes in 1..Constants.SCOPED_RESPONSE_MAX_BYTES.toLong()) }
     private val base = baseURL.toHttpUrl()
     private val client = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).cache(null).followRedirects(false).followSslRedirects(false)
         .retryOnConnectionFailure(false).connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
@@ -148,7 +152,12 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         if (closed.get()) return Reply.Unreachable
         val operation = when (kind) { "hello" -> EngineOperation.hello; "push" -> EngineOperation.push; else -> EngineOperation.pull }
         val expected = if (kind == "push") ExpectedStatuses.push else ExpectedStatuses.all
-        val max = if (kind == "pull") Constants.PULL_MAX_SCOPES.toLong() * Constants.PULL_PAGE_BYTES + 65_536 else 4L * 1024 * 1024
+        val scoped = kind == "push" && body?.items("intents")?.any { (it["cmd"]?.get("name") as? Json.Str)?.value in scopedCommands } == true
+        val max = when {
+            kind == "pull" -> Constants.PULL_MAX_SCOPES.toLong() * Constants.PULL_PAGE_BYTES + 65_536
+            scoped -> scopedResponseMaxBytes
+            else -> 4L * 1024 * 1024
+        }
         val call = (if (kind == "hello") helloClient else client).newCall(request(kind, body, token)); calls.add(call)
         if (closed.get()) { call.cancel(); calls.remove(call); return Reply.Unreachable }
         try {

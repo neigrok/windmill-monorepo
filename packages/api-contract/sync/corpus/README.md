@@ -1342,6 +1342,8 @@ E-8's client steps, every reference read through the compiled traversal (`refs/t
 - `probe.adopt`'s scope-local map renames a mark key in that tree's overlay, a link's key parts in the
   tree and a sprout's `tag` whose `board` names the tree, and leaves the same tag id in a sibling tree's
   overlay and sprout;
+- a mark key renamed by that map keeps the text its write was edited from, so a later `base-unknown`
+  refusal resends `base: {text}` with it;
 - a governor redirect, then a tag map in the redirected tree, reach an overlay key and a sprout's step
   through both.
 
@@ -1446,11 +1448,15 @@ one invocation: some number of seeds, each run for some number of steps.
   is made more frequent or listed at a larger size. It never leaves the list for that, and no fuzz
   chooses its first seed to pass.
 
-The reference's list, in `reference/test/fuzz/replay.test.js`, surveyed over 60 fuzzes of 60×160 and
-30 of 500×300; every event in the 60 × 160 column is produced by 10 or more seeds a fuzz on average,
-and every one in the 500 × 300 column by far more. The default `node --test` fuzz is 60×160, the
-gate fuzz 500×300. Each engine's list
-names its own events for the same faults and paths, at the sizes its own survey shows.
+The reference's list, in `reference/test/fuzz/replay.test.js`, was surveyed with `probe.sprout` and
+`probe.adopt` in its gesture mix over 60 fuzzes of 60×160 and 30 of 500×300, from first seeds 1, 1001,
+2001, …, with no miss and no broken invariant. Every event in the 60 × 160 column is produced by 10.85
+or more seeds a fuzz on average (`refused cap` the fewest), and every one in the 500 × 300 column by 41
+or more (`frame served as another account` the fewest). The default `node --test` fuzz is 60×160, the
+gate fuzz 500×300. The browser core's simulator, `web/test/platform/sync/fuzz/simulator.js`, differs
+from the reference's only in its import paths, runs every seed identically and keeps the same list.
+Each other engine's list names its own events for the same faults and paths, at the sizes its own
+survey shows.
 
 | §11.3 fault or engine path | 60 × 160 | 500 × 300 |
 |---|---|---|
@@ -1467,6 +1473,7 @@ names its own events for the same faults and paths, at the sizes its own survey 
 | epoch change | `server restored`, `epoch change` | |
 | a store restored or cloned | `store restored`, `store cloned` | `http 409 gap`, `http 409 replica-forked` |
 | engine paths | `activeReplicaChanged announced`, `ok with a joining write map`, `refused cap`, `http 413 request-too-large`, `retry` | `ended refused by target-merged`, `http 400 malformed` |
+| typed references (E-8): a redirected proposal, and the work that named it | `a pushed reference names a record a redirect resolved to` | `sprout answered with its step's subtree`, `adopt answered with a labelled tag` |
 
 The simulator reports its other counts, the other refusal codes and `page outside the subscription
 set` among them, without listing them.
