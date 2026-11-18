@@ -250,7 +250,7 @@ final class TransactionReader: CommitContext {
     try reading {
       guard isOpen else { throw TransactionReader.ended }
       guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope])) else { throw StoreError.noReplica(meta.replica) }
-      return replica.entries(in: scope).compactMap { entry in
+      return replica.entries(in: scope).filter { $0.scope == scope }.compactMap { entry in
         entry.intent.command.map { QueuedCommand(gestureId: entry.gestureId, command: $0,
           canSupersede: meta.state == .anon && entry.isQueued && entry.n == nil, isAdmitted: entry.state == .acked) }
       }
@@ -359,7 +359,8 @@ final class TransactionReader: CommitContext {
     var texts: Set<String> = []
   }
 
-  // Each read batch indexes its pending metadata once, including duplicate delta and prediction touches.
+  // Each read batch indexes its pending metadata once, including duplicate delta and prediction touches, an opted entry's
+  // only while its projection into the scope is uncovered.
   func pendingMetadata(in replica: LoadedReplica, mode: ViewMode) -> [RecordKey: PendingMetadata] {
     var records: [RecordKey: PendingMetadata] = [:]
     for entry in replica.entriesTouchingReads {

@@ -7,7 +7,8 @@ import SyncReplica
 // `StoreTransaction`: an open transaction as the rest of the engine sees it, naming no GRDB type and no handle. Its loaders
 // build the working copies planners change; its queries serve the readers. Each finds a replica by its id once, then
 // reads by its handle. The cursors, staging digests, known scopes and device rows of a replica are always loaded whole;
-// rows only as a planner's read set names them, and outbox entries whole or as its entry selection names them.
+// rows only as a planner's read set names them, and outbox entries whole or as its entry selection names them. A legacy
+// entry is found in a scope by its own columns, an opted one by its projections (`outbox_projection`).
 
 public struct StoreTransaction {
   let db: Database
@@ -48,7 +49,8 @@ public struct StoreTransaction {
     }
     let outbox = try self.outbox(of: handle, entries, touching: reads)
     return LoadedReplica(
-      meta: meta, outbox: outbox.read, entries: entries, unreadCommitOrder: outbox.unreadCommitOrder, confirmed: confirmed,
+      meta: meta, outbox: outbox.read, entries: entries, unreadCommitOrder: outbox.unreadCommitOrder,
+      projectionTargets: entries.projectionTargets ? try projectionTargets(of: handle) : [], confirmed: confirmed,
       staging: staging, spent: spent, cursors: cursors.records, known: try known(of: handle),
       notices: notices ? try self.notices(of: handle) : nil, deviceRows: try deviceRows(of: handle), wholeScopes: false,
       isActive: try isActive(handle))
@@ -90,7 +92,9 @@ public struct StoreTransaction {
       if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM \(table) WHERE replica = ? AND scope = ?\(active))",
                           arguments: [handle.value, scope.text]) == true { return true }
     }
-    return false
+    return try Bool.fetchOne(db, sql: """
+      SELECT EXISTS(SELECT 1 FROM outbox_projection JOIN outbox USING (local_id) WHERE outbox_projection.scope = ? AND outbox.replica = ?)
+      """, arguments: [scope.text, handle.value]) == true
   }
 
   public func meta(of id: String) throws -> ReplicaMeta? {
@@ -131,7 +135,7 @@ public struct StoreTransaction {
     if selection.all { return (try outbox(of: handle), 0) }
     var queries: [(sql: String, arguments: StatementArguments)] = []
     for (scope, rows) in reads {
-      if rows.all { queries.append(("SELECT outbox.* FROM outbox_target JOIN outbox USING (local_id) WHERE outbox.replica = ? AND outbox_target.scope = ?", [handle.value, scope.text])) }
+      if rows.all { queries += Self.entries(in: scope, of: handle) }
       for key in rows.keys {
         queries.append(("""
           SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
@@ -156,15 +160,18 @@ public struct StoreTransaction {
     }
     if let covered = selection.covered {
       queries.append(("""
-        SELECT outbox.* FROM outbox_target JOIN outbox USING (local_id)
-        WHERE outbox.replica = ? AND outbox_target.scope = ? AND outbox.state = 'acked'
-          AND outbox_target.result_epoch = ? AND outbox_target.settled = 0 AND outbox_target.result_seq <= ?
-        ORDER BY outbox.commit_order LIMIT ?
+        SELECT * FROM outbox WHERE replica = ? AND scope = ? AND state = 'acked' AND result_epoch = ? AND result_seq <= ?
+          AND predictions IS NULL
+        ORDER BY commit_order LIMIT ?
         """, [handle.value, covered.scope.text, covered.epoch, covered.cleanSeq, covered.limit]))
+      queries.append(("""
+        SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id)
+        WHERE outbox_projection.scope = ? AND outbox_projection.covered = 0 AND outbox_projection.result_seq <= ?
+          AND outbox.replica = ? AND outbox.state = 'acked' AND outbox.result_epoch = ?
+        ORDER BY outbox.commit_order LIMIT ?
+        """, [covered.scope.text, covered.cleanSeq, handle.value, covered.epoch, covered.limit]))
     }
-    for scope in selection.scopes {
-      queries.append(("SELECT outbox.* FROM outbox_target JOIN outbox USING (local_id) WHERE outbox.replica = ? AND outbox_target.scope = ?", [handle.value, scope.text]))
-    }
+    for scope in selection.scopes { queries += Self.entries(in: scope, of: handle) }
     var read: [[UInt8]: GRDB.Row] = [:]
     for query in queries {
       for record in try GRDB.Row.fetchAll(db.cachedStatement(sql: query.sql), arguments: query.arguments) {
@@ -178,6 +185,25 @@ public struct StoreTransaction {
     return (try read.values.map(entry), unread?["commit_order"] ?? 0)
   }
 
+  // Every entry with effects in `scope`: a legacy entry of it, and an opted entry projecting into it.
+  static func entries(in scope: ScopeRef, of handle: ReplicaHandle) -> [(sql: String, arguments: StatementArguments)] {
+    [("SELECT * FROM outbox WHERE replica = ? AND scope = ?", [handle.value, scope.text]),
+     ("SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id) WHERE outbox_projection.scope = ? AND outbox.replica = ?",
+      [scope.text, handle.value])]
+  }
+
+  // §7.9 the scopes uncovered projections target, in commit order and each entry's projection order, each once.
+  func projectionTargets(of handle: ReplicaHandle) throws -> [ScopeRef] {
+    let scopes = try String.fetchAll(db.cachedStatement(sql: """
+      SELECT outbox_projection.scope FROM outbox_projection JOIN outbox USING (local_id)
+      WHERE outbox_projection.covered = 0 AND outbox.replica = ?
+      ORDER BY outbox.commit_order, outbox_projection.scope <> outbox.scope, outbox_projection.scope
+      """), arguments: [handle.value])
+    var targets: [ScopeRef] = []
+    for scope in try scopes.map(ScopeRef.init) where !targets.contains(scope) { targets.append(scope) }
+    return targets
+  }
+
   func entry(_ record: GRDB.Row) throws -> OutboxEntry {
     guard let state = EntryState(rawValue: record["state"]) else { throw StoreError.corrupt("entry state") }
     let baseTexts = try (record["base_texts"] as Data?).map { try Blob.json($0).asObject().members } ?? []
@@ -186,10 +212,10 @@ public struct StoreTransaction {
       scope: try ScopeRef(record["scope"] as String), state: state, commitOrder: record["commit_order"],
       releaseAt: record["release_at"], stamp: try Stamp(record["stamp"] as String), intent: try Intent(json: Blob.json(record["intent"])),
       predict: try (record["predict"] as Data?).map { try Blob.json($0).asArray().map { try Delta(json: $0) } } ?? [],
+      predictions: try (record["predictions"] as Data?).map { try Blob.json($0).asArray().map { try Projection(json: $0) } },
       baseTexts: Dictionary(uniqueKeysWithValues: try baseTexts.map { (try TextRef(text: $0.key), try $0.value.asString()) }))
+    entry.acceptedEffects = try (record["accepted_effects"] as Data?).map { try Blob.json($0).asArray().map { try EffectReceipt(json: $0) } }
     entry.digest = (record["digest"] as Data?).map(Blob.hex)
-    entry.predictions = try (record["predictions"] as Data?).map { try Blob.json($0).asArray().map { try Projection(json: $0) } }
-    entry.acceptedEffects = try (record["accepted_effects"] as Data?).map { try Blob.json($0).asArray() }
     entry.resultSeq = record["result_seq"]
     entry.resultEpoch = record["result_epoch"]
     entry.orphanOf = record["orphan_of"]
@@ -359,19 +385,28 @@ public struct StoreTransaction {
     try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM set_row JOIN row_set ON row_set.id = set_row.row_set WHERE row_set.role IS NULL")!
   }
 
-  // The outbox's touch index as it stands and as the entries say it must be, as JSON lines: equal whenever the batch
-  // writer kept it true.
+  // The outbox's touch and projection indexes as they stand and as the entries say they must be, as JSON lines: equal
+  // whenever the batch writer kept them true.
   public func touchIndex() throws -> (stored: [JSON], expected: [JSON]) {
-    let stored = try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox_touch").map { record -> JSON in
+    let touches = try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox_touch").map { record -> JSON in
       .array(["local_id", "scope", "type", "id"].map { .string(record[$0] as String) })
+    }
+    let projections = try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox_projection").map { record -> JSON in
+      [.string(record["local_id"]), .string(record["scope"]), (record["result_seq"] as Int64?).map { JSON($0) } ?? .null,
+       .bool(record["covered"])]
     }
     var expected: [JSON] = []
     for entry in try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox").map(entry) {
-      for key in Set(entry.drawnDeltas.map(\.key)) {
-        expected.append(.array([entry.localId, entry.scope.text, key.type, key.id.text].map { .string($0) }))
+      for effect in entry.effects() {
+        for key in Set(effect.deltas.map(\.key)) {
+          expected.append(.array([entry.localId, effect.scope.text, key.type, key.id.text].map { .string($0) }))
+        }
+      }
+      for projection in entry.predictions ?? [] {
+        expected.append([.string(entry.localId), projection.scope.json, projection.resultSeq.map { JSON($0) } ?? .null, .bool(projection.covered)])
       }
     }
-    return (stored.sorted { $0.jcsPrecedes($1) }, expected.sorted { $0.jcsPrecedes($1) })
+    return ((touches + projections).sorted { $0.jcsPrecedes($1) }, expected.sorted { $0.jcsPrecedes($1) })
   }
 }
 

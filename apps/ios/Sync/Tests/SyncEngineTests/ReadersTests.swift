@@ -113,6 +113,21 @@ struct ReadersTests {
     #expect(try rig.outbox() == ["admission/0 acked 1"])
   }
 
+  // E-7: an opted command's prediction in another scope reads pending there, as drawn and in a list, while its command
+  // stays listed by its origin alone.
+  @Test func aScopedPredictionReadsPendingInItsTargetWhileItsCommandStaysTheOrigins() throws {
+    let rig = try Rig(account: "A")
+    let child = ScopeRef.tree("b_00000002")
+    _ = try rig.commit(Gesture(
+      changes: [], command: Command(name: "probe.branch", args: ["parent": "b_00000001", "child": "b_00000002", "title": "Branch"]),
+      scopedPredict: [ScopedPrediction(scope: child, changes: [.write("meta", "meta", ["title": "Branch"])])], gestureId: "branch"))
+    let meta = try #require(try rig.engine.read(child) { try $0.drawn("meta", "meta") })
+    #expect((meta.values["title"], meta.isPending, meta.isHeld) == ("Branch", true, false))
+    #expect(try rig.engine.read(child) { try $0.stored("meta").map(\.isPending) } == [true])
+    #expect(try rig.engine.commit(child) { context in (nil as Gesture?, try context.commands().map(\.gestureId)) }.value == [])
+    #expect(try rig.engine.commit(Rig.scope) { context in (nil as Gesture?, try context.commands().map(\.gestureId)) }.value == ["branch"])
+  }
+
   // §7.12: a read-and-commit body is given the id of the replica its commit writes to, the active one as it stands at
   // that commit: after a re-identify, the new id.
   @Test func aReadAndCommitBodyIsGivenTheIdOfTheReplicaItWritesTo() throws {
