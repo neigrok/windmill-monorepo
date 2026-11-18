@@ -627,7 +627,13 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
-  auto productsCatalog = sync::productCatalog();
+  // Roadmap's scopes are served through the engine only where ROADMAP_ENGINE_ENABLED is "true"/"1": a test stack, an
+  // end-to-end run, CI. Production's compose file passes no such variable, so production withholds them until roadmap's
+  // cutover (roadmap-on-the-engine.md §8.1).
+  const char* roadmapEngineEnv = std::getenv("ROADMAP_ENGINE_ENABLED");
+  const std::string roadmapEngineFlag = roadmapEngineEnv ? roadmapEngineEnv : "";
+  auto productsCatalog = sync::productCatalog(roadmapEngineFlag == "true" || roadmapEngineFlag == "1" ? sync::RoadmapServing::served
+                                                                                                       : sync::RoadmapServing::withheld);
 #ifdef WM_SYNC_PROBE
   auto syncCatalog = std::make_shared<sync::SyncCatalog>(probe::registry());
   probe::PgProbe probeTables(probe::registry());

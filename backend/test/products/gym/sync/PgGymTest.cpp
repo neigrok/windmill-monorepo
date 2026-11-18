@@ -15,7 +15,7 @@ namespace {
     const std::string name = type.name;
     ::testing::Register{"gym_store_round_trip/" + name, [name, vectors] {
       if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
-      static test::PgWorld world(true);
+      static test::PgWorld world(test::WorldProduct::gym);
       bool exercised = false;
       Json::Value samples = vectors;
       if (name == "prefs") {
@@ -87,7 +87,7 @@ namespace {
 TEST(gym_binding_foreign_keys_defer_to_commit_and_accept_a_set_before_its_session) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
-  test::PgWorld world(true);
+  test::PgWorld world(test::WorldProduct::gym);
   world.seed(vectors[0]["input"]["state"]);
   {
     auto txn = world.store().begin(TxnMode::write);
@@ -117,7 +117,7 @@ TEST(gym_set_deletion_keeps_the_prior_version_at_the_admission_time) {
   const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
   for (const auto& vector : vectors) {
     if (vector["name"] != "a set in a finished workout is deleted") continue;
-    test::PgWorld world(true);
+    test::PgWorld world(test::WorldProduct::gym);
     const auto input = vector["input"];
     const auto after = test::gymAdmitVector(world, input);
     CHECK_EQ(jcs(after), jcs(vector["expect"]));
@@ -136,7 +136,7 @@ TEST(gym_routine_deletion_clears_a_session_created_by_the_same_intent) {
   const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
   for (const auto& vector : vectors) {
     if (vector["name"] != "a routine delete clears the same-intent start session routineId, retaining its frozen plan and history") continue;
-    test::PgWorld world(true);
+    test::PgWorld world(test::WorldProduct::gym);
     const auto input = vector["input"];
     const auto after = test::gymAdmitVector(world, input);
     REQUIRE_EQ(jcs(after), jcs(vector["expect"]));
@@ -163,7 +163,7 @@ TEST(gym_proposal_creates_supersede_once_in_the_same_intent_order) {
   const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
   for (const auto& vector : vectors) {
     if (vector["name"] != "two same-key proposal creates supersede in intent order: only the second stays pending") continue;
-    test::PgWorld world(true);
+    test::PgWorld world(test::WorldProduct::gym);
     const auto input = vector["input"];
     const auto after = test::gymAdmitVector(world, input);
     REQUIRE_EQ(jcs(after), jcs(vector["expect"]));
@@ -199,7 +199,7 @@ TEST(gym_apply_receipt_rolls_back_with_its_removal_and_survives_replay) {
   REQUIRE(input.isObject());
   const std::string replica = "rp_000000000000000000000000000000aa";
   input["state"]["replicas"][replica] = test::object({{"account", "A"}, {"lastN", 0}});
-  test::PgWorld world(true);
+  test::PgWorld world(test::WorldProduct::gym);
   world.seed(input["state"]);
   Json::Value before = world.dump();
   const Json::Value intent = input["intent"];
@@ -240,7 +240,7 @@ TEST(gym_apply_receipt_rolls_back_with_its_removal_and_survives_replay) {
 
 TEST(gym_apply_receipts_cascade_with_their_account) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
-  test::PgWorld world(true);
+  test::PgWorld world(test::WorldProduct::gym);
   world.seed(parseJson(R"({"accounts":{"PURGE":{"name":"Receipt owner"}},"product":{"proposalApplies":{"acct:PURGE/gym":{"proposalPURGE":true}}}})"));
   auto txn = world.store().begin(TxnMode::write);
   const auto receipts = sqlOf(*txn).exec("select id,user_id::text from gym_proposal_applies");

@@ -774,6 +774,310 @@ create table if not exists sync_requests (
 );
 create index if not exists sync_requests_started_at on sync_requests (started_at);
 
+-- ── Roadmap on the engine (products/roadmap/sync/, docs/foundation/roadmap-on-the-engine.md §4, §7) ─────────────
+-- Roadmap's records as the sync engine stores them (engine.md §2.2, Appendix A.1), beside trees, tree_nodes,
+-- tree_edges, tree_kinds and node_progress, which roadmap's own sync keeps writing until the cutover fills these
+-- (roadmap-on-the-engine.md §8.1). Nothing here alters a table roadmap's own sync reads. Until then production writes
+-- nothing into them: windmill_server withholds roadmap's scopes unless ROADMAP_ENGINE_ENABLED says otherwise.
+--
+-- Every table carries the envelope PgTableType reads: scope_key, id, seq, rc and ru (epoch ms); born for a minted or
+-- derived type; life where dead rows are kept; life_stamp for a type with life; <field>_stamp beside every lattice
+-- field; <field>_rev and <field>_merged beside the one text field. A `deadRows: spent` type's row exists only while the
+-- record is alive (sync_spent keeps its death). A tree's and Coach's ids are global, so their id is the key; every other
+-- type's id is its scope's. An id is a string id itself, or an edge's [from, to] as its JCS. Ids hold no foreign key to
+-- other records: a reference names an engine record (§6.1 step 10). Every row goes with its scope, so erasing an
+-- account's scopes erases its roadmap rows.
+
+create table if not exists roadmap_trees (
+  scope_key    text not null references sync_scopes(key) on delete cascade,
+  id           text primary key,
+  seq          bigint not null,
+  rc           bigint not null,
+  ru           bigint not null,
+  born         text not null,
+  life         text not null check (life in ('alive', 'dead')),
+  life_stamp   text not null,
+  parent       jsonb,
+  parent_stamp text
+);
+create index if not exists roadmap_trees_feed on roadmap_trees (scope_key, seq);
+
+create table if not exists roadmap_metas (
+  scope_key             text not null references sync_scopes(key) on delete cascade,
+  id                    text not null,
+  seq                   bigint not null,
+  rc                    bigint not null,
+  ru                    bigint not null,
+  title                 text,
+  title_stamp           text,
+  guide                 text,
+  guide_stamp           text,
+  guide_inherited       boolean,
+  guide_inherited_stamp text,
+  visibility            text,
+  visibility_stamp      text,
+  reach                 text,
+  reach_stamp           text,
+  root                  text,
+  root_stamp            text,
+  parent                jsonb,
+  parent_stamp          text,
+  depth                 bigint,
+  depth_stamp           text,
+  forked_from           text,
+  forked_from_stamp     text,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_metas_feed on roadmap_metas (scope_key, seq);
+
+create table if not exists roadmap_nodes (
+  scope_key         text not null references sync_scopes(key) on delete cascade,
+  id                text not null,
+  seq               bigint not null,
+  rc                bigint not null,
+  ru                bigint not null,
+  born              text not null,
+  life              text not null check (life in ('alive', 'dead')),
+  life_stamp        text not null,
+  label             text,
+  label_stamp       text,
+  icon              text,
+  icon_stamp        text,
+  color             text,
+  color_stamp       text,
+  ord               text,
+  ord_stamp         text,
+  status            text,
+  status_stamp      text,
+  description       text,
+  description_stamp text,
+  links             jsonb,
+  links_stamp       text,
+  branch            text,
+  branch_stamp      text,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_nodes_feed on roadmap_nodes (scope_key, seq);
+
+create table if not exists roadmap_edges (
+  scope_key  text not null references sync_scopes(key) on delete cascade,
+  id         text not null,
+  seq        bigint not null,
+  rc         bigint not null,
+  ru         bigint not null,
+  life       text not null check (life in ('alive', 'dead')),
+  life_stamp text not null,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_edges_feed on roadmap_edges (scope_key, seq);
+
+create table if not exists roadmap_kinds (
+  scope_key         text not null references sync_scopes(key) on delete cascade,
+  id                text not null,
+  seq               bigint not null,
+  rc                bigint not null,
+  ru                bigint not null,
+  born              text not null,
+  life              text not null check (life in ('alive', 'dead')),
+  life_stamp        text not null,
+  hue               text,
+  hue_stamp         text,
+  label             text,
+  label_stamp       text,
+  description       text,
+  description_stamp text,
+  ord               text,
+  ord_stamp         text,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_kinds_feed on roadmap_kinds (scope_key, seq);
+
+create table if not exists roadmap_progress (
+  scope_key  text not null references sync_scopes(key) on delete cascade,
+  id         text not null,
+  seq        bigint not null,
+  rc         bigint not null,
+  ru         bigint not null,
+  mark       jsonb,
+  mark_stamp text,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_progress_feed on roadmap_progress (scope_key, seq);
+
+create table if not exists roadmap_pointers (
+  scope_key   text not null references sync_scopes(key) on delete cascade,
+  id          text not null,
+  seq         bigint not null,
+  rc          bigint not null,
+  ru          bigint not null,
+  life        text not null check (life in ('alive', 'dead')),
+  life_stamp  text not null,
+  opens       text,
+  opens_stamp text,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_pointers_feed on roadmap_pointers (scope_key, seq);
+
+create table if not exists roadmap_subtasks (
+  scope_key   text not null references sync_scopes(key) on delete cascade,
+  id          text not null,
+  seq         bigint not null,
+  rc          bigint not null,
+  ru          bigint not null,
+  born        text not null,
+  life_stamp  text not null,
+  step        text,
+  step_stamp  text,
+  label       text,
+  label_stamp text,
+  done        boolean,
+  done_stamp  text,
+  ord         text,
+  ord_stamp   text,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_subtasks_feed on roadmap_subtasks (scope_key, seq);
+
+create table if not exists roadmap_step_links (
+  scope_key   text not null references sync_scopes(key) on delete cascade,
+  id          text not null,
+  seq         bigint not null,
+  rc          bigint not null,
+  ru          bigint not null,
+  born        text not null,
+  life_stamp  text not null,
+  step        text,
+  step_stamp  text,
+  url         text,
+  url_stamp   text,
+  title       text,
+  title_stamp text,
+  ord         text,
+  ord_stamp   text,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_step_links_feed on roadmap_step_links (scope_key, seq);
+
+create table if not exists roadmap_step_notes (
+  scope_key   text not null references sync_scopes(key) on delete cascade,
+  id          text not null,
+  seq         bigint not null,
+  rc          bigint not null,
+  ru          bigint not null,
+  text        text,
+  text_rev    bigint,
+  text_merged boolean not null default false,
+  primary key (scope_key, id)
+);
+create index if not exists roadmap_step_notes_feed on roadmap_step_notes (scope_key, seq);
+
+-- A step note's superseded head (§6.11 step 4); roadmap keeps one per note.
+create table if not exists roadmap_step_notes_revisions (
+  scope_key text not null references sync_scopes(key) on delete cascade,
+  id        text not null,
+  field     text not null,
+  rev       bigint not null,
+  text      text not null,
+  primary key (scope_key, id, field, rev)
+);
+
+-- Roadmap Coach's records (roadmap-coach.md §9), in the owner's roadmap scope.
+create table if not exists roadmap_coach_threads (
+  scope_key     text not null references sync_scopes(key) on delete cascade,
+  id            text primary key,
+  seq           bigint not null,
+  rc            bigint not null,
+  ru            bigint not null,
+  born          text not null,
+  life_stamp    text not null,
+  tree_id       text,
+  tree_id_stamp text,
+  step_id       text,
+  step_id_stamp text,
+  title         text,
+  title_stamp   text
+);
+create index if not exists roadmap_coach_threads_feed on roadmap_coach_threads (scope_key, seq);
+
+create table if not exists roadmap_coach_messages (
+  scope_key         text not null references sync_scopes(key) on delete cascade,
+  id                text primary key,
+  seq               bigint not null,
+  rc                bigint not null,
+  ru                bigint not null,
+  born              text not null,
+  life_stamp        text not null,
+  thread_id         text,
+  thread_id_stamp   text,
+  role              text,
+  role_stamp        text,
+  replica           text,
+  replica_stamp     text,
+  text              text,
+  text_stamp        text,
+  state             text,
+  state_stamp       text,
+  truncated         boolean,
+  truncated_stamp   text,
+  refusal           text,
+  refusal_stamp     text,
+  calls             jsonb,
+  calls_stamp       text,
+  receipts          jsonb,
+  receipts_stamp    text,
+  proposal_id       text,
+  proposal_id_stamp text,
+  pictures          jsonb,
+  pictures_stamp    text,
+  at                bigint,
+  at_stamp          text
+);
+create index if not exists roadmap_coach_messages_feed on roadmap_coach_messages (scope_key, seq);
+
+create table if not exists roadmap_coach_proposals (
+  scope_key        text not null references sync_scopes(key) on delete cascade,
+  id               text primary key,
+  seq              bigint not null,
+  rc               bigint not null,
+  ru               bigint not null,
+  born             text not null,
+  life_stamp       text not null,
+  tree_id          text,
+  tree_id_stamp    text,
+  thread_id        text,
+  thread_id_stamp  text,
+  message_id       text,
+  message_id_stamp text,
+  base             jsonb,
+  base_stamp       text,
+  changes          jsonb,
+  changes_stamp    text,
+  state            text,
+  state_stamp      text,
+  undone           boolean,
+  undone_stamp     text
+);
+create index if not exists roadmap_coach_proposals_feed on roadmap_coach_proposals (scope_key, seq);
+
+create table if not exists roadmap_coach_write_fates (
+  scope_key        text not null references sync_scopes(key) on delete cascade,
+  id               text primary key,
+  seq              bigint not null,
+  rc               bigint not null,
+  ru               bigint not null,
+  born             text not null,
+  life_stamp       text not null,
+  message_id       text,
+  message_id_stamp text,
+  receipt          bigint,
+  receipt_stamp    text,
+  fate             text,
+  fate_stamp       text,
+  code             text,
+  code_stamp       text
+);
+create index if not exists roadmap_coach_write_fates_feed on roadmap_coach_write_fates (scope_key, seq);
+
 -- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
 -- Every customer and subscription notification upserts here, and funding a Paddle payment reads this database, never
 -- the Paddle API. No access is read from it: Windmill One is read from account_entitlements. An account bridges to a

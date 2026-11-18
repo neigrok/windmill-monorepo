@@ -7,6 +7,7 @@
 #include "products/probe/ProbeRegistry.h"
 #include "products/gym/sync/GymProduct.h"
 #include "products/journal/sync/JournalProduct.h"
+#include "products/roadmap/sync/RoadmapProduct.h"
 #include "platform/infra/SyncProducts.h"
 #include "test/testing.h"
 
@@ -536,7 +537,7 @@ TEST(the_gym_registry_reads_as_declared) {
   std::vector<std::string> deviceRows;
   for (const auto& [name, row] : device) deviceRows.push_back(name);
   CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningTurn"}));
-  CHECK_EQ(gym.version(), 12);
+  CHECK_EQ(gym.version(), 13);
   CHECK_EQ(gym.minVersion(), 11);
   CHECK(gym.type("message")->fields.at("threadId").parent);
   CHECK_EQ(gym.type("message")->fields.at("state").kind, FieldKind::ranked);
@@ -560,12 +561,34 @@ TEST(the_gym_registry_reads_as_declared) {
   }
 }
 
+TEST(the_roadmap_registry_reads_as_declared) {
+  const Registry& roadmap = wm::roadmap::engine::registry();
+  CHECK_EQ(namesOf(roadmap.types()), (std::vector<std::string>{"tree", "meta", "node", "edge", "kind", "progress", "pointer", "subtask", "stepLink",
+                                                              "stepNote", "coachThread", "coachMessage", "coachProposal", "coachWriteFate"}));
+  CHECK_EQ(namesOf(roadmap.commands()), (std::vector<std::string>{"roadmap.createSubtree", "roadmap.recolourKind", "roadmap.undoCreateRoadmap",
+                                                                 "roadmap.undoCreateSubtree", "roadmap.redoCreateSubtree", "roadmap.capture",
+                                                                 "roadmap.captureTree", "roadmap.captureOverlay", "roadmap.restore", "roadmap.restoreTree",
+                                                                 "roadmap.restoreOverlay"}));
+  CHECK_EQ(roadmap.products().at("roadmap").codes, (std::vector<std::string>{"step-opens-a-tree", "depth-limit", "not-a-root", "turn-final"}));
+  CHECK_EQ(roadmap.version(), 13);
+  CHECK_EQ(roadmap.minVersion(), 11);
+  CHECK_EQ(roadmap.governingType()->name, std::string("tree"));
+  CHECK_EQ(roadmap.type("node")->cap, std::optional<std::int64_t>(10'000));
+  CHECK_EQ(roadmap.type("edge")->cap, std::optional<std::int64_t>(20'000));
+  CHECK_EQ(roadmap.type("kind")->cap, std::optional<std::int64_t>(6));
+  CHECK(roadmap.type("node")->revivable);
+  CHECK(roadmap.type("kind")->revivable);
+  CHECK_FALSE(roadmap.type("tree")->revivable);
+  CHECK_EQ(roadmap.type("meta")->fields.at("reach").opens, (std::vector<std::string>{"unlisted", "public"}));
+  for (const char* command : {"roadmap.undoCreateRoadmap", "roadmap.undoCreateSubtree", "roadmap.redoCreateSubtree"}) CHECK(roadmap.command(command)->inverse);
+}
+
 // The product registries ship as one registry: one version and minVersion, and no product, type, command or
 // refusal code a second registry declares again.
 TEST(the_deployment_composition_embeds_every_manifest_member_in_order) {
   const Json::Value composition = parseJson(compositionText());
   CHECK_EQ(productRegistry().name(), composition["composition"].asString());
-  CHECK_EQ(productRegistry().version(), 12);
+  CHECK_EQ(productRegistry().version(), 13);
   CHECK_EQ(productRegistry().minVersion(), 11);
   const std::vector<Registry> registries = productRegistries();
   const auto catalog = productCatalog();
@@ -578,7 +601,18 @@ TEST(the_deployment_composition_embeds_every_manifest_member_in_order) {
   CHECK_EQ(namesOf(catalog->registry().commands()), commands);
   CHECK(catalog->registry().command("journal.savePage") != nullptr);
   CHECK(catalog->registry().command("journal.claimPage") != nullptr);
+  CHECK(catalog->registry().command("roadmap.createSubtree") != nullptr);
   for (const auto& type : catalog->registry().types()) CHECK_EQ(catalog->store(type.name).def().name, type.name);
+  // Production's catalog withholds roadmap's scopes until its cutover; a test stack's serves them.
+  const auto served = productCatalog(RoadmapServing::served);
+  for (const char* product : {"gym", "journal"}) {
+    CHECK(catalog->serves(std::string(product)));
+    CHECK(served->serves(std::string(product)));
+  }
+  CHECK_FALSE(catalog->serves(std::string("roadmap")));
+  CHECK_FALSE(catalog->serves(RegistryScope{ScopeKind::tree, ""}));
+  CHECK(served->serves(std::string("roadmap")));
+  CHECK(served->serves(RegistryScope{ScopeKind::overlay, ""}));
   std::set<std::pair<std::int64_t, std::int64_t>> versions;
   std::vector<std::string> declared;
   for (const Registry& registry : registries) {

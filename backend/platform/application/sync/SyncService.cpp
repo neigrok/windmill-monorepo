@@ -421,7 +421,7 @@ public:
         observation.finish("not-found");
         return answered(ref, "not-found");
       }
-      runBeforePull(ref, *key);
+      if (catalog_.serves(key->registryScope())) runBeforePull(ref, *key);
       Json::Value page = pageOf(ref, *key, wanted["cursor"]);
       const std::string kind = page["kind"].asString();
       observation.finish(kind == "rows" ? "ok" : kind);
@@ -462,11 +462,12 @@ private:
     return scope->owner;
   }
 
-  // Steps 1–6 from one read-only snapshot: access, reset, then a boot page or a live one.
+  // Steps 1–6 from one read-only snapshot: access, reset, then a boot page or a live one. A scope of a product the
+  // deployment withholds reads as absent.
   Json::Value pageOf(const std::string& ref, const ScopeKey& key, const Json::Value& cursorText) {
     const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::snapshot);
     const std::string epoch = store_.epoch(*txn);
-    const std::optional<ScopeRow> scope = store_.scope(*txn, key, RowLock::none);
+    const std::optional<ScopeRow> scope = catalog_.serves(key.registryScope()) ? store_.scope(*txn, key, RowLock::none) : std::nullopt;
     const Access access = accessIn(*txn, key, scope);
     if (!access.read) return answered(ref, access.gone ? "gone" : "not-found");
     std::optional<Cursor> cursor;
@@ -523,7 +524,8 @@ private:
 
   // Step 1: D-4 as a read sees it in the snapshot, an overlay answering as its tree does.
   Access accessIn(SyncTxn& txn, const ScopeKey& key, const std::optional<ScopeRow>& scope) {
-    const std::optional<ScopeRow> tree = key.kind() == ScopeKind::overlay ? store_.scope(txn, key.governingTree(), RowLock::none) : scope;
+    const bool overlay = key.kind() == ScopeKind::overlay && catalog_.serves(key.registryScope());
+    const std::optional<ScopeRow> tree = overlay ? store_.scope(txn, key.governingTree(), RowLock::none) : scope;
     return accessOf(key, factsOf(scope), factsOf(tree), caller_);
   }
 
@@ -569,7 +571,8 @@ SyncService::SyncService(const SyncCatalog& catalog, SyncStore& store, Admission
     : catalog_(catalog), store_(store), admission_(admission), clock_(clock), bindUnavailable_(std::move(bindUnavailable)) {}
 
 // §9.2: holdsRecords[p] iff acct:<caller>/<p> holds a visible row of a primary type; holdings[p] tallies the visible
-// rows of p's headline type: how many, and the last write among them (the greatest ru). Both read one snapshot.
+// rows of p's headline type: how many, and the last write among them (the greatest ru). Both read one snapshot. A
+// product the deployment withholds holds nothing.
 SyncReply SyncService::hello(const Credential& credential) {
   const Ms serverTime = clock_.nowMs();
   const Registry& registry = catalog_.registry();
@@ -583,13 +586,14 @@ SyncReply SyncService::hello(const Credential& credential) {
   if (caller) {
     for (const auto& [product, def] : registry.products()) {
       const ScopeKey scope = ScopeKey::product(*caller, product);
+      const bool served = catalog_.serves(product);
       const std::vector<const TypeDef*> types = catalog_.typesIn(scope.registryScope());
-      holds[product] = std::any_of(types.begin(), types.end(), [&](const TypeDef* type) {
+      holds[product] = served && std::any_of(types.begin(), types.end(), [&](const TypeDef* type) {
         return type->primary && catalog_.store(type->name).count(*txn, scope, FeedQuery{.visibleOnly = true, .limit = 1}) > 0;
       });
       const auto headline = std::find_if(types.begin(), types.end(), [](const TypeDef* type) { return type->headline; });
       if (headline == types.end()) continue;
-      const Tally tally = catalog_.store((*headline)->name).tally(*txn, scope);
+      const Tally tally = served ? catalog_.store((*headline)->name).tally(*txn, scope) : Tally{};
       Json::Value holding(Json::objectValue);
       holding["count"] = Json::UInt64(tally.count);
       holding["lastWrittenAt"] = tally.lastWrittenAt ? Json::Value(Json::UInt64(*tally.lastWrittenAt)) : Json::Value();

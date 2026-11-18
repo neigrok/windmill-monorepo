@@ -141,7 +141,10 @@ add_library(windmill_roadmap
   products/roadmap/application/ScopedToolHost.cpp
   products/roadmap/application/TendingService.cpp
   products/roadmap/application/TreeRegistry.cpp
-  products/roadmap/application/ReminderSweep.cpp)
+  products/roadmap/application/ReminderSweep.cpp
+  products/roadmap/sync/RoadmapRules.cpp
+  products/roadmap/sync/RoadmapProduct.cpp
+  products/roadmap/sync/PgRoadmap.cpp)
 target_include_directories(windmill_roadmap PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
 
@@ -204,13 +207,14 @@ endfunction()
 set(WM_BOUND_REGISTRIES)
 wm_register_sync_product(windmill_gym wm::gym::engine gym.registry.json)
 wm_register_sync_product(windmill_journal wm::journal::engine journal.registry.json)
+wm_register_sync_product(windmill_roadmap wm::roadmap::engine roadmap.registry.json)
 file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
 wm_validate_sync_composition("${WM_COMPOSITION}" "${WM_BOUND_REGISTRIES}")
 # The gym ability catalog (gym_coach.md §3.1) the tool declarations are pinned to, byte for byte (CatalogContractTest).
 wm_embed_registry(windmill_gym wm::gym catalogText "${WM_API_CONTRACT_DIR}/gym/catalog.json")
 
 add_library(windmill_product_sync platform/infra/SyncProducts.cpp)
-target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal)
+target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal windmill_roadmap)
 wm_embed_registry(windmill_product_sync wm::sync compositionText "${WM_API_CONTRACT_DIR}/sync/composition.json")
 
 # --- probe: the sync engine's test and dev product (packages/api-contract/sync/probe.registry.json), the
@@ -634,7 +638,8 @@ add_executable(windmill_sync_tests
   test/platform/adapters/postgres/PgDigestResumTest.cpp
   test/products/probe/adapters/postgres/PgProbeTest.cpp
   test/products/gym/sync/PgGymTest.cpp
-  test/products/journal/sync/PgJournalTest.cpp)
+  test/products/journal/sync/PgJournalTest.cpp
+  test/products/roadmap/sync/PgRoadmapTest.cpp)
 target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync)
 target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
