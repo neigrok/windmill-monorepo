@@ -307,17 +307,11 @@ public:
   std::set<ScopeKey> discoverEffectScopes(const CheckCtx& ctx) override {
     const ScopeKey& origin = ctx.scope.key;
     const UserId& account = ctx.caller.account;
-    Reached reached(ctx.read, account);
     if (origin.kind() == ScopeKind::tree) {
-      const std::string& tree = origin.treeId();
       const Json::Value restored = ctx.intent.cmd && ctx.intent.cmd->name == "roadmap.restoreTree" ? ctx.intent.cmd->args["operations"] : Json::Value(Json::arrayValue);
       const bool visible = writesField(ctx.intent, "meta", "visibility") || std::any_of(restored.begin(), restored.end(), [](const Json::Value& op) {
         return op["t"] == "meta" && op["slot"]["name"] == "visibility";
       });
-      if (visible) {
-        reached.add(accountOf(account));
-        reached.under(tree);
-      }
       std::vector<std::string> steps;
       for (const Delta& delta : ctx.intent.d) {
         if (delta.t == "node" && delta.lattice.life) steps.push_back(delta.id.column());
@@ -325,8 +319,11 @@ public:
       for (const Json::Value& op : restored) {
         if (op["t"] == "node" && (op["kind"] != "field" || op["slot"]["kind"] == "life")) steps.push_back(op["id"].asString());
       }
-      if (!steps.empty()) reached.add(accountOf(account));
-      for (const std::string& step : steps) reached.branch(tree, step);
+      if (!visible && steps.empty()) return {};
+      Reached reached(ctx.read, account);
+      reached.add(accountOf(account));
+      if (visible) reached.under(origin.treeId());
+      for (const std::string& step : steps) reached.branch(origin.treeId(), step);
       return reached.keys();
     }
     if (origin != accountOf(account) || (ctx.intent.cmd && among(kSelfDeclaring, ctx.intent.cmd->name))) return {};
@@ -334,6 +331,8 @@ public:
     for (const Delta& delta : ctx.intent.d) {
       if (delta.t == "tree" && delta.lattice.life && !delta.lattice.life->alive()) deaths.push_back(delta.id.column());
     }
+    if (deaths.empty()) return {};
+    Reached reached(ctx.read, account);
     reached.rootDeaths(deaths);
     return reached.keys();
   }
@@ -436,12 +435,16 @@ private:
   static void endBranches(const CheckCtx& ctx, const std::vector<Change>& changes, Outcome& outcome) {
     const UserId& account = ctx.caller.account;
     const ScopeKey own = accountOf(account);
+    std::vector<const Change*> deaths;
+    for (const Change& change : changes) {
+      if (change.scope == own && change.type->name == "tree" && died(change)) deaths.push_back(&change);
+    }
+    if (deaths.empty()) return;
     const Roadmaps roadmaps(outcome.rows(own, "tree"));
     std::vector<std::string> roots;
-    for (const Change& change : changes) {
-      if (change.scope != own || change.type->name != "tree" || !died(change)) continue;
-      for (const std::string& id : roadmaps.under(change.after.id.column())) outcome.kill(own, *roadmaps.row(id));
-      if (valueOf(change.stored, "parent").isNull()) roots.push_back(change.after.id.column());
+    for (const Change* death : deaths) {
+      for (const std::string& id : roadmaps.under(death->after.id.column())) outcome.kill(own, *roadmaps.row(id));
+      if (valueOf(death->stored, "parent").isNull()) roots.push_back(death->after.id.column());
     }
     if (roots.empty()) return;
     const Roadmaps standing(outcome.rows(own, "tree"));
