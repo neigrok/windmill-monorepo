@@ -33,7 +33,7 @@ export class ReplicaReading {
     this.listeners = new Set([() => this.emitStatus()]);
     this.statusHandlers = new Set();
     this.told = null;
-    this.held = new Map();
+    this.holdings = new Map();
     this.last = null;
     this.stopped = new AbortController();
     this.closed = false;
@@ -184,12 +184,12 @@ export class ReplicaReading {
     const tree = this.observe(RoadmapScopes.tree(id));
     const overlay = this.observe(RoadmapScopes.overlay(id));
     const read = tree.firstPullComplete && this.hydrated(RoadmapScopes.tree(id));
-    const known = this.held.get(id);
+    const known = this.holdings.get(id);
     if (known && known.record === record && known.read === read && same(known.tree, tree.drawn) && same(known.overlay, overlay.drawn)) return known.held;
     const received = new Map(this.engine.device.activeReplica.confirmedRows(RoadmapScopes.overlay(id))
       .filter((row) => row.t === StepMark.type).map((row) => [String(row.id), row.f?.mark?.[1]]));
     const held = new HeldRoadmap({ id, record, tree: tree.drawn, overlay: overlay.drawn, received, read });
-    this.held.set(id, { record, read, tree: tree.drawn, overlay: overlay.drawn, held });
+    this.holdings.set(id, { record, read, tree: tree.drawn, overlay: overlay.drawn, held });
     return held;
   }
 

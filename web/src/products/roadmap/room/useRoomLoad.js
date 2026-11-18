@@ -211,7 +211,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
 
   return {
     loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree, guides,
-    listTrees: readsReplica ? listTrees : null,
+    readsReplica, listTrees: readsReplica ? listTrees : null,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }
