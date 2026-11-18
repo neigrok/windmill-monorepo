@@ -8,10 +8,11 @@
 import { Clock } from '../core/clock.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
-import { inverseOutcomes, sameRecord, sameSlot, sameTarget, valueIn } from '../core/restore.js';
+import { creatableFault, inverseOutcomes, restorableSlotFault, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { undo } from './hold.js';
-import { collectJournal, ordinalOf } from './journal.js';
+import { collectJournal, ordinalOf, sourceOf } from './journal.js';
+import { effectsOf } from './projections.js';
 import { drawn } from './views.js';
 
 export function requestOf(replica, requestId) {
@@ -66,9 +67,17 @@ function projectionOf(registry, view, operations, stamp) {
   const deltas = new Map();
   for (const op of operations) {
     const address = op.kind === 'field' ? op.target : op.record;
-    const current = view.get(recordKey(address.t, address.id));
-    if (!current) continue;
     const key = recordKey(address.t, address.id);
+    if (op.kind === 'createRecord') {
+      if (view.has(key)) continue;
+      const created = { t: address.t, id: address.id, life: ['alive', stamp], ...(registry.type(address.t).hasBorn ? { born: stamp } : {}) };
+      if (Object.keys(op.values.f ?? {}).length) created.f = Object.fromEntries(Object.entries(op.values.f).map(([name, value]) => [name, [value, stamp]]));
+      if (Object.keys(op.values.x ?? {}).length) created.x = Object.fromEntries(Object.entries(op.values.x).map(([name, text]) => [name, { text, base: { text: '' } }]));
+      deltas.set(key, created);
+      continue;
+    }
+    const current = view.get(key);
+    if (!current) continue;
     const delta = deltas.get(key) ?? { t: address.t, id: address.id, ...(registry.type(address.t).hasBorn ? { born: current.born } : {}) };
     deltas.set(key, delta);
     if (op.kind === 'createdRecord') delta.life = ['dead', stamp];
@@ -88,15 +97,19 @@ function inverseJournal(registry, replica, inverseActId, slots) {
     const view = drawn(replica, registry, scope);
     const targets = recipe.operations.flatMap((op) => {
       if (op.kind === 'field') return [op.target];
+      if (op.kind === 'createRecord') return [];
       const type = registry.type(op.record.t);
       return type.identity === 'keyed' || type.revivable ? [{ ...op.record, slot: { kind: 'life' } }] : [];
     });
+    const recreated = recipe.operations.filter((op) => op.kind === 'createRecord')
+      .map((op) => ({ kind: 'createdRecord', restoreCommand: recipe.command, record: structuredClone(op.record) }));
     const preimages = targets.flatMap((target) => {
       const value = valueIn(view.get(recordKey(target.t, target.id)), target.slot);
       return value === undefined ? [] : [{ target: structuredClone(target), value: structuredClone(value) }];
     });
     const restorable = preimages.map(({ target }) => ({ target: structuredClone(target) }));
-    return { localId, originScope: scope, recipes: restorable.length ? [{ kind: 'fields', restoreCommand: recipe.command, targets: restorable }] : [], preimages, attempts: [] };
+    const recipes = [...(restorable.length ? [{ kind: 'fields', restoreCommand: recipe.command, targets: restorable }] : []), ...recreated];
+    return { localId, originScope: scope, recipes, preimages, attempts: [] };
   });
   return { version: 1, actId: inverseActId, retained: true, sourceEntries };
 }
@@ -110,11 +123,12 @@ export function requestInverse(replica, ctx, sourceActId, replacement) {
   const existing = replica.inverses.find((request) => request.sourceActId === sourceActId);
   if (existing) return readInverseResult(replica, existing.requestId);
   const act = replica.journal.find((candidate) => candidate.actId === sourceActId);
-  if (!act) return { kind: 'unavailable', requestId: null, reason: 'not-reversible' };
+  const cancellation = replica.cancellations.find((candidate) => candidate.inverseActId === sourceActId);
+  if (!act && !cancellation) return { kind: 'unavailable', requestId: null, reason: 'not-reversible' };
   const entries = replica.entries().filter((entry) => entry.gestureId === sourceActId);
-  if (entries.length > 0 && entries.every((entry) => entry.state === 'held')) return cancelHeld(replica, ctx, act, entries);
+  if (act && entries.length > 0 && entries.every((entry) => entry.state === 'held')) return cancelHeld(replica, ctx, act, entries);
 
-  const planned = plannedSlots(act, replacement);
+  const planned = act ? plannedSlots(act, replacement) : redoSlots(registry, cancellation);
   const inverseActId = ctx.nextGestureId();
   const requestId = ctx.nextGestureId();
   const physNow = ctx.deviceNow + replica.meta.serverOffsetMs;
@@ -150,16 +164,100 @@ export function requestInverse(replica, ctx, sourceActId, replacement) {
 // folded silently, and reports whether anything drawn changed. The act leaves the journal.
 function cancelHeld(replica, ctx, act, entries) {
   const { registry } = ctx;
-  const scopes = [...new Set(entries.flatMap((entry) => (entry.predictions ?? [{ scope: entry.scope }]).map(({ scope }) => scope)))];
+  const scopes = [...new Set(entries.flatMap((entry) => effectsOf(entry).map(({ scope }) => scope)))];
   const before = new Map(scopes.map((scope) => [scope, drawn(replica, registry, scope)]));
+  const written = entries.flatMap((entry) => effectsOf(entry).flatMap(({ scope, d }) => d.map((delta) => ({ entry, scope, delta }))));
   undo(replica, registry, ctx.ended, act.actId);
-  const changed = scopes.some((scope) => !sameJson([...before.get(scope)], [...drawn(replica, registry, scope)]));
+  const after = new Map(scopes.map((scope) => [scope, drawn(replica, registry, scope)]));
+  const changed = scopes.some((scope) => !sameJson([...before.get(scope)], [...after.get(scope)]));
   const inverseActId = ctx.nextGestureId();
   const requestId = ctx.nextGestureId();
   replica.journal = replica.journal.filter((candidate) => candidate !== act);
+  replica.cancellations.push({ version: 1, inverseActId, cancelledActId: act.actId, units: cancellationUnits(replica, registry, written, before, after) });
   replica.inverses.push({ version: 1, requestId, sourceActId: act.actId, inverseActId, state: 'settled', slots: [],
     result: { kind: 'cancelled', requestId, inverseActId, changed } });
   return readInverseResult(replica, requestId);
+}
+
+// The changes a cancellation actually took out of `drawn`, each with what restoring it must find: a register
+// the cancelled act wrote that now reads otherwise, at the version it now reads (accepted, a pending entry's,
+// or absent in the record's incarnation), and a record it created that is now absent, with the act's own
+// creation values. A later local edit that masks the act's write took nothing out, and is no unit.
+function cancellationUnits(replica, registry, written, before, after) {
+  const units = new Map();
+  for (const { entry, scope, delta } of written) {
+    const type = registry.type(delta.t);
+    const key = recordKey(delta.t, delta.id);
+    const was = before.get(scope).get(key);
+    const now = after.get(scope).get(key);
+    const record = { scope, t: delta.t, id: delta.id };
+    if (!now) {
+      if (!was || creatableFault(type)) continue;
+      const unit = units.get(jcs(['record', record])) ?? { kind: 'createdRecord', ownerLocalId: entry.localId, record, redoValues: {},
+        restored: { kind: 'recordAbsent', epoch: replica.meta.serverEpoch } };
+      for (const name of Object.keys(delta.f ?? {})) if (type.field(name)?.writer === 'client') (unit.redoValues.f ??= {})[name] = was.f[name][0];
+      for (const name of Object.keys(delta.x ?? {})) if (type.field(name)?.writer === 'client') (unit.redoValues.x ??= {})[name] = was.x[name];
+      units.set(jcs(['record', record]), unit);
+      continue;
+    }
+    const slots = [...(delta.life ? [{ kind: 'life' }] : []), ...Object.keys(delta.f ?? {}).map((name) => ({ kind: 'field', name })),
+      ...Object.keys(delta.x ?? {}).map((name) => ({ kind: 'text', name }))];
+    for (const slot of slots) {
+      if (restorableSlotFault(type, slot) || sameJson(valueIn(was, slot) ?? null, valueIn(now, slot) ?? null)) continue;
+      const target = { ...record, slot };
+      units.set(jcs(['field', target]), { kind: 'field', ownerLocalId: entry.localId, target, redoValue: structuredClone(valueIn(was, slot)),
+        restored: referenceOf(replica, registry, target, now) });
+    }
+  }
+  return [...units.values()];
+}
+
+// Where the value a target reads now comes from: a pending entry that wrote it, the confirmed row's accepted
+// version, or, unset, the record's birth.
+function referenceOf(replica, registry, target, now) {
+  const epoch = replica.meta.serverEpoch;
+  const writer = (slot) => replica.entries().reverse().find((entry) => effectsOf(entry, { active: true })
+    .some(({ scope, d }) => scope === target.scope && d.some((delta) => delta.t === target.t && sameJson(delta.id, target.id) && writes(delta, slot, now))));
+  const pendingOf = (slot) => {
+    const entry = writer(slot);
+    return entry ? { kind: 'pending', localId: entry.localId, target: { ...target, slot } } : null;
+  };
+  const confirmed = replica.confirmedRow(target.scope, target.t, target.id);
+  const accepted = (slot) => {
+    const version = versionIn(confirmed, slot);
+    return version ? { kind: 'accepted', epoch, version } : null;
+  };
+  const current = pendingOf(target.slot) ?? accepted(target.slot);
+  if (current) return current;
+  const birth = registry.type(target.t).hasBorn ? pendingOf({ kind: 'born' }) ?? accepted({ kind: 'born' }) : null;
+  return { kind: 'fieldAbsent', epoch, recordBirth: birth };
+}
+
+// Whether a delta writes the slot as `now` reads it: the register at the stamp `now` holds, or the text.
+function writes(delta, slot, now) {
+  if (slot.kind === 'born') return delta.born !== undefined && delta.born === now.born && delta.life?.[1] === delta.born;
+  if (slot.kind === 'life') return delta.life !== undefined && sameJson(delta.life, now.life);
+  if (slot.kind === 'field') return delta.f?.[slot.name] !== undefined && sameJson(delta.f[slot.name], now.f?.[slot.name]);
+  return delta.x?.[slot.name] !== undefined;
+}
+
+// A Redo of a cancellation reserves ordinary restore slots, one a scope, in the order the cancelled act wrote:
+// each field back to the value the act wrote, under the version reference it now reads, and each created
+// record created again only where it is still wholly absent.
+function redoSlots(registry, cancellation) {
+  const byScope = new Map();
+  for (const unit of [...cancellation.units].sort((a, b) => ordinalOf(a.ownerLocalId) - ordinalOf(b.ownerLocalId))) {
+    const scope = unit.kind === 'field' ? unit.target.scope : unit.record.scope;
+    const command = [...registry.commands.values()].find((candidate) => candidate.engine === 'restore' && candidate.scope === registry.scopeKindOf(scope));
+    const type = unit.kind === 'field' ? unit.target.t : unit.record.t;
+    if (!command?.predicts.includes(type)) continue;
+    const slot = byScope.get(scope) ?? { scope, recipe: { kind: 'restore', command: command.name, operations: [] } };
+    byScope.set(scope, slot);
+    slot.recipe.operations.push(unit.kind === 'field'
+      ? { kind: 'field', target: structuredClone(unit.target), before: structuredClone(unit.redoValue), reference: structuredClone(unit.restored) }
+      : { kind: 'createRecord', record: structuredClone(unit.record), values: structuredClone(unit.redoValues), reference: structuredClone(unit.restored) });
+  }
+  return [...byScope.values()];
 }
 
 // Whether every source of an act has its authoritative outcome: an entry still queued, sent or held, or
@@ -183,6 +281,50 @@ function ownedHistory(replica, act) {
 
 const rowsOf = (effects, address) => effects.filter(({ scope }) => scope === address.scope)
   .flatMap(({ rows }) => rows.filter((row) => row.t === address.t && sameJson(row.id, address.id)));
+
+// A Redo of a cancellation waits while an entry its references name has no authoritative outcome.
+function referencesAuthoritative(replica, request) {
+  const pending = request.slots.filter((slot) => slot.state === 'waiting' && slot.recipe.kind === 'restore')
+    .flatMap((slot) => slot.recipe.operations.flatMap((op) => [op.reference, op.reference?.recordBirth]))
+    .filter((reference) => reference?.kind === 'pending');
+  return pending.every(({ localId }) => {
+    const entry = replica.entry(localId);
+    return !entry || (entry.state === 'acked' && entry.resultEpoch === replica.meta.serverEpoch);
+  });
+}
+
+// The version a reference binds to now, or null: an accepted version of this epoch (a reference taken before
+// any epoch binds to the first), the version a pending entry's receipt accepted for it, or an absence in the
+// incarnation its birth names.
+function expectedOf(replica, reference) {
+  const epoch = replica.meta.serverEpoch;
+  if (reference.kind === 'accepted') return (reference.epoch ?? epoch) === epoch ? reference.version : null;
+  if (reference.kind === 'pending') {
+    const entry = replica.entry(reference.localId);
+    const effects = entry ? entry.acceptedEffects : sourceOf(replica, reference.localId)?.source.attempts
+      .find((attempt) => attempt.outcome === 'ok' && attempt.epoch === epoch)?.acceptedEffects;
+    const row = rowsOf(effects ?? [], reference.target).at(-1);
+    return row?.slots.find(({ slot }) => sameSlot(slot, reference.target.slot))?.version ?? null;
+  }
+  if ((reference.epoch ?? epoch) !== epoch) return null;
+  if (reference.recordBirth === null) return { kind: 'absent', born: null };
+  const born = expectedOf(replica, reference.recordBirth);
+  return born ? { kind: 'absent', born: born.stamp } : null;
+}
+
+// §7.5 step 1: references taken before the replica held an epoch belong to the epoch it then took, which an
+// epoch change now leaves.
+export function bindReferences(replica, epoch) {
+  const bindOne = (reference) => {
+    if (!reference || reference.kind === 'pending') return;
+    if (reference.epoch === null) reference.epoch = epoch;
+    bindOne(reference.recordBirth);
+  };
+  for (const cancellation of replica.cancellations) for (const unit of cancellation.units) bindOne(unit.restored);
+  for (const request of replica.inverses) {
+    for (const slot of request.slots) if (slot.recipe.kind === 'restore') for (const op of slot.recipe.operations) bindOne(op.reference);
+  }
+}
 
 // The latest accepted version the act owns of a target, or null.
 function latestOwned(history, target) {
@@ -237,8 +379,20 @@ export function materialize(replica, ctx, request) {
   if (request.state !== 'waiting') return;
   const act = replica.journal.find((candidate) => candidate.actId === request.sourceActId);
   if (act && !authoritative(replica, act)) return;
+  if (!act && !referencesAuthoritative(replica, request)) return;
   const history = act ? ownedHistory(replica, act) : [];
   const epoch = replica.meta.serverEpoch;
+  const bind = (op) => {
+    if (op.kind === 'field') {
+      const expected = op.reference ? expectedOf(replica, op.reference) : latestOwned(history, op.target);
+      return expected && { kind: 'field', t: op.target.t, id: op.target.id, slot: op.target.slot, expected, before: op.before };
+    }
+    if (op.kind === 'createdRecord') {
+      const proof = createdFootprint(history, op.record);
+      return proof && { kind: 'createdRecord', t: op.record.t, id: op.record.id, ...proof };
+    }
+    return (op.reference.epoch ?? epoch) === epoch ? { kind: 'createRecord', t: op.record.t, id: op.record.id, values: op.values } : null;
+  };
   for (const slot of request.slots) {
     const entry = replica.entry(slot.localId);
     if (!entry) {
@@ -248,12 +402,9 @@ export function materialize(replica, ctx, request) {
     const { recipe } = slot;
     let args = null;
     if (recipe.kind === 'restore' && epoch !== null) {
-      recipe.operations = recipe.operations.filter((op) => (op.kind === 'field' ? latestOwned(history, op.target) : createdFootprint(history, op.record)) !== null);
-      const operations = recipe.operations.map((op) => {
-        if (op.kind === 'field') return { kind: 'field', t: op.target.t, id: op.target.id, slot: op.target.slot, expected: latestOwned(history, op.target), before: op.before };
-        return { kind: 'createdRecord', t: op.record.t, id: op.record.id, ...createdFootprint(history, op.record) };
-      });
-      if (operations.length) args = { expectedEpoch: epoch, operations };
+      const bound = recipe.operations.map((op) => ({ op, wire: bind(op) })).filter(({ wire }) => wire);
+      recipe.operations = bound.map(({ op }) => op);
+      if (bound.length) args = { expectedEpoch: epoch, operations: bound.map(({ wire }) => wire) };
     }
     if (recipe.kind === 'command' && epoch !== null) {
       const records = recipe.evidence.unchangedCreatedRecords.map((record) => ({ record, proof: createdFootprint(history, record) }));
@@ -288,6 +439,7 @@ function keepProjection(entry, operations) {
     projection.d = projection.d.flatMap((delta) => {
       const kept = operations.filter((op) => sameRecord(op.kind === 'field' ? op.target : op.record, { scope: projection.scope, t: delta.t, id: delta.id }));
       if (kept.length === 0) return [];
+      if (kept.some((op) => op.kind === 'createRecord')) return [delta];
       const next = { t: delta.t, id: delta.id };
       if (delta.born !== undefined) next.born = delta.born;
       for (const op of kept) {

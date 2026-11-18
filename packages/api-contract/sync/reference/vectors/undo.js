@@ -426,6 +426,94 @@ function discarded() {
   return [sample];
 }
 
+// probe.branch as an opted act whose Undo is the product's probe.unbranch, over evidence the engine builds
+// from the branch's own receipt.
+function productInverse() {
+  const child = 'b_00000002';
+  const branch = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [], opts: {
+    cmd: { name: 'probe.branch', args: { parent: BOARD, child, title: 'Branch' } },
+    scopedPredict: [{ scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: child }] },
+      { scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Branch' } }] },
+      { scope: `tree/${child}`, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Branch' } }] }] } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'command', command: 'probe.unbranch',
+      input: { parent: BOARD, child, title: 'Root' },
+      evidence: { ownedFields: [metaTitle], unchangedCreatedRecords: [{ scope: 'self/probe', t: 'board', id: child }],
+        unchangedCreatedScopes: [`tree/${child}`] } }] }] } } };
+  const run = (foreign) => {
+    const session = new Session(world()).local(branch);
+    session.flush();
+    if (foreign) session.elsewhere({ scope: `tree/${child}`, d: [{ t: 'tag', id: 'pine', born: st(7500, 0, OTHER), life: ['alive', st(7500, 0, OTHER)], f: { label: ['Pine', st(7500, 0, OTHER)] } }] });
+    session.local(requestStep('g1'));
+    session.flush();
+    session.pull(['self/probe', TREE]);
+    return session.local({ op: 'readInverseResult', requestId: 'g3' }, viewStep('self/probe'), viewStep(TREE));
+  };
+  const undone = run(false).vector('a product inverse runs over the engine\'s evidence: the created board dies with its tree and the parent takes back its title');
+  assert.deepEqual(undone.expect.returns.at(-3), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.ok(!undone.expect.returns.at(-2).records.some((record) => record.id === child));
+  assert.equal(titleIn(undone.expect.returns.at(-1), 'meta', 'meta'), 'Root');
+  const sent = undone.expect.returns.filter((value) => value?.intents).flatMap(({ intents }) => intents).find(({ cmd }) => cmd?.name === 'probe.unbranch');
+  assert.deepEqual(sent.cmd.args.evidence.unchangedCreatedScopes, [{ scope: `tree/${child}`, seq: 1 }]);
+  const grown = run(true).vector('a product inverse whose created tree grew since skips whole, and nothing changes');
+  assert.deepEqual(grown.expect.returns.at(-3), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: false, appliedCount: 0, skippedCount: 1 });
+  return [undone, grown];
+}
+
+// An explicit replacement of the stored recipes, by source ordinal, as a product's Redo supplies them.
+function replacement() {
+  const session = new Session(world()).local(titleAct());
+  session.flush();
+  session.local({ op: 'requestInverse', actId: 'g1', deviceNow: 9000, slots: [{ index: 1, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: metaTitle }] }] }] });
+  session.flush();
+  session.pull(['self/probe', TREE]);
+  const sample = session.local({ op: 'readInverseResult', requestId: 'g3' }, viewStep('self/probe'), viewStep(TREE))
+    .vector('explicit inverse slots replace the stored recipes whole: a source they name nothing for restores nothing');
+  assert.deepEqual(sample.expect.returns.at(-3).appliedCount, 1);
+  assert.deepEqual([titleIn(sample.expect.returns.at(-2), 'card', CARD), titleIn(sample.expect.returns.at(-1), 'meta', 'meta')], ['New', 'Root']);
+  return [sample];
+}
+
+// A held act cancelled in place leaves a receipt of what disappeared; its Redo writes that back only where the
+// version each change now reads still stands, and creates again only what is wholly absent.
+function heldRedo() {
+  const held = { op: 'commitAct', deviceNow: 5000, segments: [
+    { scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'New' } }], opts: { hold: true } },
+    { scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }], opts: { hold: true } },
+  ], opts: { undo: { version: 1, segments: [
+    { index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] },
+    { index: 1, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: TREE, t: 'tag', id: 'elm' } }] },
+  ] } } };
+  const session = new Session(world()).local(held, requestStep('g1'), requestStep('g2', 9500));
+  session.flush();
+  session.pull(['self/probe', TREE]);
+  const redone = session.local({ op: 'readInverseResult', requestId: 'g5' }, viewStep('self/probe'), viewStep(TREE))
+    .vector('a Redo of a held cancellation writes back each change against the accepted version it found and creates the record again');
+  const cancellation = activeOf(redone).cancellations?.[0] ?? redone.expect.returns[1];
+  assert.deepEqual(redone.expect.returns[1], { kind: 'cancelled', requestId: 'g3', inverseActId: 'g2', changed: true });
+  assert.deepEqual(redone.expect.returns.at(-3), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: true, appliedCount: 2, skippedCount: 0 });
+  assert.equal(titleIn(redone.expect.returns.at(-2), 'card', CARD), 'New');
+  assert.ok(redone.expect.returns.at(-1).records.some((record) => record.id === 'elm' && record.f.label[0] === 'Elm'));
+  assert.ok(cancellation);
+
+  const first = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'First' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] }] } } };
+  const second = { ...first, deviceNow: 5100, segments: [{ ...first.segments[0], changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'Second' } }], opts: { hold: true } }] };
+  const waited = new Session(world()).local(first, second, requestStep('g2'), requestStep('g3', 9500));
+  waited.flush();
+  waited.pull(['self/probe']);
+  const pending = waited.local({ op: 'readInverseResult', requestId: 'g6' }, viewStep('self/probe'))
+    .vector('a Redo whose change now reads a pending entry\'s write waits for that entry\'s accepted version, then binds it');
+  assert.deepEqual(pending.expect.returns[2], { kind: 'cancelled', requestId: 'g4', inverseActId: 'g3', changed: true });
+  assert.deepEqual(pending.expect.returns.at(-2).appliedCount, 1);
+  assert.equal(titleIn(pending.expect.returns.at(-1), 'card', CARD), 'Second');
+
+  const masked = new Session(world()).local(second, { op: 'commit', scope: 'self/probe', deviceNow: 5200, changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'Mine' } }] },
+    requestStep('g1'), requestStep('g3', 9500)).vector('a held write a later local edit masks takes nothing out when cancelled, and its Redo restores nothing');
+  assert.deepEqual(masked.expect.returns.slice(2), [{ kind: 'cancelled', requestId: 'g4', inverseActId: 'g3', changed: false },
+    { kind: 'settled', requestId: 'g6', inverseActId: 'g5', changed: false, appliedCount: 0, skippedCount: 0 }]);
+  return [redone, pending, masked];
+}
+
 function requests() {
   const held = { ...titleAct(), segments: titleAct().segments.map((segment) => ({ ...segment, opts: { hold: true } })) };
   const cancelled = new Session(world()).local(held, requestStep('g1'), requestStep('g1'), viewStep('self/probe'), { op: 'requestInverse', actId: 'g9' })
@@ -440,6 +528,6 @@ function requests() {
 export function files() {
   return {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle()],
-    'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...requests(), ...discarded()],
+    'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded()],
   };
 }

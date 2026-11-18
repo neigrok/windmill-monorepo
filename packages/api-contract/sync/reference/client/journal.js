@@ -122,17 +122,28 @@ export function adoptJournal(target, source) {
 }
 
 // The product's stack no longer needs the act. Its record goes unless an unsettled inverse still reads it.
+// A cancellation's receipt and a settled request whose inverse act this is go with it; what an unsettled
+// request still reads stays.
 export function releaseReversibleAct(replica, actId) {
   const act = replica.journal.find((candidate) => candidate.actId === actId);
-  if (!act) return false;
-  act.retained = false;
+  const cancellation = replica.cancellations.find((candidate) => candidate.inverseActId === actId);
+  if (!act && !cancellation) return false;
+  if (act) act.retained = false;
+  if (cancellation) cancellation.retained = false;
+  replica.inverses = replica.inverses.filter((request) => request.state !== 'settled' || request.inverseActId !== actId);
   collectJournal(replica);
   return true;
 }
 
+// The journal keeps acts the product's stack retains, acts an unsettled request inverts, and acts whose
+// sources a kept cancellation's references wait on; cancellations stay while retained or redone.
 export function collectJournal(replica) {
-  const needed = new Set(replica.inverses.filter((request) => request.state !== 'settled').map((request) => request.sourceActId));
-  replica.journal = replica.journal.filter((act) => act.retained || needed.has(act.actId));
+  const unsettled = replica.inverses.filter((request) => request.state !== 'settled').map((request) => request.sourceActId);
+  replica.cancellations = replica.cancellations.filter((cancellation) => cancellation.retained !== false || unsettled.includes(cancellation.inverseActId));
+  const referenced = new Set(replica.cancellations.flatMap((cancellation) => cancellation.units)
+    .flatMap((unit) => [unit.restored, unit.restored?.recordBirth]).filter((reference) => reference?.kind === 'pending').map(({ localId }) => localId));
+  replica.journal = replica.journal.filter((act) => act.retained || unsettled.includes(act.actId)
+    || act.sourceEntries.some((source) => referenced.has(source.localId)));
 }
 
 // §7.7 write map and E-8: a journal's scoped references follow the same logical map as the queue.

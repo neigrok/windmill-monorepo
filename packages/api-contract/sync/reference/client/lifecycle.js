@@ -7,7 +7,7 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
-import { settleEnded } from './inverse.js';
+import { bindReferences, settleEnded } from './inverse.js';
 import { adoptJournal, discardJournal, invalidateEpochs } from './journal.js';
 import { Replica } from './replica.js';
 import { effectsOf } from './projections.js';
@@ -33,6 +33,7 @@ export function renewActor(ctx) {
 }
 
 export function epochChange(replica, ctx, epoch) {
+  bindReferences(replica, replica.meta.serverEpoch);
   replica.meta.serverEpoch = epoch;
   for (const cursor of Object.values(replica.cursors)) cursor.cursor = null;
   replica.staging = {};

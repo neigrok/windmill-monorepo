@@ -1004,6 +1004,7 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
   - `journal`: `[ReversibleAct]` (engine.md §2.5, §7.3 Undo of an act), sorted by the UTF-8 bytes of
     `actId`.
   - `inverses`: `[InverseRequest]`, sorted by the UTF-8 bytes of `requestId`.
+  - `cancellations`: `[CancellationReceipt]`, sorted by the UTF-8 bytes of `inverseActId`.
 
   Absent parts are empty. Rows sort by `t`, then by the UTF-8 bytes of `jcs(id)`. The outbox sorts by
   `commitOrder`.
@@ -1289,8 +1290,12 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   applied; a masking local edit that the server refuses leaves the restore to apply; a materialized slot
   replays after an epoch change with its own `expectedEpoch` and skips; a foreign edit between a creation
   and the act's later write of the record keeps the record, while an unbroken history deletes it; a wholly
-  held act is cancelled in place and asking again answers the same request; a Discard at sign-in settles a
-  pending inverse skipped with its values withdrawn.
+  held act is cancelled in place and asking again answers the same request; a product inverse
+  (`probe.unbranch`) runs over the evidence the engine builds from the act's receipts and skips whole when
+  the created tree grew; explicit slots replace the stored recipes whole; a held cancellation's Redo writes
+  back against the accepted versions it found and creates the record again, waits for a pending entry's
+  accepted version, and restores nothing for a write a later local edit masked; a Discard at sign-in
+  settles a pending inverse skipped with its values withdrawn.
 
 ### refusal/*.json
 

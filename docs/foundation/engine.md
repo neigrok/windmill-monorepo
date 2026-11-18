@@ -554,6 +554,13 @@ type SlotRecipe = { kind: 'restore', command, operations: ({ kind: 'field', targ
                                                          | { kind: 'createdRecord', record: RecordAddress })[] }
                 | { kind: 'command', command, input: Json, evidence: EvidenceSelection }
                 | { kind: 'withdrawn', command }
+type CancellationReceipt = { version: 1, replica, inverseActId, cancelledActId, retained?: false, units: (
+  | { kind: 'field', ownerLocalId, target: Target, redoValue: Json, restored: VersionReference }
+  | { kind: 'createdRecord', ownerLocalId, record: RecordAddress, redoValues: { f?, x? },
+      restored: { kind: 'recordAbsent', epoch: string | null } })[] }
+type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Version }
+                      | { kind: 'pending', localId, target: Target }
+                      | { kind: 'fieldAbsent', epoch: string | null, recordBirth: VersionReference | null }
 ```
 
 - `replica`, in every record above but `ReplicaMeta`, names the replica by the store's handle, which
@@ -1829,7 +1836,12 @@ type UndoRecipe =
 Redo); there are no callbacks. Asking again for the same act answers its existing request.
 1. **Held cancel.** An act every entry of which is still held is cancelled at once, as `undo` cancels it,
    its dependents folded silently. The request settles `cancelled`, whether anything drawn changed, and the
-   act leaves the journal.
+   act leaves the journal. In the same transaction a `CancellationReceipt` keeps what actually disappeared
+   from `drawn`: each register the act wrote that now reads otherwise, with the value the act wrote and the
+   version it now reads (a pending entry's write, the confirmed row's accepted version, or unset in the
+   record's birth), and each record it created that is now absent, with the act's own creation values. A
+   later local edit that masks the act's write took nothing out and is no unit. A reference taken before
+   the replica held an epoch belongs to the epoch it then takes.
 2. **Reserve.** Otherwise the request takes an inverse act id and a request id, and one stamp. Walking the
    act's sources backwards, each source's generic recipes become one restore slot in its origin scope, each
    target in one slot only, restored to its first preimage; each `command` recipe becomes a slot of its own.
@@ -1856,6 +1868,14 @@ Redo); there are no callbacks. Asking again for the same act answers its existin
    that code. The request settles with its last slot: `changed` from accepted effects, `appliedCount` and
    `skippedCount` over every operation, an atomic product slot counting one. The restore's ACK reclocks every
    later queued write of a register it restored, so an edit queued after the Undo stays the newest.
+
+A Redo of a cancellation is `requestInverse(inverseActId)` too, and reserves ordinary restore slots at once,
+one a scope: each field unit restores its value expecting the version its reference binds to, an accepted
+version of this epoch or what a pending entry's receipt accepted, or an absence in that birth (`expected:
+{kind: 'absent', born}`); each created record is created again (`createRecord`) only while wholly absent. The
+slots wait while an entry a reference names has no authoritative outcome; a refused, dropped or unowned
+reference drops its operation, never substituting what is visible now. The receipt, and the acts whose
+sources its references wait on, stay until the Redo settles or the product releases it.
 
 `readInverseResult(requestId)` answers `{kind: 'cancelled', requestId, inverseActId, changed}`,
 `{kind: 'pending', requestId, inverseActId, localChanged}`, `{kind: 'settled', requestId, inverseActId,
