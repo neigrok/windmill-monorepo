@@ -14,6 +14,7 @@ import { isVisible, recordKey } from '../core/rows.js';
 import { checkId, roundToDomain } from '../core/values.js';
 import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
+import { settleEnded } from './journal.js';
 import { predictionsOf } from './projections.js';
 import { drawn, foldDelta, RecordView, stored, visibleCount } from './views.js';
 
@@ -504,6 +505,7 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
   for (const entry of retiring) moveEntry(replica, ctx.ended, entry, 'retire');
   for (const entry of superseding) if (replica.entry(entry.localId)) moveEntry(replica, ctx.ended, entry, 'silent-fold');
   foldSilently(replica, ctx.ended, folded);
+  settleEnded(replica, 'undone');
   replica.meta.hlc = clock.pair;
   const firstOrder = act ? act.firstOrder + act.offset : replica.nextCommitOrder();
   const entries = intents.map((intent, k) => {

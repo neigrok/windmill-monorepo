@@ -7,8 +7,8 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
-import { bindReferences, settleEnded } from './inverse.js';
-import { adoptJournal, discardJournal, invalidateEpochs } from './journal.js';
+import { bindReferences } from './inverse.js';
+import { adoptJournal, discardJournal, invalidateEpochs, settleEnded } from './journal.js';
 import { Replica } from './replica.js';
 import { effectsOf } from './projections.js';
 

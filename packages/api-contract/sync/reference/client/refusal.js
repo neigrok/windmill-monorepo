@@ -9,7 +9,7 @@ import { Stamp } from '../core/stamp.js';
 import { RecordMap } from '../core/references.js';
 import { baseTextKey } from './commit.js';
 import { Dependents, deltasOf, isEmpty, removeDependent } from './dependents.js';
-import { remapJournal } from './journal.js';
+import { remapJournal, settleEnded } from './journal.js';
 import { effectsOf, mergePredictions, predictionsOf } from './projections.js';
 
 function isQueued(entry) {
@@ -172,6 +172,7 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
   if (detail !== undefined) notice.detail = detail;
   if (dependents.length) notice.content.dependents = dependents;
   replica.notices.push(notice);
+  settleEnded(replica, code);
 }
 
 // An orphan's refusal, by the server or as outgrown, ends it with no notice of its own; its held-back
@@ -180,6 +181,7 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
 function refuseOrphan(replica, ctx, orphan, event = 'refuse') {
   moveEntry(replica, ctx.ended, orphan, event);
   const dependents = foldDependents(replica, ctx, orphan, orphan.orphanOf);
+  settleEnded(replica, 'refused');
   if (dependents.length === 0) return;
   const notice = replica.notices.find((candidate) => candidate.id === `notice:${orphan.orphanOf}`);
   if (!notice) throw new Error(`notice:${orphan.orphanOf}, which ${orphan.localId}'s orphanOf names, is gone (D-17 keeps it)`);

@@ -1,80 +1,11 @@
-// K-3 the journal of reversible acts (§7.3 Undo of an act). An act opted into Undo keeps, in its replica,
-// each source entry's recipes and first local preimages, taken before any segment changed a projection, and
-// each accepted receipt or refusal its ACK transaction records before the entry can settle. The journal is
+// K-3 the journal of reversible acts (§7.3 Undo of an act): each act's source entries with their recipes,
+// first local preimages and the receipts or refusals their ACK transactions record, beside the inverse requests
+// and cancellation receipts that read them; their retention, epochs, lifecycle and settlement. The journal is
 // the replica's local user data: values and ids never leave it but in a restore's own arguments.
-
-import { recipeFault, valueIn } from '../core/restore.js';
-import { recordKey } from '../core/rows.js';
-import { CommitError } from './commit.js';
-import { drawn } from './views.js';
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-
-// The one capture command of a scope's kind (§2.4). None or several is a programming error, never a choice
-// by name.
-export function captureCommandOf(registry, scope) {
-  const kind = registry.scopeKindOf(scope);
-  const found = [...registry.commands.values()].filter((command) => command.engine === 'capture' && command.scope === kind);
-  if (found.length !== 1) throw new CommitError(`${kind} has no single capture command`);
-  return found[0].name;
-}
 
 // The local id's ordinal: its position in its act's commit order.
 export function ordinalOf(localId) {
   return Number(localId.slice(localId.lastIndexOf('/') + 1));
-}
-
-// ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
-// initial snapshot (§7.1 Ordered local acts). A slot unset there takes the recipe's explicit default; with
-// none, the act fails before anything changes. Answers the plan by segment index, or null.
-export function planUndo(replica, registry, request) {
-  const { undo } = request;
-  if (undo === undefined || undo === null) return null;
-  if (!isObject(undo) || Object.keys(undo).sort().join() !== 'segments,version' || undo.version !== 1 || !Array.isArray(undo.segments))
-    throw new CommitError('an act undo is {version: 1, segments}');
-  const plan = new Map();
-  for (const segment of undo.segments) {
-    if (!isObject(segment) || Object.keys(segment).sort().join() !== 'index,recipes' || !Number.isSafeInteger(segment.index)
-      || segment.index < 0 || segment.index >= request.scopes.length || plan.has(segment.index)
-      || !Array.isArray(segment.recipes) || segment.recipes.length === 0) throw new CommitError('an undo segment names one act segment and its recipes');
-    const scope = request.scopes[segment.index];
-    const view = drawn(replica, registry, scope);
-    const preimages = [];
-    for (const recipe of segment.recipes) {
-      const fault = recipeFault(registry, scope, recipe);
-      if (fault) throw new CommitError(`an undo recipe is malformed: ${fault}`);
-      if (recipe.kind === 'createdRecord' && view.has(recordKey(recipe.record.t, recipe.record.id))) throw new CommitError('a created record exists before its act');
-      if (recipe.kind !== 'fields') continue;
-      for (const { target, defaultValue } of recipe.targets) {
-        const value = valueIn(view.get(recordKey(target.t, target.id)), target.slot);
-        if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
-        preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue) });
-      }
-    }
-    plan.set(segment.index, { scope, recipes: structuredClone(segment.recipes), preimages });
-  }
-  return plan;
-}
-
-// An opted segment's gesture runs its own scopedEffects command, or else the capture command, which joins it
-// only when the segment writes a delta.
-export function optedGesture(registry, scope, opts) {
-  if (opts.cmd === undefined) return { ...opts, capture: captureCommandOf(registry, scope) };
-  if (!registry.command(opts.cmd.name)?.scopedEffects) throw new CommitError('an opted command returns scoped effects');
-  return opts;
-}
-
-// The act's journal record, from the segments that left an entry: one source entry each, in commit order.
-export function recordAct(replica, actId, plan, receipts) {
-  if (plan === null) return;
-  const sourceEntries = [];
-  for (const [index, { scope, recipes, preimages }] of [...plan].sort(([a], [b]) => a - b)) {
-    const { localIds } = receipts[index];
-    if (localIds.length === 0) continue;
-    if (localIds.length > 1) throw new CommitError('an opted segment commits one intent');
-    sourceEntries.push({ localId: localIds[0], originScope: scope, recipes, preimages, attempts: [] });
-  }
-  if (sourceEntries.length) replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
 }
 
 export function sourceOf(replica, localId) {
@@ -144,6 +75,39 @@ export function collectJournal(replica) {
     .flatMap((unit) => [unit.restored, unit.restored?.recordBirth]).filter((reference) => reference?.kind === 'pending').map(({ localId }) => localId));
   replica.journal = replica.journal.filter((act) => act.retained || unsettled.includes(act.actId)
     || act.sourceEntries.some((source) => referenced.has(source.localId)));
+}
+
+// An inverse request's slot settles with its outcomes, or every operation skipped by `code`.
+export function settleSlot(replica, slot, outcomes, code) {
+  const count = slot.recipe.kind === 'restore' ? slot.recipe.operations.length : 1;
+  slot.outcomes = outcomes ?? Array.from({ length: count }, (_, index) => ({ index, s: 'skipped', code }));
+  slot.state = 'settled';
+}
+
+// A request settles once every slot has: changed is whether any slot's accepted effects changed a row.
+export function settleRequest(replica, request) {
+  if (request.state === 'settled' || request.slots.some((slot) => slot.state !== 'settled')) return;
+  const outcomes = request.slots.flatMap((slot) => slot.outcomes);
+  request.state = 'settled';
+  request.result = { kind: 'settled', requestId: request.requestId, inverseActId: request.inverseActId,
+    changed: request.slots.some((slot) => slot.changed === true),
+    appliedCount: outcomes.filter(({ s }) => s === 'applied').length,
+    skippedCount: outcomes.filter(({ s }) => s === 'skipped').length };
+  collectJournal(replica);
+}
+
+// The slots whose entries ended without a result (a fold, or a Discard) settle skipped by `code`. A Discard
+// also withdraws their values: the slot keeps only its outcomes.
+export function settleEnded(replica, code, { withdraw = false } = {}) {
+  for (const request of replica.inverses) {
+    if (request.state === 'settled') continue;
+    for (const slot of request.slots) {
+      if (slot.state === 'settled' || replica.entry(slot.localId)) continue;
+      settleSlot(replica, slot, null, code);
+      if (withdraw) slot.recipe = { kind: 'withdrawn', command: slot.recipe.command };
+    }
+    settleRequest(replica, request);
+  }
 }
 
 // §7.7 write map and E-8: a journal's scoped references follow the same logical map as the queue.

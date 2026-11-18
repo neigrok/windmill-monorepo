@@ -8,7 +8,7 @@ import { receiptEffects } from '../core/receipts.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
-import { applyInverseResult, checkInverseResult, passesBarrier, settleEnded } from './inverse.js';
+import { applyInverseResult, checkInverseResult, passesBarrier } from './inverse.js';
 import { retainOutcome } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
@@ -115,10 +115,12 @@ export function validatePushEnvelope({ status, body }) {
     || body.results.some((result) => result.n >= body.retry.n))) throw new ResponseError('invalid sync continuation');
 }
 
+// Each result is checked against the entry it will apply to, the sent entry at its n: an entry acknowledged
+// under an earlier replica id keeps its old n until it settles, and is never the one a result answers.
 export function validatePushReceipts(replica, registry, body) {
   try {
     for (const result of body.results) {
-      const entry = replica.entries().find((candidate) => ['sent', 'acked'].includes(candidate.state) && candidate.n === result.n);
+      const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
       if (!entry || result.s !== 'ok') continue;
       checkInverseResult(replica, entry, result);
       if (entry.predictions) {
@@ -195,7 +197,6 @@ export function applyPushResult(replica, ctx, result, body) {
     onRefused(replica, ctx, entry, result, body);
     if (replica.entry(entry.localId) !== entry) retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'refused' });
     applyInverseResult(replica, entry, result);
-    settleEnded(replica, 'refused');
     return;
   }
   moveEntry(replica, ctx.ended, entry, 'ok');

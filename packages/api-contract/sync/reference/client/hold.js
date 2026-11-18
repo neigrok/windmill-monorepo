@@ -3,6 +3,7 @@
 
 import { moveEntry } from '../core/machines.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
+import { settleEnded } from './journal.js';
 import { effectsOf } from './projections.js';
 
 export function release(replica, registry, ended, entry) {
@@ -28,6 +29,7 @@ export function undo(replica, registry, ended, gestureId) {
   const parts = silentFoldOf(replica, registry, gesture.map((entry) => ({ entry, deltas: deltasOf(entry) })));
   for (const entry of gesture) moveEntry(replica, ended, entry, 'undo');
   foldSilently(replica, ended, parts);
+  settleEnded(replica, 'undone');
   return true;
 }
 

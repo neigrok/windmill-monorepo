@@ -51,11 +51,12 @@ export function unsubscribe(replica, ctx, scope) {
 }
 
 // Unsubscribes every held scope no longer in `scopes`; an acked entry of a scope outside the set
-// resolves, whether or not the replica ever pulled it.
+// resolves, whether or not the replica ever pulled it. Ending one scope's projections may resolve a later entry
+// of the same pass, which is then passed over.
 export function reconcile(replica, ctx, scopes) {
   for (const scope of Object.keys(replica.cursors)) if (!scopes.includes(scope)) unsubscribe(replica, ctx, scope);
   for (const entry of replica.entries()) {
-    if (entry.state !== 'acked') continue;
+    if (entry.state !== 'acked' || replica.entry(entry.localId) !== entry) continue;
     if (entry.predictions) {
       for (const projection of entry.predictions) if (!scopes.includes(projection.scope)) endScopeProjections(replica, ctx, projection.scope);
     } else if (!scopes.includes(entry.scope)) moveEntry(replica, ctx.ended, entry, 'resolve');

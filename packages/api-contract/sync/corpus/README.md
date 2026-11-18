@@ -1400,6 +1400,13 @@ E-8's client steps, every reference read through the compiled traversal (`refs/t
 - a governor redirect, then a tag map in the redirected tree, reach an overlay key and a sprout's step
   through both.
 
+### write/scoped-predictions.json
+
+E-7's client steps: scoped predictions across scopes, their coverage marker by marker, receipt validation
+before any ACK change, replays and dependencies. A result names the sent entry at its `n`: after a
+re-identify, an entry acknowledged under the old replica id keeps its old `n` until it settles, and a scoped
+receipt for the new entry numbered the same is that entry's, checked and applied as its own.
+
 ### refs/traversal.json (client)
 
 `input: {scope, record?: Delta, cmd?: Cmd, maps: Mapping[][]}` · `expect: {references, after}`. `scope`
@@ -1527,6 +1534,13 @@ survey shows.
 | a store restored or cloned | `store restored`, `store cloned` | `http 409 gap`, `http 409 replica-forked` |
 | engine paths | `activeReplicaChanged announced`, `ok with a joining write map`, `refused cap`, `http 413 request-too-large`, `retry` | `ended refused by target-merged`, `http 400 malformed` |
 | typed references (E-8): a redirected proposal, and the work that named it | `a pushed reference names a record a redirect resolved to` | `sprout answered with its step's subtree`, `adopt answered with a labelled tag` |
+| Undo of an act (K-3): opted acts, held cancellation, Undo and Redo slots, empty slots, releases | `opted act`, `undo pending` | `undo cancelled`, `redo pending`, `reversible act released`, `inverse settled applied`, `inverse settled skipped`, `ended resolved by vacate` |
+
+K-3's events were surveyed with the Undo mix in place (an opted card retitle or held tag removal, and an
+Undo, Redo or release of a journaled act, in the faults phase) over 30 fuzzes of 60×160 and 10 of 500×300
+from first seeds 1, 1001, 2001, …, with no miss: `undo pending` the fewest of its 60 × 160 column (11.9
+seeds a fuzz on average), and `undo cancelled` of its 500 × 300 column (20.7). After quiescence every inverse
+request of every replica has settled.
 
 The simulator reports its other counts, the other refusal codes and `page outside the subscription
 set` among them, without listing them.

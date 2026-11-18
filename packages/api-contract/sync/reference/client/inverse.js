@@ -11,7 +11,7 @@ import { moveEntry } from '../core/machines.js';
 import { creatableFault, inverseOutcomes, restorableSlotFault, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { undo } from './hold.js';
-import { collectJournal, ordinalOf, sourceOf } from './journal.js';
+import { ordinalOf, settleRequest, settleSlot, sourceOf } from './journal.js';
 import { effectsOf } from './projections.js';
 import { drawn } from './views.js';
 
@@ -452,24 +452,6 @@ function keepProjection(entry, operations) {
   }
 }
 
-function settleSlot(replica, slot, outcomes, code) {
-  const count = slot.recipe.kind === 'restore' ? slot.recipe.operations.length : 1;
-  slot.outcomes = outcomes ?? Array.from({ length: count }, (_, index) => ({ index, s: 'skipped', code }));
-  slot.state = 'settled';
-}
-
-// A request settles once every slot has: changed is whether any slot's accepted effects changed a row.
-function settleRequest(replica, request) {
-  if (request.state === 'settled' || request.slots.some((slot) => slot.state !== 'settled')) return;
-  const outcomes = request.slots.flatMap((slot) => slot.outcomes);
-  request.state = 'settled';
-  request.result = { kind: 'settled', requestId: request.requestId, inverseActId: request.inverseActId,
-    changed: request.slots.some((slot) => slot.changed === true),
-    appliedCount: outcomes.filter(({ s }) => s === 'applied').length,
-    skippedCount: outcomes.filter(({ s }) => s === 'skipped').length };
-  collectJournal(replica);
-}
-
 // The sender's barrier (§7.4): an inverse slot not yet materialized is materialized now if it can be; one
 // that still waits stops numbering. Answers whether the entry may be numbered.
 export function passesBarrier(replica, ctx, entry) {
@@ -493,6 +475,7 @@ export function applyInverseResult(replica, entry, result) {
   const found = slotOf(replica, entry);
   if (!found) return;
   const { request, slot } = found;
+  if (slot.state === 'settled') return;
   if (result.s === 'ok') {
     const outcomes = inverseOutcomes(result.detail?.command, slot.recipe.kind === 'restore' ? slot.recipe.operations.length : 1);
     if (slot.recipe.kind === 'restore') keepProjection(entry, slot.recipe.operations.filter((_, index) => outcomes[index].s === 'applied'));
@@ -502,20 +485,6 @@ export function applyInverseResult(replica, entry, result) {
     settleSlot(replica, slot, null, result.code);
   }
   settleRequest(replica, request);
-}
-
-// The slots whose entries ended without a result (a fold, or a Discard) settle skipped by `code`. A Discard
-// also withdraws their values: the slot keeps only its outcomes.
-export function settleEnded(replica, code, { withdraw = false } = {}) {
-  for (const request of replica.inverses) {
-    if (request.state === 'settled') continue;
-    for (const slot of request.slots) {
-      if (slot.state === 'settled' || replica.entry(slot.localId)) continue;
-      settleSlot(replica, slot, null, code);
-      if (withdraw) slot.recipe = { kind: 'withdrawn', command: slot.recipe.command };
-    }
-    settleRequest(replica, request);
-  }
 }
 
 // readInverseResult(requestId): cancelled, pending, settled or unavailable.

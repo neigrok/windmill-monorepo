@@ -1,9 +1,74 @@
 import { CONSTANTS } from '../core/constants.js';
 import { mintId } from '../core/derive.js';
+import { recipeFault, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError, commitGesture } from './commit.js';
-import { optedGesture, planUndo, recordAct } from './journal.js';
 import { drawn, stored } from './views.js';
+
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// The one capture command of a scope's kind (§2.4). None or several is a programming error, never a choice
+// by name.
+function captureCommandOf(registry, scope) {
+  const kind = registry.scopeKindOf(scope);
+  const found = [...registry.commands.values()].filter((command) => command.engine === 'capture' && command.scope === kind);
+  if (found.length !== 1) throw new CommitError(`${kind} has no single capture command`);
+  return found[0].name;
+}
+
+// ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
+// initial snapshot (§7.1 Ordered local acts). A slot unset there takes the recipe's explicit default; with
+// none, the act fails before anything changes. Answers the plan by segment index, or null.
+function planUndo(replica, registry, request) {
+  const { undo } = request;
+  if (undo === undefined || undo === null) return null;
+  if (!isObject(undo) || Object.keys(undo).sort().join() !== 'segments,version' || undo.version !== 1 || !Array.isArray(undo.segments))
+    throw new CommitError('an act undo is {version: 1, segments}');
+  const plan = new Map();
+  for (const segment of undo.segments) {
+    if (!isObject(segment) || Object.keys(segment).sort().join() !== 'index,recipes' || !Number.isSafeInteger(segment.index)
+      || segment.index < 0 || segment.index >= request.scopes.length || plan.has(segment.index)
+      || !Array.isArray(segment.recipes) || segment.recipes.length === 0) throw new CommitError('an undo segment names one act segment and its recipes');
+    const scope = request.scopes[segment.index];
+    const view = drawn(replica, registry, scope);
+    const preimages = [];
+    for (const recipe of segment.recipes) {
+      const fault = recipeFault(registry, scope, recipe);
+      if (fault) throw new CommitError(`an undo recipe is malformed: ${fault}`);
+      if (recipe.kind === 'createdRecord' && view.has(recordKey(recipe.record.t, recipe.record.id))) throw new CommitError('a created record exists before its act');
+      if (recipe.kind !== 'fields') continue;
+      for (const { target, defaultValue } of recipe.targets) {
+        const value = valueIn(view.get(recordKey(target.t, target.id)), target.slot);
+        if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
+        preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue) });
+      }
+    }
+    plan.set(segment.index, { scope, recipes: structuredClone(segment.recipes), preimages });
+  }
+  return plan;
+}
+
+// An opted segment's gesture runs its own scopedEffects command, or else the capture command, which joins it
+// only when the segment writes a delta.
+function optedGesture(registry, scope, opts) {
+  if (opts.cmd === undefined) return { ...opts, capture: captureCommandOf(registry, scope) };
+  if (!registry.command(opts.cmd.name)?.scopedEffects) throw new CommitError('an opted command returns scoped effects');
+  return opts;
+}
+
+// The act's journal record, from the segments that left an entry: one source entry each, in commit order.
+function recordAct(replica, actId, plan, receipts) {
+  if (plan === null) return;
+  const sourceEntries = [];
+  for (const [index, { scope, recipes, preimages }] of [...plan].sort(([a], [b]) => a - b)) {
+    const { localIds } = receipts[index];
+    if (localIds.length === 0) continue;
+    if (localIds.length > 1) throw new CommitError('an opted segment commits one intent');
+    sourceEntries.push({ localId: localIds[0], originScope: scope, recipes, preimages, attempts: [] });
+  }
+  if (sourceEntries.length) replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
+}
+
 
 function newActScope(replica, registry, scope) {
   const kind = registry.scopeKindOf(scope);
