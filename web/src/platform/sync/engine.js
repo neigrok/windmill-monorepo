@@ -1,4 +1,4 @@
-import { IndexedDBStore, frozen } from './store.js';
+import { IndexedDBStore, WriterSlice, frozen } from './store.js';
 import { ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
@@ -60,6 +60,7 @@ export class BrowserSyncEngine {
     this.repullSolo = new Set();
     this.pullInFlight = new Set();
     this.deferredFrames = new Map();
+    this.pullChunk = new WriterSlice(64);
     this.inFlight = new Set();
     this.live = new LiveChannel({ transport: this.transport, timers, now: monotonic, draw,
       limits: this.limits, onFrame: (frame) => this.receiveFrame(frame),
@@ -116,6 +117,7 @@ export class BrowserSyncEngine {
       throw error;
     }
     this.actor = context.actor;
+    this.lastWrite = answer.measurement;
     try {
       for (const event of context.events) {
         this.coordination?.post({ type: 'activeReplicaChanged', previous: event.previous,
@@ -755,10 +757,13 @@ export class BrowserSyncEngine {
         else if (response.status !== 401) this.pullWait.backoff(this.monotonic(), this.draw);
         return;
       }
-      for (const page of response.body.pages) {
+      const outcomes = await this.storePages(handle, response.body.pages.map((page) => {
         const cursor = request.scopes.find(({ scope }) => scope === page.scope)?.cursor;
         if (cursor === undefined) throw new Error('unexpected pull scope');
-        const outcome = await this.storePage(handle, cursor, page);
+        return { cursor, page };
+      }));
+      for (const [index, page] of response.body.pages.entries()) {
+        const outcome = outcomes[index];
         if (page.more || ['reset', 'stale'].includes(outcome)) this.pullDirty.add(page.scope);
         if (outcome === 'ignored') this.doubts.end(page.scope, this.monotonic(), this.draw);
         if (outcome === 'applied') this.doubts.rows(page.scope);
@@ -788,31 +793,50 @@ export class BrowserSyncEngine {
     }
   }
 
-  async storePage(handle, cursor, page) {
-    if (page.kind !== 'rows') return this.write(null, (device, ctx) => {
-      const replica = device.activeReplica;
-      if (replica.storageHandle !== handle) return 'outside';
-      return applyPage(replica, ctx, cursor, page, undefined, (scope) => this.scopes(replica).includes(scope));
-    });
-    let remaining = true;
-    let outcome = 'applied';
-    for (let offset = 0; offset < Math.max(1, page.rows.length); offset += 64) {
-      const last = offset + 64 >= page.rows.length;
+  // A response's pages apply in chunks the writer slice sizes: a chunk takes the rows of one page or of
+  // several, and checks each page in the transaction that applies it.
+  async storePages(handle, pages) {
+    let outcomes = pages.map(() => 'applied');
+    const settling = [];
+    for (let index = 0, offset = 0; index < pages.length;) {
+      const steps = [];
+      for (let room = this.pullChunk.size; index < pages.length && room > 0;) {
+        const { page } = pages[index];
+        const total = page.kind === 'rows' ? page.rows.length : 0;
+        const rows = page.kind === 'rows' ? page.rows.slice(offset, offset + room) : [];
+        steps.push({ index, rows, first: offset === 0, last: offset + rows.length >= total });
+        room -= Math.max(1, rows.length);
+        offset += rows.length;
+        if (offset >= total) { index++; offset = 0; }
+      }
       const answer = await this.write(null, (device, ctx) => {
         const replica = device.activeReplica;
-        if (replica.storageHandle !== handle || !this.scopes(replica).includes(page.scope)) return { outcome: 'outside' };
-        if (replica.meta.serverEpoch !== null && Cursor.decode(page.cursor)?.e !== replica.meta.serverEpoch) return { outcome: 'stale' };
-        if (replica.cursorOf(page.scope).cursor !== cursor) return { outcome: 'stale' };
-        applyChunk(replica, ctx, cursor, page, page.rows.slice(offset, offset + 64), offset === 0);
-        return { outcome: 'applied', remaining: last && finishPage(replica, ctx, cursor, page, 64) };
-      }, [{ handle, scope: page.scope, keys: page.rows.slice(offset, offset + 64).map((row) => recordKey(row.t, row.id)) }]);
-      outcome = answer.outcome;
-      remaining = answer.remaining;
-      if (outcome !== 'applied') return outcome;
+        const subscribed = (scope) => this.scopes(replica).includes(scope);
+        const decided = [...outcomes], finished = [];
+        for (const { index, rows, first, last } of steps) {
+          const { cursor, page } = pages[index];
+          if (decided[index] !== 'applied') continue;
+          if (replica.storageHandle !== handle) decided[index] = 'outside';
+          else if (page.kind !== 'rows') decided[index] = applyPage(replica, ctx, cursor, page, undefined, subscribed);
+          else if (!subscribed(page.scope)) decided[index] = 'outside';
+          else if ((replica.meta.serverEpoch !== null && Cursor.decode(page.cursor)?.e !== replica.meta.serverEpoch)
+            || replica.cursorOf(page.scope).cursor !== cursor) decided[index] = 'stale';
+          else {
+            applyChunk(replica, ctx, cursor, page, rows, first);
+            if (last && finishPage(replica, ctx, cursor, page, 64)) finished.push(index);
+          }
+        }
+        return { decided, finished };
+      }, steps.map(({ index, rows }) => ({ handle, scope: pages[index].page.scope, keys: rows.map((row) => recordKey(row.t, row.id)) })));
+      this.pullChunk.record(steps.reduce((taken, { rows }) => taken + Math.max(1, rows.length), 0), this.lastWrite.writerMs - this.lastWrite.queueMs);
+      outcomes = answer.decided;
+      settling.push(...answer.finished);
     }
-    while (remaining) remaining = await this.write(null, (device, ctx) =>
-      device.activeReplica.storageHandle === handle && settle(device.activeReplica, ctx, page.scope, 64));
-    return outcome;
+    for (const index of settling) {
+      for (let remaining = true; remaining;) remaining = await this.write(null, (device, ctx) =>
+        device.activeReplica.storageHandle === handle && settle(device.activeReplica, ctx, pages[index].page.scope, 64));
+    }
+    return outcomes;
   }
 
   follow() {

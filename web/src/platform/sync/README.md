@@ -77,7 +77,10 @@ scopes; unobserved cache generations are invalidated, and a later observation re
 The default beacon adapter maps spec event labels to the intake's snake_case names.
 Writer telemetry measures transaction enqueue to durable completion, with bounded numeric timings.
 The 25 ms writer slice is a latency target, not a hardware-independent correctness assertion.
-Push results use separate transactions; pull pages use 64-row chunks and 64-entry settling slices.
+Push results use separate transactions. A pull response applies in chunks sized by how long the last
+one held the writer, starting at 64 rows and aiming at half of the 25 ms writer slice; one chunk may
+carry several of the response's pages, each checked in the chunk that applies it. Settling slices take
+64 entries.
 Web Locks serialize sender ownership and first-tab registration; BroadcastChannel delivers
 invalidations, opened scopes, upgrade stops and replica changes. The leader reconciles durable control
 state and outbox every second and on refresh; notifications are hints. Server retry floors survive

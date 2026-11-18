@@ -516,11 +516,11 @@ test('process death between IndexedDB page chunks leaves the cursor unmoved and 
     more: false, seq: 1, digest: scopeDigest(rows) };
   const original = engine.write.bind(engine);
   engine.write = async (...args) => { const result = await original(...args); engine.close(); return result; };
-  await assert.rejects(engine.storePage(handle, null, page));
+  await assert.rejects(engine.storePages(handle, [{ cursor: null, page }]));
   engine = await open(env);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').cursor, null);
   assert.equal(engine.device.activeReplica.confirmedRows('self/probe').length, 64);
-  await engine.storePage(handle, null, page);
+  await engine.storePages(handle, [{ cursor: null, page }]);
   assert.equal(engine.device.activeReplica.confirmedRows('self/probe').length, 130);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').digest, page.digest);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').booted, true);
@@ -966,9 +966,9 @@ for (const stop of ['response', 'page']) test(`a pull whose ${stop} lands as the
   env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
   await engine.commit('self/probe', card());
   await engine.send();
-  const request = env.transport.request.bind(env.transport), storePage = engine.storePage.bind(engine);
+  const request = env.transport.request.bind(env.transport), storePages = engine.storePages.bind(engine);
   if (stop === 'response') env.transport.request = async (...args) => { const answer = await request(...args); engine.close(); return answer; };
-  else engine.storePage = async (...args) => { engine.close(); return storePage(...args); };
+  else engine.storePages = async (...args) => { engine.close(); return storePages(...args); };
   await engine.pull();
   await assert.rejects(engine.write(null, () => {}), (error) => error instanceof CommitError && error.kind === 'store');
   assert.deepEqual(env.failures, []);
@@ -1058,7 +1058,7 @@ for (const denial of ['page', 'frame']) test(`a reader overlay survives ack and 
     await engine.subscribe(tree); await engine.pull();
     assert.deepEqual(view.getSnapshot().drawn, ownMark);
     if (denial === 'frame') await engine.receiveFrame({ op: 'not-found', scope: tree, as: 'B' });
-    else await engine.storePage(engine.device.activeReplica.storageHandle, engine.device.activeReplica.cursorOf(tree).cursor, { scope: tree, kind: 'not-found' });
+    else await engine.storePages(engine.device.activeReplica.storageHandle, [{ cursor: engine.device.activeReplica.cursorOf(tree).cursor, page: { scope: tree, kind: 'not-found' } }]);
     assert.deepEqual(engine.device.activeReplica.known, { [tree]: 'not-found', [overlay]: 'not-found' });
     assert.deepEqual(engine.scopes(), ['self/probe']);
     assert.deepEqual(view.getSnapshot().drawn, []);

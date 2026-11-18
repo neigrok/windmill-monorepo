@@ -670,8 +670,8 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
         mood: [0, '1000:0:srv'], energy: [null, '1000:0:srv'], source: ['typed', '1000:0:srv'],
         documentStamp: [{ ms: 1000, counter: 0, actor: 'srv' }, '1000:0:srv'],
       }, x: { body: { text: 'frozen contribution', rev: 1, merged: false } } };
-      const pull = () => engine.storePage(engine.device.activeReplica.storageHandle, null, { scope, kind: 'rows', rows: [row],
-        seq: 1, more: false, cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 1 }), digest: scopeDigest([row]) });
+      const pull = () => engine.storePages(engine.device.activeReplica.storageHandle, [{ cursor: null, page: { scope, kind: 'rows', rows: [row],
+        seq: 1, more: false, cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 1 }), digest: scopeDigest([row]) } }]);
       const result = () => engine.pushResults(engine.device.activeReplica.storageHandle, request, { status: 200, body: { as: 'A',
         epoch: 'ep-1', serverTime: Date.now(), lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }] } }, timing());
       if (order === 'pull-before-result') {

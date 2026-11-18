@@ -3,6 +3,7 @@ import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.j
 
 const keyOf = (...parts) => jcs(parts);
 const HEAD = keyOf('head');
+const WRITER_SLICE_MS = 25;
 const caches = ['confirmed', 'spentIds', 'staging'];
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b) || jcs(a ?? null) === jcs(b ?? null);
 
@@ -11,6 +12,20 @@ export function frozen(value) {
   Object.freeze(value);
   for (const item of Object.values(value)) frozen(item);
   return value;
+}
+
+// A sliced step's size, from how long the last one held the writer: t taken in h ms sizes the next t × aim ÷ h,
+// at most twice the offer and below it only past the aim, half of WRITER_SLICE_MS.
+export class WriterSlice {
+  constructor(size) { this.size = size; }
+
+  record(taken, heldMs) {
+    if (taken === 0) return;
+    const aim = WRITER_SLICE_MS / 2, upper = Math.min(2 * this.size, 4096);
+    if (heldMs <= 0) { this.size = upper; return; }
+    const fitting = Math.min(upper, Math.floor(taken * aim / heldMs));
+    this.size = heldMs > aim ? Math.max(1, fitting) : Math.max(this.size, fitting);
+  }
 }
 
 class ScopeDemand extends Error {
