@@ -1,13 +1,12 @@
-// What the server tells a build it has retired, and what the build does about it: every session stops its socket and every
-// write door stops sending, everything stays in the store the next build carries over, and the page reloads for that build
-// at the first moment it loses nothing a person holds.
+// What the server tells a retired build, and what the build does: it stops sending, keeps everything in the store the next
+// build carries over, and reloads for that build at the first moment it loses nothing a person holds.
 
 import * as beacon from '../../../telemetry/beacon.js';
 import { sessionStorageOrNothing } from '../persistence/browserStorage.js';
 import { stepDraftSession } from '../step/StepDraftSession.js';
 
 // The one answer that retires a build, from a roadmap write route or from the socket's path. No other answer does.
-export const RETIRED = Object.freeze({ status: 410, code: 'client-update-required' });
+const RETIRED = Object.freeze({ status: 410, code: 'client-update-required' });
 
 // After a socket that never opened, its path is read once, plainly, never while offline, at most once a minute, for ten
 // seconds at most: a browser cannot read why an upgrade failed, and a reconnect loop must not become a probe storm.
