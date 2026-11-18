@@ -28,6 +28,7 @@ internal object Probe {
     val tree = ScopeRef.tree("b_00000001")
     val overlay = ScopeRef.overlay("b_00000001")
     val start = 1_800_000_000_000L
+    val board: ProbeType = object : ProbeType("board", scope, emptyMap(), emptyList()), RemovableType<ProbeEntity> { override val heldRemoval = true }
     val card: ProbeType = object : ProbeType("card", scope, mapOf("title" to Json.of(""), "body" to Json.of(""), "size" to Json.Null, "claim" to Json.Null, "tier" to Json.of("draft")),
         listOf(TextSpec("card.title", MeasureUnit.chars, 1, 12, true, true), TextSpec("card.body", MeasureUnit.bytes, 0, 24, true, true), NumberSpec("card.size", -500.0, 500.0, quantum = .01), TextSpec("card.claim", MeasureUnit.chars, 0, 12, true, true), ChoiceSpec("card.tier", listOf("draft", "review", "done", "dropped")))), DraftableType<ProbeEntity>, RemovableType<ProbeEntity>, OrderedType<ProbeEntity> {
         override val savesGuarded = true; override val heldRemoval = true; override val orderField = "ord"
@@ -45,7 +46,7 @@ internal object Probe {
     val run: ProbeType = object : ProbeType("run", scope, mapOf("startedAt" to Json.Null, "label" to Json.Null), listOf(TextSpec("run.label", MeasureUnit.chars, 0, 12, true, true))), RemovableType<ProbeEntity> { override val heldRemoval = false }
     val link: ProbeType = object : ProbeType("link", null, mapOf("strength" to Json.Null), listOf(NumberSpec("link.strength", 0.0, 9.0, integer = true))), RemovableType<ProbeEntity> { override val heldRemoval = true }
     val tag: ProbeType = object : ProbeType("tag", null, mapOf("label" to Json.of("")), listOf(TextSpec("tag.label", MeasureUnit.chars, 0, 24, false, false))), RemovableType<ProbeEntity> { override val heldRemoval = false }
-    fun entity(type: String): ProbeType = if (type == "guardedMeta") guardedMeta else listOf(card, day, fact, mark, meta, lap, run, link, tag).firstOrNull { it.type == type } ?: throw ContractError("no probe entity $type")
+    fun entity(type: String): ProbeType = if (type == "guardedMeta") guardedMeta else listOf(board, card, day, fact, mark, meta, lap, run, link, tag).firstOrNull { it.type == type } ?: throw ContractError("no probe entity $type")
 }
 internal sealed interface ProbeRefusal {
     data class Invalid(val violation: Violation) : ProbeRefusal

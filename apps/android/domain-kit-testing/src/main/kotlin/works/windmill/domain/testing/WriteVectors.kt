@@ -12,6 +12,7 @@ import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.core.Stamp
 import works.windmill.sync.core.Delta
 import works.windmill.sync.core.Command
+import works.windmill.sync.core.lives
 
 internal fun fields(json: Json?): Map<String, Json> = json?.obj() ?: emptyMap()
 internal fun names(json: Json) = json.arr().map { it.str() }
@@ -37,7 +38,12 @@ internal object WriteVectors {
         val predictions = (input["predict"]?.arr() ?: emptyList()).map { json ->
             val type = Probe.entity(json.member("t").str())
             val id = Id(RecordID(json.member("id")), type)
-            if (json.member("op").str() == "create") Prediction.create(type, id, fields(json["f"])) else Prediction.update(type, id, fields(json["f"]))
+            val scope = json["scope"]?.let(::ScopeRef)
+            when (json.member("op").str()) {
+                "create" -> Prediction.create(type, id, fields(json["f"]), scope)
+                "write" -> Prediction.write(type, id, fields(json["f"]), scope = scope)
+                else -> Prediction.update(type, id, fields(json["f"]), scope)
+            }
         }
         val plan = command?.let { Plan(it, predictions) } ?: Plan()
         for (operation in input.member("plan").arr()) {
@@ -65,18 +71,43 @@ internal object WriteVectors {
         return plan
     }
     fun translate(input: Json): Json = try {
-        var registry = probeRegistry()
-        input["tagField"]?.let { field ->
-            val document = registry.json.obj().toMutableMap()
-            document["types"] = Json.Arr(document.getValue("types").arr().map { type ->
-                if (type.member("type").str() != "tag") type
-                else Json.Obj((type.obj() + ("fields" to Json.objectOf("label" to field))).toList())
-            })
-            registry = Registry(Json.Obj(document.toList()))
+        // `tagField` replaces the tag's label declaration and `linkFields` the link's fields, each proving one rule.
+        val replaced = listOfNotNull(input["tagField"]?.let { "tag" to Json.objectOf("label" to it) }, input["linkFields"]?.let { "link" to it }).toMap()
+        val registry = if (replaced.isEmpty()) probeRegistry() else probeRegistry().json.let { document ->
+            Registry(document.with("types" to Json.Arr(document.member("types").arr().map { type ->
+                replaced[type.member("type").str()]?.let { type.with("fields" to it) } ?: type
+            })))
         }
         Json.objectOf("gesture" to build(input, moment(input)).gesture(input["scope"]?.str()?.let(::ScopeRef) ?: Probe.scope, registry).form)
     } catch (violation: Violation) { Json.objectOf("violation" to violation.json) }
       catch (error: PlanError) { Json.objectOf("error" to Json.of(true)) }
+    // §9.5 an act's decision as ProductCorpus.act gives it to a product's vectors: each scope of `loads` read for the ids it
+    // draws, which is the result, and each segment built as in plan/translate.json, an operation with `mint` taking the next id
+    // in its segment's scope.
+    fun actDecision(input: Json): Json {
+        val registry = probeRegistry()
+        val act = object : ActAction<Pair<Moment, Json>, Json, ProbeRefusal> {
+            override val refusals = ProbeRefusals
+            override fun load(read: ActReader) = read.moment to Json.Obj(input.member("loads").arr().map { scope ->
+                scope.str() to read.inScope(ScopeRef(scope)) { reader ->
+                    Json.Arr(registry.types.filter { registry.lives(it.name, reader.scope) }.flatMap { reader.source.drawn(it.name) }.map { it.id.json })
+                }
+            })
+            override fun decide(loaded: Pair<Moment, Json>, ids: ActIDSource): ActDecision<Json, ProbeRefusal> {
+                val (moment, drawn) = loaded
+                val segments = input.member("segments").arr()
+                if (segments.isEmpty()) return ActDecision.Unchanged(drawn)
+                return ActDecision.Write(ActPlan(segments.map { segment ->
+                    val scope = ScopeRef(segment.member("scope"))
+                    val plan = Json.Arr(segment.member("plan").arr().map { operation ->
+                        if (operation["mint"] != Json.of(true)) operation else operation.with("id" to ids.mint(Probe.entity(operation.member("t").str()), scope).record.json)
+                    })
+                    ScopedPlan(scope, build(segment.with("plan" to plan), moment))
+                }), drawn)
+            }
+        }
+        return ProductCorpus(RuleBook(registry, emptyList(), emptyList())).act(act, works.windmill.sync.testing.Vector("domain-kit/run/act-decisions.json", "", input, Json.Null), { it }, { it.form })
+    }
     fun pipeline(input: Json): Json = runBlocking { withActionContext { pipeline(input, it) } }
     private fun pipeline(input: Json, context: ActionContext): Json {
         val registry = probeRegistry()
