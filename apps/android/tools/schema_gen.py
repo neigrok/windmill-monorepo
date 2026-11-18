@@ -28,7 +28,7 @@ def load(path):
 
 # The checked-in schema uses this closed subset of draft 2020-12; unknown validation keywords fail closed.
 def validate(schema, value, root, path="registry"):
-    supported = {"$schema", "$id", "$defs", "$ref", "title", "description", "type", "required", "properties", "additionalProperties", "propertyNames", "allOf", "oneOf", "if", "then", "not", "const", "enum", "minimum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "pattern", "minProperties", "maxProperties", "items", "minItems", "uniqueItems"}
+    supported = {"$schema", "$id", "$defs", "$ref", "title", "description", "type", "required", "properties", "additionalProperties", "propertyNames", "allOf", "oneOf", "if", "then", "not", "const", "enum", "minimum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "pattern", "minProperties", "items", "minItems", "uniqueItems"}
     if schema is True:
         return
     if schema is False or set(schema) - supported:
@@ -65,8 +65,8 @@ def validate(schema, value, root, path="registry"):
     if "if" in schema and conforms(schema["if"]):
         validate(schema.get("then", True), value, root, path)
     if isinstance(value, dict):
-        if set(schema.get("required", [])) - value.keys() or not schema.get("minProperties", 0) <= len(value) <= schema.get("maxProperties", math.inf):
-            raise ValueError(path + ": required or property count")
+        if set(schema.get("required", [])) - value.keys() or len(value) < schema.get("minProperties", 0):
+            raise ValueError(path + ": required")
         for key, item in value.items():
             if "propertyNames" in schema:
                 validate(schema["propertyNames"], key, root, path)

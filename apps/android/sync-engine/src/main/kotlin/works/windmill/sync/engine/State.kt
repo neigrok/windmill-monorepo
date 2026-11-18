@@ -55,13 +55,31 @@ internal class Entry(var json: Json) {
     val predicted: List<ScopedDeltas> get() = predictions?.map { ScopedDeltas(it.scope, it.deltas) } ?: listOf(ScopedDeltas(scope, predict))
     // Every delta the entry holds, by scope: its intent belongs to its origin. Dependency and identity recovery read them all.
     val effects: List<ScopedDeltas> get() = decodedEffects.of(json) { stored(active = false) }.also { decodedEffects = it }.value
-    // The deltas views draw: an opted command's covered projections no longer do, and its intent leaves with its origin's.
+    // The deltas views draw: an opted command's covered projections no longer do, its intent leaves with its origin's, and once its
+    // receipt applies its intent draws at the versions the server accepted.
     val active: List<ScopedDeltas> get() = decodedActive.of(json) { stored(active = true) }.also { decodedActive = it }.value
-    private fun stored(active: Boolean): List<ScopedDeltas> = predictions?.filter { !active || !it.covered }?.map {
-        ScopedDeltas(it.scope, (if (it.scope == scope) intent.deltas else emptyList()) + it.deltas)
-    } ?: listOf(ScopedDeltas(scope, intent.deltas + predict))
+    private fun stored(active: Boolean): List<ScopedDeltas> {
+        val predictions = predictions ?: return listOf(ScopedDeltas(scope, intent.deltas + predict))
+        val ordinary = if (active) acceptedOrdinary() else intent.deltas
+        return predictions.filter { !active || !it.covered }.map { ScopedDeltas(it.scope, (if (it.scope == scope) ordinary else emptyList()) + it.deltas) }
+    }
+    // Copies of the numbered intent's deltas, each register its origin receipt versions at that version; the intent itself never changes.
+    private fun acceptedOrdinary(): List<Delta> {
+        val rows = acceptedEffects.firstOrNull { it.scope == scope }?.rows.orEmpty()
+        return intent.deltas.map { delta ->
+            rows.firstOrNull { it.key == delta.key }?.slots.orEmpty().fold(delta) { accepted, slot ->
+                val stamp = slot.stamp ?: return@fold accepted
+                val lattice = accepted.lattice
+                val versioned = when (slot.kind) {
+                    EffectSlot.Kind.born -> Lattice(lattice.life, lattice.born?.let { stamp }, lattice.fields)
+                    EffectSlot.Kind.life -> Lattice(lattice.life?.copy(stamp = stamp), lattice.born, lattice.fields)
+                    else -> Lattice(lattice.life, lattice.born, lattice.fields.mapValues { (name, register) -> if (name == slot.name) register.copy(stamp = stamp) else register })
+                }
+                accepted.copy(lattice = versioned)
+            }
+        }
+    }
     val deltas: List<Delta> get() = effects.flatMap { it.deltas }
-    fun deltas(scope: ScopeRef): List<Delta> = effects.filter { it.scope == scope }.flatMap { it.deltas }
     fun activeDeltas(scope: ScopeRef): List<Delta> = active.filter { it.scope == scope }.flatMap { it.deltas }
     // One projection a scope after a remap gives two the same scope: their deltas join, and the scope is covered only when both were.
     fun mergePredictions() {

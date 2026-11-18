@@ -68,8 +68,10 @@ class ProbeServerRules : ServerRules {
     override val localCheckTypes = setOf("run")
     override fun replays(command: CheckedCommand, context: RuleContext) = when (command.name) {
         "probe.start" -> context.entry("receipts", command.string("id")) != null
-        "probe.copy" -> context.entry("copies", command.string("dst")) == Json.of(command.string("src")); else -> false
+        "probe.copy" -> context.entry("copies", command.string("dst")) == Json.of(command.string("src"))
+        "probe.branch" -> context.entry("branches", command.string("child")) == branchReceipt(command); else -> false
     }
+    private fun branchReceipt(command: CheckedCommand) = Json.objectOf("parent" to Json.of(command.string("parent")), "title" to command.args.getValue("title"))
     override fun discoverEffectScopes(context: RuleContext, command: CheckedCommand?): Set<ScopeKey> {
         if (command?.name == "probe.branch") return setOf(ScopeKey("tree:${command.string("parent")}"), ScopeKey("tree:${command.string("child")}"))
         if (command?.name != "probe.copy" || replays(command, context) || context.idState(RecordKey("board", RecordID(command.string("dst")))).state != "none") return emptySet()
@@ -116,14 +118,21 @@ class ProbeServerRules : ServerRules {
                     CommandOutcome(listOf(PlannedDelta.create(board)), listOf(WriteClaim(board, mintedBorn = true)), product = putEntry(c.product, "copies", c.scope, board.id.toString(), Json.of(source)), into = mapOf(ScopeKey("tree:${board.id}") to copies))
                 }
             }
-            // Creates board `child` and titles both its tree and `parent`'s: one command's effects in three scopes.
+            // Creates board `child` and titles both its tree and `parent`'s: one command's effects in three scopes. Its receipt
+            // `child → {parent, title}` answers a replay, from any replica, with the board it created.
             "probe.branch" -> {
-                val parent = command.string("parent"); val board = RecordKey("board", RecordID(command.string("child")))
-                if (parent == board.id.string) throw Refusal("invalid")
-                if (c.record(board) != null) throw Refusal("id-taken")
-                val title = PlannedDelta.update(RecordKey("meta", RecordID("meta")), null, mapOf("title" to command.args.getValue("title")))
-                CommandOutcome(listOf(PlannedDelta.create(board)), listOf(WriteClaim(board, mintedBorn = true)), Json.objectOf("created" to Json.of(true)), c.product,
-                    listOf(parent, board.id.string!!).associate { ScopeKey("tree:$it") to listOf(title) })
+                val parent = command.string("parent"); val child = command.string("child"); val board = RecordKey("board", RecordID(child))
+                if (replays(command, c)) {
+                    val created = c.record(board)
+                    CommandOutcome(write = if (created?.isAlive == true) listOf(WriteClaim(board, born = created.lattice.born)) else emptyList(),
+                        detail = Json.objectOf("created" to Json.of(false)), product = c.product)
+                } else {
+                    if (parent == child) throw Refusal("invalid")
+                    if (c.record(board) != null) throw Refusal("id-taken")
+                    val title = PlannedDelta.update(RecordKey("meta", RecordID("meta")), null, mapOf("title" to command.args.getValue("title")))
+                    CommandOutcome(listOf(PlannedDelta.create(board)), listOf(WriteClaim(board, mintedBorn = true)), Json.objectOf("created" to Json.of(true)),
+                        putEntry(c.product, "branches", c.scope, child, branchReceipt(command)), listOf(parent, child).associate { ScopeKey("tree:$it") to listOf(title) })
+                }
             }
             "probe.tick" -> CommandOutcome(c.records("run").filter { isOpen(it) && (it.lattice.fields["startedAt"]?.value?.long() ?: Long.MAX_VALUE) <= c.serverNow - 600_000 }.map { PlannedDelta.update(it.key, it.lattice.born, mapOf("endedAt" to Json.of(c.serverNow))) }, product = c.product)
             else -> throw Refusal("invalid")

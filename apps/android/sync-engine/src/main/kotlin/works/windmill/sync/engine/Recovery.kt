@@ -48,33 +48,30 @@ private fun moveRegister(replica: ReplicaState, named: NamedRegister, stamp: Sta
     var delta = slot.delta
     val current = if (named.name == "life") delta["life"] else delta["f"]?.get(named.name)
     if (current == null || current.arr()[1] == stamp.json) return
-    val old = current.arr()[1]
-    val creates = named.name == "life" && current.arr()[0] == Json.of("alive") && delta["born"] == old
+    val old = Stamp(current.arr()[1].str())
+    val creates = named.name == "life" && current.arr()[0] == Json.of("alive") && delta["born"] == old.json
     val moved = Json.array(current.arr()[0], stamp.json)
     delta = if (named.name == "life") delta.with("life" to moved, "born" to if (creates) stamp.json else delta["born"])
         else delta.with("f" to delta.member("f").with(named.name to moved))
     slot.delta = delta
-    val queued = queuedOnly || slot.entry.predictions != null
-    for (later in replica.laterUnacked(slot.entry).filter { !queued || it.queued() }) {
-        if (named.name == "life") {
-            for (other in later.slots()) {
-                var following = other.delta
-                if (other.scope != slot.scope || following.recordKey != delta.recordKey) continue
-                if (creates && following["born"] == old) following = following.with("born" to stamp.json)
-                following["life"]?.arr()?.let { life ->
-                    if (life[1] == old) following = following.with("life" to Json.array(life[0], stamp.json))
-                }
-                other.delta = following
-            }
-        } else {
-            if (later.scope != slot.scope) continue
+    followRegister(replica, slot.entry, slot.scope, delta.recordKey, named.name, old, stamp, creates, queuedOnly || slot.entry.predictions != null)
+}
+
+// What follows a record's register from `old` to `stamp` in the entries after `source`, in `scope`: the borns of a record it creates and
+// the lives that carry it, or the guards on a field.
+private fun followRegister(replica: ReplicaState, source: Entry, scope: ScopeRef, key: RecordKey, register: String, old: Stamp, stamp: Stamp,
+    createsRecord: Boolean = false, queuedOnly: Boolean = false) {
+    for (later in replica.laterUnacked(source).filter { !queuedOnly || it.queued() }) {
+        if (register == "life") for (other in later.slots().filter { it.scope == scope && it.delta.recordKey == key }) {
+            var following = other.delta
+            if (createsRecord && following["born"] == old.json) following = following.with("born" to stamp.json)
+            following["life"]?.arr()?.let { life -> if (life[1] == old.json) following = following.with("life" to Json.array(life[0], stamp.json)) }
+            if (following != other.delta) other.delta = following
+        } else if (later.scope == scope) {
             val intent = later.json.member("intent")
             val guards = intent.items("guard")
-            if (guards.isEmpty()) continue
-            later.json = later.json.with("intent" to intent.with("guard" to Json.Arr(guards.map { guard ->
-                if (guard.recordKey == delta.recordKey && guard.member("field").str() == named.name && guard["stamp"] == old)
-                    guard.with("stamp" to stamp.json) else guard
-            })))
+            val followed = guards.map { if (it.recordKey == key && it.member("field").str() == register && it["stamp"] == old.json) it.with("stamp" to stamp.json) else it }
+            if (followed != guards) later.json = later.json.with("intent" to intent.with("guard" to Json.Arr(followed)))
         }
     }
 }
@@ -497,37 +494,28 @@ private fun Engine.applyAcceptedVersions(replica: ReplicaState, command: Entry, 
         }.map { NamedRegister(slot, it) }
     } }
     for (effect in effects) for (row in effect.rows) {
+        val ordinary = if (effect.scope == command.scope) command.intent.deltas.filter { it.key == row.key } else emptyList()
         val predicted = command.slots().filter { it.prediction && it.scope == effect.scope && it.delta.recordKey == row.key }
+        val prior = previous.firstOrNull { it.scope == effect.scope }?.row(row.key)
         for (slot in row.slots) {
             val stamp = slot.stamp ?: continue
-            val prior = previous.firstOrNull { it.scope == effect.scope }?.row(row.key)?.slot(slot.kind, slot.name)?.stamp
-            if (prior != null && prior != stamp) for (entry in later) {
-                for (other in entry.slots().filter { it.scope == effect.scope && it.delta.recordKey == row.key }) {
-                    var delta = other.delta
-                    if (slot.kind == EffectSlot.Kind.born && delta["born"] == prior.json) delta = delta.with("born" to stamp.json)
-                    if (slot.kind == EffectSlot.Kind.born || slot.kind == EffectSlot.Kind.life) delta["life"]?.arr()?.let {
-                        if (it[1] == prior.json) delta = delta.with("life" to Json.array(it[0], stamp.json))
-                    }
-                    other.delta = delta
-                }
-                if (slot.kind == EffectSlot.Kind.field && entry.scope == effect.scope) entry.intent = entry.intent.copy(guards = entry.intent.guards.map {
-                    if (it.key == row.key && it.field == slot.name && it.stamp == prior) it.copy(stamp = stamp) else it
-                })
+            val register = if (slot.kind == EffectSlot.Kind.field) slot.name!! else "life"
+            fun follow(old: Stamp?) {
+                if (old != null && old != stamp) followRegister(replica, command, effect.scope, row.key, register, old, stamp, slot.kind == EffectSlot.Kind.born, queuedOnly = true)
             }
+            follow(prior?.slot(slot.kind, slot.name)?.stamp)
+            for (delta in ordinary) follow(when (slot.kind) {
+                EffectSlot.Kind.born -> delta.lattice.born
+                EffectSlot.Kind.life -> delta.lattice.life?.stamp
+                else -> delta.lattice.fields[register]?.stamp
+            })
             for (delta in predicted) {
-                val old = delta.delta["born"]
-                if (slot.kind == EffectSlot.Kind.born && old != null) {
-                    var updated = delta.delta.with("born" to stamp.json)
-                    updated["life"]?.arr()?.let { if (it[0] == Json.of("alive") && it[1] == old) updated = updated.with("life" to Json.array(it[0], stamp.json)) }
-                    delta.delta = updated
-                    for (entry in later) for (other in entry.slots().filter { it.scope == effect.scope && it.delta.recordKey == row.key }) {
-                        var following = other.delta
-                        if (following["born"] == old) following = following.with("born" to stamp.json)
-                        following["life"]?.arr()?.let { if (it[1] == old) following = following.with("life" to Json.array(it[0], stamp.json)) }
-                        other.delta = following
-                    }
-                }
-                slot.register?.let { moveRegister(replica, NamedRegister(delta, it), stamp, queuedOnly = true) }
+                if (slot.kind != EffectSlot.Kind.born) { moveRegister(replica, NamedRegister(delta, register), stamp, queuedOnly = true); continue }
+                val old = delta.delta["born"]?.str()?.let(::Stamp) ?: continue
+                var updated = delta.delta.with("born" to stamp.json)
+                updated["life"]?.arr()?.let { if (it[0] == Json.of("alive") && it[1] == old.json) updated = updated.with("life" to Json.array(it[0], stamp.json)) }
+                delta.delta = updated
+                follow(old)
             }
         }
     }
