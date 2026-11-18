@@ -520,6 +520,7 @@ function traversal() {
   assert.deepEqual(command.expect.after.args, { board: B9, tag: 'oak', child: CHILD });
   const link = traversed('a tuple key\'s parts resolve into the link\'s own tree', { scope: `tree/${B1}`, record: { t: 'link', id: ['elm', 'elm'], life: ['alive', st(2000)] }, maps: [[elmToOak(B1)]] });
   assert.deepEqual(link.expect.after.id, ['oak', 'oak']);
+  assert.deepEqual(link.expect.references.find(({ role }) => role === 'identity').id, ['elm', 'elm']);
   const untouched = traversed('unannotated JSON and text are never read', {
     scope: 'self/probe', record: { t: 'card', id: CHILD, f: { title: [CHILD, st(2000)], attachment: [{ id: CHILD }, st(2000)] } }, maps: [[{ t: 'card', from: 'card0009', id: 'card0010' }, toNine]],
   });
