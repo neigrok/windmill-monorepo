@@ -224,7 +224,7 @@ internal fun Registry.remappedScope(scope: ScopeRef, write: List<WriteMapEntry>,
     return if (scope.kind is ScopeRef.Kind.Tree) ScopeRef.tree(id) else ScopeRef.overlay(id)
 }
 
-// §7.7 write map and E-8: one entry renamed by one logical map, atomically. Every delta, guard, receipt row and argument is
+// §7.7 write map and E-8: one entry renamed by one logical map, atomically. Every delta, guard, receipt row, argument and base text key is
 // renamed by its compiled leaves, global mappings first and then scoped ones in the scopes the governor mappings leave; then
 // its ScopeRefs follow the governors. `replayed` re-address a retained command (step 0): an argument naming its own source
 // moves to the record that source now resolves to, even a proposed creation. `predictionOnly` renames an opted command's
@@ -240,7 +240,6 @@ private fun Registry.rewriteEntry(entry: Entry, map: RecordMap, predictionOnly: 
     val command = entry.json.member("intent")["cmd"]
     val named = if (predictionOnly || command == null) emptyList()
         else references.ofCommand(scope, command) + references.ofCommand(scope, command, Leaf.Role.creation)
-    val before = entry.intent.deltas.map { it.key }
     for (slot in entry.slots().filter { !predictionOnly || it.prediction }) slot.delta = references.remapRecord(slot.scope, slot.delta, map)
     entry.acceptedEffects = entry.acceptedEffects.map { effect -> effect.copy(rows = effect.rows.map { EffectRow(references.remapRecord(effect.scope, it.json, map)) }) }
     if (!predictionOnly) {
@@ -257,11 +256,10 @@ private fun Registry.rewriteEntry(entry: Entry, map: RecordMap, predictionOnly: 
             val argued = moved != null && named.any { it.key == RecordKey(type, RecordID(from)) }
             target.with("from" to if (argued) moved!!.json else renamed(type, from), "id" to renamed(type, target.member("id")))
         })) }
-        val keys = before.zip(entry.intent.deltas.map { it.key }).toMap()
         entry.json.fields("baseTexts").takeIf { it.isNotEmpty() }?.let { bases -> entry.json = entry.json.with("baseTexts" to Json.Obj(bases.map { (text, value) ->
-            val parts = Json.parse(text).arr()
-            val key = keys[RecordKey(parts[0].str(), RecordID(parts[1]))] ?: RecordKey(parts[0].str(), RecordID(parts[1]))
-            Json.array(Json.of(key.type), key.id.json, parts[2]).jcs to value
+            val (type, id, field) = Json.parse(text).arr()
+            val record = references.remapRecord(scope, Json.objectOf("t" to type, "id" to id), map)
+            Json.array(type, record.member("id"), field).jcs to value
         }.distinctBy { it.first })) }
     }
     if (!map.movesScopes) return
