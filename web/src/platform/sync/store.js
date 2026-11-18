@@ -381,12 +381,15 @@ export class IndexedDBStore {
         if (head.result && this.controls?.revision === revision) { controls = this.controls; begin(); return; }
         const all = table.getAll();
         all.onsuccess = guarded(() => {
-          const records = new Map();
+          const records = new Map(), outbox = [];
           for (const { key, value } of all.result) {
             const parts = JSON.parse(key);
             if (parts[0] === 'garbage') this.garbage.add(value);
+            else if (parts[0] === 'outbox') outbox.push({ key, value, parts });
             else records.set(key, new ControlRecord(JSON.stringify(value), parts));
           }
+          outbox.sort((a, b) => a.value.commitOrder - b.value.commitOrder);
+          for (const { key, value, parts } of outbox) records.set(key, new ControlRecord(JSON.stringify(value), parts));
           controls = this.controls = { revision: records.get(HEAD)?.value.revision, records };
           const pointed = new Set([...records.values()].filter(({ parts: [kind] }) => kind === 'cache').map((record) => record.shared.generation));
           for (const generation of this.generations.keys()) if (!pointed.has(generation)) this.generations.delete(generation);

@@ -13,18 +13,16 @@ const ENVELOPE = ['seq', 'rc', 'ru'];
 // A pending entry as the observation folded it: the deltas its active effects draw in the scope, in order,
 // and the record keys they name.
 class FoldedEntry {
-  constructor(entry, deltas, signature) {
+  constructor(entry, scope) {
     this.source = entry;
-    this.signature = signature;
     this.order = entry.commitOrder;
     this.held = entry.state === 'held';
-    this.deltas = deltas;
-    this.keys = deltas.map((delta) => recordKey(delta.t, delta.id));
+    this.deltas = effectsOf(entry, { active: true }).filter((effect) => effect.scope === scope).flatMap(({ d }) => d);
+    this.keys = this.deltas.map((delta) => recordKey(delta.t, delta.id));
   }
 
-  static of(entry, scope) {
-    const deltas = effectsOf(entry, { active: true }).filter((effect) => effect.scope === scope).flatMap(({ d }) => d);
-    return new FoldedEntry(entry, deltas, JSON.stringify([entry.state === 'held', entry.commitOrder, deltas]));
+  get signature() {
+    return (this.encoded ??= JSON.stringify([this.held, this.order, this.deltas]));
   }
 }
 
@@ -113,7 +111,7 @@ export class ScopeObservation {
       if (!(entry.state === 'held' || PENDING.has(entry.state))) continue;
       const previous = this.entries.get(entry.localId);
       if (previous?.source === entry) { entries.set(entry.localId, previous); continue; }
-      const folded = FoldedEntry.of(entry, this.scope);
+      const folded = new FoldedEntry(entry, this.scope);
       if (previous?.signature === folded.signature) {
         previous.source = entry;
         entries.set(entry.localId, previous);
