@@ -10,8 +10,8 @@ client's design, whose public API the kit binds to.
 **Status:** Built in Swift (`apps/ios/Domain`); Kotlin implements it from this spec. Each
 implementation passes the shared vectors of §15. `WindmillKit` supplies the product-neutral AI
 client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there. Undo of an act (§9.6)
-is built in the web kit (`web/src/platform/domain-kit`) over the browser engine; the Swift and Kotlin kits
-port it, with the rename of the held-only `undo` to `cancelHeld`, from `run/undo.json`.
+is built in the web, Swift and Kotlin kits over their engines, with the held-only `undo` named `cancelHeld`,
+each passing `run/undo.json`.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;

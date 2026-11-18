@@ -14,7 +14,9 @@ gym's and journal's) and the engine's JavaScript reference model server carries 
 ([engine](engine.md) Appendix A.1). Roadmap syncs through a sync of its own:
 a lattice and a socket described in [graph sync](../GRAPH_SYNC_DESIGN.md) and
 [the roadmap tree engine](../../backend/SPEC.md), on the web only. The [sync engine](engine.md)
-serves gym and journal, and its tree and overlay scopes have run only against its test product. The
+serves gym and journal in production; on the review branch the C++ server binds roadmap
+(`backend/products/roadmap/sync/`) and serves its scopes only where `ROADMAP_ENGINE_ENABLED` is set,
+which production's configuration leaves unset. The
 build order lives in the Roadmap on the engine roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `roadmap-on-the-engine`.
 
@@ -458,8 +460,8 @@ What changes is built only from boards marked ✅ Ready for dev:
   warning, both against canon.
 - The server and the browser break a tie between two marks differently.
 - A step's workspace lives in one browser.
-- The engine's tree and overlay scopes have run only against its test product, and production's
-  build refuses any composition but gym and journal.
+- The engine's tree and overlay scopes have run only against its test product, and production serves
+  no composition but gym and journal.
 - Roadmap's MCP write tools take no `requestId`.
 
 ## §15 Rulings

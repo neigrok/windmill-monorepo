@@ -2457,7 +2457,9 @@ before its own result is recorded; its resend then carries another digest, the s
 ### §7.9 Subscriptions
 
 A bound replica subscribes the product scopes of the products its surface carries (the registry's
-`surfaces`), and no scope of another product. It also subscribes the tree and overlay scopes its
+`surfaces`), and no scope of another product. A build may carry fewer products than its surface lists:
+it names the products it carries (Swift `EngineConfig.carried`, Kotlin `products`), and subscribes only
+those. It also subscribes the tree and overlay scopes its
 product binding lists (A.1): the set holds a tree and its overlay per governing record alive in
 `drawn` or in `stored`, so a held create's tree is in it, and so is a tree inside its governing
 record's delete window, so an undo finds its rows. The engine also exposes `subscribe(scope)` and
