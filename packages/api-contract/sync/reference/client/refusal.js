@@ -232,7 +232,7 @@ export function onRefused(replica, ctx, entry, result, response) {
 }
 
 // §7.7 write map and E-8: one queued entry renamed by one logical map, atomically. Every delta, guard,
-// receipt row and argument is renamed by its compiled leaves, global mappings first and then scoped ones
+// receipt row, argument and base text key is renamed by its compiled leaves, global mappings first and then scoped ones
 // in the scopes the governor mappings leave; then its ScopeRefs follow the governors. `replayed` are
 // the mappings that re-address a retained command (step 0): an argument naming its own source moves to
 // the record that source now resolves to, even a proposed creation.
@@ -254,6 +254,14 @@ function rewriteEntry(registry, entry, map, { predictionOnly = false, replayed =
   for (const effect of entry.acceptedEffects ?? []) for (const row of effect.rows) references.remapRecord(effect.scope, row, map);
   if (!predictionOnly) {
     for (const guard of entry.intent.guard ?? []) references.remapRecord(scope, guard, map);
+    if (entry.baseTexts) {
+      entry.baseTexts = Object.fromEntries(Object.entries(entry.baseTexts).map(([key, text]) => {
+        const [t, id, field] = JSON.parse(key);
+        const record = { t, id };
+        references.remapRecord(scope, record, map);
+        return [baseTextKey(t, record.id, field), text];
+      }));
+    }
     if (entry.intent.cmd) references.remapCommand(scope, entry.intent.cmd, map, moves);
     const renamed = (t, id) => (registry.type(t)?.idSpace === 'global' ? map.globalTarget(t, id) : map.scopedTarget(map.scope(scope), t, id)) ?? id;
     for (const target of entry.writeTargets ?? []) {

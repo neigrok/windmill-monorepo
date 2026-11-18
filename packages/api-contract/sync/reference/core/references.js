@@ -234,14 +234,15 @@ export class References {
     }
   }
 
-  // Every resolved identity of `leaves` in a holder of `holderScope`: `{leaf, scope, t, id}`.
+  // Every resolved identity of `leaves` in a holder of `holderScope`: `{leaf, scope, t, id}`. Each id is a
+  // copy: a tuple identity is the holder's own array, which a later rename writes into.
   resolve(leaves, holder, holderScope) {
     const found = [];
     for (const leaf of leaves) {
       const at = leaf.find(holder);
       if (at.state !== 'value' || (leaf.role !== 'identity' && typeof at.value !== 'string')) continue;
       const scope = this.scopeOf(leaf, holder, holderScope);
-      if (scope !== null) found.push({ leaf, scope, t: leaf.t, id: at.value });
+      if (scope !== null) found.push({ leaf, scope, t: leaf.t, id: structuredClone(at.value) });
     }
     return found;
   }

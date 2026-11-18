@@ -2271,8 +2271,9 @@ global type renames its id in every scope; a mapping of a scope-local type renam
 command's scope, keyed by that scope as the map's governor mappings leave it, so an overlay's key
 names the record of its own tree and the same id in a sibling tree stays. Each entry takes two passes,
 each reading every leaf before writing one: the global leaves and governed ScopeRefs, then the
-scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. A creation leaf
-moves only with its own command's retained target.
+scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. The entry's
+`baseTexts` keys follow their records, so a `base-unknown` recovery finds the text a renamed record's
+write was edited from. A creation leaf moves only with its own command's retained target.
 0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
    first move its previous resolved id to `w.id` in the command's prediction and its later held or
    ready dependents, including deletes, references, key parts and guards, and in device rows through
@@ -3071,8 +3072,11 @@ run, and against the real server and Postgres nightly.
 - a store restored from a snapshot, or cloned.
 
 **It checks at every answer and frame** that one served as anyone but the replica's account changes
-nothing the replica pulled (§9.1), and **at every step** that each change of a device's active replica
-id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12).
+nothing the replica pulled (§9.1), **at every step** that each change of a device's active replica
+id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12), and **at every push**
+that no intent a device sends names a proposal its retained write targets say was redirected, by the
+proposal's own id or by any typed reference (§2.4 References), but the command that proposed it and an
+id another retained command resolved to.
 
 **It checks after quiescence:**
 - INV-2: no resurrection without a revive or a newer keyed put.
