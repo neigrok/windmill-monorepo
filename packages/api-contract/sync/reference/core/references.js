@@ -70,10 +70,6 @@ export class RecordMap {
     }
   }
 
-  get isEmpty() {
-    return this.global.size === 0 && this.scoped.size === 0;
-  }
-
   // A tree or overlay ScopeRef after the governor mappings; any other scope as it is.
   scope(ref) {
     const kind = this.registry.scopeKindOf(ref);
@@ -130,7 +126,7 @@ export class References {
     if (command.refPaths === undefined) return leaves;
     const where = command.name;
     const domainAt = (path) => {
-      const arg = command.args[path[0]];
+      const arg = Object.hasOwn(command.args, path[0]) ? command.args[path[0]] : undefined;
       if (!arg) fail(`${where}: refPaths name the undeclared argument ${path[0]}`);
       if (arg.type !== 'json') fail(`${where}: refPaths reach into a json argument, not ${arg.type} ${path[0]}`);
       return domainAlong(arg.domain, path.slice(1));
