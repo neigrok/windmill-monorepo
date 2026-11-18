@@ -511,13 +511,28 @@ export class SyncSession {
     this.sent.clear();
     this.phase = 'offline';
     try { socket?.close(); } catch { /* the socket is let go either way */ }
-    this.persistNow((error) => this.reportFailure('roadmap-sync-persist', error));
-    this.emitStatus();
+    this.persistWrite();
+    try {
+      this.emitStatus();
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
+    }
   }
 
-  // Whether an act is held, as a delete waiting out its Undo: a reload would cut it short.
+  // Whether an act is under way that a reload would cut short: a delete waiting out its Undo, or a Discard settling.
   holdsAct() {
-    return this.heldAct !== null;
+    return this.heldAct !== null || this.discardPending;
+  }
+
+  // Whether everything this session holds is where the next page load finds it: saved, in a store kept on the device.
+  async savedOnDevice() {
+    try {
+      const saved = await this.persistNow((error) => this.reportFailure('roadmap-sync-persist', error));
+      return saved?.status === 'saved' && await this.store.holdsOnDevice();
+    } catch (error) {
+      this.reportFailure('roadmap-sync-persist', error);
+      return false;
+    }
   }
 
   connect() {

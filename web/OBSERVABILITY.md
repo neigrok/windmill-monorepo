@@ -286,7 +286,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Fork landed | `fork_claim` | `mode: email/instant/browse` |
 | Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
 | The server retired this build: the socket's path or a roadmap write route answered `410` `client-update-required`, once per page load, by the door that said it first | `roadmap_sync_retired` | `step: detected`, `door: socket/write` |
-| The retired build's reload: `deferred` when the page was in view or held something open as the build was retired, `ran` as the page reloads, `suppressed` when this tab already reloaded for it within ten minutes or cannot keep that mark, and stays offline | `roadmap_sync_retired` | `step: reload`, `door: socket/write`, `outcome: ran/deferred/suppressed` |
+| The retired build's reload: `deferred` when no room was open, or the page was in view or held something open, as the build was retired; `ran` as the page reloads; `suppressed` when this tab already reloaded for it within ten minutes (tried again as the ten minutes end), cannot keep that mark, or a save did not reach a store kept on the device, and the page stays offline | `roadmap_sync_retired` | `step: reload`, `door: socket/write`, `outcome: ran/deferred/suppressed` |
 | Refusal shown, retried or discarded from Board, Graph or the owner step document | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
@@ -350,7 +350,8 @@ change no optimistic marks or ledger and emit no success event; a structure-only
 The existing `roadmap-sync-discard` boundary reports unexpected replacement failures; readers receive no owner
 recovery controls. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
 A retired build emits `roadmap_sync_retired` `detected` once per page load, then one reload outcome, or `deferred` followed by
-`ran` once the page holds nothing open; a write door it no longer sends through fails as a lost request does, with no Issue.
+`ran` or `suppressed`; a page suppressed by the window emits its outcome again as the window ends. A write door it no longer
+sends through fails as a lost request does, with no Issue.
 
 ### Technical failures
 
@@ -402,6 +403,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-progress-mark` | Each invalid progress row skipped while reading server frames, stored records or legacy residue, with only `lane: progress`; shared Sentry deduplication and rate limits apply | Valid marks remain available and sync; invalid rows stay off the wire |
 | `roadmap-sync-restore` | A stored lane or record that cannot be read, once per session | That lane stays out until the server's graft fills it |
 | `roadmap-sync-socket` | A socket with no inbound frame for ten seconds while online and in view, once per session | The Shell's sync status; reconnects keep trying |
+| `roadmap-sync-retire` | A session that throws as the build is retired, reported by the door that said so; the other sessions are retired and the reload is still arranged | That session's room may not stand offline until it is left |
 | `roadmap-sync-probe` | The plain read of the socket's path that follows a socket that never opened, failing for any reason but a lost connection or its ten-second limit. At most one read a minute for the page, none offline | The socket keeps reconnecting, and the next probe waits its minute |
 | `roadmap-sync-dropped` | A write reply or heartbeat pong proves an earlier frame unanswered, once per session, tagged with the first affected `lane: structure/progress` | The write stays pending and is sent again |
 | `roadmap-sync-unlandable` | The socket closed five times running with the lane's first structure frame unanswered, and that frame is heavier than 64 KiB: one the path drops the connection for, as the server does a message past its size limit. A lighter frame is never judged. Once per session, tagged `lane: structure` and the frame's `size` bucket (`under-128k`, `under-256k`, `under-1m`, `over-1m`) | The refused card of a write this browser cannot send; that frame's writes, and the other parts of the acts it carries, stay unsent until Retry, and other writes go on |

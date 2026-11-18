@@ -72,12 +72,13 @@ export class RetiredPage {
     };
   }
 
-  reloadedWithin(windowMs) {
+  // When this tab last reloaded for a retired build, or null.
+  reloadMark() {
     try {
       const at = Number(this.storage.getItem(RELOAD_MARK));
-      return at > 0 && this.now() - at < windowMs;
+      return at > 0 ? at : null;
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -99,9 +100,9 @@ export class RetiredPage {
 
 // Whether the server has retired this build, one fact for the whole page. `retired` is the door that said so first,
 // `socket` or `write`, or null. A session enlists while it runs: it is retired with the build, and the reload waits for
-// the act it holds and for its saves.
+// the act it holds and for its saves to reach the device. The page reloads only while a session is enlisted.
 export class BuildRetirement {
-  constructor({ page = new RetiredPage(), fetch = (...args) => globalThis.fetch(...args), events = beacon, timers = globalThis, now = Date.now,
+  constructor({ page = null, fetch = (...args) => globalThis.fetch(...args), events = beacon, timers = globalThis, now = Date.now,
     online = () => globalThis.navigator?.onLine !== false } = {}) {
     this.page = page;
     this.fetch = fetch;
@@ -111,24 +112,44 @@ export class BuildRetirement {
     this.online = online;
     this.retired = null;
     this.sessions = new Set();
+    this.holds = new Set();
     this.probing = false;
     this.probedAt = -Infinity;
+    this.wanted = false;
     this.reloading = false;
-    this.stopWatching = null;
-    this.recheck = null;
+    this.watching = null;
   }
 
   enlist(session) {
     this.sessions.add(session);
     if (this.retired) session.retire();
-    return () => this.sessions.delete(session);
+    this.watch();
+    return () => {
+      this.sessions.delete(session);
+      if (this.sessions.size === 0) this.unwatch();
+    };
   }
 
-  declare(door) {
+  // A surface that keeps what a person typed in its own state alone holds the reload off while it does. Answers the release.
+  hold() {
+    const held = {};
+    this.holds.add(held);
+    return () => this.holds.delete(held);
+  }
+
+  // `report` is the reporter of the door that said so, for a session that throws as it is retired.
+  declare(door, report) {
     if (this.retired) return;
     this.retired = door;
+    this.page ??= new RetiredPage();
     this.events.track('roadmap_sync_retired', { step: 'detected', door });
-    for (const session of this.sessions) session.retire();
+    for (const session of this.sessions) {
+      try {
+        session.retire();
+      } catch (error) {
+        report('roadmap-sync-retire', error);
+      }
+    }
     this.reloadWhenSafe();
   }
 
@@ -138,49 +159,76 @@ export class BuildRetirement {
     if (this.retired || this.probing || !this.online() || this.now() - this.probedAt < PROBE_SPACING_MS) return;
     this.probing = true;
     this.probedAt = this.now();
+    let retired = false;
     try {
       const response = await this.fetch(socketUrl.replace(/^ws/, 'http'), {
         credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(PROBE_LIMIT_MS),
       });
-      if (await saysRetired(response)) this.declare('socket');
+      retired = await saysRetired(response);
     } catch (error) {
       if (!LOST_CONNECTIONS.has(error?.name)) report('roadmap-sync-probe', error);
     } finally {
       this.probing = false;
     }
+    if (retired) this.declare('socket', report);
   }
 
-  // The tab reloads once a window at most; where it already did, or cannot keep the mark, it stays offline.
+  // Once a window at most. Inside one the reload is suppressed and tried again as the window ends, so a page served the
+  // same build stays offline only until then; a page that cannot keep the mark stays offline.
   reloadWhenSafe() {
-    if (this.page.reloadedWithin(RELOAD_WINDOW_MS) || !this.page.markReload()) {
-      this.events.track('roadmap_sync_retired', { step: 'reload', door: this.retired, outcome: 'suppressed' });
+    const since = this.now() - (this.page.reloadMark() ?? -Infinity);
+    if (since < RELOAD_WINDOW_MS) {
+      this.suppress();
+      this.timers.setTimeout(() => this.reloadWhenSafe(), RELOAD_WINDOW_MS - since);
       return;
     }
-    const attempt = () => { this.reloadIfSafe(); };
-    this.stopWatching = this.page.watch(attempt);
-    this.recheck = this.timers.setInterval(attempt, RECHECK_MS);
+    if (!this.page.markReload()) return this.suppress();
+    this.wanted = true;
+    this.watch();
     if (!this.safe()) this.events.track('roadmap_sync_retired', { step: 'reload', door: this.retired, outcome: 'deferred' });
-    attempt();
+    this.reloadIfSafe();
   }
 
-  // Nothing a person holds is open — no held act, no draft, no text field in focus, no dialog — and they are between
-  // gestures, or the page is hidden.
+  watch() {
+    if (!this.wanted || this.watching || this.sessions.size === 0) return;
+    const attempt = () => { this.reloadIfSafe(); };
+    this.watching = { stop: this.page.watch(attempt), recheck: this.timers.setInterval(attempt, RECHECK_MS) };
+  }
+
+  unwatch() {
+    if (!this.watching) return;
+    this.watching.stop();
+    this.timers.clearInterval(this.watching.recheck);
+    this.watching = null;
+  }
+
+  suppress() {
+    this.events.track('roadmap_sync_retired', { step: 'reload', door: this.retired, outcome: 'suppressed' });
+  }
+
+  // A roadmap session is enlisted and nothing a person holds is open — no hold, no held act, no draft, no text field in
+  // focus, no dialog — and they are between gestures, or the page is hidden.
   safe() {
-    return ![...this.sessions].some((session) => session.holdsAct()) && !this.page.holdsWork() && this.page.resting();
+    const sessions = [...this.sessions];
+    return sessions.length > 0 && this.holds.size === 0 && !sessions.some((session) => session.holdsAct())
+      && !this.page.holdsWork() && this.page.resting();
   }
 
+  // Every session's save must succeed in a store that keeps it on the device, or the page stays offline with what it holds.
   async reloadIfSafe() {
-    if (this.reloading || !this.safe()) return;
+    if (this.reloading || !this.wanted || !this.safe()) return;
     this.reloading = true;
-    await Promise.allSettled([...this.sessions].map((session) => session.persistNow()));
+    const saved = await Promise.allSettled([...this.sessions].map(async (session) => session.savedOnDevice()));
     this.reloading = false;
-    if (!this.safe()) return;
-    this.stopWatching();
-    this.timers.clearInterval(this.recheck);
-    if (!this.page.markReload()) {
-      this.events.track('roadmap_sync_retired', { step: 'reload', door: this.retired, outcome: 'suppressed' });
-      return;
+    if (saved.some((result) => result.value !== true)) {
+      this.wanted = false;
+      this.unwatch();
+      return this.suppress();
     }
+    if (!this.safe()) return;
+    this.wanted = false;
+    this.unwatch();
+    if (!this.page.markReload()) return this.suppress();
     this.events.track('roadmap_sync_retired', { step: 'reload', door: this.retired, outcome: 'ran' });
     this.page.reload();
   }

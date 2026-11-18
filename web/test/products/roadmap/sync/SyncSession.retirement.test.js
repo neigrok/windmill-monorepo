@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 import { BuildRetirement } from '../../../../src/products/roadmap/sync/retirement.js';
+import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 
 class Timers {
   constructor() {
@@ -48,6 +49,7 @@ function memoryStore() {
     load: async () => structuredClone(store.record),
     save: async (treeId, value) => { store.record = structuredClone(value); return { status: 'saved' }; },
     requestPersistent: async () => true,
+    holdsOnDevice: async () => true,
   };
   return store;
 }
@@ -64,13 +66,14 @@ test('a retired build keeps every unsent write in the old store, sends nothing m
   const reports = [];
   const events = [];
   const retirement = new BuildRetirement({
-    page: { reloadedWithin: () => true, markReload: () => true },
+    page: { reloadMark: () => Date.now(), markReload: () => true },
     fetch: async (url, init) => {
       probes.push(url);
       return new Response(JSON.stringify({ error: 'This version of the app can no longer save; update it.', code: 'client-update-required' }), { status: 410 });
     },
     events: { track: (name, props) => events.push(props) },
     online: () => true,
+    timers: new Timers(),
   });
   const store = memoryStore();
   const timers = new Timers();
@@ -119,4 +122,59 @@ test('a retired build keeps every unsent write in the old store, sends nothing m
   reloaded.close();
   assert.deepEqual(reports, []);
   assert.deepEqual(events, [{ step: 'detected', door: 'socket' }, { step: 'reload', door: 'socket', outcome: 'suppressed' }]);
+});
+
+// A page at rest, hidden and holding nothing, that keeps its mark: only the saves can stop its reload.
+function restingPage() {
+  return { reloads: 0, holdsWork: () => false, resting: () => true, watch: () => () => {}, reloadMark: () => null, markReload: () => true,
+    reload() { this.reloads += 1; } };
+}
+
+async function retiredWith(t, store) {
+  const original = globalThis.WebSocket;
+  globalThis.WebSocket = Socket;
+  t.after(() => { globalThis.WebSocket = original; });
+  const page = restingPage();
+  const events = [];
+  const reports = [];
+  const timers = new Timers();
+  const retirement = new BuildRetirement({ page, timers, online: () => true, events: { track: (name, props) => events.push(props.outcome ?? props.step) },
+    fetch: async () => new Response(JSON.stringify({ error: 'Update.', code: 'client-update-required' }), { status: 410 }) });
+  const session = new SyncSession({ url: 'ws://localhost:8088/v1/socket', treeId: 'tree', title: 'Tree', registry: null, store, timers, retirement,
+    reportFailure: (operation) => reports.push(operation) });
+  t.after(() => session.close());
+  await session.start();
+  const live = Socket.made.at(-1);
+  live.open();
+  live.receive(GRAFT);
+  live.receive({ t: 'progress', intent: 'graft', marks: [] });
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Unsent' });
+  live.close();
+  timers.runReconnects();
+  Socket.made.at(-1).close();
+  for (let turn = 0; turn < 10; turn += 1) await settle();
+  return { session, page, retirement, events, reports };
+}
+
+test('a retired page whose save failed keeps its only copy of an unsent edit: it stays offline instead of reloading', async (t) => {
+  const store = { ...memoryStore(), save: async () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); } };
+  const { session, page, retirement, events, reports } = await retiredWith(t, store);
+  assert.deepEqual({ retired: retirement.retired, reloads: page.reloads, unsent: session.pendingEditCount(), phase: session.phase },
+    { retired: 'socket', reloads: 0, unsent: 1, phase: 'offline' });
+  assert.deepEqual(events, ['detected', 'suppressed']);
+  assert.ok(reports.length > 0 && reports.every((operation) => operation === 'roadmap-sync-persist'));
+});
+
+test('a retired page whose browser keeps the store in page memory alone stays offline instead of reloading', async (t) => {
+  const store = new SyncStore();
+  const { session, page, events } = await retiredWith(t, store);
+  assert.deepEqual({ onDevice: await store.holdsOnDevice(), reloads: page.reloads, unsent: session.pendingEditCount() },
+    { onDevice: false, reloads: 0, unsent: 1 });
+  assert.deepEqual(events, ['detected', 'suppressed']);
+});
+
+test('a retired page whose saves reached the device reloads', async (t) => {
+  const { page, events } = await retiredWith(t, memoryStore());
+  assert.equal(page.reloads, 1);
+  assert.deepEqual(events, ['detected', 'ran']);
 });

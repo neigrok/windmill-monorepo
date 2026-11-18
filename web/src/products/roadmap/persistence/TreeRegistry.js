@@ -5,6 +5,7 @@ import { AuthError } from '../../../shell/auth/AuthClient.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { LocalTreeRegistry, resolveDeviceOwner } from './LocalTreeRegistry.js';
 import { buildRetirement, saysRetired } from '../sync/retirement.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
 
 // One row per owned roadmap: { id, title, done, total, updatedAt }.
 export async function listTrees() {
@@ -105,7 +106,7 @@ async function sendWrite(url, init) {
     throw unreachable();
   }
   if (!await saysRetired(response)) return response;
-  buildRetirement.declare('write');
+  buildRetirement.declare('write', reportRoadmapFailure);
   throw unreachable();
 }
 

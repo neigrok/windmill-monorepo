@@ -224,11 +224,12 @@ after(async () => {
 });
 
 // A fresh tab on a backend that is live again, with every page error and every console error but the browser's own lines
-// for the retired answers failing the test.
-async function openRoom() {
+// for the retired answers failing the test. `init` runs in every page before the room.
+async function openRoom({ init = null } = {}) {
   await ready;
   Object.assign(backend, { retired: false, documents: 0, probes: 0, writes: [], frames: [] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  if (init) await context.addInitScript(init);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
   const errors = [];
@@ -333,6 +334,33 @@ test('Chromium: a retired write door stands the room offline, waits out the dial
       { step: 'reload', door: 'socket', outcome: 'suppressed' },
     ]);
     assert.deepEqual(await issues(page), [], 'the refused share reports no Issue');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('Chromium: where the browser refuses IndexedDB, the retired room keeps its edit on the page and never reloads it away', async () => {
+  const { context, page, errors } = await openRoom({ init: () => {
+    Object.defineProperty(window, 'indexedDB', { configurable: true, get: () => undefined });
+  } });
+  try {
+    backend.retired = true;
+    cutLiveSockets();
+    await until(() => backend.probes === 1, 'the probe of the socket’s path');
+    await page.waitForFunction(() => window.session.phase === 'offline' && window.session.ws === null);
+    await page.evaluate(() => window.session.dispatch({ kind: 'RenameNode', id: 'dock', label: 'Written while retired' }));
+    await page.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture:events') ?? '[]')
+      .some(({ name, props }) => name === 'roadmap_sync_retired' && props.outcome === 'suppressed'), null, { timeout: IDLE_MS + 10000 });
+    await waitPastIdle();
+    assert.equal(backend.documents, 1, 'a page whose store lives in its memory alone never reloads');
+    await page.locator('.st-board-card[data-step-id="dock"]').filter({ hasText: 'Written while retired' }).waitFor();
+    assert.equal(await page.evaluate(() => window.session.pendingEditCount()), 1);
+    assert.deepEqual(backend.frames, []);
+    assert.deepEqual(await retiredEvents(page), [
+      { step: 'detected', door: 'socket' },
+      { step: 'reload', door: 'socket', outcome: 'deferred' },
+      { step: 'reload', door: 'socket', outcome: 'suppressed' },
+    ]);
+    assert.deepEqual(await issues(page), []);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

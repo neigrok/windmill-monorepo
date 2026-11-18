@@ -14,26 +14,36 @@ const RETIRED_BODY = { error: 'This version of the app can no longer save; updat
 class Clock {
   constructor() {
     this.now = 1_000_000;
-    this.intervals = new Map();
+    this.timers = new Map();
     this.next = 0;
   }
-  setInterval(callback) { this.intervals.set(++this.next, callback); return this.next; }
-  clearInterval(id) { this.intervals.delete(id); }
-  tick() { for (const callback of [...this.intervals.values()]) callback(); }
+  setInterval(callback) { this.timers.set(++this.next, { callback, every: true }); return this.next; }
+  clearInterval(id) { this.timers.delete(id); }
+  setTimeout(callback, delay) { this.timers.set(++this.next, { callback, due: this.now + delay }); return this.next; }
+  // Every interval runs once, and every timeout that is due.
+  tick() {
+    for (const [id, { callback, every, due }] of [...this.timers]) {
+      if (!every && due > this.now) continue;
+      if (!every) this.timers.delete(id);
+      callback();
+    }
+  }
 }
 
 class FakePage {
-  constructor({ reloadedAt = null, keepsMarks = true, hidden = false, holdsWork = false, resting = false } = {}) {
-    Object.assign(this, { reloadedAt, keepsMarks, hidden, held: holdsWork, rest: resting });
+  constructor(clock, { reloadedAt = null, keepsMarks = true, hidden = false, holdsWork = false, resting = false } = {}) {
+    Object.assign(this, { clock, markedAt: reloadedAt, keepsMarks, hidden, held: holdsWork, rest: resting });
     this.reloads = 0;
     this.watching = null;
-    this.marks = 0;
   }
   holdsWork() { return this.held; }
   resting() { return this.hidden || this.rest; }
   watch(onChange) { this.watching = onChange; return () => { this.watching = null; }; }
-  reloadedWithin() { return this.reloadedAt !== null; }
-  markReload() { this.marks += this.keepsMarks ? 1 : 0; return this.keepsMarks; }
+  reloadMark() { return this.markedAt; }
+  markReload() {
+    if (this.keepsMarks) this.markedAt = this.clock.now;
+    return this.keepsMarks;
+  }
   reload() { this.reloads += 1; }
 }
 
@@ -42,23 +52,32 @@ class FakeSession {
     this.log = log;
     this.retired = 0;
     this.held = false;
+    this.kept = true;
+    this.reports = [];
   }
   retire() { this.retired += 1; }
   holdsAct() { return this.held; }
-  async persistNow() { this.log.push('persisted'); }
+  reportFailure(operation, error) { this.reports.push([operation, error]); }
+  async savedOnDevice() {
+    this.log.push('saved');
+    return this.kept;
+  }
 }
 
-function retirement({ page = new FakePage(), fetch = async () => html(404, TODAYS_SOCKET_GET), online = () => true } = {}) {
+function retirement({ fetch = async () => html(404, TODAYS_SOCKET_GET), online = () => true, reloadedAgo = null, ...pageOptions } = {}) {
   const clock = new Clock();
   const events = [];
+  const shown = new FakePage(clock, { ...pageOptions, reloadedAt: reloadedAgo === null ? null : clock.now - reloadedAgo });
   const subject = new BuildRetirement({
-    page, fetch, online, timers: clock, now: () => clock.now,
+    page: shown, fetch, online, timers: clock, now: () => clock.now,
     events: { track: (name, props) => events.push({ name, props }) },
   });
-  return { subject, page, clock, events };
+  return { subject, page: shown, clock, events };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+const outcomes = (events) => events.map(({ props }) => props.outcome ?? props.step);
+const nothingToReport = () => assert.fail('nothing to report');
 
 test('only a 410 whose body says client-update-required is the retired answer', async () => {
   const answers = [
@@ -132,35 +151,34 @@ test('probes are bounded: one at a time, one a minute, none offline and none onc
     online: () => online,
     fetch: async (url) => { calls.push(url); await new Promise((resolve) => { release = resolve; }); return answer(); },
   });
-  const report = () => assert.fail('nothing to report');
-  const first = subject.probeSocket('ws://host/v1/socket', report);
-  await subject.probeSocket('ws://host/v1/socket', report);
+  const first = subject.probeSocket('ws://host/v1/socket', nothingToReport);
+  await subject.probeSocket('ws://host/v1/socket', nothingToReport);
   release();
   await first;
   clock.now += PROBE_SPACING_MS - 1;
-  await subject.probeSocket('ws://host/v1/socket', report);
+  await subject.probeSocket('ws://host/v1/socket', nothingToReport);
   assert.equal(calls.length, 1, 'a reconnect loop inside the spacing makes no probe');
   online = false;
   clock.now += 1;
-  await subject.probeSocket('ws://host/v1/socket', report);
+  await subject.probeSocket('ws://host/v1/socket', nothingToReport);
   assert.equal(calls.length, 1, 'an offline browser makes no probe');
   online = true;
   answer = () => json(410, RETIRED_BODY);
-  const second = subject.probeSocket('ws://host/v1/socket', report);
+  const second = subject.probeSocket('ws://host/v1/socket', nothingToReport);
   release();
   await second;
   assert.equal(subject.retired, 'socket');
   clock.now += PROBE_SPACING_MS;
-  await subject.probeSocket('ws://host/v1/socket', report);
+  await subject.probeSocket('ws://host/v1/socket', nothingToReport);
   assert.equal(calls.length, 2, 'a retired build probes no more');
 });
 
 test('the first door to say retired is the one counted, and a session enlisting later is retired at once', () => {
-  const { subject, events } = retirement({ page: new FakePage({ hidden: true }) });
+  const { subject, events } = retirement({ hidden: true });
   const early = new FakeSession();
   subject.enlist(early);
-  subject.declare('write');
-  subject.declare('socket');
+  subject.declare('write', nothingToReport);
+  subject.declare('socket', nothingToReport);
   const late = new FakeSession();
   const unenlist = subject.enlist(late);
   assert.deepEqual({ retired: subject.retired, early: early.retired, late: late.retired }, { retired: 'write', early: 1, late: 1 });
@@ -169,16 +187,29 @@ test('the first door to say retired is the one counted, and a session enlisting 
   assert.equal(subject.sessions.has(late), false);
 });
 
-test('a hidden page holding nothing reloads at once, after every session’s save', async () => {
-  const log = [];
-  const page = new FakePage({ hidden: true });
-  page.reload = () => log.push('reloaded');
-  const { subject, events } = retirement({ page });
-  subject.enlist(new FakeSession(log));
-  subject.enlist(new FakeSession(log));
-  subject.declare('socket');
+test('a session that throws as it is retired is reported under its own name, and the rest are retired and reloaded', async () => {
+  const failure = new Error('status handler failed');
+  const { subject, page, events } = retirement({ hidden: true, fetch: async () => json(410, RETIRED_BODY) });
+  const throwing = Object.assign(new FakeSession(), { retire() { throw failure; } });
+  const second = new FakeSession();
+  subject.enlist(throwing);
+  subject.enlist(second);
+  const reports = [];
+  await subject.probeSocket('ws://localhost:8088/v1/socket', (...report) => reports.push(report));
   await settle();
-  assert.deepEqual(log, ['persisted', 'persisted', 'reloaded']);
+  assert.deepEqual({ reports, second: second.retired, reloads: page.reloads }, { reports: [['roadmap-sync-retire', failure]], second: 1, reloads: 1 });
+  assert.deepEqual(outcomes(events), ['detected', 'ran']);
+});
+
+test('a hidden page holding nothing reloads at once, after every session’s save reached the device', async () => {
+  const log = [];
+  const { subject, page, events } = retirement({ hidden: true });
+  page.reload = () => log.push('reloaded');
+  subject.enlist(new FakeSession(log));
+  subject.enlist(new FakeSession(log));
+  subject.declare('socket', nothingToReport);
+  await settle();
+  assert.deepEqual(log, ['saved', 'saved', 'reloaded']);
   assert.deepEqual(events, [
     { name: 'roadmap_sync_retired', props: { step: 'detected', door: 'socket' } },
     { name: 'roadmap_sync_retired', props: { step: 'reload', door: 'socket', outcome: 'ran' } },
@@ -186,10 +217,25 @@ test('a hidden page holding nothing reloads at once, after every session’s sav
   assert.equal(page.watching, null);
 });
 
+test('a save that failed, or that stayed in the page’s memory, keeps the page offline with what it holds', async () => {
+  const { subject, page, clock, events } = retirement({ hidden: true });
+  const kept = new FakeSession();
+  const lost = new FakeSession();
+  lost.kept = false;
+  subject.enlist(kept);
+  subject.enlist(lost);
+  subject.declare('socket', nothingToReport);
+  await settle();
+  clock.tick();
+  await settle();
+  assert.deepEqual({ reloads: page.reloads, watching: page.watching, timers: clock.timers.size }, { reloads: 0, watching: null, timers: 0 });
+  assert.deepEqual(outcomes(events), ['detected', 'suppressed']);
+});
+
 test('a page in use waits for rest, and reloads on the first check that finds it', async () => {
-  const page = new FakePage();
-  const { subject, clock, events } = retirement({ page });
-  subject.declare('write');
+  const { subject, page, clock, events } = retirement();
+  subject.enlist(new FakeSession());
+  subject.declare('write', nothingToReport);
   await settle();
   clock.tick();
   await settle();
@@ -203,17 +249,17 @@ test('a page in use waits for rest, and reloads on the first check that finds it
     { step: 'reload', door: 'write', outcome: 'deferred' },
     { step: 'reload', door: 'write', outcome: 'ran' },
   ]);
-  assert.deepEqual(clock.intervals.size, 0);
+  assert.equal(clock.timers.size, 0);
 });
 
-test('a draft, a text field, a dialog or a held act keeps the page from reloading even while it is hidden', async () => {
-  for (const hold of ['page', 'act']) {
-    const page = new FakePage({ hidden: true, holdsWork: hold === 'page' });
-    const { subject, clock, events } = retirement({ page });
+test('a draft, a text field, a dialog, a held act or a surface’s hold keeps the page from reloading even while it is hidden', async () => {
+  for (const hold of ['page', 'act', 'surface']) {
+    const { subject, page, clock, events } = retirement({ hidden: true, holdsWork: hold === 'page' });
     const session = new FakeSession();
     session.held = hold === 'act';
+    const release = hold === 'surface' ? subject.hold() : () => {};
     subject.enlist(session);
-    subject.declare('socket');
+    subject.declare('socket', nothingToReport);
     await settle();
     page.watching();
     clock.tick();
@@ -221,27 +267,65 @@ test('a draft, a text field, a dialog or a held act keeps the page from reloadin
     assert.equal(page.reloads, 0, hold);
     page.held = false;
     session.held = false;
+    release();
     page.watching();
     await settle();
     assert.equal(page.reloads, 1, hold);
-    assert.deepEqual(events.map(({ props }) => props.outcome).filter(Boolean), ['deferred', 'ran'], hold);
+    assert.deepEqual(outcomes(events), ['detected', 'deferred', 'ran'], hold);
   }
 });
 
-test('the loop guard: a tab that reloaded for this within the window, or cannot keep the mark, stays offline', async () => {
-  for (const page of [new FakePage({ hidden: true, reloadedAt: 1 }), new FakePage({ hidden: true, keepsMarks: false })]) {
-    const { subject, clock, events } = retirement({ page });
-    const session = new FakeSession();
-    subject.enlist(session);
-    subject.declare('socket');
-    await settle();
-    assert.deepEqual({ reloads: page.reloads, watching: page.watching, timers: clock.intervals.size, retired: session.retired },
-      { reloads: 0, watching: null, timers: 0, retired: 1 });
-    assert.deepEqual(events.map(({ props }) => props), [
-      { step: 'detected', door: 'socket' },
-      { step: 'reload', door: 'socket', outcome: 'suppressed' },
-    ]);
-  }
+test('the page reloads only while a roadmap session is enlisted: the last to leave stops the watch, the next re-arms it', async () => {
+  const { subject, page, clock, events } = retirement({ hidden: true });
+  subject.declare('write', nothingToReport);
+  await settle();
+  assert.deepEqual({ reloads: page.reloads, watching: page.watching, timers: clock.timers.size }, { reloads: 0, watching: null, timers: 0 },
+    'retired with no room open');
+  const leave = subject.enlist(new FakeSession());
+  assert.equal(typeof page.watching, 'function');
+  page.held = true;
+  clock.tick();
+  await settle();
+  leave();
+  assert.deepEqual({ watching: page.watching, timers: clock.timers.size }, { watching: null, timers: 0 });
+  page.held = false;
+  clock.tick();
+  await settle();
+  assert.equal(page.reloads, 0, 'no room, no reload');
+  subject.enlist(new FakeSession());
+  page.watching();
+  await settle();
+  assert.equal(page.reloads, 1);
+  assert.deepEqual(outcomes(events), ['detected', 'deferred', 'ran']);
+});
+
+test('the loop guard: inside the window the page stays offline until the window ends, then tries once more', async () => {
+  const { subject, page, clock, events } = retirement({ hidden: true, reloadedAgo: 60_000 });
+  subject.enlist(new FakeSession());
+  subject.declare('socket', nothingToReport);
+  await settle();
+  assert.deepEqual({ reloads: page.reloads, watching: page.watching }, { reloads: 0, watching: null });
+  clock.now += RELOAD_WINDOW_MS - 60_000 - 1;
+  clock.tick();
+  await settle();
+  assert.equal(page.reloads, 0, 'still inside the window');
+  clock.now += 1;
+  clock.tick();
+  await settle();
+  assert.deepEqual({ reloads: page.reloads, markedAt: page.markedAt }, { reloads: 1, markedAt: clock.now });
+  assert.deepEqual(outcomes(events), ['detected', 'suppressed', 'ran']);
+});
+
+test('the loop guard: a page that cannot keep the mark stays offline for good', async () => {
+  const { subject, page, clock, events } = retirement({ hidden: true, keepsMarks: false });
+  subject.enlist(new FakeSession());
+  subject.declare('socket', nothingToReport);
+  await settle();
+  clock.now += RELOAD_WINDOW_MS * 3;
+  clock.tick();
+  await settle();
+  assert.deepEqual({ reloads: page.reloads, watching: page.watching, timers: clock.timers.size }, { reloads: 0, watching: null, timers: 0 });
+  assert.deepEqual(outcomes(events), ['detected', 'suppressed']);
 });
 
 class FakeStorage {
@@ -252,26 +336,50 @@ class FakeStorage {
 
 class FakeTarget extends EventTarget {}
 
-function pageWith({ activeElement = null, dialog = false, visibilityState = 'visible', storage = new FakeStorage() } = {}) {
+function pageWith({ activeElement = null, dialog = false, visibilityState = 'visible', storage = new FakeStorage(), clock = { now: 5_000_000 } } = {}) {
   const document = new FakeTarget();
   Object.assign(document, { activeElement, visibilityState, querySelector: () => (dialog ? {} : null) });
   const window = new FakeTarget();
-  const clock = { now: 5_000_000 };
+  window.location = { reloads: 0, reload() { this.reloads += 1; } };
   return { page: new RetiredPage({ document, window, storage, now: () => clock.now }), document, window, clock };
 }
 
-test('the reload mark is kept for the window, and a storage that keeps nothing keeps no mark', () => {
+test('a tab served the same retired build reloads once a window: suppressed on the next load, reloaded as the window ends', async () => {
+  const clock = new Clock();
+  const storage = new FakeStorage();
+  const loadOf = () => {
+    const shown = pageWith({ storage, clock, visibilityState: 'hidden' });
+    const events = [];
+    const subject = new BuildRetirement({ page: shown.page, timers: clock, now: () => clock.now, events: { track: (name, props) => events.push(props) } });
+    subject.enlist(new FakeSession());
+    return { ...shown, events, subject };
+  };
+  const first = loadOf();
+  first.subject.declare('socket', nothingToReport);
+  await settle();
+  assert.equal(first.window.location.reloads, 1);
+  clock.now += 60_000;
+  const second = loadOf();
+  second.subject.declare('socket', nothingToReport);
+  await settle();
+  assert.equal(second.window.location.reloads, 0);
+  clock.now += RELOAD_WINDOW_MS;
+  clock.tick();
+  await settle();
+  assert.equal(second.window.location.reloads, 1);
+  assert.deepEqual(second.events.map(({ outcome, step }) => outcome ?? step), ['detected', 'suppressed', 'ran']);
+});
+
+test('the reload mark is read back as written, and a storage that keeps nothing keeps no mark', () => {
   const { page, clock } = pageWith();
-  assert.equal(page.reloadedWithin(RELOAD_WINDOW_MS), false);
+  assert.equal(page.reloadMark(), null);
   assert.equal(page.markReload(), true);
-  clock.now += RELOAD_WINDOW_MS - 1;
-  assert.equal(page.reloadedWithin(RELOAD_WINDOW_MS), true);
-  clock.now += 1;
-  assert.equal(page.reloadedWithin(RELOAD_WINDOW_MS), false);
+  assert.equal(page.reloadMark(), clock.now);
   const forgetful = pageWith({ storage: { getItem: () => null, setItem: () => {} } }).page;
-  assert.equal(forgetful.markReload(), false);
-  const refusing = pageWith({ storage: { getItem: () => { throw new DOMException('denied', 'SecurityError'); }, setItem: () => { throw new DOMException('denied', 'SecurityError'); } } }).page;
-  assert.deepEqual({ within: refusing.reloadedWithin(RELOAD_WINDOW_MS), marked: refusing.markReload() }, { within: false, marked: false });
+  assert.deepEqual({ marked: forgetful.markReload(), mark: forgetful.reloadMark() }, { marked: false, mark: null });
+  const denied = () => { throw new DOMException('denied', 'SecurityError'); };
+  const refusing = pageWith({ storage: { getItem: denied, setItem: denied } }).page;
+  assert.deepEqual({ marked: refusing.markReload(), mark: refusing.reloadMark() }, { marked: false, mark: null });
 });
 
 test('what a reload would lose: a text field in focus, an open dialog, a step draft the guard holds', () => {
@@ -321,4 +429,15 @@ test('between gestures: hidden, or no pointer pressed and no input for the idle 
   stop();
   document.dispatchEvent(new Event('visibilitychange'));
   assert.deepEqual(changes, ['hidden']);
+});
+
+test('loading the module touches no session storage: the page it reloads is built when a build is first retired', async (t) => {
+  let reads = 0;
+  const keepsNothing = { getItem: () => null, setItem: () => {} };
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, get: () => { reads += 1; return keepsNothing; } });
+  t.after(() => { delete globalThis.sessionStorage; });
+  const fresh = await import(`../../../../src/products/roadmap/sync/retirement.js?load=${Date.now()}`);
+  assert.equal(reads, 0);
+  fresh.buildRetirement.declare('write', nothingToReport);
+  assert.equal(reads, 1);
 });
