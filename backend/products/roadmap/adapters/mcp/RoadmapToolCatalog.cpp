@@ -442,4 +442,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   return tools;
 }
 
+std::vector<ToolDeclaration> roadmapDoorToolCatalog() {
+  std::vector<ToolDeclaration> tools = roadmapToolCatalog();
+  for (ToolDeclaration& declaration : tools) {
+    if (declaration.access == Access::read) continue;
+    declaration.descriptor["inputSchema"]["properties"]["requestId"] =
+        typed("string", "An id of your choosing for this call; send the same call with it again and it writes once.");
+  }
+  return tools;
+}
+
 }

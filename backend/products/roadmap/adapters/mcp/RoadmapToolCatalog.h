@@ -37,5 +37,8 @@ constexpr std::size_t kMaxImportDescriptionBytes = 6 * 1024 * 1024;
 // Every tool, its description, the JSON Schema its arguments are pre-validated against, and the
 // grant level that reaches it.
 std::vector<ToolDeclaration> roadmapToolCatalog();
+// The catalog the door's host declares (Roadmap on the sync engine §7): every write also takes an optional
+// `requestId`, so a call sent again under it writes once and is answered as the first was.
+std::vector<ToolDeclaration> roadmapDoorToolCatalog();
 
 }

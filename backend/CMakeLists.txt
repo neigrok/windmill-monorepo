@@ -142,6 +142,8 @@ add_library(windmill_roadmap
   products/roadmap/application/NodeEdits.cpp
   products/roadmap/application/ActivityFeed.cpp
   products/roadmap/application/ForkService.cpp
+  products/roadmap/application/RoadmapRows.cpp
+  products/roadmap/application/RoadmapDoor.cpp
   products/roadmap/application/ScopedToolHost.cpp
   products/roadmap/application/TendingService.cpp
   products/roadmap/application/TreeRegistry.cpp
@@ -482,6 +484,8 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/mcp/ReadShape.cpp
   products/roadmap/adapters/mcp/EditReceipt.cpp
   products/roadmap/adapters/mcp/ToolArgs.cpp
+  products/roadmap/adapters/mcp/RoadmapToolParts.cpp
+  products/roadmap/adapters/mcp/RoadmapDoorTools.cpp
   products/roadmap/routes.cpp)
 
 # Journal adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
@@ -617,11 +621,12 @@ add_executable(windmill_mcp_tests
 # Both products' tool surfaces link here: the gym suite pins its own catalog AND that no gym name
 # collides with a roadmap one, which is the difference between a boot failure and a green suite. Its
 # write cases run on the real gym door, which takes the product catalog the server seals.
-target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_product_sync)
+target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_product_sync windmill_probe)
 # The golden MCP wire (WireCorpusTest) lives beside the roadmap tools and is byte-compared against
 # a fresh transcript; the source path is handed in so the check finds it from any build tree.
 target_compile_definitions(windmill_mcp_tests PRIVATE
   WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json"
+  WM_DOOR_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus_door.json"
   WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
   WM_GYM_ABILITIES_DIR="${WM_API_CONTRACT_DIR}/gym/abilities")
 add_test(NAME mcp COMMAND windmill_mcp_tests)
