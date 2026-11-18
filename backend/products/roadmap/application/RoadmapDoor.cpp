@@ -52,7 +52,7 @@ Json::Value RoadmapDoor::run(const UserId& account, const std::optional<std::str
         observation->finish();
         answer->set_value(reply);
       } catch (const Call::Answered& replayed) {
-        observation->finish("replayed");
+        observation->finish("unchanged");
         answer->set_value(replayed.reply);
       }
     } catch (const DoorBusy&) {

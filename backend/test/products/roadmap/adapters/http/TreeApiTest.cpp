@@ -1,6 +1,7 @@
 #include "products/roadmap/adapters/http/TreeApi.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/application/ForkService.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/platform/Fakes.h"
