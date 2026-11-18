@@ -48,6 +48,18 @@ test('concurrent tab read-and-commit transactions cannot overwrite each other', 
   stores.forEach((store) => store.close());
 });
 
+test('a store forgets the rows it held of a generation another tab let go', async () => {
+  const indexedDB = new IDBFactory();
+  const [kept, other] = await Promise.all([1, 2].map(() => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id })));
+  await kept.transact((device) => device.activeReplica.putConfirmed('self/probe', { t: 'card', id: 'card0001', seq: 1 }));
+  const [generation] = kept.generations.keys();
+  assert.equal((await kept.read(['self/probe'])).device.activeReplica.confirmedRows('self/probe').length, 1);
+  await other.transact((device) => device.activeReplica.forgetScope('self/probe'));
+  assert.deepEqual((await kept.read(['self/probe'])).device.activeReplica.confirmedRows('self/probe'), []);
+  assert.equal(kept.generations.has(generation), false);
+  [kept, other].forEach((store) => store.close());
+});
+
 test('re-identify persists new metadata without changing confirmed row keys or bytes', async () => {
   const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id });
   await store.transact((device) => device.activeReplica.putConfirmed('self/probe',

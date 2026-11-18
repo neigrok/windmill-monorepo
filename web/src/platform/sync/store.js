@@ -379,6 +379,8 @@ export class IndexedDBStore {
             else records.set(key, new ControlRecord(JSON.stringify(value), parts));
           }
           controls = this.controls = { revision: records.get(HEAD)?.value.revision, records };
+          const pointed = new Set([...records.values()].filter(({ parts: [kind] }) => kind === 'cache').map((record) => record.shared.generation));
+          for (const generation of this.generations.keys()) if (!pointed.has(generation)) this.generations.delete(generation);
           begin();
         });
       });
