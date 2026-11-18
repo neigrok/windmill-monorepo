@@ -186,6 +186,18 @@ test('a store that cannot commit is a store failure reported as storage; the rea
   engine.close();
 });
 
+test('a store failure while sending or pulling reports storage once and never as transport', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  const transact = engine.store.transact.bind(engine.store), quota = new DOMException('quota', 'QuotaExceededError');
+  engine.store.transact = (change, options) => (options?.readonly ? transact(change, options) : Promise.reject(quota));
+  await engine.send();
+  engine.kickPull(); await engine.pull();
+  assert.deepEqual(env.failures, ['storage', 'storage']);
+  engine.close();
+});
+
 test('undo offers are the held gestures, each with its own deadline and records, until undone or released', async () => {
   const env = environment(), engine = await BrowserSyncEngine.open(env.options);
   const observation = engine.observe('self/probe');

@@ -644,9 +644,9 @@ export class BrowserSyncEngine {
         this.pushLimit = null;
         this.kickPull();
       } else if (![400, 401, 409, 413].includes(response.status)) this.wait.backoff(time, this.draw, hint);
-    } catch {
+    } catch (error) {
       if (this.canSync()) {
-        this.telemetry.failure('transport');
+        if (!(error instanceof CommitError && error.kind === 'store')) this.telemetry.failure('transport');
         this.wait.backoff(this.monotonic(), this.draw, { liveHint: this.liveHint(this.device.activeReplica) });
       }
     } finally {
@@ -771,9 +771,9 @@ export class BrowserSyncEngine {
       }
       this.pullWait.results(['ok'], this.monotonic(), this.draw);
       this.follow();
-    } catch {
+    } catch (error) {
       if (this.canSync()) {
-        this.telemetry.failure('transport');
+        if (!(error instanceof CommitError && error.kind === 'store')) this.telemetry.failure('transport');
         this.pullWait.backoff(this.monotonic(), this.draw);
         for (const { scope } of request?.scopes ?? []) {
           this.pullDirty.add(scope);
