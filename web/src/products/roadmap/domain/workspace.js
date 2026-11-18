@@ -89,12 +89,13 @@ export class StepNoteValue {
 
 /** @type {EntityType<StepNoteValue, null>} */
 export const StepNote = new EntityType({
-  type: 'stepNote', scope: null, savesGuarded: false,
+  type: 'stepNote', scope: null, savesGuarded: false, savesReversibly: true,
   decode: (f) => new StepNoteValue(new Id(f.id, StepNote), f.text('text')),
   checks: [new Check('text', (note) => new StepNoteValue(note.id, RoadmapSpecs.note.apply(note.text, new Path('text'))))],
 });
 
-// A step's note is edited in one draft and saved by the kit's draft save, its text merged by the engine.
+// A step's note is edited in one draft and saved by the kit's draft save, its text merged by the engine. Each save is
+// an act an Undo names: it restores the text the draft was saved from, and skips where another device changed it.
 /** @param {import('../../../platform/domain-kit/drafts.js').Draft<StepNoteValue>} draft */
 export function SaveStepNote(draft) { return SaveDraft.ofDraft(draft, RoadmapRefusals); }
 

@@ -193,18 +193,19 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 | Set or clear a pointer | `opens` and the life, or `createdRecord` of a pointer the overlay never held | writes it back |
 | Add, change or move a subtask or a link | `createdRecord`, or the changed fields and `ord` | the change; a deleted subtask or link is terminal, so the Redo of an add brings nothing back |
 | Delete a subtask or a link | none: the type is terminal. The delete is held nine seconds, and `cancelHeld` in the hold is its one Undo | — |
-| Create a roadmap | `roadmap.undoCreateRoadmap {tree}` over the record and its tree scope, unchanged since: the roadmap dies while nothing changed in it, its owner's overlay included. Each tree segment names a restore of `meta.guide`, which the creation never writes, so the engine keeps its receipts, which prove the scope; that restore is dropped | none: a new roadmap is a new creation |
+| Create a roadmap | `roadmap.undoCreateRoadmap {tree}` over the record and its tree scope, unchanged since: the roadmap dies while nothing changed in it, its owner's overlay included. Each tree segment is the Undo's evidence (`evidenceForUndo`, `undo: []`), journaled so its receipts prove the scope | none: a new roadmap is a new creation |
 | Create a subtree | `roadmap.undoCreateSubtree {tree, step, subtree}` over the step's `branch`, the subtree's record and its tree scope; a step revived before it, its life | `redoCreateSubtree`: the product's slots (`redoCreateSubtree(creation, fresh)` in `roadmaps.js`) plant a new subtree under a fresh id while the `branch` is still the one the Undo cleared (R-8) |
 | Delete a roadmap | none after its hold (R-7); `cancelHeld` in the hold | — |
-| A step's note, the landing note | none: a draft's save does not opt into Undo, and device rows are the device's | — |
+| Save a step's note | the note's `text`, from the text the draft was saved from (`""` for a first note): `StepNote` saves reversibly, so each save is an act; it skips where a write the device had not seen changed the note | writes the saved text back |
+| The landing note | none: device rows are the device's | — |
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
-binding. A step is `{run: <action>, input, as?, on?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
+binding. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
 <role>}` (`subtree: true` gives a Redo the product's slots), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
-input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, the `InverseResult` without its ids,
+input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
 `{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id
 `<new>`. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
-answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. A restore that revives a
-record (the Undo of a delete, the Redo of a creation) also draws nothing until the server answers; a restore of fields
-and a deletion draw at once.
+answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:
+fields and texts written back, a created record deleted, and a record revived (the Undo of a delete, the Redo of a
+creation).
 

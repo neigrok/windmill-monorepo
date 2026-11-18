@@ -16,7 +16,7 @@ import { ChangeKind, CreateKind, DeleteKind, MoveKind, RecolourKind } from '../.
 import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
-import { RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
+import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { Contract, savedForm } from '../../../platform/domain-kit/vectors.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
@@ -72,8 +72,15 @@ function actOf(input) {
 /** @param {Vector} vector */
 function noteSave(vector) {
   const { tree, step, text } = vector.input.input;
-  return corpus.save((draft) => SaveStepNote(draft), vector, new StepNoteValue(new Id(step, StepNote)),
-    (note) => new StepNoteValue(note.id, text), savedForm, refusalForm, RoadmapScopes.overlay(tree));
+  const scope = RoadmapScopes.overlay(tree);
+  /** @type {any} */
+  let decided = null;
+  const form = /** @type {any} */ (corpus.save((draft) => {
+    const save = SaveStepNote(draft);
+    return { scope: save.scope, refusals: save.refusals, load: (read) => save.load(read), decide: (loaded) => (decided = save.decide(loaded)) };
+  }, vector, new StepNoteValue(new Id(step, StepNote)), (note) => new StepNoteValue(note.id, text), savedForm, refusalForm, scope));
+  const recipes = form.decision.write ? translateUndo(decided.plan, scope) : null;
+  return recipes === null ? form : { decision: { write: { ...form.decision.write, undo: recipes } } };
 }
 
 /** @param {Vector} vector */
@@ -109,8 +116,8 @@ export function runAction(vector) {
   return form;
 }
 
-// K-3 scenes (`undo.json`): acts on the kit's harness over the reference server with roadmap's binding, then their
-// Undo and Redo. A step names a role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back
+// K-3 scenes (`undo.json`): acts and a note's draft saves on the kit's harness over the reference server with roadmap's
+// binding, then their Undo and Redo. A step names a role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back
 // names each id by the first role that holds it, and any other minted id `<new>`.
 /** @param {Vector} vector */
 export async function runScene(vector) {
@@ -182,6 +189,14 @@ export async function runScene(vector) {
             actId: outcome.kind === 'committed' ? outcome.receipt.gestureId : null, requestId: null };
         }
         outcomes.push(outcome.kind === 'refused' ? { refused: refusalForm(outcome.refusal) } : outcome.kind);
+      } else if (step.save) {
+        const { tree, step: owner, text } = bind(step.input);
+        const scope = RoadmapScopes.overlay(tree);
+        const id = new Id(owner, StepNote);
+        const draft = phone.runner.openOrNew(StepNote, id, new StepNoteValue(id), scope).edit((note) => new StepNoteValue(note.id, text));
+        const { result } = await phone.runner.save(draft, RoadmapRefusals, scope);
+        if (step.as) roles[step.as] = { input: { tree, step: owner, text }, result: null, actId: result.kind === 'saved' ? result.receipt?.gestureId ?? null : null, requestId: null };
+        outcomes.push(result.kind);
       } else if (step.sync) {
         observeAll();
         await a.sync();
@@ -203,7 +218,7 @@ export async function runScene(vector) {
       } else if (step.inspect) {
         const { scope, t, fields } = step.inspect;
         const rows = phone.runner.read(bind(scope), (read) => read.views.visible('drawn', t)).map((record) => Object.fromEntries(fields.map((/** @type {string} */ name) =>
-          [name, name === 'id' ? record.id : record.f?.[name]?.[0] ?? null])));
+          [name, name === 'id' ? record.id : record.f?.[name]?.[0] ?? record.x?.[name] ?? null])));
         outcomes.push({ [t]: named(rows).sort((/** @type {any} */ x, /** @type {any} */ y) => (jcs(x) < jcs(y) ? -1 : jcs(x) > jcs(y) ? 1 : 0)) });
       } else {
         throw new Error(`no scene step ${Object.keys(step).join()}`);

@@ -7,7 +7,7 @@ import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
-import { GENESIS_KINDS, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, UNSET, gone, restoring, writeIn } from './roadmapRules.js';
+import { GENESIS_KINDS, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep, StepsImport } from './steps.js';
 import { StepPointer } from './progress.js';
 import { LandingNote, RoadmapTree } from './records.js';
@@ -83,14 +83,10 @@ export const RoadmapMeta = new EntityType({
   ],
 });
 
-// The recipe a creation's tree segment names so the engine keeps that segment's receipts, which prove the created
-// scope unchanged to the creation's own Undo: a field the creation never writes, so its restore has nothing to take
-// back and is dropped.
-const RECEIPTED = UndoRecipe.fields(Restore.tree, [{ target: UndoTarget.field(new Id('meta', RoadmapMeta), 'guide'), defaultValue: UNSET.meta.guide }]);
-
 // §5 Create a roadmap: the `tree` record, then its tree scope with the title, the genesis kinds and the first
 // steps, in chunks when the steps are many. The engine drops the tree's intents when the record is refused. Its
-// Undo is `roadmap.undoCreateRoadmap`, while the record, the tree and the owner's overlay of it are as it left them.
+// Undo is `roadmap.undoCreateRoadmap`, while the record, the tree and the owner's overlay of it are as it left them;
+// each tree segment is journaled as that Undo's evidence, so its receipts prove the tree unchanged.
 export class CreateRoadmap {
   /**
    * @param {string} title
@@ -134,7 +130,7 @@ export class CreateRoadmap {
       for (const unit of chunk) unit.writeTo(plan, false);
       return new ScopedPlan(scope, plan);
     });
-    for (const plan of [opening, ...later.map((segment) => segment.plan)]) plan.undoBy(RECEIPTED);
+    for (const plan of [opening, ...later.map((segment) => segment.plan)]) plan.evidenceForUndo();
     return ActDecision.write(new ActPlan([new ScopedPlan(RoadmapScopes.account, account), new ScopedPlan(scope, opening), ...later]),
       { tree: id.record, steps: imported.ids });
   }
