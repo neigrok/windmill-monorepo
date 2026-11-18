@@ -18,7 +18,7 @@ function reference(replica, scope, view) {
   });
 }
 
-for (const seed of [1, 2, 3]) test(`scope observations equal the reference views after every commit, hold, undo, push, peer pull and reopen: seed ${seed}`, async () => {
+for (const seed of [1, 2, 3]) test(`scope observations equal the reference views after every commit, scoped prediction, hold, undo, push, peer pull and reopen: seed ${seed}`, async () => {
   const env = environment(), peer = environment(), rng = new Rng(seed);
   env.state = new ServerState(serverState({
     scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001'), 'acct:A/overlay/b_00000001': overlayScope('A', 'b_00000001') },
@@ -57,7 +57,10 @@ for (const seed of [1, 2, 3]) test(`scope observations equal the reference views
       else if (kind === 1) await engine.commit(tree, [{ op: 'update', t: 'tag', id: pick(tags), f: { label: `U${step}` } }], { hold: rng.int(3) === 0 });
       else if (kind === 2) await engine.commit(tree, [{ op: 'delete', t: 'tag', id: pick(tags) }], { hold: rng.int(2) === 0 });
       else if (kind === 3) await engine.commit(tree, [{ op: 'put', t: 'link', id: [pick(tags), pick(tags)], present: rng.int(4) > 0, f: { strength: rng.int(10) } }]);
-      else if (kind === 4) await engine.commit(overlay, [{ op: 'write', t: 'mark', id: pick(tags), x: { memo: `m${step}` }, f: { done: rng.int(2) === 0 } }], { hold: rng.int(3) === 0 });
+      else if (kind === 4 && rng.int(2)) await engine.commit(overlay, [{ op: 'write', t: 'mark', id: pick(tags), x: { memo: `m${step}` }, f: { done: rng.int(2) === 0 } }], { hold: rng.int(3) === 0 });
+      else if (kind === 4) await engine.commit('self/probe', [], { hold: rng.int(2) === 0,
+        cmd: { name: 'probe.branch', args: { parent: 'b_00000001', child: 'b_00000002', title: `B${step}` } },
+        scopedPredict: [{ scope: tree, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: `B${step}` } }] }] });
       else if (kind === 5) {
         const offers = engine.observe(tree).getSnapshot().undoOffers;
         if (offers.length) await engine.undo(offers.at(-1).id);
