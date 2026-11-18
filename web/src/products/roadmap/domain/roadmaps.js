@@ -2,12 +2,12 @@
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
-import { Plan, Prediction } from '../../../platform/domain-kit/plans.js';
+import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
-import { GENESIS_KINDS, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, writeIn } from './roadmapRules.js';
+import { GENESIS_KINDS, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, UNSET, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep, StepsImport } from './steps.js';
 import { StepPointer } from './progress.js';
 import { LandingNote, RoadmapTree } from './records.js';
@@ -83,8 +83,14 @@ export const RoadmapMeta = new EntityType({
   ],
 });
 
+// The recipe a creation's tree segment names so the engine keeps that segment's receipts, which prove the created
+// scope unchanged to the creation's own Undo: a field the creation never writes, so its restore has nothing to take
+// back and is dropped.
+const RECEIPTED = UndoRecipe.fields(Restore.tree, [{ target: UndoTarget.field(new Id('meta', RoadmapMeta), 'guide'), defaultValue: UNSET.meta.guide }]);
+
 // §5 Create a roadmap: the `tree` record, then its tree scope with the title, the genesis kinds and the first
-// steps, in chunks when the steps are many. The engine drops the tree's intents when the record is refused.
+// steps, in chunks when the steps are many. The engine drops the tree's intents when the record is refused. Its
+// Undo is `roadmap.undoCreateRoadmap`, while the record, the tree and the owner's overlay of it are as it left them.
 export class CreateRoadmap {
   /**
    * @param {string} title
@@ -116,16 +122,19 @@ export class CreateRoadmap {
     const imported = new StepsImport(this.steps, new RoadmapTree({ id: String(id.record) }), null).planned(moment, ids, scope);
     const account = new Plan();
     account.create(new Valid(new RoadmapValue(id), moment));
+    account.undoBy(UndoRecipe.command('roadmap.undoCreateRoadmap', { tree: String(id.record) },
+      { unchangedCreatedRecords: [{ id, scope: null }], unchangedCreatedScopes: [scope] }));
     const opening = new Plan();
     opening.create(meta, { fields: ['title'] });
     for (const kind of genesis) opening.create(kind);
     const chunks = imported.chunks(1 + genesis.length);
-    for (const unit of chunks[0] ?? []) unit.writeTo(opening);
+    for (const unit of chunks[0] ?? []) unit.writeTo(opening, false);
     const later = chunks.slice(1).map((chunk) => {
       const plan = new Plan();
-      for (const unit of chunk) unit.writeTo(plan);
+      for (const unit of chunk) unit.writeTo(plan, false);
       return new ScopedPlan(scope, plan);
     });
+    for (const plan of [opening, ...later.map((segment) => segment.plan)]) plan.undoBy(RECEIPTED);
     return ActDecision.write(new ActPlan([new ScopedPlan(RoadmapScopes.account, account), new ScopedPlan(scope, opening), ...later]),
       { tree: id.record, steps: imported.ids });
   }
@@ -185,6 +194,7 @@ export class WriteRoadmap {
     if (changed.length === 0) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.update(valid, { fields: changed });
+    plan.undoBy(restoring(Restore.tree, META, changed));
     return writeIn(this.scope, plan, null);
   }
 }
@@ -271,6 +281,7 @@ export class SetVisibility {
       ...subtrees.map((subtree) => Prediction.write(META, { reach: visibility }, {}, RoadmapScopes.tree(subtree))),
     ]);
     plan.update(valid, { fields: ['visibility'] });
+    plan.undoBy(restoring(Restore.tree, META, ['visibility']));
     return writeIn(RoadmapScopes.tree(this.tree), plan, null);
   }
 }
@@ -329,12 +340,38 @@ export class CreateSubtree {
         { hue: kind.hue, label: kind.label, description: kind.description, ord: `a${index}` }, scope)),
       Prediction.update(step.id, { branch: subtree }, RoadmapScopes.tree(this.tree)),
     ]);
+    command.undoBy(UndoRecipe.command('roadmap.undoCreateSubtree', { tree: this.tree, step: this.step, subtree }, {
+      ownedFields: [UndoTarget.field(step.id, 'branch', RoadmapScopes.tree(this.tree))],
+      unchangedCreatedRecords: [{ id: new Id(subtree, Roadmap), scope: null }],
+      unchangedCreatedScopes: [scope],
+    }));
     const connected = new ScopedPlan(RoadmapScopes.account, command);
-    if (!absent) return ActDecision.write(new ActPlan([connected]), { subtree });
+    const created = { subtree, root: meta.root ?? this.tree, revived: absent };
+    if (!absent) return ActDecision.write(new ActPlan([connected]), created);
     const revival = new Plan();
     revival.revive(new Valid(step, moment, []), { fields: [] });
+    revival.undoBy(restoring(Restore.tree, step.id, [], { life: true }));
     revival.device(RoadmapScopes.landing(this.tree), note.adding({ revived: [this.step] }).json);
-    return ActDecision.write(new ActPlan([new ScopedPlan(RoadmapScopes.tree(this.tree), revival), connected]), { subtree });
+    return ActDecision.write(new ActPlan([new ScopedPlan(RoadmapScopes.tree(this.tree), revival), connected]), created);
   }
+}
+
+// R-8 Redo of creating a subtree: the Undo's inverse act, its sources by ordinal, given recipes of the product's own.
+// `roadmap.redoCreateSubtree` plants a new subtree under `fresh` while the step's `branch` is still the one the Undo
+// cleared; a step the creation revived is revived again. The Undo's sources walk the creation backwards: the command's
+// inverse first, then the revival's restore.
+/**
+ * @param {{ tree: string, step: string, root: string, revived: boolean }} creation the creation's input and result
+ * @param {string} fresh
+ * @returns {{ index: number, scope: string, plan: Plan }[]}
+ */
+export function redoCreateSubtree({ tree, step, root, revived }, fresh) {
+  const planted = new Plan();
+  planted.undoBy(UndoRecipe.command('roadmap.redoCreateSubtree', { tree, root, step, subtree: fresh },
+    { ownedFields: [UndoTarget.field(new Id(step, RoadmapStep), 'branch', RoadmapScopes.tree(tree))] }));
+  if (!revived) return [{ index: 0, scope: RoadmapScopes.account, plan: planted }];
+  const alive = new Plan();
+  alive.undoBy(restoring(Restore.tree, new Id(step, RoadmapStep), [], { life: true }));
+  return [{ index: 0, scope: RoadmapScopes.account, plan: planted }, { index: 1, scope: RoadmapScopes.tree(tree), plan: alive }];
 }
 

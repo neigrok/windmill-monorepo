@@ -3,11 +3,11 @@
 import { ActDecision } from '../../../platform/domain-kit/acts.js';
 import { SaveDraft } from '../../../platform/domain-kit/drafts.js';
 import { EntityType, Id, sameJson } from '../../../platform/domain-kit/entities.js';
-import { Plan } from '../../../platform/domain-kit/plans.js';
+import { Plan, UndoRecipe } from '../../../platform/domain-kit/plans.js';
 import { Placement } from '../../../platform/domain-kit/reading.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
-import { RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, writeIn } from './roadmapRules.js';
+import { Restore, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
@@ -38,7 +38,7 @@ export class SubtaskValue {
 
 /** @type {EntityType<SubtaskValue, null>} */
 export const Subtask = new EntityType({
-  type: 'subtask', scope: null, orderField: 'ord', heldRemoval: false,
+  type: 'subtask', scope: null, orderField: 'ord', heldRemoval: true,
   decode: (f) => new SubtaskValue(new Id(f.id, Subtask), f.string('step', ''), { label: f.string('label', ''), done: f.bool('done', false) }),
   checks: [new Check('label', (subtask) => subtask.with({ label: RoadmapSpecs.subtask.apply(subtask.label, new Path('label')) }))],
 });
@@ -65,7 +65,7 @@ export class StepLinkValue {
 
 /** @type {EntityType<StepLinkValue, null>} */
 export const StepLink = new EntityType({
-  type: 'stepLink', scope: null, orderField: 'ord', heldRemoval: false,
+  type: 'stepLink', scope: null, orderField: 'ord', heldRemoval: true,
   decode: (f) => new StepLinkValue(new Id(f.id, StepLink), f.string('step', ''), { url: f.string('url', ''), title: f.string('title', '') }),
   checks: [
     new Check('url', (link) => link.with({ url: RoadmapSpecs.url.apply(link.url, new Path('url')) })),
@@ -138,6 +138,7 @@ export class AddToWorkspace {
     if (refused) return refused;
     const plan = new Plan();
     plan.insert(valid, anchor);
+    plan.undoBy(UndoRecipe.createdRecord(Restore.overlay, valid.id));
     return writeIn(scope, plan, valid.id.record);
   }
 }
@@ -196,6 +197,7 @@ export class ChangeInWorkspace {
     if (changed.length === 0) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.update(valid, { fields: changed });
+    plan.undoBy(restoring(Restore.overlay, item.id, changed));
     return writeIn(RoadmapScopes.overlay(this.tree), plan, null);
   }
 }
@@ -229,6 +231,7 @@ export class MoveInWorkspace {
     if (this.below === this.id || this.below === above) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.move(item.id, this.below === null ? null : new Id(this.below, this.type));
+    plan.undoBy(restoring(Restore.overlay, item.id, ['ord']));
     return writeIn(RoadmapScopes.overlay(this.tree), plan, null);
   }
 }

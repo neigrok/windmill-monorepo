@@ -2,11 +2,11 @@
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
-import { Plan, Prediction } from '../../../platform/domain-kit/plans.js';
+import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { between, dropKey, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
-import { RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, writeIn } from './roadmapRules.js';
+import { Restore, RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, UNSET, full, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -110,6 +110,7 @@ export class CreateKind {
     if (refused) return refused;
     const plan = new Plan();
     plan.create(valid);
+    plan.undoBy(UndoRecipe.createdRecord(Restore.tree, id));
     return writeIn(scope, plan, id.record);
   }
 }
@@ -119,13 +120,16 @@ export class CreateKind {
  * @param {string} tree
  * @param {RoadmapKindValue} kind
  * @param {Valid<RoadmapKindValue>} valid
+ * @param {boolean} absent
  */
-function revived(tree, kind, valid) {
+function revived(tree, kind, valid, absent) {
   const before = kind.fields();
   const changed = valid.checked.filter((name) => !sameJson(before[/** @type {keyof typeof before} */ (name)], valid.written[name]));
   if (changed.length === 0) return ActDecision.unchanged(null);
   const plan = new Plan();
   plan.revive(valid, { fields: changed });
+  const restorable = changed.filter((name) => name !== 'ord' || kind.ord !== null);
+  if (restorable.length || absent) plan.undoBy(restoring(Restore.tree, kind.id, restorable, { life: absent }));
   return writeIn(RoadmapScopes.tree(tree), plan, null);
 }
 
@@ -147,9 +151,9 @@ export class ChangeKind {
   load(read) { return read.inScope(RoadmapScopes.tree(this.tree), (tree) => readKinds(tree, this.kind)); }
 
   /** @param {LoadedKinds} loaded */
-  decide({ kind, moment }) {
+  decide({ kind, absent, moment }) {
     if (kind === null) return gone(RoadmapKind.type, this.kind);
-    return revived(this.tree, kind, new Valid(kind.with(this.changes), moment, Object.keys(this.changes)));
+    return revived(this.tree, kind, new Valid(kind.with(this.changes), moment, Object.keys(this.changes)), absent);
   }
 }
 
@@ -171,7 +175,7 @@ export class MoveKind {
   load(read) { return read.inScope(RoadmapScopes.tree(this.tree), (tree) => readKinds(tree, this.kind)); }
 
   /** @param {LoadedKinds} loaded */
-  decide({ kind, present, moment }) {
+  decide({ kind, absent, present, moment }) {
     if (kind === null) return gone(RoadmapKind.type, this.kind);
     const members = present.filter((other) => String(other.id.record) !== this.kind && other.ord !== null && isOrderKey(other.ord))
       .map((other) => ({ id: String(other.id.record), key: /** @type {string} */ (other.ord) }))
@@ -181,7 +185,7 @@ export class MoveKind {
     const above = own === null ? undefined : members.filter((member) => member.key < own || (member.key === own && compareText(member.id, this.kind) < 0)).at(-1)?.id ?? null;
     if (above === this.below) return ActDecision.unchanged(null);
     const ord = dropKey({ stored: members, drawn: members, moved: this.kind, above: this.below });
-    return revived(this.tree, kind, new Valid(kind.with({ ord }), moment, ['ord']));
+    return revived(this.tree, kind, new Valid(kind.with({ ord }), moment, ['ord']), absent);
   }
 }
 
@@ -217,14 +221,19 @@ export class RecolourKind {
     const hue = new Valid(kind.with({ hue: this.hue }), moment, ['hue']).value.hue;
     wearing(present, hue, this.kind);
     if (hue === kind.hue) return ActDecision.unchanged(null);
-    const wearers = steps.filter((step) => step.color === kind.hue).sort((a, b) => Id.compare(a.id, b.id))
-      .map((step) => Prediction.update(step.id, { color: hue }));
+    const worn = steps.filter((step) => step.color === kind.hue).sort((a, b) => Id.compare(a.id, b.id));
+    const wearers = worn.map((step) => Prediction.update(step.id, { color: hue }));
     const scope = RoadmapScopes.tree(this.tree);
-    const command = new ScopedPlan(scope, Plan.running({ name: 'roadmap.recolourKind', specs: [RoadmapSpecs.recolourHue], args: { kind: kind.id.record, hue } },
-      [Prediction.update(kind.id, { hue }), ...wearers]));
+    const recolour = Plan.running({ name: 'roadmap.recolourKind', specs: [RoadmapSpecs.recolourHue], args: { kind: kind.id.record, hue } },
+      [Prediction.update(kind.id, { hue }), ...wearers]);
+    recolour.undoBy(UndoRecipe.fields(Restore.tree, [
+      { target: UndoTarget.field(kind.id, 'hue'), defaultValue: UNSET.kind.hue },
+      ...worn.map((step) => ({ target: UndoTarget.field(step.id, 'color'), defaultValue: UNSET.node.color }))]));
+    const command = new ScopedPlan(scope, recolour);
     if (!absent) return ActDecision.write(new ActPlan([command]), null);
     const revival = new Plan();
     revival.revive(new Valid(kind, moment, []), { fields: [] });
+    revival.undoBy(restoring(Restore.tree, kind.id, [], { life: true }));
     return ActDecision.write(new ActPlan([new ScopedPlan(scope, revival), command]), null);
   }
 }
@@ -249,6 +258,7 @@ export class DeleteKind {
     if (kind === null) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.remove(this.id);
+    plan.undoBy(restoring(Restore.tree, this.id, [], { life: true }));
     return writeIn(RoadmapScopes.tree(this.tree), plan, null);
   }
 }

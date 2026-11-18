@@ -3,6 +3,7 @@
 // through the kit's ProductCorpus over the roadmap registry.
 
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
+import { translateUndo } from '../../../../src/platform/domain-kit/translation.js';
 import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
 import { CreateRoadmap, CreateSubtree, DeleteRoadmap, SetVisibility, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
@@ -91,7 +92,18 @@ export function runAction(vector) {
   const input = vector.input;
   if (input.read !== undefined) return /** @type {Json} */ (/** @type {unknown} */ (readResult(vector)));
   if (input.action === 'SaveStepNote') return noteSave(vector);
-  return corpus.act(/** @type {import('../../../../src/platform/domain-kit/acts.js').ActAction<any, any, any>} */ (actOf(input)), vector, (result) => /** @type {Json} */ (result), refusalForm);
+  const act = /** @type {import('../../../../src/platform/domain-kit/acts.js').ActAction<any, any, any>} */ (actOf(input));
+  /** @type {any} */
+  let decided = null;
+  const form = /** @type {any} */ (corpus.act({ refusals: act.refusals, load: (read) => act.load(read), decide: (loaded, ids) => (decided = act.decide(loaded, ids)) },
+    vector, (result) => /** @type {Json} */ (result), refusalForm));
+  if (!form.decision.write) return form;
+  // K-3: each segment's Undo recipes as the engine journals them (translateUndo), where the segment opts in.
+  form.decision.write.segments = form.decision.write.segments.map((/** @type {any} */ segment, /** @type {number} */ index) => {
+    const recipes = translateUndo(decided.plan.segments[index].plan, segment.scope);
+    return recipes === null ? segment : { ...segment, undo: recipes };
+  });
+  return form;
 }
 
 /** @param {any} input */

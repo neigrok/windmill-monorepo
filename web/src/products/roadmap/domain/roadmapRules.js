@@ -1,6 +1,7 @@
 // @ts-check
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
+import { UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { ChoiceSpec, CountSpec, TextSpec } from '../../../platform/domain-kit/values.js';
 import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
@@ -140,3 +141,33 @@ export function full(capacity, growth, subject) {
   const refused = capacity.refusal(growth, subject);
   return refused === null ? null : ActDecision.refuse(RoadmapRefusals.ofRefused(refused));
 }
+
+// K-3: each scope kind's restore command, and the value equivalent to unset of each client field a restore may
+// write back, as the registry declares it. `ord` has none: every create writes it.
+export const Restore = Object.freeze({ tree: 'roadmap.restoreTree', overlay: 'roadmap.restoreOverlay' });
+
+export const UNSET = Object.freeze({
+  meta: Object.freeze({ title: '', guide: '', visibility: 'private' }),
+  node: Object.freeze({ label: '', icon: '', color: 'terracotta', description: '', links: Object.freeze([]) }),
+  kind: Object.freeze({ hue: 'terracotta', label: '', description: '' }),
+  progress: Object.freeze({ mark: Object.freeze({ status: 'none', outOfOrder: false }) }),
+  subtask: Object.freeze({ label: '', done: false }),
+  stepLink: Object.freeze({ title: '' }),
+});
+
+// An Undo that writes back the named fields of one record, and its life where `life` says so, each from its value
+// before the act, or the value equivalent to unset.
+/**
+ * @param {string} command
+ * @param {import('../../../platform/domain-kit/entities.js').Id<any>} id
+ * @param {readonly string[]} names
+ * @param {{ life?: boolean, scope?: string | null }} [options]
+ */
+export function restoring(command, id, names, { life = false, scope = null } = {}) {
+  const unset = /** @type {Record<string, Record<string, import('../../../platform/domain-kit/values.js').Json>>} */ (/** @type {unknown} */ (UNSET))[id.entity.type] ?? {};
+  const fields = names.map((name) => Object.hasOwn(unset, name)
+    ? { target: UndoTarget.field(id, name, scope), defaultValue: /** @type {import('../../../platform/domain-kit/values.js').Json} */ (unset[name]) }
+    : UndoTarget.field(id, name, scope));
+  return UndoRecipe.fields(command, [...fields, ...(life ? [UndoTarget.life(id, scope)] : [])]);
+}
+

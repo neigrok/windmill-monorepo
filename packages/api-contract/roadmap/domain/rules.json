@@ -6,9 +6,9 @@
     {"type":"node","removable":true,"held":true,"ordered":false,"guarded":false},
     {"type":"pointer","removable":true,"held":false,"ordered":false,"guarded":false},
     {"type":"progress","removable":false,"held":false,"ordered":false,"guarded":false},
-    {"type":"stepLink","removable":true,"held":false,"ordered":true,"guarded":false},
+    {"type":"stepLink","removable":true,"held":true,"ordered":true,"guarded":false},
     {"type":"stepNote","removable":false,"held":false,"ordered":false,"guarded":false},
-    {"type":"subtask","removable":true,"held":false,"ordered":true,"guarded":false},
+    {"type":"subtask","removable":true,"held":true,"ordered":true,"guarded":false},
     {"type":"tree","removable":true,"held":true,"ordered":false,"guarded":false}
   ],
   "rules": [
