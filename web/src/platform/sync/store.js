@@ -16,16 +16,17 @@ export function frozen(value) {
 }
 
 // A sliced step's size, from how long the last one held the writer: t taken in h ms sizes the next t × aim ÷ h,
-// at most twice the offer and below it only past the aim, half of WRITER_SLICE_MS.
+// at most twice the offer and below it only past the aim, half of WRITER_SLICE_MS. An IndexedDB transaction's
+// own cost can pass the aim with a handful of rows, so a step never shrinks below the size it started at.
 export class WriterSlice {
-  constructor(size) { this.size = size; }
+  constructor(size) { this.start = this.size = size; }
 
   record(taken, heldMs) {
     if (taken === 0) return;
     const aim = WRITER_SLICE_MS / 2, upper = Math.min(2 * this.size, 4096);
     if (heldMs <= 0) { this.size = upper; return; }
     const fitting = Math.min(upper, Math.floor(taken * aim / heldMs));
-    this.size = heldMs > aim ? Math.max(1, fitting) : Math.max(this.size, fitting);
+    this.size = heldMs > aim ? Math.max(this.start, fitting) : Math.max(this.size, fitting);
   }
 }
 

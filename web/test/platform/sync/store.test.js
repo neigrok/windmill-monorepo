@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { IndexedDBStore } from '../../../src/platform/sync/store.js';
+import { IndexedDBStore, WriterSlice } from '../../../src/platform/sync/store.js';
 import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { registry } from './oracle-adapters/fixtures.js';
@@ -261,4 +261,15 @@ test('versionchange releases every open store so a later upgrade can complete', 
     assert.deepEqual(stores.map((store) => store.closed), [true, true]);
     for (const store of stores) await assert.rejects(store.read(), /sync store closed/);
   } finally { stores.forEach((store) => store.close()); }
+});
+
+test('a writer slice doubles while under half the slice, fits the aim past it, and never shrinks below its start', () => {
+  const slice = new WriterSlice(64);
+  const sizes = [[64, 2], [128, 0], [256, 6.25], [512, 50], [256, 100], [64, 400], [0, 400]].map(([taken, heldMs]) => {
+    slice.record(taken, heldMs);
+    return slice.size;
+  });
+  assert.deepEqual(sizes, [128, 256, 512, 128, 64, 64, 64]);
+  for (let step = 0; step < 12; step++) slice.record(slice.size, 1);
+  assert.equal(slice.size, 4096);
 });
