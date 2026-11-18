@@ -92,8 +92,9 @@ export class ReplicaRoadmap {
   get state() {
     if (this.account.trees.get(this.treeId)?.read !== 'loaded' || (!this.mine && !this.listRead)) return 'waiting';
     if (!this.open.holds) return 'missing';
+    // A roadmap the server is still answering for may yet stand: its meta can arrive after its steps.
     const { standing } = this.account.locate(this.treeId);
-    if (standing === 'hidden') return 'missing';
+    if (standing === 'hidden') return this.open.read ? 'missing' : 'waiting';
     return standing === 'standing' ? 'open' : 'waiting';
   }
 
@@ -114,8 +115,8 @@ export class ReplicaRoadmap {
     const owners = new Set(new LegendRead(tree).result().owners.map((owner) => owner.id));
     const place = new TreePlace(location.place);
     return {
-      id: this.treeId, title: location.title ?? '', guide: tree.meta.guide, author: null,
-      visibility: place.subtree ? tree.meta.reach : tree.meta.visibility, mine: this.mine, place,
+      id: this.treeId, title: location.title ?? '', guide: tree.meta?.guide ?? '', author: null,
+      visibility: (place.subtree ? tree.meta?.reach : tree.meta?.visibility) ?? 'private', mine: this.mine, place,
       kinds: tree.kinds.filter((kind) => kind.present && owners.has(kind.id))
         .map((kind) => ({ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description })),
       nodes: graph.nodes.map((step) => {

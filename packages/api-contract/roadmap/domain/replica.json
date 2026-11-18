@@ -565,15 +565,7 @@
         "tree": "t_00000000000000a1",
         "step": "kite"
       },
-      "meta": {
-        "title": "",
-        "guide": "",
-        "guideInherited": false,
-        "root": "t_00000000000000d4",
-        "depth": 0,
-        "visibility": "private",
-        "reach": "private"
-      },
+      "meta": null,
       "nodes": [],
       "edges": [],
       "kinds": [],
@@ -598,15 +590,7 @@
       "own": false,
       "updatedAt": null,
       "parent": null,
-      "meta": {
-        "title": "",
-        "guide": "",
-        "guideInherited": false,
-        "root": "t_00000000000000e5",
-        "depth": 0,
-        "visibility": "private",
-        "reach": "private"
-      },
+      "meta": null,
       "nodes": [],
       "edges": [],
       "kinds": [],
@@ -631,15 +615,7 @@
       "own": false,
       "updatedAt": null,
       "parent": null,
-      "meta": {
-        "title": "",
-        "guide": "",
-        "guideInherited": false,
-        "root": "t_00000000000000e5",
-        "depth": 0,
-        "visibility": "private",
-        "reach": "private"
-      },
+      "meta": null,
       "nodes": [],
       "edges": [],
       "kinds": [],
@@ -1325,7 +1301,7 @@
     ]
   },
   {
-    "name": "The person’s list: their own roots that stand, newest first by the server’s last receipt, ties by id, never received last; no subtree, deleted or someone else’s roadmap",
+    "name": "The person’s list: their own roots that stand, newest first by the server’s last receipt, ties by id, never received last; no subtree, deleted or someone else’s roadmap, nor a root whose meta has not arrived",
     "input": {
       "operation": "list",
       "trees": [
@@ -1510,6 +1486,25 @@
             "root": "Z",
             "depth": 0
           },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "M",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": 95,
+          "parent": null,
+          "meta": null,
           "nodes": [
             {
               "id": "n",

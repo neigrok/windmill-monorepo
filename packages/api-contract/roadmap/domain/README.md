@@ -13,8 +13,11 @@ time, randomness or localization.
 
 `RoadmapTree` constructs the supplied normalized tree, nodes and kinds. Trees retain `present`,
 `read`, `own` (the tree is in the person's own list), `updatedAt` (when the server last received any
-record of it, or null), immutable `parent`, metadata, every node record including absent ones, every
-edge's presence, marks and pointers. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
+record of it, or null), immutable `parent`, metadata (`meta: null` where its tree scope holds no meta),
+every node record including absent ones, every edge's presence, marks and pointers. D-3: a root stands
+once its tree scope holds its meta; a loaded root without it (a creation or a fork under way) is hidden,
+with every subtree under it, so it has no title, count, list row or address and a pointer at it dangles.
+An unread root keeps standing, as nothing is known of it. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
 millisecond instants or null. Optional `mark.stamp`, `pointer.setAt` and `node.branchStamp` are
 full engine stamps, not instants. A mark is personal progress; authored node `status` never supplies it.
 
@@ -41,7 +44,7 @@ ID byte order.
 
 `readRoadmap` (`roadmaps.js`) reads one roadmap from a device's replica: its tree scope's steps and links as
 `readTree` reads them, absent ones kept, each step with its `rc`, `ru` and the stamp of the subtree it owns;
-its meta with the server's `parent`, `depth`, `reach` and `guideInherited`; its kinds; and, from its owner's
+its meta with the server's `parent`, `depth`, `reach` and `guideInherited`, null where the scope holds none; its kinds; and, from its owner's
 overlay, the marks and pointers (a roadmap someone else owns takes no overlay). Its record in the person's
 list, where there is one, makes it `own`, says whether it is present and where it sits; without one the meta
 says where. A tree scope the device holds records of is read; an empty one is read once the server has

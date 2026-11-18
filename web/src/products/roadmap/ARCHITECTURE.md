@@ -161,8 +161,8 @@ on, every room but the demo reads through `ReplicaReading`:
   stands and the scope's stored rows are `loaded`. A roadmap the device holds nothing of waits for the server's first
   answer; where the engine cannot reach the server (its `connection` is not `online`, or it is paused for auth or an
   upgrade), or with no answer within ten seconds (`FIRST_COPY_MS`), the room shows its load error and Try again, as a
-  failed read does. A roadmap the server does not serve, one the device holds nothing of, and a hidden subtree (§5) are
-  in no address: the same load error.
+  failed read does. A roadmap the server does not serve, one the device holds nothing of, a hidden subtree (§5) and a
+  root whose meta has not arrived (D-3) are in no address once the server has answered for it: the same load error.
 - **Shapes.** `room/ReplicaRoadmap.js` is the room's edge: each roadmap's records (`HeldRoadmap`) are read by the
   domain's `readRoadmap` into a `RoadmapTree` (its steps, links, meta and kinds, and the owner's marks and pointers, a
   mark dated by the server once no queued entry still changes its record, the snapshot's `pending`), the domain's

@@ -421,5 +421,202 @@
       ],
       "loops": []
     }
+  },
+  {
+    "name": "A root whose tree scope holds no meta does not stand: no title, count or address, its subtrees hidden and a pointer at it dangling; an unread root still stands",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "F",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": null,
+          "nodes": [
+            {
+              "id": "own",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "own",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "G"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "G",
+          "present": true,
+          "read": "loaded",
+          "parent": {
+            "tree": "F",
+            "step": "own"
+          },
+          "meta": {
+            "title": "G",
+            "guide": "",
+            "guideInherited": false,
+            "root": "F",
+            "depth": 1,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "g",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "g",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "Q",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "Q",
+            "guide": "",
+            "guideInherited": false,
+            "root": "Q",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "p",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "p",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "p",
+              "present": true,
+              "opens": "F"
+            }
+          ]
+        },
+        {
+          "id": "U",
+          "present": true,
+          "read": "unread",
+          "parent": null,
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": {
+      "trees": [
+        {
+          "id": "F",
+          "standing": "hidden",
+          "read": "loaded",
+          "place": null,
+          "title": null,
+          "counts": null,
+          "complete": false,
+          "openings": []
+        },
+        {
+          "id": "G",
+          "standing": "hidden",
+          "read": "loaded",
+          "place": null,
+          "title": null,
+          "counts": null,
+          "complete": false,
+          "openings": []
+        },
+        {
+          "id": "Q",
+          "standing": "standing",
+          "read": "loaded",
+          "place": {
+            "root": "Q",
+            "parent": null,
+            "path": [],
+            "depth": 0
+          },
+          "title": "Q",
+          "counts": {
+            "done": 0,
+            "total": 1
+          },
+          "complete": false,
+          "openings": [
+            {
+              "node": "p",
+              "kind": "pointer",
+              "tree": "F",
+              "status": "dangling",
+              "complete": false,
+              "counts": null,
+              "loop": false
+            }
+          ]
+        },
+        {
+          "id": "U",
+          "standing": "standing",
+          "read": "unread",
+          "place": {
+            "root": "U",
+            "parent": null,
+            "path": [],
+            "depth": 0
+          },
+          "title": null,
+          "counts": null,
+          "complete": false,
+          "openings": []
+        }
+      ],
+      "loops": []
+    }
   }
 ]

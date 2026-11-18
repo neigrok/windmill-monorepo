@@ -126,8 +126,8 @@ export function readRoadmap(id, { listed = null, tree, overlay = null, queued = 
     own: listed !== null,
     updatedAt,
     parent: listed ? placeIn(Fields.record(listed)) : meta.parent,
-    meta: { title: meta.title, guide: meta.guide, guideInherited: meta.guideInherited, root: meta.root ?? id, depth: meta.depth,
-      visibility: meta.visibility, reach: meta.reach },
+    meta: metaRecord ? { title: meta.title, guide: meta.guide, guideInherited: meta.guideInherited, root: meta.root ?? id, depth: meta.depth,
+      visibility: meta.visibility, reach: meta.reach } : null,
     nodes: steps.nodes,
     edges: steps.edges,
     kinds: records.filter((record) => record.t === RoadmapKind.type).map((record) => {

@@ -117,9 +117,14 @@ export class RoadmapAccount {
       if (location) { base = location; break; }
       const tree = this.trees.get(current);
       if (!tree) break;
-      if (!tree.present) { base = { standing: 'hidden', place: null, title: null }; this.locations.set(current, base); break; }
+      // D-3: a root stands once its tree scope holds its meta; one read without it (a creation or a fork under way) does not.
+      if (!tree.present || (tree.parent === null && tree.read === 'loaded' && tree.meta === null)) {
+        base = { standing: 'hidden', place: null, title: null };
+        this.locations.set(current, base);
+        break;
+      }
       if (tree.parent === null) {
-        base = { standing: 'standing', place: { root: tree.id, parent: null, path: [], depth: 0 }, title: tree.read === 'loaded' ? tree.meta.title : null };
+        base = { standing: 'standing', place: { root: tree.id, parent: null, path: [], depth: 0 }, title: tree.read === 'loaded' ? tree.meta?.title ?? null : null };
         this.locations.set(current, base);
         break;
       }
@@ -214,7 +219,7 @@ export class RoadmapAccount {
     if (this.locations.get(id)?.standing !== 'standing') return [];
     const candidates = [...this.waysBack(id)].flatMap(([treeId, way]) => {
       const tree = this.trees.get(treeId);
-      if (!tree || tree.read !== 'loaded' || tree.meta.guide === '') return [];
+      if (!tree || tree.read !== 'loaded' || !tree.meta || tree.meta.guide === '') return [];
       return [{ tree: treeId, title: this.locations.get(treeId)?.title ?? '', text: tree.meta.guide, own: !tree.meta.guideInherited, distance: way.distance }];
     });
     candidates.sort((a, b) => a.distance - b.distance || compareText(a.tree, b.tree));

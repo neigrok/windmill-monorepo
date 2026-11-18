@@ -10,7 +10,7 @@ import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/
 /** @typedef {{node:string,present:boolean,opens:string,setAt?:string|null}} Pointer */
 /** @typedef {{tree:string,step:string}} Parent */
 /** @typedef {{title:string,guide:string,guideInherited:boolean,root:string,depth:number,visibility:string,reach:string}} Metadata */
-/** @typedef {{id:string,present?:boolean,read?:'loaded'|'unread',own?:boolean,updatedAt?:number|null,parent?:Parent|null,meta?:Partial<Metadata>,nodes?:StepInput[],edges?:Edge[],kinds?:KindInput[],marks?:Mark[],pointers?:Pointer[]}} TreeInput */
+/** @typedef {{id:string,present?:boolean,read?:'loaded'|'unread',own?:boolean,updatedAt?:number|null,parent?:Parent|null,meta?:Partial<Metadata>|null,nodes?:StepInput[],edges?:Edge[],kinds?:KindInput[],marks?:Mark[],pointers?:Pointer[]}} TreeInput */
 
 export class Step {
   /** @param {StepInput} input */
@@ -46,7 +46,7 @@ export class Kind {
 }
 
 // A roadmap's normalized records. `own` says it is in the person's own list; `updatedAt` is when the server last received
-// any record of it, null where it has received none.
+// any record of it, null where it has received none; `meta` is null while its tree scope holds no meta.
 export class RoadmapTree {
   /** @param {TreeInput} input */
   constructor(input) {
@@ -56,7 +56,8 @@ export class RoadmapTree {
     this.own = input.own ?? false;
     this.updatedAt = input.updatedAt ?? null;
     this.parent = input.parent ? { ...input.parent } : null;
-    this.meta = { title: '', guide: '', guideInherited: false, root: input.id, depth: 0, visibility: 'private', reach: 'private', ...input.meta };
+    this.meta = input.meta === null ? null
+      : { title: '', guide: '', guideInherited: false, root: input.id, depth: 0, visibility: 'private', reach: 'private', ...input.meta };
     this.nodes = (input.nodes ?? []).map((node) => new Step(node)).sort(authoredOrder);
     this.nodesById = new Map(this.nodes.map((node) => [node.id, node]));
     this.edges = (input.edges ?? []).map((edge) => ({ ...edge })).sort(edgeOrder);
