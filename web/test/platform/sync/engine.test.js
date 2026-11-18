@@ -1022,6 +1022,33 @@ test('a bound reader opening a foreign tree follows its own overlay and schedule
   } finally { engine.close(); }
 });
 
+test('pages that share a chunk see a board the same answer killed: its tree page applies nothing', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  const board = (life, seq) => row({ t: 'board', id: 'b_00000001', life, born: st(1), seq });
+  const oak = row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 1 });
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [board(['alive', st(1)], 1)], 'tree:b_00000001': [oak] },
+  }));
+  const engine = await open(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
+    assert.deepEqual(engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id), ['oak']);
+    const replica = engine.device.activeReplica;
+    const live = (seq) => Cursor.encode({ e: 'ep-1', m: 'live', s: seq });
+    const dead = board(['dead', st(2)], 2), ash = row({ t: 'tag', id: 'ash', life: ['alive', st(2)], born: st(2), seq: 2 });
+    const outcomes = await engine.storePages(replica.storageHandle, [
+      { cursor: replica.cursorOf('self/probe').cursor, page: { scope: 'self/probe', kind: 'rows', rows: [dead], more: false, seq: 2, cursor: live(2), digest: scopeDigest([]) } },
+      { cursor: replica.cursorOf(tree).cursor, page: { scope: tree, kind: 'rows', rows: [ash], more: false, seq: 2, cursor: live(2), digest: scopeDigest([oak, ash]) } },
+    ]);
+    assert.deepEqual(outcomes, ['applied', 'outside']);
+    assert.equal(engine.lastWrite.rowWrites, 1);
+    assert.deepEqual(engine.device.activeReplica.known, { [tree]: 'gone', 'self/overlay/b_00000001': 'gone' });
+    assert.deepEqual(engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id), ['oak']);
+  } finally { engine.close(); }
+});
+
 for (const denial of ['page', 'frame']) test(`a reader overlay survives ack and pull, leaves with the last tab, and clears on a ${denial} denial`, async () => {
   const env = environment(), tree = 'tree/b_00000001', overlay = 'self/overlay/b_00000001';
   const ownerMark = row({ t: 'mark', id: 'oak', f: { done: [true, st(1)] }, seq: 1 });

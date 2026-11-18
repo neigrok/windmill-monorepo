@@ -794,7 +794,8 @@ export class BrowserSyncEngine {
   }
 
   // A response's pages apply in chunks the writer slice sizes: a chunk takes the rows of one page or of
-  // several, and checks each page in the transaction that applies it.
+  // several, and checks each page in the transaction that applies it. Only a product page or an end can
+  // move the subscription set, so the set is read again after one of those.
   async storePages(handle, pages) {
     let outcomes = pages.map(() => 'applied');
     const settling = [];
@@ -811,20 +812,21 @@ export class BrowserSyncEngine {
       }
       const answer = await this.write(null, (device, ctx) => {
         const replica = device.activeReplica;
-        const subscribed = (scope) => this.scopes(replica).includes(scope);
+        let subscribed = new Set(this.scopes(replica));
         const decided = [...outcomes], finished = [];
         for (const { index, rows, first, last } of steps) {
           const { cursor, page } = pages[index];
           if (decided[index] !== 'applied') continue;
           if (replica.storageHandle !== handle) decided[index] = 'outside';
-          else if (page.kind !== 'rows') decided[index] = applyPage(replica, ctx, cursor, page, undefined, subscribed);
-          else if (!subscribed(page.scope)) decided[index] = 'outside';
+          else if (page.kind !== 'rows') decided[index] = applyPage(replica, ctx, cursor, page, undefined, (scope) => subscribed.has(scope));
+          else if (!subscribed.has(page.scope)) decided[index] = 'outside';
           else if ((replica.meta.serverEpoch !== null && Cursor.decode(page.cursor)?.e !== replica.meta.serverEpoch)
             || replica.cursorOf(page.scope).cursor !== cursor) decided[index] = 'stale';
           else {
             applyChunk(replica, ctx, cursor, page, rows, first);
             if (last && finishPage(replica, ctx, cursor, page, 64)) finished.push(index);
           }
+          if (page.kind !== 'rows' || this.registry.scopeKindOf(page.scope)?.startsWith('product:')) subscribed = new Set(this.scopes(replica));
         }
         return { decided, finished };
       }, steps.map(({ index, rows }) => ({ handle, scope: pages[index].page.scope, keys: rows.map((row) => recordKey(row.t, row.id)) })));
