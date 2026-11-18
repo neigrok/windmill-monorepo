@@ -1,6 +1,6 @@
 // @ts-check
 
-import { ActDecision } from '../../../platform/domain-kit/acts.js';
+import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
 import { Plan, Prediction } from '../../../platform/domain-kit/plans.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
@@ -186,7 +186,8 @@ export class MoveKind {
 }
 
 // §4 `roadmap.recolourKind`: the kind's hue and the colour of every step that wears it, present or not,
-// predicted so the legend and the steps change at once. The server revives the kind and no step.
+// predicted so the legend and the steps change at once. A kind this device holds as deleted is revived first, as
+// every change to a kind carries its life; the command revives no step.
 export class RecolourKind {
   /**
    * @param {string} tree
@@ -211,16 +212,20 @@ export class RecolourKind {
   }
 
   /** @param {LoadedKinds & { steps: import('./steps.js').RoadmapStepValue[] }} loaded */
-  decide({ kind, present, steps, moment }) {
+  decide({ kind, absent, present, steps, moment }) {
     if (kind === null) return gone(RoadmapKind.type, this.kind);
     const hue = new Valid(kind.with({ hue: this.hue }), moment, ['hue']).value.hue;
     wearing(present, hue, this.kind);
     if (hue === kind.hue) return ActDecision.unchanged(null);
     const wearers = steps.filter((step) => step.color === kind.hue).sort((a, b) => Id.compare(a.id, b.id))
       .map((step) => Prediction.update(step.id, { color: hue }));
-    const plan = Plan.running({ name: 'roadmap.recolourKind', specs: [RoadmapSpecs.recolourHue], args: { kind: kind.id.record, hue } },
-      [Prediction.update(kind.id, { hue }), ...wearers]);
-    return writeIn(RoadmapScopes.tree(this.tree), plan, null);
+    const scope = RoadmapScopes.tree(this.tree);
+    const command = new ScopedPlan(scope, Plan.running({ name: 'roadmap.recolourKind', specs: [RoadmapSpecs.recolourHue], args: { kind: kind.id.record, hue } },
+      [Prediction.update(kind.id, { hue }), ...wearers]));
+    if (!absent) return ActDecision.write(new ActPlan([command]), null);
+    const revival = new Plan();
+    revival.revive(new Valid(kind, moment, []), { fields: [] });
+    return ActDecision.write(new ActPlan([new ScopedPlan(scope, revival), command]), null);
   }
 }
 

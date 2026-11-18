@@ -10,11 +10,10 @@ import { StepMark, StepMarkValue, StepPointer, StepPointerValue } from '../../..
 import { StepLink, StepLinkValue, StepNote, StepNoteValue, Subtask, SubtaskValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { GENESIS_KINDS, RoadmapRefusals } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
-import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
-import { roadmapRegistry } from './vectors.js';
+import { roadmapBook } from './vectors.js';
 
-const book = new RoadmapRules(roadmapRegistry).book;
+const book = roadmapBook;
 const T = 't_0000000000000001';
 
 test('every roadmap entity agrees with the registry, its sample setting every field it writes', () => {

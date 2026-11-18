@@ -1,25 +1,19 @@
 // @ts-check
-// Roadmap's shared vectors on the web: the pure reads over normalized records, and the actions
-// (`*-actions.json`) over the kit: an act's load over each scope's records, its decision, and each segment's
-// gesture by the roadmap registry.
+// Roadmap's shared vectors on the web: the pure reads over normalized records, and the actions (`*-actions.json`)
+// through the kit's ProductCorpus over the roadmap registry.
 
-import { ActIDSource, ActReader } from '../../../../src/platform/domain-kit/acts.js';
-import { IDSource, decision } from '../../../../src/platform/domain-kit/actions.js';
-import { Draft } from '../../../../src/platform/domain-kit/drafts.js';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
-import { Reader, Views } from '../../../../src/platform/domain-kit/reading.js';
-import { translate } from '../../../../src/platform/domain-kit/translation.js';
-import { Fault, Violation } from '../../../../src/platform/domain-kit/values.js';
-import { recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
-import { CreateRoadmap, DeleteRoadmap, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { CreateRoadmap, CreateSubtree, DeleteRoadmap, SetVisibility, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
+import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { ChangeKind, CreateKind, DeleteKind, MoveKind, RecolourKind } from '../../../../src/products/roadmap/domain/kinds.js';
 import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
 import { RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
-import { Contract, momentOf, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
+import { Contract, savedForm } from '../../../platform/domain-kit/vectors.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
@@ -30,26 +24,8 @@ import { diagnose, pointerDiagnostics } from '../../../../src/products/roadmap/d
 /** @typedef {import('../../../platform/domain-kit/vectors.js').Vector} Vector */
 
 export const roadmapRegistry = new Registry(Contract.json('sync/roadmap.registry.json'));
-
-// What one scope of a scene hands a reader: its records, the device rows, and nothing pending.
-/** @param {any} input @param {string} scope */
-function viewsOf(input, scope) {
-  const records = input.scopes?.[scope] ?? { drawn: [] };
-  /** @param {any[]} rows */
-  const keyed = (rows) => new Map(viewRecords(rows).map((record) => [recordKey(record.t, record.id), record]));
-  const stored = records.stored ?? records.drawn;
-  return { drawn: keyed(records.drawn), stored: keyed(stored), confirmed: keyed(stored), devices: input.device ?? {}, firstPullComplete: true, now: input.now };
-}
-
-/** @param {any} input */
-function mintsFrom(input) {
-  const left = [...(input.ids ?? [])];
-  return (/** @type {string} */ type) => {
-    const id = left.shift();
-    if (id === undefined) throw new Fault(`the vector lists no id left to mint a ${type}`);
-    return id;
-  };
-}
+export const roadmapBook = new RoadmapRules(roadmapRegistry).book;
+const corpus = new ProductCorpus(roadmapBook, RoadmapRules.spec);
 
 /** @param {any} input */
 function actOf(input) {
@@ -57,6 +33,8 @@ function actOf(input) {
   switch (action) {
     case 'CreateRoadmap': return new CreateRoadmap(given.title, given.steps);
     case 'DeleteRoadmap': return new DeleteRoadmap(given.tree);
+    case 'SetVisibility': return new SetVisibility(given.tree, given.visibility);
+    case 'CreateSubtree': return new CreateSubtree(given.tree, given.step);
     case 'WriteRoadmap': return new WriteRoadmap(given.tree, Object.fromEntries(['title', 'guide'].filter((name) => name in given).map((name) => [name, given[name]])));
     case 'CreateStep': return new CreateStep(given.tree, given.step, given.prerequisites);
     case 'ChangeStep': return new ChangeStep(given.tree, given.step, given.changes);
@@ -69,7 +47,7 @@ function actOf(input) {
     case 'RecolourKind': return new RecolourKind(given.tree, given.kind, given.hue);
     case 'MoveKind': return new MoveKind(given.tree, given.kind, given.below);
     case 'DeleteKind': return new DeleteKind(given.tree, given.kind);
-    case 'Complete': return Complete(given.tree, given.step, given.outOfOrder ?? false);
+    case 'Complete': return Complete(given.tree, given.step, { outOfOrder: given.outOfOrder ?? false, opensStanding: given.opensStanding ?? false });
     case 'Reset': return Reset(given.tree, given.step);
     case 'SetPointer': return SetPointer(given.tree, given.step, given.opens);
     case 'ClearPointer': return ClearPointer(given.tree, given.step);
@@ -86,60 +64,23 @@ function actOf(input) {
   }
 }
 
-// An act's decision over the scene: load through an act reader, decide once, each segment translated in its scope.
-/** @param {any} input */
-function actDecision(input) {
-  const mint = mintsFrom(input);
-  /** @type {import('../../../../src/platform/domain-kit/acts.js').ActContext} */
-  const context = {
-    now: input.now,
-    finishLoad() {},
-    inScope: (scope, body) => body(viewsOf(input, scope)),
-    mintID: (type) => mint(type),
-    opaqueID: () => { throw new Fault('a roadmap act mints no opaque id'); },
-  };
-  const act = actOf(input);
-  const reader = new ActReader(context, roadmapRegistry, momentOf(input));
-  const loaded = act.load(reader);
-  reader.end();
-  /** @type {any} */
-  let decided;
-  try {
-    decided = act.decide(/** @type {any} */ (loaded), new ActIDSource(context));
-  } catch (error) {
-    if (!(error instanceof Violation)) throw error;
-    return { decision: { refuse: refusalForm(act.refusals.ofViolation(error)) } };
-  }
-  if (decided.kind === 'refuse') return { decision: { refuse: refusalForm(decided.refusal) } };
-  if (decided.kind === 'unchanged') return { decision: { unchanged: { result: decided.result } } };
-  const segments = decided.plan.segments.map((/** @type {any} */ segment) => ({ scope: segment.scope, gesture: translate(segment.plan, segment.scope, roadmapRegistry) }));
-  return { decision: { write: { segments, result: decided.result } } };
-}
-
 // A step's note saved from the draft its editor opens over the scene's overlay.
-/** @param {any} input */
-function noteSave(input) {
-  const { tree, step, text } = input.input;
-  const scope = RoadmapScopes.overlay(tree);
-  const read = new Reader(new Views(roadmapRegistry, { ...viewsOf(input, scope), mintId: mintsFrom(input) }), scope, momentOf(input));
-  const id = new Id(step, StepNote);
-  const held = read.repository(StepNote).find(id, 'drawn');
-  const draft = (held === null ? Draft.new(new StepNoteValue(id), null, scope) : Draft.opening(held, scope)).edit((note) => new StepNoteValue(note.id, text));
-  const save = SaveStepNote(draft);
-  const decided = decision(save, save.load(read), new IDSource(read.views));
-  if (decided.kind === 'refuse') return { decision: { refuse: refusalForm(decided.refusal) } };
-  if (decided.kind === 'unchanged') return { decision: { unchanged: { result: savedForm(decided.result) } } };
-  return { decision: { write: { segments: [{ scope, gesture: translate(decided.plan, scope, roadmapRegistry) }], result: savedForm(decided.result) } } };
+/** @param {Vector} vector */
+function noteSave(vector) {
+  const { tree, step, text } = vector.input.input;
+  return corpus.save((draft) => SaveStepNote(draft), vector, new StepNoteValue(new Id(step, StepNote)),
+    (note) => new StepNoteValue(note.id, text), savedForm, refusalForm, RoadmapScopes.overlay(tree));
 }
 
-/** @param {any} input */
-function readResult(input) {
+/** @param {Vector} vector */
+function readResult(vector) {
+  const input = vector.input;
   if (input.read === 'cannotLand') return { result: cannotLand(input.input.notices, roadmapRegistry) };
   if (input.read !== 'landing') throw new Error(`no roadmap read ${input.read}`);
-  const scope = RoadmapScopes.tree(input.input.tree);
-  const read = new Reader(new Views(roadmapRegistry, viewsOf(input, scope)), scope, momentOf(input));
-  const landing = landingOf(input.input.tree, read);
-  return { result: { follows: landing.follows, cameBack: landing.cameBack, note: landing.note.json } };
+  return corpus.read(vector, RoadmapScopes.tree(input.input.tree), (read) => {
+    const landing = landingOf(input.input.tree, read);
+    return { follows: landing.follows, cameBack: landing.cameBack, note: landing.note.json };
+  });
 }
 
 /**
@@ -148,9 +89,9 @@ function readResult(input) {
  */
 export function runAction(vector) {
   const input = vector.input;
-  if (input.read !== undefined) return /** @type {Json} */ (/** @type {unknown} */ (readResult(input)));
-  if (input.action === 'SaveStepNote') return /** @type {Json} */ (/** @type {unknown} */ (noteSave(input)));
-  return /** @type {Json} */ (/** @type {unknown} */ (actDecision(input)));
+  if (input.read !== undefined) return /** @type {Json} */ (/** @type {unknown} */ (readResult(vector)));
+  if (input.action === 'SaveStepNote') return noteSave(vector);
+  return corpus.act(/** @type {import('../../../../src/platform/domain-kit/acts.js').ActAction<any, any, any>} */ (actOf(input)), vector, (result) => /** @type {Json} */ (result), refusalForm);
 }
 
 /** @param {any} input */

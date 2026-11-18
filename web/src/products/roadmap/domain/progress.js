@@ -82,7 +82,7 @@ class StepOverlay {
       moment: scope.moment,
     }));
     this.known = known.known;
-    this.opens = known.branch || overlay.pointer !== null;
+    this.owns = known.branch;
     this.mark = overlay.mark ?? new StepMarkValue(new Id(step, StepMark));
     this.pointer = overlay.pointer;
     this.moment = overlay.moment;
@@ -90,20 +90,23 @@ class StepOverlay {
   }
 }
 
-// §5 Complete and Reset write the step's mark in the person's overlay. A step that owns a subtree or opens a
-// roadmap is complete exactly when that roadmap is, and takes no mark.
+// §5 Complete and Reset write the step's mark in the person's overlay. A step that owns a subtree, or whose
+// pointer opens a standing roadmap, is complete exactly when that roadmap is, and takes no mark. Whether the
+// pointer's roadmap stands is read from the account by the caller; a pointer that dangles leaves the mark its meaning.
 export class MarkStep {
   /**
    * @param {string} tree
    * @param {string} step
    * @param {'complete' | 'none'} status
    * @param {boolean} outOfOrder
+   * @param {boolean} opensStanding
    */
-  constructor(tree, step, status, outOfOrder = false) {
+  constructor(tree, step, status, outOfOrder = false, opensStanding = false) {
     this.tree = tree;
     this.step = step;
     this.status = status;
     this.outOfOrder = status === 'complete' && outOfOrder;
+    this.opensStanding = opensStanding;
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
@@ -112,9 +115,9 @@ export class MarkStep {
   load(read) { return new StepOverlay(read, this.tree, this.step); }
 
   /** @param {StepOverlay} loaded */
-  decide({ known, opens, mark, moment }) {
+  decide({ known, owns, mark, moment }) {
     if (!known) return gone(RoadmapStep.type, this.step);
-    if (this.status === 'complete' && opens) throw new Violation(RoadmapChecks.opening, new Path('step'), { kind: 'custom', custom: 'opens' });
+    if (this.status === 'complete' && (owns || this.opensStanding)) throw new Violation(RoadmapChecks.opening, new Path('step'), { kind: 'custom', custom: 'opens' });
     if (mark.holds(this.status, this.outOfOrder)) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.create(new Valid(new StepMarkValue(mark.id, this.status, this.outOfOrder), moment), { fields: ['mark'] });
@@ -152,8 +155,8 @@ export class PointStep {
   }
 }
 
-/** @param {string} tree @param {string} step @param {boolean} [outOfOrder] */
-export function Complete(tree, step, outOfOrder = false) { return new MarkStep(tree, step, 'complete', outOfOrder); }
+/** @param {string} tree @param {string} step @param {{ outOfOrder?: boolean, opensStanding?: boolean }} [word] */
+export function Complete(tree, step, { outOfOrder = false, opensStanding = false } = {}) { return new MarkStep(tree, step, 'complete', outOfOrder, opensStanding); }
 
 /** @param {string} tree @param {string} step */
 export function Reset(tree, step) { return new MarkStep(tree, step, 'none'); }

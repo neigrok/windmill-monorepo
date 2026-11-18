@@ -36,6 +36,7 @@
     {"name":"progress.mark.status","subject":"progress","kind":"local","spec":{"path":"progress.mark.status","kind":"choice","values":["complete","none"]}},
     {"name":"progress.opening","subject":"progress","kind":"local"},
     {"name":"roadmap.recolourKind.hue","subject":"roadmap","kind":"local","spec":{"path":"roadmap.recolourKind.hue","kind":"choice","values":["terracotta","olive","gold","brick","sky","plum"]}},
+    {"name":"roadmap.setVisibility.visibility","subject":"roadmap","kind":"local","spec":{"path":"roadmap.setVisibility.visibility","kind":"choice","values":["private","unlisted","public"]}},
     {"name":"stepLink.cap","subject":"stepLink","kind":"server","codes":["cap"]},
     {"name":"stepLink.gone","subject":"stepLink","kind":"server","codes":["unknown-record","record-dead"]},
     {"name":"stepLink.taken","subject":"stepLink","kind":"server","codes":["id-taken","id-spent"]},

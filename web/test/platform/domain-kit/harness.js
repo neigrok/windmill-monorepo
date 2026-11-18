@@ -16,7 +16,7 @@ import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { environment } from '../sync/fakes.js';
 import { DEFAULT_NOW } from './vectors.js';
 
-/** @typedef {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, scopes: Set<string>, now: number, serial: number, server: any, phones: Harness[], zone: import('../../../src/platform/domain-kit/time.js').Zone }} World */
+/** @typedef {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, scopes: Set<string>, now: number, serial: number, random: (bound: number) => number, server: any, phones: Harness[], zone: import('../../../src/platform/domain-kit/time.js').Zone }} World */
 
 export class Harness {
   /** @param {World} world @param {any} env @param {any} engine @param {any} options */
@@ -31,7 +31,13 @@ export class Harness {
 
   /** @param {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, start?: number, zone?: import('../../../src/platform/domain-kit/time.js').Zone }} options */
   static async open({ registry, product, scope, start = DEFAULT_NOW, zone = new FixedZone(0) }) {
-    const world = { registry, product, scope, scopes: new Set([scope]), now: start, serial: 0, server: ServerState.empty({ epoch: 'ep-domain', accounts: { A: { name: 'A' } } }), phones: [], zone };
+    let seed = 1;
+    // §14.2's seeded ids: a fixed linear congruential sequence, so a second mint of a type draws another id.
+    const random = (/** @type {number} */ bound) => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      return (seed >>> 8) % bound;
+    };
+    const world = { registry, product, scope, scopes: new Set([scope]), now: start, serial: 0, random, server: ServerState.empty({ epoch: 'ep-domain', accounts: { A: { name: 'A' } } }), phones: [], zone };
     return Harness.phone(world);
   }
 
@@ -40,7 +46,7 @@ export class Harness {
     const env = environment();
     env.timers.time = world.now;
     env.transport.request = async () => ({ response: hello(/** @type {any} */ ({ state: world.server, registry: world.registry, account: 'A', serverTime: world.now })), timing: steadyTiming(world.now, world.now) });
-    const options = { ...env.options, registry: world.registry, now: () => world.now, monotonic: () => world.now,
+    const options = { ...env.options, registry: world.registry, now: () => world.now, monotonic: () => world.now, draw: (/** @type {number} */ bound) => world.random(bound),
       newActor: () => `r_${String(++world.serial).padStart(12, '0')}`, newReplicaId: () => `rp_${String(++world.serial).padStart(32, '0')}` };
     const engine = await BrowserSyncEngine.open(options);
     const phone = new Harness(world, env, engine, options);
