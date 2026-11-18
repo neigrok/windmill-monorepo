@@ -291,12 +291,46 @@ public enum CommitOutcome: Hashable, Sendable {
   case refused(RefusalCode, detail: JSON?, notice: String? = nil)
 }
 
+// §7.3 an act's opt-in to Undo: each named segment's recipes, by its index in the act.
+public struct ActUndo: Sendable, Hashable {
+  public struct Segment: Sendable, Hashable {
+    public let index: Int
+    public let recipes: [UndoRecipe]
+
+    public init(index: Int, recipes: [UndoRecipe]) {
+      self.index = index
+      self.recipes = recipes
+    }
+  }
+
+  public let segments: [Segment]
+
+  public init(segments: [Segment]) {
+    self.segments = segments
+  }
+
+  // `{version: 1, segments: [{index, recipes}]}`.
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    try object.expectKeys(required: ["version", "segments"])
+    guard try object.member("version").asInteger() == 1 else { throw JSONError.shape("an act undo is version 1") }
+    segments = try object.member("segments").asArray().map { (segment: JSON) throws -> Segment in
+      let fields = try segment.asObject()
+      try fields.expectKeys(required: ["index", "recipes"])
+      return Segment(index: Int(try fields.member("index").asInteger()),
+                     recipes: try fields.member("recipes").asArray().map { (recipe: JSON) throws -> UndoRecipe in try UndoRecipe(json: recipe) })
+    }
+  }
+}
+
 public struct ActRequest: Sendable {
   public let scopes: [ScopeRef]
   public let hold: Bool
   public let gestureId: String?
-  public init(scopes: [ScopeRef], hold: Bool = false, gestureId: String? = nil) {
-    self.scopes = scopes; self.hold = hold; self.gestureId = gestureId
+  // §7.3: the act's opt-in to Undo after its hold, nil for an act that keeps only the held Undo.
+  public let undo: ActUndo?
+  public init(scopes: [ScopeRef], hold: Bool = false, gestureId: String? = nil, undo: ActUndo? = nil) {
+    self.scopes = scopes; self.hold = hold; self.gestureId = gestureId; self.undo = undo
   }
 }
 

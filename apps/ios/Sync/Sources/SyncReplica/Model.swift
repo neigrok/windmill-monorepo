@@ -258,6 +258,8 @@ public struct OutboxEntry: Sendable, Hashable {
   public var resultEpoch: String?
   public var orphanOf: String?
   public var writeTargets: [WriteTarget]?
+  // K-3: the inverse request whose slot this entry is (§7.3 Undo of an act).
+  public var inverseOf: String?
 
   public init(localId: String, gestureId: String, lineage: String, scope: ScopeRef, state: EntryState, commitOrder: Int64,
               releaseAt: Int64, stamp: Stamp, intent: Intent, predict: [Delta] = [], predictions: [Projection]? = nil,
@@ -350,6 +352,7 @@ public struct OutboxEntry: Sendable, Hashable {
     resultEpoch = try object["resultEpoch"]?.asString()
     orphanOf = try object["orphanOf"]?.asString()
     writeTargets = try object["writeTargets"]?.asArray().map { try WriteTarget(json: $0) }
+    inverseOf = try object["inverseOf"]?.asString()
   }
 
   public var json: JSON {
@@ -368,6 +371,7 @@ public struct OutboxEntry: Sendable, Hashable {
     object["resultEpoch"] = resultEpoch.map { .string($0) }
     object["orphanOf"] = orphanOf.map { .string($0) }
     object["writeTargets"] = writeTargets.map { .array($0.map(\.json)) }
+    object["inverseOf"] = inverseOf.map(JSON.string)
     return .object(object)
   }
 
@@ -573,15 +577,18 @@ public struct EntrySelection: Sendable, Hashable {
   public var scopes: Set<ScopeRef>
   // The scopes uncovered projections target, which a subscription set read in the transaction joins (§7.9).
   public var projectionTargets: Bool
+  // Entries by local id: those the journal names, loaded with it (§7.3 Undo of an act).
+  public var localIds: Set<String>
 
   public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = [], covered: CoveredEntries? = nil,
-              scopes: Set<ScopeRef> = [], projectionTargets: Bool = false) {
+              scopes: Set<ScopeRef> = [], projectionTargets: Bool = false, localIds: Set<String> = []) {
     self.all = all
     self.heldGestures = heldGestures
     self.numbered = numbered
     self.covered = covered
     self.scopes = scopes
     self.projectionTargets = projectionTargets
+    self.localIds = localIds
   }
 
   public static let every = EntrySelection(all: true)

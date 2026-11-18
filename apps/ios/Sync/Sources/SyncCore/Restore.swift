@@ -346,17 +346,33 @@ public struct Evidence: Sendable, Hashable {
   public struct OwnedField: Sendable, Hashable {
     public var target: Target
     public let version: EffectSlot.Version
+
+    public init(target: Target, version: EffectSlot.Version) {
+      self.target = target
+      self.version = version
+    }
   }
 
   public struct CreatedRecord: Sendable, Hashable {
     public var record: RecordAddress
     public let rowSeq: Int64
     public let footprint: [EffectSlot]
+
+    public init(record: RecordAddress, rowSeq: Int64, footprint: [EffectSlot]) {
+      self.record = record
+      self.rowSeq = rowSeq
+      self.footprint = footprint
+    }
   }
 
   public struct CreatedScope: Sendable, Hashable {
     public var scope: ScopeRef
     public let seq: Int64
+
+    public init(scope: ScopeRef, seq: Int64) {
+      self.scope = scope
+      self.seq = seq
+    }
   }
 
   public let expectedEpoch: String

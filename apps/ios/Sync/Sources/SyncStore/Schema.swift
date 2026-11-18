@@ -42,6 +42,36 @@ enum Schema {
         CREATE INDEX outbox_projection_open  ON outbox_projection(scope) WHERE covered = 0;
         """)
     }
+    // K-3: the journal of reversible acts, inverse requests and cancellation receipts, each record by its id, which is a
+    // gesture id and so unique on the device, in its replica's namespace; an inverse slot's request beside its entry; and
+    // whether a replica's journal holds anything, read with its replica row, so a replica with none reads no more (§7.3
+    // Undo of an act). A journal that holds records loads whole with its replica.
+    migrator.registerMigration("v4") { db in
+      try db.execute(sql: """
+        ALTER TABLE outbox ADD COLUMN inverse_of TEXT NULL;
+        ALTER TABLE replica ADD COLUMN journaled INTEGER NOT NULL DEFAULT 0 CHECK (journaled IN (0, 1));
+        CREATE TABLE journal_act (
+          act_id  TEXT PRIMARY KEY,
+          replica INTEGER NOT NULL REFERENCES replica ON DELETE CASCADE,
+          act     BLOB NOT NULL
+        );
+        CREATE INDEX journal_act_replica ON journal_act(replica, act_id);
+        CREATE TABLE inverse_request (
+          request_id     TEXT PRIMARY KEY,
+          replica        INTEGER NOT NULL REFERENCES replica ON DELETE CASCADE,
+          inverse_act_id TEXT NOT NULL,
+          request        BLOB NOT NULL
+        );
+        CREATE INDEX inverse_request_replica ON inverse_request(replica, request_id);
+        CREATE INDEX inverse_request_act ON inverse_request(inverse_act_id);
+        CREATE TABLE cancellation (
+          inverse_act_id TEXT PRIMARY KEY,
+          replica        INTEGER NOT NULL REFERENCES replica ON DELETE CASCADE,
+          receipt        BLOB NOT NULL
+        );
+        CREATE INDEX cancellation_replica ON cancellation(replica, inverse_act_id);
+        """)
+    }
     return migrator
   }
 

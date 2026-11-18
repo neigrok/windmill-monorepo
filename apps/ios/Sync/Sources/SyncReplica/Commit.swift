@@ -19,12 +19,13 @@ public struct CommitPlanner: Sendable {
   // caller's reader, and commits here only when the body decides a gesture: a nil one writes nothing and ticks no clock.
   // `gestureIdTaken`: an outbox entry or a notice of any replica on the device carries the gesture's given id (§2.5).
   // `draws`: the ids an earlier plan of this commit drew before it stopped at `UnreadDraws`, taken again first.
+  // `capture`: an opted act segment's capture command, which joins the gesture when it writes a delta (§7.3).
   public func commit(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
                      identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw] = [],
-                     actOffset: Int? = nil, actFirstOrder: Int64? = nil) throws -> CommitOutcome {
+                     actOffset: Int? = nil, actFirstOrder: Int64? = nil, capture: String? = nil) throws -> CommitOutcome {
     try checkWritable(replica.meta)
     return try commitGesture(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken,
-                             draws: draws, actOffset: actOffset, actFirstOrder: actFirstOrder)
+                             draws: draws, actOffset: actOffset, actFirstOrder: actFirstOrder, capture: capture)
   }
 
   // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
@@ -76,7 +77,8 @@ public struct CommitPlanner: Sendable {
   // Steps 2–11, after the checks before step 2. The retire, the supersede and their one silent fold run on a working copy,
   // which the diff reads and which the replica becomes once the commit is accepted.
   func commitGesture(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw], actOffset: Int?, actFirstOrder: Int64?) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw], actOffset: Int?, actFirstOrder: Int64?,
+                     capture: String?) throws -> CommitOutcome {
     guard registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("\(scope) is no scope of the registry") }
     let product = try product(of: scope)
     if let taken = gesture.gestureId, gestureIdTaken { throw CommitFailure.malformed("the gesture id \(taken) is taken") }
@@ -117,7 +119,8 @@ public struct CommitPlanner: Sendable {
     }
     guard builder.unread.isEmpty else { throw UnreadDraws(keys: builder.unread, draws: builder.draws) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
-    let command = gesture.command.map(registry.rounded)
+    let captured: Command? = capture.flatMap { (name: String) -> Command? in deltas.isEmpty ? nil : Command(name: name, args: [:]) }
+    let command = (gesture.command ?? captured).map(registry.rounded)
     // E-7: an opted command predicts one projection a scope, the origin's always and first, the rest by byte order, each
     // built against its own scope; `predict` is its origin's projection. A scope known gone refuses, and grouped bytes
     // past EFFECT_MAX_BYTES refuse too-large, leaving nothing.
@@ -255,11 +258,15 @@ public struct CommitPlanner: Sendable {
   }
 
   // Step 4's retire: the held gestures of the scope with no command, whose every delta removes a named record.
+  // A capture command is the ordinary deltas' own, so it does not stop a retire.
   func retiringEntries(of retire: [RecordRef], in scope: ScopeRef, replica: LoadedReplica) -> [OutboxEntry] {
     guard !retire.isEmpty else { return [] }
     let named = Set(retire.map(\.key))
-    let removesNamed = { (entry: OutboxEntry) in
-      entry.intent.command == nil && !entry.intent.deltas.isEmpty
+    let commandFree = { (entry: OutboxEntry) -> Bool in
+      entry.intent.command.map { (command: Command) -> Bool in self.registry.command(command.name)?.engine == .capture } ?? true
+    }
+    let removesNamed = { (entry: OutboxEntry) -> Bool in
+      commandFree(entry) && !entry.intent.deltas.isEmpty
         && entry.intent.deltas.allSatisfy { $0.removes && named.contains($0.key) }
     }
     var gestures: [(id: String, entries: [OutboxEntry])] = []

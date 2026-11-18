@@ -66,6 +66,8 @@ public enum IntentEvent: String, Sendable, Hashable, CaseIterable {
   case transport, reidentify
   case skewReturn = "skew-return"
   case rewind, resolve, epoch, discard
+  // §7.3 Undo of an act: an inverse slot materialized with nothing left to restore ends unnumbered.
+  case vacate
 }
 
 // MARK: - Replicas (§8.2)
@@ -100,6 +102,7 @@ public enum Machines {
     ([.sent], .reidentify, [.state(.ready)]),
     ([.sent], .skewReturn, [.state(.ready)]),
     ([.sent], .rewind, [.state(.ready)]),
+    ([.ready], .vacate, [.ended(.resolved)]),
     ([.acked], .resolve, [.ended(.resolved)]),
     ([.acked], .epoch, [.state(.ready)]),
     ([.held, .ready, .sent, .acked], .discard, [.ended(.discarded)]),

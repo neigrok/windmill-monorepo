@@ -57,6 +57,9 @@ package final class Simulator {
     case pull(SimNetwork.Fate)
     case follow, receiveFrame, frameFault
     case release, undo, foreground
+    // §7.3 Undo of an act: a one-segment act opted into Undo, an inverse of the phone's latest such act, and its release.
+    case optedAct(ScopeRef, Gesture, ActUndo)
+    case requestInverse, releaseAct
     case leave(flushing: Bool)
     case relaunch(reboot: Bool)
     // The process dies once `commits` transactions of a pull's or a push's answer have committed, or its first slice.
@@ -117,6 +120,8 @@ package final class Simulator {
     var digestCorrupted = false
     // The active replica's id as the phone's announcements left it (§7.12); nil before the first is seen.
     var announcedActive: String?
+    // The acts the phone opted into Undo, by their gesture ids, in commit order.
+    var acts: [String] = []
 
     // After each transaction its store commits, the phone's entries are read: what each writes, and its unsourced stamps.
     init(name: String, account: String, device: SteppedEngine) {
@@ -443,6 +448,13 @@ package final class Simulator {
     case .release:
       phone.device.releaseDue()
     case .undo: undo(on: phone)
+    case .optedAct(let scope, let gesture, let undo): optedAct(gesture, in: scope, undo: undo, on: phone)
+    case .requestInverse:
+      guard let act = phone.acts.last, let result = try? phone.engine.requestInverse(act) else { return }
+      count("inverse \(result.kindName)")
+    case .releaseAct:
+      guard let act = phone.acts.last else { return }
+      if (try? phone.engine.releaseReversibleAct(act)) == true { count("reversible act released") }
     case .leave(let flushing): await leave(phone, flushing: flushing)
     case .foreground:
       phone.engine.foreground()
@@ -670,6 +682,20 @@ package final class Simulator {
     guard corrupted?.value == true else { return }
     phone.digestCorrupted = true
     count("digest corrupted")
+  }
+
+  // An act of one segment opted into Undo; its entries join the ledger as a commit's do.
+  func optedAct(_ gesture: Gesture, in scope: ScopeRef, undo: ActUndo, on phone: Phone) {
+    do {
+      let act = try phone.engine.commitAct({ _ in (ActRequest(scopes: [scope], undo: undo), ()) }, segment: { _, _, _ in gesture })
+      guard case .committed(let receipt)? = act.outcome else { return }
+      phone.committed += receipt.localIds
+      phone.acts.append(receipt.gestureId)
+      count("opted act")
+    } catch {
+      guard phone.device.killer?.isDead != true else { return }
+      violations.append("\(phone.name): an opted act in \(scope) failed: \(error)")
+    }
   }
 
   func undo(on phone: Phone) {

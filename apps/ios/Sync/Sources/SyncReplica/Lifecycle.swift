@@ -151,6 +151,7 @@ public struct ReplicaLifecycle: Sendable {
   // Every cursor null and every staging dropped; acked entries of another epoch back to ready, their projections
   // uncovered for replay; then re-identify.
   public func changeEpoch(to epoch: String, in replica: inout LoadedReplica, instance: inout Instance, identities: IdentitySource) throws {
+    replica.bindReferences(to: replica.meta.serverEpoch)
     replica.update { $0.serverEpoch = epoch }
     for (scope, record) in replica.cursors.sorted(by: { $0.key < $1.key }) where record.cursor != nil {
       var reset = record
@@ -175,6 +176,7 @@ public struct ReplicaLifecycle: Sendable {
         entry.predictions = entry.predictions?.map { Projection(scope: $0.scope, deltas: $0.deltas) }
       }
     }
+    replica.invalidateAttempts(outside: epoch)
     try reidentify(&replica, instance: &instance, identities: identities)
   }
 
@@ -245,6 +247,7 @@ public struct ReplicaLifecycle: Sendable {
       guard let anon = device.anon else { continue }
       try device.modify(anon.id) { anon in
         for entry in entries(of: decision.product, in: anon) { try anon.move(entry.localId, .discard) }
+        anon.discardJournal(of: decision.product, registry: registry)
         anon.apply(.deleteDeviceRows(product: decision.product))
       }
     }
@@ -268,6 +271,11 @@ public struct ReplicaLifecycle: Sendable {
           }
         }
         for notice in anon.notices { target.apply(.moveNotice(notice)) }
+        target.updateJournal { journal in
+          journal.acts += anon.journal.acts
+          journal.inverses += anon.journal.inverses
+          journal.cancellations += anon.journal.cancellations
+        }
       }
       _ = try Machines.replica.transition(from: .anon, .signIn, to: .deleted)
       device.remove(anon.id)

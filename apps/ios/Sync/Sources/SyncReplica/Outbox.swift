@@ -180,5 +180,6 @@ public struct Hold: Sendable {
       replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }
       if replica.entry(entry.localId)!.isEmpty { try replica.move(entry.localId, .silentFold) }
     }
+    replica.settleEnded(code: "undone")
   }
 }

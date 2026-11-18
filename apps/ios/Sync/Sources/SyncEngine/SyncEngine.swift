@@ -214,6 +214,35 @@ public final class SyncEngine: Replica {
     return undone
   }
 
+  // MARK: Undo of an act (§7.3, K-3)
+
+  // requestInverse(sourceActId, inverseSlots?): an act still wholly held is cancelled at once; otherwise its inverse slots
+  // are reserved and projected, and the sender takes them from here. `slots` replace the stored recipes whole. A failure
+  // of the transaction throws as a commit's does.
+  public func requestInverse(_ sourceActId: String, replacing slots: [ActUndo.Segment]? = nil) throws -> InverseResult {
+    let result: InverseResult
+    do {
+      result = try core.write(operation: .commit) { store, instance in
+        try store.requestInverse(sourceActId, replacing: slots, instance: instance, identities: core.identities)
+      }
+    } catch let failure as CommitFailure {
+      throw failure
+    } catch {
+      throw CommitFailure(.storeFailure, "\(error)")
+    }
+    core.wakes.sender.kick()
+    return result
+  }
+
+  public func readInverseResult(_ requestId: String) throws -> InverseResult {
+    try core.storageOperation { try core.store.readInverseResult(requestId) }
+  }
+
+  // The product's stack no longer needs the act: its journal record goes once no unsettled request reads it.
+  public func releaseReversibleAct(_ actId: String) throws -> Bool {
+    try core.write { store, _ in try store.releaseReversibleAct(actId) }
+  }
+
   public func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
     try core.read(scope, body)
   }

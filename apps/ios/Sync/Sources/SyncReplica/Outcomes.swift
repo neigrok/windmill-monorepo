@@ -142,6 +142,7 @@ public struct PushPlanner: Sendable {
   public let registry: Registry
   public let limits: Limits
   let lifecycle: ReplicaLifecycle
+  let inverses: Inverses
   let rewriteDeviceValue: DeviceValueRewrite
   let commandResultWrites: CommandResultDeviceWrites
 
@@ -153,6 +154,7 @@ public struct PushPlanner: Sendable {
     self.registry = registry
     self.limits = limits
     lifecycle = ReplicaLifecycle(registry: registry)
+    inverses = Inverses(registry: registry)
     self.rewriteDeviceValue = rewriteDeviceValue
     self.commandResultWrites = commandResultWrites
   }
@@ -178,7 +180,13 @@ public struct PushPlanner: Sendable {
       var intents = sent(replica).map(\.intent)
       var back = heldBack(in: replica)
       for candidate in replica.outbox where candidate.state == .ready {
-        guard let entry = replica.entry(candidate.localId), entry.state == .ready else { continue }
+        guard var entry = replica.entry(candidate.localId), entry.state == .ready else { continue }
+        if entry.inverseOf != nil {
+          guard try inverses.passesBarrier(entry, in: &replica) else { break }
+          back = heldBack(in: replica)
+          guard let materialized = replica.entry(candidate.localId) else { continue }
+          entry = materialized
+        }
         if back.contains(entry.commitOrder) {
           if entry.intent.command != nil { break }
           continue
@@ -313,6 +321,8 @@ public struct PushPlanner: Sendable {
     switch result.verdict {
     case .refused(let code):
       try refuse(entry.localId, code: code, detail: result.detail, lastN: lastN, in: &replica, instance: instance)
+      if replica.entry(entry.localId) == nil { replica.retain(Attempt(epoch: epoch, n: result.n, ok: false), of: entry.localId) }
+      try settleInverse(entry, by: result, in: &replica)
     case .ok(let seq, let write):
       let effects = entry.predictions == nil ? nil : try receipt(of: result, for: entry)
       try replica.move(entry.localId, .ok) { entry in
@@ -326,8 +336,15 @@ public struct PushPlanner: Sendable {
       } else if let write {
         try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance)
       }
+      replica.retain(Attempt(epoch: epoch, n: result.n, ok: true, acceptedEffects: replica.entry(entry.localId)?.acceptedEffects), of: entry.localId)
+      try settleInverse(entry, by: result, in: &replica)
       try replica.settle(entry.localId)
     }
+  }
+
+  // K-3: an inverse slot's result settles it (§7.3 Undo of an act).
+  func settleInverse(_ entry: OutboxEntry, by result: PushResult, in replica: inout LoadedReplica) throws {
+    try inverses.settle(entry, by: result, in: &replica)
   }
 
   func writeCommandResult(_ entry: OutboxEntry, result: PushResult, epoch: String, in replica: inout LoadedReplica) throws {
@@ -376,6 +393,7 @@ public struct PushPlanner: Sendable {
     replica.apply(.putNotice(Notice(
       id: "notice:\(entry.localId)", product: product(of: entry.scope), scope: entry.scope, code: code, detail: detail,
       content: content, at: deviceNow)))
+    replica.settleEnded(code: code.text)
   }
 
   // An orphan's refusal ends it by `event` with no notice of its own; its held-back dependents fold into its origin's
@@ -384,6 +402,7 @@ public struct PushPlanner: Sendable {
   func refuseOrphan(_ orphan: OutboxEntry, of origin: String, by event: IntentEvent, in replica: inout LoadedReplica) throws {
     try replica.move(orphan.localId, event)
     let dependents = try foldDependents(of: orphan, into: origin, in: &replica)
+    replica.settleEnded(code: "refused")
     guard !dependents.isEmpty else { return }
     let id = "notice:\(origin)"
     guard let notice = replica.notices.first(where: { $0.id.utf8.elementsEqual(id.utf8) }) else {
@@ -496,6 +515,7 @@ public struct PushPlanner: Sendable {
         continue
       }
       _ = try receipt(of: result, for: entry)
+      try inverses.check(result, of: entry, in: replica)
       opted = true
     }
     if opted && response.json.jcs.count > Constants.scopedResponseMaxBytes { throw JSONError.shape("a scoped answer exceeds its bound") }
@@ -681,6 +701,7 @@ public struct PushPlanner: Sendable {
       let map = RecordMap(registry: registry, mappings: mappings)
       replica.update(entry: queued.localId) { rewrite(&$0, by: map, replayed: later ? replayed : []) }
     }
+    if !joins.isEmpty || !replayed.isEmpty { replica.remapJournal(by: RecordMap(registry: registry, mappings: joins + replayed), registry: registry) }
     let moved: [RecordMap.Mapping] = joins + replayed.filter { $0.from != $0.to }
     let own = RecordMap(registry: registry, mappings: moved)
     replica.update(entry: commandId) { rewrite(&$0, by: own, predictionsOnly: true) }
@@ -752,6 +773,7 @@ public struct PushPlanner: Sendable {
         replica.update(entry: later.localId) { rewrite(&$0, by: map, replayed: replayed) }
       }
       replica.update(entry: commandId) { rewrite(&$0, by: map, predictionsOnly: true) }
+      replica.remapJournal(by: map, registry: registry)
     }
     for record in records {
       let w = record.w

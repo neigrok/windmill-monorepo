@@ -55,7 +55,7 @@ public enum Corpus {
     ("journal/admit.json", .server), ("journal/revisions.json", .server),
     ("journal/client.json", .client), ("journal/content-clock.json", .client), ("journal/claim-edit.json", .client),
     ("hlc/offset.json", .client), ("hlc/jump.json", .client), ("fracindex/", .client), ("view/", .client), ("commit/", .client),
-    ("hold/", .client), ("refusal/", .client), ("write/", .client), ("refs/", .client), ("lineage/", .client),
+    ("hold/", .client), ("refusal/", .client), ("write/", .client), ("refs/", .client), ("lineage/", .client), ("undo/", .client),
     ("pull/pages.json", .client), ("machine/intent.json", .client), ("machine/replica.json", .client),
   ]
 
@@ -63,7 +63,7 @@ public enum Corpus {
   public static let clientStepFiles = [
     "commit/acts.json", "commit/deltas.json", "commit/grouping.json", "commit/guards.json", "commit/ids.json", "commit/retire.json",
     "commit/throws.json", "commit/supersede.json", "hold/release.json", "hold/undo.json", "refusal/base-unknown.json", "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json",
-    "write/map.json", "write/references.json", "write/scoped-predictions.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
+    "write/map.json", "write/references.json", "write/scoped-predictions.json", "undo/journal.json", "undo/restore.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
   ]
 
   public static func role(of path: String) -> CorpusRole? {
