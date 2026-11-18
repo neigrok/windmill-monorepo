@@ -283,11 +283,33 @@ public struct OutboxEntry: Sendable, Hashable {
 
   // Everything the entry holds, scope by scope: its intent's deltas and its predictions, the stored effects dependents,
   // identity recovery and notices read. `active` keeps only the projections no cursor covers yet, the ones views draw
-  // (§7.6): an opted entry's ordinary deltas draw while its origin projection is uncovered.
+  // (§7.6): an opted entry's ordinary deltas draw while its origin projection is uncovered, at their accepted versions.
   public func effects(active: Bool = false) -> [ScopedDeltas] {
     guard let predictions else { return [ScopedDeltas(scope: scope, deltas: intent.deltas + predict)] }
+    let ordinary = active ? acceptedDeltas : intent.deltas
     return predictions.filter { !active || !$0.covered }.map { projection in
-      ScopedDeltas(scope: projection.scope, deltas: (projection.scope == scope ? intent.deltas : []) + projection.deltas)
+      ScopedDeltas(scope: projection.scope, deltas: (projection.scope == scope ? ordinary : []) + projection.deltas)
+    }
+  }
+
+  // The intent's deltas as views draw them once its receipt is applied: copies, each born, life and field the origin's
+  // receipt versions at its accepted stamp, so a guard read after the ACK holds what the server stored. The numbered
+  // intent never changes.
+  var acceptedDeltas: [Delta] {
+    let rows = acceptedEffects?.first { $0.scope == scope }?.rows ?? []
+    return intent.deltas.map { delta in
+      guard let slots = rows.first(where: { $0.key == delta.key })?.slots else { return delta }
+      var accepted = delta
+      for slot in slots {
+        guard case .stamp(let stamp) = slot.version else { continue }
+        switch slot.slot {
+        case .born: accepted.lattice.born = accepted.lattice.born.map { _ in stamp }
+        case .life: accepted.lattice.life = accepted.lattice.life.map { Life($0.state, stamp) }
+        case .field(let name): accepted.lattice.fields[name] = accepted.lattice.fields[name].map { Register($0.value, stamp) }
+        case .text: continue
+        }
+      }
+      return accepted
     }
   }
 

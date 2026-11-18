@@ -272,3 +272,15 @@ public enum ScopedDetail {
     if type.life && !row.slots.contains(where: { $0.slot == .life }) { throw malformed }
   }
 }
+
+extension Delta {
+  // The stamp the delta writes to a receipt's slot: its born, its life's or a field's; none to a text.
+  public func stamp(of slot: EffectSlot.Slot) -> Stamp? {
+    switch slot {
+    case .born: lattice.born
+    case .life: lattice.life?.stamp
+    case .field(let name): lattice.fields[name]?.stamp
+    case .text: nil
+    }
+  }
+}

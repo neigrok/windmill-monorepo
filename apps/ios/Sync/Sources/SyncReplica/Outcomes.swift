@@ -560,10 +560,11 @@ public struct PushPlanner: Sendable {
     }
   }
 
-  // §7.7 for scoped entries, by (scope, t, id, slot): every accepted stamp is observed; a version an earlier receipt of the
-  // same command gave and this one replaced moves in later queued work that carried it; the command's predictions take the
-  // accepted versions; then each later queued entry whose own writes of those registers the receipt names takes one fresh
-  // tick of this instance's clock after them. Sent entries, numbered and immutable, keep their stamps.
+  // §7.7 for scoped entries, by (scope, t, id, slot): every accepted stamp is observed; the command's predictions move to
+  // the accepted versions; later queued work that carried a stamp the command wrote, by an ordinary delta, by a prediction
+  // or by an earlier receipt of a replay, follows its accepted version; then each later queued entry whose own writes of
+  // those registers the receipt names takes one fresh tick of this instance's clock after them. Sent entries, numbered
+  // and immutable, keep their stamps, and so does the command's own intent, which views draw at the accepted versions.
   func applyAccepted(_ versions: [AcceptedVersion], previous: [EffectReceipt], of commandId: String, in replica: inout LoadedReplica,
                      instance: Instance) {
     guard let command = replica.entry(commandId) else { return }
@@ -572,47 +573,32 @@ public struct PushPlanner: Sendable {
       meta.observe(stamps)
       meta.admit(stamps)
     }
-    let later = replica.outbox.filter { $0.commitOrder > command.commitOrder && $0.isQueued }.map(\.localId)
-    let own = later.map { (localId: $0, registers: Restamp.registers(of: replica.entry($0)!, acceptedIn: versions)) }
+    let own = replica.outbox.filter { $0.commitOrder > command.commitOrder && $0.isQueued }
+      .map { (localId: $0.localId, registers: Restamp.registers(of: $0, acceptedIn: versions)) }
     for version in versions {
       let earlier = previous.first { $0.scope == version.scope }?.rows.first { $0.key == version.key }
+        .map { AcceptedVersion(scope: version.scope, key: version.key, slots: $0.slots) }
+      let ordinary = version.scope == command.scope ? command.intent.deltas.filter { $0.key == version.key } : []
       for slot in version.slots {
-        guard case .stamp(let stamp) = slot.version else { continue }
-        if let old = earlier.flatMap({ AcceptedVersion(scope: version.scope, key: version.key, slots: $0.slots).stamp(of: slot.slot) }),
-           old != stamp {
-          for localId in later {
-            replica.update(entry: localId) { entry in
-              switch slot.slot {
-              case .born: Restamp.follow(&entry, in: version.scope, key: version.key, from: old, to: stamp, born: true)
-              case .life: Restamp.follow(&entry, in: version.scope, key: version.key, from: old, to: stamp, born: false)
-              case .field(let name) where entry.scope == version.scope:
-                for index in entry.intent.guards.indices where entry.intent.guards[index].key == version.key
-                  && entry.intent.guards[index].field.utf8.elementsEqual(name.utf8) && entry.intent.guards[index].stamp == old {
-                  entry.intent.guards[index].stamp = stamp
-                }
-              case .field, .text: break
-              }
-            }
-          }
+        guard case .stamp(let n) = slot.version else { continue }
+        let register: Restamp.Register.Name = if case .field(let name) = slot.slot { .field(name) } else { .life }
+        let carried = [earlier?.stamp(of: slot.slot)] + ordinary.map { $0.stamp(of: slot.slot) }
+        for o in carried.compactMap({ $0 }) {
+          Restamp.follow(register, of: version.key, in: version.scope, after: commandId, from: o, to: n, createsRecord: slot.slot == .born,
+                         queuedOnly: true, in: &replica)
         }
         for part in Restamp.parts(of: replica.entry(commandId)!, predictedIn: version.scope, for: version.key) {
-          switch slot.slot {
-          case .born:
-            var delta = Restamp.delta(part, of: replica.entry(commandId)!)
-            guard let old = delta.lattice.born else { continue }
-            delta.lattice.born = stamp
-            if let life = delta.lattice.life, life.isAlive, life.stamp == old { delta.lattice.life = Life(.alive, stamp) }
-            replica.update(entry: commandId) { Restamp.replace(part, of: &$0, with: delta) }
-            for localId in later {
-              replica.update(entry: localId) { Restamp.follow(&$0, in: version.scope, key: version.key, from: old, to: stamp, born: true) }
-            }
-          case .life:
-            Restamp.move(.init(part: part, register: .life), of: commandId, to: stamp, in: &replica, queuedOnly: true)
-          case .field(let name):
-            Restamp.move(.init(part: part, register: .field(name)), of: commandId, to: stamp, in: &replica, queuedOnly: true)
-          case .text:
-            break
+          guard slot.slot == .born else {
+            Restamp.move(.init(part: part, register: register), of: commandId, to: n, in: &replica, queuedOnly: true)
+            continue
           }
+          var delta = Restamp.delta(part, of: replica.entry(commandId)!)
+          guard let old = delta.lattice.born else { continue }
+          delta.lattice.born = n
+          if let life = delta.lattice.life, life.isAlive, life.stamp == old { delta.lattice.life = Life(.alive, n) }
+          replica.update(entry: commandId) { Restamp.replace(part, of: &$0, with: delta) }
+          Restamp.follow(.life, of: version.key, in: version.scope, after: commandId, from: old, to: n, createsRecord: true, queuedOnly: true,
+                         in: &replica)
         }
       }
     }
@@ -968,7 +954,6 @@ package enum Restamp {
   static func move(_ register: Register, of localId: String, to n: Stamp, in replica: inout LoadedReplica, queuedOnly: Bool = false) {
     guard let entry = replica.entry(localId) else { return }
     var delta = delta(register.part, of: entry)
-    let scope = scope(of: register.part, in: entry)
     let o: Stamp
     var createsRecord = false
     switch register.register {
@@ -984,19 +969,26 @@ package enum Restamp {
       delta.lattice.fields[name] = SyncCore.Register(current.value, n)
     }
     replica.update(entry: localId) { replace(register.part, of: &$0, with: delta) }
-    let queued = queuedOnly || entry.predictions != nil
-    let later = replica.outbox.filter { $0.commitOrder > entry.commitOrder && ($0.isQueued || !queued && $0.state == .sent) }
+    follow(register.register, of: delta.key, in: scope(of: register.part, in: entry), after: localId, from: o, to: n,
+           createsRecord: createsRecord, queuedOnly: queuedOnly || entry.predictions != nil, in: &replica)
+  }
+
+  // What follows a record's register from `o` to `n` in the entries after `localId`, in `scope`: of a life, the lives that
+  // carry it and, when it created the record, the borns; of a field, the guards on it. Sent entries follow too, unless
+  // `queuedOnly`.
+  static func follow(_ register: Register.Name, of key: RecordKey, in scope: ScopeRef, after localId: String, from o: Stamp, to n: Stamp,
+                     createsRecord: Bool = false, queuedOnly: Bool, in replica: inout LoadedReplica) {
+    guard o != n, let entry = replica.entry(localId) else { return }
+    let later = replica.outbox.filter { $0.commitOrder > entry.commitOrder && ($0.isQueued || !queuedOnly && $0.state == .sent) }
     for other in later {
       replica.update(entry: other.localId) { other in
-        switch register.register {
+        switch register {
         case .life:
-          follow(&other, in: scope, key: delta.key, from: o, to: n, born: createsRecord)
+          follow(&other, in: scope, key: key, from: o, to: n, born: createsRecord)
         case .field(let name) where other.scope == scope:
           for index in other.intent.guards.indices {
             let named = other.intent.guards[index]
-            if named.key == delta.key && named.field.utf8.elementsEqual(name.utf8) && named.stamp == o {
-              other.intent.guards[index].stamp = n
-            }
+            if named.key == key && named.field.utf8.elementsEqual(name.utf8) && named.stamp == o { other.intent.guards[index].stamp = n }
           }
         case .field:
           break
