@@ -27,7 +27,7 @@ extension EngineCore {
     if let kept = started.forkGuard, kept != copy { try forkGuard.save(kept) }
     if let oldest = started.oldestInverseRequestedAt {
       telemetry.event("sync_inverse", properties: [
-        "outcome": "pending", "count": String(started.unsettledInverses), "age_ms": String(max(0, clock.wall.nowMs() - oldest)),
+        "outcome": "pending", "waiting": String(started.unsettledInverses), "age_ms": String(max(0, clock.wall.nowMs() - oldest)),
       ])
     }
     let seat = try seat()

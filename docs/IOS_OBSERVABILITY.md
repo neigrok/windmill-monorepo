@@ -80,9 +80,10 @@ enters telemetry.
 The promise is **Only you.** Never send journal text, text length, mood or energy values, email
 addresses, Apple subjects/tickets/identity tokens, session tokens or response bodies. Apple tickets
 live in memory only and are cleared on dismissal, expiry or completion. Product properties pass a finite allowlist of labels;
-unknown event names, property names and label values are discarded. Duration and a Coach turn's counts
-(`ability_calls`, `refusals`, `answer_bytes`) are the only numeric product properties; duration is clamped to
-0–86,400,000 ms and a count to 0–10,000,000. Version/build/release metadata is bounded.
+unknown event names, property names and label values are discarded. Duration, a Coach turn's counts
+(`ability_calls`, `refusals`, `answer_bytes`) and `sync_inverse`'s (`applied`, `skipped`, `waiting`, `age_ms`) are the
+only numeric product properties; duration is clamped to 0–86,400,000 ms and a count to 0–10,000,000. Version/build/release
+metadata is bounded.
 
 The final Sentry send hook removes messages, requests, extras, breadcrumbs, user identity, transaction
 and server names, arbitrary tags and custom contexts. It strips exception messages and mechanism
@@ -150,7 +151,7 @@ rules refuse, records `journal_save_refused` with its reason alone.
 | Echo sheet | `journal_echo_ink` | action: open, close, back |
 | Echoes | `journal_echo_shown`, `journal_echo_reader_opened`, `journal_echo_intro_dismissed`, `journal_echo_opened`, `journal_echo_useful`, `journal_echo_dismissed` | no properties |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
-| Undo of an act | `sync_inverse` | an Undo or Redo of a journaled act (engine K-3). Requested: outcome ok (cancelled in place, or settled at once), pending (its slots wait or travel), unavailable (an act it cannot invert), failed (the transaction did not commit). A request the phone sent that settles later: outcome settled, with `applied` and `skipped` operation counts. At engine start, while requests still wait: outcome pending, with their `count` and the oldest one's `age_ms`. No act, request or record id and no value |
+| Undo of an act | `sync_inverse` | an Undo or Redo of a journaled act (engine K-3). Requested: outcome ok (cancelled in place, or settled at once), pending (its slots wait or travel), unavailable (an act it cannot invert), failed (the transaction did not commit). A request the phone sent that settles later: outcome settled, with `applied` and `skipped` operation counts. At engine start, while requests still wait: outcome pending, with how many (`waiting`) and the oldest one's `age_ms`. No act, request or record id and no value |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms; optional coarse scope_kind |
 
 Echoes reads and feedback stay REST and report failures under the static operation `journal_echoes`

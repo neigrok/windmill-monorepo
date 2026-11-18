@@ -558,7 +558,7 @@ struct TelemetryTests {
     await drain(rig.engine.core.telemetry)
     await drain(relaunched.core.telemetry)
     let requested = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending"], durationMs: nil)
-    let waiting = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending", "count": "1", "age_ms": "5000"], durationMs: nil)
+    let waiting = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending", "waiting": "1", "age_ms": "5000"], durationMs: nil)
     let settled = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "settled", "applied": "0", "skipped": "0"], durationMs: nil)
     let reported: [Recorded] = recorder.events.filter { $0.name == "sync_inverse" }
     #expect(reported == [requested, waiting, settled])
