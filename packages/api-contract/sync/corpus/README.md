@@ -1281,7 +1281,8 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   collects the entry, never the attempt. An epoch change drops other-epoch attempts: a requeued source
   replays into the new epoch, a collected one keeps none; a changed-epoch answer that records its
   results first keeps them. A retire matches an opted removal. `releaseReversibleAct` removes the record.
-  Sign-in's Add carries the journal; Discard removes the product's whole source entries.
+  Sign-in's Add carries the journal; Discard removes the product's whole source entries. A write map that
+  renames a record a journaled act names renames it in the act's recipe, preimage and receipt.
 - `restore.json`: inverse requests end to end against the reference server. An Undo after its act settled
   restores each field and settles with its counts; one requested before every segment settles waits for
   each source, a refused source owning nothing and its slot vacating unnumbered; a slot whose source is

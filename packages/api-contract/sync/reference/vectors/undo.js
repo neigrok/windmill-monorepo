@@ -525,9 +525,25 @@ function requests() {
   return [cancelled];
 }
 
+// probe.adopt answered with the tree's labelled tag renames the proposed tag in a later opted act's queued entry,
+// and the journal's target, preimage and receipt follow the same map.
+function remapped() {
+  const session = new Session(world()).local(
+    { op: 'commit', scope: TREE, deviceNow: 5000, changes: [], opts: { cmd: { name: 'probe.adopt', args: { tag: 'pine', label: 'Oak' } },
+      predict: [{ op: 'create', t: 'tag', id: 'pine', f: { label: 'Oak' } }] } },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'pine', f: { label: 'Fir' } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree',
+        targets: [{ target: target(TREE, 'tag', 'pine', 'field', 'label') }] }] }] } } });
+  session.flush();
+  const sample = session.vector('a write map renames the record a journaled act names, in its recipe, preimage and receipt');
+  const source = journalOf(sample)[0].sourceEntries[0];
+  assert.deepEqual([source.recipes[0].targets[0].target.id, source.preimages[0].target.id, source.attempts[0].acceptedEffects[0].rows[0].id], ['oak', 'oak', 'oak']);
+  return [sample];
+}
+
 export function files() {
   return {
-    'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle()],
+    'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded()],
   };
 }
