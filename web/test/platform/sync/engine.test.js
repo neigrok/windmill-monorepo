@@ -186,6 +186,29 @@ test('a store that cannot commit is a store failure reported as storage; the rea
   engine.close();
 });
 
+test('a store failure while sending or pulling reports storage once and never as transport', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  const transact = engine.store.transact.bind(engine.store), quota = new DOMException('quota', 'QuotaExceededError');
+  engine.store.transact = (change, options) => (options?.readonly ? transact(change, options) : Promise.reject(quota));
+  await engine.send();
+  engine.kickPull(); await engine.pull();
+  assert.deepEqual(env.failures, ['storage', 'storage']);
+  engine.close();
+});
+
+test('a burst of writes in one minute never starves the transport failure that follows it', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  for (let n = 0; n < 40; n++) await engine.commit('self/probe', [{ op: 'put', t: 'day', id: `2026-10-${String(n % 28 + 1).padStart(2, '0')}`, present: true, f: { score: n % 11 } }]);
+  assert.ok(env.events.filter(({ name }) => name === 'sync-writer').length > 0);
+  env.transport.request = async () => { throw new Error('offline'); };
+  await engine.send();
+  assert.deepEqual(env.failures, ['transport']);
+  engine.close();
+});
+
 test('undo offers are the held gestures, each with its own deadline and records, until undone or released', async () => {
   const env = environment(), engine = await BrowserSyncEngine.open(env.options);
   const observation = engine.observe('self/probe');
@@ -516,11 +539,11 @@ test('process death between IndexedDB page chunks leaves the cursor unmoved and 
     more: false, seq: 1, digest: scopeDigest(rows) };
   const original = engine.write.bind(engine);
   engine.write = async (...args) => { const result = await original(...args); engine.close(); return result; };
-  await assert.rejects(engine.storePage(handle, null, page));
+  await assert.rejects(engine.storePages(handle, [{ cursor: null, page }]));
   engine = await open(env);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').cursor, null);
   assert.equal(engine.device.activeReplica.confirmedRows('self/probe').length, 64);
-  await engine.storePage(handle, null, page);
+  await engine.storePages(handle, [{ cursor: null, page }]);
   assert.equal(engine.device.activeReplica.confirmedRows('self/probe').length, 130);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').digest, page.digest);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').booted, true);
@@ -966,9 +989,9 @@ for (const stop of ['response', 'page']) test(`a pull whose ${stop} lands as the
   env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
   await engine.commit('self/probe', card());
   await engine.send();
-  const request = env.transport.request.bind(env.transport), storePage = engine.storePage.bind(engine);
+  const request = env.transport.request.bind(env.transport), storePages = engine.storePages.bind(engine);
   if (stop === 'response') env.transport.request = async (...args) => { const answer = await request(...args); engine.close(); return answer; };
-  else engine.storePage = async (...args) => { engine.close(); return storePage(...args); };
+  else engine.storePages = async (...args) => { engine.close(); return storePages(...args); };
   await engine.pull();
   await assert.rejects(engine.write(null, () => {}), (error) => error instanceof CommitError && error.kind === 'store');
   assert.deepEqual(env.failures, []);
@@ -1007,6 +1030,33 @@ test('a bound reader opening a foreign tree follows its own overlay and schedule
     assert.deepEqual(engine.scopes(), ['self/probe', 'tree/b_00000001', 'self/overlay/b_00000001']);
     assert.equal(engine.pullDirty.has('self/overlay/b_00000001'), true);
     assert.equal(engine.readMetadata('self/overlay/b_00000001').firstPullComplete, false);
+  } finally { engine.close(); }
+});
+
+test('pages that share a chunk see a board the same answer killed: its tree page applies nothing', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  const board = (life, seq) => row({ t: 'board', id: 'b_00000001', life, born: st(1), seq });
+  const oak = row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 1 });
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [board(['alive', st(1)], 1)], 'tree:b_00000001': [oak] },
+  }));
+  const engine = await open(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
+    assert.deepEqual(engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id), ['oak']);
+    const replica = engine.device.activeReplica;
+    const live = (seq) => Cursor.encode({ e: 'ep-1', m: 'live', s: seq });
+    const dead = board(['dead', st(2)], 2), ash = row({ t: 'tag', id: 'ash', life: ['alive', st(2)], born: st(2), seq: 2 });
+    const outcomes = await engine.storePages(replica.storageHandle, [
+      { cursor: replica.cursorOf('self/probe').cursor, page: { scope: 'self/probe', kind: 'rows', rows: [dead], more: false, seq: 2, cursor: live(2), digest: scopeDigest([]) } },
+      { cursor: replica.cursorOf(tree).cursor, page: { scope: tree, kind: 'rows', rows: [ash], more: false, seq: 2, cursor: live(2), digest: scopeDigest([oak, ash]) } },
+    ]);
+    assert.deepEqual(outcomes, ['applied', 'outside']);
+    assert.equal(engine.lastWrite.rowWrites, 1);
+    assert.deepEqual(engine.device.activeReplica.known, { [tree]: 'gone', 'self/overlay/b_00000001': 'gone' });
+    assert.deepEqual(engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id), ['oak']);
   } finally { engine.close(); }
 });
 
@@ -1058,7 +1108,7 @@ for (const denial of ['page', 'frame']) test(`a reader overlay survives ack and 
     await engine.subscribe(tree); await engine.pull();
     assert.deepEqual(view.getSnapshot().drawn, ownMark);
     if (denial === 'frame') await engine.receiveFrame({ op: 'not-found', scope: tree, as: 'B' });
-    else await engine.storePage(engine.device.activeReplica.storageHandle, engine.device.activeReplica.cursorOf(tree).cursor, { scope: tree, kind: 'not-found' });
+    else await engine.storePages(engine.device.activeReplica.storageHandle, [{ cursor: engine.device.activeReplica.cursorOf(tree).cursor, page: { scope: tree, kind: 'not-found' } }]);
     assert.deepEqual(engine.device.activeReplica.known, { [tree]: 'not-found', [overlay]: 'not-found' });
     assert.deepEqual(engine.scopes(), ['self/probe']);
     assert.deepEqual(view.getSnapshot().drawn, []);
@@ -1089,4 +1139,33 @@ test('an open anonymous tree resolves its overlay separately for each bound acco
     assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
     assert.deepEqual(engine.observe(overlay).getSnapshot().drawn, []);
   } finally { engine.close(); }
+});
+
+test('an opted act journals in IndexedDB, and its Undo survives a reopen and settles through the reference server', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send(); await engine.pull();
+  const title = { scope: 'self/probe', t: 'card', id: 'card0001', slot: { kind: 'field', name: 'title' } };
+  const { outcome: act } = await engine.commitAct([{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'renamed' } }] }],
+    { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: title }] }] }] } });
+  await engine.send(); await engine.pull();
+  assert.equal(engine.device.activeReplica.journal[0].sourceEntries[0].attempts[0].outcome, 'ok');
+  env.transport.response = () => new Promise(() => {});
+  const requested = await engine.requestInverse(act.gestureId);
+  assert.deepEqual([requested.kind, requested.localChanged], ['pending', true]);
+  assert.equal(engine.observe('self/probe').getSnapshot().drawn.find((record) => record.t === 'card').f.title[0], 'secret');
+  engine.close();
+  env.transport.response = null;
+  const reopened = await open(env);
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), requested);
+  await reopened.send(); await reopened.pull();
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), { kind: 'settled', requestId: requested.requestId,
+    inverseActId: requested.inverseActId, changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(reopened.device.activeReplica.confirmedRows('self/probe')[0].f.title[0], 'secret');
+  assert.ok(env.events.some(({ name, props }) => name === 'sync-inverse' && props.outcome === 'pending'));
+  assert.equal(await reopened.releaseReversibleAct(act.gestureId), true);
+  reopened.close();
 });

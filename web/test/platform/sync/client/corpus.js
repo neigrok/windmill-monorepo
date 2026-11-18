@@ -13,7 +13,7 @@ import { registry } from '../oracle-adapters/fixtures.js';
 import { runSteps } from '../oracle-adapters/steps.js';
 
 const CORPUS = fileURLToPath(new URL('../../../../../packages/api-contract/sync/corpus/', import.meta.url));
-const STEP_FILES = ['commit', 'hold', 'refusal', 'write', 'lineage']
+const STEP_FILES = ['commit', 'hold', 'refusal', 'write', 'lineage', 'undo']
   .flatMap((dir) => readdirSync(`${CORPUS}${dir}`).map((file) => `${dir}/${file}`))
   .concat(['pull/pages.json']);
 

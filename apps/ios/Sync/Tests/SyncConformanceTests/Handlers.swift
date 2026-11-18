@@ -34,7 +34,7 @@ enum Handlers {
         "MAX_RECORD_BYTES": JSON(Constants.maxRecordBytes), "PUSH_MAX_INTENTS": JSON(Constants.pushMaxIntents),
         "PUSH_MAX_BYTES": JSON(Constants.pushMaxBytes), "EFFECT_MAX_BYTES": JSON(Constants.effectMaxBytes),
         "RECEIPT_MAX_BYTES": JSON(Constants.receiptMaxBytes), "SCOPED_RESPONSE_MAX_BYTES": JSON(Constants.scopedResponseMaxBytes),
-        "PUSH_WORK_MS": JSON(Constants.pushWorkMs),
+        "PUSH_WORK_MS": JSON(Constants.pushWorkMs), "WRITER_SLICE_MS": JSON(Constants.writerSliceMs),
         "PULL_PAGE_BYTES": JSON(Constants.pullPageBytes), "LIVE_FRAME_BYTES": JSON(Constants.liveFrameBytes),
         "LIVE_INLINE_BYTES": JSON(Constants.liveInlineBytes), "KEEPALIVE_BYTES": JSON(Constants.keepaliveBytes),
         "MERGE_WORK_CELLS": JSON(Constants.mergeWorkCells), "ACCOUNT_ID_BYTES": JSON(Constants.accountIdBytes),
@@ -137,6 +137,21 @@ enum Handlers {
         return ["admitted": false]
       }
     },
+    "registry/references.json": { input in
+      guard let registry = try? Registry(json: input.member("registry")) else { return ["admitted": false] }
+      if let field = input["field"] {
+        guard let type = registry.type(try field.member("type").asString()), let definition = type.field(try field.member("name").asString()) else {
+          throw VectorError("no such field")
+        }
+        return ["admitted": .bool(registry.admits(try field.member("value"), for: definition, of: type))]
+      }
+      if let command = input["command"] {
+        guard let definition = registry.command(try command.member("name").asString()) else { throw VectorError("no such command") }
+        return ["admitted": .bool(registry.admits(arguments: try command.member("args").asObject(), of: definition))]
+      }
+      return ["admitted": true]
+    },
+    "refs/traversal.json": { try traversal($0) },
     "registry/ids.json": { input in
       let registry = try Registry(json: input.member("registry"))
       let name = try input.member("type").asString()
@@ -154,7 +169,7 @@ enum Handlers {
                       "args": ["target": ["type": .string("ref<\(name)>")]]]],
       ])
       return ["id": .bool(registry.isID(id, of: type)),
-              "field": .bool(refs.admits(id, for: refs.type("holder")!.field("target")!)),
+              "field": .bool(refs.admits(id, for: refs.type("holder")!.field("target")!, of: refs.type("holder")!)),
               "argument": .bool(refs.admits(id, for: refs.command("p.check")!.args[0])),
               "key": registry.isID(id, of: type) ? .string(try RecordID(json: id).text) : .null]
     },
@@ -250,6 +265,37 @@ enum Handlers {
       }
       return (file, run)
     })
+
+  // `{scope, record? | cmd?, maps}`: every identity the compiled traversal resolves in the holder before any map, sorted by
+  // its JCS, and the holder once each map applied in order.
+  static func traversal(_ input: JSON) throws -> JSON {
+    let scope = try ScopeRef(json: input.member("scope"))
+    let mappingOf = { (mapping: JSON) throws -> RecordMap.Mapping in
+      let scope: ScopeRef? = try mapping["scope"].map { (scope: JSON) throws -> ScopeRef in try ScopeRef(json: scope) }
+      return RecordMap.Mapping(
+        type: try mapping.member("t").asString(), from: try RecordID(json: mapping.member("from")), to: try RecordID(json: mapping.member("id")),
+        scope: scope)
+    }
+    let maps: [RecordMap] = try input.member("maps").asArray().map { (mappings: JSON) throws -> RecordMap in
+      RecordMap(registry: probe, mappings: try mappings.asArray().map(mappingOf))
+    }
+    let shown = { (references: [ResolvedReference]) -> JSON in
+      let rows: [JSON] = references.map { (reference: ResolvedReference) -> JSON in
+        ["role": .string(reference.leaf.role.rawValue), "scope": reference.scope.json, "t": .string(reference.key.type), "id": reference.key.id.json]
+      }
+      return .array(rows.sorted { (left: JSON, right: JSON) -> Bool in left.jcsPrecedes(right) })
+    }
+    if let record = input["record"] {
+      var delta = try Delta(json: record)
+      let references = probe.resolve(probe.references.leaves(ofType: delta.key.type), in: ReferenceHolder(delta), holderScope: scope)
+      for map in maps { probe.remap(&delta, in: scope, by: map) }
+      return ["references": shown(references), "after": delta.json]
+    }
+    var command = try Command(json: input.member("cmd"))
+    let references = probe.resolve(probe.references.leaves(ofCommand: command.name), in: ReferenceHolder(args: command.args), holderScope: scope)
+    for map in maps { probe.remap(&command, in: scope, by: map) }
+    return ["references": shown(references), "after": command.json]
+  }
 
   // `{replica, scope}`: the view's records in record order, the visible ones, and for stored the cap counts.
   static func view(_ input: JSON, _ mode: ViewMode) throws -> JSON {

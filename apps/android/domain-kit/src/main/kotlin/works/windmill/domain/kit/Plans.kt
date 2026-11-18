@@ -7,6 +7,7 @@ import works.windmill.sync.api.NewID
 import works.windmill.sync.api.OrderAnchor
 import works.windmill.sync.api.RecordRef
 import works.windmill.sync.api.RegisterRef
+import works.windmill.sync.api.ScopedPrediction
 import works.windmill.sync.api.TextEdit
 import works.windmill.sync.core.Command
 import works.windmill.sync.core.Json
@@ -24,13 +25,25 @@ interface ServerCommand {
     val args: Map<String, Json>
 }
 
-data class Prediction(val kind: Kind, val type: String, val id: RecordID, val values: Map<String, Json>, val texts: Map<String, String> = emptyMap()) {
+// §8.4: the values a product expects a command to write, server-written fields included, unvalidated. A prediction names
+// the scope it writes when that is not the plan's own: a command with scoped effects (E-7) predicts in every scope it changes.
+data class Prediction(val kind: Kind, val type: String, val id: RecordID, val values: Map<String, Json>, val texts: Map<String, String> = emptyMap(),
+    val scope: ScopeRef? = null) {
     enum class Kind { Create, Update, Write, Remove }
     companion object {
-        fun <E : Entity<E>> create(type: EntityType<E>, id: Id<E>, values: Map<String, Json>): Prediction = Prediction(Kind.Create, type.type, id.record, values)
-        fun <E : Entity<E>> update(type: EntityType<E>, id: Id<E>, values: Map<String, Json>): Prediction = Prediction(Kind.Update, type.type, id.record, values)
-        fun <E : Entity<E>> write(type: EntityType<E>, id: Id<E>, values: Map<String, Json>, texts: Map<String, String> = emptyMap()): Prediction = Prediction(Kind.Write, type.type, id.record, values, texts)
-        fun <E : Entity<E>> remove(type: EntityType<E>, id: Id<E>): Prediction = Prediction(Kind.Remove, type.type, id.record, emptyMap())
+        fun <E : Entity<E>> create(type: EntityType<E>, id: Id<E>, values: Map<String, Json>, scope: ScopeRef? = null): Prediction =
+            Prediction(Kind.Create, type.type, id.record, values, scope = scope)
+        fun <E : Entity<E>> update(type: EntityType<E>, id: Id<E>, values: Map<String, Json>, scope: ScopeRef? = null): Prediction =
+            Prediction(Kind.Update, type.type, id.record, values, scope = scope)
+        fun <E : Entity<E>> write(type: EntityType<E>, id: Id<E>, values: Map<String, Json>, texts: Map<String, String> = emptyMap(), scope: ScopeRef? = null): Prediction =
+            Prediction(Kind.Write, type.type, id.record, values, texts, scope)
+        fun <E : Entity<E>> remove(type: EntityType<E>, id: Id<E>, scope: ScopeRef? = null): Prediction = Prediction(Kind.Remove, type.type, id.record, emptyMap(), scope = scope)
+    }
+    fun change(registry: Registry): Change = when (kind) {
+        Kind.Create -> Change.create(type, NewID.Given(id), values)
+        Kind.Update -> Change.update(type, id, values)
+        Kind.Write -> Change.write(type, id, values, texts.mapValues { TextEdit(it.value) })
+        Kind.Remove -> if (registry.type(type)?.identity == "keyed") Change.put(type, id, false) else Change.delete(type, id)
     }
 }
 
@@ -105,17 +118,27 @@ class Plan {
         }
         val retire = operations.filter { it.creates && registry.type(it.entity.type)?.let { d -> d.identity == "keyed" && d.life } == true }
             .map { it.ref }.sortedWith { a, b -> compareBytes(a.type, b.type).takeIf { it != 0 } ?: a.id.compareTo(b.id) }
-        val predict = predictions.map { p ->
-            if (command?.let { registry.command(it.name)?.predicts?.contains(p.type) } != true) throw PlanError(5, "the command does not predict ${p.type}")
-            when (p.kind) {
-                Prediction.Kind.Create -> Change.create(p.type, NewID.Given(p.id), p.values)
-                Prediction.Kind.Update -> Change.update(p.type, p.id, p.values)
-                Prediction.Kind.Write -> Change.write(p.type, p.id, p.values, p.texts.mapValues { TextEdit(it.value) })
-                Prediction.Kind.Remove -> if (registry.type(p.type)?.identity == "keyed") Change.put(p.type, p.id, false) else Change.delete(p.type, p.id)
-            }
-        }
+        val predicted = predicted(scope, registry)
+        val origin = predicted.getValue(scope)
+        val others = predicted.keys.filter { it != scope }.sorted()
         return Gesture(changes, atomic = changes.size > 1, hold = isHeld, guards = guards, retire = retire,
-            supersede = supersededGestures, command = command, predict = predict, local = deviceWrites.toList())
+            supersede = supersededGestures, command = command, predict = if (others.isEmpty()) origin else emptyList(), local = deviceWrites.toList(),
+            scopedPredict = if (others.isEmpty()) null
+                else listOfNotNull(origin.takeIf { it.isNotEmpty() }?.let { ScopedPrediction(scope, it) }) + others.map { ScopedPrediction(it, predicted.getValue(it)) })
+    }
+    // Rule 5: the command predicts the type, in a scope that holds it; a scope other than the plan's needs a command with scoped
+    // effects. Each scope's changes, the plan's own always present.
+    private fun predicted(scope: ScopeRef, registry: Registry): Map<ScopeRef, List<Change>> {
+        val definition = command?.let { registry.command(it.name) }
+        val groups = linkedMapOf<ScopeRef, MutableList<Change>>(scope to mutableListOf())
+        for (prediction in predictions) {
+            val target = prediction.scope ?: scope
+            if (!registry.lives(prediction.type, target)) throw PlanError(5, "${prediction.type} is predicted outside its scope")
+            if (target != scope && definition?.scopedEffects != true) throw PlanError(5, "${command?.name ?: "a plan"} predicts no other scope")
+            if (definition?.predicts?.contains(prediction.type) != true) throw PlanError(5, "the command does not predict ${prediction.type}")
+            groups.getOrPut(target) { mutableListOf() } += prediction.change(registry)
+        }
+        return groups
     }
     companion object {
         fun applying(spec: ValueSpec, json: Json, keys: List<String>, path: Path): Json = when (json) {
@@ -199,7 +222,9 @@ data class Operation(val kind: Kind, val entity: EntityFacts, val id: RecordID,
         val (written, texts) = split(names, d, base)
         val values = if (d.hasBorn) written.filter { (name, value) -> value !== Json.Null || d.fields[name]?.kind != "time" } else written
         if (anchor != null && !d.hasBorn) throw PlanError(0, "an anchored create names a type without a birth identity")
-        if (!d.hasBorn && names.isEmpty()) throw PlanError(8, "a keyed create writes no field")
+        // Rule 8: a keyed type with life that declares no field is created by its presence alone.
+        val presenceOnly = d.identity == "keyed" && d.life && d.fields.isEmpty()
+        if (!d.hasBorn && names.isEmpty() && !presenceOnly) throw PlanError(8, "a keyed create writes no field")
         return when {
             d.hasBorn -> Change.create(entity.type, NewID.Given(id), values, texts, anchor)
             d.identity == "keyed" && d.life -> Change.put(entity.type, id, true, values, texts)

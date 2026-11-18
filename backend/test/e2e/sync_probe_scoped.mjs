@@ -40,7 +40,7 @@ setTimeout(() => {
 }, DEADLINE_MS).unref();
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
-const { IDBFactory } = createRequire(`${repo}web/package.json`)('fake-indexeddb');
+const { IDBFactory, IDBKeyRange } = createRequire(`${repo}web/package.json`)('fake-indexeddb');
 const registry = new Registry(JSON.parse(readFileSync(`${repo}packages/api-contract/sync/probe.registry.json`, 'utf8')));
 const base = `http://127.0.0.1:${PORT}`;
 const results = { pass: 0, fail: 0 };
@@ -86,7 +86,7 @@ const transport = new HttpTransport({ schema: registry.version, base, timers: gl
   } });
 // Backoffs draw zero and the device clock follows the wall clock, so every round may send and no stamp runs ahead of
 // the server's skew bound.
-const engine = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), name: 'sync-probe-scoped', registry, transport, timers,
+const engine = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), keyRange: IDBKeyRange, name: 'sync-probe-scoped', registry, transport, timers,
   draw: () => 0, now: () => timers.time, monotonic: () => timers.time, navigator: { onLine: true, locks: new FakeLocks() },
   document: null, window: null, telemetry: { event() {}, failure(operation) { failures.push(operation); } } });
 const leading = async () => {

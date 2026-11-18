@@ -4,7 +4,7 @@
 request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
 requests persistent storage and starts synchronization. No product or UI imports this engine.
 
-The registry composes the shared gym and journal registries at version 10, minimum 10. The deterministic
+The registry composes the shared gym, journal and roadmap registries at version 13, minimum 11. The deterministic
 core and replica rules import `packages/api-contract/sync/reference/core` and `client` directly.
 The shared modules use `TextEncoder`, canonical base64url and vendored synchronous SHA-256, with no
 dependencies. `core/encoding.js` exposes the shared encoding helpers to web consumers;
@@ -29,6 +29,11 @@ before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`)
 drawn/stored records, notices, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and
 the records it changes) and `firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
 replica changes after durable commits and persisted-page suspension, restoration and restore failure.
+`commitAct(segments, {undo})` journals an act opted into Undo after its hold (engine.md §7.3 Undo of an act);
+`requestInverse(actId, slots?)` asks for its inverse in one transaction and answers an `InverseResult`,
+`readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a
+journal record the product's stack no longer needs. The journal, inverse requests and cancellation receipts
+are control records of the replica's store, beside its outbox.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
 
@@ -57,6 +62,18 @@ and durable device work are separate from cached rows. Replica handles stay fixe
 changes. Each cache has a generation pointer; completed boots transfer the staging pointer, and
 forget/sign-out invalidate pointers atomically. Old generations are deleted in batches of 128.
 
+A store keeps the control records it last committed or read, as JSON text, and uses them while the
+head record's revision is unchanged; any other tab's write moves the revision and the next transaction
+reads them again. It keeps each cache generation's rows it has read, frozen, while the generation's
+version is unchanged, and reads a whole generation along the `[generation, id]` primary key, so
+`open` takes the `IDBKeyRange` of the same IndexedDB implementation (`keyRange`, the global by
+default). A write edits one working copy of each control record, kept while the record's text is
+unchanged, so it parses only the records that changed since the last write; a record a write
+changes, a value a caller handed in and an aborted write's edits never reach the next write. It
+shares the rows and compares only rows whose identity changed; a read shares frozen values, so
+unchanged state keeps its identity from one publication to the next. A row is a value: a change
+replaces it and never edits it. The push request a write numbers leaves it as a copy.
+
 IndexedDB store versions are independent of the wire registry version:
 
 | Store version | Layout | Release evidence |
@@ -74,10 +91,18 @@ version changes. Fixture reads wait for transaction completion before closing th
 
 Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
 scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.
+An observation (`observation.js`) keeps its scope's records between publications and folds again only
+the records whose confirmed row changed identity or whose pending entries changed; a record no held
+entry touches is one frozen object in both `drawn` and `stored`.
 The default beacon adapter maps spec event labels to the intake's snake_case names.
-Writer telemetry measures transaction enqueue to durable completion, with bounded numeric timings.
+Writer telemetry measures transaction enqueue to durable completion, with bounded numeric timings,
+for the first ten writes of each minute that change the store, under an allowance failures and step
+events never share.
 The 25 ms writer slice is a latency target, not a hardware-independent correctness assertion.
-Push results use separate transactions; pull pages use 64-row chunks and 64-entry settling slices.
+Push results use separate transactions. A pull response applies in chunks sized by how long the last
+one held the writer, from 64 rows and never fewer, aiming at half of the 25 ms writer slice; one chunk may
+carry several of the response's pages, each checked in the chunk that applies it. Settling slices take
+64 entries.
 Web Locks serialize sender ownership and first-tab registration; BroadcastChannel delivers
 invalidations, opened scopes, upgrade stops and replica changes. The leader reconciles durable control
 state and outbox every second and on refresh; notifications are hints. Server retry floors survive

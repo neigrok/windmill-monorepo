@@ -241,7 +241,7 @@ public enum IntentShape {
     var fields: [String: PlannedRegister] = [:]
     for (name, register) in try members(object["f"] ?? [:]) {
       guard let field = type.field(name), field.kind.isLattice, !isReplica || field.writer == .client,
-            case .array(let pair) = register, pair.count == 2, registry.admits(pair[0], for: field)
+            case .array(let pair) = register, pair.count == 2, registry.admits(pair[0], for: field, of: type)
       else { throw Refusal(.invalid) }
       fields[name] = PlannedRegister(pair[0], try slot(pair[1], isReplica: isReplica))
     }
@@ -311,16 +311,8 @@ public enum IntentShape {
   static func commandOf(_ json: JSON, kind: ScopeKind, registry: Registry) throws(Refusal) -> CheckedCommand {
     guard case .object(let object) = json, (try? object.expectKeys(required: ["args", "name"])) != nil,
           case .string(let name)? = object["name"], let definition = registry.command(name), definition.scope == kind,
-          case .object(let args)? = object["args"],
-          args.keys.allSatisfy({ key in definition.args.contains { $0.name.utf8.elementsEqual(key.utf8) } })
+          case .object(let args)? = object["args"], registry.admits(arguments: args, of: definition)
     else { throw Refusal(.invalid) }
-    for argument in definition.args {
-      guard let value = args[argument.name] else {
-        if argument.optional { continue }
-        throw Refusal(.invalid)
-      }
-      guard registry.admits(value, for: argument) else { throw Refusal(.invalid) }
-    }
     return CheckedCommand(definition: definition, args: args)
   }
 

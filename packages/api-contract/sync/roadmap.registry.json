@@ -52,10 +52,14 @@
             "nullable": true,
             "required": ["tree", "step"],
             "properties": {
-              "tree": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" },
-              "step": { "type": "string", "unit": "chars", "min": 1, "max": 128 }
+              "tree": { "type": "string" },
+              "step": { "type": "string" }
             }
           },
+          "refPaths": [
+            { "path": ["tree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } },
+            { "path": ["step"], "type": "node", "scope": { "kind": "treeFrom", "path": ["tree"] } }
+          ],
           "default": null
         }
       }
@@ -74,11 +78,10 @@
         "guideInherited": { "kind": "lww", "writer": "server", "domain": { "type": "boolean" }, "default": false },
         "visibility": {
           "kind": "lww",
-          "writer": "server",
+          "writer": "client",
           "domain": { "type": "string", "enum": ["private", "unlisted", "public"] },
           "default": "private"
         },
-        "visibilitySetBy": { "kind": "lww", "writer": "server", "domain": { "type": "stamp" } },
         "reach": {
           "kind": "lww",
           "writer": "server",
@@ -95,10 +98,14 @@
             "nullable": true,
             "required": ["tree", "step"],
             "properties": {
-              "tree": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" },
-              "step": { "type": "string", "unit": "chars", "min": 1, "max": 128 }
+              "tree": { "type": "string" },
+              "step": { "type": "string" }
             }
           },
+          "refPaths": [
+            { "path": ["tree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } },
+            { "path": ["step"], "type": "node", "scope": { "kind": "treeFrom", "path": ["tree"] } }
+          ],
           "default": null
         },
         "depth": { "kind": "const", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0, "max": 8 }, "default": 0 },
@@ -128,7 +135,7 @@
           "default": "terracotta"
         },
         "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } },
-        "status": { "kind": "lww", "writer": "client", "domain": { "type": "string", "nullable": true }, "default": null },
+        "status": { "kind": "lww", "writer": "client", "domain": { "type": "string", "nullable": true, "enum": ["none", "complete"] }, "default": null },
         "description": { "kind": "lww", "writer": "client", "unit": "chars", "max": 16000, "domain": { "type": "string" }, "default": "" },
         "links": {
           "kind": "lww",
@@ -405,28 +412,23 @@
   ],
   "commands": [
     {
-      "name": "roadmap.setVisibility",
-      "scope": "tree",
-      "origins": ["replica", "server"],
-      "serverInternal": false,
-      "scopedEffects": true,
-      "args": {
-        "visibility": { "type": "json", "domain": { "type": "string", "enum": ["private", "unlisted", "public"] } }
-      },
-      "predicts": ["meta"]
-    },
-    {
       "name": "roadmap.createSubtree",
       "scope": "product:roadmap",
       "origins": ["replica", "server"],
       "serverInternal": false,
       "scopedEffects": true,
       "args": {
-        "tree": { "type": "json", "domain": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" } },
-        "root": { "type": "json", "domain": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" } },
-        "step": { "type": "json", "domain": { "type": "string", "unit": "chars", "min": 1, "max": 128 } },
-        "subtree": { "type": "json", "domain": { "type": "string", "pattern": "^t_[0-9a-f]{16}$" } }
+        "tree": { "type": "json", "domain": { "type": "string" } },
+        "root": { "type": "json", "domain": { "type": "string" } },
+        "step": { "type": "json", "domain": { "type": "string" } },
+        "subtree": { "type": "json", "domain": { "type": "string" } }
       },
+      "refPaths": [
+        { "path": ["tree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } },
+        { "path": ["root"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } },
+        { "path": ["step"], "type": "node", "scope": { "kind": "treeFrom", "path": ["tree"] } },
+        { "path": ["subtree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" }, "role": "creation" }
+      ],
       "predicts": ["tree", "meta", "node", "kind"]
     },
     {
@@ -441,8 +443,85 @@
       },
       "predicts": ["kind", "node"]
     },
+    {
+      "name": "roadmap.undoCreateRoadmap",
+      "scope": "product:roadmap",
+      "origins": ["replica"],
+      "serverInternal": false,
+      "scopedEffects": true,
+      "inverse": true,
+      "args": {
+        "input": { "type": "json", "domain": { "type": "object", "required": ["tree"], "properties": { "tree": { "type": "string" } } } }
+      },
+      "refPaths": [{ "path": ["input", "tree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } }],
+      "predicts": ["tree"]
+    },
+    {
+      "name": "roadmap.undoCreateSubtree",
+      "scope": "product:roadmap",
+      "origins": ["replica"],
+      "serverInternal": false,
+      "scopedEffects": true,
+      "inverse": true,
+      "args": {
+        "input": {
+          "type": "json",
+          "domain": {
+            "type": "object",
+            "required": ["tree", "step", "subtree"],
+            "properties": { "tree": { "type": "string" }, "step": { "type": "string" }, "subtree": { "type": "string" } }
+          }
+        }
+      },
+      "refPaths": [
+        { "path": ["input", "tree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } },
+        { "path": ["input", "step"], "type": "node", "scope": { "kind": "treeFrom", "path": ["input", "tree"] } },
+        { "path": ["input", "subtree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } }
+      ],
+      "predicts": ["tree", "node"]
+    },
+    {
+      "name": "roadmap.redoCreateSubtree",
+      "scope": "product:roadmap",
+      "origins": ["replica"],
+      "serverInternal": false,
+      "scopedEffects": true,
+      "inverse": true,
+      "args": {
+        "input": {
+          "type": "json",
+          "domain": {
+            "type": "object",
+            "required": ["tree", "root", "step", "subtree"],
+            "properties": { "tree": { "type": "string" }, "root": { "type": "string" }, "step": { "type": "string" }, "subtree": { "type": "string" } }
+          }
+        }
+      },
+      "refPaths": [
+        { "path": ["input", "tree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } },
+        { "path": ["input", "root"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" } },
+        { "path": ["input", "step"], "type": "node", "scope": { "kind": "treeFrom", "path": ["input", "tree"] } },
+        { "path": ["input", "subtree"], "type": "tree", "scope": { "kind": "fixed", "value": "self/roadmap" }, "role": "creation" }
+      ],
+      "predicts": ["tree", "meta", "node", "kind"]
+    },
     { "name": "roadmap.capture", "scope": "product:roadmap", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
-    { "name": "roadmap.captureTree", "scope": "tree", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
-    { "name": "roadmap.captureOverlay", "scope": "overlay", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} }
+    {
+      "name": "roadmap.captureTree", "scope": "tree", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {},
+      "predicts": ["meta"]
+    },
+    { "name": "roadmap.captureOverlay", "scope": "overlay", "origins": ["replica"], "serverInternal": false, "engine": "capture", "scopedEffects": true, "args": {} },
+    {
+      "name": "roadmap.restore", "scope": "product:roadmap", "origins": ["replica"], "serverInternal": false, "engine": "restore", "scopedEffects": true, "args": {},
+      "predicts": ["coachThread", "coachMessage", "coachProposal", "coachWriteFate"]
+    },
+    {
+      "name": "roadmap.restoreTree", "scope": "tree", "origins": ["replica"], "serverInternal": false, "engine": "restore", "scopedEffects": true, "args": {},
+      "predicts": ["meta", "node", "edge", "kind"]
+    },
+    {
+      "name": "roadmap.restoreOverlay", "scope": "overlay", "origins": ["replica"], "serverInternal": false, "engine": "restore", "scopedEffects": true, "args": {},
+      "predicts": ["progress", "pointer", "subtask", "stepLink", "stepNote"]
+    }
   ]
 }

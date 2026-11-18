@@ -91,6 +91,7 @@ add_library(windmill_platform
   platform/domain/sync/Credentials.cpp
   platform/domain/sync/Shape.cpp
   platform/domain/sync/Admit.cpp
+  platform/domain/sync/Restore.cpp
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
   platform/application/AiBudgetService.cpp

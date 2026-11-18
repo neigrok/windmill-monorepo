@@ -349,12 +349,12 @@ test('Chromium: scoped writer latency and pointer swaps stay independent of cach
   try {
     const page = await open(context, 'latency');
     const measurements = await page.evaluate(async () => {
-      const store = engine.store;
-      await store.transact((device) => {
+      await engine.store.transact((device) => {
         for (let n = 0; n < 4096; n++) device.activeReplica.putConfirmed('tree/b_00000001', { t: 'tag', id: `tag${n}`, seq: 1 });
       });
+      const store = await engine.store.reopen();
       const control = await store.transact((device) => { device.activeReplica.meta.authPaused = true; });
-      const scoped = await store.transact((device) => { device.activeReplica.confirmedRows('tree/b_00000001')[0].seq = 2; },
+      const scoped = await store.transact((device) => { device.activeReplica.putConfirmed('tree/b_00000001', { t: 'tag', id: 'tag0', seq: 2 }); },
         { scopes: [{ scope: 'tree/b_00000001', keys: ['["tag","tag0"]'] }] });
       await store.transact((device) => { device.activeReplica.staging['tree/b_00000001'] = { digest: 'replacement', rows: { replacement: { t: 'tag', id: 'replacement', seq: 3 } } }; });
       const swap = await store.transact((device) => {
@@ -362,6 +362,7 @@ test('Chromium: scoped writer latency and pointer swaps stay independent of cach
         delete device.activeReplica.staging['tree/b_00000001'];
       });
       const read = await store.read(['tree/b_00000001']);
+      store.close();
       return { control: control.measurement, scoped: scoped.measurement, swap: swap.measurement, rows: read.device.activeReplica.confirmedRows('tree/b_00000001') };
     });
     assert.equal(measurements.control.rowReads, 0);
@@ -456,7 +457,7 @@ test('Chromium: persisted lifecycle events close and reopen real Web Locks and I
   } finally { await context.close(); }
 });
 
-test('Chromium: default telemetry beacons use intake-compatible names and bounded content-free properties', async () => {
+test('Chromium: default telemetry beacons use intake-compatible names, bounded content-free properties and the writer sample', async () => {
   const context = await freshContext();
   try {
     const page = await open(context, 'beacon');
@@ -469,14 +470,14 @@ test('Chromium: default telemetry beacons use intake-compatible names and bounde
     await page.evaluate(async () => {
       const { syncTelemetry } = await import('/src/platform/sync/telemetry.js');
       const telemetry = syncTelemetry();
-      for (let i = 0; i < 20; i++) telemetry.event('sync-writer', { durationMs: 80000, queueMs: 1, body: 'private', account: 'private' });
+      for (let i = 0; i < 12; i++) telemetry.event('sync-writer', { durationMs: 80000, queueMs: 1, body: 'private', account: 'private' });
+      for (let i = 0; i < 10; i++) telemetry.event('sync-commit', { outcome: 'ok', scope: 'tree/private', body: 'private' });
     });
     const batch = await Promise.race([delivery, new Promise((_, reject) => setTimeout(() => reject(new Error('beacon delivery stalled')), 5000).unref())]);
-    assert.equal(batch.events.length, 20);
-    for (const event of batch.events) {
-      assert.equal(event.name, 'sync_writer');
-      assert.deepEqual(event.props, { durationMs: 60000, queueMs: 1 });
-    }
+    assert.deepEqual(batch.events.map(({ name, props }) => ({ name, props })), [
+      ...Array.from({ length: 10 }, () => ({ name: 'sync_writer', props: { durationMs: 60000, queueMs: 1 } })),
+      ...Array.from({ length: 10 }, () => ({ name: 'sync_commit', props: { outcome: 'ok' } })),
+    ]);
   } finally { await context.close(); }
 });
 
@@ -647,7 +648,8 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
       window.sentSaves = [];
       const transport = { async request(endpoint, request) {
         if (endpoint === 'hello') return { response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(),
-          schema: registry.version, minSchema: registry.version, holdsRecords: { gym: false, journal: false } } }, timing: timing() };
+          schema: registry.version, minSchema: registry.version,
+          holdsRecords: Object.fromEntries(Object.keys(registry.products).map((product) => [product, false])) } }, timing: timing() };
         if (endpoint === 'push') {
           sentSaves.push(...request.intents.filter((intent) => intent.cmd?.name === 'journal.savePage').map((intent) => intent.cmd.args));
           return { response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(),
@@ -669,8 +671,8 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
         mood: [0, '1000:0:srv'], energy: [null, '1000:0:srv'], source: ['typed', '1000:0:srv'],
         documentStamp: [{ ms: 1000, counter: 0, actor: 'srv' }, '1000:0:srv'],
       }, x: { body: { text: 'frozen contribution', rev: 1, merged: false } } };
-      const pull = () => engine.storePage(engine.device.activeReplica.storageHandle, null, { scope, kind: 'rows', rows: [row],
-        seq: 1, more: false, cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 1 }), digest: scopeDigest([row]) });
+      const pull = () => engine.storePages(engine.device.activeReplica.storageHandle, [{ cursor: null, page: { scope, kind: 'rows', rows: [row],
+        seq: 1, more: false, cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 1 }), digest: scopeDigest([row]) } }]);
       const result = () => engine.pushResults(engine.device.activeReplica.storageHandle, request, { status: 200, body: { as: 'A',
         epoch: 'ep-1', serverTime: Date.now(), lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }] } }, timing());
       if (order === 'pull-before-result') {

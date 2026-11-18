@@ -176,10 +176,3 @@ fun Registry.scopeOfType(type: String, from: ScopeRef): ScopeRef? = when (val sc
     else -> ScopeRef.product(scope.removePrefix("product:"))
 }
 fun Registry.lives(type: String, scope: ScopeRef): Boolean = scopeKind(scope)?.let { it == type(type)?.scope } ?: false
-fun TypeDef.references(id: RecordID, values: Map<String, Json>): List<RecordKey> = buildList {
-    json["key"]?.let { key ->
-        key["ref"]?.let { add(RecordKey(it.str(), id)) }
-        key["tuple"]?.arr()?.zip(id.parts ?: emptyList())?.forEach { (part, value) -> add(RecordKey(part.member("ref").str(), RecordID(value))) }
-    }
-    for ((name, field) in fields) if (field.ref != null && values[name] is Json.Str) add(RecordKey(field.ref, RecordID(values.getValue(name))))
-}

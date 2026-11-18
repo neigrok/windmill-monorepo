@@ -1,22 +1,26 @@
-import { IndexedDBStore } from './store.js';
+import { IndexedDBStore, WriterSlice, frozen } from './store.js';
+import { ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
 import { syncTelemetry } from './telemetry.js';
 import { registry as composedRegistry } from './schema.js';
 import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
-import { compareRecords, recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
+import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { bodyBytes, Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 import { Stamp } from '../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { Offset } from '../../../../packages/api-contract/sync/reference/core/clock.js';
 import { CommitError, commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { ActCommit } from '../../../../packages/api-contract/sync/reference/client/acts.js';
-import { release, releaseAll, releaseDue, undo, undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
+import { release, releaseAll, releaseDue, undo } from '../../../../packages/api-contract/sync/reference/client/hold.js';
+import { readInverseResult, requestInverse } from '../../../../packages/api-contract/sync/reference/client/inverse.js';
+import { releaseReversibleAct } from '../../../../packages/api-contract/sync/reference/client/journal.js';
+import { effectsOf } from '../../../../packages/api-contract/sync/reference/client/projections.js';
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
-import { dismiss, noticesInScope } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
+import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
 import { applyPushResult, nextPush, onHello, onPushResponse, ResponseError, SenderWait, validatePushEnvelope, validatePushReceipts } from '../../../../packages/api-contract/sync/reference/client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf, unsubscribe } from '../../../../packages/api-contract/sync/reference/client/subscriptions.js';
-import { drawn, stored, viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
+import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
 function secureDraw(bound) {
   if (!Number.isSafeInteger(bound) || bound <= 0 || bound > 2 ** 32) throw new Error('invalid random bound');
@@ -28,13 +32,6 @@ function secureDraw(bound) {
 
 const replicaId = () => `rp_${crypto.randomUUID().replace(/-/g, '')}`;
 const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[secureDraw(62)]).join('')}`;
-const freeze = (value) => {
-  if (value && typeof value === 'object') {
-    for (const item of Object.values(value)) freeze(item);
-    Object.freeze(value);
-  }
-  return value;
-};
 
 export class BrowserSyncEngine {
   constructor({ store, registry = composedRegistry, transport, telemetry, leadership, navigator = globalThis.navigator,
@@ -67,6 +64,7 @@ export class BrowserSyncEngine {
     this.repullSolo = new Set();
     this.pullInFlight = new Set();
     this.deferredFrames = new Map();
+    this.pullChunk = new WriterSlice(64, this.limits.WRITER_SLICE_MS);
     this.inFlight = new Set();
     this.live = new LiveChannel({ transport: this.transport, timers, now: monotonic, draw,
       limits: this.limits, onFrame: (frame) => this.receiveFrame(frame),
@@ -85,7 +83,7 @@ export class BrowserSyncEngine {
   static async open(options = {}) {
     let store;
     try {
-      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB,
+      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB, keyRange: options.keyRange,
         name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
       const engine = new BrowserSyncEngine({ ...options, store });
       await engine.refresh(true);
@@ -123,6 +121,7 @@ export class BrowserSyncEngine {
       throw error;
     }
     this.actor = context.actor;
+    this.lastWrite = answer.measurement;
     try {
       for (const event of context.events) {
         this.coordination?.post({ type: 'activeReplicaChanged', previous: event.previous,
@@ -173,7 +172,7 @@ export class BrowserSyncEngine {
     }
     this.revision = revision;
     const replica = device.activeReplica;
-    this.snapshot = freeze({ revision, replica: replica.id, state: replica.meta.state,
+    this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state,
       authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
       pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null) });
     for (const observation of this.views.values()) observation.refresh(replica);
@@ -223,7 +222,7 @@ export class BrowserSyncEngine {
   }
 
   emit(event) {
-    this.notify(this.eventListeners, freeze(structuredClone(event)));
+    this.notify(this.eventListeners, frozen(structuredClone(event)));
   }
 
   activeReplica() { return this.device.activeReplica.id; }
@@ -233,25 +232,9 @@ export class BrowserSyncEngine {
 
   observe(scope) {
     if (this.views.has(scope)) return this.views.get(scope);
-    const listeners = new Set();
-    const observation = {
-      getSnapshot: () => observation.snapshot,
-      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
-      refresh: (replica) => {
-        const records = (view) => [...view.values()].sort(compareRecords).map((row) => {
-          const envelope = replica.confirmedRow(scope, row.t, row.id);
-          const metadata = Object.fromEntries(['seq', 'rc', 'ru'].filter((key) => envelope?.[key] !== undefined).map((key) => [key, envelope[key]]));
-          return { ...row, ...metadata };
-        });
-        observation.snapshot = freeze({ replica: replica.id,
-          drawn: records(drawn(replica, this.registry, scope)),
-          stored: records(stored(replica, this.registry, scope)),
-          notices: structuredClone(noticesInScope(replica, scope)),
-          undoOffers: undoOffers(replica, scope),
-          firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)) });
-        this.notify(listeners);
-      },
-    };
+    const observation = new ScopeObservation(scope, this.registry, {
+      firstPullComplete: (replica) => firstPullComplete(replica, scope, this.scopes(replica)),
+      notify: (listeners) => this.notify(listeners) });
     observation.refresh(this.device.activeReplica);
     this.views.set(scope, observation);
     if (this.device.activeReplica.confirmed[scope] && !this.device.activeReplica.loadedCaches.has(`confirmed:${scope}`)) {
@@ -420,10 +403,42 @@ export class BrowserSyncEngine {
     return result;
   }
 
+  // K-3 (engine.md §7.3 Undo of an act): the inverse of a journaled act, reserved in one transaction over the
+  // scopes its sources and held entries wrote. Its event carries the result's kind as an outcome, nothing more.
+  async requestInverse(actId, slots) {
+    const replica = this.device.activeReplica;
+    const act = replica.journal.find((candidate) => candidate.actId === actId);
+    const cancellation = replica.cancellations.find((candidate) => candidate.inverseActId === actId);
+    const scopes = [...new Set([
+      ...(act?.sourceEntries ?? []).map((source) => source.originScope),
+      ...(cancellation?.units ?? []).map((unit) => (unit.target ?? unit.record).scope),
+      ...replica.entries().filter((entry) => entry.gestureId === actId).flatMap((entry) => effectsOf(entry).map(({ scope }) => scope)),
+    ])];
+    let result;
+    try {
+      result = await this.write(null, (device, ctx) => requestInverse(device.activeReplica, ctx, actId, slots), scopes);
+    } catch (error) {
+      this.telemetry.event('sync-inverse', { outcome: 'failed' });
+      throw error;
+    }
+    this.telemetry.event('sync-inverse', { outcome: { cancelled: 'ok', settled: 'ok', pending: 'pending', unavailable: 'unavailable' }[result.kind] });
+    this.kick();
+    return result;
+  }
+
+  readInverseResult(requestId) {
+    return readInverseResult(this.device.activeReplica, requestId);
+  }
+
+  releaseReversibleAct(actId) {
+    return this.write(null, (device) => releaseReversibleAct(device.activeReplica, actId));
+  }
+
   async commitAct(prepare, segment) {
     if (typeof prepare !== 'function') {
       const segments = prepare;
-      prepare = () => ({ request: segments === null ? null : { scopes: segments.map((item) => item.scope), hold: segments.some((item) => item.opts?.hold) }, value: segments });
+      const options = segment ?? {};
+      prepare = () => ({ request: segments === null ? null : { scopes: segments.map((item) => item.scope), hold: segments.some((item) => item.opts?.hold), ...options }, value: segments });
       segment = (values, index) => values[index];
     }
     const act = new ActCommit();
@@ -637,8 +652,7 @@ export class BrowserSyncEngine {
         handle = device.activeReplica.storageHandle;
         if (!current(device) || device.activeReplica.meta.authPaused || device.activeReplica.meta.state !== 'bound'
           || this.signOutPaused(device) || (device.activeReplica.meta.pushRetryAt ?? 0) > this.now() || device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true) return null;
-        return nextPush(device.activeReplica, ctx, { ...(this.pushLimit ? { limit: this.pushLimit } : {}),
-        });
+        return structuredClone(nextPush(device.activeReplica, ctx, this.pushLimit ? { limit: this.pushLimit } : {}));
       });
       if (!request) return;
       if (leave) {
@@ -670,9 +684,9 @@ export class BrowserSyncEngine {
         this.pushLimit = null;
         this.kickPull();
       } else if (![400, 401, 409, 413].includes(response.status)) this.wait.backoff(time, this.draw, hint);
-    } catch {
+    } catch (error) {
       if (this.canSync()) {
-        this.telemetry.failure('transport');
+        if (!(error instanceof CommitError && error.kind === 'store')) this.telemetry.failure('transport');
         this.wait.backoff(this.monotonic(), this.draw, { liveHint: this.liveHint(this.device.activeReplica) });
       }
     } finally {
@@ -784,10 +798,13 @@ export class BrowserSyncEngine {
         else if (response.status !== 401) this.pullWait.backoff(this.monotonic(), this.draw);
         return;
       }
-      for (const page of response.body.pages) {
+      const outcomes = await this.storePages(handle, response.body.pages.map((page) => {
         const cursor = request.scopes.find(({ scope }) => scope === page.scope)?.cursor;
         if (cursor === undefined) throw new Error('unexpected pull scope');
-        const outcome = await this.storePage(handle, cursor, page);
+        return { cursor, page };
+      }));
+      for (const [index, page] of response.body.pages.entries()) {
+        const outcome = outcomes[index];
         if (page.more || ['reset', 'stale'].includes(outcome)) this.pullDirty.add(page.scope);
         if (outcome === 'ignored') this.doubts.end(page.scope, this.monotonic(), this.draw);
         if (outcome === 'applied') this.doubts.rows(page.scope);
@@ -795,9 +812,9 @@ export class BrowserSyncEngine {
       }
       this.pullWait.results(['ok'], this.monotonic(), this.draw);
       this.follow();
-    } catch {
+    } catch (error) {
       if (this.canSync()) {
-        this.telemetry.failure('transport');
+        if (!(error instanceof CommitError && error.kind === 'store')) this.telemetry.failure('transport');
         this.pullWait.backoff(this.monotonic(), this.draw);
         for (const { scope } of request?.scopes ?? []) {
           this.pullDirty.add(scope);
@@ -817,31 +834,52 @@ export class BrowserSyncEngine {
     }
   }
 
-  async storePage(handle, cursor, page) {
-    if (page.kind !== 'rows') return this.write(null, (device, ctx) => {
-      const replica = device.activeReplica;
-      if (replica.storageHandle !== handle) return 'outside';
-      return applyPage(replica, ctx, cursor, page, undefined, (scope) => this.scopes(replica).includes(scope));
-    });
-    let remaining = true;
-    let outcome = 'applied';
-    for (let offset = 0; offset < Math.max(1, page.rows.length); offset += 64) {
-      const last = offset + 64 >= page.rows.length;
+  // A response's pages apply in chunks the writer slice sizes: a chunk takes the rows of one page or of
+  // several, and checks each page in the transaction that applies it. Only a product page or an end can
+  // move the subscription set, so the set is read again after one of those.
+  async storePages(handle, pages) {
+    let outcomes = pages.map(() => 'applied');
+    const settling = [];
+    for (let index = 0, offset = 0; index < pages.length;) {
+      const steps = [];
+      for (let room = this.pullChunk.size; index < pages.length && room > 0;) {
+        const { page } = pages[index];
+        const total = page.kind === 'rows' ? page.rows.length : 0;
+        const rows = page.kind === 'rows' ? page.rows.slice(offset, offset + room) : [];
+        steps.push({ index, rows, first: offset === 0, last: offset + rows.length >= total });
+        room -= Math.max(1, rows.length);
+        offset += rows.length;
+        if (offset >= total) { index++; offset = 0; }
+      }
       const answer = await this.write(null, (device, ctx) => {
         const replica = device.activeReplica;
-        if (replica.storageHandle !== handle || !this.scopes(replica).includes(page.scope)) return { outcome: 'outside' };
-        if (replica.meta.serverEpoch !== null && Cursor.decode(page.cursor)?.e !== replica.meta.serverEpoch) return { outcome: 'stale' };
-        if (replica.cursorOf(page.scope).cursor !== cursor) return { outcome: 'stale' };
-        applyChunk(replica, ctx, cursor, page, page.rows.slice(offset, offset + 64), offset === 0);
-        return { outcome: 'applied', remaining: last && finishPage(replica, ctx, cursor, page, 64) };
-      }, [{ handle, scope: page.scope, keys: page.rows.slice(offset, offset + 64).map((row) => recordKey(row.t, row.id)) }]);
-      outcome = answer.outcome;
-      remaining = answer.remaining;
-      if (outcome !== 'applied') return outcome;
+        let subscribed = new Set(this.scopes(replica));
+        const decided = [...outcomes], finished = [];
+        for (const { index, rows, first, last } of steps) {
+          const { cursor, page } = pages[index];
+          if (decided[index] !== 'applied') continue;
+          if (replica.storageHandle !== handle) decided[index] = 'outside';
+          else if (page.kind !== 'rows') decided[index] = applyPage(replica, ctx, cursor, page, undefined, (scope) => subscribed.has(scope));
+          else if (!subscribed.has(page.scope)) decided[index] = 'outside';
+          else if ((replica.meta.serverEpoch !== null && Cursor.decode(page.cursor)?.e !== replica.meta.serverEpoch)
+            || replica.cursorOf(page.scope).cursor !== cursor) decided[index] = 'stale';
+          else {
+            applyChunk(replica, ctx, cursor, page, rows, first);
+            if (last && finishPage(replica, ctx, cursor, page, 64)) finished.push(index);
+          }
+          if (page.kind !== 'rows' || this.registry.scopeKindOf(page.scope)?.startsWith('product:')) subscribed = new Set(this.scopes(replica));
+        }
+        return { decided, finished };
+      }, steps.map(({ index, rows }) => ({ handle, scope: pages[index].page.scope, keys: rows.map((row) => recordKey(row.t, row.id)) })));
+      this.pullChunk.record(steps.reduce((taken, { rows }) => taken + Math.max(1, rows.length), 0), this.lastWrite.writerMs - this.lastWrite.queueMs);
+      outcomes = answer.decided;
+      settling.push(...answer.finished);
     }
-    while (remaining) remaining = await this.write(null, (device, ctx) =>
-      device.activeReplica.storageHandle === handle && settle(device.activeReplica, ctx, page.scope, 64));
-    return outcome;
+    for (const index of settling) {
+      for (let remaining = true; remaining;) remaining = await this.write(null, (device, ctx) =>
+        device.activeReplica.storageHandle === handle && settle(device.activeReplica, ctx, pages[index].page.scope, 64));
+    }
+    return outcomes;
   }
 
   follow() {

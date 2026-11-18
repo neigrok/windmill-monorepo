@@ -77,13 +77,19 @@ intent draws, and later queued work follows, at the versions the server accepted
 command names: a push carrying one may be answered with up to `SCOPED_RESPONSE_MAX_BYTES`, and every
 other non-pull answer keeps the 4 MiB bound. Android's registries declare no opted command.
 
+The registry compiles every place it declares a record identity — ids, key parts, `ref` fields,
+`ref<t>` arguments and `refPaths` leaves (engine §2.4 References) — once, into `Registry.references`.
+Value and argument checks, dependents and every write map read identities only through it; a map
+renames each delta, guard, receipt row and argument in two passes, global leaves first and then
+scope-local ones, and a proposed creation moves only with its own retained target.
+
 The JVM model server implements probe, gym and journal bindings. Step mode drives the production
 engine's sender/result batches and puller/page chunks/settling, with virtual clocks and transport.
 Step mode leaves sender waits pending until the caller advances its virtual clock; timed-out pulls
 retry, and live/pull answers remain bound to the requested replica across lineage changes. Live
 channels close on replica renewal, leave, authentication pause and shutdown.
 
-Gym consumes registry v12/minimum 11. The model server binds the Coach conversation types `thread` and
+Gym consumes registry v13/minimum 11. The model server binds the Coach conversation types `thread` and
 `message` (gym Coach §9.1), and authors routine revision/original count,
 proposal base revision/name/change count, note content time and immutable Coach creation snapshots.
 The gym domain decodes that metadata without including it in client fields, plans or guards;

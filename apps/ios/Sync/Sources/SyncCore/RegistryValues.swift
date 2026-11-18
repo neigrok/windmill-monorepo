@@ -26,8 +26,9 @@ extension Registry {
     return id == .string(singleton)
   }
 
-  // A field's value: its kind's (a ranked field's rank, a time field's epoch ms), its domain's, its ref's and its bounds'.
-  public func admits(_ value: JSON, for field: FieldDef) -> Bool {
+  // A field of `type`'s value: its kind's (a ranked field's rank, a time field's epoch ms), its domain's, its ref's, its
+  // bounds' and every typed leaf's (E-8).
+  public func admits(_ value: JSON, for field: FieldDef, of type: TypeDef) -> Bool {
     switch field.kind {
     case .ranked(let rank): guard rank.of(value) != nil else { return false }
     case .time: guard Registry.isEpochMs(value) else { return false }
@@ -35,8 +36,23 @@ extension Registry {
     }
     if let domain = field.domain, !domain.admits(value) { return false }
     if value.isNull { return field.domain?.nullable ?? (field.ref == nil) }
-    if let target = field.ref, !(type(target).map { isID(value, of: $0) } ?? false) { return false }
-    return field.bounds?.admits(value) ?? true
+    if let target = field.ref, !(self.type(target).map { isID(value, of: $0) } ?? false) { return false }
+    guard field.bounds?.admits(value) ?? true else { return false }
+    return typedLeafFault(of: value, for: field, of: type) == nil
+  }
+
+  // A command's arguments: every name declared, each required one present, each present one of its argument, and every
+  // typed leaf (E-8) holding.
+  public func admits(arguments: JSON.Object, of command: CommandDef) -> Bool {
+    guard arguments.keys.allSatisfy({ key in command.args.contains { $0.name.utf8.elementsEqual(key.utf8) } }) else { return false }
+    for argument in command.args {
+      guard let value = arguments[argument.name] else {
+        if argument.optional { continue }
+        return false
+      }
+      guard admits(value, for: argument) else { return false }
+    }
+    return typedLeafFault(of: .object(arguments), for: command) == nil
   }
 
   public func admits(_ value: JSON, for argument: ArgumentDef) -> Bool {

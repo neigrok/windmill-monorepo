@@ -3,8 +3,10 @@
 The browser engine injects telemetry through `syncTelemetry`. Its defaults send events through
 `src/telemetry/beacon.js` and technical failures through `src/telemetry/sentry.js`. A telemetry failure
 cannot stop synchronization. The beacon adapter encodes the spec's hyphenated event labels with
-underscores because `/v1/events` accepts snake_case names. Each engine instance permits at most 30 reports per rolling minute;
-injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
+underscores because `/v1/events` accepts snake_case names. Each engine instance gives failures, step events
+and `sync-writer` timings separate allowances per minute, so a burst of writes crowds out neither a failure
+nor a step: at most 30 failures and 30 step events, and the timings of the first 10 writes that change
+the store, each minute; injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
 The beacon keeps up to 200 newest queued events in memory while the browser is offline and flushes
@@ -26,10 +28,11 @@ refusal text never enter telemetry properties.
 | Events | Meaning |
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
+| `sync-inverse` | An Undo or Redo of a journaled act requested (engine.md §7.3 Undo of an act): `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act with no journal, `failed` when the transaction did not commit |
 | `sync-signin`, `sync-signout`, `sync-auth-paused` | Lineage decisions and authentication transitions |
 | `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
 | `sync-refused`, `sync-push-malformed` | Terminal refusals and malformed push responses |
-| `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency |
+| `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency, sampled: the first 10 writes of each minute that change the store |
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
 
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe

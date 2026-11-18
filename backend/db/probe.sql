@@ -11,15 +11,18 @@
 -- the end makes a database built without that cascade cascade too.
 
 create table if not exists probe_boards (
-  scope_key  text not null references sync_scopes(key) on delete cascade,
-  id         text primary key,
-  seq        bigint not null,
-  rc         bigint not null,
-  ru         bigint not null,
-  born       text not null,
-  life       text not null check (life in ('alive', 'dead')),
-  life_stamp text not null
+  scope_key    text not null references sync_scopes(key) on delete cascade,
+  id           text primary key,
+  seq          bigint not null,
+  rc           bigint not null,
+  ru           bigint not null,
+  born         text not null,
+  life         text not null check (life in ('alive', 'dead')),
+  life_stamp   text not null,
+  parent       jsonb,
+  parent_stamp text
 );
+alter table probe_boards add column if not exists parent jsonb, add column if not exists parent_stamp text;
 create index if not exists probe_boards_feed on probe_boards (scope_key, seq);
 
 create table if not exists probe_cards (

@@ -105,7 +105,34 @@ export function scopedPredictions() {
 }
 
 export function files() {
-  return { 'write/scoped-predictions.json': [...scopedPredictions(), ...scopedCoverage(), ...scopedReconciliation(), ...scopedReplay(), ...scopedDependencies()] };
+  return { 'write/scoped-predictions.json': [...scopedPredictions(), ...scopedCoverage(), ...scopedReconciliation(), ...scopedReplay(), ...scopedDependencies(), ...scopedAfterReidentify(), ...scopedReconcile()] };
+}
+
+// After a re-identify, an entry acknowledged under the old replica id keeps its old `n` until it settles; a scoped
+// receipt for the new id's entry at that same `n` is that sent entry's, and is checked and applied as its own.
+export function scopedAfterReidentify() {
+  const replica = 'rp_00000000000000000000000000000001';
+  const card = 'cardAAAA0001';
+  const confirmed = { 'self/probe': [row({ t: 'card', id: card, born: st(1000), life: ['alive', st(1000)], f: { title: ['Old', st(1000)] }, seq: 1 })] };
+  const device = settle({ active: replica, replicas: [{ meta: freshMeta(replica, 'bound', 'A'), confirmed }] });
+  const state = new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: { 'acct:A/probe': confirmed['self/probe'] } }));
+  const edit = (title, cmd) => ({ op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [{ op: 'update', t: 'card', id: card, f: { title } }], opts: cmd ? { cmd } : {} });
+  const answer = (steps, at, serverNow) => {
+    const request = runSteps({ device, ids: ['rp_00000000000000000000000000000002'], actors: ['r_cccccccccccc'], steps }).returns.at(-1);
+    const pushed = push({ state: at, registry, product, account: 'A', request, serverNow });
+    return { state: pushed.state, step: { op: 'pushResponse', deviceNow: serverNow, response: pushed.response } };
+  };
+  const steps = [edit('Plain'), { op: 'push', deviceNow: 5000 }];
+  const first = answer(steps, state, 6000);
+  steps.push(first.step, { op: 'reidentify' }, edit('Scoped', { name: 'probe.capture', args: {} }), { op: 'push', deviceNow: 7000 });
+  const second = answer(steps, first.state, 8000);
+  steps.push(second.step, { op: 'view', scope: 'self/probe', withHeld: true });
+  const sample = stepsVector('a scoped receipt answers the sent entry at its n, not an older acknowledged entry that kept the same n', {
+    device, ids: ['rp_00000000000000000000000000000002'], actors: ['r_cccccccccccc'], steps,
+  });
+  assert.notDeepEqual(sample.expect.returns[6], { throws: true });
+  assert.deepEqual(sample.expect.device.replicas[0].outbox.map(({ localId, state, n }) => [localId, state, n]), [['g1/0', 'acked', 1], ['g2/0', 'acked', 1]]);
+  return [sample];
 }
 
 export function scopedCoverage() {
@@ -413,4 +440,30 @@ export function scopedDependencies() {
   assert.equal(refused.expect.device.replicas[0].notices[0].content.dependents[0].scope, origin);
   assert.equal(refused.expect.device.replicas[0].notices[0].content.dependents[0].predictions[1].scope, target);
   return [held, refused];
+}
+
+// A reconcile that leaves out a tree the replica never pulled ends the projections there: an opted entry's marker
+// covers, and an ordinary acknowledged entry of that tree resolves, each exactly once.
+export function scopedReconcile() {
+  const replica = 'rp_00000000000000000000000000000001';
+  const board = 'b_00000001';
+  const tree = `tree/${board}`;
+  const confirmed = { 'self/probe': [row({ t: 'board', id: board, born: st(1000), life: ['alive', st(1000)], seq: 1 })] };
+  const device = settle({ active: replica, replicas: [{ meta: freshMeta(replica, 'bound', 'A'), confirmed }] });
+  const state = new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A'), [`tree:${board}`]: treeScope('A', board) },
+    rows: { 'acct:A/probe': confirmed['self/probe'], [`tree:${board}`]: [row({ t: 'meta', id: 'meta', f: { title: ['Old', st(1000)] }, seq: 1 })] } }));
+  const write = (title, cmd) => ({ op: 'commit', scope: tree, deviceNow: 5000, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title } }], opts: cmd ? { cmd } : {} });
+  const steps = [write('Scoped', { name: 'probe.captureTree', args: {} }), write('Plain')];
+  let at = state;
+  for (const serverNow of [6000, 7000]) {
+    steps.push({ op: 'push', deviceNow: serverNow });
+    const request = runSteps({ device, steps }).returns.at(-1);
+    const pushed = push({ state: at, registry, product, account: 'A', request, serverNow });
+    at = pushed.state;
+    steps.push({ op: 'pushResponse', deviceNow: serverNow, response: pushed.response });
+  }
+  steps.push({ op: 'reconcile', scopes: ['self/probe'] });
+  const sample = stepsVector('a reconcile that leaves out a tree never pulled ends an opted and an ordinary acknowledged entry there once each', { device, steps });
+  assert.deepEqual(sample.expect.ended.map(({ localId, event }) => `${localId} ${event}`), ['g1/0 resolve', 'g2/0 resolve']);
+  return [sample];
 }

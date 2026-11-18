@@ -62,6 +62,7 @@ private:
   std::optional<Opening> opening_;
   std::map<std::string, TypeBinding> types_;
   std::unique_ptr<SyncCommand> capture_;
+  std::unique_ptr<SyncCommand> restore_;
   std::map<std::string, SyncCommand*> commands_;
   mutable std::array<std::timed_mutex, 256> scopeMutexes_;
   mutable std::mutex ownerMutexesLock_;

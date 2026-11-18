@@ -127,6 +127,7 @@ struct CommandCtx {
   SyncReader& read;
   SyncTxn& txn;
   const Json::Value& rawArgs;
+  const std::string& epoch;  // the server's epoch, which a restore and an inverse command's evidence name
 };
 
 // Deltas a command writes into another owned live scope, or one this intent creates.

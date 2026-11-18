@@ -138,7 +138,7 @@ Scopes are `self/roadmap`, `tree/<T>` and `self/overlay/<T>`; the device row is 
 |---|---|---|
 | `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2`, and the steps, chunked |
 | `DeleteRoadmap` | `{tree}` | `null`; held; a subtree's record refuses `notARoot` |
-| `SetVisibility` | `{tree, visibility}` | `null`; `roadmap.setVisibility {visibility}` in the root's tree, predicting its `visibility` and `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); a subtree refuses `notARoot` |
+| `SetVisibility` | `{tree, visibility}` | `null`; a write of the root's `meta.visibility` under `roadmap.captureTree`, predicting the root's `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); the visibility the root holds writes nothing; a subtree refuses `notARoot` |
 | `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step `drawn` holds dead is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |
 | `WriteRoadmap` | `{tree, title?, guide?}` | `null`; the changed fields of `meta` |
 | `CreateStep` | `{tree, step: {label, icon?, color?, description?, links?}, prerequisites}` | the step's id; the step after the steps its first prerequisite leads to (or after the first steps), one link from each prerequisite, and the landing note |
@@ -171,5 +171,7 @@ depthLimit | other: {code, subject, detail, path}}`.
 
 The web runs every action case through the kit's `ProductCorpus.act`, each with its records reversed too.
 `web/test/products/roadmap/domain/harness.test.js` runs the held deletes and their Undo, a subtree and a
-visibility predicted across scopes, and a change against another device's delete (INV-1) over the real engine.
+visibility predicted across scopes, and a change against another device's delete (INV-1) over the real engine;
+against roadmap's reference binding it lands a subtree and a visibility as the server writes them, keeps a newer
+private over a stale public sent after it, and ends and restores a subtree's standing with its step.
 

@@ -8,23 +8,25 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 **Status:** The C++ server (`backend/platform/**/sync*`) carries the engine, with clients in JS
 (`packages/api-contract/sync/reference/core` and `client`, shared with the JS reference, with browser
 I/O in `web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin (`apps/android/sync-*`).
-`windmill_server` serves the gym and
-journal composition on `/v1/sync`, and the engine is the only writer of their records: web (gym,
+`windmill_server` serves gym and journal
+on `/v1/sync`, and the engine is the only writer of their records: web (gym,
 journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's Coach among them, and MCP,
 the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
-(Appendices C and D). `windmill_server_probe` carries the test-only contract.
+(Appendices C and D). `windmill_server_probe` carries the test-only contract. The source composition also
+names roadmap (A.1), whose rules the JS reference model server carries; `windmill_server`'s build refuses that
+composition until roadmap's binding is registered beside gym's and journal's.
 
-**Registry contract:** The composed source registry is version 12 with minimum version 11. Gym's
+**Registry contract:** The composed source registry is version 13 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
 last time. Derived volume and estimates are explicit null when unavailable. Older clients must
 upgrade. The explicit `other` equipment value remains supported. All legacy
 equipment values and load counts remain stored without migration. `other` counts one external load,
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
-records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym and journal,
-whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
+records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym, journal and
+roadmap, whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
 schema 12 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
-holds the receipts. Every other product
-starts from empty stores.
+holds the receipts. Roadmap's rows are to be adopted by
+[Roadmap on the sync engine](roadmap-on-the-engine.md) §8.1. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
@@ -38,17 +40,16 @@ echoes and nudges stay REST. `/v1/sync` has its own `426 upgrade-required` minim
 - stamps, the HLC and the merge;
 - per-intent admission, results and commands;
 - per-scope sequencing and digests, paged pull and the live channel;
-- the client replica: confirmed cache, durable outbox, undo holds and the device scope;
+- the client replica: confirmed cache, durable outbox, undo holds, the journal of reversible acts and the
+  device scope;
 - the replica lifecycle (claim, sign-out) and conformance.
 
 **Outside the engine** (none of these is a synced record):
-- Presence and remote cursors, carried as ephemeral live-socket messages (§9.5).
 - The global gym exercise seed catalog.
 - The server Coach's legacy gym conversations (`gym_ask_*`, A.2).
 - Gym session shares and log shares; the roadmap share page, images and gallery; the roadmap
   home-list done/total read.
 - Journal echoes, spans, nudges, voice and curation.
-- The roadmap per-node workspace, which is device-only.
 - Auth, billing, entitlements and reminders.
 - Account deletion and export, which remove every scope an account owns.
 
@@ -151,8 +152,12 @@ Every field also has:
 `lww`, `ranked`, `fww`, `const` and `time` fields, life and born are **lattice fields**. `text` and
 `serial` are **server-sequenced**.
 
-**D-10 Reference.** A field or command argument typed `ref<type>` holds an id of that type, or null
-where its domain is nullable. It drives dependent folding and the write map (§7.7).
+**D-10 Reference.** A record identity a registry declares inside a value: a key part of a keyed type, a
+field or command argument typed `ref<type>`, or a typed leaf that a `refPaths` entry names (§2.4
+References). It holds an id of its type, or null where it is nullable, and names the record
+`(scope, t, id)` in the scope it declares. It drives dependent folding and the write map (§7.7). Beyond
+the `parent` rule (§6.1 step 10), a reference requires no record to exist; it grants no access and adds
+no scope to admission's locks or effects.
 
 **D-11 Spent id.** An id whose record is dead, for a type whose death is terminal. A spent id is
 never alive again (INV-2).
@@ -390,7 +395,9 @@ equipment rows and overrides are not migrated. The open workout's editable plan 
 (A.2): `session.plan` turns from a const server register into a guarded client `lww` register, which a
 client of version 11 never writes and reads as before, and the session's `planRevision` and
 `routineRevision`, the `workoutProposal` type, its two commands and the `plan-logged` code are additive.
-The journal registry carries version 12 with it, since the composed registries declare one version.
+Roadmap's registry joins the composition at version 13, minimum 11 (A.1): its product, types and commands are
+additive, and gym's and journal's registries carry version 13 with it, since the composed registries declare one
+version.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern` or `idDomain`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -398,7 +405,7 @@ The journal registry carries version 12 with it, since the composed registries d
   `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `wholePut`, `revivable`, `deadRows`,
   `governs`, `origins`, `fields`, `cap`, `visibleWhen`, `primary` and `headline`.
 - **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `default`,
-  `serialNext`, `rank` and `opens`.
+  `serialNext`, `rank`, `opens` and `refPaths`.
 - **Domains** are structured: `string` (`enum`, `pattern`, `unit`, `min`, `max`), `number`
   (`integer`, `min`, `max`, `quantum`), `boolean`, `fracKey` (D-25), `stamp`, `id`, `json`, `array`
   (`items`, `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds
@@ -429,10 +436,41 @@ The journal registry carries version 12 with it, since the composed registries d
   dialects lets `$` match before a final line terminator.
 - **Commands:** `name`, `scope`, `origins`, `serverInternal`, `beforePull`, `args` (each of type
   `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`), `predicts`, optional
-  `scopedEffects: true` and optional `engine: "capture"`. The engine tag requires `scopedEffects`
-  and empty `args`. Capture is bound by the platform and runs the ordinary intent deltas, checks and
-  consequences without a product command mutation. An opted command may predict registered types
-  outside its origin scope; whole-put types remain excluded.
+  `scopedEffects: true`, optional `engine: "capture" | "restore"`, optional `inverse: true` and optional
+  `refPaths`. The engine tag requires `scopedEffects` and empty `args`; the platform binds the command. Capture
+  runs the ordinary intent deltas, checks and consequences without a product command mutation. Restore
+  writes back earlier values under conditions (K-3, §6.4): its `predicts` names the types it restores,
+  each of its own scope kind and none governing a tree, and it declares no `refPaths`, its arguments being
+  §6.4's fixed shape. `inverse: true` marks a product command an Undo or Redo recipe runs: it requires
+  `scopedEffects` and no engine tag, and declares exactly one required `json` argument, `input`; its wire
+  arguments are `{input, evidence}`, the engine building `evidence` (§6.4). An opted command may predict
+  registered types outside its origin scope; whole-put types remain excluded.
+- **References** (E-8). A field of kind `lww`, `fww` or `const` without a scalar `ref`, and a command,
+  MAY declare `refPaths`: typed leaves `{path, type, scope, nullable?, role?}`. `path` is literal object
+  property names, relative to the field's value or to the command's `args`, whose first name is a `json`
+  argument; it holds no array index, wildcard or expression. A leaf holds a string id of `type`, a type
+  whose ids are not tuples, or null when `nullable: true`. `scope` names where the identity lives:
+  - `{kind: "origin"}`: where its type lives, seen from the holder's scope: its product scope, or the
+    tree or overlay of the holder's own tree; a holder in a product scope names no tree or overlay type
+    so. Every key part, `ref` field and `ref<t>` argument is a leaf of this kind;
+  - `{kind: "fixed", value: "self/<product>"}`: that declared product's scope, which holds `type`;
+  - `{kind: "treeFrom", path}`: `tree/<id>`, or the caller's `self/overlay/<id>` for an overlay type,
+    where `<id>` is what the leaf at `path` holds: an ordinary leaf of the same declaration (a
+    `ref<t>` argument included) whose type governs trees. `type` lives in a tree or an overlay.
+
+  `role: "creation"`, on a command's leaf only, proposes the id of a record the command creates, of a
+  minted or derived type it predicts. It is admitted as the command's own create, names no existing
+  record, is never a dependency and is renamed by no map but its own command's retained target (§7.7
+  step 0). A leaf is declared once and never inside another leaf, a scalar `ref` argument and a path to
+  the same name included. A path through an `object` domain names declared properties and ends at a
+  `string`, `id` or `json` domain; a `json` domain leaves the rest open. A registry that breaks any of
+  these is refused as it loads.
+
+  Each implementation compiles every leaf of a registry once, and that one traversal serves admission's
+  checks (§6.1 step 2), the commit's (§7.1 step 4), dependents (§7.7 step 3) and every id map (§7.7 write
+  map). A leaf is found by walking its path from the holder's value: absent, null under a null object on
+  the way (which names nothing), null, a value, or malformed where something other than an object stands
+  where the path continues. Unannotated JSON and text are never read.
 
 The engine applies:
 - `parent: true` marks the one `ref` field whose target must be alive (§6.1 step 10).
@@ -503,6 +541,29 @@ type NoticeContent = { scope?: ScopeRef, d?: Delta[], cmd?: Cmd, predictions?: S
 type Notice = { id, replica, scope, code: RefusalCode, detail?, content: NoticeContent, at,
                 dismissed?: true }
 type DeviceRow = { replica, product, key, value: Json }  // device/<product>
+type ReversibleAct = { version: 1, replica, actId: string /* its gesture id */, retained: boolean,
+                       sourceEntries: { localId, originScope: ScopeRef, recipes: UndoRecipe[],
+                                        preimages: { target: Target, value: Json }[],
+                                        attempts: { epoch, n, outcome: 'ok' | 'refused',
+                                                    acceptedEffects?: EffectReceipt[] }[],
+                                        unavailable?: true }[] }
+type InverseRequest = { version: 1, replica, requestId, sourceActId, inverseActId,
+                        state: 'waiting' | 'materialized' | 'settled', localChanged?: boolean,
+                        slots: { localId, commitOrder, recipe: SlotRecipe,
+                                 state: 'waiting' | 'materialized' | 'settled',
+                                 outcomes?: { index, s: 'applied' | 'skipped', code? }[], changed?: boolean }[],
+                        result?: InverseResult }
+type SlotRecipe = { kind: 'restore', command, operations: ({ kind: 'field', target: Target, before: Json }
+                                                         | { kind: 'createdRecord', record: RecordAddress })[] }
+                | { kind: 'command', command, input: Json, evidence: EvidenceSelection }
+                | { kind: 'withdrawn', command }
+type CancellationReceipt = { version: 1, replica, inverseActId, cancelledActId, retained?: false, units: (
+  | { kind: 'field', ownerLocalId, target: Target, redoValue: Json, restored: VersionReference }
+  | { kind: 'createdRecord', ownerLocalId, record: RecordAddress, redoValues: { f?, x? },
+      restored: { kind: 'recordAbsent', epoch: string | null } })[] }
+type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Version }
+                      | { kind: 'pending', localId, target: Target }
+                      | { kind: 'fieldAbsent', epoch: string | null, recordBirth: VersionReference | null }
 ```
 
 - `replica`, in every record above but `ReplicaMeta`, names the replica by the store's handle, which
@@ -533,6 +594,11 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 - `DeviceMeta.pendingSignIn`: an incomplete sign-in, resumed at the next engine start (§7.10).
 - `liveHint` (§7.4) is not stored: the product's view rule computes it when the sender backs off
   (Appendix A).
+- `ReversibleAct`: the journal of an act opted into Undo (§7.3 Undo of an act), in its replica's
+  namespace, never shared across replicas. Its preimages are local user data and its ids private sync data:
+  neither enters telemetry, logs or reports. `unavailable` marks a source whose history an epoch change
+  took. `InverseRequest`: one Undo or Redo of an act; its slots are outbox entries (`OutboxEntry.inverseOf`
+  names the request) whose recipes hold the same private values.
 
 **The writer.** The store runs one writing transaction at a time. A commit (§7.1) waits for the
 writer, and the person waits for the commit, so the engine's other transactions are short. This is a
@@ -944,6 +1010,10 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
      a losing delete plants nothing (§2.4).
    - The `<T>` of a `tree/<T>` or `self/overlay/<T>` reference matches the governing type's
      `idPattern`.
+   - Every typed leaf of a field value or of a command's arguments (§2.4 References) that is present
+     holds an id of its type, its pattern or domain and so E-2's bounds included; it is null only where
+     `nullable`, and lies under objects all the way down. A present `treeFrom` leaf's source is present
+     and not null.
    - No string of the intent, a key or a value at any depth, holds U+0000.
 
    Failure → `invalid`. Then a stamp with `ms > serverNow + MAX_SKEW_MS` in any delta's life, born
@@ -977,7 +1047,8 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
       scope row and, for each command argument typed `ref<t>` where `t` governs `tree`,
       `tree:<value>`, each row once in the stronger mode it needs: the scope row `FOR NO KEY
       UPDATE`, an argument tree `FOR SHARE`. A tree-scope intent's own row so takes its key's place
-      among its argument trees. An id that no scope has yet locks nothing.
+      among its argument trees. An id that no scope has yet locks nothing. A typed leaf of `refPaths`
+      locks nothing (D-10).
    6. Each fresh id of a global id space that the intent creates or deletes is locked by `(type, id)` (§4.2).
       An id that only a command's arguments or `check` reveal is locked on demand, just before its
       lookup.
@@ -1213,8 +1284,57 @@ create and every admission check. Legacy commands retain their missing-target ru
 
 The exact receipt is stored with the idempotency result and replayed, never reconstructed from later
 rows. It omits field and text values, but IDs may derive from user text: the entire receipt is private
-sync data and MUST NOT enter telemetry or log properties. This outbox receipt is not durable Undo
-history; normal outbox garbage collection removes it.
+sync data and MUST NOT enter telemetry or log properties. The outbox's copy goes with its entry; a
+source entry of a reversible act keeps its own copy in the journal (§7.3 Undo of an act).
+
+**Restore and inverse commands** (K-3). An `engine: "restore"` command, bound by the platform, has these
+fixed arguments; the bound scope supplies the scope, operations name none, and the client sends no stamp:
+
+```ts
+type RestoreArgs = { expectedEpoch: string, operations: (
+  | { kind: 'field', t, id, slot, expected: E7Version | { kind: 'absent', born: Stamp | null }, before: Json }
+  | { kind: 'createdRecord', t, id, rowSeq: number, footprint: { slot, version: E7Version }[] }
+  | { kind: 'createRecord', t, id, values: { f?: Record<string, Json>, x?: Record<string, string> } })[] }
+type InverseDetail = { inverse: { outcomes: { index, s: 'applied' | 'skipped', code? }[] } }
+```
+
+- Every operation names a type the command `predicts`, one slot at most once. A `field` slot is a client
+  `lww` field, a client text or the life of a keyed type with life or a revivable type, and `before` is on
+  its domain (a life is `alive` or `dead`, a text within its bound). `absent` names no life, and its `born`
+  is the record's birth, or null for a type without one. A `createdRecord` or `createRecord` type has life,
+  governs no tree and is not whole-put; a footprint lists born, life, fields and texts in that order; a
+  create's values are client `lww`, `fww`, `const` or `time` fields and client texts, on their domains.
+  Anything else, an empty list included, is `invalid` at §6.1 step 2.
+- At step 8 each operation, in order, holds or skips by its own condition, read from the scope as stored
+  and as earlier operations of the command leave it. Another `expectedEpoch` skips every one
+  `epoch-changed`. A `field` holds while the slot's version is `expected` (a stamp, or a text's revision),
+  or, for `absent`, while the record of that birth exists with the slot unset; otherwise `version-changed`.
+  A non-life slot of a dead record of a type neither keyed nor revivable skips `record-dead`. A
+  `createdRecord` holds while the record is alive at `rowSeq` with exactly `footprint`; otherwise
+  `record-changed`. A `createRecord` holds while the id is wholly absent, no spent id among it; otherwise
+  `record-present`.
+- What holds becomes one server delta a record: a `field` writes `before` (a text by a replacement that
+  archives the head, §6.4 above), a `createdRecord` writes the record's death, a `createRecord` the
+  record with its values, all under the server stamp step 9 mints, newer than every register it joins. The
+  delta carries the record's born, and its stored life where a keyed type or a dead record needs one. Checks
+  and consequences run as for any command. The detail is `InverseDetail`, one outcome an operation, inside
+  the scoped detail's `command`.
+
+An `inverse: true` command's wire arguments are `{input, evidence}`. `input` passes the declared argument's
+domain and typed leaves; `evidence` is the engine's, and its shape is checked at §6.1 step 2:
+
+```ts
+type Evidence = { expectedEpoch: string,
+  ownedFields: { target: Target, version: E7Version }[],
+  unchangedCreatedRecords: { record: RecordAddress, rowSeq: number, footprint: { slot, version }[] }[],
+  unchangedCreatedScopes: { scope: ScopeRef /* tree or overlay */, seq: number }[] }
+```
+
+The product decides which evidence it needs and refuses `invalid` without it; its handler answers the same
+`InverseDetail` with one outcome, since its effect is all or nothing. It holds while the epoch is the
+server's, every owned field is still at its version, every created record alive at its row sequence with
+its footprint, and every created scope at its seq; otherwise it skips `epoch-changed`, `version-changed`,
+`record-changed` or `scope-changed` and writes nothing. The probe's `probe.unbranch` undoes `probe.branch`.
 
 ### §6.5 Caps
 
@@ -1526,6 +1646,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    - A text change names the text it was edited from. The entry keeps that text in `baseTexts`.
      The delta's base is `{rev}` when that text is the confirmed text at that rev; otherwise
      `{text}`.
+   - A typed leaf (§2.4 References) of a field value the gesture writes or predicts, or of its
+     command's arguments, that breaks §6.1 step 2's leaf rule throws: dependents and id maps read
+     every leaf of a queued entry. A scalar `ref` and a `ref<t>` argument are left for admission.
    - A command prediction MAY include server-written lattice fields, text and serial values.
      Predicted serials name declared serial fields and MUST be positive safe integers; otherwise
      the commit throws. Predictions fold locally, never entering wire deltas or the digest.
@@ -1668,13 +1791,110 @@ and likewise have never been sent.
 - No background timer, job or task keeps a hold. A released entry is sent like any ready entry, by
   the flush or by a later sender run.
 
+#### Undo of an act (K-3)
+
+`undo(gestureId)` above stays the held-only Undo. An act MAY also opt into Undo after its hold, by its
+`ActRequest.undo = {version: 1, segments: [{index, recipes}]}`: each named segment's recipes, a closed union
+over `Target = {scope, t, id, slot}` (`slot` in §6.4's encoding) and `RecordAddress = {scope, t, id}`:
+
+```ts
+type UndoRecipe =
+  | { kind: 'fields', restoreCommand, targets: { target: Target, defaultValue?: Json }[] }
+  | { kind: 'createdRecord', restoreCommand, record: RecordAddress }
+  | { kind: 'command', command, input: Json,
+      evidence: { ownedFields: Target[], unchangedCreatedRecords: RecordAddress[], unchangedCreatedScopes: ScopeRef[] } }
+```
+
+- A `fields` or `createdRecord` recipe names its segment scope's `engine: "restore"` command, and its targets
+  and record live in the segment's scope, of types that command restores. A field target's slot is a client
+  `lww` field, a client text, or the life of a keyed type with life or a revivable type; never born. A
+  created record's type has life, governs no tree and is not whole-put, and the record is absent from
+  `drawn` before the act. A `command` recipe names an `inverse: true` command of the segment's scope kind;
+  its evidence may name any scope. Anything else throws malformed before the act changes anything.
+- **Capture.** Before any segment changes a projection, the act reads each field target's value in
+  `drawn`: its *first local preimage*. An unset slot takes the target's `defaultValue`, the product's value
+  equivalent to unset (`null` is a value); without one the act throws malformed. A named segment runs as one
+  scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
+  one `engine: "capture"` command when it writes a delta (none, or several, throws malformed). A capture
+  command does not stop a retire (§7.1 step 4) from matching its removal.
+- **Record.** The act's transaction writes its `ReversibleAct` (§2.5), `actId` its gesture id: one source
+  entry per named segment that left an entry, with its recipes and preimages. A segment that writes nothing
+  leaves none, and an act left with none records nothing.
+- **Retention.** A source entry's `ok` stores `{epoch, n, outcome: 'ok', acceptedEffects}`, its receipt
+  after the result's maps, and a terminal refusal `{epoch, n, outcome: 'refused'}`, in the result's
+  transaction (§7.4), before the entry can settle or be collected. One attempt an epoch: a replayed answer
+  replaces it. A death before that transaction leaves the entry `sent`, and its resend's stored result is
+  retained.
+- **Epochs.** An epoch change (§7.5 step 1) drops every attempt of another epoch. A source still in the
+  outbox replays and earns its own; a collected one has none, and an inverse never reconstructs it. A
+  changed-epoch answer that records its results before the change keeps those, which are the new epoch's.
+  Adopting a first epoch drops nothing.
+- **Maps.** A write map's logical map (§7.7) renames the journal's scopes, targets, records, typed inputs and
+  receipts with the queue.
+- **Release.** `releaseReversibleAct(actId)` says the product's stack no longer needs the act: its record and
+  values go, once no unsettled inverse request reads it.
+
+`requestInverse(sourceActId, inverseSlots?)` asks for the inverse of a journaled act, in one transaction.
+`inverseSlots`, a complete `[{index, recipes}]` by source ordinal, replaces the stored recipes (a product's
+Redo); there are no callbacks. Asking again for the same act answers its existing request.
+1. **Held cancel.** An act every entry of which is still held is cancelled at once, as `undo` cancels it,
+   its dependents folded silently. The request settles `cancelled`, whether anything drawn changed, and the
+   act leaves the journal. In the same transaction a `CancellationReceipt` keeps what actually disappeared
+   from `drawn`: each register the act wrote that now reads otherwise, with the value the act wrote and the
+   version it now reads (a pending entry's write, the confirmed row's accepted version, or unset in the
+   record's birth), and each record it created that is now absent, with the act's own creation values. A
+   later local edit that masks the act's write took nothing out and is no unit. A reference taken before
+   the replica held an epoch belongs to the epoch it then takes.
+2. **Reserve.** Otherwise the request takes an inverse act id and a request id, and one stamp. Walking the
+   act's sources backwards, each source's generic recipes become one restore slot in its origin scope, each
+   target in one slot only, restored to its first preimage; each `command` recipe becomes a slot of its own.
+   Each slot is an outbox entry at the next commit position, `ready`, its command's arguments still unbound,
+   carrying the optimistic projection of its restore (each value at the request's stamp, a created record
+   dead) as its origin prediction. The inverse act journals each slot as a source whose recipes put back the
+   values its targets show now, a created record's life only where a write can bring it back.
+3. **Barrier.** The sender stops at a slot still waiting (§7.4); later entries keep their positions, and a
+   restart changes nothing.
+4. **Materialize.** Once every source of the act is authoritative (ended, or `acked` with this epoch's
+   attempt), in the request transaction or the numbering transaction: each `field` operation takes the latest
+   version the act's current-epoch receipts own of its target, and is dropped when none owns it (a refused or
+   collected source owns nothing). A `createdRecord` is proven by its own receipts alone: its creation
+   (`beforeRowSeq: null`) and each later own write continuing it (`beforeRowSeq` the previous `rowSeq`); a gap,
+   or a source whose history is `unavailable`, drops it. A `command` slot gets its evidence: the latest owned
+   version of each selected field that has one, each created record proven so, and each created scope proven
+   by its own receipts (`beforeSeq: null`, then each next `beforeSeq` the previous `seq`); a created record or
+   scope it cannot prove drops the whole slot. `expectedEpoch` is the replica's epoch. The arguments bind
+   atomically; a dropped operation's projection is withdrawn; a slot left with nothing ends `resolved`
+   unnumbered. Numbered arguments never change: an epoch change replays the entry as it is, and the server
+   skips it.
+5. **Results.** A slot's `ok` records its outcomes, withdraws a skipped operation's projection and notes
+   whether its receipt changed a row; a refusal, or an entry that ends without a result, settles it skipped by
+   that code. The request settles with its last slot: `changed` from accepted effects, `appliedCount` and
+   `skippedCount` over every operation, an atomic product slot counting one. The restore's ACK reclocks every
+   later queued write of a register it restored, so an edit queued after the Undo stays the newest.
+
+A Redo of a cancellation is `requestInverse(inverseActId)` too, and reserves ordinary restore slots at once,
+one a scope: each field unit restores its value expecting the version its reference binds to, an accepted
+version of this epoch or what a pending entry's receipt accepted, or an absence in that birth (`expected:
+{kind: 'absent', born}`); each created record is created again (`createRecord`) only while wholly absent. The
+slots wait while an entry a reference names has no authoritative outcome; a refused, dropped or unowned
+reference drops its operation, never substituting what is visible now. The receipt, and the acts whose
+sources its references wait on, stay until the Redo settles or the product releases it.
+
+`readInverseResult(requestId)` answers `{kind: 'cancelled', requestId, inverseActId, changed}`,
+`{kind: 'pending', requestId, inverseActId, localChanged}`, `{kind: 'settled', requestId, inverseActId,
+changed, appliedCount, skippedCount}`, or `{kind: 'unavailable', requestId, reason}`. A transport failure
+stays pending. A Redo is `requestInverse(inverseActId)`: it restores only what the Undo actually applied, since
+it owns nothing else. Sign-in's Discard of a product settles that product's waiting slots skipped
+`discarded` and withdraws their values; slots stay counted as unsent work until then.
+
 ### §7.4 Sender (one per replica: the web leader tab, or an app-scoped worker)
 
 ```
 loop while state = bound ∧ ¬authPaused ∧ online:
   tx: number ready entries in commitOrder, up to PUSH_MAX_INTENTS, and while the request body stays
       within PUSH_MAX_BYTES (the first entry of a request always goes), passing over held-back
-      entries, and stopping after the first command entry or at a held-back command entry:
+      entries, and stopping after the first command entry, at a held-back command entry, or at an
+      inverse slot still waiting once it is offered materialization (§7.3 Undo of an act):
       n := nextN++, digest, state := sent
           (no entry is numbered while a command entry is `sent`)
       an entry whose one-intent body, at that n and the current ackThrough, exceeds PUSH_MAX_BYTES
@@ -1737,7 +1957,8 @@ The principal check precedes epoch handling. A `409` used for recovery MUST carr
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
 a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
 An authenticated `200` validates every scoped receipt before any ACK-side mutation, including offset
-sampling. Require the origin and every predicted scope after global-ID remaps; reject duplicate,
+sampling, each against the sent entry at its result's `n`: an entry acknowledged under an earlier replica id
+keeps its old `n` until it settles, and no result answers it. Require the origin and every predicted scope after global-ID remaps; reject duplicate,
 unknown or invalid scopes, malformed slots, rows of a type outside their declared scope, and missing
 required markers. Additional well-formed discovered scopes are accepted and persisted as receipt-only
 empty-d markers. A continuation has positive safe-integer `n ≤ lastN + 1`, strictly after every
@@ -1768,8 +1989,8 @@ re-identifies with nothing lost (§7.7).
 
 An opted result applies global-ID remaps first, then stores scope-qualified `acceptedEffects` and
 projection watermarks in one receipt-application step within its ACK transaction, before settlement
-or garbage collection. That step is the boundary where a future durable receipt consumer can persist
-its own copy atomically. A null scope seq immediately covers its uncreated target. Receipt-only
+or garbage collection. In that step the journal retains a source entry's receipt, and a terminal
+refusal its refusal (§7.3 Undo of an act). A null scope seq immediately covers its uncreated target. Receipt-only
 markers are covered by the same rule as predicted ones.
 
 A null `serverEpoch` takes the answer's epoch in the first batch, so no entry is ever acked while
@@ -2036,11 +2257,11 @@ notice of its own, as step 3 states):
    - `base-unknown`: every text delta of `e` switches to `base: {text: baseTexts[…]}`.
 2. **Remove `e`.**
 3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
-   `ref` fields, `ref` arguments or key parts name, a record created in `e` (by a delta or by
-   `predict`), that carries unchanged a life register `e` wrote (a keyed put or a command's
-   prediction, §7.1 step 4), or that
-   targets a scope whose governing record `e` creates. A reference names a record in the scope its
-   type lives in: a product scope, or the tree and overlay scopes of the same tree. Folding is
+   ordinary references (D-10) name, a record created in `e` (by a delta or by `predict`), that
+   carries unchanged a life register `e` wrote (a keyed put or a command's prediction, §7.1 step 4),
+   or that targets a scope whose governing record `e` creates. A reference names `(scope, t, id)` in
+   the scope it declares (§2.4 References): a step `treeFrom` its tree argument names a record of that
+   tree, and the same id in another tree is another record. A proposed creation names none. Folding is
    transitive: a record a dependent creates, and a life register it writes, make their own
    dependents. A guard makes nothing dependent, so a fold keeps a guard on a record `e` creates in
    an entry with no dependent delta on that record. After this refusal the server refuses that entry
@@ -2067,7 +2288,16 @@ notice of its own, as step 3 states):
 
 **Write map.** An `ok` result's write map applies in the result's batch (§7.4). Let `s` be the
 command entry's stamp, which every register it predicted carries. Steps 0–2 run for each map
-entry `w`, then step 3 once for the map:
+entry `w`, then step 3 once for the map. The `target-merged` refusals of every entry are read first,
+from the queue as it stood. The renames of steps 0 and 1 are then one logical map, applied to each
+entry at once through its compiled leaves (§2.4 References): no mapping feeds another. A mapping of a
+global type renames its id in every scope; a mapping of a scope-local type renames it only in the
+command's scope, keyed by that scope as the map's governor mappings leave it, so an overlay's key
+names the record of its own tree and the same id in a sibling tree stays. Each entry takes two passes,
+each reading every leaf before writing one: the global leaves and governed ScopeRefs, then the
+scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. The entry's
+`baseTexts` keys follow their records, so a `base-unknown` recovery finds the text a renamed record's
+write was edited from. A creation leaf moves only with its own command's retained target.
 0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
    first move its previous resolved id to `w.id` in the command's prediction and its later held or
    ready dependents, including deletes, references, key parts and guards, and in device rows through
@@ -2087,7 +2317,7 @@ entry `w`, then step 3 once for the map:
 1. If this source had no retained target, apply its initial join: `w.from` is present only when the
    resolved id differs from the id the command was called with,
    which means the record existed before the command (a join). It is replaced by `w.id` in every
-   held and ready entry (delta ids, key parts, `ref<w.t>` fields and arguments), in `predict`, and
+   held and ready entry (delta ids and every reference to the record), in `predict`, and
    in device rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`:
    it is not rewritten, and is refused `target-merged` by steps 2–4 above.
 2. The command's own `predict` is restamped by the restamp rule, with `n` given by the map:
@@ -2285,12 +2515,13 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
 Then, in one local transaction:
 1. **Discard.** For each decision answered discard, the entries it covers end `discarded`, deletes
    released at the start among them, and the product's device rows in the `anon` replica are
-   deleted.
+   deleted, with the journal's whole source entries of that product and their preimages (§7.3 Undo of
+   an act). An act left with no source entry goes.
 2. **Bind.** A `dormant(A)` replica becomes `bound(A)`, with every cursor `null`. Otherwise the
    `anon` replica, when entries or pending product device work remain, is rebound (`state := bound`, `account := A`).
    Otherwise a new `bound(A)` replica is created.
 3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries or pending product device
-   work remain in the `anon` replica, they move, with its device rows and notices, into `bound(A)`, preserving local ids,
+   work remain in the `anon` replica, they move, with its device rows, notices and journal, into `bound(A)`, preserving local ids,
    gesture ids and stamps, after `bound(A)`'s own entries in their commit order. The `anon` replica
    is then deleted. Products merge writing-bearing device-row collisions without dropping either
    document; the destination's current draft stays current and incoming writing remains available
@@ -2409,6 +2640,7 @@ doubt (§7.9), whether or not its id changed.
 | `ready` | at numbering, its one-intent body over `PUSH_MAX_BYTES` (grown since commit, §7.4) | `refused` (`too-large`, a notice, or none for an orphan) |
 | `held`, `ready` | anonymous gesture superseded (§7.1 step 4), or emptied by the silent fold of an undo, retire or supersede (§7.3) | `undone` (no notice) |
 | `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
+| `ready` | an inverse slot materialized with nothing left to restore (§7.3 Undo of an act) | `resolved` (vacated, never numbered) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |
 | `sent` | `ok` | `acked` |
 | `sent` | `clock-skew`, `base-unknown` | `ready` (recovered, same position) |
@@ -2666,7 +2898,7 @@ S→C: { op: 'change', as, scope, epoch, seq, digest: string, rows?: Row[] }
 `as` is the principal the socket's upgrade was served as (§9.1), the same on every frame of the
 socket.
 
-Other `op` values carry ephemeral product messages, such as presence, and the engine ignores them.
+The engine ignores any other `op` value.
 Frames are at most `LIVE_FRAME_BYTES`.
 
 ### §9.6 Codes: the closed list
@@ -2816,7 +3048,7 @@ vectors assume.
 |---|---|
 | all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
 | server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope`, `gym/admit`, `journal/admit`, `journal/revisions` |
-| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}`, `journal/client`, `journal/content-clock` |
+| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}`, `journal/client`, `journal/content-clock`, `undo/*` |
 
 Runners assert exact equality, comparing values by `jcs`.
 
@@ -2864,8 +3096,11 @@ run, and against the real server and Postgres nightly.
 - a store restored from a snapshot, or cloned.
 
 **It checks at every answer and frame** that one served as anyone but the replica's account changes
-nothing the replica pulled (§9.1), and **at every step** that each change of a device's active replica
-id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12).
+nothing the replica pulled (§9.1), **at every step** that each change of a device's active replica
+id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12), and **at every push**
+that no intent a device sends names a proposal its retained write targets say was redirected, by the
+proposal's own id or by any typed reference (§2.4 References), but the command that proposed it and an
+id another retained command resolved to.
 
 **It checks after quiescence:**
 - INV-2: no resurrection without a revive or a newer keyed put.
@@ -2894,9 +3129,115 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 ### A.1 Roadmap
 
-Not bound. Roadmap syncs through a sync of its own, and no registry of it is in the composition.
-[Roadmap on the sync engine](roadmap-on-the-engine.md) §3 specifies its registry, commands and
-consequences, which join this appendix in the change that binds them.
+**Scopes:** `self/roadmap` (the person's roadmaps and Roadmap Coach's records), `tree/<T>` (one roadmap) and
+`self/overlay/<T>` (a person's marks; the owner's pointers and workspace). **Device scope** `device/roadmap`,
+with rows `landing:<T>` (`{nodes, edges, revived}`: the device's own new steps and links, and the steps its
+own changes revived, until the person has been told, [Roadmap on the sync engine](roadmap-on-the-engine.md)
+§6), `runningTurn:<turnId>`, `applying:<proposalId>` (`{stamp}`) and `picture:<id>` (`localOnly`), as
+[Roadmap Coach](roadmap-coach.md) §7–§9 use them.
+**Surfaces:** web, iOS. Roadmap's server-origin doors (MCP, tending, the fork) are Roadmap on the sync engine
+§7's. **Subscriptions** (§7.9): a tree and its overlay for each `tree` record the replica holds; a reader's
+roadmap and its subtrees are subscribed explicitly as the person opens them (Roadmap on the sync engine §5).
+**Adoption:** the cutover of Roadmap on the sync engine §8.1. **Binding:** the JS reference model server
+(`packages/api-contract/sync/reference/roadmap/`); the C++ binding is not built.
+
+`tree` mints `t_` and 16 of `0-9a-f`. `node` and `kind` take ids by `idDomain`, 1–128 chars (§2.4), mint 16 of `0-9a-z` and derive with the fallbacks `step` and `kind` (D-26). `subtask` and
+`stepLink` mint 16 base-62 characters in their overlay's id space, matching `^[A-Za-z0-9_-]{8,64}$`; Coach's
+four types mint the same, globally, seeded (D-8: a seed of at most 58 characters, `n ≤ 99 999`). A
+roadmap's *place* is its `tree.parent`; a *subtree* has one and a *root* does not; *the subtrees under* a
+roadmap are those whose places lead up to it. A step is *present* while its `node` is alive. **Primary
+type** (§9.2): `tree`. No type is the headline.
+
+| Type | Scope | Identity | Life | Fields | Rules |
+|---|---|---|---|---|---|
+| `tree` | self/roadmap | minted g, governs `tree:<id>` | terminal, keep | const server: `parent` `{tree, step}` or null (default null), whose `tree` is a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | A replica-origin delete of a subtree's record → `not-a-root`. Its death kills every subtree under it; a root's also kills each step of the owner's other roadmaps whose alive pointer opens it. |
+| `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars, `visibility` ∈ {private, unlisted, public} (private); lww server: `guideInherited` (false), `reach` ∈ {private, unlisted, public}, which `opens` at {unlisted, public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A delta writing `visibility` on a subtree's `meta` → `not-a-root`. A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
+| `node` | tree | derived, by domain | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color` a hue (terracotta), `ord`, `status` null or ∈ {none, complete} (null), `description` ≤16 000 chars, `links` (`maxItems` 32 of {`url` ≤2 048 chars, `label` ≤200 chars}); lww server: `branch` `ref<tree>` or null (null) | Cap 10 000. A change carrying an alive life that joins dead is revived. A change of its presence writes the reach of the subtrees it owns. |
+| `edge` | tree | keyed `[from, to]`, `ref<node>` each | yes, keep | — | Cap 20 000. A loop is admitted. |
+| `kind` | tree | derived, by domain | revivable, keep | lww: `hue` a hue (terracotta), `label` ≤24 chars, `description` ≤80 chars, `ord` | Cap 6. Two kinds of one hue are admitted. A change carrying an alive life that joins dead is revived. |
+| `progress` | overlay | keyed `ref<node>` | none | lww: `mark` {`status` ∈ {complete, none}, `outOfOrder`} ({none, false}) | A reader's own marks. |
+| `pointer` | overlay | keyed `ref<node>` | yes, keep | lww: `opens` `ref<tree>` | The owner's only (below). |
+| `subtask` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `label` ≤200 chars, `done` (false), `ord` | Cap 20 000. The owner's only. Replica origin. |
+| `stepLink` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `url` ≤2 048 chars, `title` ≤200 chars, `ord` | Cap 20 000. The owner's only. Replica origin. |
+| `stepNote` | overlay | keyed `ref<node>` | none; `visibleWhen [text]` | text: `text` ≤16 000 chars | The owner's only. Replica origin. |
+| `coachThread` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>` or null (all roadmaps); const: `stepId` ≤128 chars or null, `title` 1–8 000 bytes | Its death kills its messages, their write fates, and its proposals. Replica origin; not a primary type. |
+| `coachMessage` | self/roadmap | minted g | terminal, spent | const: `threadId` `ref<coachThread>` parent, `role` ∈ {person, coach}, `replica`, `pictures` (`maxItems` 1), `at`; lww: `text` ≤131 072 bytes, `truncated` (false), `refusal` a code or null, `calls` ≤32 768 bytes, `receipts` ≤16 384 bytes, `proposalId` `ref<coachProposal>` or null; ranked `state` (running 0; interrupted 1; completed, declined, failed, stopped 2) | Once the stored `state` is completed, declined, failed or stopped, a delta writing `state`, `text`, `calls` or `receipts` → `turn-final`. Its death kills its write fates. |
+| `coachProposal` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>`; const: `threadId` `ref<coachThread>`, `messageId` `ref<coachMessage>`, `base` ≤262 144 bytes of JSON, `changes` (`maxItems` 100 of JSON, ≤65 536 bytes); ranked `state` (pending 0; rejected, stale, replaced 1; applied 2); fww `undone` (false) | Roadmap Coach §7. |
+| `coachWriteFate` | self/roadmap | minted g | terminal, spent | const: `messageId` `ref<coachMessage>` parent, `receipt` 0–5, `fate` ∈ {undone, refused}, `code` or null | Roadmap Coach §9. |
+
+**The owner's records.** A `pointer`, `subtask`, `stepLink` or `stepNote` in an overlay whose owner is not
+its tree's owner → `forbidden`, so a reader's overlay holds their marks alone (R-3).
+
+**Revival.** An intent's delta of a `node` or a `kind` carrying an alive life, whose record is still dead once
+joined (the delete is newer), takes `life := alive` at the server stamp of step 9's next pass. So a step or
+kind a person changed is present, whichever of the change and the delete came first.
+
+**Visibility.** A root's `visibility` is the owner's field, written under the gesture's stamp, so the newest
+choice stands whenever it arrives. When an intent changes its value, by a delta or a restore, the root's `reach`
+takes it and every subtree under the root takes *reach* as below; a restamp of the same value writes no reach.
+Discovery declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes or
+restores `visibility`.
+
+**Reach.** For every `node` whose presence an intent changes, whatever changes it, each subtree the step owns,
+and each under those, in order of depth, takes its place's roadmap's `reach` while it and its owning step are
+present, and `private` otherwise; a `meta.reach` that differs is written at the server stamp. Discovery
+declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes a node's life.
+
+**A roadmap's death** (in `self/roadmap`) kills every alive subtree under it. A root's death also kills every
+alive step of the owner's other alive roadmaps whose alive `pointer` in the owner's overlay `opens` the root;
+discovery reads the owner's overlays and declares those that hold one, with their trees, and the subtrees the
+steps own.
+
+**Commands.** None names a stamp; each writes at the server stamp.
+
+- **`roadmap.createSubtree {tree, root, step, subtree}`** in `self/roadmap`, replica and server origin,
+  `scopedEffects`, predicts `tree`, `meta`, `node`, `kind`. Its arguments are typed leaves (E-8): `tree` and
+  `root` trees of `self/roadmap`, `step` a node of `tree/<tree>`, `subtree` a proposed tree.
+  1. An alive `tree` of the scope placed at `{tree, step}` (the least id when several) answers: ok, the step
+     revived when dead, write `[{t: tree, id, from?: subtree, born}]`. This is the replay rule.
+  2. No `node` `step` in `tree/<tree>`, alive or dead → `unknown-record`.
+  3. An alive owner's `pointer` on the step with `opens` set → `step-opens-a-tree`.
+  4. `tree`'s `depth` (0 unset) + 1 > `MAX_DEPTH` (8) → `depth-limit`.
+  5. `root` not `tree`'s `root` (its id unset) → `invalid`; `subtree` not `none` → `id-taken`.
+  6. Create `tree` `subtree` placed at `{tree, step}`, which creates its scope; into it `meta` `{root, parent,
+     depth: tree's depth + 1, reach: tree's reach}` and the genesis kinds `build` (terracotta, `Build`,
+     `Things you make`, `a0`), `learn` (olive, `Learn`, `Things you figure out`, `a1`) and `milestone` (gold,
+     `Milestone`, `Moments that matter`, `a2`); the step's `branch := subtree`, reviving it when dead. Write
+     `[{t: tree, id: subtree, born, f: {parent}}]`.
+- **`roadmap.recolourKind {kind: ref<kind>, hue}`** in `tree/<T>`, replica and server origin, `scopedEffects`,
+  predicts `kind`, `node`. No such kind → `unknown-record`; its hue (terracotta unset) → ok, no change.
+  Otherwise the kind's `hue := hue`, reviving it when dead, and every `node`, alive or dead, whose `color`
+  (terracotta unset) was the kind's hue takes `color := hue` with its stored life: no step revives. Write `[]`.
+- **Capture and restore** (replica origin, §6.4): `roadmap.capture`, `roadmap.captureTree` (predicts `meta`,
+  so a visibility's write predicts the branch's reach), `roadmap.captureOverlay`; `roadmap.restore` (restores `coachThread`, `coachMessage`, `coachProposal`,
+  `coachWriteFate`), `roadmap.restoreTree` (`meta`, `node`, `edge`, `kind`) and `roadmap.restoreOverlay`
+  (`progress`, `pointer`, `subtask`, `stepLink`, `stepNote`). A restored node life counts for *reach*, and a
+  restored `visibility` for *Visibility*: Undo of a visibility is this generic restore.
+- **Product inverses** (replica origin, `scopedEffects`, `inverse: true`, §6.4). Evidence that does not name
+  what each lists → `invalid`; evidence that no longer holds, a row of a scope not declared or not alive
+  reading absent, skips whole.
+  - `roadmap.undoCreateRoadmap {input: {tree}}` (`self/roadmap`, predicts `tree`): evidence proves the created
+    record `tree` and the created scope `tree/<tree>`. A place → `not-a-root`; the owner's overlay of it past
+    seq 0 → skipped `scope-changed`. Then `tree` dies, as a root dies.
+  - `roadmap.undoCreateSubtree {input: {tree, step, subtree}}` (`self/roadmap`, predicts `tree`, `node`):
+    evidence owns the step's `branch` and proves the created record `subtree` and its scope. `subtree` not
+    placed at `{tree, step}` → `invalid`; the owner's overlay of it past seq 0 → skipped `scope-changed`. Then
+    `subtree` dies and the step's `branch := null`, together (R-8).
+  - `roadmap.redoCreateSubtree {input: {tree, root, step, subtree}}` (`self/roadmap`, predicts `tree`, `meta`,
+    `node`, `kind`; `subtree` proposed): evidence owns the step's `branch` the Undo wrote. Then as
+    `createSubtree` steps 5 and 6.
+
+**What admission does not refuse:** a loop among links, two kinds of one hue, a pointer on a step that owns
+a subtree (reading prefers the subtree). A device checks each before the gesture
+(Roadmap on the sync engine §5).
+
+**Gestures:** **Held** (9 s): delete a step, delete a roadmap; a roadmap's deletion is not undone once its
+hold ends. A reorder writes the moved step's or kind's `ord`, a key the product computes among one trunk
+parent's steps or one roadmap's kinds.
+
+**Codes** (§9.6), the registry's `codes`: `step-opens-a-tree` and `depth-limit` (`roadmap.createSubtree`),
+`not-a-root` (a `visibility` written on a subtree, `roadmap.undoCreateRoadmap`, a person's delete of a
+subtree's record), `turn-final` (a write of a Coach message the writer has ended).
 
 ### A.2 Gym
 

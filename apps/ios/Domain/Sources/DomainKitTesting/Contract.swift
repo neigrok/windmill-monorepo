@@ -169,12 +169,24 @@ extension RecordRef {
 }
 
 extension Gesture {
-  // `{changes, atomic, hold, guards, retire, cmd, predict, local}`, all eight keys always.
+  // `{changes, atomic, hold, guards, retire, cmd, predict, local}`, all eight keys always, and `scopedPredict`,
+  // `[{scope, changes}]`, when a prediction names another scope.
   public var form: JSON {
-    ["changes": .array(changes.map(\.form)), "atomic": .bool(atomic), "hold": .bool(hold),
-     "guards": .array(guards.map { ["t": .string($0.type), "id": $0.id.json, "field": .string($0.field)] }),
-     "retire": .array(retire.map(\.form)), "cmd": command?.json ?? .null, "predict": .array(predict.map(\.form)),
-     "local": .array(local.map { ["key": .string($0.key), "value": $0.value ?? .null] })]
+    let guarded: [JSON] = guards.map { (register: RegisterRef) -> JSON in
+      ["t": .string(register.type), "id": register.id.json, "field": .string(register.field)]
+    }
+    let written: [JSON] = local.map { (write: DeviceWrite) -> JSON in ["key": .string(write.key), "value": write.value ?? .null] }
+    var form: JSON.Object = [
+      "changes": .array(changes.map(\.form)), "atomic": .bool(atomic), "hold": .bool(hold), "guards": .array(guarded),
+      "retire": .array(retire.map(\.form)), "cmd": command?.json ?? .null, "predict": .array(predict.map(\.form)),
+      "local": .array(written),
+    ]
+    if !scopedPredict.isEmpty {
+      form["scopedPredict"] = .array(scopedPredict.map { (group: ScopedPrediction) -> JSON in
+        ["scope": group.scope.json, "changes": .array(group.changes.map(\.form))]
+      })
+    }
+    return .object(form)
   }
 }
 
@@ -243,6 +255,21 @@ extension Decision {
       ["write": ["gesture": try plan.gesture(in: scope, registry: registry).form, "result": result(value)]]
     case .unchanged(let value): ["unchanged": ["result": result(value)]]
     case .refuse(let reason): ["refuse": refusal(reason)]
+    }
+  }
+}
+
+extension ActDecision {
+  // An act's write as each segment's gesture, §8.2 translating its plan in its own scope, in the act's order.
+  public func form(registry: Registry, result: (Result) -> JSON, refusal: (Refusal) -> JSON) throws -> JSON {
+    switch self {
+    case .write(let act, let value):
+      let segments: [JSON] = try act.segments.map { (segment: ScopedPlan) throws -> JSON in
+        ["scope": segment.scope.json, "gesture": try segment.plan.gesture(in: segment.scope, registry: registry).form]
+      }
+      return ["write": ["segments": .array(segments), "result": result(value)]]
+    case .unchanged(let value): return ["unchanged": ["result": result(value)]]
+    case .refuse(let reason): return ["refuse": refusal(reason)]
     }
   }
 }

@@ -8,6 +8,8 @@ import { receiptEffects } from '../core/receipts.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
+import { applyInverseResult, checkInverseResult, passesBarrier } from './inverse.js';
+import { retainOutcome } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
 import { applyAcceptedVersions, applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
@@ -53,6 +55,11 @@ export function nextPush(replica, ctx, { limit } = {}) {
     let back = heldBack(replica, ctx.registry);
     for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
       if (replica.entry(entry.localId) !== entry || entry.state !== 'ready') continue;
+      if (entry.inverseOf !== undefined) {
+        if (!passesBarrier(replica, ctx, entry)) break;
+        back = heldBack(replica, ctx.registry);
+        if (replica.entry(entry.localId) !== entry) continue;
+      }
       if (back.has(entry)) {
         if (entry.intent.cmd !== undefined) break;
         continue;
@@ -108,11 +115,14 @@ export function validatePushEnvelope({ status, body }) {
     || body.results.some((result) => result.n >= body.retry.n))) throw new ResponseError('invalid sync continuation');
 }
 
+// Each result is checked against the entry it will apply to, the sent entry at its n: an entry acknowledged
+// under an earlier replica id keeps its old n until it settles, and is never the one a result answers.
 export function validatePushReceipts(replica, registry, body) {
   try {
     for (const result of body.results) {
-      const entry = replica.entries().find((candidate) => ['sent', 'acked'].includes(candidate.state) && candidate.n === result.n);
+      const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
       if (!entry || result.s !== 'ok') continue;
+      checkInverseResult(replica, entry, result);
       if (entry.predictions) {
         receiptEffects(registry, entry, result);
         if (bodyBytes(body) > CONSTANTS.SCOPED_RESPONSE_MAX_BYTES) throw new ResponseError('scoped response too large');
@@ -185,6 +195,8 @@ export function applyPushResult(replica, ctx, result, body) {
   meta.serverEpoch ??= body.epoch;
   if (result.s === 'refused') {
     onRefused(replica, ctx, entry, result, body);
+    if (replica.entry(entry.localId) !== entry) retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'refused' });
+    applyInverseResult(replica, entry, result);
     return;
   }
   moveEntry(replica, ctx.ended, entry, 'ok');
@@ -193,6 +205,8 @@ export function applyPushResult(replica, ctx, result, body) {
   replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
   if (result.write) applyWriteMap(replica, ctx, entry, result.write);
   if (effects) applyReceipt(replica, ctx, entry, effects, result.write ?? []);
+  retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'ok', acceptedEffects: entry.acceptedEffects });
+  applyInverseResult(replica, entry, result);
   resolveIfCovered(replica, ctx, entry);
 }
 

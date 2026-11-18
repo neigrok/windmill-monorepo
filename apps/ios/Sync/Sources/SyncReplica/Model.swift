@@ -447,13 +447,6 @@ public struct SpentID: Sendable, Hashable {
   public var json: JSON { ["t": .string(key.type), "id": key.id.json, "born": born.json] }
 }
 
-// One record of one scope, the same only byte for byte: what dependents, held-back numbering, restamps and anon counts
-// key by.
-struct ScopedKey: Hashable {
-  let scope: ScopeRef
-  let key: RecordKey
-}
-
 // A tree or overlay scope the replica learned is gone or not found (§7.5), which §7.1 step 2 refuses.
 public enum KnownKind: String, Sendable, Hashable {
   case gone

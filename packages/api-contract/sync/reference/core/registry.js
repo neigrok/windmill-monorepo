@@ -1,6 +1,7 @@
 // §2.4 the registry: types, fields and commands, in registry.schema.json's format.
 // Scope references (§9.1 ScopeRef) map to registry scope kinds here.
 
+import { References } from './references.js';
 import { checkFieldValue, checkScalarId } from './values.js';
 
 const LATTICE_KINDS = new Set(['lww', 'ranked', 'fww', 'const', 'time']);
@@ -171,20 +172,6 @@ export class TypeDef {
   get parentField() {
     return this.fieldNames((field) => field.parent === true)[0];
   }
-
-  // Every id this record names: ref fields' values, and the parts of a ref-built key (§7.7 step 3).
-  referencesOf(id, fieldValues) {
-    const found = [];
-    if (this.key?.ref) found.push({ via: 'key', name: null, t: this.key.ref, id });
-    if (this.key?.tuple) {
-      this.key.tuple.forEach((part, index) => found.push({ via: 'key', name: part.name, t: part.ref, id: id[index] }));
-    }
-    for (const [name, def] of Object.entries(this.fields)) {
-      const value = fieldValues[name];
-      if (def.ref && typeof value === 'string') found.push({ via: 'field', name, t: def.ref, id: value });
-    }
-    return found;
-  }
 }
 
 export class Registry {
@@ -323,11 +310,7 @@ export class Registry {
         if ((field.min !== undefined || field.max !== undefined) && field.unit === undefined) fail(`${type.type}.${name}: a bound states its unit`);
         const fault = field.domain ? domainFault(field.domain) : null;
         if (fault) fail(`${type.type}.${name}: ${fault}`);
-        if (Object.hasOwn(field, 'default')) {
-          if (!LATTICE_KINDS.has(field.kind)) fail(`${type.type}.${name}: a default is for a lattice field`);
-          const reason = checkFieldValue(this, field, field.default);
-          if (reason) fail(`${type.type}.${name}: the default is off the field's domain: ${reason}`);
-        }
+        if (Object.hasOwn(field, 'default') && !LATTICE_KINDS.has(field.kind)) fail(`${type.type}.${name}: a default is for a lattice field`);
         if (field.opens) {
           const placed = type.scope === 'tree' && type.identity === 'singleton' && field.writer === 'server';
           if (!placed) fail(`${type.type}.${name}: opens is for a server-written field of a tree singleton`);
@@ -337,7 +320,20 @@ export class Registry {
     }
     for (const command of this.commands.values()) {
       if (command.scopedEffects !== undefined && command.scopedEffects !== true) fail(`${command.name}: scopedEffects is true or absent`);
-      if (command.engine !== undefined && (command.engine !== 'capture' || !command.scopedEffects || Object.keys(command.args).length)) fail(`${command.name}: engine capture requires scopedEffects and empty args`);
+      if (command.engine !== undefined && (!['capture', 'restore'].includes(command.engine) || !command.scopedEffects || Object.keys(command.args).length)) fail(`${command.name}: an engine command requires scopedEffects and empty args`);
+      if (command.engine === 'restore') {
+        if (!command.predicts?.length) fail(`${command.name}: a restore command predicts the types it restores`);
+        for (const t of command.predicts ?? []) {
+          const type = this.types.get(t);
+          if (type && (type.scope !== command.scope || type.governs)) fail(`${command.name}: a restore restores types of its scope that govern no tree`);
+        }
+        if (command.refPaths !== undefined) fail(`${command.name}: a restore's arguments are fixed`);
+      }
+      if (command.inverse !== undefined) {
+        const input = command.args.input;
+        if (command.inverse !== true || !command.scopedEffects || command.engine !== undefined) fail(`${command.name}: an inverse command is a product command with scopedEffects`);
+        if (Object.keys(command.args).join() !== 'input' || input.type !== 'json' || input.optional) fail(`${command.name}: an inverse command declares only its required json input`);
+      }
       for (const t of command.predicts ?? []) if (!this.types.has(t)) fail(`${command.name}: predicts unknown ${t}`);
       if (command.serverInternal && command.origins.includes('replica')) fail(`${command.name}: server-internal commands have server origin only`);
       if (command.beforePull && !command.serverInternal) fail(`${command.name}: a beforePull command is server-internal`);
@@ -347,6 +343,14 @@ export class Registry {
         if (ref && !this.types.has(ref)) fail(`${command.name}.${name}: ref to unknown ${ref}`);
         const fault = arg.domain ? domainFault(arg.domain) : null;
         if (fault) fail(`${command.name}.${name}: ${fault}`);
+      }
+    }
+    this.references = new References(this, fail);
+    for (const type of this.types.values()) {
+      for (const [name, field] of Object.entries(type.fields)) {
+        if (!Object.hasOwn(field, 'default')) continue;
+        const reason = checkFieldValue(this, field, field.default);
+        if (reason) fail(`${type.type}.${name}: the default is off the field's domain: ${reason}`);
       }
     }
     const declared = new Set();

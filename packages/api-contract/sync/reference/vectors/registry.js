@@ -174,8 +174,19 @@ function scopedCommands() {
     ['engine capture requires the scoped-effects opt-in', { scopedEffects: undefined }, false],
     ['scoped effects is true or absent', { scopedEffects: false }, false],
     ['engine capture accepts no arguments', { args: { id: { type: 'ref<item>' } } }, false],
-    ['the engine command tag names only capture', { engine: 'restore' }, false],
+    ['the engine command tag names capture or restore', { engine: 'replay' }, false],
     ['scoped commands predict only registered types', { predicts: ['missing'] }, false],
+    ['engine restore is a scoped command with no arguments that predicts what it restores', { engine: 'restore' }, true],
+    ['engine restore names the types it restores', { engine: 'restore', predicts: undefined }, false],
+    ['engine restore restores only types of its own scope', { engine: 'restore', predicts: ['meta'] }, false],
+    ['engine restore never restores a governing type', { engine: 'restore', predicts: ['item', 'board'] }, false],
+    ['engine restore accepts no arguments', { engine: 'restore', args: { id: { type: 'ref<item>' } } }, false],
+    ['an inverse command is a scoped product command with one json input', { engine: undefined, inverse: true, args: { input: { type: 'json' } } }, true],
+    ['an inverse command requires the scoped-effects opt-in', { engine: undefined, inverse: true, scopedEffects: undefined, args: { input: { type: 'json' } } }, false],
+    ['an inverse command is a product command', { inverse: true, args: { input: { type: 'json' } } }, false],
+    ['an inverse command declares only its input', { engine: undefined, inverse: true, args: { input: { type: 'json' }, evidence: { type: 'json' } } }, false],
+    ['an inverse command requires its input', { engine: undefined, inverse: true, args: { input: { type: 'json', optional: true } } }, false],
+    ['inverse is true or absent', { engine: undefined, inverse: false, args: { input: { type: 'json' } } }, false],
   ].map(([name, change, expected]) => {
     const document = documentOf(ITEM, BOARD, META);
     Object.assign(document.commands[0], { scopedEffects: true, engine: 'capture', predicts: ['item'] }, change);
