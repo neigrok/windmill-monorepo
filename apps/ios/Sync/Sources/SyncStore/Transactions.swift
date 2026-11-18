@@ -210,8 +210,10 @@ extension Store {
     try write(step.transaction) { tx in
       let page: (page: PullPage, chunk: PageChunk)? = if case .page(let page, _, let chunk) = step { (page, chunk) } else { nil }
       let reads = planners.pages.reads(of: step).merging(page == nil ? [:] : planners.lifecycle.reads(of: subscribed)) { $0.union($1) }
-      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let meta = try tx.meta(of: id),
-            var replica = try tx.replica(id, reads: reads, entries: planners.pages.entries(of: step, in: meta)),
+      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let meta = try tx.meta(of: id) else { return Planned(nil, ReplicaBatch()) }
+      var entries = planners.pages.entries(of: step, in: meta)
+      entries.projectionTargets = page != nil
+      guard var replica = try tx.replica(id, reads: reads, entries: entries),
             replica.meta.account.map({ Array($0.utf8) }) == account.map({ Array($0.utf8) })
       else { return Planned(nil, ReplicaBatch()) }
       let set = page == nil ? [] : Set(try planners.lifecycle.subscriptionSet(of: replica, subscribed))
@@ -228,7 +230,8 @@ extension Store {
                     instance: Instance) throws -> Written<(outcome: FrameOutcome, unsettled: Bool, next: [ScopeRef])?> {
     try write(.liveFrame) { tx in
       let reads = planners.pages.reads(of: frame).merging(planners.lifecycle.reads(of: subscribed)) { $0.union($1) }
-      let entries = planners.pages.entries(of: frame, settling: count)
+      var entries = planners.pages.entries(of: frame, settling: count)
+      entries.projectionTargets = true
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8), var replica = try tx.replica(id, reads: reads, entries: entries) else {
         return Planned(nil, ReplicaBatch())
       }

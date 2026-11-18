@@ -86,6 +86,8 @@ public struct ServerLimits: Sendable, Hashable {
   public var pushMaxIntents = Constants.pushMaxIntents
   public var pushMaxBytes = Constants.pushMaxBytes
   public var effectMaxBytes = Constants.effectMaxBytes
+  public var receiptMaxBytes = Constants.receiptMaxBytes
+  public var scopedResponseMaxBytes = Constants.scopedResponseMaxBytes
   public var pullPageBytes = Constants.pullPageBytes
   public var pullMaxScopes = Constants.pullMaxScopes
   public var pullMaxBytes = Constants.pullMaxBytes
@@ -94,16 +96,24 @@ public struct ServerLimits: Sendable, Hashable {
 
   public init() {}
 
-  // The corpus's `limits` knobs, by their spec names.
+  // The corpus's `limits` knobs, by their spec names. The effect, receipt and scoped response bounds only shrink.
   public init(json: JSON?) throws {
     let knobs = try json?.asObject() ?? JSON.Object()
-    try knobs.expectKeys(
-      required: [], optional: ["MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "EFFECT_MAX_BYTES", "PULL_PAGE_BYTES", "PULL_MAX_BYTES"])
+    try knobs.expectKeys(required: [], optional: [
+      "MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "EFFECT_MAX_BYTES", "RECEIPT_MAX_BYTES", "SCOPED_RESPONSE_MAX_BYTES",
+      "PULL_PAGE_BYTES", "PULL_MAX_BYTES",
+    ])
+    let shrunk = { (name: String, bound: Int) throws -> Int in
+      let value = try knobs[name].map { Int(try $0.asInteger(atLeast: 1)) } ?? bound
+      guard value <= bound else { throw JSONError.shape("\(name) exceeds its default") }
+      return value
+    }
     maxRecordBytes = try knobs["MAX_RECORD_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? maxRecordBytes
     pushMaxIntents = try knobs["PUSH_MAX_INTENTS"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pushMaxIntents
     pushMaxBytes = try knobs["PUSH_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pushMaxBytes
-    effectMaxBytes = try knobs["EFFECT_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? effectMaxBytes
-    guard effectMaxBytes <= Constants.effectMaxBytes else { throw JSONError.shape("effect limit exceeds its default") }
+    effectMaxBytes = try shrunk("EFFECT_MAX_BYTES", Constants.effectMaxBytes)
+    receiptMaxBytes = try shrunk("RECEIPT_MAX_BYTES", Constants.receiptMaxBytes)
+    scopedResponseMaxBytes = try shrunk("SCOPED_RESPONSE_MAX_BYTES", Constants.scopedResponseMaxBytes)
     pullPageBytes = try knobs["PULL_PAGE_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pullPageBytes
     pullMaxBytes = try knobs["PULL_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pullMaxBytes
   }
@@ -184,6 +194,11 @@ struct AdmissionRun {
   var order: [Place] = []
   var firstPassStamp: Stamp?
   var declared: Set<ScopeKey> = []
+  // E-7: the seq of every scope the origin's account owns as discovery found it, and the scopes this admission creates
+  // and kills, which an opted command's receipt covers.
+  var beforeSeqs: [ScopeKey: Int64] = [:]
+  var created: Set<ScopeKey> = []
+  var killed: Set<ScopeKey> = []
   var effectBytes = 0
   var changeEvents: [LiveEvent] = []
   var deathEvents: [LiveEvent] = []
@@ -205,7 +220,7 @@ struct AdmissionRun {
     intentGuards = intent.guards
     try lockScope(for: intent)
     let deltas = try lockIdentities(intent.deltas, in: scope, from: .intent)
-    let replay = intent.command.map { admission.rules.replays($0, in: context()) } ?? false
+    let replay = intent.command.map { $0.definition.engine == nil && admission.rules.replays($0, in: context()) } ?? false
     if !replay { try checkGuards(intent.guards, writtenBy: deltas) }
     try discoverEffectScopes(command: intent.command)
     let outcome = try runCommand(intent.command)
@@ -221,7 +236,7 @@ struct AdmissionRun {
     try checkParents()
     assignSerials()
     try checkCaps()
-    try createScopes()
+    try createScopes(scopedEffects: intent.command?.definition.scopedEffects == true)
     apply(scope)
     for written in Set(order.map(\.scope)).subtracting([scope]).sorted() { apply(written) }
     applyDeaths()
@@ -229,7 +244,35 @@ struct AdmissionRun {
     let write = outcome.map { outcome in
       outcome.write.map { $0.json(minted: firstPassStamp, born: touched[Place(scope: scope, key: $0.key)]?.joined?.lattice.born) }
     }
-    return .ok(seq: state.scopes[scope]!.seq, write: write, detail: outcome?.detail)
+    let result = AdmitResult.ok(seq: state.scopes[scope]!.seq, write: write, detail: outcome?.detail)
+    guard let command = intent.command?.definition, command.scopedEffects else { return result }
+    return try scoped(result)
+  }
+
+  // §6.4 an opted command's success: its detail wrapped beside the receipt of every scope it declared, created or killed
+  // of its own, each with its changed rows at their committed versions. The receipt and the complete response it rides
+  // are bounded before anything commits.
+  func scoped(_ result: AdmitResult) throws(Refusal) -> AdmitResult {
+    guard case .ok(let seq, let write, let detail) = result else { return result }
+    let owned = killed.filter { state.scopes[$0]?.owner.isSameID(as: origin.account) == true }
+    let keys = Dictionary(declared.union(created).union(owned).map { ($0.ref, $0) }) { first, _ in first }
+    let effects = EffectReceipt.ordered(origin: scope.ref, keys.keys).map { ref -> EffectReceipt in
+      let key = keys[ref]!
+      let after = state.scopes[key]?.seq
+      let rows = order.filter { $0.scope == key && touched[$0]!.changed }.map { place in
+        var row = touched[place]!.joined!
+        row.seq = after!
+        return EffectRow(before: touched[place]!.locked.row, after: row)
+      }
+      return EffectReceipt(scope: ref, beforeSeq: beforeSeqs[key], seq: after, rows: rows.sorted { $0.key < $1.key })
+    }
+    let scoped = AdmitResult.ok(seq: seq, write: write, detail: ScopedDetail.wrapping(effects, command: detail))
+    let receiptBytes = ScopedDetail.metadata(effects).jcs.count
+    let responseBytes = ScopedDetail.responseBytes(of: scoped.json, epoch: state.epoch, account: origin.account)
+    guard receiptBytes <= admission.limits.receiptMaxBytes, responseBytes <= admission.limits.scopedResponseMaxBytes else {
+      throw Refusal(.tooLarge)
+    }
+    return scoped
   }
 
   // MARK: - Step 3: the scope, inserted when absent, and who may write it
@@ -253,6 +296,7 @@ struct AdmissionRun {
   }
 
   mutating func discoverEffectScopes(command: CheckedCommand?) throws {
+    beforeSeqs = state.scopes.filter { $0.value.owner.isSameID(as: origin.account) }.mapValues(\.seq)
     declared = try admission.rules.discoverEffectScopes(in: context(), command: command).union([scope])
     for target in declared.subtracting([scope]).sorted() {
       guard ScopeKey(target.ref, account: origin.account) == target else {
@@ -353,8 +397,10 @@ struct AdmissionRun {
 
   // MARK: - Step 8: the command's handler
 
+  // A capture command mutates nothing of its own: the intent's deltas, checks and consequences are its effects.
   func runCommand(_ command: CheckedCommand?) throws -> CommandOutcome? {
     guard let command else { return nil }
+    if command.definition.engine == .capture { return CommandOutcome(product: state.product) }
     return try admission.rules.run(command, in: context())
   }
 
@@ -578,8 +624,9 @@ struct AdmissionRun {
     state.spent[scope, default: [:]][row.key] = SpentRow(born: row.lattice.born, lifeStamp: row.lattice.life!.stamp, seq: row.seq)
   }
 
-  // Missing targets require the exact governing record to be created by this admission.
-  mutating func createScopes() throws(Refusal) {
+  // Missing targets require the exact governing record to be created by this admission; an opted command may declare an
+  // absent target it leaves alone.
+  mutating func createScopes(scopedEffects: Bool) throws(Refusal) {
     var creates: [ScopeKey: String] = [:]
     for place in order {
       guard let record = touched[place], registry.type(place.key.type)?.governsTree == true,
@@ -587,10 +634,14 @@ struct AdmissionRun {
       let tree = ScopeKey(.tree(place.key.id.description))
       if state.scopes[tree] == nil { creates[tree] = ScopeRecord.governor(scope: place.scope, key: place.key) }
     }
-    for target in declared where state.scopes[target] == nil && creates[target] == nil { throw Refusal(.notFound) }
+    for target in declared where state.scopes[target] == nil && creates[target] == nil {
+      if scopedEffects && !order.contains(where: { $0.scope == target }) { continue }
+      throw Refusal(.notFound)
+    }
     for (tree, governor) in creates {
       state.scopes[tree] = ScopeRecord(owner: origin.account, born: .governingCreate, governedBy: governor)
     }
+    created = Set(creates.keys)
   }
 
   mutating func applyDeaths() {
@@ -603,6 +654,7 @@ struct AdmissionRun {
 
   mutating func kill(tree: String) {
     let governed = state.scopes.keys.filter { $0 == ScopeKey(.tree(tree)) || $0.isOverlay(of: tree) }
+    killed.formUnion(governed)
     for key in governed.sorted() {
       guard state.scopes[key]!.die(at: serverNow) else { continue }
       deathEvents.append(.death(key))

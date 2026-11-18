@@ -279,7 +279,7 @@ struct OutcomesTests {
     let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 3, "results": []])
     let steps = Self.steps(.ok(answer), to: PushRequest(replica: "rp_1", account: "A", ackThrough: 0, intents: []), by: planner, batch: 16)
     #expect(steps == [
-      .sample(serverTime: 5010), .results(ResultBatch(replica: "rp_1", results: [], lastN: 3, epoch: "ep-1", isLast: true)),
+      .sample(serverTime: 5010, checking: answer), .results(ResultBatch(replica: "rp_1", results: [], lastN: 3, epoch: "ep-1", isLast: true)),
     ])
     var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
     for step in steps {
@@ -315,8 +315,9 @@ struct OutcomesTests {
     ]]])
   }
 
-  // A join of tagA into tagB: the queued link keyed [tagA, tagX] resends with its guard on [tagB, tagX], and the mark keyed
-  // by tagA, refused base-unknown after the join, falls back to the text it was edited from.
+  // A join of tagA into tagB in the tree a command wrote: the queued link keyed [tagA, tagX] resends with its guard on
+  // [tagB, tagX]. A tag's ids are its scope's, so the overlay's mark keyed by tagA keeps its key, and refused base-unknown
+  // falls back to the text it was edited from.
   @Test func aJoinRekeysGuardsAndBaseTextsOfRecordsKeyedByTheCalledId() throws {
     let zero = String(repeating: "0", count: 64)
     let input = try JSON(parsing: """
@@ -328,14 +329,15 @@ struct OutcomesTests {
         "cursors": {"tree/b_00000001": {"cursor": null, "digest": "\(zero)", "booted": false},
                     "self/overlay/b_00000001": {"cursor": null, "digest": "\(zero)", "booted": false}}}]},
        "steps": [
-         {"op": "commit", "scope": "self/probe", "changes": [], "opts": {"cmd": {"name": "probe.start", "args": {"id": "run00009", "startedAt": 5000, "join": true}},
-            "predict": [{"op": "create", "t": "run", "id": "run00009", "f": {"startedAt": 5000}}]}, "deviceNow": 5000},
+         {"op": "commit", "scope": "tree/b_00000001", "changes": [], "opts": {"cmd": {"name": "probe.captureTree", "args": {}}}, "deviceNow": 5000},
          {"op": "push", "deviceNow": 5000},
          {"op": "commit", "scope": "tree/b_00000001", "changes": [{"op": "put", "t": "link", "id": ["tagA", "tagX"], "f": {"strength": 2}}],
             "opts": {"guard": [{"t": "link", "id": ["tagA", "tagX"], "field": "strength"}]}, "deviceNow": 5001},
          {"op": "commit", "scope": "self/overlay/b_00000001", "changes": [{"op": "write", "t": "mark", "id": "tagA", "x": {"memo": "old!"}}], "deviceNow": 5002},
          {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 1,
-            "results": [{"n": 1, "s": "ok", "seq": 1, "write": [{"t": "tag", "id": "tagB", "from": "tagA"}]}]}}, "deviceNow": 5010},
+            "results": [{"n": 1, "s": "ok", "seq": 2, "write": [{"t": "tag", "id": "tagB", "from": "tagA"}],
+              "detail": {"windmillKit": {"v": 1, "effects": [{"scope": "tree/b_00000001", "beforeSeq": 1, "seq": 2, "rows": []}]}}}]}},
+          "deviceNow": 5010},
          {"op": "push", "deviceNow": 5011},
          {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5012, "epoch": "ep-1", "as": "A", "lastN": 3,
             "results": [{"n": 2, "s": "ok", "seq": 2}, {"n": 3, "s": "refused", "code": "base-unknown"}]}}, "deviceNow": 5012},
@@ -348,7 +350,7 @@ struct OutcomesTests {
     #expect(try link.member("guard") == [["t": "link", "id": ["tagB", "tagX"], "field": "strength", "stamp": "1:0:srv"]])
     #expect(try link.member("d").asArray()[0].member("id") == ["tagB", "tagX"])
     let mark = try returns[7].member("intents").asArray()[0].member("d").asArray()[0]
-    let expected: JSON = ["t": "mark", "id": "tagB", "x": ["memo": ["text": "old!", "base": ["text": "old"]]]]
+    let expected: JSON = ["t": "mark", "id": "tagA", "x": ["memo": ["text": "old!", "base": ["text": "old"]]]]
     #expect(mark == expected)
   }
 

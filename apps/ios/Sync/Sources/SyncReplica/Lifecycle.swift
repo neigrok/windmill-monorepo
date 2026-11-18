@@ -148,7 +148,8 @@ public struct ReplicaLifecycle: Sendable {
     if !current.utf8.elementsEqual(epoch.utf8) { try changeEpoch(to: epoch, in: &replica, instance: &instance, identities: identities) }
   }
 
-  // Every cursor null and every staging dropped; acked entries of another epoch back to ready; then re-identify.
+  // Every cursor null and every staging dropped; acked entries of another epoch back to ready, their projections
+  // uncovered for replay; then re-identify.
   public func changeEpoch(to epoch: String, in replica: inout LoadedReplica, instance: inout Instance, identities: IdentitySource) throws {
     replica.update { $0.serverEpoch = epoch }
     for (scope, record) in replica.cursors.sorted(by: { $0.key < $1.key }) where record.cursor != nil {
@@ -168,7 +169,9 @@ public struct ReplicaLifecycle: Sendable {
           }
         }
       }
-      try replica.move(entry.localId, .epoch)
+      try replica.move(entry.localId, .epoch) { entry in
+        entry.predictions = entry.predictions?.map { Projection(scope: $0.scope, deltas: $0.deltas) }
+      }
     }
     try reidentify(&replica, instance: &instance, identities: identities)
   }
@@ -269,7 +272,7 @@ public struct ReplicaLifecycle: Sendable {
     }
     device.modify(target) { target in
       target.updateEntries { $0.lineage = account }
-      let stamps = target.outbox.flatMap { [$0.stamp] + $0.drawnDeltas.flatMap(\.lattice.stamps) }
+      let stamps = target.outbox.flatMap { [$0.stamp] + $0.effects().flatMap(\.deltas).flatMap(\.lattice.stamps) }
       target.update { meta in
         meta.observe(stamps)
         meta.authPaused = false
@@ -354,18 +357,21 @@ public struct ReplicaLifecycle: Sendable {
     }
   }
 
-  // An entry's product is its scope's; a tree or overlay scope's is its governing type's.
+  // An entry's product is its origin scope's; a tree or overlay scope's is its governing type's. One choice owns the whole
+  // entry, every projection included.
   func entries(of product: String, in replica: LoadedReplica) -> [OutboxEntry] {
     replica.outbox.filter { registry.product(of: $0.scope)?.utf8.elementsEqual(product.utf8) == true }
   }
 
-  // The count, by type, of the distinct records (scope, type, id) a product's entries create or change.
+  // The count, by type, of the distinct records (scope, type, id) a product's entries create or change, in every scope.
   public func anonCount(of product: String, in replica: LoadedReplica) -> [String: Int] {
     var records: Set<ScopedKey> = []
     var counts: [String: Int] = [:]
     for entry in entries(of: product, in: replica) {
-      for delta in entry.drawnDeltas where records.insert(ScopedKey(scope: entry.scope, key: delta.key)).inserted {
-        counts[delta.key.type, default: 0] += 1
+      for effect in entry.effects() {
+        for delta in effect.deltas where records.insert(ScopedKey(scope: effect.scope, key: delta.key)).inserted {
+          counts[delta.key.type, default: 0] += 1
+        }
       }
     }
     return counts
@@ -478,7 +484,8 @@ public struct ReplicaLifecycle: Sendable {
 
   // MARK: Subscriptions (§7.9)
 
-  // §7.9 in pull order: products, governed trees, opened scopes (signed out: opened trees); none known gone or not found.
+  // §7.9 in pull order: products, governed trees, opened scopes, and the scopes uncovered projections target (signed out:
+  // opened trees); none known gone or not found.
   public func subscriptionSet(of replica: LoadedReplica, _ set: SubscriptionSet) throws -> [ScopeRef] {
     let scopes: [ScopeRef] = switch set {
     case .given(let given): given
@@ -490,6 +497,7 @@ public struct ReplicaLifecycle: Sendable {
           if case .tree(let id) = scope.kind, replica.known[scope] == nil { return [scope, .overlay(id)] }
           return [scope]
         }
+        + replica.projectionTargets
     }
     var seen: Set<ScopeRef> = []
     return scopes.filter { replica.known[$0] == nil && seen.insert($0).inserted }
@@ -525,18 +533,19 @@ public struct ReplicaLifecycle: Sendable {
     return .subscribed
   }
 
-  // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not. A scope the
-  // replica knows gone or not found is outside it: it was unsubscribed when its page came (§7.5), and no pull brings its
-  // rows until a subscribe clears a not-found. Answers the scopes of the set.
+  // A scope outside `subscribed` is forgotten, and every acked effect outside it ends, pulled or not: a legacy entry
+  // resolves, an opted one's projection is covered. A scope the replica knows gone or not found is outside it: it was
+  // unsubscribed when its page came (§7.5), and no pull brings its rows until a subscribe clears a not-found. Answers the
+  // scopes of the set.
   @discardableResult
   public func reconcile(_ replica: inout LoadedReplica, subscribed: Set<ScopeRef>) throws -> Set<ScopeRef> {
     let followed = subscribed.filter { replica.known[$0] == nil }
     for scope in replica.cursors.keys.sorted() where !followed.contains(scope) {
       replica.apply(.forgetScope(scope))
-      for entry in replica.entries(in: scope) where entry.state == .acked { try replica.move(entry.localId, .resolve) }
+      try replica.endProjections(in: scope)
     }
-    for entry in replica.outbox where entry.state == .acked && !followed.contains(entry.scope) {
-      try replica.move(entry.localId, .resolve)
+    for entry in replica.outbox where entry.state == .acked {
+      for scope in entry.scopes where !followed.contains(scope) { try replica.endProjections(in: scope) }
     }
     return followed
   }

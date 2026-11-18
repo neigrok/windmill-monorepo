@@ -63,8 +63,18 @@ public enum Corpus {
   public static let clientStepFiles = [
     "commit/acts.json", "commit/deltas.json", "commit/grouping.json", "commit/guards.json", "commit/ids.json", "commit/retire.json",
     "commit/throws.json", "commit/supersede.json", "hold/release.json", "hold/undo.json", "refusal/base-unknown.json", "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json",
-    "write/map.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
+    "write/map.json", "write/scoped-predictions.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
   ]
+
+  // Vectors the reference generated wrong, by `file · name`, each with its fault. A runner expects each to fail, and fails
+  // once it passes, so an entry leaves with the corpus's fix.
+  public static let knownIssues: [String: String] = Dictionary(uniqueKeysWithValues: [
+    "epoch replay carries a resolved born into queued work even without an origin prediction",
+    "prior scoped accepted versions rebase a later guard even when the target had no predicted row",
+  ].map { name in
+    ("write/scoped-predictions.json · \(name)",
+     "the input device already carries gesture g1, and the reference names the new commit g1 again, so two entries hold the local id g1/0 (§2.5)")
+  })
 
   public static func role(of path: String) -> CorpusRole? {
     roles.first { $0.entry == path }?.role ?? roles.first { $0.entry.hasSuffix("/") && path.hasPrefix($0.entry) }?.role
