@@ -1056,10 +1056,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
     if (std::optional<std::string> bad = prepareEdit(name, payload)) return ToolResult::failure(*bad);
     const std::string kind = *commandKindFor(name);
     return write([&](Call& call) -> ToolResult {
-      std::vector<SentPointer> opened;
-      TreeDiagnostics before;
-      TreeDiagnostics after;
-      const TreeEdit edited = editTree(call, tree, caller, [&](TreeRoom& room, const TreeRows& rows, const AccountRows&, sync::SyncTxn& txn) -> ToolResult {
+      return editTree(call, tree, caller, [&](TreeRoom& room, const TreeRows& rows, const AccountRows&, sync::SyncTxn& txn) -> ToolResult {
         if (!room.readableBy(caller)) return noSuchTree(tree);
         if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, room.owner())) return ToolResult::failure(writeRefusalSentence(*refusal));
         Json::Value command = payload;
@@ -1091,18 +1088,18 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
           return ToolResult::failure("the arguments passed every published check but no " + kind +
                                      " could be built from them — that is a server bug, please report it.");
         if (std::optional<std::string> reason = room.validate(*decoded)) return ToolResult::failure(*reason);
+        std::vector<SentPointer> opened;
         if (const CreateNode* created = std::get_if<CreateNode>(&*decoded); created && created->opens && sentOpens)
           opened.push_back({"opens", created->id, *created->opens});
         if (std::optional<ToolResult> refusal = checkPointers(door_.rows(), txn, caller, room, opened)) return *refusal;
         const std::vector<NodeId> refused = refusedPointersOf(room, opened);
         countCurrentWriteRefused(refused.size());
-        before = room.diagnose();
+        const TreeDiagnostics before = room.diagnose();
         const Seq seq = room.applyCommand(*decoded, clock_.nowMs(), caller);
-        after = room.diagnose();
         Json::Value out(Json::objectValue);
         out["applied"] = true;
         out["seq"] = static_cast<Json::Int64>(seq);
-        answerDiagnostics(before, after, out);
+        answerDiagnostics(before, room.diagnose(), out);
         answerRefusedPointers(refused, out);
         if (command.isMember("id")) out["id"] = command["id"];
         if (setsHue && command.isMember("kind")) out["kind"] = command["kind"];
@@ -1112,8 +1109,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
             if (held.hue == hue) out["kind"] = held.id.str();
         }
         return ToolResult::json(out);
-      });
-      return edited.answer;
+      }).answer;
     });
   }
 
