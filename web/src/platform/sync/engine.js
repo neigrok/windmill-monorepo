@@ -1,22 +1,23 @@
-import { IndexedDBStore } from './store.js';
+import { IndexedDBStore, frozen } from './store.js';
+import { ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
 import { syncTelemetry } from './telemetry.js';
 import { registry as composedRegistry } from './schema.js';
 import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
-import { compareRecords, recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
+import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { bodyBytes, Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 import { Stamp } from '../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { Offset } from '../../../../packages/api-contract/sync/reference/core/clock.js';
 import { CommitError, commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { ActCommit } from '../../../../packages/api-contract/sync/reference/client/acts.js';
-import { release, releaseAll, releaseDue, undo, undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
+import { release, releaseAll, releaseDue, undo } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
 import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope } from '../../../../packages/api-contract/sync/reference/client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf, unsubscribe } from '../../../../packages/api-contract/sync/reference/client/subscriptions.js';
-import { drawn, stored, viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
+import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
 function secureDraw(bound) {
   if (!Number.isSafeInteger(bound) || bound <= 0 || bound > 2 ** 32) throw new Error('invalid random bound');
@@ -28,13 +29,6 @@ function secureDraw(bound) {
 
 const replicaId = () => `rp_${crypto.randomUUID().replace(/-/g, '')}`;
 const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[secureDraw(62)]).join('')}`;
-const freeze = (value) => {
-  if (value && typeof value === 'object') {
-    for (const item of Object.values(value)) freeze(item);
-    Object.freeze(value);
-  }
-  return value;
-};
 
 export class BrowserSyncEngine {
   constructor({ store, registry = composedRegistry, transport, telemetry, leadership, navigator = globalThis.navigator,
@@ -172,7 +166,7 @@ export class BrowserSyncEngine {
     }
     this.revision = revision;
     const replica = device.activeReplica;
-    this.snapshot = freeze({ revision, replica: replica.id, state: replica.meta.state,
+    this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state,
       authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
       pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null) });
     for (const observation of this.views.values()) observation.refresh(replica);
@@ -222,7 +216,7 @@ export class BrowserSyncEngine {
   }
 
   emit(event) {
-    this.notify(this.eventListeners, freeze(structuredClone(event)));
+    this.notify(this.eventListeners, frozen(structuredClone(event)));
   }
 
   activeReplica() { return this.device.activeReplica.id; }
@@ -232,25 +226,9 @@ export class BrowserSyncEngine {
 
   observe(scope) {
     if (this.views.has(scope)) return this.views.get(scope);
-    const listeners = new Set();
-    const observation = {
-      getSnapshot: () => observation.snapshot,
-      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
-      refresh: (replica) => {
-        const records = (view) => [...view.values()].sort(compareRecords).map((row) => {
-          const envelope = replica.confirmedRow(scope, row.t, row.id);
-          const metadata = Object.fromEntries(['seq', 'rc', 'ru'].filter((key) => envelope?.[key] !== undefined).map((key) => [key, envelope[key]]));
-          return { ...row, ...metadata };
-        });
-        observation.snapshot = freeze({ replica: replica.id,
-          drawn: records(drawn(replica, this.registry, scope)),
-          stored: records(stored(replica, this.registry, scope)),
-          notices: structuredClone(replica.notices.filter((notice) => notice.scope === scope)),
-          undoOffers: undoOffers(replica, scope),
-          firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)) });
-        this.notify(listeners);
-      },
-    };
+    const observation = new ScopeObservation(scope, this.registry, {
+      firstPullComplete: (replica) => firstPullComplete(replica, scope, this.scopes(replica)),
+      notify: (listeners) => this.notify(listeners) });
     observation.refresh(this.device.activeReplica);
     this.views.set(scope, observation);
     if (this.device.activeReplica.confirmed[scope] && !this.device.activeReplica.loadedCaches.has(`confirmed:${scope}`)) {
