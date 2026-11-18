@@ -103,7 +103,16 @@ try {
               durationMs: properties.durationMs, queueMs: properties.queueMs });
           },
         } };
+        const holds = [];
+        const watchWrites = (opened) => {
+          const transact = opened.store.transact.bind(opened.store);
+          opened.store.transact = (change, settings = {}) => transact(change, settings).then((answer) => {
+            if (!settings.readonly) holds.push({ operation, heldMs: answer.measurement.writerMs - answer.measurement.queueMs });
+            return answer;
+          });
+        };
         let engine = await BrowserSyncEngine.open(options);
+        watchWrites(engine);
         const scope = tree;
         const check = (ok, message) => { if (!ok) throw new Error(message); };
         const result = { scenario, transport: 'HTTP to JS reference server; explicit engine rounds', browser: navigator.userAgent };
@@ -142,6 +151,7 @@ try {
         }
         engine.close();
         await measure('openMs', async () => { engine = await BrowserSyncEngine.open(options); });
+        watchWrites(engine);
         await measure('readMs', async () => {
           const count = engine.observe(scope).getSnapshot().drawn.length;
           check(count === expected.deviceRecords, `wrong opened count ${count}`);
@@ -178,17 +188,23 @@ try {
         check(result.pendingEntries === expected.pendingEntries + 1, 'unexpected pending-entry count');
         check(writerSamples.filter((sample) => sample.operation === 'gesture').length === 1, 'gesture writer was not observed exactly once');
         check(writerSamples.some((sample) => sample.operation === 'firstPull'), 'first-pull writer was not observed');
+        const quantile = (values, q) => values[Math.max(0, Math.ceil(values.length * q) - 1)];
         const summaries = [];
         for (const name of [...new Set(writerSamples.map((sample) => sample.operation))].sort()) {
           const samples = writerSamples.filter((sample) => sample.operation === name);
           const summary = { operation: name, kind: samples[0].kind, count: samples.length };
           for (const field of ['durationMs', 'queueMs']) {
             const values = samples.map((sample) => sample[field]).sort((a, b) => a - b);
-            const quantile = (q) => values[Math.max(0, Math.ceil(values.length * q) - 1)];
-            summary[field] = { max: values.at(-1), p50: quantile(0.5), p95: quantile(0.95), p99: quantile(0.99) };
+            summary[field] = { max: values.at(-1), p50: quantile(values, 0.5), p95: quantile(values, 0.95), p99: quantile(values, 0.99) };
           }
           summaries.push(summary);
         }
+        result.transactions = { coverage: 'every write transaction the engine committed, grouped by benchmark API phase',
+          timing: 'writer hold, from the transaction\'s first request to its durable completion, queue excluded',
+          phases: [...new Set(holds.map((hold) => hold.operation))].sort().map((name) => {
+            const values = holds.filter((hold) => hold.operation === name).map((hold) => hold.heldMs).sort((a, b) => a - b);
+            return { operation: name, count: values.length, p50: +quantile(values, 0.5).toFixed(1), p99: +quantile(values, 0.99).toFixed(1), max: +values.at(-1).toFixed(1) };
+          }) };
         result.writer = { coverage: 'delivered sync-writer events for changed transactions, grouped by benchmark API phase',
           timing: 'duration includes queue wait through durable completion; integer milliseconds rounded up',
           sampling: 'at most 100 telemetry events per minute per engine; duration capped at 60000 ms; samples may be censored',

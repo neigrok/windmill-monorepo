@@ -43,8 +43,10 @@ disk as a person's browser does. `--storage memory` uses an ephemeral context in
 IndexedDB costs more per row as the database grows. `--profile DIRECTORY` writes one V8 CPU profile per
 measured phase, `<scenario>-<phase>.cpuprofile`, which DevTools opens; profiled timings include the
 sampler's overhead. The report includes the source commit, dirty-tree flag, storage, browser/host
-versions, client timings, and individual model-server request times. The server, browser and
-profile directory close on completion or failure.
+versions, client timings, every write transaction's writer hold by phase (`transactions`: from its
+first request to its durable completion, queue excluded), the writer telemetry the engine delivered
+(`writer`, at most 100 events a minute), and individual model-server request times. The server,
+browser and profile directory close on completion or failure.
 
 ## Swift
 
