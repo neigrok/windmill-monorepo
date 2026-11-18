@@ -9,6 +9,7 @@
 #include "products/roadmap/domain/read/RoadmapAccount.h"
 #include "products/roadmap/ports/OpLog.h"
 #include "products/roadmap/ports/RoadmapRecords.h"
+#include "products/roadmap/ports/TreeRepository.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -59,6 +60,10 @@ public:
 
   // The roadmap, when it stands and `caller` owns it or its reach lets anyone with its address read it.
   std::optional<ReadableRoadmap> open(const TreeId& tree, const std::optional<UserId>& caller);
+
+  // The roadmap's access as a door that reads no more than its owner and who may read it checks it (the share card and
+  // video): what open() reads, as the rooms' accessOf answers it.
+  std::optional<TreeAccess> access(const TreeId& tree, const std::optional<UserId>& caller);
 
   // The activity feed's events after `since`, the latest `limit` of them, named by the roadmap's present steps.
   std::vector<ActivityEvent> activity(const ReadableRoadmap& roadmap, Seq since, std::size_t limit);

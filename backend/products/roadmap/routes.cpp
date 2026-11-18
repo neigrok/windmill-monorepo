@@ -34,8 +34,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
 
   auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.ownerProgress, deps.oplog, deps.authService,
                                        deps.forkService, deps.engineReads);
-  auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.registry, deps.authService);
-  auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.registry, deps.authService);
+  auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.registry, deps.authService, deps.engineReads);
+  auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.registry, deps.authService, deps.engineReads);
   auto sharePageApi =
       std::make_shared<SharePageApi>(deps.registry, deps.trees, deps.authService, deps.ogVideos, deps.webRoot,
                                      deps.appBaseUrl, deps.engineReads);

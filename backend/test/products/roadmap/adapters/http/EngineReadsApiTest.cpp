@@ -1,4 +1,5 @@
 #include "products/roadmap/adapters/http/GalleryApi.h"
+#include "products/roadmap/adapters/http/OgImageApi.h"
 #include "products/roadmap/adapters/http/SharePageApi.h"
 #include "products/roadmap/adapters/http/TreeApi.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
@@ -20,6 +21,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -53,6 +55,16 @@ std::string webRootHolding(const std::string& shell) {
   std::ofstream(dir / "index.html", std::ios::binary) << shell;
   return dir.string();
 }
+
+// The cards put, by tree.
+struct Cards : OgImageRepository {
+  std::map<std::string, std::string> byId;
+  void put(const std::string& treeId, const std::string& pngBytes) override { byId[treeId] = pngBytes; }
+  std::optional<std::string> get(const std::string& treeId) override {
+    const auto found = byId.find(treeId);
+    return found == byId.end() ? std::nullopt : std::optional<std::string>(found->second);
+  }
+};
 
 // Ann's roadmaps as her browser makes them, through the engine as main.cpp serves it, and the routes handed the engine
 // reads; Bea reads them.
@@ -94,6 +106,8 @@ struct Engine {
   TreeApi treeApi{rooms, trees, ownerProgress, ops, auth, fork, reads};
   SharePageApi sharePage{rooms, trees, auth, videos, webRootHolding(kShell), "https://share.example", reads};
   GalleryApi gallery{trees, ownerProgress, auth, "", reads};
+  std::shared_ptr<Cards> images = std::make_shared<Cards>();
+  OgImageApi cards{images, rooms, auth, reads};
 
   Engine() {
     PgLease conn{*pgTestPool()};
@@ -206,6 +220,21 @@ struct Engine {
     drogon::HttpResponsePtr answered;
     sharePage.page(get(session), [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree);
     return std::string(answered->body());
+  }
+
+  int putCard(const std::string& session, const std::string& tree) {
+    auto request = get(session);
+    request->setMethod(drogon::Put);
+    request->setBody(std::string("\x89PNG\r\n\x1a\nengine", 14));
+    drogon::HttpResponsePtr answered;
+    cards.putImage(request, [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree);
+    return answered->statusCode();
+  }
+
+  drogon::HttpResponsePtr card(const std::string& session, const std::string& tree) {
+    drogon::HttpResponsePtr answered;
+    cards.getImage(get(session), [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree);
+    return answered;
   }
 
   Json::Value galleryIndex(const std::string& session) {
@@ -359,4 +388,25 @@ TEST(engine_readiness_names_each_roots_steps_whose_prerequisites_are_met_through
   CHECK_EQ(readiness[0].ready[0].id, NodeId{"ownership"});
   CHECK_EQ(readiness[0].ready[0].label, std::string("Ownership"));
   CHECK_EQ(readiness[0].ready[0].color, NodeColor::terracotta);
+}
+
+TEST(engine_share_card_is_put_by_the_roadmaps_owner_alone_and_shown_to_whoever_may_read_the_roadmap) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  Engine engine;
+  engine.plant();
+
+  CHECK_EQ(engine.putCard("bea-session", kRoot), drogon::k403Forbidden);
+  CHECK_EQ(engine.putCard("ann-session", kRoot), drogon::k204NoContent);
+  CHECK_EQ(engine.putCard("ann-session", kSubtree), drogon::k204NoContent);
+  const drogon::HttpResponsePtr shown = engine.card("", kRoot);
+  CHECK_EQ(shown->statusCode(), drogon::k200OK);
+  CHECK_EQ(std::string(shown->body()), std::string("\x89PNG\r\n\x1a\nengine", 14));
+
+  engine.deleteBasics(kStart + 300'000);
+  CHECK_EQ(engine.putCard("ann-session", kSubtree), drogon::k404NotFound);
+  CHECK_EQ(engine.card("ann-session", kSubtree)->statusCode(), drogon::k302Found);
+  engine.push(kStart + 360'000, {Engine::intent("tree/" + kRoot, "g-private", kStart + 360'000,
+                                                R"([{"t": "meta", "id": "meta", "f": {"visibility": ["private", "@"]}}])")});
+  CHECK_EQ(engine.card("", kRoot)->statusCode(), drogon::k302Found);
+  CHECK_EQ(engine.card("ann-session", kRoot)->statusCode(), drogon::k200OK);
 }
