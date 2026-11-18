@@ -16,7 +16,7 @@ import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { environment } from '../sync/fakes.js';
 import { DEFAULT_NOW } from './vectors.js';
 
-/** @typedef {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, now: number, serial: number, server: any, phones: Harness[], zone: import('../../../src/platform/domain-kit/time.js').Zone }} World */
+/** @typedef {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, scopes: Set<string>, now: number, serial: number, server: any, phones: Harness[], zone: import('../../../src/platform/domain-kit/time.js').Zone }} World */
 
 export class Harness {
   /** @param {World} world @param {any} env @param {any} engine @param {any} options */
@@ -31,7 +31,7 @@ export class Harness {
 
   /** @param {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, start?: number, zone?: import('../../../src/platform/domain-kit/time.js').Zone }} options */
   static async open({ registry, product, scope, start = DEFAULT_NOW, zone = new FixedZone(0) }) {
-    const world = { registry, product, scope, now: start, serial: 0, server: ServerState.empty({ epoch: 'ep-domain', accounts: { A: { name: 'A' } } }), phones: [], zone };
+    const world = { registry, product, scope, scopes: new Set([scope]), now: start, serial: 0, server: ServerState.empty({ epoch: 'ep-domain', accounts: { A: { name: 'A' } } }), phones: [], zone };
     return Harness.phone(world);
   }
 
@@ -45,19 +45,28 @@ export class Harness {
     const engine = await BrowserSyncEngine.open(options);
     const phone = new Harness(world, env, engine, options);
     assert.equal((await engine.signIn('A')).complete, true);
-    engine.observe(world.scope);
+    for (const scope of world.scopes) engine.observe(scope);
     return phone;
   }
 
   async device() { return Harness.phone(this.world); }
   get server() { return this.world.server; }
 
+  // Every phone observes, pulls and releases each scope a test names, so an act's intents in other scopes settle.
+  /** @param {string} scope */
+  observe(scope) {
+    this.world.scopes.add(scope);
+    for (const phone of this.world.phones) phone.engine.observe(scope);
+  }
+
+  get scopes() { return [...this.world.scopes]; }
+
   async restart() {
     this.engine.close();
     this.engine = await BrowserSyncEngine.open(this.options);
     await this.engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => engineStart(device, context));
     this.runner = new ActionRunner(new EngineReplica(this.engine), this.world.registry, this.world.zone);
-    this.engine.observe(this.world.scope);
+    for (const scope of this.world.scopes) this.engine.observe(scope);
   }
 
   async senderStep() {
@@ -67,17 +76,17 @@ export class Harness {
     const out = push(/** @type {any} */ ({ state: world.server, registry: world.registry, product: world.product, account: 'A', request, serverNow: world.now }));
     world.server = out.state;
     assert.equal(out.response.status, 200);
-    await engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => onPushResponse(device.activeReplica, context, request, out.response, steadyTiming(world.now, world.now)), [world.scope]);
+    await engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => onPushResponse(device.activeReplica, context, request, out.response, steadyTiming(world.now, world.now)), this.scopes);
     return true;
   }
 
   async pullerStep() {
     const { world, engine } = this;
-    const request = pullRequest(engine.device.activeReplica, world.registry, [world.scope]);
+    const request = pullRequest(engine.device.activeReplica, world.registry, this.scopes);
     const out = pull(/** @type {any} */ ({ state: world.server, registry: world.registry, product: world.product, account: 'A', request, serverNow: world.now }));
     world.server = out.state;
     assert.equal(out.response.status, 200);
-    await engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => onPullResponse(device.activeReplica, context, request, out.response, steadyTiming(world.now, world.now)), [world.scope]);
+    await engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => onPullResponse(device.activeReplica, context, request, out.response, steadyTiming(world.now, world.now)), this.scopes);
     return /** @type {any} */ (out.response.body).pages.some((/** @type {any} */ page) => page.more);
   }
 
@@ -102,12 +111,12 @@ export class Harness {
     this.world.now += ms;
     for (const phone of this.world.phones) {
       phone.env.timers.time = this.world.now;
-      await phone.engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => releaseDue(device.activeReplica, this.world.registry, context.ended, this.world.now), [this.world.scope]);
+      await phone.engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => releaseDue(device.activeReplica, this.world.registry, context.ended, this.world.now), this.scopes);
     }
   }
 
   async leave() {
-    await this.engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => releaseAll(device.activeReplica, this.world.registry, context.ended), [this.world.scope]);
+    await this.engine.write(null, (/** @type {any} */ device, /** @type {any} */ context) => releaseAll(device.activeReplica, this.world.registry, context.ended), this.scopes);
   }
 
   failNextCommit() {
@@ -122,8 +131,8 @@ export class Harness {
   drawn(type, scope = type.boundScope()) { return this.runner.read(type.boundScope(scope), (read) => read.repository(type).all('drawn')); }
   /** @template E @param {import('../../../src/platform/domain-kit/entities.js').EntityType<E>} type @param {string} [scope] */
   stored(type, scope = type.boundScope()) { return this.runner.read(type.boundScope(scope), (read) => read.repository(type).all('stored')); }
-  /** @template R @param {import('../../../src/platform/domain-kit/refusals.js').Refusals<R>} refusals */
-  notices(refusals) { return this.engine.observe(this.world.scope).getSnapshot().notices.map((/** @type {any} */ notice) => new DomainNotice(notice, this.world.registry, refusals)); }
+  /** @template R @param {import('../../../src/platform/domain-kit/refusals.js').Refusals<R>} refusals @param {string} [scope] */
+  notices(refusals, scope = this.world.scope) { return this.engine.observe(scope).getSnapshot().notices.map((/** @type {any} */ notice) => new DomainNotice(notice, this.world.registry, refusals)); }
   undoOffers() { return undoOffers(this.engine.device.activeReplica, this.world.scope); }
   close() { for (const phone of this.world.phones) phone.engine.close(); }
 }

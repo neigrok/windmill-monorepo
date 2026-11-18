@@ -71,6 +71,7 @@ function probeType({ type, scope, defaults, specs, ...protocols }) {
 const chars = (/** @type {string} */ path, /** @type {number} */ min, /** @type {number} */ max) => new TextSpec(path, { unit: 'chars', min, max, trim: true, nfc: true });
 
 export const Probe = Object.freeze({
+  board: probeType({ type: 'board', scope: PROBE_SCOPE, defaults: {}, specs: [], heldRemoval: true }),
   card: probeType({ type: 'card', scope: PROBE_SCOPE, defaults: { title: '', body: '', size: null, claim: null, tier: 'draft' },
     specs: [chars('card.title', 1, 12), new TextSpec('card.body', { unit: 'bytes', min: 0, max: 24, trim: true, nfc: true }),
       new NumberSpec('card.size', { min: -500, max: 500, quantum: 0.01 }), chars('card.claim', 0, 12),

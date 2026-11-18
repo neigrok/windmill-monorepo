@@ -1,6 +1,7 @@
 // @ts-check
 
 import assert from 'node:assert/strict';
+import { ActDecision, ActIDSource, ActReader } from '../../../src/platform/domain-kit/acts.js';
 import { IDSource, decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';
 import { Fields } from '../../../src/platform/domain-kit/entities.js';
@@ -46,20 +47,69 @@ export class ProductCorpus {
     }
   }
 
+  // A case's records in one scope: its `records`, or, in a scene of several scopes, `scopes[scope]`, with the
+  // scene's device rows; `stored` defaults to `drawn`, and `ids` are minted in order.
+  /** @param {Vector} vector @param {string} scope @param {(type: string) => import('../../../src/platform/domain-kit/entities.js').RecordID} mintId */
+  views(vector, scope, mintId) {
+    const { records: single, scopes, device = {}, firstPullComplete = true } = vector.input;
+    const records = scopes === undefined ? single : scopes[scope] ?? { drawn: [] };
+    const stored = viewRecords(records.stored ?? records.drawn);
+    return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored, confirmed: stored, devices: device, firstPullComplete, mintId });
+  }
+
+  /** @param {Vector} vector */
+  mints(vector) {
+    const left = [...(vector.input.ids ?? [])];
+    return (/** @type {string} */ type) => {
+      const id = left.shift();
+      if (id === undefined) throw new Fault(`no vector id left for ${type}`);
+      return id;
+    };
+  }
+
   /** @param {Vector} vector @param {string} scope */
   reader(vector, scope) {
-    const { records, firstPullComplete = true, ids = [] } = vector.input;
-    const left = [...ids];
-    const stored = viewRecords(records.stored ?? records.drawn);
-    const views = Views.ofRecords(this.book.registry, {
-      drawn: viewRecords(records.drawn), stored, confirmed: stored, firstPullComplete,
-      mintId: (type) => {
-        const id = left.shift();
-        if (id === undefined) throw new Fault(`no vector id left for ${type}`);
-        return id;
+    return new Reader(this.views(vector, scope, this.mints(vector)), scope, momentOf(vector.input));
+  }
+
+  // An act's case (§9.5): its load through an act reader over each scope's records, one decision, and each segment
+  // translated in its scope: `{write: {segments: [{scope, gesture}], result}}`, `{unchanged: {result}}` or `{refuse}`.
+  /**
+   * @template L,T,R
+   * @param {import('../../../src/platform/domain-kit/acts.js').ActAction<L,T,R>} action
+   * @param {Vector} vector
+   * @param {(result: T) => Json} resultForm
+   * @param {(refusal: R) => Json} refusalForm
+   */
+  act(action, vector, resultForm, refusalForm) {
+    const mint = this.mints(vector);
+    const moment = momentOf(vector.input);
+    /** @type {import('../../../src/platform/domain-kit/acts.js').ActContext} */
+    const context = {
+      now: moment.now.ms,
+      finishLoad() {},
+      inScope: (scope, body) => {
+        const views = this.views(vector, scope, mint);
+        return body({ drawn: views.drawn, stored: views.stored, confirmed: views.confirmed, devices: views.devices, firstPullComplete: views.firstPullComplete, now: moment.now.ms });
       },
-    });
-    return new Reader(views, scope, momentOf(vector.input));
+      mintID: (type) => mint(type),
+      opaqueID: () => { throw new Fault('an act case mints no opaque id'); },
+    };
+    const reader = new ActReader(context, this.book.registry, moment);
+    const loaded = action.load(reader);
+    reader.end();
+    /** @type {import('../../../src/platform/domain-kit/acts.js').ActDecision<T, R>} */
+    let decided;
+    try {
+      decided = action.decide(loaded, new ActIDSource(context));
+    } catch (error) {
+      if (!(error instanceof Violation)) throw error;
+      decided = ActDecision.refuse(action.refusals.ofViolation(error));
+    }
+    if (decided.kind === 'refuse') return { decision: { refuse: refusalForm(decided.refusal) } };
+    if (decided.kind === 'unchanged') return { decision: { unchanged: { result: resultForm(decided.result) } } };
+    const segments = decided.plan.segments.map((segment) => ({ scope: segment.scope, gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(segment.plan, segment.scope, this.book.registry))) }));
+    return { decision: { write: { segments, result: resultForm(decided.result) } } };
   }
 
   /**
