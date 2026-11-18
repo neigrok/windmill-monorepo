@@ -252,7 +252,7 @@ for (const blocked of [false, true]) test(`every version-one row survives ${bloc
   for (let opened = 0; opened < 2; opened++) {
     const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, name: 'migration', newReplicaId: () => assert.fail('existing device must survive') });
     try {
-      assert.equal(store.database.version, 2);
+      assert.equal(store.database.version, 3);
       assert.equal((await store.read([{ scope: 'self/probe', type: 'card' }])).measurement.rowReads, 12);
       assert.deepEqual((await store.read()).device.toJSON(), expected);
     } finally { store.close(); }
@@ -284,15 +284,58 @@ test('versionchange releases every open store so a later upgrade can complete', 
   let upgraded;
   try {
     upgraded = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('wm-sync', 3);
+      const request = indexedDB.open('wm-sync', 4);
       request.onsuccess = () => { request.result.close(); resolve(request.result); };
       request.onerror = () => reject(request.error);
       request.onblocked = () => reject(new Error('open stores did not release their connections'));
     });
-    assert.equal(upgraded.version, 3);
+    assert.equal(upgraded.version, 4);
     assert.deepEqual(stores.map((store) => store.closed), [true, true]);
     for (const store of stores) await assert.rejects(store.read(), /sync store closed/);
   } finally { stores.forEach((store) => store.close()); }
+});
+
+test('a version-two store upgrades to three with every record, its open tab closes, and a version-two open is refused', async () => {
+  const indexedDB = new IDBFactory();
+  const opened = (name, version, upgrade) => new Promise((resolve, reject) => {
+    const request = indexedDB.open(name, version);
+    if (upgrade) request.onupgradeneeded = () => upgrade(request.result);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const all = (database, name) => new Promise((resolve, reject) => {
+    const transaction = database.transaction(name);
+    const read = transaction.objectStore(name).getAll();
+    transaction.oncomplete = () => resolve(read.result);
+    transaction.onabort = () => reject(transaction.error);
+  });
+  const source = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, name: 'source', newReplicaId: () => id });
+  await source.transact(gesture);
+  const expected = (await source.read()).device.toJSON();
+  const [records, rows] = [await all(source.database, 'records'), await all(source.database, 'rows')];
+  source.close();
+  const older = await opened('upgrade', 2, (database) => {
+    database.createObjectStore('records', { keyPath: 'key' });
+    const store = database.createObjectStore('rows', { keyPath: 'key' });
+    store.createIndex('generation', 'generation');
+    store.createIndex('type', 'type');
+  });
+  await new Promise((resolve, reject) => {
+    const transaction = older.transaction(['records', 'rows'], 'readwrite');
+    for (const record of records) transaction.objectStore('records').put(record);
+    for (const row of rows) transaction.objectStore('rows').put(row);
+    transaction.oncomplete = resolve;
+    transaction.onabort = () => reject(transaction.error);
+  });
+  let olderClosed = false;
+  older.onversionchange = () => { olderClosed = true; older.close(); };
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, name: 'upgrade', newReplicaId: () => assert.fail('existing device must survive') });
+  try {
+    assert.equal(olderClosed, true);
+    assert.equal(store.database.version, 3);
+    assert.deepEqual((await store.read()).device.toJSON(), expected);
+    await assert.rejects(opened('upgrade', 2), { name: 'VersionError' });
+  } finally { store.close(); }
 });
 
 test('a writer slice doubles while under half the slice, fits the aim past it, and never shrinks below its start', () => {

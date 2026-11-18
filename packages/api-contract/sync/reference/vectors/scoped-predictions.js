@@ -85,9 +85,10 @@ export function scopedPredictions() {
   ].map(([name, change]) => {
     const broken = structuredClone(ack);
     change(broken.response.body.results[0].detail.windmillKit.effects);
-    const sample = stepsVector(`a ${name} receipt changes no ACK state`, { device, steps: [commit, send, broken] });
-    assert.deepEqual(sample.expect.returns[2], { throws: true });
-    assert.deepEqual(sample.expect.device, runSteps({ device, steps: [commit, send] }).device);
+    const sample = stepsVector(`a ${name} receipt acknowledges its entry with no receipt, ends its projections and reports it`, { device, steps: [commit, send, broken] });
+    assert.deepEqual(sample.expect.returns[2], null);
+    assert.deepEqual(sample.expect.telemetry, [{ event: 'sync-push-malformed' }]);
+    assert.equal(sample.expect.device.replicas[0].outbox, undefined);
     return sample;
   });
   const duplicate = stepsVector('a duplicate ACK preserves independently covered projections', {

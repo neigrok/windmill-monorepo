@@ -6,7 +6,7 @@ import { freshMeta } from '../client/replica.js';
 import { pull } from '../server/pull.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
-import { OTHER, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
+import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
 import { runSteps, settle, stepsVector } from './steps.js';
 
 export const REPLICA = 'rp_00000000000000000000000000000001';
@@ -401,8 +401,8 @@ function strictCreation() {
     session.pull(['self/probe']);
     return session.local({ op: 'readInverseResult', requestId: 'g3' }, viewStep('self/probe'));
   };
-  const hidden = run(true).vector('a foreign edit between the creation and a later write of the same act breaks the row history: the created record stays');
-  assert.deepEqual(hidden.expect.returns.at(-2), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
+  const hidden = run(true).vector('a foreign edit between the creation and a later write of the same act breaks the row history: the created record stays, counted skipped');
+  assert.deepEqual(hidden.expect.returns.at(-2), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 1 });
   assert.ok(hidden.expect.returns.at(-1).records.some((record) => record.id === made));
   const owned = run(false).vector('a record whose every write since its creation is the act\'s own is deleted by its Undo');
   assert.deepEqual(owned.expect.returns.at(-2).appliedCount, 2);
@@ -470,7 +470,15 @@ function replacement() {
     .vector('explicit inverse slots replace the stored recipes whole: a source they name nothing for restores nothing');
   assert.deepEqual(sample.expect.returns.at(-3).appliedCount, 1);
   assert.deepEqual([titleIn(sample.expect.returns.at(-2), 'card', CARD), titleIn(sample.expect.returns.at(-1), 'meta', 'meta')], ['New', 'Root']);
-  return [sample];
+  const unjournaled = new Session(world()).local(titleAct());
+  unjournaled.flush();
+  const before = unjournaled.run().device;
+  const refused = unjournaled.local({ op: 'requestInverse', actId: 'g1', deviceNow: 9000,
+    slots: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: target('self/probe', 'card', CARD, 'field', 'body') }] }] }] })
+    .vector('inverse slots that name a target the act never journaled throw malformed and change nothing');
+  assert.deepEqual(refused.expect.returns.at(-1), { throws: true });
+  assert.deepEqual(refused.expect.device, before);
+  return [sample, refused];
 }
 
 // A held act cancelled in place leaves a receipt of what disappeared; its Redo writes that back only where the
@@ -541,9 +549,181 @@ function remapped() {
   return [sample];
 }
 
+// Review findings, each the behaviour an Undo or Redo must keep.
+const settledOf = (vector) => vector.expect.returns.filter((value) => value?.kind === 'settled');
+const serverValue = (session, key, t, id, read) => read(session.state.rows[key][JSON.stringify([t, id])]);
+
+function redoWritesTheAct() {
+  const session = new Session(world()).local(titleAct());
+  session.flush();
+  session.pull(['self/probe']);
+  session.local({ op: 'commit', scope: 'self/probe', deviceNow: 9000, changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'Refused' } }],
+    opts: { guard: [{ t: 'card', id: CARD, field: 'body' }] } }, requestStep('g1', 9100));
+  session.elsewhere({ scope: 'self/probe', d: [{ t: 'card', id: CARD, born: st(1100), f: { body: ['theirs', st(8800, 0, OTHER)] } }] });
+  session.flush();
+  session.pull(['self/probe']);
+  session.local({ op: 'requestInverse', actId: 'g3', deviceNow: 12000 });
+  session.flush();
+  session.pull(['self/probe']);
+  const sample = session.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a Redo writes back the act\'s own value, never a later local edit the server refused');
+  assert.equal(serverValue(session, 'acct:A/probe', 'card', CARD, (r) => r.f.title[0]), 'New');
+  return [sample];
+}
+
+function noErase() {
+  const lww = new Session(world()).local({ op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'Mine' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] }] } } });
+  lww.elsewhere({ scope: 'self/probe', d: [{ t: 'card', id: CARD, born: st(1100), f: { title: ['Theirs', st(4000, 0, OTHER)] } }] });
+  lww.flush();
+  lww.local(requestStep('g1'));
+  lww.flush();
+  const kept = lww.local({ op: 'readInverseResult', requestId: 'g3' })
+    .vector('an Undo never erases a write the device had not seen when it acted: the field skips, and the other device\'s write stays under the act\'s');
+  assert.deepEqual(kept.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.equal(serverValue(lww, 'acct:A/probe', 'card', CARD, (r) => r.f.title[0]), 'Mine');
+
+  const overlay = `self/overlay/${BOARD}`;
+  const key = `acct:A/overlay/${BOARD}`;
+  const mark = row({ t: 'mark', id: 'oak', x: { memo: { text: 'buy milk', rev: 1, merged: false } }, seq: 1 });
+  const board = row({ t: 'board', id: BOARD, born: st(1000), life: ['alive', st(1000)], seq: 1 });
+  const device = settle({ active: REPLICA, replicas: [{ meta: freshMeta(REPLICA, 'bound', 'A'), confirmed: { 'self/probe': [board], [overlay]: [mark] } }] });
+  const state = new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A'), [`tree:${BOARD}`]: treeScope('A', BOARD), [key]: overlayScope('A', BOARD) },
+    rows: { 'acct:A/probe': [board], [key]: [mark] } }));
+  const memo = target(overlay, 'mark', 'oak', 'text', 'memo');
+  const text = new Session({ device, state }).local({ op: 'commitAct', deviceNow: 5000, segments: [{ scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'buy milk and eggs' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreOverlay', targets: [{ target: memo }] }] }] } } });
+  text.elsewhere({ scope: overlay, d: [{ t: 'mark', id: 'oak', x: { memo: { text: 'call mum; buy milk', base: { rev: 1 } } } }] });
+  text.flush();
+  text.pull([overlay]);
+  const merged = serverValue(text, key, 'mark', 'oak', (r) => r.x.memo.text);
+  text.local(requestStep('g1'));
+  text.flush();
+  const textKept = text.local({ op: 'readInverseResult', requestId: 'g3' })
+    .vector('an Undo of a text the server merged with another device\'s edit skips, keeping the merged words');
+  assert.deepEqual(textKept.expect.returns.at(-1).skippedCount, 1);
+  assert.equal(serverValue(text, key, 'mark', 'oak', (r) => r.x.memo.text), merged);
+  return [kept, textKept];
+}
+
+function cancelledCommand() {
+  const child = 'b_00000002';
+  const branch = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [], opts: { hold: true,
+    cmd: { name: 'probe.branch', args: { parent: BOARD, child, title: 'Branch' } },
+    scopedPredict: [{ scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: child }] },
+      { scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Branch' } }] },
+      { scope: `tree/${child}`, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Branch' } }] }] } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'command', command: 'probe.unbranch', input: { parent: BOARD, child, title: 'Root' },
+      evidence: { ownedFields: [metaTitle], unchangedCreatedRecords: [{ scope: 'self/probe', t: 'board', id: child }], unchangedCreatedScopes: [`tree/${child}`] } }] }] } } };
+  const slots = [{ index: 0, recipes: [{ kind: 'command', command: 'probe.unbranch', input: { parent: BOARD, child, title: 'Root' },
+    evidence: { ownedFields: [], unchangedCreatedRecords: [{ scope: 'self/probe', t: 'board', id: child }], unchangedCreatedScopes: [`tree/${child}`] } }] }];
+  const sample = new Session(world()).local(branch, requestStep('g1', 5100), requestStep('g2', 5200), { op: 'requestInverse', actId: 'g2', deviceNow: 5300, slots })
+    .vector('a held product command leaves no generic redo: its Redo is unavailable without the product\'s slots, and takes them when given');
+  assert.deepEqual(sample.expect.returns[2], { kind: 'unavailable', requestId: null, reason: 'product-redo-required' });
+  assert.deepEqual(sample.expect.returns[3], { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.deepEqual(activeOf(sample).cancellations[0].units, []);
+  return [sample];
+}
+
+function plainReference() {
+  const plain = { op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'First' } }] };
+  const held = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'Second' } }], opts: { hold: true } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] }] } } };
+  const session = new Session(world()).local(plain, held, requestStep('g2', 9000), requestStep('g3', 9500));
+  session.flush();
+  session.pull(['self/probe']);
+  const sample = session.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a Redo whose change now reads an ordinary pending edit binds that edit\'s accepted write and applies');
+  assert.deepEqual(sample.expect.returns.at(-1).appliedCount, 1);
+  assert.equal(serverValue(session, 'acct:A/probe', 'card', CARD, (r) => r.f.title[0]), 'Second');
+  return [sample];
+}
+
+function ownCreation() {
+  const act = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'ActOwn' } }], opts: { hold: true } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: TREE, t: 'tag', id: 'elm' } }] }] } } };
+  const later = { op: 'commit', scope: TREE, deviceNow: 5100, changes: [{ op: 'update', t: 'tag', id: 'elm', f: { label: 'LaterEdit' } }] };
+  const sample = new Session(world()).local(act, later, requestStep('g1', 5200))
+    .vector('a held cancellation keeps the act\'s own creation for its Redo, not a later gesture\'s edit of the record');
+  assert.deepEqual(activeOf(sample).cancellations[0].units[0].redoValues, { f: { label: 'ActOwn' } });
+  return [sample];
+}
+
+function malformedOutcomes() {
+  const session = new Session(world()).local(titleAct());
+  session.flush();
+  session.local(requestStep('g1'), { op: 'commit', scope: 'self/probe', deviceNow: 9100, changes: [{ op: 'update', t: 'card', id: CARD, f: { body: 'later' } }] });
+  const strip = (response) => {
+    for (const result of response.body.results) if (result.detail?.command?.inverse) delete result.detail.command.inverse;
+    return response;
+  };
+  session.push({ answer: strip });
+  session.flush();
+  const sample = session.local({ op: 'readInverseResult', requestId: 'g3' })
+    .vector('a result whose inverse outcomes are malformed still acknowledges its entry, settles its slot skipped invalid, reports it, and later work goes on');
+  assert.deepEqual(sample.expect.telemetry, [{ event: 'sync-push-malformed' }]);
+  assert.deepEqual(sample.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 1 });
+  assert.ok(sample.expect.returns.filter((value) => value?.intents).flatMap(({ intents }) => intents).some(({ cmd }) => cmd === undefined));
+  return [sample];
+}
+
+// A cancellation's receipt and its request follow their product's work at sign-in: an Add carries them, a
+// Discard takes them with that work, values and all.
+function cancellationLifecycle() {
+  const anon = 'rp_00000000000000000000000000000009';
+  const bound = 'rp_00000000000000000000000000000002';
+  const device = settle({ active: anon, replicas: [{ meta: freshMeta(anon, 'anon'), confirmed: { 'self/probe': [
+    row({ t: 'card', id: CARD, born: st(1100), life: ['alive', st(1100)], f: { title: ['Old', st(1100)] }, seq: 2 })] } }] });
+  const held = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'Private' } }], opts: { hold: true } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] }] } } };
+  const other = { op: 'commit', scope: 'self/probe', deviceNow: 5100, changes: [{ op: 'update', t: 'card', id: CARD, f: { body: 'kept' } }] };
+  const signIn = (decision) => ({ op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: decision } });
+  const added = stepsVector('an Add carries a cancellation and its request into the bound replica', {
+    device, ids: [bound], steps: [held, requestStep('g1', 5050), other, signIn('add')] });
+  assert.equal(activeOf(added).cancellations[0].units[0].redoValue, 'Private');
+  assert.equal(activeOf(added).inverses[0].result.kind, 'cancelled');
+  const discarded = stepsVector('a Discard takes the product\'s cancellations and requests with its work, keeping none of their values', {
+    device, ids: [bound], steps: [held, requestStep('g1', 5050), other, signIn('discard')] });
+  assert.equal(JSON.stringify(discarded.expect.device).includes('Private'), false);
+  assert.equal(discarded.expect.device.replicas.some((replica) => replica.cancellations || replica.inverses || replica.journal), false);
+  return [added, discarded];
+}
+
+// A scope that dies keeps none of its values in the journal: its sources there become unavailable, and a request
+// keeps no values once settled.
+function deadScope() {
+  const session = new Session(world()).local(titleAct());
+  session.flush();
+  session.pull(['self/probe', TREE]);
+  session.local(requestStep('g1'));
+  session.flush();
+  session.elsewhere({ scope: 'self/probe', d: [{ t: 'board', id: BOARD, born: st(1000), life: ['dead', st(9500, 0, OTHER)] }] });
+  session.pull(['self/probe', TREE]);
+  const sample = session.local({ op: 'readInverseResult', requestId: 'g3' })
+    .vector('a tree that dies takes its values out of the journal, and its sources become unavailable');
+  const replica = activeOf(sample);
+  assert.equal(/"(Root|Grown)"/.test(JSON.stringify([replica.journal, replica.inverses])), false);
+  assert.deepEqual(replica.journal.flatMap((act) => act.sourceEntries).filter((source) => source.originScope === TREE)
+    .map(({ preimages, written, unavailable }) => ({ preimages, written, unavailable })), [
+    { preimages: [], written: [], unavailable: true }, { preimages: [], written: [], unavailable: true }]);
+  return [sample];
+}
+
+// No product stack outlives its process: engine start keeps only what an unsettled request reads.
+function startRelease() {
+  const session = new Session(world(), { actors: ['r_cccccccccccc'] }).local(titleAct(), titleAct({ title: 'Newer', meta: 'Taller', deviceNow: 6000 }));
+  session.flush();
+  session.local(requestStep('g2'), { op: 'engineStart' });
+  const sample = session.vector('engine start releases every act no unsettled request reads');
+  assert.deepEqual(activeOf(sample).journal.map(({ actId }) => actId), ['g2']);
+  return [sample];
+}
+
 export function files() {
   return {
-    'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped()],
-    'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded()],
+    'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
+      ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
+    'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes()],
   };
 }

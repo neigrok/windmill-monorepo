@@ -17,8 +17,10 @@ function captureCommandOf(registry, scope) {
 }
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
-// initial snapshot (§7.1 Ordered local acts). A slot unset there takes the recipe's explicit default; with
-// none, the act fails before anything changes. Answers the plan by segment index, or null.
+// initial snapshot (§7.1 Ordered local acts), each with the sequence of the confirmed row it was read over (null
+// where none is confirmed) and the server epoch that sequence counts in. A slot unset there takes the recipe's
+// explicit default; with none, the act fails before anything changes. Answers the plan by segment index, or
+// null.
 function planUndo(replica, registry, request) {
   const { undo } = request;
   if (undo === undefined || undo === null) return null;
@@ -40,7 +42,8 @@ function planUndo(replica, registry, request) {
       for (const { target, defaultValue } of recipe.targets) {
         const value = valueIn(view.get(recordKey(target.t, target.id)), target.slot);
         if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
-        preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue) });
+        preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue),
+          rowSeq: replica.confirmedRow(target.scope, target.t, target.id)?.seq ?? null, epoch: replica.meta.serverEpoch });
       }
     }
     plan.set(segment.index, { scope, recipes: structuredClone(segment.recipes), preimages });
@@ -56,15 +59,21 @@ function optedGesture(registry, scope, opts) {
   return opts;
 }
 
-// The act's journal record, from the segments that left an entry: one source entry each, in commit order.
-function recordAct(replica, actId, plan, receipts) {
+// The act's journal record, from the segments that left an entry: one source entry each, in commit order, with
+// the value the act left in each target, which a Redo writes back.
+function recordAct(replica, registry, actId, plan, receipts) {
   if (plan === null) return;
   const sourceEntries = [];
   for (const [index, { scope, recipes, preimages }] of [...plan].sort(([a], [b]) => a - b)) {
     const { localIds } = receipts[index];
     if (localIds.length === 0) continue;
     if (localIds.length > 1) throw new CommitError('an opted segment commits one intent');
-    sourceEntries.push({ localId: localIds[0], originScope: scope, recipes, preimages, attempts: [] });
+    const view = drawn(replica, registry, scope);
+    const written = preimages.flatMap(({ target }) => {
+      const value = valueIn(view.get(recordKey(target.t, target.id)), target.slot);
+      return value === undefined ? [] : [{ target: structuredClone(target), value: structuredClone(value) }];
+    });
+    sourceEntries.push({ localId: localIds[0], originScope: scope, recipes, preimages, written, attempts: [] });
   }
   if (sourceEntries.length) replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
 }
@@ -187,7 +196,7 @@ export class ActCommit {
       delete this.segment;
     }
     if (!this.wrote) return { outcome: null, value };
-    recordAct(working, this.gestureId, this.undoPlan, this.receipts);
+    recordAct(working, ctx.registry, this.gestureId, this.undoPlan, this.receipts);
     for (const key of ['meta', 'outbox', 'notices', 'device', 'journal']) replica[key] = working[key];
     ctx.ended.push(...this.ended);
     return { outcome: { gestureId: this.gestureId, segments: this.receipts, retired: [...this.retired], superseded: [...this.superseded],

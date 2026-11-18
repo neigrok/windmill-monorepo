@@ -1,7 +1,10 @@
 // K-3 the journal of reversible acts (§7.3 Undo of an act): each act's source entries with their recipes,
-// first local preimages and the receipts or refusals their ACK transactions record, beside the inverse requests
-// and cancellation receipts that read them; their retention, epochs, lifecycle and settlement. The journal is
-// the replica's local user data: values and ids never leave it but in a restore's own arguments.
+// first local preimages, the values the act wrote and the receipts or refusals their ACK transactions record,
+// beside the inverse requests and cancellation receipts that read them; their retention, epochs, lifecycle and
+// settlement. The journal is the replica's local user data: values and ids never leave it but in a restore's
+// own arguments.
+
+import { moveEntry } from '../core/machines.js';
 
 // The local id's ordinal: its position in its act's commit order.
 export function ordinalOf(localId) {
@@ -17,13 +20,15 @@ export function sourceOf(replica, localId) {
 }
 
 // The ACK transaction's retention point (§7.4): a source keeps its accepted receipt, or its refusal, under the
-// answer's epoch, before its entry can settle or be collected. One attempt an epoch: a replay's replaces it.
+// answer's epoch, before its entry can settle or be collected. One attempt an epoch: a replay's replaces it. An
+// `ok` without a readable receipt proves nothing of what the act wrote: the source's history is `unavailable`.
 export function retainOutcome(replica, localId, { epoch, n, outcome, acceptedEffects }) {
   const found = sourceOf(replica, localId);
   if (!found) return;
   const { source } = found;
   source.attempts = source.attempts.filter((attempt) => attempt.epoch !== epoch);
   source.attempts.push({ epoch, n, outcome, ...(acceptedEffects ? { acceptedEffects: structuredClone(acceptedEffects) } : {}) });
+  if (outcome === 'ok' && !acceptedEffects) source.unavailable = true;
 }
 
 // §7.5 step 1: a restored server invalidates each source's proofs from another epoch. A source still in the
@@ -39,10 +44,53 @@ export function invalidateEpochs(replica, epoch) {
 }
 
 // §7.10: a Discard of a product's work removes the journal's whole source entries of that product, values
-// included; an act left with none goes.
+// included, and its cancellations' units and inverse requests; a record left with nothing of its own goes. The
+// discarded slots settle skipped first.
 export function discardJournal(replica, registry, product) {
-  for (const act of replica.journal) act.sourceEntries = act.sourceEntries.filter((source) => registry.productOfRef(source.originScope) !== product);
+  const theirs = (scope) => registry.productOfRef(scope) === product;
+  for (const act of replica.journal) act.sourceEntries = act.sourceEntries.filter((source) => !theirs(source.originScope));
   replica.journal = replica.journal.filter((act) => act.sourceEntries.length > 0);
+  settleEnded(replica, 'discarded');
+  for (const cancellation of replica.cancellations) {
+    const kept = new Set(cancellation.sourceEntries.filter((source) => !theirs(source.originScope)).map(({ localId }) => localId));
+    cancellation.sourceEntries = cancellation.sourceEntries.filter(({ localId }) => kept.has(localId));
+    cancellation.units = cancellation.units.filter((unit) => kept.has(unit.ownerLocalId));
+  }
+  const gone = new Set(replica.cancellations.filter((cancellation) => cancellation.sourceEntries.length === 0).map(({ inverseActId }) => inverseActId));
+  replica.cancellations = replica.cancellations.filter((cancellation) => !gone.has(cancellation.inverseActId));
+  replica.inverses = replica.inverses.filter((request) => (request.slots.length
+    ? request.slots.some((slot) => !theirs(slot.originScope)) : !gone.has(request.inverseActId)));
+}
+
+// §7.5 step 2: a scope that ends (its `gone` or `not-found`, or a dead governing row) keeps none of its values in
+// the journal. Its sources keep their receipts and become unavailable; a cancellation's units there go; a slot
+// still waiting there vacates, skipped.
+export function forgetJournalScope(replica, ended, scope) {
+  for (const act of replica.journal) {
+    for (const source of act.sourceEntries) {
+      if (source.originScope !== scope) continue;
+      Object.assign(source, { recipes: [], preimages: [], written: [], unavailable: true });
+    }
+  }
+  for (const cancellation of replica.cancellations) cancellation.units = cancellation.units.filter((unit) => (unit.target ?? unit.record).scope !== scope);
+  for (const request of replica.inverses) {
+    if (request.state === 'settled') continue;
+    for (const slot of request.slots) {
+      if (slot.state !== 'waiting' || slot.originScope !== scope) continue;
+      const entry = replica.entry(slot.localId);
+      if (entry) moveEntry(replica, ended, entry, 'vacate');
+      settleSlot(replica, slot, null, 'scope-gone');
+    }
+    settleRequest(replica, request);
+  }
+}
+
+// §7.3 engine start: no product stack outlives its process, so every act and cancellation no unsettled request
+// reads goes.
+export function releaseJournal(replica) {
+  for (const act of replica.journal) act.retained = false;
+  for (const cancellation of replica.cancellations) cancellation.retained = false;
+  collectJournal(replica);
 }
 
 // Moves a replica's journal into another at an Add, keeping act and local ids.
@@ -77,17 +125,20 @@ export function collectJournal(replica) {
     || act.sourceEntries.some((source) => referenced.has(source.localId)));
 }
 
-// An inverse request's slot settles with its outcomes, or every operation skipped by `code`.
+// An inverse request's slot settles with its outcomes, or every operation skipped by `code`. A settled slot
+// keeps no values: its recipe gives way to its command's name.
 export function settleSlot(replica, slot, outcomes, code) {
   const count = slot.recipe.kind === 'restore' ? slot.recipe.operations.length : 1;
   slot.outcomes = outcomes ?? Array.from({ length: count }, (_, index) => ({ index, s: 'skipped', code }));
+  slot.recipe = { kind: 'withdrawn', command: slot.recipe.command };
   slot.state = 'settled';
 }
 
-// A request settles once every slot has: changed is whether any slot's accepted effects changed a row.
+// A request settles once every slot has: changed is whether any slot's accepted effects changed a row, and the
+// counts take every operation a slot sent and every one it skipped before sending.
 export function settleRequest(replica, request) {
   if (request.state === 'settled' || request.slots.some((slot) => slot.state !== 'settled')) return;
-  const outcomes = request.slots.flatMap((slot) => slot.outcomes);
+  const outcomes = request.slots.flatMap((slot) => [...slot.outcomes, ...(slot.skipped ?? []).map(({ code }) => ({ s: 'skipped', code }))]);
   request.state = 'settled';
   request.result = { kind: 'settled', requestId: request.requestId, inverseActId: request.inverseActId,
     changed: request.slots.some((slot) => slot.changed === true),
@@ -96,15 +147,13 @@ export function settleRequest(replica, request) {
   collectJournal(replica);
 }
 
-// The slots whose entries ended without a result (a fold, or a Discard) settle skipped by `code`. A Discard
-// also withdraws their values: the slot keeps only its outcomes.
-export function settleEnded(replica, code, { withdraw = false } = {}) {
+// The slots whose entries ended without a result (a fold, or a Discard) settle skipped by `code`.
+export function settleEnded(replica, code) {
   for (const request of replica.inverses) {
     if (request.state === 'settled') continue;
     for (const slot of request.slots) {
       if (slot.state === 'settled' || replica.entry(slot.localId)) continue;
       settleSlot(replica, slot, null, code);
-      if (withdraw) slot.recipe = { kind: 'withdrawn', command: slot.recipe.command };
     }
     settleRequest(replica, request);
   }
@@ -133,6 +182,7 @@ export function remapJournal(registry, replica, map) {
         }
       }
       source.preimages.forEach((preimage) => target(preimage.target));
+      (source.written ?? []).forEach((item) => target(item.target));
       for (const attempt of source.attempts) {
         for (const effect of attempt.acceptedEffects ?? []) {
           for (const row of effect.rows) references.remapRecord(effect.scope, row, map);

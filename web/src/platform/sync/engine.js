@@ -110,7 +110,16 @@ export class BrowserSyncEngine {
       answer = await this.store.transact((device, ensureScope) => {
         context = this.context(device);
         context.ensureScope = ensureScope;
-        try { return change(device, context); } catch (error) { thrown = error; throw error; }
+        // An inverse request that was waiting and settles in this transaction reports its counts, never an id.
+        const requests = () => device.replicas.flatMap((replica) => replica.inverses);
+        const waiting = new Set(requests().filter(({ state }) => state !== 'settled').map(({ requestId }) => requestId));
+        let result;
+        try { result = change(device, context); } catch (error) { thrown = error; throw error; }
+        for (const request of requests()) {
+          if (!waiting.has(request.requestId) || request.state !== 'settled') continue;
+          context.telemetry.push({ event: 'sync-inverse', outcome: 'settled', applied: request.result.appliedCount, skipped: request.result.skippedCount });
+        }
+        return result;
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
       if (error !== thrown) {
@@ -265,6 +274,12 @@ export class BrowserSyncEngine {
     this.installLifecycle();
     this.requestPersistence();
     this.telemetry.event('sync-start', { outcome: 'ok' });
+    // Requests still waiting at engine start stay visible: their count and the oldest one's age.
+    const waiting = this.device.activeReplica.inverses.filter(({ state }) => state !== 'settled');
+    if (first && waiting.length) {
+      this.telemetry.event('sync-inverse', { outcome: 'pending', count: waiting.length,
+        ageMs: Math.max(0, this.now() - Math.min(...waiting.map(({ requestedAt }) => requestedAt))) });
+    }
     this.armHolds();
     await this.cleanupCredentials();
     this.kick();
@@ -703,16 +718,19 @@ export class BrowserSyncEngine {
     }
   }
 
+  // A 200's results, in batches after one transaction that checks every receipt, takes the offset sample and
+  // notes the unreadable results, which still acknowledge their entries (engine.md §7.4).
   async pushResults(handle, request, response, timing) {
-    const accepted = await this.write(null, (device) => {
+    const unreadable = await this.write(null, (device, ctx) => {
       const replica = device.replicas.find((replica) => replica.storageHandle === handle);
-      if (!replica || replica.id !== request.replica) return false;
-      if (replica.isUnauthenticated(response)) { replica.meta.authPaused = true; return false; }
-      validatePushReceipts(replica, this.registry, response.body);
+      if (!replica || replica.id !== request.replica) return null;
+      if (replica.isUnauthenticated(response)) { replica.meta.authPaused = true; return null; }
+      const found = validatePushReceipts(replica, this.registry, response.body);
       replica.takeOffsetSample(response.body.serverTime, timing, this.limits);
-      return true;
+      if (found.size) ctx.telemetry.push({ event: 'sync-push-malformed' });
+      return found;
     });
-    if (!accepted) return;
+    if (!unreadable) return;
     const results = [...response.body.results].sort((a, b) => a.n - b.n);
     for (let index = 0; index < Math.max(1, results.length); index++) {
       await this.write(null, (device, ctx) => {
@@ -723,7 +741,7 @@ export class BrowserSyncEngine {
             for (const result of results) {
               if (result.s !== 'ok') continue;
               this.onPushResult(replica, ctx, result, response.body);
-              applyPushResult(replica, ctx, result, response.body);
+              applyPushResult(replica, ctx, result, response.body, unreadable);
             }
           }
           epochChange(replica, ctx, response.body.epoch);
@@ -731,7 +749,7 @@ export class BrowserSyncEngine {
         }
         if (results[index]) {
           this.onPushResult(replica, ctx, results[index], response.body);
-          applyPushResult(replica, ctx, results[index], response.body);
+          applyPushResult(replica, ctx, results[index], response.body, unreadable);
         }
         if (index === results.length - 1 || results.length === 0) {
           replica.meta.serverEpoch ??= response.body.epoch;
