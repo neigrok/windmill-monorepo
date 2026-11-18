@@ -150,15 +150,16 @@ private fun Engine.receipts(entry: Entry, result: Json): List<EffectReceipt> {
 }
 
 // What a 200 acknowledges is checked before anything of it applies, its offset sample included: a continuation names an n past every
-// result and at most one past `lastN`, an opted result carries whole receipts within SCOPED_RESPONSE_MAX_BYTES, a repeated one too, and
-// any other result none. A failure throws, and the response changes nothing.
+// result and at most one past `lastN`, an opted result carries whole receipts within SCOPED_RESPONSE_MAX_BYTES, and any other result
+// none. Each result is checked against the entry it applies to, the sent entry at its n: an entry acknowledged under an earlier replica
+// id keeps its old n until it settles, and no result answers it. A failure throws, and the response changes nothing.
 private fun Engine.validateAcknowledgement(replica: ReplicaState, body: Json) {
     body["retry"]?.let { retry ->
         val n = retry.member("n").long(1); retry.member("retryAfterMs").long(0)
         if (n > body.member("lastN").long(0) + 1 || body.items("results").any { it.member("n").long() >= n }) throw JsonError("push-continuation")
     }
     for (result in body.items("results")) {
-        val entry = replica.entries().firstOrNull { it.state in setOf("sent", "acked") && it.json["n"] == result["n"] } ?: continue
+        val entry = replica.entries().firstOrNull { it.state == "sent" && it.json["n"] == result["n"] } ?: continue
         if (result.member("s").str() != "ok") continue
         if (entry.predictions == null) { if (result["detail"]?.get("windmillKit") != null) throw JsonError("scoped-receipt"); continue }
         receipts(entry, result)
