@@ -98,7 +98,7 @@ SQLite schema version 2 keeps each as one row of its replica in `reversible_act`
 `cancellation`, written only when it changes. A version 1 store gains the three empty tables when it
 opens. Android's registries declare no restore or inverse command.
 
-The JVM model server implements probe, gym and journal bindings. Step mode drives the production
+The JVM model server implements probe, gym, journal and roadmap bindings. Step mode drives the production
 engine's sender/result batches and puller/page chunks/settling, with virtual clocks and transport.
 Step mode leaves sender waits pending until the caller advances its virtual clock; timed-out pulls
 retry, and live/pull answers remain bound to the requested replica across lineage changes. Live
@@ -167,9 +167,9 @@ commits and forbids pushing.
 
 ## Interpretations and discrepancies
 
-- Generate full gym+journal composition v12/minVersion 11; production automatic subscriptions remain
-  gym-only. Journal client vectors and fuzz are mandatory. The corpus README includes
-  `journal/claim-edit.json`, which §11.1's table omits; the client runner therefore counts 52 files.
+- Generate the full gym+journal+roadmap composition v13/minVersion 11; production automatic
+  subscriptions remain gym-only. Journal client vectors and fuzz are mandatory. The corpus README
+  includes `journal/claim-edit.json`, which §11.1's table omits; the client runner claims it too.
 - The runner guard follows Kotlin's coroutine context through an injected pure port. It cannot
   discover CoroutineContext from a synchronous function while obeying §2.3's owner denial; the
   actual context adapter belongs at the permitted boundary. No SyncAPI change or layering exception.

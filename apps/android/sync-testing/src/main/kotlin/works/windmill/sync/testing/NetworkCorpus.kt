@@ -1,5 +1,6 @@
 package works.windmill.sync.testing
 
+import java.io.File
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
@@ -9,7 +10,13 @@ object NetworkCorpus {
         "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json", "refusal/base-unknown.json",
         "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json", "write/references.json", "undo/journal.json", "undo/restore.json")
 
-    fun handlers(registry: Registry): Map<String, Handler> = paths.associateWith { { input: Json -> run(registry, input) } }
+    fun handlers(registry: Registry): Map<String, Handler> = paths.associateWith { handler(registry) }
+
+    // The client-step language against a product's registry: `roadmap/client.json` runs it with roadmap's (corpus/README.md).
+    fun productHandlers(root: File): Map<String, Handler> =
+        mapOf("roadmap/client.json" to handler(Registry(Json.parse(File(root, "sync/roadmap.registry.json").readBytes()))))
+
+    fun handler(registry: Registry): Handler = { input -> run(registry, input) }
 
     private fun run(registry: Registry, input: Json): Json {
         var wall = 0L

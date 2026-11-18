@@ -75,6 +75,20 @@ class EngineTests {
         }
     }
 
+    // E-6 over the shipped composition: the account's roadmaps are rows the app holds, never scopes it follows.
+    @Test fun theShippedCompositionSubscribesAndPullsGymOnlyWhileTheAccountHoldsRoadmaps() {
+        Engine.memory(works.windmill.sync.schema.SyncSchema.registry, identities = identities, actor = "actor").use { engine ->
+            engine.signIn("A", emptyMap())
+            val stamp = Stamp("1:0:a")
+            val roadmap = "t_0123456789abcdef"
+            engine.store.transaction { engine.store.put(engine.device.current().id, ScopeRef.product("roadmap"),
+                Row(RecordKey("tree", RecordID(roadmap)), Lattice(Life("alive", stamp), stamp), seq = 1)) }
+            assertEquals(setOf(ScopeRef.product("gym")), engine.subscriptions())
+            assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null}]}"""), engine.pullRequest(engine.subscriptions()))
+            assertEquals(setOf(ScopeRef.product("roadmap"), ScopeRef.tree(roadmap), ScopeRef.overlay(roadmap)), engine.subscriptions(listOf("roadmap")))
+        }
+    }
+
     @Test fun readerTreesPairTheBoundAccountsOverlayAndReopenBothScopes() {
         val tree = ScopeRef.tree("b_00000001")
         val overlay = ScopeRef.overlay("b_00000001")
