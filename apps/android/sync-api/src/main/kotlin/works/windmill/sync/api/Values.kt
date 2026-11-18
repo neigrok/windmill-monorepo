@@ -45,6 +45,7 @@ data class Change(val type: String, val operation: Operation, val values: Map<St
     }
 }
 
+// An opted command's prediction of one scope it changes (§7.1 step 4).
 data class ScopedPrediction(val scope: ScopeRef, val changes: List<Change>)
 
 data class DeviceWrite(val key: String, val value: Json?)
@@ -78,7 +79,9 @@ data class TextValue(val text: String, val merged: Boolean, val pending: Boolean
 data class Record(val type: String, val id: RecordID, val life: Life?, val born: Stamp?, val values: Map<String, Json>,
     val texts: Map<String, TextValue>, val serials: Map<String, Json>, val rc: Long?, val ru: Long?,
     val isVisible: Boolean, val isPending: Boolean, val isHeld: Boolean)
-data class NoticeContent(var deltas: List<Delta> = emptyList(), var command: Command? = null, var dependents: List<NoticeContent> = emptyList(), var predictions: List<ScopedDeltas>? = null)
+// A refused entry's content, kept whole: an opted command's projections by scope, and, beside them, the scope each dependent part came from.
+data class NoticeContent(var deltas: List<Delta> = emptyList(), var command: Command? = null, var dependents: List<NoticeContent> = emptyList(),
+    var predictions: List<ScopedDeltas>? = null, var scope: ScopeRef? = null)
 data class Notice(val id: String, val product: String, val scope: ScopeRef, val code: RefusalCode, val detail: Json?,
     val content: NoticeContent, val at: Long, val isDismissed: Boolean = false)
 data class UndoOffer(val id: String, val scope: ScopeRef, val releaseAt: Long)

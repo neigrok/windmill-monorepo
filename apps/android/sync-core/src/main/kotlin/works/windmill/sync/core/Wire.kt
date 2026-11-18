@@ -115,6 +115,12 @@ data class Delta(val key: RecordKey, val lattice: Lattice = Lattice(), val texts
     val removes: Boolean get() = lattice.life?.isAlive == false
 }
 
+// The deltas an entry holds for one scope: its origin's intent and prediction, or another scope's projection.
+data class ScopedDeltas(val scope: ScopeRef, val deltas: List<Delta>) {
+    constructor(json: Json) : this(ScopeRef(json.member("scope")), json.member("d").arr().map(::Delta))
+    val json: Json get() = Json.objectOf("scope" to scope.json, "d" to Json.Arr(deltas.map(Delta::json)))
+}
+
 data class Guard(val key: RecordKey, val field: String, val stamp: Stamp?) {
     constructor(json: Json) : this(RecordKey(json.member("t").str(), RecordID(json.member("id"))), json.member("field").str(),
         json.member("stamp").orNull()?.str()?.let(::Stamp))

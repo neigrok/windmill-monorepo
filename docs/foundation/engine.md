@@ -1722,12 +1722,13 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
 `authPaused`, `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope
 whose last push failed with anything but a `400`, `409` or `413`, until a push of that scope is
 answered `200` or one of those three (a `400` or `413` changes the next push, a `409` re-identifies or
-pauses). A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
+pauses). An opted command's records are listed under every scope it predicts, as its origin's push
+ended. A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
 unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsBack(scope, key)`
 applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
-its size cap) — so a product can tell a server it never reached from one that answered with a failure.
+its size cap, and a `200` whose receipts the replica cannot accept) — so a product can tell a server it never reached from one that answered with a failure.
 Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
 with a `5xx`, so a product can tell the log's outage from a refusal.
 

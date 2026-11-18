@@ -2,13 +2,21 @@ package works.windmill.sync.engine
 
 import works.windmill.sync.core.*
 
-internal fun Json.with(vararg pairs: Pair<String, Json?>): Json = Json.Obj(obj().toMutableMap().apply {
-    for ((key, value) in pairs) if (value == null) remove(key) else put(key, value)
-}.toList())
 internal fun Json.items(key: String): List<Json> = get(key)?.arr() ?: emptyList()
 internal fun Json.fields(key: String): Map<String, Json> = get(key)?.obj() ?: emptyMap()
 internal fun Json.flag(key: String): Boolean = get(key)?.bool() ?: false
 internal val Json.recordKey: RecordKey get() = RecordKey(member("t").str(), RecordID(member("id")))
+
+// One scope's share of an opted command's prediction (§7.1 step 4). It draws over that scope's confirmed rows until
+// the scope covers the command's accepted `resultSeq` (§7.5), and stays, covered, while the command's other scopes wait.
+internal data class Projection(val scope: ScopeRef, val deltas: List<Delta>, val resultSeq: Long? = null, val covered: Boolean = false) {
+    constructor(json: Json) : this(ScopeRef(json.member("scope")), json.member("d").arr().map(::Delta), json["resultSeq"]?.long(), json["covered"]?.bool() ?: false)
+    val json: Json get() = Json.Obj(buildList {
+        add("scope" to scope.json); add("d" to Json.Arr(deltas.map(Delta::json)))
+        resultSeq?.let { add("resultSeq" to Json.of(it)) }
+        if (covered) add("covered" to Json.of(true))
+    })
+}
 
 // Every view reads the deltas of every entry, so an entry decodes its intent and predictions once:
 // Json is immutable, and a value is decoded again only when the entry holds a different instance.
@@ -16,8 +24,9 @@ internal class Entry(var json: Json) {
     private class Decoded<T>(val source: Json, val value: T)
     private var decodedIntent: Decoded<Intent>? = null
     private var decodedPredict: Decoded<List<Delta>>? = null
-    private var decodedDeltas: Decoded<List<Delta>>? = null
     private var decodedPredictions: Decoded<List<Projection>>? = null
+    private var decodedEffects: Decoded<List<ScopedDeltas>>? = null
+    private var decodedActive: Decoded<List<ScopedDeltas>>? = null
     private fun <T> Decoded<T>?.of(source: Json, decode: (Json) -> T): Decoded<T> =
         this?.takeIf { it.source === source } ?: Decoded(source, decode(source))
     val id get() = json.member("localId").str()
@@ -34,22 +43,34 @@ internal class Entry(var json: Json) {
     var predict: List<Delta>
         get() = json["predict"]?.let { source -> decodedPredict.of(source) { it.arr().map(::Delta) }.also { decodedPredict = it }.value }.orEmpty()
         set(value) { json = json.with("predict" to value.takeIf { it.isNotEmpty() }?.let { Json.Arr(it.map(Delta::json)) }) }
+    // An opted command's projections, its origin's first and always present; null for every other entry, which keeps `predict`.
     var predictions: List<Projection>?
         get() = json["predictions"]?.let { source -> decodedPredictions.of(source) { it.arr().map(::Projection) }.also { decodedPredictions = it }.value }
         set(value) { json = json.with("predictions" to value?.let { Json.Arr(it.map(Projection::json)) }) }
-    fun effects(active: Boolean = false): List<ScopedDeltas> = predictions?.filter { !active || !it.covered }?.map {
+    // The versions an opted command's receipt accepted, kept for a replay to rebase on (§7.4).
+    var acceptedEffects: List<EffectReceipt>
+        get() = json.items("acceptedEffects").map(::EffectReceipt)
+        set(value) { json = json.with("acceptedEffects" to value.takeIf { it.isNotEmpty() }?.let { Json.Arr(it.map(EffectReceipt::json)) }) }
+    // What the entry predicts, by scope: an opted command's projections, or a command's legacy `predict` in its origin.
+    val predicted: List<ScopedDeltas> get() = predictions?.map { ScopedDeltas(it.scope, it.deltas) } ?: listOf(ScopedDeltas(scope, predict))
+    // Every delta the entry holds, by scope: its intent belongs to its origin. Dependency and identity recovery read them all.
+    val effects: List<ScopedDeltas> get() = decodedEffects.of(json) { stored(active = false) }.also { decodedEffects = it }.value
+    // The deltas views draw: an opted command's covered projections no longer do, and its intent leaves with its origin's.
+    val active: List<ScopedDeltas> get() = decodedActive.of(json) { stored(active = true) }.also { decodedActive = it }.value
+    private fun stored(active: Boolean): List<ScopedDeltas> = predictions?.filter { !active || !it.covered }?.map {
         ScopedDeltas(it.scope, (if (it.scope == scope) intent.deltas else emptyList()) + it.deltas)
     } ?: listOf(ScopedDeltas(scope, intent.deltas + predict))
-    fun deltas(scope: ScopeRef, active: Boolean = false): List<Delta> = effects(active).filter { it.scope == scope }.flatMap { it.deltas }
+    val deltas: List<Delta> get() = effects.flatMap { it.deltas }
+    fun deltas(scope: ScopeRef): List<Delta> = effects.filter { it.scope == scope }.flatMap { it.deltas }
+    fun activeDeltas(scope: ScopeRef): List<Delta> = active.filter { it.scope == scope }.flatMap { it.deltas }
+    // One projection a scope after a remap gives two the same scope: their deltas join, and the scope is covered only when both were.
     fun mergePredictions() {
         val groups = predictions?.groupBy { it.scope } ?: return
-        predictions = EffectReceipts.orderedScopes(scope, groups.keys).map { target ->
+        predictions = EffectReceipt.ordered(scope, groups.keys).map { target ->
             val values = groups[target].orEmpty()
             Projection(target, values.flatMap { it.deltas }, values.mapNotNull { it.resultSeq }.maxOrNull(), values.isNotEmpty() && values.all { it.covered })
         }
     }
-    val scopes: Set<ScopeRef> get() = effects().map { it.scope }.toSet()
-    val deltas: List<Delta> get() = decodedDeltas.of(json) { effects().flatMap { it.deltas } }.also { decodedDeltas = it }.value
 }
 
 internal data class OutboxDelta(val entry: Entry, val delta: Delta)
@@ -89,7 +110,6 @@ internal class ReplicaState(input: Json) {
             if (next == "ready") {
                 entry.json = entry.json.with("n" to null, "digest" to null, "resultSeq" to null, "resultEpoch" to null)
                 entry.intent = entry.intent.copy(n = null)
-                entry.predictions = entry.predictions?.map { it.copy(resultSeq = null, covered = false) }
             }
         }
     }

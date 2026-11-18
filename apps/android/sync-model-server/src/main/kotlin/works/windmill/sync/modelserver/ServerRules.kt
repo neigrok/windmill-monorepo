@@ -71,6 +71,7 @@ class ProbeServerRules : ServerRules {
         "probe.copy" -> context.entry("copies", command.string("dst")) == Json.of(command.string("src")); else -> false
     }
     override fun discoverEffectScopes(context: RuleContext, command: CheckedCommand?): Set<ScopeKey> {
+        if (command?.name == "probe.branch") return setOf(ScopeKey("tree:${command.string("parent")}"), ScopeKey("tree:${command.string("child")}"))
         if (command?.name != "probe.copy" || replays(command, context) || context.idState(RecordKey("board", RecordID(command.string("dst")))).state != "none") return emptySet()
         return setOf(ScopeKey("tree:${command.string("dst")}"))
     }
@@ -114,6 +115,15 @@ class ProbeServerRules : ServerRules {
                     } }
                     CommandOutcome(listOf(PlannedDelta.create(board)), listOf(WriteClaim(board, mintedBorn = true)), product = putEntry(c.product, "copies", c.scope, board.id.toString(), Json.of(source)), into = mapOf(ScopeKey("tree:${board.id}") to copies))
                 }
+            }
+            // Creates board `child` and titles both its tree and `parent`'s: one command's effects in three scopes.
+            "probe.branch" -> {
+                val parent = command.string("parent"); val board = RecordKey("board", RecordID(command.string("child")))
+                if (parent == board.id.string) throw Refusal("invalid")
+                if (c.record(board) != null) throw Refusal("id-taken")
+                val title = PlannedDelta.update(RecordKey("meta", RecordID("meta")), null, mapOf("title" to command.args.getValue("title")))
+                CommandOutcome(listOf(PlannedDelta.create(board)), listOf(WriteClaim(board, mintedBorn = true)), Json.objectOf("created" to Json.of(true)), c.product,
+                    listOf(parent, board.id.string!!).associate { ScopeKey("tree:$it") to listOf(title) })
             }
             "probe.tick" -> CommandOutcome(c.records("run").filter { isOpen(it) && (it.lattice.fields["startedAt"]?.value?.long() ?: Long.MAX_VALUE) <= c.serverNow - 600_000 }.map { PlannedDelta.update(it.key, it.lattice.born, mapOf("endedAt" to Json.of(c.serverNow))) }, product = c.product)
             else -> throw Refusal("invalid")

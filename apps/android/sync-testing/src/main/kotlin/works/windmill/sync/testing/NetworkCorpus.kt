@@ -7,7 +7,7 @@ import works.windmill.sync.engine.*
 object NetworkCorpus {
     val paths = listOf("commit/grouping.json", "commit/retire.json", "commit/throws.json", "hold/release.json", "hold/undo.json",
         "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json", "refusal/base-unknown.json",
-        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json")
+        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json")
 
     fun handlers(registry: Registry): Map<String, Handler> = paths.associateWith { { input: Json -> run(registry, input) } }
 
@@ -34,8 +34,8 @@ object NetworkCorpus {
             override fun actorID() = take("actors").str()
             override fun forkGuard() = take("forkGuards").str()
         }
-        Engine.memory(registry, input.member("device"), clock, identities, current,
-            input["limits"]?.get("PUSH_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES).use { engine ->
+        val limits = ClientCorpus.limits(input)
+        Engine.memory(registry, input.member("device"), clock, identities, current, limits.pushMaxBytes, effectMaxBytes = limits.effectMaxBytes).use { engine ->
             var lastPush: Json? = null
             var lastPull: Json? = null
             var pulledFor: String? = null

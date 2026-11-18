@@ -112,7 +112,10 @@ class Refusal(val code: String, val detail: Json? = null) : Exception(code)
 class AdmissionFault(cause: Throwable? = null) : Exception("admission-fault", cause)
 data class Admitted(val result: Json, val events: List<LiveEvent> = emptyList())
 fun refused(code: String, detail: Json? = null): Json = Json.objectOf("s" to Json.of("refused"), "code" to Json.of(code)).with("detail" to detail)
+// Constants a call may shrink, as a corpus vector's `limits` do; a name the model server cannot configure fails the call.
 class ServerLimits(json: Json? = null) {
+    init { json?.expectKeys(emptyList(), listOf("MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "RECEIPT_MAX_BYTES", "SCOPED_RESPONSE_MAX_BYTES",
+        "EFFECT_MAX_BYTES", "PULL_PAGE_BYTES", "PULL_MAX_BYTES")) }
     val maxRecordBytes = json?.get("MAX_RECORD_BYTES")?.long(1)?.toInt() ?: Constants.MAX_RECORD_BYTES
     val pushMaxIntents = json?.get("PUSH_MAX_INTENTS")?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS
     val pushMaxBytes = json?.get("PUSH_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES

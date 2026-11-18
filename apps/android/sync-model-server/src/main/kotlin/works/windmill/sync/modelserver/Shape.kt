@@ -39,8 +39,6 @@ data class PlannedDelta(val key: RecordKey, val op: String, val life: PlannedLif
 }
 data class CheckedCommand(val definition: CommandDef, val args: Map<String, Json>) { val name get() = definition.name; fun string(name: String) = (args[name] as? Json.Str)?.value ?: "" }
 data class CheckedIntent(val scope: ScopeRef, val deltas: List<PlannedDelta>, val guards: List<Guard>, val command: CheckedCommand?)
-fun Json.with(vararg members: Pair<String, Json?>): Json = Json.Obj(obj().toMutableMap().apply { for ((key, value) in members) if (value == null) remove(key) else put(key, value) }.toList())
-private fun Json.holdsNul(): Boolean = when (this) { is Json.Str -> '\u0000' in value; is Json.Arr -> values.any { it.holdsNul() }; is Json.Obj -> members.any { '\u0000' in it.key || it.value.holdsNul() }; else -> false }
 
 object IdentityRules {
     fun op(type: TypeDef, life: PlannedLife?, born: Stamp?, mintsBorn: Boolean = false): String? = when {
@@ -65,7 +63,7 @@ object IdentityRules {
 }
 object IntentShape {
     fun check(json: Json, replica: Boolean, registry: Registry, now: Long): CheckedIntent = try {
-        json.expectKeys(listOf("scope"), listOf("n", "d", "guard", "cmd", "gestureId")); require(!json.holdsNul())
+        json.expectKeys(listOf("scope"), listOf("n", "d", "guard", "cmd", "gestureId")); require(!json.holdsNul)
         val scope = ScopeRef(json.member("scope")); val kind = registry.scopeKind(scope) ?: throw Refusal("invalid")
         if (scope.tree != null) require(registry.governingType?.let { registry.isId(Json.of(scope.tree!!), it) } == true)
         json["gestureId"]?.str()
@@ -101,7 +99,7 @@ object IntentShape {
         CheckedIntent(scope, clamped, guards, checkedCommand)
     } catch (refusal: Refusal) { throw refusal } catch (_: IllegalArgumentException) { throw Refusal("invalid") }
     fun effect(json: Json, scope: ScopeKey, source: String, registry: Registry): PlannedDelta = try {
-        require(!json.holdsNul())
+        require(!json.holdsNul)
         val kind = registry.scopeKind(scope.ref) ?: throw Refusal("invalid")
         val serials = json["v"]?.obj().orEmpty()
         val replacements = mutableMapOf<String, TextReplacement>()
