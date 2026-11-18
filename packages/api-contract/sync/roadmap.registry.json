@@ -411,8 +411,7 @@
       "serverInternal": false,
       "scopedEffects": true,
       "args": {
-        "visibility": { "type": "json", "domain": { "type": "string", "enum": ["private", "unlisted", "public"] } },
-        "stamp": { "type": "json", "domain": { "type": "stamp" } }
+        "visibility": { "type": "json", "domain": { "type": "string", "enum": ["private", "unlisted", "public"] } }
       },
       "predicts": ["meta"]
     },
