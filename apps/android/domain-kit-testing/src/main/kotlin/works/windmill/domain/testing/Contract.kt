@@ -182,6 +182,7 @@ val Gesture.form: Json get() = Json.objectOf("changes" to Json.Arr(changes.map {
     "hold" to Json.of(hold), "guards" to Json.Arr(guards.map { Json.objectOf("t" to Json.of(it.type), "id" to it.id.json, "field" to Json.of(it.field)) }),
     "retire" to Json.Arr(retire.map { it.form }), "cmd" to (command?.json ?: Json.Null), "predict" to Json.Arr(predict.map { it.form }),
     "local" to Json.Arr(local.map { Json.objectOf("key" to Json.of(it.key), "value" to (it.value ?: Json.Null)) }))
+    .with("scopedPredict" to scopedPredict?.let { groups -> Json.Arr(groups.map { Json.objectOf("scope" to it.scope.json, "changes" to Json.Arr(it.changes.map { change -> change.form })) }) })
 val CommitReceipt.form: Json get() = Json.objectOf("gestureId" to Json.of(gestureId), "localIds" to Json.Arr(localIds.map(Json::of)),
     "releaseAt" to (releaseAt?.let(Json::of) ?: Json.Null), "retired" to Json.Arr(retired.map(Json::of)))
 

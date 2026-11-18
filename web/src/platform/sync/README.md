@@ -95,7 +95,9 @@ An observation (`observation.js`) keeps its scope's records between publications
 the records whose confirmed row changed identity or whose pending entries changed; a record no held
 entry touches is one frozen object in both `drawn` and `stored`.
 The default beacon adapter maps spec event labels to the intake's snake_case names.
-Writer telemetry measures transaction enqueue to durable completion, with bounded numeric timings.
+Writer telemetry measures transaction enqueue to durable completion, with bounded numeric timings,
+for the first ten writes of each minute that change the store, under an allowance failures and step
+events never share.
 The 25 ms writer slice is a latency target, not a hardware-independent correctness assertion.
 Push results use separate transactions. A pull response applies in chunks sized by how long the last
 one held the writer, from 64 rows and never fewer, aiming at half of the 25 ms writer slice; one chunk may

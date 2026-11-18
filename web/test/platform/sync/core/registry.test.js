@@ -196,8 +196,8 @@ test('the registry exposes the opening field and the before-pull commands', () =
   assert.deepEqual(registry.beforePullCommands('tree'), []);
 });
 
-test('the product registries are gym and journal, each valid against registry.schema.json and the Registry', () => {
-  assert.deepEqual(PRODUCTS.map((registry) => registry.registry), ['gym', 'journal']);
+test('the product registries are gym, journal and roadmap, each valid against registry.schema.json and the Registry', () => {
+  assert.deepEqual(PRODUCTS.map((registry) => registry.registry), ['gym', 'journal', 'roadmap']);
   for (const registry of PRODUCTS) {
     assert.deepEqual(errorsOf(SCHEMA, registry), [], registry.registry);
     assert.doesNotThrow(() => new Registry(registry), registry.registry);
@@ -224,14 +224,19 @@ test('the composed registries declare one version, and no product registry decla
   }
 });
 
-// D-8 and A.2: every gym minted type is seeded, and its widest seeded id, a seed at the bound and the largest ordinal, fits
-// its id pattern.
-test('every minted gym type is seeded, its widest seeded id in its pattern', () => {
-  const minted = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.identity === 'minted');
-  const seeded = minted.filter((type) => type.seeded);
-  assert.deepEqual(seeded.map((type) => type.type), minted.map((type) => type.type));
-  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
+// D-8: a type that declares seeded ids fits its widest seeded id, a seed at the bound and the largest ordinal, in its id
+// pattern, in every product registry.
+test('every seeded type of every product fits its widest seeded id in its pattern', () => {
+  const seeded = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.seeded);
   for (const type of seeded) {
     assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
   }
+});
+
+// A.2: every minted gym type is seeded.
+test('every minted gym type is seeded', () => {
+  const gym = new Registry(PRODUCTS.find((json) => json.registry === 'gym'));
+  const minted = [...gym.types.values()].filter((type) => type.identity === 'minted');
+  assert.deepEqual(minted.filter((type) => type.seeded).map((type) => type.type), minted.map((type) => type.type));
+  assert.deepEqual(minted.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
 });

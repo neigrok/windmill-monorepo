@@ -198,6 +198,17 @@ test('a store failure while sending or pulling reports storage once and never as
   engine.close();
 });
 
+test('a burst of writes in one minute never starves the transport failure that follows it', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  for (let n = 0; n < 40; n++) await engine.commit('self/probe', [{ op: 'put', t: 'day', id: `2026-10-${String(n % 28 + 1).padStart(2, '0')}`, present: true, f: { score: n % 11 } }]);
+  assert.ok(env.events.filter(({ name }) => name === 'sync-writer').length > 0);
+  env.transport.request = async () => { throw new Error('offline'); };
+  await engine.send();
+  assert.deepEqual(env.failures, ['transport']);
+  engine.close();
+});
+
 test('undo offers are the held gestures, each with its own deadline and records, until undone or released', async () => {
   const env = environment(), engine = await BrowserSyncEngine.open(env.options);
   const observation = engine.observe('self/probe');
