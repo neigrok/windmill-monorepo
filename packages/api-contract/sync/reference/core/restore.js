@@ -8,18 +8,14 @@ import { jcs, sameJson } from './jcs.js';
 import { Stamp } from './stamp.js';
 import { checkFieldValue, checkId, lengthIn } from './values.js';
 
-export const RESTORE_SKIPS = ['epoch-changed', 'version-changed', 'record-changed', 'record-dead', 'record-present', 'scope-changed'];
-
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const exactKeys = (value, keys, optional = []) => isObject(value)
   && Object.keys(value).every((key) => keys.includes(key) || optional.includes(key))
   && keys.every((key) => Object.hasOwn(value, key));
 const isSeq = (value) => Number.isSafeInteger(value) && value >= 0;
 
-export class RestoreError extends Error {}
-
 // The order E-7 lists a row's slots in: born, life, fields by name, texts by name.
-export function slotOrderKey(slot) {
+function slotOrderKey(slot) {
   if (slot.kind === 'born') return '0';
   if (slot.kind === 'life') return '1';
   return `${slot.kind === 'field' ? '2' : '3'}${slot.name}`;
@@ -29,20 +25,12 @@ export function sameSlot(a, b) {
   return a.kind === b.kind && (a.name ?? null) === (b.name ?? null);
 }
 
-export function sameTarget(a, b) {
-  return a.scope === b.scope && a.t === b.t && sameJson(a.id, b.id) && sameSlot(a.slot, b.slot);
-}
-
 export function sameRecord(a, b) {
   return a.scope === b.scope && a.t === b.t && sameJson(a.id, b.id);
 }
 
-export function targetKey({ scope, t, id, slot }) {
+function targetKey({ scope, t, id, slot }) {
   return jcs([scope, t, id, slot.kind, slot.name ?? null]);
-}
-
-export function recordAddressKey({ scope, t, id }) {
-  return jcs([scope, t, id]);
 }
 
 function slotShapeFault(slot) {
@@ -138,7 +126,7 @@ function footprintFault(type, footprint) {
 }
 
 // The registry scope kind a ScopeRef names, a tree or overlay naming a governing id, or null.
-export function scopeKindOfRef(registry, ref) {
+function scopeKindOfRef(registry, ref) {
   const kind = registry.scopeKindOf(ref);
   if (!kind || kind === 'device') return null;
   if ((kind === 'tree' || kind === 'overlay') && (!registry.governingType || checkId(registry, registry.governingType, ref.split('/').pop()))) return null;

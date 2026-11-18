@@ -8,19 +8,19 @@
 import { Clock } from '../core/clock.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
-import { creatableFault, inverseOutcomes, restorableSlotFault, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
+import { compareSlots, creatableFault, inverseOutcomes, restorableSlotFault, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { undo } from './hold.js';
 import { ordinalOf, settleRequest, settleSlot, sourceOf } from './journal.js';
 import { effectsOf } from './projections.js';
 import { drawn } from './views.js';
 
-export function requestOf(replica, requestId) {
+function requestOf(replica, requestId) {
   return replica.inverses.find((request) => request.requestId === requestId);
 }
 
 // The slot an inverse entry reserved, with its request.
-export function slotOf(replica, entry) {
+function slotOf(replica, entry) {
   const request = entry.inverseOf === undefined ? undefined : requestOf(replica, entry.inverseOf);
   const slot = request?.slots.find((candidate) => candidate.localId === entry.localId);
   return slot ? { request, slot } : null;
@@ -352,11 +352,9 @@ function createdFootprint(history, record) {
     for (const item of row.slots) footprint.set(jcs(item.slot), structuredClone(item));
     previous = row.rowSeq;
   }
-  const ordered = [...footprint.values()].sort((a, b) => (rank(a.slot) < rank(b.slot) ? -1 : 1));
+  const ordered = [...footprint.values()].sort((a, b) => compareSlots(a.slot, b.slot));
   return { rowSeq: previous, footprint: ordered };
 }
-
-const rank = (slot) => `${{ born: 0, life: 1, field: 2, text: 3 }[slot.kind]}${slot.name ?? ''}`;
 
 // A scope the act created, proven unchanged by its own receipts: created (beforeSeq null), then each next
 // receipt of it starting where the last ended.

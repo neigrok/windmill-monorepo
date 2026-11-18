@@ -38,7 +38,8 @@ echoes and nudges stay REST. `/v1/sync` has its own `426 upgrade-required` minim
 - stamps, the HLC and the merge;
 - per-intent admission, results and commands;
 - per-scope sequencing and digests, paged pull and the live channel;
-- the client replica: confirmed cache, durable outbox, undo holds and the device scope;
+- the client replica: confirmed cache, durable outbox, undo holds, the journal of reversible acts and the
+  device scope;
 - the replica lifecycle (claim, sign-out) and conformance.
 
 **Outside the engine** (none of these is a synced record):
@@ -1954,7 +1955,8 @@ The principal check precedes epoch handling. A `409` used for recovery MUST carr
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
 a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
 An authenticated `200` validates every scoped receipt before any ACK-side mutation, including offset
-sampling. Require the origin and every predicted scope after global-ID remaps; reject duplicate,
+sampling, each against the sent entry at its result's `n`: an entry acknowledged under an earlier replica id
+keeps its old `n` until it settles, and no result answers it. Require the origin and every predicted scope after global-ID remaps; reject duplicate,
 unknown or invalid scopes, malformed slots, rows of a type outside their declared scope, and missing
 required markers. Additional well-formed discovered scopes are accepted and persisted as receipt-only
 empty-d markers. A continuation has positive safe-integer `n ≤ lastN + 1`, strictly after every
