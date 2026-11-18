@@ -1,7 +1,7 @@
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
 
-const EVENTS = new Set(['sync-start', 'sync-commit', 'sync-release', 'sync-undo', 'sync-signin',
+const EVENTS = new Set(['sync-start', 'sync-commit', 'sync-release', 'sync-undo', 'sync-inverse', 'sync-signin',
   'sync-signout', 'sync-auth-paused', 'sync-upgrade', 'sync-persist', 'sync-leader',
   'sync-digest-mismatch', 'sync-push-malformed', 'sync-refused', 'sync-writer']);
 const OPERATIONS = new Set(['storage', 'transport', 'live', 'leadership', 'observer', 'auth']);
