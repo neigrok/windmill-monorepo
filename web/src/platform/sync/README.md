@@ -84,10 +84,11 @@ sign-in, and answers `true` when the browser then holds none. The anon replica, 
 can have paused, comes out of a finished sign-out unpaused, and a `clear` that answers `true` unpauses it again
 (engine.md §9.1). While a deletion is owed the live socket stays closed, since it would carry the cookie, and anonymous
 pulls go on; engine start and every reconnection run the deletion before the socket opens again.
-`credentialHeld(account)` takes what the session owner found of the browser's credential (`null` for none, `undefined`
+`credentialHeld(account)` takes what the session owner read of the browser's credential (`null` for none, `undefined`
 when it could not tell): a bound replica of another account pauses, as a 401 pauses it, and a paused anon replica
-unpauses once none is held. The port's `held()` answers the same, and the leader asks it at start and every
-`CREDENTIAL_CHECK_MS` (30 s) while its anon replica is paused with no deletion owed and no sign-in pending.
+unpauses once none is held. The shell tells it what each read of `/v1/me` finds (at open and restore, on focus, on
+reconnection and every 20 s, outside a sign-out); the engine asks no one itself. The transaction that pauses or unpauses
+the active replica emits `sync-auth-paused` with `paused` or `released`, once.
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably
 records cookie cleanup until the credentials port succeeds, and so does `cancelSignIn(account)`, which in the same write
 drops the pending sign-in; `cleanupCredentials()` runs the deletion owed. Sign-in drops a deletion owed for an earlier

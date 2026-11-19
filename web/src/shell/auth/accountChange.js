@@ -10,12 +10,14 @@ export function restoredDeviceHolder(engine) {
 }
 
 export class DeviceSeat {
-  constructor(products) {
+  constructor(products, reportCredential = () => {}) {
     this.account = null;
     this.previousAccount = null;
     this.lapsed = false;
     this.confirmed = false;
     this.products = products;
+    this.reportCredential = reportCredential;
+    this.credentialReported = false;
   }
 
   // The durable bound replica remembers the holder, without granting session authority.
@@ -27,6 +29,16 @@ export class DeviceSeat {
   async finishDeviceCleanup(change) {
     await Promise.all(this.products.map(async (product) => product.forgetDevice?.(change)));
     if (this.previousAccount === change.previous) this.previousAccount = null;
+  }
+
+  // Tells the engine whose credential the read found (engine.md §9.1): `me`'s account, null for none, undefined for a blip.
+  // A tell that fails is reported once a page, and the read goes on.
+  async tellCredential(engine, me) {
+    try { await engine.credentialHeld(me === undefined ? undefined : me?.id ?? null); }
+    catch (error) {
+      if (!this.credentialReported) this.reportCredential(error);
+      this.credentialReported = true;
+    }
   }
 
   // `me` is a user, null for a real 401, undefined for a blip. Returns null when nothing changes.

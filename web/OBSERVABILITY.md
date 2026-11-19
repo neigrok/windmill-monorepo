@@ -29,7 +29,8 @@ refusal text never enter telemetry properties.
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
 | `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with how many are `waiting` and the oldest one's `ageMs` |
-| `sync-signin`, `sync-signout`, `sync-auth-paused` | Lineage decisions and authentication transitions |
+| `sync-signin`, `sync-signout` | Lineage decisions and authentication transitions |
+| `sync-auth-paused` | The active replica's sync stopping for its credential, told once by the transaction that makes the change: `paused` (a `401`, an answer or frame served as another principal, or the shell reading that the browser no longer holds the account's credential), `released` (a sign-in, a sign-out, the shell reading that the browser holds no credential, or a credential deletion that leaves none) |
 | `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
 | `sync-refused`, `sync-push-malformed` | Terminal refusals, and malformed push responses or receipts: a 400, or a `200` whose receipt or inverse outcomes the replica cannot read, which still acknowledges its entry |
 | `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency, sampled: the first 10 writes of each minute that change the store |
@@ -39,13 +40,25 @@ Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`
 integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
 1,000), `ageMs` (capped at 30 days), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `settled`,
 `paused`, `failed`, `acquired`, `released`). No id or value of an act, request or record enters them.
-Failures use only the static operations `storage`, `transport`, `live`, `leadership`,
-`observer` and `auth`. Storage denial is explicit; no volatile fallback replaces durable work. A write
+Failures reach Sentry with kind `sync`, route `/sync` and no stack, under these static operations only:
+
+| Failure | When |
+|---|---|
+| `sync-storage` | The device store did not open, commit or read; an engine step no caller hears (a release, a cleanup, a peer's refresh) failed; a persisted restore failed |
+| `sync-transport` | A hello, push or pull failed or answered what the engine cannot read, while the replica could sync; a store failure on the way is `sync-storage` alone |
+| `sync-live` | The live socket ended or failed while it was wanted |
+| `sync-leadership` | The tab lock or the channel between tabs failed |
+| `sync-observer` | A listener of the engine, of a scope's observation or of its events threw |
+| `sync-auth` | A sign-in whose hello did not answer as the account signing in, or that threw (a sign-out still open is no failure); a credential deletion the session owner's `clear` could not make |
+
+Storage denial is explicit; no volatile fallback replaces durable work. A write
 the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
-kind `store`; an error a caller's read-and-commit function throws passes through unreported.
+kind `store`; an error a caller's read-and-commit function throws passes through unreported. The engine
+asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its
+20-second poll among them), and that read is what releases a paused anon replica.
 
 The shell reports cookie cleanup, session transition and auth-hint storage failures under static
-`auth` operations. Opening and warming the offline shell reports `offline-shell` to Sentry.
+`auth` operations, and a read of `/v1/me` the engine could not take as `auth-credential-held`. Opening and warming the offline shell reports `offline-shell` to Sentry.
 The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`; a failed
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.
@@ -442,6 +455,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
+| `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
 | `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 

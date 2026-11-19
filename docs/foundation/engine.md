@@ -2921,10 +2921,11 @@ replica; one that leaves another account's cookie in place does not. The session
 credential the browser holds outside the sync endpoints too, and tells the browser engine
 (`credentialHeld(account)`, `null` for none): a bound replica whose account's credential the browser
 no longer holds is `authPaused` as a `401` would pause it, and a paused `anon` replica unpauses once
-the browser holds none. The leader asks it itself (the port's `held()`) while its active `anon`
-replica is paused with no deletion owed and no sign-in pending, which nothing else would end: at
-engine start and every `CREDENTIAL_CHECK_MS` while that lasts. A frame's `as` never deletes a
-credential: it may name a cookie a sign-in set before the sign-in recorded `pendingSignIn`.
+the browser holds none. The session owner tells it what its reads of the account find, and that is
+what ends a paused `anon` replica's pause while no deletion is owed and no sign-in is pending: the
+web shell reads `/v1/me` once the engine opens or is restored, on focus, on reconnection and every
+20 s, outside a sign-out or an account closure. The engine asks no one itself. A frame's `as` never
+deletes a credential: it may name a cookie a sign-in set before the sign-in recorded `pendingSignIn`.
 
 An HTTP request is checked in this order, and the first failing check answers:
 1. the registry version (above);
@@ -3928,7 +3929,6 @@ the engine's codes.
 | `CLOCK_JUMP_MS` | 1000 |
 | `SCOPE_HORIZON` / `REPLICA_GC` / `REQUEST_RETENTION` | 30 / 365 / 90 days |
 | `REQUEST_LEASE_MS` | 60 000 |
-| `CREDENTIAL_CHECK_MS` (browser) | 30 000: how often the leader asks whose credential the browser holds while its active `anon` replica is paused with nothing else to end it (§9.1) |
 | Gym stale window | 4 h |
 
 ---

@@ -56,7 +56,8 @@ export default function AuthProvider({ children }) {
     () => session.engine?.getSnapshot().upgradeRequired ?? false,
     () => false,
   );
-  const [seat] = useState(() => new DeviceSeat(PRODUCTS));
+  const [seat] = useState(() => new DeviceSeat(PRODUCTS,
+    (error) => captureError('auth', 'auth-credential-held', error?.stack ?? '', '/auth')));
   const [productQuestions] = useState(() => new ProductQuestions(PRODUCTS,
     (question, error) => captureError('auth', 'auth-product-words', error?.stack ?? '', '/auth', { question })));
   const [dataScope] = useState(() => new DocumentDataScope({
@@ -256,6 +257,7 @@ export default function AuthProvider({ children }) {
     const confirmedRevision = confirmRoom(me);
     if (engine.restoring) await engine.restoring;
     if (engine.closed || engine.signingOut || engine.device.meta.closingAccount || signOutResult.current) return undefined;
+    await seat.tellCredential(engine, me);
     if (me === undefined) {
       const cached = hint();
       const meta = engine.device.activeReplica.meta;
@@ -266,7 +268,6 @@ export default function AuthProvider({ children }) {
     if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision); return me; }
     const ended = signedOut || Boolean(seat.previousAccount && engine.device.activeReplica.meta.state === 'anon');
     if (ended && engine.device.activeReplica.meta.state === 'bound') await finishSignOut({ choice: 'keep' }, me?.id ?? null);
-    else await engine.credentialHeld(null);
     pending.current = null; setQuestion(null); settle(null, { signedOut: ended }, confirmedRevision);
     return null;
   }), [enqueue, settle, bind, seat, finishClosure, finishSignOut, cleanupDevice, confirmRoom, dataScope]);
@@ -385,12 +386,9 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     let alive = true;
     const hooks = PRODUCTS.map((product) => product.sync ?? {});
-    // `held` answers whose credential the browser holds, null for none, undefined when the server cannot say. `clear`
-    // answers whether the browser holds no credential after it: another account's cookie, or a session it must keep, stays.
-    syncSession.open({ base: API_BASE, credentials: { held: async () => {
-      const current = await fetchMe();
-      return current === undefined ? undefined : current?.id ?? null;
-    }, clear: async (account) => {
+    // `clear` answers whether the browser holds no credential after it: another account's cookie, or a session it must keep,
+    // stays. Whose credential it holds the engine hears from every refresh (`tellCredential`).
+    syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const revision = roomOwnership.current.revision;
       const current = await fetchMe();
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');

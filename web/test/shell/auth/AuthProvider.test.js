@@ -2,7 +2,7 @@ import test from 'node:test';
 import { registerNavigationGuard } from '../../../src/shell/navigation.js';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
-import { environment, until } from '../../platform/sync/fakes.js';
+import { environment, tick, until } from '../../platform/sync/fakes.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
@@ -736,17 +736,31 @@ test('the credentials port answers that the browser holds no credential once it 
     { own: true, none: true, loggedOut: 1 });
 });
 
-test('the credentials port answers whose credential the browser holds: its account, none, or nothing when it cannot tell', async (t) => {
+test('a paused anon replica waits on the shell\'s 20-second read of the account, which releases it once the browser holds no credential, and nothing else asks the server', async (t) => {
   const state = await account(t);
-  const answers = [{ ok: true, status: 200, user: { id: 'A', name: 'Ada' } }, { ok: false, status: 401 }, { ok: false, status: 503 }];
-  globalThis.fetch.mock.mockImplementation(async () => {
-    const answer = answers.shift();
-    if (!answer) throw new TypeError('offline');
-    return { ok: answer.ok, status: answer.status, json: async () => ({ user: answer.user }) };
+  const engine = state.engine;
+  await engine.start();
+  await until(() => engine.leader);
+  state.setMe(null);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await engine.cleanupCredentials();
+  await state.auth().refresh();
+  const reads = () => globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/v1/me')).length;
+  const told = () => state.env.events.filter(({ name }) => name === 'sync-auth-paused').map(({ props }) => props.outcome);
+  const before = { reads: reads(), fetches: globalThis.fetch.mock.calls.length, told: told().length };
+  await engine.receiveFrame({ op: 'change', scope: 'tree/b_00000001', as: 'A' });
+  for (let i = 0; i < 20; i++) { state.env.timers.advance(15_000); await tick(); }
+  t.mock.timers.tick(19_999);
+  await tick();
+  const waited = { state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+    fetches: globalThis.fetch.mock.calls.length - before.fetches };
+  t.mock.timers.tick(1);
+  await until(() => engine.device.activeReplica.meta.authPaused === false);
+  assert.deepEqual({ waited, reads: reads() - before.reads, fetches: globalThis.fetch.mock.calls.length - before.fetches,
+    told: told().slice(before.told), status: state.auth().status, failures: state.env.failures }, {
+    waited: { state: 'anon', authPaused: true, fetches: 0 },
+    reads: 1, fetches: 1, told: ['paused', 'released'], status: 'ghost', failures: [],
   });
-  const held = [];
-  for (let i = 0; i < 4; i++) held.push(await state.engine.credentials.held());
-  assert.deepEqual(held, ['A', null, undefined, undefined]);
 });
 
 test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {

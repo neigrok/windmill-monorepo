@@ -193,6 +193,23 @@ for (const guard of ['none', 'anon', 'dormant', 'closed', 'signingOut', 'signOut
   });
 }
 
+test('the seat tells the engine whose credential each read found, and a tell that throws is reported once a page while the reads go on', async () => {
+  const told = [], reported = [];
+  let failing = false;
+  const engine = { credentialHeld: async (held) => {
+    told.push(held);
+    if (failing) throw new Error('store closed');
+  } };
+  const seat = new DeviceSeat([], (error) => reported.push(error.message));
+  await seat.tellCredential(engine, A);
+  await seat.tellCredential(engine, null);
+  await seat.tellCredential(engine, undefined);
+  failing = true;
+  await seat.tellCredential(engine, null);
+  await seat.tellCredential(engine, B);
+  assert.deepEqual({ told, reported }, { told: ['u_A', null, undefined, null, 'u_B'], reported: ['store closed'] });
+});
+
 test('a product hook that throws is asked of as one that says nothing, and each throw reports the question it was asked', async () => {
   const thrown = new Error('the product chunk did not load');
   const broken = { id: 'broken', sync: {

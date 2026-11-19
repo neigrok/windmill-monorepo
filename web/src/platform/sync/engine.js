@@ -30,10 +30,6 @@ function secureDraw(bound) {
   return word[0] % bound;
 }
 
-// The browser engine's own timing, beside Appendix B's: how often a paused anon replica that nothing else unpauses asks
-// whose credential the browser holds (engine.md §9.1).
-const BROWSER_LIMITS = Object.freeze({ CREDENTIAL_CHECK_MS: 30_000 });
-
 const replicaId = () => `rp_${crypto.randomUUID().replace(/-/g, '')}`;
 const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[secureDraw(62)]).join('')}`;
 
@@ -58,7 +54,7 @@ export class BrowserSyncEngine {
     pendingDeviceWork = () => [], adoptDeviceRows = () => undefined, onPushResult = () => {}, credentials, base }) {
     Object.assign(this, { store, registry, navigator, document, window, timers, now, monotonic,
       newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, adoptDeviceRows, onPushResult, credentials });
-    this.limits = { ...CONSTANTS, ...BROWSER_LIMITS, ...limits };
+    this.limits = { ...CONSTANTS, ...limits };
     this.telemetry = syncTelemetry(telemetry);
     this.actor = newActor();
     this.boot = crypto.randomUUID();
@@ -135,12 +131,16 @@ export class BrowserSyncEngine {
         // An inverse request that was waiting and settles in this transaction reports its counts, never an id.
         const requests = () => device.replicas.flatMap((replica) => replica.inverses);
         const waiting = new Set(requests().filter(({ state }) => state !== 'settled').map(({ requestId }) => requestId));
+        // The active replica's pause starting or ending is told once, by the transaction that makes it (engine.md §9.1).
+        const paused = device.activeReplica.meta.authPaused === true;
         let result;
         try { result = change(device, context); } catch (error) { thrown = error; throw error; }
         for (const request of requests()) {
           if (!waiting.has(request.requestId) || request.state !== 'settled') continue;
           context.telemetry.push({ event: 'sync-inverse', outcome: 'settled', applied: request.result.appliedCount, skipped: request.result.skippedCount });
         }
+        if (paused !== (device.activeReplica.meta.authPaused === true))
+          context.telemetry.push({ event: 'sync-auth-paused', outcome: paused ? 'released' : 'paused' });
         return result;
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
@@ -203,11 +203,7 @@ export class BrowserSyncEngine {
     if (device.meta.clearCredential) this.live.stop();
     this.notify(this.listeners);
     if (this.upgradeRequired || this.signingOut) this.stopNetwork();
-    if (replica.meta.authPaused) {
-      this.live.stop();
-      this.telemetry.event('sync-auth-paused', { outcome: 'paused' });
-      this.armCredentialCheck();
-    }
+    if (replica.meta.authPaused) this.live.stop();
   }
 
   governingScopes(device) {
@@ -318,7 +314,7 @@ export class BrowserSyncEngine {
       readReplica: () => this.refresh(), onLeader: (leader) => {
         this.leader = leader;
         this.telemetry.event('sync-leader', { outcome: leader ? 'acquired' : 'released' });
-        if (leader) { this.kick(); this.armReconcile(); this.armCredentialCheck(); }
+        if (leader) { this.kick(); this.armReconcile(); }
         else { this.timers.clearTimeout(this.reconcileTimer); this.stopNetwork(); }
       }, onMessage: (message) => this.peerMessage(message),
       onFailure: (operation) => this.telemetry.failure(operation) }); }
@@ -340,7 +336,6 @@ export class BrowserSyncEngine {
     this.armHolds();
     await this.cleanupCredentials();
     this.kick();
-    this.checkCredential();
     if (this.device.meta.pendingSignIn && this.online)
       this.signIn(this.device.meta.pendingSignIn.account).catch(() => {});
   }
@@ -1249,9 +1244,9 @@ export class BrowserSyncEngine {
     } catch { this.telemetry.failure('auth'); }
   }
 
-  // What the session owner found of the browser's credential: the account it holds one of, null for none, or undefined
-  // when it could not tell (engine.md §9.1). A bound replica of another account pauses, as a 401 pauses it, and a paused
-  // anon replica unpauses once the browser holds none.
+  // What the session owner read of the browser's credential: the account it holds one of, null for none, or undefined when
+  // it could not tell (engine.md §9.1). A bound replica of another account pauses, as a 401 pauses it, and a paused anon
+  // replica unpauses once the browser holds none: nothing else ends that pause while no deletion is owed.
   async credentialHeld(held) {
     if (held === undefined) return;
     const pauses = (replica) => replica.meta.state === 'bound' && held !== replica.meta.account && !replica.meta.authPaused;
@@ -1265,31 +1260,6 @@ export class BrowserSyncEngine {
       return true;
     });
     if (resumed) this.kick();
-  }
-
-  // A paused anon replica that nothing else unpauses, with no credential deletion owed and no sign-in pending, the leader
-  // asks the session owner about: at start and every CREDENTIAL_CHECK_MS while it stays so (engine.md §9.1). A frame's
-  // `as` never deletes a credential: it may be a cookie a sign-in set before it recorded `pendingSignIn`.
-  awaitsCredential() {
-    const replica = this.device?.activeReplica;
-    return Boolean(this.credentials?.held) && this.started && this.leader && !this.closed && this.online
-      && replica?.meta.state === 'anon' && replica.meta.authPaused === true
-      && !this.device.meta.clearCredential && !this.device.meta.pendingSignIn;
-  }
-
-  armCredentialCheck() {
-    if (this.credentialTimer !== undefined || !this.awaitsCredential()) return;
-    this.credentialTimer = this.timers.setTimeout(() => {
-      this.credentialTimer = undefined;
-      this.checkCredential();
-    }, this.limits.CREDENTIAL_CHECK_MS);
-  }
-
-  async checkCredential() {
-    if (!this.awaitsCredential()) return;
-    try { await this.credentialHeld(await this.credentials.held()); }
-    catch { if (!this.closed) this.telemetry.failure('auth'); }
-    this.armCredentialCheck();
   }
 
   // The product cleanup a finished sign-out recorded (`finishSignOut`'s `deviceCleanup`) is done: its marker goes, unless a
@@ -1427,8 +1397,6 @@ export class BrowserSyncEngine {
     this.timers.clearTimeout(this.reconcileTimer);
     this.timers.clearTimeout(this.cleanupTimer);
     this.cleanupTimer = null;
-    this.timers.clearTimeout(this.credentialTimer);
-    this.credentialTimer = undefined;
     this.stopNetwork();
     this.coordination?.close();
     for (const timer of ['holdTimer', 'leaveTimer', 'signoutTimer', 'signoutPoll']) this.timers.clearTimeout(this[timer]);
