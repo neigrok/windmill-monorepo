@@ -26,7 +26,7 @@ function savedPlace(place, seed) {
 // From the door to a live room: the reading, then domain, layout and the first view, then the reading follows each
 // change; a retry runs it again. With `replica` the room reads the device's copy through the sync engine
 // (`ReplicaReading`); without it, and for the demo, it reads as it does today (`LatticeReading`).
-export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica = false, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, dismissToast, desktopEditorRef, onRemoteProgress }) {
+export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica = false, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, showToast, dismissToast, desktopEditorRef, onRemoteProgress }) {
   const { sceneRef, sessionRef, replicaRef, projectionRef, treeRef, seedRef } = room;
   const [placeStore] = useState(() => new PlaceStore());
   const [returnLedger] = useState(() => new ReturnLedger());
@@ -62,7 +62,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
     knownRef.current = new Map();
     framing.firstFrameRef.current = null;
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
-    const reading = readsReplica ? new ReplicaReading({ treeId }) : new LatticeReading({ treeId, demo, shared, demotion, known: knownRef, room });
+    const reading = readsReplica ? new ReplicaReading({ treeId, room, say: showToast }) : new LatticeReading({ treeId, demo, shared, demotion, known: knownRef, room });
     readingRef.current = reading;
     replicaRef.current = readsReplica ? reading : null;
 

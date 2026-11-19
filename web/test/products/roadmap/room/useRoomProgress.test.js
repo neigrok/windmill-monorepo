@@ -264,11 +264,3 @@ test('a structure-only rebaseline accepts completion and its Undo into the separ
     ['write', 'wind', 'none'], ['ledger', 'sail', []],
   ]);
 });
-
-test('a room that reads the replica marks nothing until the domain’s Complete and Reset are wired: no mark shows, nothing is written or said', (t) => {
-  const { acts, calls } = roomFixture(t, { overrides: { replicaRef: { current: {} } } });
-  acts.adoptLoaded({ completed: new Set(['wind']), completedAt: { wind: 1 } });
-  assert.deepEqual({ complete: acts.complete('dock', { at: 100 }), reset: acts.reset('wind'), bulk: acts.markDone(new Set(['dock'])) },
-    { complete: false, reset: false, bulk: undefined });
-  assert.deepEqual({ completed: acts.snapshot.completed, calls }, { completed: new Set(['wind']), calls: [] });
-});

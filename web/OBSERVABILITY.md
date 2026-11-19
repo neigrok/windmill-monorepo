@@ -291,6 +291,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Fork landed | `fork_claim` | `mode: email/instant/browse` |
 | Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
 | Refusal shown, retried or discarded from Board, Graph or the owner step document | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
+| A room on the device's copy: a write the domain refused where it was made, before anything was written; a roadmap at its cap and a link that would close a loop are said in today's words, any other says nothing | `roadmap_write_refused` | `write: mark/title/guide/visibility/workspace/note`, `refusal: invalid/gone/taken/tooLarge/full/roadmapGone/unreachable/notARoot/stepOpensARoadmap/depthLimit/other` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
@@ -389,6 +390,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-fork` | Fork, from a roadmap or the gallery: a server failure, or a request lost while visible and online | Fork's own error |
 | `roadmap-gallery-load` | A still-wanted initial gallery read or page failed, tagged `read: initial/page` and `reason: server/network/shape`. Server failures and transport loss, including an interrupted body after successful headers, report through `reportUnexpectedFailure`; 4xx and offline or hidden transport loss do not. A fully read successful response whose JSON parse or entry projection throws reports as `shape` through `reportRoadmapFailure`. Only static labels leave; no bodies, cursors, URLs, names or raw messages | The gallery's existing error and Try again; a failed page retains its cards, count and cursor for retry |
 | `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online | The dialog's own error |
+| `roadmap-replica-write` | A room on the device's copy: a write its store did not take, or an Undo, Redo or release of one that threw, tagged `write` with what it wrote (`mark/title/guide/visibility/workspace/note/undo/redo/release`) | Nothing of that write is drawn: the room shows what the device holds, and a switcher's rename puts the old name back |
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
 | `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
 | `roadmap-guide` | The render of the guide's entry on the tree or of its open note | A failed entry is not drawn; a failed note closes |

@@ -246,53 +246,54 @@ test('a signed-in reader opens a shared roadmap from the replica as they do toda
   }
 });
 
-test('with the switch on the owner’s gestures write nothing and show nothing they did not write', async () => {
+// The rows the reference server holds of every scope whose key names `part`, as it stands after the last push.
+const serverRows = (part) => Object.entries(state.rows).filter(([key]) => key.includes(part)).flatMap(([, rows]) => Object.values(rows));
+
+async function reachesServer(check) {
+  for (let turn = 0; turn < 200; turn++) {
+    if (check()) return;
+    await new Promise((settle) => setTimeout(settle, 50));
+  }
+  throw new Error('the write never reached the server');
+}
+
+// One owner's script on a room: open a step, complete it and add it a subtask, then what the room shows and told.
+async function markAndNote(context, { replica }) {
+  await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  const failures = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+  await page.goto(`${origin}/room?account=u_owner&replica=${replica ? 'on' : 'off'}#/app/${TREE}`);
+  await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).click();
+  const step = page.getByRole('article', { name: 'Read the wind', exact: true });
+  await step.getByRole('button', { name: 'Complete', exact: true }).click();
+  await page.locator('[data-column="done"] .st-board-card-title', { hasText: 'Read the wind' }).waitFor();
+  await step.getByRole('button', { name: 'Add subtask', exact: true }).click();
+  await page.keyboard.type('Check the forecast');
+  await page.keyboard.press('Enter');
+  await step.getByText('Check the forecast', { exact: true }).waitFor();
+  const read = { columns: await boardColumns(page), step: await step.innerText(),
+    ...await page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues })), failures };
+  await page.close();
+  return read;
+}
+
+test('with the switch on the owner’s marks and workspace land on the device’s copy, with the screens and events of today’s room', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
-    await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
-    const page = await context.newPage();
-    page.setDefaultTimeout(15000);
-    const failures = [];
-    page.on('pageerror', (error) => failures.push(error.message));
-    page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
-    const told = () => page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues }));
-
-    await page.goto(`${origin}/room?account=u_owner&replica=on#/app/${TREE}`);
-    await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).click();
-    const step = page.getByRole('article', { name: 'Read the wind', exact: true });
-    await step.getByRole('button', { name: 'Complete', exact: true }).click();
-    await step.getByRole('button', { name: 'Add subtask', exact: true }).click();
-    await page.keyboard.type('Check the forecast');
-    await page.keyboard.press('Enter');
-    assert.deepEqual({ columns: await boardColumns(page), subtasks: await step.getByText('Check the forecast').count(), ...await told() }, {
-      columns: ['locked: Leave the dock', 'upNext: Read the wind', 'done: Choose a course'], subtasks: 0,
-      events: [
-        'roadmap_view_open {"view":"board","band":"desktop","role":"owner","door":"default","trees":"none"}',
-        'roadmap_board_step_open {"surface":"document","column":"upNext","door":"card"}',
-        'roadmap_board_workspace {"action":"subtaskAdd"}',
-      ],
-      issues: [],
-    });
-
-    await page.goto(`${origin}/room?account=u_owner&replica=on&again=1#/app/${TREE}`);
-    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
-    const composer = page.getByRole('dialog', { name: 'New step', exact: true });
-    await composer.locator('input').first().fill('Tie a bowline');
-    await composer.getByRole('button', { name: 'Create step', exact: true }).click();
-    await composer.getByText('Couldn’t save. Your draft is kept.', { exact: true }).waitFor();
-    assert.deepEqual({ columns: await boardColumns(page), ...await told(), failures }, {
-      columns: ['locked: Leave the dock', 'upNext: Read the wind', 'done: Choose a course'],
-      events: [
-        'roadmap_view_open {"view":"board","band":"desktop","role":"owner","door":"default","trees":"none"}',
-        'roadmap_verb {"verb":"newStep","door":"row","view":"board","band":"desktop"}',
-        'roadmap_board_create {"step":"open","door":"verbs","view":"board"}',
-        'roadmap_board_create {"step":"failed"}',
-      ],
-      issues: [], failures: [],
-    });
-    await page.close();
+    await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const onCopy = await markAndNote(replica, { replica: true });
+    const lattice = await markAndNote(today, { replica: false });
+    assert.deepEqual(onCopy.columns, ['locked: ', 'upNext: Leave the dock', 'done: Read the wind, Choose a course']);
+    assert.deepEqual(onCopy, { ...lattice, step: lattice.step.replace('Tree\nNone\n', '') });
+    await reachesServer(() => serverRows(`overlay/${TREE}`).some((row) => row.t === 'progress' && row.id === 'wind')
+      && serverRows(`overlay/${TREE}`).some((row) => row.t === 'subtask'));
   } finally {
-    await context.close();
+    await replica.close();
+    await today.close();
   }
 });

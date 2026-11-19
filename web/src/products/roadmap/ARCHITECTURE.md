@@ -185,13 +185,21 @@ on, every room but the demo reads through `ReplicaReading`:
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
-- **Writes.** None reaches the replica yet; the room's gestures move onto the domain's actions in the next build. The
-  room shows the owner's screens, and a gesture writes nothing and shows nothing it did not write: `RoomProgress.mark`
-  and the workspace's edits do nothing while `replicaRef` holds the reading (a workspace control still emits its
-  `roadmap_board_workspace` step as the person acts), the legend's edits find no session and write and say nothing, a new
-  step's composer says *Couldn’t save. Your draft is kept.* (`BoardActs` reports no missing session where `readsReplica`
-  says there is none to find), and the step document's Tree section offers no control: `treeActs` is null while nothing
-  can take a write, the one way the owner's screens differ from today's (`SkillTreeView.replica.browser.test.js`).
+- **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
+  `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
+  stands and takes the slice of its calls the room's write paths make. The owner's marks are each step's `Complete` or
+  `Reset` (whether a step's pointer opens a standing roadmap read from the account, as the domain asks); a roadmap's name,
+  from the room or a switcher's row, is `WriteRoadmap`, and a subtree's is its owning step's label (`ChangeStep`); the
+  guide is `WriteRoadmap`, the share dialog's visibility `SetVisibility`; and the workspace's edits go through
+  `ReplicaWorkspace`, subtasks and links by the domain's workspace actions and the note through the kit's one draft of it,
+  saved in place. None of these enters the Undo stack, as none does today, so each act is released and the engine keeps
+  no Undo of it. A write the domain refuses where it is made is said in today's words where there are some (a roadmap at
+  its cap, a link that would close a loop) and emits `roadmap_write_refused`; one the store does not take reports
+  `roadmap-replica-write`. The room's gestures on steps and kinds take nothing yet: a new step's composer says
+  *Couldn’t save. Your draft is kept.*, as the session's `dispatch` applies none, and the step document's Tree section offers no control (`treeActs` is null), the one way the owner's screens
+  differ from today's (`SkillTreeView.replica.browser.test.js`). Such a room draws no presence and hands its session
+  neither to a reconnect nor to a claim of the device's trees: the engine reconnects, and its lineage rule takes what
+  the device holds at sign-in.
 
 ## A step that opens a tree
 

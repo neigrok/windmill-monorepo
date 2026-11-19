@@ -140,7 +140,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const graphUnavailable = graphAvailability === 'unavailable';
   const load = useRoomLoad({
     treeId, accountId: account?.id ?? null, demo, shared, demotion, replica, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
-    legend: legendKit, workspace: { hydrateWorkspaces, adoptWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
+    legend: legendKit, workspace: { hydrateWorkspaces, adoptWorkspaces, pushArcs }, selection, showToast, dismissToast, desktopEditorRef,
     onRemoteProgress: (remote) => {
       const said = progressActs.adoptRemote(remote);
       if (!said) return;
@@ -237,7 +237,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     const session = sessionRef.current;
     const currentSession = !loading && session?.treeId === treeId && !session.closed ? session : null;
     const ready = Boolean(currentSession?.ready);
-    const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.lattice.toTreeData()).tree) : null;
+    const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.treeData()).tree) : null;
     const onDevice = holder?.place === 'device' && new LocalTreeRegistry().onDevice(treeId) !== null;
     const editable = owner && sharedWritesAllowed() && (onDevice || session?.reach !== 'reader') && !session?.closed;
     return { tree: currentTree, ready, editable, session, savingBlocked: !ready || Boolean(session?.rebaselining || session?.discardPending) };
@@ -264,7 +264,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   // Attaching, changing and detaching the tree a step opens: the holder's, while the session can take a write, among the
   // trees where the holder's lives (the server's, or this device's). A chosen tree's row stands at once from what the
   // picker knew of it, and a read the server refuses for want of a session is the room's lapse, as a refused write is.
-  const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining ? {
+  const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining && !load.readsReplica ? {
     view: boardActive ? 'board' : 'graph',
     trees: holder.place === 'device'
       ? { place: 'device', signedIn: status === 'signed-in', list: listDeviceTrees, read: readDeviceTreeCard }
@@ -466,7 +466,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
         style={boardActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
       />
 
-      {desktopEditor && (
+      {desktopEditor && !load.readsReplica && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} sessionRef={sessionRef} selection={selectedId} />
       )}
 
@@ -759,6 +759,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
         title={tree?.title ?? ''}
         subtrees={tree?.nodes.some((step) => step.opening?.owned) ?? false}
         onStanceChange={setTreeVisibility}
+        writeVisibility={load.readsReplica ? (id, visibility) => sessionRef.current.setVisibility(visibility) : undefined}
       />
 
       {loading && !loadError && !boardActive && <div className="st-loading"><span className="st-loading-msg">{GRAPH_LOAD.planting}</span></div>}
