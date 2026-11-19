@@ -2477,7 +2477,11 @@ before its own result is recorded; its resend then carries another digest, the s
   rekeys its channel and lock.
 - Every tab holds the lock `wm-tab` in shared mode while it lives. A tab that finds it unheld
   (`navigator.locks.query()`) when it starts is the first tab.
-- Every tab reads views from IndexedDB and commits through §7.1.
+- Every tab reads views from IndexedDB and commits through §7.1. Each publication of a tab's views, at open
+  and after every change to the store, its own or a peer's, reads every scope of the active replica whole,
+  whether or not anything in the tab observes it, so a read of a scope answers the rows the device stored for
+  it: a scope a peer changed is read again, and one a peer brought to the device after the tab opened is read
+  the first time. No read answers a scope whose stored rows the tab has not read.
 
 ### §7.9 Subscriptions
 

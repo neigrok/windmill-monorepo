@@ -9,6 +9,8 @@ import { ZERO_DIGEST } from '../../../../packages/api-contract/sync/reference/co
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 import { epochChange } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
+import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
+import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';
@@ -19,7 +21,8 @@ import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/ru
 import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { Fault } from '../../../src/platform/domain-kit/values.js';
-import { environment, until } from '../sync/fakes.js';
+import { environment, tick, until } from '../sync/fakes.js';
+import { OTHER, product, productScope, row, serverState, st, treeScope } from '../sync/oracle-adapters/fixtures.js';
 import { PROBE_SCOPE, PROBE_TREE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
 import { Contract, momentOf, probeRegistry, viewRecords } from './vectors.js';
 
@@ -141,8 +144,45 @@ test('a read leaves no hold on the scope it reads: one the app observes keeps it
   engine.close();
 });
 
-// An observation's first hold folds the scope and, where its cache is not loaded, reads the device's store once; its
-// last release only drops the fold. Subscriptions and pulls follow the replica's scopes, never an observation.
+// A follower tab holds no observation of the tree and reads it through the kit: first when the leader's pull
+// brings the tree to the device after the follower opened, then after the leader pulls another device's edit.
+test('a follower tab reads a scope nothing holds there as the device last stored it, one born after the tab opened included', async () => {
+  const env = environment();
+  /** @type {any} */ (env).state = new ServerState(serverState(/** @type {any} */ ({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'tag', id: 'oak', born: st(1), life: ['alive', st(1)], f: { label: ['Oak', st(1)] }, seq: 1 })] },
+  })));
+  const leader = await BrowserSyncEngine.open(env.options);
+  await leader.start();
+  await until(() => leader.leader);
+  /** @type {any} */ (env.transport).account = 'A';
+  await leader.signIn('A');
+  const follower = await BrowserSyncEngine.open(env.options);
+  await follower.start();
+  for (let turn = 0; turn < 20; turn++) await tick();
+  const runner = new ActionRunner(new EngineReplica(follower), env.options.registry, new FixedZone(0));
+  const labels = () => runner.read(PROBE_TREE, (read) => read.repository(Probe.tag).all('drawn').map((tag) => tag.fields().label));
+  const pulled = async () => {
+    for (let round = 0; round < 3; round++) { leader.kickPull(); await leader.pull(); }
+    const generation = leader.device.activeReplica.cacheGenerations[`confirmed:${PROBE_TREE}`];
+    await until(() => follower.device.activeReplica.cacheGenerations[`confirmed:${PROBE_TREE}`] === generation, 500);
+  };
+  try {
+    assert.deepEqual({ leader: leader.leader, follower: Boolean(follower.leader), scopes: Object.keys(follower.device.activeReplica.confirmed) },
+      { leader: true, follower: false, scopes: [] });
+    await pulled();
+    assert.deepEqual(labels(), ['Oak']);
+    /** @type {any} */ (env).state = push(/** @type {any} */ ({ state: /** @type {any} */ (env).state, registry: env.options.registry, product,
+      account: 'A', serverNow: env.timers.time, request: { replica: 'rp_0000000000000000000000000000000b', account: 'A', ackThrough: 0,
+        intents: [{ n: 1, scope: PROBE_TREE, d: [{ t: 'tag', id: 'oak', born: st(1), f: { label: ['Elm', st(2, 0, OTHER)] } }] }] } })).state;
+    await pulled();
+    assert.deepEqual({ labels: labels(), observed: follower.views.has(PROBE_TREE) }, { labels: ['Elm'], observed: false });
+  } finally { follower.close(); leader.close(); }
+});
+
+// An observation's first hold folds the scope from the published replica, which holds every scope's rows; its last
+// release only drops the fold. Subscriptions and pulls follow the replica's scopes, never an observation.
 test('reads of a scope nobody holds, on a started and signed-in engine, ask the network nothing and schedule nothing', async () => {
   const env = environment();
   const engine = await BrowserSyncEngine.open(env.options);
@@ -217,7 +257,7 @@ test('a commit reads the current tab transaction, including confirmed values ben
     commands: [{ gestureId: receipt.gestureId, command: { name: command.name, args: command.args }, canSupersede: false, isAdmitted: true }],
     checkpoint: { epoch: 'ep-current', cleanSeq: 5 }, actor: engine.actor, isAnonymous: false, complete: true,
   } });
-  await engine.refresh(false, [PROBE_SCOPE]);
+  await engine.refresh();
   assert.deepEqual(runner.read(PROBE_SCOPE, metadata), loaded.kind === 'unchanged' && loaded.result);
   engine.close(); peer.close();
 });

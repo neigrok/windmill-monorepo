@@ -235,13 +235,12 @@ test('an observation lives while a hold is unreleased: a released hold hears not
     await store('elm', 3);
     assert.deepEqual(heard, silent);
     const third = engine.observe(tree);
-    await until(() => third.getSnapshot().loaded);
     assert.deepEqual(third.getSnapshot().drawn.map(({ id }) => id), ['ash', 'elm', 'oak']);
     third.release();
   } finally { engine.close(); }
 });
 
-test('an observation says its stored rows are loaded only once the device has read the scope it pulled unobserved', async () => {
+test('every publication reads every scope the replica holds: a tree pulled unobserved is whole at its first observation', async () => {
   const env = environment(), tree = 'tree/b_00000001';
   const tags = ['ash', 'elm', 'oak'].map((id, index) => row({ t: 'tag', id, life: ['alive', st(1)], born: st(1), seq: index + 2 }));
   env.state = new ServerState(serverState({
@@ -252,11 +251,9 @@ test('an observation says its stored rows are loaded only once the device has re
   try {
     env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
     for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
-    assert.equal(engine.observe('self/probe').getSnapshot().loaded, true);
-    const view = engine.observe(tree);
-    assert.equal(view.getSnapshot().loaded, false);
-    await until(() => view.getSnapshot().loaded);
-    assert.deepEqual(view.getSnapshot().drawn.map(({ id }) => id), ['ash', 'elm', 'oak']);
+    assert.equal(engine.views.has(tree), false);
+    const view = engine.observe(tree).getSnapshot();
+    assert.deepEqual({ loaded: view.loaded, drawn: view.drawn.map(({ id }) => id) }, { loaded: true, drawn: ['ash', 'elm', 'oak'] });
   } finally { engine.close(); }
 });
 

@@ -88,7 +88,7 @@ export class BrowserSyncEngine {
       store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB, keyRange: options.keyRange,
         name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
       const engine = new BrowserSyncEngine({ ...options, store });
-      await engine.refresh(true);
+      await engine.refresh();
       return engine;
     } catch (error) {
       syncTelemetry(options.telemetry).failure('storage');
@@ -143,7 +143,7 @@ export class BrowserSyncEngine {
     try {
       if (answer.changed) {
         this.telemetry.event('sync-writer', { durationMs: Math.ceil(answer.measurement.writerMs), queueMs: Math.ceil(answer.measurement.queueMs) });
-        await this.refresh(false, scopes);
+        await this.refresh();
         this.scheduleCleanup();
       }
       for (const event of context.telemetry) this.telemetry.event(event.event, { ...event, scopeKind: event.kind });
@@ -160,27 +160,14 @@ export class BrowserSyncEngine {
     return answer.result;
   }
 
-  publish({ device, revision, hydrated = false }) {
+  publish({ device, revision }) {
     if (revision < this.revision) return;
     const previous = this.device?.activeReplica;
-    const current = device.activeReplica;
-    if (previous?.storageHandle === current.storageHandle) {
-      for (const kind of ['confirmed', 'spentIds']) for (const scope of Object.keys(current[kind])) {
-        if (!current.loadedCaches.has(`${kind}:${scope}`) && current.cacheGenerations[`${kind}:${scope}`] === previous.cacheGenerations[`${kind}:${scope}`])
-        {
-          current[kind][scope] = previous[kind][scope] ?? {};
-          if (previous.loadedCaches.has(`${kind}:${scope}`)) current.loadedCaches.add(`${kind}:${scope}`);
-        }
-      }
-    }
     this.device = device;
     if (!device.meta.signOut && !this.signOutOpening) { this.releaseSignOut?.(); this.releaseSignOut = null; }
     this.upgradeRequired = device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true;
     this.signingOut = device.meta.signOut?.phase === 'decision';
-    if (revision === this.revision && this.snapshot) {
-      if (hydrated) for (const observation of this.views.values()) observation.refresh(device.activeReplica);
-      return;
-    }
+    if (revision === this.revision && this.snapshot) return;
     this.revision = revision;
     const replica = device.activeReplica;
     this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state,
@@ -210,12 +197,15 @@ export class BrowserSyncEngine {
     }, 0);
   }
 
-  async refresh(boot = false, changedScopes = []) {
+  // Every publication reads every scope the active replica holds rows of, so a view or a read of any scope answers
+  // the device's rows whether or not anything observes it; the store shares the rows of a generation it has read.
+  async refresh() {
     try {
-      const answer = await this.store.read((device) => [...this.governingScopes(device),
-        ...changedScopes.map((item) => typeof item === 'string' ? { handle: device.activeReplica.storageHandle, scope: item } : item),
-        ...(boot ? Object.keys(device.activeReplica.confirmed) : []).map((scope) => ({ handle: device.activeReplica.storageHandle, scope })),
-        ...[...this.views.keys()].map((scope) => ({ handle: device.activeReplica.storageHandle, scope }))]);
+      const answer = await this.store.read((device) => {
+        const replica = device.activeReplica;
+        return [...new Set([...Object.keys(replica.confirmed), ...Object.keys(replica.spentIds)])]
+          .map((scope) => ({ handle: replica.storageHandle, scope }));
+      });
       this.publish(answer);
       if (this.coordination && this.coordination.replica !== this.activeReplica()) this.coordination.rekey(this.activeReplica());
       this.scheduleSender();
@@ -241,7 +231,7 @@ export class BrowserSyncEngine {
   observeEngine = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   onEvent(listener) { this.eventListeners.add(listener); return () => this.eventListeners.delete(listener); }
 
-  // A hold on the scope's observation: the engine refreshes and hydrates the scope while any hold is unreleased.
+  // A hold on the scope's observation, which every publication refreshes while any hold is unreleased.
   observe(scope) {
     const known = this.views.get(scope);
     if (known) return known.hold();
@@ -251,10 +241,6 @@ export class BrowserSyncEngine {
       idle: () => { if (this.views.get(scope) === observation) this.views.delete(scope); } });
     observation.refresh(this.device.activeReplica);
     this.views.set(scope, observation);
-    if (this.device.activeReplica.confirmed[scope] && !this.device.activeReplica.loadedCaches.has(`confirmed:${scope}`)) {
-      this.store.read([scope]).then((answer) => { if (!this.closed) this.publish({ ...answer, hydrated: true }); })
-        .catch(() => { if (!this.closed) this.telemetry.failure('storage'); });
-    }
     return observation.hold();
   }
 
@@ -1192,7 +1178,7 @@ export class BrowserSyncEngine {
         this.online = this.navigator?.onLine !== false;
         this.peerScopes.clear();
         this.doubts.clear();
-        await this.refresh(true);
+        await this.refresh();
         if (this.closed) return;
         await this.start();
         if (this.closed) return;

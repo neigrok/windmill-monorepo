@@ -29,9 +29,9 @@ through unchanged. `newGestureId()` mints the id a caller passes as `opts.gestur
 before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`) does.
 
 `observe(scope)` answers a hold on the scope's observation, with `getSnapshot`, `subscribe` and `release`.
-Every hold of a scope reads one observation; the engine refreshes and hydrates the scope while any hold
-is unreleased, and the last `release()` drops it, so a later `observe` reads the scope afresh. A released
-hold calls no listener again; `release` is idempotent, and a hold never released lasts the document. The
+Every hold of a scope reads one observation; every publication refreshes it while any hold is unreleased,
+and the last `release()` drops it, so a later `observe` folds the scope afresh from the published replica. A
+released hold calls no listener again; `release` is idempotent, and a hold never released lasts the document. The
 snapshot carries:
 
 - `drawn` and `stored`: the scope's records, retaining confirmed `seq`, `rc` and `ru` envelope metadata;
@@ -41,8 +41,9 @@ snapshot carries:
   were undone, refused or discarded);
 - `outbox`: `{held, ready, sent, acked}`, the counts of the queued entries that belong to the scope or draw
   in it;
-- `loaded`: whether the device's stored rows of the scope are in the snapshot; false only while an
-  observed scope's rows are still being read from the device;
+- `loaded`: whether the device's stored rows of the scope are in the snapshot. Every publication reads every
+  scope (below), so an engine snapshot is always loaded; only `useSyncRecords`' placeholder before the engine
+  opens is not;
 - `notices`, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and the records it
   changes) and `firstPullComplete`.
 
@@ -122,8 +123,11 @@ and a late successful connection closes. Open stores close on `versionchange`. N
 regressions verify every row after upgrade, abort, blocked-open retry and reopen, and exercise real
 version changes. Fixture reads wait for transaction completion before closing their connections.
 
-Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
-scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.
+Every publication, at open, after each write and whenever another tab's write moves the store, reads every
+scope the active replica holds rows of. So a view or a kit read of any scope, held or not, answers the device's
+rows, a scope another tab brought to the device after this tab opened included (engine.md §7.8). The store keeps
+the rows of each generation it has read, and this tab's writes update them in place, so a publication reads rows
+from IndexedDB only for a generation it does not hold whole, such as one another tab's write changed.
 An observation (`observation.js`) keeps its scope's records between publications and folds again only
 the records whose confirmed row changed identity or whose queued entries changed; a record no held
 entry touches is one frozen object in both `drawn` and `stored`.

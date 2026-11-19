@@ -550,7 +550,7 @@ export class EngineReplica {
   }
 
   // The scope's views as its observation folds them now, through a hold let go at once: a read keeps no scope
-  // observed that the app does not.
+  // observed that the app does not, and every engine publication holds every scope's stored rows (engine §7.8).
   /**
    * @param {string} scope
    * @returns {ReadViews}
