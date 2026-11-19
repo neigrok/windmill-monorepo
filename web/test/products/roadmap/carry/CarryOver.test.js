@@ -502,3 +502,22 @@ test('a roadmap made here while an account was signed in waits for that account,
   await carry.running;
   assert.deepEqual({ steps: holding(engine, id).steps, old: await oldStores() }, { steps: [['cast', 'Cast on']], old: NOTHING_OLD });
 });
+
+test('with no connection a roadmap made signed out waits for the server’s answer, at once, and its old stores stay whole', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  server.reachable = false;
+  const engine = await tab(t, disk, server);
+  engine.setOnline(false);
+  const { carry, tracked, reported } = carryOver(disk);
+  const started = Date.now();
+  await carry.run(engine);
+  assert.ok(Date.now() - started < 5000, 'nothing waits on a server the engine cannot reach');
+  assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync, stages: tracked.map(({ stage }) => stage), reported },
+    { listed: false, old: [id], stages: ['found', 'waiting'], reported: [] });
+  server.reachable = true;
+  engine.setOnline(true);
+  await carryOver(disk).carry.run(engine);
+  assert.deepEqual({ listed: holding(engine, id).listed, old: await oldStores() }, { listed: true, old: NOTHING_OLD });
+});

@@ -210,7 +210,7 @@ export class CarryOver {
   }
 
   // Whether each scope has had its first pull and its stored rows read within the bound: at once for a scope the replica
-  // does not pull.
+  // does not pull, and not at all while the engine cannot reach the server.
   pulled(engine, scopes) {
     const holds = scopes.map((scope) => engine.observe(scope));
     const done = () => holds.every((hold) => {
@@ -226,8 +226,8 @@ export class CarryOver {
         for (const hold of holds) hold.release();
         resolve(answer);
       };
-      if (done()) {
-        finish(true);
+      if (done() || engine.getSnapshot().connection !== 'online') {
+        finish(done());
         return;
       }
       timer = this.timers.setTimeout(() => finish(false), ANSWER_MS);
