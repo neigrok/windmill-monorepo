@@ -549,8 +549,8 @@ export class EngineReplica {
     return { outcome: { receipt: outcome }, value };
   }
 
-  // The scope's views as its observation folds them now, through a hold let go at once: a read keeps no scope
-  // observed that the app does not, and every engine publication holds every scope's stored rows (engine §7.8).
+  // The scope's views as its observation folds them now, through a hold let go at once, so a read keeps no scope
+  // observed that the app does not. A snapshot without its stored rows breaks engine §7.8 and faults.
   /**
    * @param {string} scope
    * @returns {ReadViews}
@@ -559,6 +559,7 @@ export class EngineReplica {
     const hold = this.engine.observe(scope);
     try {
       const snapshot = hold.getSnapshot();
+      precondition(snapshot.loaded === true, 'the engine published a scope without its stored rows');
       const keyed = (/** @type {ViewRecord[]} */ records) => new Map(records.map((record) => [recordKey(record.t, record.id), record]));
       return {
         drawn: keyed(snapshot.drawn),

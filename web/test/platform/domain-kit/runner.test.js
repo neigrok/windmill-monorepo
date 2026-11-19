@@ -181,6 +181,17 @@ test('a follower tab reads a scope nothing holds there as the device last stored
   } finally { follower.close(); leader.close(); }
 });
 
+// A port that publishes a scope without its stored rows breaks the engine's rule (engine §7.8): the read faults and lets
+// go of its hold, rather than answering the scope empty.
+test('a read of a snapshot that is not loaded faults rather than answering the scope empty', () => {
+  let released = 0;
+  const engine = { observe: () => ({ getSnapshot: () => ({ drawn: [], stored: [], loaded: false }), release: () => { released += 1; } }) };
+  const runner = new ActionRunner(new EngineReplica(engine), probeRegistry, new FixedZone(0));
+  assert.throws(() => runner.read(PROBE_TREE, (read) => read.repository(Probe.tag).all('drawn')),
+    (error) => error instanceof Fault && error.message === 'the engine published a scope without its stored rows');
+  assert.equal(released, 1);
+});
+
 // An observation's first hold folds the scope from the published replica, which holds every scope's rows; its last
 // release only drops the fold. Subscriptions and pulls follow the replica's scopes, never an observation.
 test('reads of a scope nobody holds, on a started and signed-in engine, ask the network nothing and schedule nothing', async () => {
