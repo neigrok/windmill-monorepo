@@ -907,6 +907,9 @@ extension Repository where E: Ordered {
 - `spentBorn` is the born of the scope's spent id of the record (engine §2.5 `SpentId`): what the device
   keeps of a derived record deleted elsewhere once its row is gone (engine §7.5), nil for any other id. Such a
   record is in neither view, and a revival (§8.1) takes this born; an id the device never knew has neither.
+  On the web the repository also answers `spentSeq(id)`, the `seq` of the dead row the spent id came from (engine
+  §2.5), null where it keeps none, and a confirmed record (`Reader.confirmed`) keeps its row's `seq`: the server's
+  order of a delete and of a write the device holds. Swift's and Kotlin's repositories carry no `spentSeq`.
 - A record that fails to decode throws `DecodeError`: a schema fault, surfaced, never skipped.
 - A product declares an aggregate's repository as a function composing these.
 

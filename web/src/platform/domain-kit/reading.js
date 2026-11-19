@@ -19,7 +19,7 @@ import { precondition } from './values.js';
 /** @typedef {{ kind: 'top' } | { kind: 'bottom' } | { kind: 'below', id: RecordID }} Placement */
 /** @typedef {{ gestureId: string, command: import('./plans.js').Command, canSupersede: boolean, isAdmitted?: boolean }} QueuedCommand */
 /** @typedef {{ epoch: string | null, cleanSeq: number | null }} ScopeCheckpoint */
-/** @typedef {{ t: string, id: RecordID, born: string }} SpentId */
+/** @typedef {{ t: string, id: RecordID, born: string, seq?: number }} SpentId */
 /** @typedef {{ get(key: string): ViewRecord | undefined }} ConfirmedRows the scope's confirmed records by record key */
 /**
  * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
@@ -39,8 +39,8 @@ export const Placement = Object.freeze({
 export class Views {
   /** @type {Record<ViewMode, Map<string, ViewTypeIndex>>} */
   #indexes = { drawn: new Map(), stored: new Map() };
-  /** @type {Map<string, string>} */
-  #spentBorns;
+  /** @type {Map<string, SpentId>} */
+  #spentIds;
 
   /**
    * @param {Registry} registry
@@ -54,7 +54,7 @@ export class Views {
     this.stored = stored;
     this.confirmed = confirmed;
     this.spent = spent;
-    this.#spentBorns = new Map(spent.map((row) => [recordKey(row.t, row.id), row.born]));
+    this.#spentIds = new Map(spent.map((row) => [recordKey(row.t, row.id), row]));
     this.devices = devices;
     this.firstPullComplete = firstPullComplete;
     this.actor = actor;
@@ -143,7 +143,17 @@ export class Views {
    */
   spentBorn(type, id) {
     this.assertOpen();
-    return this.#spentBorns.get(recordKey(type, id)) ?? null;
+    return this.#spentIds.get(recordKey(type, id))?.born ?? null;
+  }
+
+  // The `seq` of the dead row the scope's spent id of a record came from (engine §2.5), or null.
+  /**
+   * @param {string} type
+   * @param {RecordID} id
+   */
+  spentSeq(type, id) {
+    this.assertOpen();
+    return this.#spentIds.get(recordKey(type, id))?.seq ?? null;
   }
 
   /** @param {string} key */
@@ -276,6 +286,13 @@ export class Repository {
   /** @param {import('./entities.js').Id<E>} id */
   spentBorn(id) {
     return this.views.spentBorn(this.type.type, id.record);
+  }
+
+  // The server's `seq` of the death a spent id came from (engine §2.5), where the device keeps it: the order in which the
+  // server took the delete. Null for any other id, and for a spent id that keeps none.
+  /** @param {import('./entities.js').Id<E>} id */
+  spentSeq(id) {
+    return this.views.spentSeq(this.type.type, id.record);
   }
 
   // The raw record of a view, visible or not (the folded record, ER-3).

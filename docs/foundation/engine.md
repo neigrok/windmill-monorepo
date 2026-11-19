@@ -1598,9 +1598,9 @@ reaches the caller.
 
 In the **read-and-commit** form, `changes` is a function of the views: `commit` calls it after step 1
 and before step 2, with `drawn` and `stored` read inside the same transaction, the scope's spent
-ids (`SpentId`, each `{t, id, born}`), the commit's `physNow()` reading (step 4) and the id of the
-replica the commit writes to, the active one (§7.12), so a read and the writes it decides are one
-transaction. The function
+ids (`SpentId`, each `{t, id, born, seq?}`, `seq` where the spent id keeps one), the commit's
+`physNow()` reading (step 4) and the id of the replica the commit writes to, the active one (§7.12),
+so a read and the writes it decides are one transaction. The function
 returns the gesture (its changes and `opts`) or none, and MAY return a value of its own, which
 `commit` returns beside its result. With none, `commit` writes nothing, ticks no clock and returns
 none. A gesture whose diff is empty still runs steps 2–11. One local transaction:
