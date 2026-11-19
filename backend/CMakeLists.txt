@@ -575,6 +575,8 @@ target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
 target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_product_sync)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# One binary links the platform and every product, so no two files define a class under one qualified name.
+add_test(NAME one_definition COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/one_definition_test.py)
 add_test(NAME sync_epoch COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/sync_epoch_test.py $<TARGET_FILE:windmill_rotate_sync_epoch>)
 set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)

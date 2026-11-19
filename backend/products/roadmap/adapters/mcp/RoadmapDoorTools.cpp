@@ -745,7 +745,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
       if (std::optional<std::string> bad = optionalBool(arguments["includeGuides"], "includeGuides")) return ToolResult::failure(*bad);
       const read::FollowGraph graph = reading->graph();
       const TreeData data = documentOf(*reading, graph);
-      const std::optional<Page> page = pageOf(data.nodes, arguments, error);
+      const std::optional<NodePage> page = pageOf(data.nodes, arguments, error);
       if (!page) return ToolResult::failure(error);
       const NodeReadContext context = contextOf(*reading, graph, *nodeFields, appOrigin_, false);
       ProjectedPage projected = projectPage(data.nodes, *page, *nodeFields, context);
@@ -908,7 +908,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         const bool owns = arguments["owns"].asBool();
         std::erase_if(matches, [&](const NodeSpec& node) { return owning.contains(node.id.str()) != owns; });
       }
-      const std::optional<Page> page = pageOf(matches, arguments, error);
+      const std::optional<NodePage> page = pageOf(matches, arguments, error);
       if (!page) return ToolResult::failure(error);
       ProjectedPage projected = projectPage(matches, *page, *fields, context);
       Json::Value out(Json::objectValue);
