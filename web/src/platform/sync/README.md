@@ -92,7 +92,7 @@ The engine stores no tokens. The shell owns the cookie session and pinned accoun
 records cookie cleanup until the credentials port succeeds, and so does `cancelSignIn(account)`, which in the same write
 drops the pending sign-in; `cleanupCredentials()` runs the deletion owed. Sign-in drops a deletion owed for an earlier
 session, since the credential the browser holds is the one signing in. Sign-in uses a fresh
-hello and pins Add/Discard decisions. Same-account refreshes preserve held work until its deadline
+hello and pins Add/Discard decisions, and empties the anon replica it leaves behind of the trees it read (engine.md §7.10). Same-account refreshes preserve held work until its deadline
 or a lifecycle transition. `beginSignOut`, `finishSignOut` and `cancelSignOut` expose the
 bounded flush and Keep/Discard session. `cancelSignOut()` resolves after the shared pause is durably
 released. Before the sender numbers a push it asks a fresh hello and sends only when the account, schema floor and device still match; otherwise it backs off. The leader flushes; every numbering transaction checks the shared session, and a Web Lock

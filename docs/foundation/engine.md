@@ -2695,6 +2695,12 @@ Then, in one local transaction:
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
 
+In a browser, the transaction that completes a sign-in also empties the `anon` replica it leaves beside
+the bound one, which holds no work then, of every tree and overlay scope: their confirmed rows, `SpentId` rows, cursors,
+`KnownScope` rows and staging. They are the readable trees a person opened signed out (§7.9), which
+nothing reconciles while the replica is not active, so they would otherwise stay with whoever is at the
+browser next.
+
 The browser engine adds two reads for a product's sweep after a sign-out: `hasReplicaOf(account)`,
 whether a bound or dormant replica of the account remains (a Discard deleted it), and
 `anonymousRecords()`, the scopes the `anon` replica holds rows of or its entries write, and the

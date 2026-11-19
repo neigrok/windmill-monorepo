@@ -1092,14 +1092,21 @@ export class BrowserSyncEngine {
       }
       const result = await this.write('sync-signin', (device, ctx) => {
         if (device.meta.authGeneration !== generation) return { complete: false, superseded: true };
-        if (device.activeReplica.meta.state === 'bound') {
-          if (device.activeReplica.meta.account !== account) throw new CommitError('account changed during authentication');
-          onHello(device.activeReplica, ctx, response, timing);
-          device.activeReplica.meta.authPaused = false;
-          return { complete: true, due: [] };
+        const bound = device.activeReplica.meta.state === 'bound';
+        if (bound && device.activeReplica.meta.account !== account) throw new CommitError('account changed during authentication');
+        const result = bound ? { complete: true, due: [] } : signIn(device, ctx, { account, decisions, counted, holdsRecords: response.body.holdsRecords });
+        if (!result.complete) return result;
+        onHello(device.activeReplica, ctx, response, timing);
+        device.activeReplica.meta.authPaused = false;
+        // An anon replica a sign-in leaves behind another bound one holds no work, only the readable trees a person opened
+        // signed out, which nothing reconciles while it is inactive: they go from the device (engine.md §7.10).
+        const left = device.anonReplica();
+        const held = new Set(left ? ['confirmed', 'spentIds', 'cursors', 'staging', 'known'].flatMap((kind) => Object.keys(left[kind])) : []);
+        for (const scope of held) {
+          if (!['tree', 'overlay'].includes(this.registry.scopeKindOf(scope))) continue;
+          left.forgetScope(scope);
+          delete left.known[scope];
         }
-        const result = signIn(device, ctx, { account, decisions, counted, holdsRecords: response.body.holdsRecords });
-        if (result.complete) onHello(device.activeReplica, ctx, response, timing);
         return result;
       });
       this.doubts.clear();

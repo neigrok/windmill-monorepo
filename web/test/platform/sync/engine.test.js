@@ -1701,6 +1701,39 @@ test('an anon replica whose last tree is unsubscribed has nothing to pull, and i
   } finally { engine.close(); }
 });
 
+test('a public tree read signed out goes from the device at a sign-in that leaves the anon replica behind a new one: none of its rows stays at rest', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const atRest = () => new Promise((resolve, reject) => {
+    const request = engine.store.database.transaction('rows').objectStore('rows').getAll();
+    request.onsuccess = () => resolve(request.result.map(({ value }) => value.t).sort());
+    request.onerror = () => reject(request.error);
+  });
+  try {
+    await engine.subscribe(tree);
+    await engine.pull();
+    const anon = engine.activeReplica();
+    const read = { scopes: Object.keys(engine.device.activeReplica.confirmed), rows: await atRest() };
+    env.transport.account = 'B';
+    assert.equal((await engine.signIn('B')).complete, true);
+    await engine.unsubscribe(tree);
+    env.timers.advance(0);
+    await until(() => engine.store.garbage.size === 0);
+    const stored = (await engine.store.read()).device.replicas.map((replica) => ({ anon: replica.id === anon, state: replica.meta.state,
+      scopes: Object.keys(replica.confirmed), cursors: Object.keys(replica.cursors), known: replica.known }));
+    assert.deepEqual({ read, stored, rows: await atRest() }, {
+      read: { scopes: [tree], rows: ['meta'] },
+      stored: [{ anon: true, state: 'anon', scopes: [], cursors: [], known: {} }, { anon: false, state: 'bound', scopes: [], cursors: [], known: {} }],
+      rows: [],
+    });
+  } finally { engine.close(); }
+});
+
 test('an opted act journals in IndexedDB, and its Undo survives a reopen, reports its wait and settles through the reference server', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A';
