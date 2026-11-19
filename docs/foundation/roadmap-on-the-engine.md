@@ -244,7 +244,16 @@ Every gesture is an action on the domain kit, the same in each language.
 - **Signed out**, a roadmap a person makes lives in the device's `anon` replica. At sign-in the
   engine's lineage rule decides: added without asking to an account that holds no roadmaps, and
   otherwise by the person's Add or Discard. At sign-out it asks Keep or Discard for what is unsent.
-  The silent adoption and the silent wipe the web does today both end.
+  The silent adoption and the silent wipe the web does today both end. A Discard covers exactly the
+  work its question names (engine §7.10). The sign-in question names every roadmap the signed-out
+  work changes: the browser's own by name, and another's by its changes ("{roadmap} · N changes"),
+  each by the name the browser showed it signed out and never by one another account's replica
+  holds; its Discard takes all of it. A roadmap made and deleted signed out stays deleted either way
+  and goes unnamed, and work that changes no roadmap of the browser's own is added without asking.
+  The sign-out question names, beside the replica's unsent changes, the account's roadmaps the
+  browser's old stores still hold (§8.2), each with its changes, and is asked where only those wait;
+  its Discard takes exactly those, while their entries hold what it counted. Work a question did not
+  name is never discarded.
 
 Other gestures are one intent per record.
 
@@ -401,28 +410,40 @@ tables, stopping where they differ from those it planned from.
 ### §8.2 What a browser holds
 
 The new bundle carries over what the old one kept. It runs under a browser lock, on every load
-while an old store still holds anything and again whenever another replica becomes active, and
-writes a ledger of what it carried in the replica it carried to: a device row a roadmap
-(`carry:<T>`), written in the act that carries, which records the roadmap the old one became, the
-changes and workspace items it carried, and each record it set aside for §6's one list.
+while an old store still holds anything, again whenever another replica becomes active or the
+active one is bound to another account, and again when the connection returns to a run that left a
+roadmap waiting. A run writes only into the replica it started on, bound as it was: once a sign-in
+or a sign-out makes another active, the engine refuses its write, and the run ends with every old
+store whole for the next replica's run. It writes a ledger of what it carried in the replica it
+carried to: a device row a roadmap (`carry:<T>`), written in the act that carries, which records
+the roadmap the old one became and whether the carry-over created it, the changes and workspace
+items it carried, and each record it set aside for §6's one list.
 
 - **A roadmap made signed out** goes only to the replica it belongs to, so nothing reaches an
   account but by the lineage rule: one whose index row names nobody to the `anon` replica, waiting
   while an account is signed in; one whose row names an account to that account's. One whose claim
   the server answered (its record holds what the server confirmed) goes only to the account whose
-  list holds it, or that deleted it. The browser first asks the server whether the id exists. An id
-  the server does not hold becomes a creation that keeps every id the roadmap held. One the person's
-  list holds, a claim cut short, is carried as unsent changes to it. One the server serves for
-  another account, or holds as spent, is created under a new id derived from the old one, with the
-  device's pointers moved to it. Signed out, the server answers only for a roadmap anyone may read,
-  so a private id reads as one it does not hold.
+  list holds it, or that deleted it. One whose claim landed and went unanswered, which an account's
+  list holds, is carried to that account as unsent changes to it. The browser first asks the server
+  whether the id exists. An id the server does not hold becomes a creation that keeps every id the
+  roadmap held. One the person's list holds, a claim cut short, is carried as unsent changes to it.
+  One the server serves for another account, or holds as spent, is created under a new id derived
+  from the old one, with the device's pointers moved to it. Signed out, the server answers only for
+  a roadmap anyone may read, so a private id reads as one it does not hold.
+- **A creation keeps its old stores until the server takes it.** The `anon` replica sends nothing,
+  so a roadmap carried there keeps them until a sign-in adds it to an account and the server takes
+  it. Where the server refuses its id as taken or spent, the roadmap is placed again as that
+  account's from its old stores whole, carried as changes to the roadmap the account's list holds,
+  and the refusal's notice goes.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
   after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
   connection counts as made now. They go only to the account the index row names, or whose list
   holds the roadmap. A roadmap gone from that account's list keeps them for its §6 one list, as
   changes to a deleted roadmap where the server holds it spent and as changes after access ended
-  otherwise. An account's roadmaps wait while the device keeps its replica; once its sign-out's
-  Discard takes the replica, they go uncarried with it.
+  otherwise. An account's roadmaps wait while the device keeps its replica. Its sign-out question
+  names those waiting with their changes (§5), and its Discard takes exactly those, while their
+  entries hold what it counted; one it did not name waits for the account's next sign-in. An
+  account's closure takes every one whose index row names it.
 - **Marks** a device roadmap holds, and marks left undrained from before roadmap's present sync,
   are carried as marks; a step a claim would have marked from its seed is marked. A mark left
   undrained or found on a seed stands only where the person holds no mark of the step.
@@ -432,11 +453,16 @@ changes and workspace items it carried, and each record it set aside for §6's o
   holds. A workspace of a roadmap the person does not own is not carried; one of the person's
   roadmap deleted since goes to §6's one list. An item past a bound of §4, and a step or kind of a
   roadmap made signed out past its bound or its type's cap, is not cut short: it goes to §6's one
-  list, where the person may copy it.
-- An old store's entry is deleted once the ledger shows it carried, and only while it still holds
-  what was carried: what a tab still on the old bundle writes after the carry stays for the next
-  load, which carries only what the ledger does not record. The stores that are not sync's stay:
-  the last place, the view, the legend and the ledgers.
+  list, where the person may copy it, set aside before the act that carries the rest is tried.
+- An old store's entry is deleted once the ledger shows it carried, and the server has taken a
+  roadmap the carry-over created, and only while it still holds what was carried: what a tab still
+  on the old bundle writes after the carry stays for the next load, which carries only what the
+  ledger does not record. A row of the device index that does not read is left unread on its own,
+  every other row read. A row whose record is not yet written waits a load, the old bundle writing
+  the row first, and goes as empty only once a later load finds it so too. The stores that are not
+  sync's stay for the carry-over: the last place, the view, the legend, the ledgers and the demo's
+  own workspace; an explicit sign-out, an account replacement and an account closure take the last
+  place, the legend and the ledgers of every roadmap but the anonymous ones.
 
 - **INV-4.** A browser deletes no old store while the ledger lacks an entry of it.
 

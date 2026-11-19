@@ -83,14 +83,14 @@ function render({ hash, pathname, search }) {
   return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo, replica: ROOM_READS_REPLICA }, inRoom: true };
 }
 
-// Explicit sign-out and account replacement take the room's landing notes and told notices, Keep or Discard. Today's sync
-// also wipes stamped work; on the device's copy the engine's Keep or Discard decides what is unsent, and today's stores are
+// Explicit sign-out, account replacement and account closure take what the browser kept of every roadmap but the
+// anonymous ones, Keep or Discard. Today's sync also wipes stamped work; on the device's copy the engine's Keep or
+// Discard decides what is unsent, a Discard takes the old stores its question named, and the rest of today's stores are
 // the carry-over's to empty once carried (INV-4). A session lapse never calls this hook.
-async function forgetDevice({ next, navigation }) {
+async function forgetDevice({ previous = null, next, navigation }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.
-  const [{ forgetDeviceTrees }, { forgetReplicaRoom }] = await Promise.all([import('./sync/localTrees.js'), accountChange()]);
-  await forgetReplicaRoom();
-  if (!ROOM_READS_REPLICA) await forgetDeviceTrees();
+  if (ROOM_READS_REPLICA) await (await accountChange()).forgetReplicaRoom({ previous });
+  else await (await import('./sync/localTrees.js')).forgetDeviceTrees();
   confirmDeviceOwner(next ?? null);
   if (typeof window === 'undefined' || !readNavigation().hash.startsWith('#/app/')) return;
   if (navigation) navigation.navigate('#/app', { replace: true });

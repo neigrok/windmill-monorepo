@@ -11,8 +11,8 @@
 // none, Add, Discard and Escape where it holds some, and Keep and Discard at a sign-out with a change unsent, only with the
 // switch on; with it off, today's silent claim and plain sign-out; and the carry-over of what the last old bundle kept in
 // a browser (§8.2), its stores written by the old bundle's own code: with the switch on, a roadmap made signed out, its
-// marks and workspace carried and kept through a sign-in, and a signed-in browser's unsent changes carried to the server,
-// the old stores gone each time; with it off, the old stores untouched. Each run has its own database, server and built
+// marks and workspace carried and kept through a sign-in, its old stores kept until the server takes it, and a signed-in
+// browser's unsent changes carried to the server, its old stores gone once carried; with it off, the old stores untouched. Each run has its own database, server and built
 // app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
 // name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
@@ -1083,14 +1083,14 @@ async function carryScenario(mode, browser, { session, carrier }, account, check
     return;
   }
 
-  await check('§8.2 signed out, then signed in: a roadmap made signed out, its marks and its workspace are carried and the old stores go', async () => {
+  await check('§8.2 signed out, then signed in: a roadmap made signed out, its marks and its workspace are carried, and its old stores go once a sign-in adds it to the account and the server takes it', async () => {
     const d = await Device.signedOut(browser);
     devices.push(d);
     await d.holdOld(signedOut);
     await d.page.goto(`${origin}/app`);
-    assert.ok(await d.oldUntil((held) => JSON.stringify(held) === JSON.stringify(NOTHING_OLD)), 'signed out, the old stores went once carried');
-    const anon = await d.store();
-    assert.ok(holds(anon, 'Float on your back') && holds(anon, 'Relax the neck'), 'the anon replica holds the roadmap and its workspace');
+    assert.ok(await d.storeUntil((anon) => holds(anon, 'Float on your back') && holds(anon, 'Relax the neck')), 'the anon replica holds the roadmap and its workspace');
+    await settle(2000);
+    assert.deepEqual(await d.old(), { records: 1, rows: 1, keys: 2 }, 'signed out, the old stores stay until the server takes the roadmap');
     await d.signIn(session(carrier));
     const phone = await OwnerDevice.open('carrier', session(carrier), carrier);
     try {
@@ -1105,7 +1105,7 @@ async function carryScenario(mode, browser, { session, carrier }, account, check
     } finally {
       phone.engine.close();
     }
-    assert.deepEqual(await d.old(), NOTHING_OLD, 'the old stores stay gone');
+    assert.ok(await d.oldUntil((held) => JSON.stringify(held) === JSON.stringify(NOTHING_OLD)), 'the old stores went once the server took the roadmap');
   });
 
   await check('§8.2 signed in: changes the browser had not sent are carried after the roadmap’s first pull and reach the server, and the old stores go', async () => {

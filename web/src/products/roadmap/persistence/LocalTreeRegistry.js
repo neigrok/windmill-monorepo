@@ -83,18 +83,27 @@ export class LocalTreeRegistry {
     }
   }
 
-  // Every row by tree id, or a throw where the browser could not read the index or it does not read as one.
+  // Every row by tree id, or a throw where the browser could not read the index or a row of it does not read as one.
   rows() {
+    const { rows, malformed } = this.readRows();
+    if (malformed.length > 0) throw new Error('Device tree index malformed');
+    return rows;
+  }
+
+  // Each row on its own: `rows` those that read as rows, by tree id, and `malformed` the ids of those that do not. Throws
+  // where the browser could not read the index or it does not read as one.
+  readRows() {
     const storage = this.suppliedStorage ?? window.localStorage;
     const entries = JSON.parse(storage.getItem(KEY) ?? '{}');
-    if (!entries || typeof entries !== 'object' || Array.isArray(entries)
-      || Object.entries(entries).some(([id, entry]) => !id || !entry || typeof entry !== 'object' || Array.isArray(entry)
-        || (entry.title !== undefined && typeof entry.title !== 'string')
-        || (entry.owner !== undefined && entry.owner !== null && typeof entry.owner !== 'string')
-        || (entry.claimed !== undefined && typeof entry.claimed !== 'boolean'))) {
-      throw new Error('Device tree index malformed');
-    }
-    return entries;
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)) throw new Error('Device tree index malformed');
+    const readable = ([id, entry]) => id && entry && typeof entry === 'object' && !Array.isArray(entry)
+      && (entry.title === undefined || typeof entry.title === 'string')
+      && (entry.owner === undefined || entry.owner === null || typeof entry.owner === 'string')
+      && (entry.claimed === undefined || typeof entry.claimed === 'boolean');
+    return {
+      rows: Object.fromEntries(Object.entries(entries).filter(readable)),
+      malformed: Object.entries(entries).filter((row) => !readable(row)).map(([id]) => id),
+    };
   }
 
   // Recovery must distinguish a successful empty index from one the browser could not read.

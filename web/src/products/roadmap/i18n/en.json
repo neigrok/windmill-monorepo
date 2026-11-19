@@ -736,6 +736,6 @@
   "roadmap.accountChoice.addNote": "{count, plural, one {Choosing Discard removes this browser roadmap.} other {Choosing Discard removes these browser roadmaps.}}",
   "roadmap.accountChoice.keepTitle": "Keep unsent changes?",
   "roadmap.accountChoice.keepLead": "{count, plural, one {{shown} change hasn’t reached your account.} other {{shown} changes haven’t reached your account.}}",
-  "roadmap.accountChoice.keepRoadmap": "{name} · {count, plural, one {{shown} change} other {{shown} changes}}",
+  "roadmap.accountChoice.changedRoadmap": "{name} · {count, plural, one {{shown} change} other {{shown} changes}}",
   "roadmap.accountChoice.keepNote": "{count, plural, one {Keep it for your next sign-in. Discard removes it from this browser.} other {Keep them for your next sign-in. Discard removes them from this browser.}}"
 }

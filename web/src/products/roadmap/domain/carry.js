@@ -4,13 +4,13 @@ import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/a
 import { Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
 import { Valid } from '../../../platform/domain-kit/validation.js';
-import { Violation } from '../../../platform/domain-kit/values.js';
+import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { hashText } from '../../../platform/sync/core/encoding.js';
 import { between, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
 import { StepMark, StepMarkValue } from './progress.js';
-import { HUES, HeldRecord, RoadmapRefusals, RoadmapScopes, gone, writeIn } from './roadmapRules.js';
+import { HUES, HeldRecord, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, writeIn } from './roadmapRules.js';
 import { Roadmap, RoadmapMeta, RoadmapMetaValue, RoadmapValue } from './roadmaps.js';
 import { ImportUnit, RoadmapLinkValue, RoadmapStep, RoadmapStepValue, importChunks } from './steps.js';
 import { StepNote, StepNoteValue } from './workspace.js';
@@ -73,6 +73,30 @@ export function carriedOrds(keys) {
  */
 export function kept(old, reason, subject, values, named = '') {
   return Object.freeze({ id: hashText(jcs([old, subject, values])).slice(0, 16), reason, subject, values, named });
+}
+
+// The bounds of §4 a workspace item the old bundle kept is held to, by its type: each field and its spec.
+/** @type {Readonly<Record<'subtask' | 'stepLink' | 'stepNote', [string, import('../../../platform/domain-kit/values.js').TextSpec][]>>} */
+const ITEM_BOUNDS = Object.freeze({
+  subtask: [['label', RoadmapSpecs.subtask]],
+  stepLink: [['url', RoadmapSpecs.url], ['title', RoadmapSpecs.linkTitle]],
+  stepNote: [['text', RoadmapSpecs.note]],
+});
+
+// §8.2 Whether a workspace item the old bundle kept stands within the bounds of §4. One past a bound is set aside whole
+// before the act that carries the rest, as `CarriedRoadmap` sets aside a record, so that act is never refused for it.
+/**
+ * @param {'subtask' | 'stepLink' | 'stepNote'} type
+ * @param {Record<string, Json>} values
+ */
+export function withinBounds(type, values) {
+  try {
+    for (const [field, spec] of ITEM_BOUNDS[type]) spec.apply(String(values[field] ?? ''), new Path(field));
+    return true;
+  } catch (error) {
+    if (!(error instanceof Violation)) throw error;
+    return false;
+  }
 }
 
 // What a roadmap the old bundle kept comes to as the engine's records: its words, its kinds in their order, its steps
@@ -270,16 +294,18 @@ function newer(a, b) {
 
 // §8.2 The ledger of what the carry-over carried of one old roadmap, a device row of the replica it went to
 // (`carry:<old id>`), written in the act that carried it. `to` is the roadmap it became, null where it was not carried
-// (not the person's); `frontier` the newest stamp of each writer of the old bundle whose changes it carried, so a change
-// an old tab makes after it is carried again and nothing before it twice; `items` each workspace item carried, by its
-// old key, with a digest of what it held; `marks` a digest of the marks left undrained it carried; `kept` each record it
-// set aside for §6's one list, with its reason and its words. The row never leaves the device.
+// (not the person's); `created` whether the carry-over made `to` itself, so the old stores stay until the server takes
+// that creation; `frontier` the newest stamp of each writer of the old bundle whose changes it carried, so a change an
+// old tab makes after it is carried again and nothing before it twice; `items` each workspace item carried, by its old
+// key, with a digest of what it held; `marks` a digest of the marks left undrained it carried; `kept` each record it set
+// aside for §6's one list, with its reason and its words. The row never leaves the device.
 export class CarryLedger {
   /**
-   * @param {{ to?: string | null, frontier?: Record<string, string>, items?: Record<string, string>, marks?: string | null, kept?: Kept[] }} ledger
+   * @param {{ to?: string | null, created?: boolean, frontier?: Record<string, string>, items?: Record<string, string>, marks?: string | null, kept?: Kept[] }} ledger
    */
-  constructor({ to = null, frontier = {}, items = {}, marks = null, kept = [] } = {}) {
+  constructor({ to = null, created = false, frontier = {}, items = {}, marks = null, kept = [] } = {}) {
     this.to = to;
+    this.created = created;
     this.frontier = Object.freeze({ ...frontier });
     this.items = Object.freeze({ ...items });
     this.marks = marks;
@@ -299,25 +325,27 @@ export class CarryLedger {
     const row = /** @type {Record<string, any>} */ (json);
     const strings = (/** @type {unknown} */ value) => (value !== null && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).filter(([, each]) => typeof each === 'string')) : {});
-    return new CarryLedger({ to: typeof row.to === 'string' ? row.to : null, frontier: strings(row.frontier), items: strings(row.items),
+    return new CarryLedger({ to: typeof row.to === 'string' ? row.to : null, created: row.created === true, frontier: strings(row.frontier), items: strings(row.items),
       marks: typeof row.marks === 'string' ? row.marks : null, kept: Array.isArray(row.kept) ? row.kept.map((each) => ({ ...each, named: typeof each?.named === 'string' ? each.named : '' })) : [] });
   }
 
-  // The ledger with another carry's entry added: its roadmap where it names one, each writer's newer stamp, its items
-  // and marks, and each record it kept that this one does not hold.
+  // The ledger with another carry's entry added: its roadmap where it names one, and whether the carry-over made it, each
+  // writer's newer stamp, its items and marks, and each record it kept that this one does not hold.
   /** @param {CarryLedger} entry */
   merging(entry) {
     const frontier = { ...this.frontier };
     for (const [actor, stamp] of Object.entries(entry.frontier)) if (frontier[actor] === undefined || newer(stamp, frontier[actor] ?? '')) frontier[actor] = stamp;
     const known = new Set(this.kept.map((each) => each.id));
-    return new CarryLedger({ to: entry.to ?? this.to, frontier, items: { ...this.items, ...entry.items }, marks: entry.marks ?? this.marks,
+    return new CarryLedger({ to: entry.to ?? this.to, created: entry.to === null ? this.created : entry.created, frontier, items: { ...this.items, ...entry.items },
+      marks: entry.marks ?? this.marks,
       kept: [...this.kept, ...entry.kept.filter((each) => !known.has(each.id))] });
   }
 
   // The ledger less one record it set aside.
   /** @param {string} id */
   without(id) {
-    return new CarryLedger({ to: this.to, frontier: this.frontier, items: this.items, marks: this.marks, kept: this.kept.filter((each) => each.id !== id) });
+    return new CarryLedger({ to: this.to, created: this.created, frontier: this.frontier, items: this.items, marks: this.marks,
+      kept: this.kept.filter((each) => each.id !== id) });
   }
 
   // Whether the old bundle's change under `stamp` was carried.
@@ -330,7 +358,7 @@ export class CarryLedger {
 
   get json() {
     /** @type {Json} */
-    const json = { to: this.to, frontier: { ...this.frontier }, items: { ...this.items }, marks: this.marks,
+    const json = { to: this.to, created: this.created, frontier: { ...this.frontier }, items: { ...this.items }, marks: this.marks,
       kept: this.kept.map((each) => ({ id: each.id, reason: each.reason, subject: { ...each.subject }, values: each.values, named: each.named })) };
     return json;
   }
@@ -388,6 +416,19 @@ export class DiscardKept {
     plan.device(this.key, held.without(this.id).json);
     return writeIn(RoadmapScopes.account, plan, true);
   }
+}
+
+// How the account's list holds a roadmap: `alive`, `spent` where it held one under the id, or null where it never did.
+/**
+ * @param {import('../../../platform/domain-kit/reading.js').Reader} read a reader of the account's scope
+ * @param {string} id
+ * @returns {'alive' | 'spent' | null}
+ */
+export function listedAs(read, id) {
+  const roadmaps = read.repository(Roadmap);
+  const record = roadmaps.record(id, 'stored');
+  if (record?.life?.[0] === 'alive') return 'alive';
+  return record !== undefined || roadmaps.spentBorn(new Id(id, Roadmap)) !== null ? 'spent' : null;
 }
 
 // The ledger of one old roadmap as the replica holds it.

@@ -5,7 +5,7 @@ import { RoadmapProduct } from '../../../../../packages/api-contract/sync/refere
 import { isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 import { roadmapRegistry } from './vectors.js';
-import { CarriedIds, CarriedRoadmap, CarryLedger, CarryMark, CarryRoadmap, CarryStepNote, DiscardKept, RecordCarry, carriedOrds, carryLedgerOf, kept }
+import { CarriedIds, CarriedRoadmap, CarryLedger, CarryMark, CarryRoadmap, CarryStepNote, DiscardKept, RecordCarry, carriedOrds, carryLedgerOf, kept, withinBounds }
   from '../../../../src/products/roadmap/domain/carry.js';
 import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
 import { Complete, StepMark } from '../../../../src/products/roadmap/domain/progress.js';
@@ -155,16 +155,16 @@ test('a note the device kept is written where the step holds none, after the one
   }
 });
 
-test('the ledger takes each carry’s entry: its roadmap, each writer’s newest stamp, its items and every record it kept, once, and Discard drops one it kept', async () => {
+test('the ledger takes each carry’s entry: its roadmap and whether the carry-over made it, each writer’s newest stamp, its items and every record it kept, once, and Discard drops one it kept', async () => {
   const a = await phone();
   try {
-    const first = new CarryLedger({ to: OLD, frontier: { r_one: '200:1:r_one' }, items: { a: 'x' }, kept: [kept(OLD, 'pastBound', { t: 'subtask', id: 's' }, { label: 'long' })] });
+    const first = new CarryLedger({ to: OLD, created: true, frontier: { r_one: '200:1:r_one' }, items: { a: 'x' }, kept: [kept(OLD, 'pastBound', { t: 'subtask', id: 's' }, { label: 'long' })] });
     committed(await a.runner.runAct(new RecordCarry(OLD, first)));
     assert.equal((await a.runner.runAct(new RecordCarry(OLD, first))).kind, 'unchanged');
     committed(await a.runner.runAct(new RecordCarry(OLD, new CarryLedger({ frontier: { r_one: '150:9:r_one', r_two: '300:0:r_two' }, items: { b: 'y' },
       marks: 'm', kept: first.kept }))));
     const ledger = a.runner.read(RoadmapScopes.account, (read) => carryLedgerOf(read, OLD));
-    assert.deepEqual(ledger.json, { to: OLD, frontier: { r_one: '200:1:r_one', r_two: '300:0:r_two' }, items: { a: 'x', b: 'y' }, marks: 'm',
+    assert.deepEqual(ledger.json, { to: OLD, created: true, frontier: { r_one: '200:1:r_one', r_two: '300:0:r_two' }, items: { a: 'x', b: 'y' }, marks: 'm',
       kept: [{ id: first.kept[0].id, reason: 'pastBound', subject: { t: 'subtask', id: 's' }, values: { label: 'long' }, named: '' }] });
     assert.deepEqual(['200:1:r_one', '200:2:r_one', '1:0:r_three', '300:0:r_two'].map((stamp) => ledger.carried(stamp)), [true, false, false, true]);
     assert.equal(a.runner.read(RoadmapScopes.account, (read) => carryLedgerOf(read, 't_00000000000000ff')).to, null);
@@ -173,7 +173,22 @@ test('the ledger takes each carry’s entry: its roadmap, each writer’s newest
     assert.deepEqual(a.runner.read(RoadmapScopes.account, (read) => carryLedgerOf(read, OLD)).json, { ...ledger.json, kept: [] });
     const again = await a.runner.runAct(new DiscardKept(OLD, first.kept[0].id));
     assert.deepEqual([again.kind, again.result], ['unchanged', false]);
+    committed(await a.runner.runAct(new RecordCarry(OLD, new CarryLedger({ to: OLD, created: false }))));
+    assert.equal(a.runner.read(RoadmapScopes.account, (read) => carryLedgerOf(read, OLD)).created, false, 'an entry that names the roadmap says whether the carry-over made it');
   } finally {
     a.close();
   }
+});
+
+test('a workspace item stands within the bounds of its type’s fields, and one past any of them does not', () => {
+  assert.deepEqual([
+    withinBounds('subtask', { label: 'Check the forecast', done: true }),
+    withinBounds('subtask', { label: 'x'.repeat(201), done: false }),
+    withinBounds('subtask', { label: '   ', done: false }),
+    withinBounds('stepLink', { url: 'https://example.org', title: 'Tides' }),
+    withinBounds('stepLink', { url: '', title: 'Tides' }),
+    withinBounds('stepLink', { url: 'https://example.org', title: 't'.repeat(201) }),
+    withinBounds('stepNote', { text: 'n'.repeat(16000) }),
+    withinBounds('stepNote', { text: 'n'.repeat(16001) }),
+  ], [true, false, false, true, false, false, true, false]);
 });

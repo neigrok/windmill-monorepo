@@ -107,12 +107,28 @@ async function tab(t, disk, server, account = null) {
 }
 
 // The carry-over of one tab, its reports and events kept.
-function carryOver(disk, { timers = globalThis, session = null } = {}) {
+function carryOver(disk, { timers = globalThis, session = null, stores = new OldStores() } = {}) {
   const reported = [];
   const tracked = [];
-  const carry = new CarryOver({ session, stores: new OldStores(), locks: disk.locks, timers,
+  const carry = new CarryOver({ session, stores, locks: disk.locks, timers,
     report: (operation, error, tags) => reported.push({ operation, tags }), track: (name, props) => tracked.push({ name, ...props }) });
   return { carry, reported, tracked };
+}
+
+// The carry-over of a tab, started as the app starts it: once the engine stands, and again as `consider` says.
+function started(t, disk, engine, options = {}) {
+  const carrying = carryOver(disk, { ...options, session: { getSnapshot: () => ({ engine, ready: true }), subscribe: () => () => {} } });
+  carrying.carry.start();
+  t.after(() => carrying.carry.stop());
+  return carrying;
+}
+
+// Until the runs a started carry-over has queued, the ones queued while they ran among them, are done.
+async function settled(carry) {
+  for (let running = null; running !== carry.running;) {
+    running = carry.running;
+    await running;
+  }
 }
 
 const runner = (engine) => new ActionRunner(new EngineReplica(engine), roadmapRegistry, new FixedZone(0));
@@ -176,32 +192,35 @@ async function plantedSignedOut(owner = null) {
   return id;
 }
 
-test('a roadmap made signed out is carried into the anon replica under its id, with its marks, its workspace and the mark left undrained, and its old stores go', async (t) => {
+// The roadmap `plantedSignedOut` plants, as the replica holds it once carried: the 300-character subtask on `solo` is past
+// its bound, set aside for the one list.
+const SAILED = {
+  listed: true, title: 'Learn to sail',
+  steps: [['dock', 'Leave the dock'], ['solo', 'Sail solo'], ['wind', 'Read the wind']],
+  links: [['dock', 'solo'], ['wind', 'dock']],
+  kinds: ['build', 'learn', 'milestone'],
+  marks: ['dock', 'wind'],
+  pointers: [],
+  workspace: { wind: { subtasks: [['Check the forecast', true], ['Watch the flags', false]], links: [['https://www.example.org/wind', 'example.org']], note: 'Gusts come in from the left.' } },
+};
+
+test('a roadmap made signed out is carried into the anon replica under its id, with its marks, its workspace and the mark left undrained, and its old stores stay until the server takes its creation', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const id = await plantedSignedOut();
   const engine = await tab(t, disk, server);
   const { carry, reported, tracked } = carryOver(disk);
   await carry.run(engine);
-  const held = holding(engine, id);
-  assert.deepEqual({ ...held, workspace: { ...held.workspace, solo: undefined } }, {
-    listed: true, title: 'Learn to sail',
-    steps: [['dock', 'Leave the dock'], ['solo', 'Sail solo'], ['wind', 'Read the wind']],
-    links: [['dock', 'solo'], ['wind', 'dock']],
-    kinds: ['build', 'learn', 'milestone'],
-    marks: ['dock', 'wind'],
-    pointers: [],
-    workspace: { wind: { subtasks: [['Check the forecast', true], ['Watch the flags', false]], links: [['https://www.example.org/wind', 'example.org']], note: 'Gusts come in from the left.' }, solo: undefined },
-  });
+  assert.deepEqual(holding(engine, id), SAILED);
   const ledger = runner(engine).read(RoadmapScopes.account, (read) => carryLedgerOf(read, id));
-  assert.equal(ledger.to, id);
+  assert.deepEqual({ to: ledger.to, created: ledger.created }, { to: id, created: true });
   assert.deepEqual(ledger.kept.map((each) => [each.reason, each.subject.t, each.values.label]), [['pastBound', 'subtask', 'x'.repeat(300)]]);
-  assert.deepEqual(await oldStores(), NOTHING_OLD);
+  assert.deepEqual(await oldStores(), { sync: [id], index: [id], workspaces: [id], marks: [id] });
   assert.deepEqual(reported, []);
   assert.deepEqual(tracked, [
     { name: 'roadmap_carry', stage: 'found', roadmaps: '1', changed: '0', workspaces: '1', marks: '1' },
     { name: 'roadmap_carry', stage: 'carried', roadmaps: '1', moved: '0', changes: '0', marks: '2-5', items: '2-5', kept: '1' },
-    { name: 'roadmap_carry', stage: 'cleared', stores: '2-5' },
+    { name: 'roadmap_carry', stage: 'waiting', roadmaps: '1' },
   ]);
 });
 
@@ -329,10 +348,10 @@ async function claimAnswered(id) {
   claim.close();
 }
 
-// A roadmap the server keeps under `id` for `account`, planted on that account's other device.
-async function servedAs(t, server, account, id) {
+// A roadmap the server keeps under `id` for `account`, titled `title`, planted on that account's other device.
+async function servedAs(t, server, account, id, title = 'Someone’s') {
   const phone = await device(t, server, account);
-  const served = new CarriedRoadmap(id, { title: 'Someone’s', guide: '', kinds: DEFAULT_KINDS, steps: [], links: [] }, roadmapRegistry, runner(phone).moment());
+  const served = new CarriedRoadmap(id, { title, guide: '', kinds: DEFAULT_KINDS, steps: [], links: [] }, roadmapRegistry, runner(phone).moment());
   assert.equal((await runner(phone).runAct(new CarryRoadmap(id, served))).kind, 'committed');
   await sent(phone);
   return phone;
@@ -357,7 +376,7 @@ test('a claim cut short whose roadmap the person deleted on the server is create
   assert.deepEqual(reported, []);
 });
 
-test('signed out, a roadmap made here whose id the server serves for another account is created under a fresh id, and the device’s pointers at it move with it', async (t) => {
+test('signed out, a roadmap made here whose id the server serves for another account is created under a fresh id, and the device’s pointers at it move with it; both keep their old stores until the server takes them', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const sail = await plantedSignedOut();
@@ -371,15 +390,15 @@ test('signed out, a roadmap made here whose id the server serves for another acc
   const fresh = CarriedIds.roadmap(sail);
   assert.deepEqual({ fresh: holding(engine, fresh).steps.length, theirs: holding(engine, sail).listed, pointers: holding(engine, row).pointers },
     { fresh: 3, theirs: false, pointers: [['sea', fresh]] });
-  assert.deepEqual(await oldStores(), NOTHING_OLD);
+  assert.deepEqual((await oldStores()).sync, [row, sail].sort());
   assert.deepEqual(reported, []);
 });
 
 test('a carry cut short writes nothing or everything: a commit the store refuses keeps every old entry for the next load, and one that landed is not written twice', async (t) => {
   const disk = browser(t);
   const server = new Server();
-  const id = await plantedSignedOut();
-  const engine = await tab(t, disk, server);
+  const id = await plantedSignedOut('A');
+  const engine = await tab(t, disk, server, 'A');
   const commitAct = engine.commitAct.bind(engine);
   engine.commitAct = () => Promise.reject(new DOMException('the disk is full', 'QuotaExceededError'));
   const first = carryOver(disk);
@@ -401,10 +420,16 @@ test('a carry cut short writes nothing or everything: a commit the store refuses
   killed = false;
   assert.equal(holding(engine, id).steps.length, 3);
   assert.deepEqual((await oldStores()).sync, [id]);
-  const entries = engine.device.activeReplica.outbox.length;
+  const commit = engine.commitAct.bind(engine);
+  let wrote = 0;
+  engine.commitAct = async (...args) => {
+    const committed = await commit(...args);
+    if (committed.outcome !== null) wrote += 1;
+    return committed;
+  };
   const third = carryOver(disk);
   await third.carry.run(engine);
-  assert.equal(engine.device.activeReplica.outbox.length, entries, 'nothing is written twice');
+  assert.equal(wrote, 0, 'nothing is written twice');
   assert.deepEqual(await oldStores(), NOTHING_OLD);
   assert.deepEqual(third.tracked.map(({ stage }) => stage), ['found', 'cleared']);
 });
@@ -418,9 +443,9 @@ test('two tabs at once: one carries under the lock, the other finds nothing left
   await Promise.all([a.carry.run(one), b.carry.run(two)]);
   const creations = one.device.activeReplica.outbox.filter((entry) => entry.intent.d?.some((delta) => delta.t === 'tree' && delta.id === id)).length;
   assert.equal(creations, 1);
-  assert.deepEqual([a.tracked.map(({ stage }) => stage), b.tracked.map(({ stage }) => stage)], [['found', 'carried', 'cleared'], []]);
+  assert.deepEqual([a.tracked.map(({ stage }) => stage), b.tracked.map(({ stage }) => stage)], [['found', 'carried', 'waiting'], []]);
   assert.equal(holding(one, id).steps.length, 3);
-  assert.deepEqual(await oldStores(), NOTHING_OLD);
+  assert.deepEqual((await oldStores()).sync, [id]);
 });
 
 test('a tab that never reloaded keeps writing the old store after the carry: the next load carries what it wrote since, and nothing it wrote before', async (t) => {
@@ -439,11 +464,10 @@ test('a tab that never reloaded keeps writing the old store after the carry: the
   await carry.run(engine);
   assert.deepEqual(holding(engine, id).steps, [['dock', 'Leave the dock'], ['solo', 'Sail alone'], ['wind', 'Read the wind well']]);
   assert.deepEqual(tracked, [
-    { name: 'roadmap_carry', stage: 'found', roadmaps: '0', changed: '1', workspaces: '0', marks: '0' },
+    { name: 'roadmap_carry', stage: 'found', roadmaps: '1', changed: '0', workspaces: '1', marks: '0' },
     { name: 'roadmap_carry', stage: 'carried', roadmaps: '0', moved: '0', changes: '1', marks: '1', items: '0', kept: '0' },
-    { name: 'roadmap_carry', stage: 'cleared', stores: '2-5' },
   ]);
-  assert.deepEqual(await oldStores(), NOTHING_OLD);
+  assert.deepEqual((await oldStores()).sync, [id]);
 });
 
 test('a second run changes nothing', async (t) => {
@@ -515,48 +539,45 @@ test('a roadmap made here while an account was signed in waits for that account,
   assert.deepEqual({ steps: holding(engine, id).steps, old: await oldStores() }, { steps: [['cast', 'Cast on']], old: NOTHING_OLD });
 });
 
-test('with no connection a roadmap made signed out waits for the server’s answer, at once, and its old stores stay whole', async (t) => {
+test('with no connection a roadmap made signed out waits for the server’s answer, at once, its old stores whole, and is carried when the connection comes back', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const id = await plantedSignedOut();
   server.reachable = false;
   const engine = await tab(t, disk, server);
   engine.setOnline(false);
-  const { carry, tracked, reported } = carryOver(disk);
-  const started = Date.now();
-  await carry.run(engine);
-  assert.ok(Date.now() - started < 5000, 'nothing waits on a server the engine cannot reach');
+  const before = Date.now();
+  const { carry, tracked, reported } = started(t, disk, engine);
+  await carry.running;
+  assert.ok(Date.now() - before < 5000, 'nothing waits on a server the engine cannot reach');
   assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync, stages: tracked.map(({ stage }) => stage), reported },
     { listed: false, old: [id], stages: ['found', 'waiting'], reported: [] });
   server.reachable = true;
   engine.setOnline(true);
-  await carryOver(disk).carry.run(engine);
-  assert.deepEqual({ listed: holding(engine, id).listed, old: await oldStores() }, { listed: true, old: NOTHING_OLD });
+  await until(engine, () => holding(engine, id).listed, 'the carry once the connection came back');
+  await carry.running;
+  assert.deepEqual({ held: holding(engine, id), stages: tracked.map(({ stage }) => stage), reported }, { held: SAILED, stages: ['found', 'waiting', 'found', 'carried'], reported: [] });
 });
 
-test('signed out, then signed in to an account that holds no roadmaps: what was carried into the anon replica reaches the server whole', async (t) => {
+test('signed out, then signed in to an account that holds no roadmaps: what was carried into the anon replica reaches the server whole, and its old stores go once the server takes it', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const id = await plantedSignedOut();
   const engine = await tab(t, disk, server);
-  await carryOver(disk).carry.run(engine);
+  const { carry, tracked, reported } = started(t, disk, engine);
+  await carry.running;
   const before = holding(engine, id);
+  assert.deepEqual({ held: before, old: (await oldStores()).sync }, { held: SAILED, old: [id] });
   engine.transport.account = 'B';
   assert.equal((await engine.signIn('B')).complete, true);
+  await carry.running;
+  assert.deepEqual({ old: await oldStores(), stages: tracked.map(({ stage }) => stage), reported }, { old: NOTHING_OLD, stages: ['found', 'carried', 'waiting', 'found', 'cleared'], reported: [] });
   await sent(engine);
   const phone = await device(t, server, 'B');
   await until(phone, () => holding(phone, id).listed, 'the account’s list on another device');
   for (const scope of [RoadmapScopes.tree(id)]) await phone.subscribe(scope);
   await until(phone, () => JSON.stringify(holding(phone, id)) === JSON.stringify(before), 'the carried roadmap on another device');
 });
-
-// The carry-over of a tab, started as the app starts it: once the engine stands and again as each replica becomes active.
-function started(t, disk, engine) {
-  const carrying = carryOver(disk, { session: { getSnapshot: () => ({ engine, ready: true }), subscribe: () => () => {} } });
-  carrying.carry.start();
-  t.after(() => carrying.carry.stop());
-  return carrying;
-}
 
 test('a claim the server answered goes only to the account whose list holds it: never into the anon replica, nor another account’s', async (t) => {
   const disk = browser(t);
@@ -580,10 +601,10 @@ test('a claim the server answered goes only to the account whose list holds it: 
   await carry.running;
   assert.deepEqual({ steps: holding(engine, id).steps, old: await oldStores() },
     { steps: [['dock', 'Leave the dock'], ['solo', 'Sail solo'], ['wind', 'Read the wind']], old: NOTHING_OLD }, 'signed in as the account that claimed it');
-  assert.deepEqual(tracked.map(({ stage }) => stage), ['found', 'waiting', 'found', 'waiting', 'found', 'waiting', 'found', 'carried', 'cleared']);
+  assert.deepEqual(tracked.map(({ stage }) => stage), ['found', 'waiting', 'found', 'carried', 'cleared']);
 });
 
-test('a roadmap made signed out waits while an account is signed in, for the lineage rule to ask of it, and is carried into the anon replica once signed out', async (t) => {
+test('a roadmap made signed out waits while an account is signed in, for the lineage rule to ask of it, and is carried into the anon replica once signed out, its old stores kept until the server takes it', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const id = await plantedSignedOut();
@@ -594,11 +615,11 @@ test('a roadmap made signed out waits while an account is signed in, for the lin
   await engine.finishSignOut({ choice: 'keep' });
   engine.transport.account = null;
   await carry.running;
-  assert.deepEqual({ state: engine.getSnapshot().state, steps: holding(engine, id).steps.length, old: await oldStores() }, { state: 'anon', steps: 3, old: NOTHING_OLD });
+  assert.deepEqual({ state: engine.getSnapshot().state, steps: holding(engine, id).steps.length, old: (await oldStores()).sync }, { state: 'anon', steps: 3, old: [id] });
 });
 
 for (const choice of ['keep', 'discard']) {
-  test(`an account's roadmap left uncarried at its sign-out ${choice === 'keep' ? 'waits with its replica, and is carried once the account signs in again' : 'goes with its Discard, carried nowhere'}`, async (t) => {
+  test(`an account's roadmap left uncarried at its sign-out ${choice === 'keep' ? 'waits with its replica' : 'and not named by its Discard waits all the same'}, and is carried once the account signs in again`, async (t) => {
     const disk = browser(t);
     const server = new Server();
     const { tree, steps } = await plantedOnServer(t, server);
@@ -611,12 +632,8 @@ for (const choice of ['keep', 'discard']) {
     await engine.finishSignOut({ choice });
     engine.transport.account = null;
     await carry.running;
-    if (choice === 'discard') {
-      assert.deepEqual({ old: await oldStores(), queued: queued(engine), stages: tracked.slice(2).map(({ stage }) => stage) },
-        { old: NOTHING_OLD, queued: 0, stages: ['found', 'discarded', 'cleared'] });
-      return;
-    }
-    assert.deepEqual({ old: (await oldStores()).sync, queued: queued(engine) }, { old: [tree], queued: 0 }, 'signed out, nothing of it reaches the anon replica');
+    assert.deepEqual({ old: (await oldStores()).sync, queued: queued(engine), stages: tracked.map(({ stage }) => stage) },
+      { old: [tree], queued: 0, stages: ['found', 'waiting'] }, 'signed out, nothing of it reaches the anon replica');
     engine.setOnline(true);
     engine.transport.account = 'A';
     assert.equal((await engine.signIn('A')).complete, true);
@@ -625,3 +642,243 @@ for (const choice of ['keep', 'discard']) {
       { steps: ['Grip the oars lightly', 'Pull a stroke', 'Row a mile'], old: NOTHING_OLD });
   });
 }
+
+// The notices of roadmap's the engine holds, by code.
+function noticeCodes(engine) {
+  const hold = engine.observeNotices('roadmap');
+  const codes = hold.getSnapshot().notices.map((notice) => notice.code);
+  hold.release();
+  return codes;
+}
+
+// Until another device of `account` holds `tree` as `expected`.
+async function onAnotherDevice(t, server, account, tree, expected) {
+  const phone = await device(t, server, account);
+  for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) await phone.subscribe(scope).catch(() => {});
+  await until(phone, () => JSON.stringify(holding(phone, tree)) === JSON.stringify(expected), 'the carried roadmap on another device');
+  return phone;
+}
+
+test('a claim whose create landed but whose answer never came back, carried signed out, keeps its old stores; at sign-in the server refuses its id as taken, and it is carried whole as changes to the account’s roadmap, once', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  await servedAs(t, server, 'A', id, 'Learn to sail');
+  const engine = await tab(t, disk, server);
+  const { carry, reported } = started(t, disk, engine);
+  await carry.running;
+  assert.deepEqual({ held: holding(engine, id), old: (await oldStores()).sync }, { held: SAILED, old: [id] }, 'signed out, in the anon replica, its old stores kept');
+  engine.transport.account = 'A';
+  const due = (await engine.signIn('A')).due.find((question) => question.product === 'roadmap');
+  assert.equal((await engine.signIn('A', { decisions: { roadmap: 'add' }, counted: { roadmap: due.counted } })).complete, true);
+  await carry.running;
+  await sent(engine);
+  assert.deepEqual({ held: holding(engine, id), fresh: holding(engine, CarriedIds.roadmap(id)).listed, old: await oldStores(), notices: noticeCodes(engine), reported },
+    { held: SAILED, fresh: false, old: NOTHING_OLD, notices: [], reported: [] });
+  await onAnotherDevice(t, server, 'A', id, SAILED);
+});
+
+test('signed in, a claim whose create landed but whose answer never came back is carried as changes to the roadmap the account’s list holds', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  await servedAs(t, server, 'A', id, 'Learn to sail');
+  const engine = await tab(t, disk, server, 'A');
+  await until(engine, () => holding(engine, id).listed, 'the account’s list');
+  const { carry, reported, tracked } = carryOver(disk);
+  await carry.run(engine);
+  await sent(engine);
+  assert.deepEqual({ held: holding(engine, id), old: await oldStores(), reported, stages: tracked.map(({ stage }) => stage) },
+    { held: SAILED, old: NOTHING_OLD, reported: [], stages: ['found', 'carried', 'cleared'] });
+  await onAnotherDevice(t, server, 'A', id, SAILED);
+});
+
+// A carry the account's change interrupts: `change` runs as the carry-over asks the server of `tree`, its first await.
+function interrupted(engine, tree, change) {
+  const subscribe = engine.subscribe.bind(engine);
+  let fired = false;
+  engine.subscribe = async (scope) => {
+    const answer = await subscribe(scope);
+    if (!fired && scope === RoadmapScopes.tree(tree)) {
+      fired = true;
+      await change();
+    }
+    return answer;
+  };
+}
+
+// Every device row of roadmap's each replica holds, by its state.
+async function rowsByReplica(engine) {
+  const { device: stored } = await engine.store.read();
+  return stored.replicas.map((replica) => [replica.meta.state, Object.keys(replica.device.roadmap ?? {})]);
+}
+
+for (const choice of ['keep', 'discard']) {
+  test(`a sign-out with ${choice === 'keep' ? 'Keep' : 'Discard'} while a carry waits on a roadmap’s first pull writes nothing into the anon replica, keeps every old store, and the roadmap is carried once its account signs in again`, async (t) => {
+    const disk = browser(t);
+    const server = new Server();
+    const { tree, steps } = await plantedOnServer(t, server);
+    await editedOffline(tree, steps);
+    const engine = await tab(t, disk, server, 'A');
+    interrupted(engine, tree, async () => {
+      await engine.finishSignOut({ choice });
+      engine.transport.account = null;
+    });
+    const { carry, reported, tracked } = started(t, disk, engine);
+    await settled(carry);
+    assert.deepEqual({ rows: await rowsByReplica(engine), queued: queued(engine), old: (await oldStores()).sync, reported, stages: tracked.map(({ stage }) => stage) },
+      { rows: choice === 'keep' ? [['anon', []], ['dormant', []]] : [['anon', []]], queued: 0, old: [tree], reported: [], stages: ['found', 'waiting'] });
+    engine.transport.account = 'A';
+    assert.equal((await engine.signIn('A')).complete, true);
+    await settled(carry);
+    assert.deepEqual({ steps: holding(engine, tree).steps.map(([, label]) => label).sort(), old: await oldStores() },
+      { steps: ['Grip the oars lightly', 'Pull a stroke', 'Row a mile'], old: NOTHING_OLD });
+  });
+}
+
+test('signed out, another tab signs in to an account that holds roadmaps while a carry asks the server: nothing reaches that account, every old store stays, and the roadmap is carried into the anon replica once signed out', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  await plantedOnServer(t, server);
+  const id = await plantedSignedOut();
+  const engine = await tab(t, disk, server);
+  interrupted(engine, id, async () => {
+    engine.transport.account = 'A';
+    assert.equal((await engine.signIn('A')).complete, true);
+  });
+  const { carry, reported } = started(t, disk, engine);
+  await settled(carry);
+  assert.deepEqual({ state: engine.getSnapshot().state, queued: queued(engine), listed: holding(engine, id).listed, old: (await oldStores()).sync, reported },
+    { state: 'bound', queued: 0, listed: false, old: [id], reported: [] });
+  await engine.finishSignOut({ choice: 'keep' });
+  engine.transport.account = null;
+  await settled(carry);
+  assert.deepEqual({ state: engine.getSnapshot().state, held: holding(engine, id), old: (await oldStores()).sync }, { state: 'anon', held: SAILED, old: [id] });
+});
+
+test('signed out, a sign-in that adds the anon replica to an account, keeping the replica, while a carry asks the server: nothing the carry decided reaches the account', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  await plantedOnServer(t, server);
+  const id = await plantedSignedOut();
+  const engine = await tab(t, disk, server);
+  assert.equal((await runner(engine).runAct(new CreateRoadmap('Learn to swim'))).kind, 'committed');
+  const anon = engine.device.activeReplica.id;
+  interrupted(engine, id, async () => {
+    engine.transport.account = 'A';
+    const due = (await engine.signIn('A')).due.find((question) => question.product === 'roadmap');
+    assert.equal((await engine.signIn('A', { decisions: { roadmap: 'add' }, counted: { roadmap: due.counted } })).complete, true);
+  });
+  const { carry, reported } = carryOver(disk);
+  await carry.run(engine);
+  assert.deepEqual({ same: engine.device.activeReplica.id === anon, account: engine.device.activeReplica.meta.account, listed: holding(engine, id).listed,
+    ledger: Object.keys(engine.device.activeReplica.deviceRows('roadmap')).filter(CarryLedger.isLedger), old: (await oldStores()).sync, reported },
+  { same: true, account: 'A', listed: false, ledger: [], old: [id], reported: [] });
+});
+
+test('a roadmap with many steps and many workspace items past their bound is carried in one act, each item set aside before it is tried', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  globalThis.window.wmDeviceConfirmation = { owner: null };
+  const nodes = Array.from({ length: 300 }, (_, index) => ({ id: `s${index}`, label: `Step ${index}`, color: 'olive', prerequisites: index ? [`s${index - 1}`] : [] }));
+  const id = await bearImportedTree({ title: 'Big', kinds: DEFAULT_KINDS, nodes });
+  let workspace = emptyWorkspace();
+  for (let index = 0; index < 200; index += 1) workspace = addSubtask(workspace, `${'x'.repeat(250)}${index}`);
+  new WorkspaceStore().save(id, { s0: addSubtask(workspace, 'Count the steps') });
+  const engine = await tab(t, disk, server);
+  const commitAct = engine.commitAct.bind(engine);
+  let commits = 0;
+  engine.commitAct = (...args) => { commits += 1; return commitAct(...args); };
+  const { carry, reported } = carryOver(disk);
+  await carry.run(engine);
+  const ledger = runner(engine).read(RoadmapScopes.account, (read) => carryLedgerOf(read, id));
+  assert.deepEqual({ commits, steps: holding(engine, id).steps.length, subtasks: holding(engine, id).workspace.s0?.subtasks, kept: ledger.kept.length,
+    reasons: [...new Set(ledger.kept.map((each) => each.reason))], reported },
+  { commits: 1, steps: 300, subtasks: [['Count the steps', false]], kept: 200, reasons: ['pastBound'], reported: [] });
+});
+
+test('one index row that does not read leaves every other roadmap carried, and is reported once on this browser, not on every load', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  const rows = JSON.parse(globalThis.window.localStorage.getItem('windmill:device-trees'));
+  rows.t_00000000000000ff = { title: 7, owner: null, claimed: false };
+  globalThis.window.localStorage.setItem('windmill:device-trees', JSON.stringify(rows));
+  const engine = await tab(t, disk, server);
+  const loads = [];
+  for (let load = 0; load < 2; load += 1) {
+    const { carry, reported } = carryOver(disk);
+    await carry.run(engine);
+    loads.push(reported.map(({ operation, tags }) => [operation, tags.store, tags.name]));
+  }
+  assert.deepEqual({ held: holding(engine, id), loads, rows: Object.keys(JSON.parse(globalThis.window.localStorage.getItem('windmill:device-trees'))).sort() },
+    { held: SAILED, loads: [[['roadmap-carry-read', 'index', 'other']], []], rows: [id, 't_00000000000000ff'].sort() });
+});
+
+test('an index row whose record the old bundle has not written yet waits a load; one still with no record a load later is forgotten as empty', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  const store = new SyncStore();
+  const record = await store.load(id);
+  await store.clear(id, { durable: true });
+  globalThis.window.wmDeviceConfirmation = { owner: null };
+  new LocalTreeRegistry().record('t_00000000000000b2', 'Never written');
+  const engine = await tab(t, disk, server);
+  const first = carryOver(disk);
+  await first.carry.run(engine);
+  assert.deepEqual({ listed: holding(engine, id).listed, index: (await oldStores()).index, stages: first.tracked.map(({ stage }) => stage) },
+    { listed: false, index: [id, 't_00000000000000b2'].sort(), stages: ['found', 'waiting'] }, 'the first load forgets neither');
+  assert.equal((await store.save(id, record)).status, 'saved');
+  const second = carryOver(disk);
+  await second.carry.run(engine);
+  assert.deepEqual({ held: holding(engine, id), index: (await oldStores()).index, stages: second.tracked.map(({ stage }) => stage) },
+    { held: SAILED, index: [id], stages: ['found', 'carried', 'waiting', 'cleared'] });
+});
+
+test('an entry that does not read is reported once on this browser, and a load that leaves waiting what the last one left says nothing', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  globalThis.window.localStorage.setItem('windmill:workspace:t_00000000000000bb', '{not json');
+  const { tree, steps } = await plantedOnServer(t, server);
+  await editedOffline(tree, steps);
+  const engine = await tab(t, disk, server, 'A');
+  engine.setOnline(false);
+  const loads = [];
+  for (let load = 0; load < 3; load += 1) {
+    const { carry, reported, tracked } = carryOver(disk);
+    await carry.run(engine);
+    loads.push({ reported: reported.map(({ operation, tags }) => [operation, tags.store]), stages: tracked.map(({ stage }) => stage) });
+  }
+  assert.deepEqual(loads, [
+    { reported: [['roadmap-carry-read', 'workspace']], stages: ['found', 'waiting'] },
+    { reported: [], stages: [] },
+    { reported: [], stages: [] },
+  ]);
+});
+
+test('the demo’s own workspace is no old store: the carry-over reads past it', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  globalThis.window.localStorage.setItem('windmill:workspace:t_9e407a96b5330ebe', JSON.stringify({ n1: { subtasks: [{ id: 's1', label: 'A demo subtask', done: false }], links: [], note: '' } }));
+  const engine = await tab(t, disk, server);
+  const { carry, reported, tracked } = carryOver(disk);
+  await carry.run(engine);
+  assert.deepEqual({ reported, tracked, workspaces: (await oldStores()).workspaces }, { reported: [], tracked: [], workspaces: ['t_9e407a96b5330ebe'] });
+});
+
+test('a run that fails, and a question to the server that fails, are reported as reads: of the replica, and of the server', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  const engine = await tab(t, disk, server);
+  engine.subscribe = async () => { throw new TypeError('the transport broke'); };
+  const asking = carryOver(disk);
+  await asking.carry.run(engine);
+  const stores = new OldStores();
+  stores.read = async () => { throw new TypeError('the store broke'); };
+  const { carry, reported } = started(t, disk, engine, { stores });
+  await carry.running;
+  assert.deepEqual({ asked: asking.reported, ran: reported, old: (await oldStores()).sync },
+    { asked: [{ operation: 'roadmap-carry-read', tags: { store: 'server', name: 'other' } }], ran: [{ operation: 'roadmap-carry-read', tags: { store: 'replica', name: 'other' } }], old: [id] });
+});

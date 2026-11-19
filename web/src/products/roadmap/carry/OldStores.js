@@ -2,18 +2,21 @@
 // carried: each roadmap's record in the sync database (`SyncStore`), its row of the device index (`LocalTreeRegistry`),
 // its workspaces (`WorkspaceStore`) and the marks left undrained from before roadmap's present sync (`ProgressStore`).
 // `OldRoadmap` says what one roadmap's entries come to as the domain's acts; the carry-over decides where they go. The
-// stores that are not sync's stay: the last place, the view, the legend and the ledgers.
+// stores that are not sync's stay: the last place, the view, the legend and the ledgers, and the demo's own workspace.
+// `CarryNotes` is what the carry-over remembers of them in this browser from one load to the next.
 
 import { hashText } from '../../../platform/sync/core/encoding.js';
 import { isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
-import { CarriedIds, CarriedRoadmap, CarryLedger, CarryMark, CarryRoadmap, CarryStepNote } from '../domain/carry.js';
+import { CarriedIds, CarriedRoadmap, CarryLedger, CarryMark, CarryRoadmap, CarryStepNote, kept, withinBounds } from '../domain/carry.js';
 import { ChangeKind, CreateKind, DeleteKind, MoveKind, RecolourKind } from '../domain/kinds.js';
 import { ClearPointer, Complete, Reset, SetPointer } from '../domain/progress.js';
 import { WriteRoadmap } from '../domain/roadmaps.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep } from '../domain/steps.js';
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask } from '../domain/workspace.js';
+import { DEMO_TREE_ID } from '../demo/demoStage.js';
 import { cmpOrder } from '../model/TrunkTree.js';
+import { localStorageOrNothing } from '../persistence/browserStorage.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { WorkspaceStore } from '../persistence/WorkspaceStore.js';
@@ -58,6 +61,29 @@ export class OldRoadmap {
   // A roadmap made signed out whose claim the server answered: its record holds what the server confirmed of it, so the
   // server keeps it for the account that claimed it.
   get claimBegan() { return this.madeSignedOut && this.record?.confirmed?.structure != null; }
+
+  // Whether the roadmap goes to `account`'s replica, where that account's list holds it or held it (`listed`: alive,
+  // spent or null): one its row names, and one its row names nobody for that the list holds, a claim of it having landed.
+  belongsTo(account, listed) {
+    if (account === null) return false;
+    return this.owner === account || (listed !== null && (this.owner ?? null) === null);
+  }
+
+  // The roadmap's name as this browser last showed it.
+  get name() { return this.lattice.title || this.index?.title || ''; }
+
+  // What its entries hold now, as a digest: a question that counted the roadmap takes it only while they hold the same.
+  get fingerprint() { return hashText(JSON.stringify([this.index, this.record, this.workspace, this.marks])).slice(0, 32); }
+
+  // How many changes of the person's the roadmap holds that the ledger has not carried, counted as the room counts them:
+  // a roadmap no server holds yet is one change, as making it is, and each of its marks another; a roadmap the server
+  // keeps counts each change and mark the carry-over would write; and each workspace item counts, carried or set aside.
+  unsentCount(ledger) {
+    const items = this.items().filter((item) => ledger.items[item.key] !== item.digest).length;
+    if (!this.madeSignedOut || this.claimBegan || ledger.to !== null) return this.changes(this.id, ledger, () => true, (tree) => tree).length + items;
+    const marked = [...this.progress.marks].filter(([, mark]) => mark.status === 'complete').map(([step]) => step);
+    return 1 + new Set([...marked, ...this.seeds(this.id).map((each) => each.subject.id), ...this.undrained(this.id).map((each) => each.subject.id)]).size + items;
+  }
 
   // The roadmap as the old bundle showed it: its words, its kinds in their order, its present steps in the order its
   // Board drew them (`cmpOrder`), and the links among them.
@@ -204,9 +230,10 @@ export class OldRoadmap {
 
   // §8.2 The workspaces kept on this device, on the steps of `to`: each subtask and link under an id derived from its old
   // one, made once, or changed where the old bundle changed it after it was carried, and each note written after the one
-  // its step holds. What the ledger carried as it holds now writes nothing.
-  workspaceParts(to, ledger) {
-    return this.items().filter((item) => ledger.items[item.key] !== item.digest).map((item) => {
+  // its step holds. What the ledger carried as it holds now writes nothing. An item past a bound of §4 is no part: it is
+  // set aside whole for the one list (`kept`), before any act is tried.
+  carriedWorkspace(to, ledger) {
+    const parts = this.items().filter((item) => ledger.items[item.key] !== item.digest).map((item) => {
       const id = CarriedIds.item(item.type, this.id, item.step, item.old);
       const known = ledger.items[item.key] !== undefined;
       const named = this.nameOf(item.step);
@@ -219,6 +246,8 @@ export class OldRoadmap {
       const act = known ? ChangeStepLink(to, id, item.values) : AddStepLink(to, item.step, item.values, { id });
       return part(act, { t: 'stepLink', id }, values, 'item', named);
     });
+    const bounded = (each) => withinBounds(each.subject.t, each.values);
+    return { parts: parts.filter(bounded), kept: parts.filter((each) => !bounded(each)).map((each) => kept(this.id, 'pastBound', each.subject, each.values, each.named)) };
   }
 
   // A step's name as the old bundle last held it, present or deleted.
@@ -243,36 +272,42 @@ export class OldStores {
     this.marks = marks;
   }
 
-  // Every roadmap any old store names, and each store that could not be read: `{ store, error }`, the store `sync`,
-  // `index`, `workspace` or `marks`. A roadmap whose record cannot be read is left out, every entry of it kept.
+  // Every roadmap any old store names, and each entry that could not be read: `{ store, entry, error }`, the store
+  // `sync`, `index`, `workspace` or `marks` and the roadmap whose entry it is (null for the whole index). A roadmap whose
+  // record or index row cannot be read is left out, every entry of it kept; a row that does not read leaves every other
+  // row read. The demo's workspace is the demo's, no old store's.
   async read() {
     const unread = [];
     let rows = {};
     try {
-      rows = this.index.rows();
+      const index = this.index.readRows();
+      rows = index.rows;
+      for (const id of index.malformed) unread.push({ store: 'index', entry: id, error: new TypeError('device index row does not read') });
     } catch (error) {
-      unread.push({ store: 'index', error });
+      unread.push({ store: 'index', entry: null, error });
     }
     let held = [];
     try {
       held = await this.store.treeIds({ durable: true });
     } catch (error) {
-      unread.push({ store: 'sync', error });
+      unread.push({ store: 'sync', entry: null, error });
       return { roadmaps: [], unread };
     }
     const workspaces = new Set(this.workspaces.treeIds());
     const marks = new Set(this.marks.treeIds());
+    const left = new Set([DEMO_TREE_ID, ...unread.map(({ entry }) => entry)]);
     const roadmaps = [];
     for (const id of new Set([...Object.keys(rows), ...held, ...workspaces, ...marks])) {
+      if (left.has(id)) continue;
       const workspace = workspaces.has(id) ? this.workspaces.load(id) : null;
-      if (workspaces.has(id) && workspace === null) unread.push({ store: 'workspace', error: new SyntaxError('workspace does not read') });
+      if (workspaces.has(id) && workspace === null) unread.push({ store: 'workspace', entry: id, error: new SyntaxError('workspace does not read') });
       const legacy = marks.has(id) ? this.marks.load(id) : null;
-      if (marks.has(id) && legacy === null) unread.push({ store: 'marks', error: new SyntaxError('marks do not read') });
+      if (marks.has(id) && legacy === null) unread.push({ store: 'marks', entry: id, error: new SyntaxError('marks do not read') });
       try {
         const record = held.includes(id) ? await this.store.load(id) : null;
         roadmaps.push(new OldRoadmap(id, { index: rows[id] ?? null, record, workspace, marks: legacy }));
       } catch (error) {
-        unread.push({ store: 'sync', error });
+        unread.push({ store: 'sync', entry: id, error });
       }
     }
     return { roadmaps, unread };
@@ -291,4 +326,81 @@ export class OldStores {
     ];
     return gone.filter(Boolean).length;
   }
+
+  // An account's Discard (§5 Signed out, §8.2): each old roadmap `taken` names goes uncarried, its entries only while
+  // they hold what was read. Answers how many roadmaps it took.
+  async discard(taken) {
+    const { roadmaps } = await this.read();
+    let discarded = 0;
+    for (const roadmap of roadmaps.filter(taken)) if (await this.forget(roadmap) > 0) discarded += 1;
+    return discarded;
+  }
+}
+
+const NOTES = 'windmill:roadmap:carry-notes';
+
+// How many digests each list of the notes keeps, the newest last.
+const NOTED = 100;
+
+const digest = (value) => hashText(jcs(value)).slice(0, 16);
+
+const noNotes = () => ({ reported: [], waiting: null, recordless: [], counted: null });
+
+let pageNotes = noNotes();
+
+// What the carry-over remembers in this browser from one load to the next, in `localStorage` and never sent: digests of
+// the unread entries it reported, so each is reported once; a digest of the roadmaps a run left waiting, so a run that
+// leaves the same ones says nothing; digests of the index rows it found with no record, each forgotten as empty only once
+// a later load finds it so too; and the old roadmaps a sign-out question counted (`counted`), which its Discard takes. A
+// browser that refuses storage remembers for the page alone.
+export class CarryNotes {
+  constructor(storage = localStorageOrNothing()) {
+    this.storage = storage;
+  }
+
+  get notes() {
+    try {
+      const stored = JSON.parse(this.storage.getItem(NOTES) ?? 'null');
+      if (stored === null) return noNotes();
+      return { ...noNotes(), ...stored };
+    } catch {
+      return pageNotes;
+    }
+  }
+
+  save(notes) {
+    pageNotes = notes;
+    try { this.storage.setItem(NOTES, JSON.stringify(notes)); } catch { /* the page keeps them */ }
+  }
+
+  // Of the unread entries (`{ store, entry }`), those this browser has not reported, which count as reported from here on.
+  unreported(unread) {
+    const notes = this.notes;
+    const fresh = unread.filter(({ store, entry }) => !notes.reported.includes(digest([store, entry])));
+    if (fresh.length > 0) this.save({ ...notes, reported: [...notes.reported, ...fresh.map(({ store, entry }) => digest([store, entry]))].slice(-NOTED) });
+    return fresh;
+  }
+
+  // Whether the roadmaps a run leaves waiting, by id, are others than the last run left; remembers them.
+  waitingChanged(ids) {
+    const notes = this.notes;
+    const waiting = ids.length === 0 ? null : digest([...ids].sort());
+    if (waiting === notes.waiting) return false;
+    this.save({ ...notes, waiting });
+    return true;
+  }
+
+  // Whether an earlier load found this roadmap's index row, as it is now, with no record; remembers it found so now.
+  recordlessBefore(roadmap) {
+    const notes = this.notes;
+    const seen = digest([roadmap.id, roadmap.index]);
+    if (notes.recordless.includes(seen)) return true;
+    this.save({ ...notes, recordless: [...notes.recordless, seen].slice(-NOTED) });
+    return false;
+  }
+
+  // The old roadmaps a sign-out question counted: `{ account, roadmaps }`, each roadmap's id with its fingerprint, or null.
+  get counted() { return this.notes.counted; }
+
+  set counted(counted) { this.save({ ...this.notes, counted }); }
 }
