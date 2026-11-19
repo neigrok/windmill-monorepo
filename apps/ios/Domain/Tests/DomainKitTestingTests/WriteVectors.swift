@@ -168,19 +168,14 @@ enum Plans {
     }
   }
 
-  // §9.6 run/undo.json: an act opted into Undo over the real engine and the model server, or a reversible draft's save,
-  // then its Undo and Redo; each result without the ids the engine draws. A segment whose `undo` is empty is named for
-  // evidence alone.
-  static func undo(_ vector: Vector) throws -> JSON {
+  // §9.6 run/undo.json and §9.7 run/composed.json: an act opted into Undo, a composed act, a single action or a reversible
+  // draft's save over the real engine and the model server, then its Undo, Redo and held-cancel steps; each result without
+  // the ids the engine draws.
+  static func engineAct(_ vector: Vector) throws -> JSON {
     let phone = Harness(registry: try vector.registry, start: Probe.start, rules: ProbeServerRules())
     let plans = { (segments: JSON) throws -> [ScopedPlan] in
-      try segments.asArray().map { (segment: JSON) throws -> ScopedPlan in
-        let scoped = Vector(file: vector.file, name: vector.name, input: segment, expect: .null)
-        var plan = try Plans.build(scoped, at: try phone.runner.moment())
-        let recipes: [UndoRecipe] = try (segment["undo"]?.asArray() ?? []).map(Plans.undoRecipe)
-        if !recipes.isEmpty { plan.undoRecipes += recipes } else if segment["undo"] != nil { plan.evidenceForUndo() }
-        return ScopedPlan(try scoped.scope, plan)
-      }
+      let moment = try phone.runner.moment()
+      return try segments.asArray().map { (segment: JSON) throws -> ScopedPlan in try Plans.scoped(segment, of: vector, at: moment) }
     }
     for setup in try vector.input["before"]?.asArray() ?? [] {
       guard case .committed = try phone.runner.runAct(PlannedAct(plans: try plans(setup))) else { throw ContractError("\(vector) set up no act") }
@@ -189,7 +184,23 @@ enum Plans {
     let actId: String?
     let outcome: JSON
     do {
-      if let save = vector.input["save"] {
+      if let parts = vector.input["parts"] {
+        let moment = try phone.runner.moment()
+        let actions: [AnyActAction<ProbeRefusal>] = try parts.asArray().map { (part: JSON) throws -> AnyActAction<ProbeRefusal> in
+          AnyActAction(VectorPart(item: part, scope: try ScopeRef(json: part.member("scope")), vector: vector, moment: moment))
+        }
+        switch try phone.runner.runComposed(actions) {
+        case .committed(_, let receipt):
+          actId = receipt.gestureId
+          outcome = Plans.form(receipt)
+        case .unchanged:
+          actId = nil
+          outcome = ["kind": "unchanged"]
+        case .refused(let part, let refusal):
+          actId = nil
+          outcome = ["kind": "refused", "part": JSON(part), "refusal": refusal.form]
+        }
+      } else if let save = vector.input["save"] {
         let saved = try Plans.save(try Drafts.draftable(save.member("t").asString()), save, on: phone)
         actId = saved.receipt?.gestureId
         outcome = saved.form
@@ -202,8 +213,7 @@ enum Plans {
         let ran = try phone.runner.runAct(PlannedAct(plans: try plans(vector.input.member("segments"))))
         guard case .committed(_, let receipt) = ran else { return ["outcome": ["kind": "refused"]] }
         actId = receipt.gestureId
-        let counts: [JSON] = receipt.segments.map { (segment: ActSegmentReceipt) -> JSON in JSON(segment.localIds.count) }
-        outcome = ["kind": "committed", "counts": .array(counts), "held": .bool(receipt.releaseAt != nil)]
+        outcome = Plans.form(receipt)
       }
     } catch is PlanError {
       return ["error": true]
@@ -214,6 +224,7 @@ enum Plans {
       switch try step.asString() {
       case "sync": phone.sync()
       case "read": results.append(Plans.form(try phone.runner.inverseResult(requestId ?? "")))
+      case "cancel": results.append(["cancelled": .bool(try phone.runner.cancelHeld(actId ?? ""))])
       case let undoOrRedo:
         let result = undoOrRedo == "undo" ? try phone.runner.undo(actId ?? "") : try phone.runner.redo(requestId ?? "")
         if case .unavailable = result {} else { requestId = Plans.requestId(of: result) }
@@ -229,6 +240,63 @@ enum Plans {
       return .array(drawn)
     }
     return ["outcome": outcome, "results": .array(results), "records": .array(records)]
+  }
+
+  // An act's committed outcome: the entries of each segment, and whether the act is held.
+  static func form(_ receipt: ActReceipt) -> JSON {
+    let counts: [JSON] = receipt.segments.map { (segment: ActSegmentReceipt) -> JSON in JSON(segment.localIds.count) }
+    return ["kind": "committed", "counts": .array(counts), "held": .bool(receipt.releaseAt != nil)]
+  }
+
+  // A segment as the vector states it: its plan, and its Undo recipes, or, `undo` empty, named for evidence alone.
+  static func scoped(_ segment: JSON, of vector: Vector, at moment: Moment) throws -> ScopedPlan {
+    let scoped = Vector(file: vector.file, name: vector.name, input: segment, expect: .null)
+    var plan = try Plans.build(scoped, at: moment)
+    let recipes: [UndoRecipe] = try (segment["undo"]?.asArray() ?? []).map(Plans.undoRecipe)
+    if !recipes.isEmpty { plan.undoRecipes += recipes } else if segment["undo"] != nil { plan.evidenceForUndo() }
+    return ScopedPlan(try scoped.scope, plan)
+  }
+
+  // A composed act's part as the vector states it: a plan as given; `append`, which reads a record through the parts before
+  // it and writes a field's value with a suffix, refusing when the record is gone; or `unchanged`.
+  struct VectorPart: ActAction {
+    let item: JSON
+    let scope: ScopeRef
+    let vector: Vector
+    let moment: Moment
+
+    func load(_ read: ActReader) throws -> JSON? {
+      guard let append = item["append"] else { return nil }
+      let type = try probeEntity(append.member("t").asString())
+      let id = try RecordID(json: append.member("id"))
+      let field = try append.member("field").asString()
+      return try read.inScope(scope) { (reader: Reader) throws -> JSON? in try Plans.value(type, id, field: field, in: reader) }
+    }
+
+    func decide(_ found: JSON?, ids: ActIDSource) throws(Violation) -> ActDecision<Void, ProbeRefusal> {
+      if item["unchanged"] == true { return .unchanged(()) }
+      do {
+        guard let append = item["append"] else { return .write(ActPlan([try Plans.scoped(item, of: vector, at: moment)]), ()) }
+        let (type, id, field) = (try append.member("t").asString(), try append.member("id"), try append.member("field").asString())
+        guard let found else {
+          return .refuse(ProbeRefusal(Refused(.unknownRecord, subject: RecordRef(type: type, id: try RecordID(json: id)), path: .predicted)))
+        }
+        let written: JSON = .string(((try? found.asString()) ?? "") + (try append.member("suffix").asString()))
+        var update = try item.asObject()
+        update["append"] = nil
+        update["plan"] = [["op": "update", "t": .string(type), "id": id, "f": .object([field: written]), "fields": [.string(field)]]]
+        return .write(ActPlan([try Plans.scoped(.object(update), of: vector, at: moment)]), ())
+      } catch let violation as Violation {
+        throw violation
+      } catch {
+        preconditionFailure("invalid composed part: \(error)")
+      }
+    }
+  }
+
+  // A field of a record as `drawn` shows it, nil when the record is not there.
+  static func value<E: ProbeEntity>(_ type: E.Type, _ id: RecordID, field: String, in read: Reader) throws -> JSON? {
+    try read.repository(E.self).find(ID<E>(id), in: .drawn).map { (entity: E) -> JSON in entity.fields[field] ?? .null }
   }
 
   // Each record `drawn` lists as `{id, <field>}`.
