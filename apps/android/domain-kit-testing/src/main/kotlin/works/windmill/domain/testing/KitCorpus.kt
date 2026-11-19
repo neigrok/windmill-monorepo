@@ -38,6 +38,7 @@ object KitCorpus {
         "run/pipeline.json" to WriteVectors::pipeline,
         "run/acts.json" to WriteVectors::act,
         "run/act-decisions.json" to WriteVectors::actDecision,
+        "run/undo.json" to WriteVectors::undo,
         "draft/save.json" to WriteVectors::save,
         "draft/script.json" to WriteVectors::script,
         "scope/bindings.json" to WriteVectors::script,

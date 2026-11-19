@@ -131,17 +131,30 @@ add_library(windmill_roadmap
   products/roadmap/domain/Gallery.cpp
   products/roadmap/domain/Tending.cpp
   products/roadmap/domain/Reminders.cpp
+  products/roadmap/domain/read/RoadmapTree.cpp
+  products/roadmap/domain/read/FollowGraph.cpp
+  products/roadmap/domain/read/RoadmapAccount.cpp
+  products/roadmap/domain/read/Reads.cpp
   products/roadmap/application/TreeRoom.cpp
   products/roadmap/application/RoomRegistry.cpp
   products/roadmap/application/OwnerProgress.cpp
+  products/roadmap/application/OwnerFollows.cpp
   products/roadmap/application/ProgressService.cpp
   products/roadmap/application/NodeEdits.cpp
   products/roadmap/application/ActivityFeed.cpp
+  products/roadmap/application/EngineReadModels.cpp
   products/roadmap/application/ForkService.cpp
+  products/roadmap/application/RoadmapRows.cpp
+  products/roadmap/application/RoadmapDoor.cpp
+  products/roadmap/application/DoorForks.cpp
   products/roadmap/application/ScopedToolHost.cpp
   products/roadmap/application/TendingService.cpp
   products/roadmap/application/TreeRegistry.cpp
-  products/roadmap/application/ReminderSweep.cpp)
+  products/roadmap/application/ReminderSweep.cpp
+  products/roadmap/sync/RoadmapRules.cpp
+  products/roadmap/sync/RoadmapProduct.cpp
+  products/roadmap/sync/RoadmapDeeds.cpp
+  products/roadmap/sync/PgRoadmap.cpp)
 target_include_directories(windmill_roadmap PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
 
@@ -204,13 +217,14 @@ endfunction()
 set(WM_BOUND_REGISTRIES)
 wm_register_sync_product(windmill_gym wm::gym::engine gym.registry.json)
 wm_register_sync_product(windmill_journal wm::journal::engine journal.registry.json)
+wm_register_sync_product(windmill_roadmap wm::roadmap::engine roadmap.registry.json)
 file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
 wm_validate_sync_composition("${WM_COMPOSITION}" "${WM_BOUND_REGISTRIES}")
 # The gym ability catalog (gym_coach.md §3.1) the tool declarations are pinned to, byte for byte (CatalogContractTest).
 wm_embed_registry(windmill_gym wm::gym catalogText "${WM_API_CONTRACT_DIR}/gym/catalog.json")
 
 add_library(windmill_product_sync platform/infra/SyncProducts.cpp)
-target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal)
+target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal windmill_roadmap)
 wm_embed_registry(windmill_product_sync wm::sync compositionText "${WM_API_CONTRACT_DIR}/sync/composition.json")
 
 # --- probe: the sync engine's test and dev product (packages/api-contract/sync/probe.registry.json), the
@@ -309,6 +323,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/TendingTest.cpp
   test/products/roadmap/domain/TreeTest.cpp
   test/products/roadmap/domain/RemindersTest.cpp
+  test/products/roadmap/domain/read/ReadVectorsTest.cpp
   test/products/roadmap/application/TreeRegistryTest.cpp
   test/products/roadmap/application/ForkServiceTest.cpp
   test/products/roadmap/application/TreeRoomTest.cpp
@@ -316,9 +331,11 @@ add_executable(windmill_domain_tests
   test/products/roadmap/application/ProgressServiceTest.cpp
   test/products/roadmap/application/OwnerProgressTest.cpp
   test/products/roadmap/application/ActivityFeedTest.cpp
+  test/products/roadmap/application/EngineReadModelsTest.cpp
   test/products/roadmap/application/ScopedToolHostTest.cpp
   test/products/roadmap/application/TendingServiceTest.cpp
   test/products/roadmap/application/ReminderSweepTest.cpp
+  test/products/roadmap/sync/RoadmapDeedsTest.cpp
   test/products/journal/domain/PageTest.cpp
   test/products/journal/domain/NudgePlanTest.cpp
   test/products/journal/domain/PassageTest.cpp
@@ -353,12 +370,13 @@ add_executable(windmill_domain_tests
   test/products/gym/coach/TurnServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
-# contract holds; the gym turn exchanges (gym/turns), the gym domain vectors (gym/domain) and the roadmap's web
-# addresses (roadmap-addresses.json), the link urls a person is shown (roadmap-link-urls.json) and the tree socket's
+# contract holds; the gym turn exchanges (gym/turns), the gym domain vectors (gym/domain), roadmap's read vectors
+# (roadmap/domain) and the roadmap's web addresses (roadmap-addresses.json), the link urls a person is shown (roadmap-link-urls.json) and the tree socket's
 # message sizes (roadmap-socket.json) the same way.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns" WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
   WM_ROADMAP_ADDRESSES="${WM_API_CONTRACT_DIR}/roadmap-addresses.json"
+  WM_ROADMAP_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/roadmap/domain"
   WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json"
   WM_ROADMAP_SOCKET="${WM_API_CONTRACT_DIR}/roadmap-socket.json"
   WM_SUBSCRIPTIONS_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/subscriptions")
@@ -447,6 +465,7 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/postgres/PgTreeRepository.cpp
   products/roadmap/adapters/postgres/PgProgressRepository.cpp
   products/roadmap/adapters/postgres/PgOpLog.cpp
+  products/roadmap/adapters/postgres/PgRoadmapRecords.cpp
   products/roadmap/adapters/postgres/PgOgImageRepository.cpp
   products/roadmap/adapters/postgres/PgOgVideoRepository.cpp
   products/roadmap/adapters/postgres/PgReminderRepository.cpp
@@ -472,6 +491,8 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/mcp/ReadShape.cpp
   products/roadmap/adapters/mcp/EditReceipt.cpp
   products/roadmap/adapters/mcp/ToolArgs.cpp
+  products/roadmap/adapters/mcp/RoadmapToolParts.cpp
+  products/roadmap/adapters/mcp/RoadmapDoorTools.cpp
   products/roadmap/routes.cpp)
 
 # Journal adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
@@ -601,17 +622,19 @@ add_executable(windmill_mcp_tests
   test/products/roadmap/adapters/mcp/RoadmapToolsTest.cpp
   test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp
   test/products/roadmap/adapters/mcp/WireCorpusTest.cpp
+  test/products/roadmap/adapters/mcp/DoorToolsTest.cpp
   test/products/gym/adapters/mcp/GymToolsTest.cpp
   test/products/gym/adapters/mcp/CatalogContractTest.cpp
   test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp)
 # Both products' tool surfaces link here: the gym suite pins its own catalog AND that no gym name
 # collides with a roadmap one, which is the difference between a boot failure and a green suite. Its
 # write cases run on the real gym door, which takes the product catalog the server seals.
-target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_product_sync)
+target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_product_sync windmill_probe)
 # The golden MCP wire (WireCorpusTest) lives beside the roadmap tools and is byte-compared against
 # a fresh transcript; the source path is handed in so the check finds it from any build tree.
 target_compile_definitions(windmill_mcp_tests PRIVATE
   WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json"
+  WM_DOOR_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus_door.json"
   WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
   WM_GYM_ABILITIES_DIR="${WM_API_CONTRACT_DIR}/gym/abilities")
 add_test(NAME mcp COMMAND windmill_mcp_tests)
@@ -634,7 +657,9 @@ add_executable(windmill_sync_tests
   test/platform/adapters/postgres/PgDigestResumTest.cpp
   test/products/probe/adapters/postgres/PgProbeTest.cpp
   test/products/gym/sync/PgGymTest.cpp
-  test/products/journal/sync/PgJournalTest.cpp)
+  test/products/journal/sync/PgJournalTest.cpp
+  test/products/roadmap/sync/PgRoadmapTest.cpp
+  test/products/roadmap/application/RoadmapDoorPgTest.cpp)
 target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync)
 target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
@@ -707,6 +732,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/http/TreeApiTest.cpp
   test/products/roadmap/adapters/http/SharePageApiTest.cpp
   test/products/roadmap/adapters/http/GalleryApiTest.cpp
+  test/products/roadmap/adapters/http/EngineReadsApiTest.cpp
   test/products/roadmap/adapters/http/OgImageApiTest.cpp
   test/products/roadmap/adapters/http/OgVideoApiTest.cpp
   test/products/roadmap/adapters/http/TreeRegistryApiTest.cpp

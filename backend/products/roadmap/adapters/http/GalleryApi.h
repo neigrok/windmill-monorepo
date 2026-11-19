@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "products/roadmap/application/EngineReadModels.h"
 #include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/domain/Gallery.h"
 #include "products/roadmap/ports/TreeRepository.h"
@@ -21,11 +22,12 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // GET /gallery renders the wall as HTML; GET /v1/gallery serves the same index as JSON, adding
 // per-row `mine` and `forked` for a signed-in caller. Neither makes a per-caller access decision:
-// listPublic filters on visibility in SQL.
+// listPublic filters on visibility in SQL. Where the engine serves roadmap, `engine` is set and the wall is read from its
+// records instead (roadmap-on-the-engine.md §7).
 class GalleryApi {
 public:
   GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<OwnerProgress> progress,
-             std::shared_ptr<AuthService> auth, std::string webRoot);
+             std::shared_ptr<AuthService> auth, std::string webRoot, std::shared_ptr<EngineReadModels> engine);
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
   void index(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
@@ -45,6 +47,7 @@ private:
   std::shared_ptr<OwnerProgress> progress_;
   std::shared_ptr<AuthService> auth_;
   std::string webRoot_;
+  std::shared_ptr<EngineReadModels> engine_;
 };
 
 }

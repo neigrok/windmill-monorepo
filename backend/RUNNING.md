@@ -91,6 +91,13 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
 
+`ROADMAP_ENGINE_ENABLED=1` serves roadmap's scopes through the sync engine (`products/roadmap/sync/`), on the
+`roadmap_*` tables `db/schema.sql` builds, and feeds roadmap's read models from them: the activity feed, the owner's
+progress, the share page with its card and video, the gallery and reminders' readiness (`application/EngineReadModels`). Without it the server
+composes and binds roadmap but withholds its scopes, as production does until roadmap's cutover: hello says roadmap
+holds nothing, `self/roadmap` pulls empty, its trees are not found, every roadmap intent is refused, and the read
+models read the rooms and roadmap's own tables.
+
 ### The subscription service
 
 Run from `services/subscriptions/`, once its database exists (§2); it migrates the ledger before it
@@ -454,7 +461,7 @@ WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product
-instead of gym and journal, for the throwaway sync database only; it refuses to start where
+instead of the product composition, for the throwaway sync database only; it refuses to start where
 `WINDMILL_APP_URL` is https. It also mounts the dev stack's endpoints
 (`products/probe/adapters/http/DevApi.h`), which native end-to-end runs drive:
 
@@ -512,7 +519,8 @@ with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `win
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
 database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
-suite over the gym + journal catalog (schema 8, minimum 4) and both product scopes. On the runner
+suite over the product composition's catalog, roadmap's scopes withheld as production runs them, and its
+three product scopes. On the runner
 itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
 deploy does, changes nothing, and that repeated application removes retired cutover storage and the
 retired tree columns while preserving live rows.

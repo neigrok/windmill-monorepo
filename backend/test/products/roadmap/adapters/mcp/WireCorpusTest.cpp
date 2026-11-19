@@ -1,3 +1,4 @@
+#include "test/products/roadmap/adapters/mcp/DoorHarness.h"
 #include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 
 #include "test/testing.h"
@@ -34,9 +35,9 @@ Json::Value strings(std::vector<const char*> values) {
   return array;
 }
 
-// A single authoring-then-reading session covering every wire shape an agent meets. Client-supplied node ids + the harness StepClock keep the transcript reproducible.
+// A single authoring-then-reading session covering every wire shape an agent meets, on the roadmap `tree`. Client-supplied node ids + the harness StepClock keep the transcript reproducible.
 // The golden is byte-compared and is generated on a dev machine but re-run in CI's toolchain: do NOT add a step whose wire carries a FRACTIONAL float, since double formatting can differ across the two.
-std::vector<Step> plan() {
+std::vector<Step> plan(const char* tree) {
   return {
       {"get_tree", kNoArgs},
       {"update_tree", with("guide", "Ship the root first; render and sync follow it.")},
@@ -97,9 +98,9 @@ std::vector<Step> plan() {
                                   return array;
                                 }()}})},
       // The harness holds one tree, so the tree a node opens is the tree it is in: a loop of trees the receipt and get_diagnostics name.
-      {"update_nodes", obj({{"updates", [] {
+      {"update_nodes", obj({{"updates", [tree] {
                                Json::Value array(Json::arrayValue);
-                               array.append(obj({{"nodeId", "docs"}, {"opens", "t"}}));
+                               array.append(obj({{"nodeId", "docs"}, {"opens", tree}}));
                                return array;
                              }()}})},
       {"find_nodes", with("query", "render")},
@@ -192,13 +193,15 @@ Json::Value envelope(const ToolResult& result) {
 }
 
 // Record the transcript as { schemaVersion, steps: [ { step, tool, result } ] }. jsoncpp sorts object keys, so the rendering is canonical.
+template <typename Session>
 Json::Value transcribe() {
-  Harness harness;
+  Session harness;
   Json::Value document(Json::objectValue);
   document["schemaVersion"] = kWireCorpusVersion;
   Json::Value steps(Json::arrayValue);
   int index = 0;
-  for (const Step& step : plan()) {
+  const std::string tree = harness.tree;
+  for (const Step& step : plan(tree.c_str())) {
     Json::Value entry(Json::objectValue);
     entry["step"] = index++;
     entry["tool"] = step.tool;
@@ -248,12 +251,12 @@ void reportFirstDifference(const std::string& expected, const std::string& actua
   }
 }
 
-}
-
-// The MCP wire, byte-pinned. Two independent runs must be byte-identical, then the transcript is compared to the committed golden. Regenerate with WM_REGEN_WIRE_CORPUS=1 and bump kWireCorpusVersion.
-TEST(mcp_wire_corpus_is_deterministic_and_matches_the_golden) {
-  const std::string actual = render(transcribe());
-  const std::string again = render(transcribe());
+// The MCP wire of one session, byte-pinned: two independent runs must be byte-identical, then the transcript is compared
+// to the committed golden at `path`. Regenerate with WM_REGEN_WIRE_CORPUS=1 and bump kWireCorpusVersion.
+template <typename Session>
+void pinWire(const std::string& path) {
+  const std::string actual = render(transcribe<Session>());
+  const std::string again = render(transcribe<Session>());
   if (actual != again) {
     reportFirstDifference(again, actual);
     ::testing::fail("MCP wire is non-deterministic across runs (an unordered iteration reached it)",
@@ -261,7 +264,6 @@ TEST(mcp_wire_corpus_is_deterministic_and_matches_the_golden) {
     return;
   }
 
-  const std::string path = WM_WIRE_CORPUS_PATH;
   if (std::getenv("WM_REGEN_WIRE_CORPUS")) {
     // Write the golden, then FAIL on purpose: a regeneration is never a green run.
     writeFile(path, actual);
@@ -283,4 +285,20 @@ TEST(mcp_wire_corpus_is_deterministic_and_matches_the_golden) {
                     "WM_REGEN_WIRE_CORPUS=1",
                     __FILE__, __LINE__);
   }
+}
+
+// The rooms' harness keeps one roadmap, "t".
+struct RoomSession : Harness {
+  std::string tree = "t";
+};
+
+}
+
+// The session through roadmap's rooms, the tools ROADMAP_ENGINE_ENABLED off serves.
+TEST(mcp_wire_corpus_is_deterministic_and_matches_the_golden) { pinWire<RoomSession>(WM_WIRE_CORPUS_PATH); }
+
+// The same session through the engine's door, the tools ROADMAP_ENGINE_ENABLED on serves, pinned in a golden of its own
+// beside the rooms' one: where the two differ is what the door answers otherwise (adapters/mcp/README.md, The door).
+TEST(mcp_wire_corpus_through_the_door_is_deterministic_and_matches_its_golden) {
+  pinWire<DoorHarness>(WM_DOOR_WIRE_CORPUS_PATH);
 }

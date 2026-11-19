@@ -103,11 +103,12 @@ test('a save by someone who is not the owner writes through no door and distingu
 });
 
 // The read of the guides above as written, its collaborators recorded: what was asked, what was held and what reported.
-function readWith({ holder = 'u_olya', claimed = true, answer = async () => ({ guides: [] }) } = {}) {
+function readWith({ holder = 'u_olya', claimed = true, held = null, answer = async () => ({ guides: [] }) } = {}) {
   const calls = [];
   const effect = guide.effectWith('readGuides', {
     treeId: 't_sail',
     holder,
+    held,
     LocalTreeRegistry: class { get(id) { return { id, claimed }; } },
     AbortController,
     Error,
@@ -122,6 +123,13 @@ function readWith({ holder = 'u_olya', claimed = true, answer = async () => ({ g
   return { effect, calls };
 }
 const turn = () => new Promise((resolve) => setImmediate(resolve));
+
+test('a room that reads the replica holds the guides the replica holds and asks the server nothing', async () => {
+  const { effect, calls } = readWith({ held: { guides: [{ treeId: 't_life', title: 'My life', text: 'Health first.' }] } });
+  assert.equal(effect(), undefined);
+  await turn();
+  assert.deepEqual(calls, []);
+});
 
 test('the guides above are read once for the tree’s holder and held for that tree and holder, without the tree’s own', async () => {
   const { effect, calls } = readWith({ answer: async () => ({ guides: [

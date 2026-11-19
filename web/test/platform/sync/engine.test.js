@@ -23,6 +23,7 @@ const readyHello = (env) => {
   return { response: { status: 200, body: { as: env.transport.account, epoch: 'ep-1', serverTime: now,
     schema: env.options.registry.version, minSchema: env.options.registry.minVersion } }, timing: { send: reading, recv: reading } };
 };
+const peer = async (env) => { const engine = await BrowserSyncEngine.open(env.options); await engine.start(); return engine; };
 const open = async (env) => {
   const engine = await BrowserSyncEngine.open(env.options);
   engine.observe('self/probe');
@@ -209,6 +210,104 @@ test('a burst of writes in one minute never starves the transport failure that f
   engine.close();
 });
 
+test('an observation lives while a hold is unreleased: a released hold hears nothing more, and the last release drops the scope', async () => {
+  const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+  const tag = (id, seq) => row({ t: 'tag', id, life: ['alive', st(seq)], born: st(seq), seq });
+  const store = (id, seq) => engine.write(null, (device) => device.activeReplica.putConfirmed(tree, tag(id, seq)), [tree]);
+  try {
+    const first = engine.observe(tree), second = engine.observe(tree);
+    const heard = [0, 0];
+    first.subscribe(() => heard[0]++);
+    second.subscribe(() => heard[1]++);
+    await store('oak', 1);
+    assert.ok(heard[0] > 0 && heard[1] > 0);
+    first.release(); first.release();
+    const [before, other] = heard;
+    await store('ash', 2);
+    assert.equal(heard[0], before);
+    assert.ok(heard[1] > other);
+    assert.deepEqual(second.getSnapshot().drawn.map(({ id }) => id), ['ash', 'oak']);
+    assert.equal(engine.views.has(tree), true);
+    second.release();
+    assert.equal(engine.views.has(tree), false);
+    const silent = [...heard];
+    await store('elm', 3);
+    assert.deepEqual(heard, silent);
+    const third = engine.observe(tree);
+    await until(() => third.getSnapshot().loaded);
+    assert.deepEqual(third.getSnapshot().drawn.map(({ id }) => id), ['ash', 'elm', 'oak']);
+    third.release();
+  } finally { engine.close(); }
+});
+
+test('an observation says its stored rows are loaded only once the device has read the scope it pulled unobserved', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  const tags = ['ash', 'elm', 'oak'].map((id, index) => row({ t: 'tag', id, life: ['alive', st(1)], born: st(1), seq: index + 2 }));
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })], 'tree:b_00000001': tags },
+  }));
+  const engine = await open(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
+    assert.equal(engine.observe('self/probe').getSnapshot().loaded, true);
+    const view = engine.observe(tree);
+    assert.equal(view.getSnapshot().loaded, false);
+    await until(() => view.getSnapshot().loaded);
+    assert.deepEqual(view.getSnapshot().drawn.map(({ id }) => id), ['ash', 'elm', 'oak']);
+  } finally { engine.close(); }
+});
+
+test('the engine snapshot says the connection: offline from the browser, unreachable after a request failed, online once one answers, in every tab', async () => {
+  const env = environment(), engine = await open(env), other = await peer(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    const told = [];
+    engine.observeEngine(() => told.push(engine.getSnapshot().connection));
+    assert.equal(engine.getSnapshot().connection, 'online');
+    const request = env.transport.request.bind(env.transport);
+    env.transport.request = async () => { throw new Error('offline'); };
+    engine.kickPull(); await engine.pull();
+    assert.equal(engine.getSnapshot().connection, 'unreachable');
+    await until(() => other.getSnapshot().connection === 'unreachable');
+    env.transport.request = async (endpoint, body) => (endpoint === 'pull' ? { response: { status: 503, body: { retryAfterMs: 0 } }, timing: {} } : request(endpoint, body));
+    engine.pullWait.until = 0; engine.kickPull(); await engine.pull();
+    assert.equal(engine.getSnapshot().connection, 'unreachable');
+    env.transport.request = request;
+    engine.pullWait.until = 0; engine.kickPull(); await engine.pull();
+    assert.equal(engine.getSnapshot().connection, 'online');
+    await until(() => other.getSnapshot().connection === 'online');
+    engine.setOnline(false);
+    assert.equal(engine.getSnapshot().connection, 'offline');
+    engine.setOnline(true);
+    assert.equal(engine.getSnapshot().connection, 'online');
+    assert.deepEqual(told.filter((state, index) => state !== told[index - 1]), ['unreachable', 'online', 'offline', 'online']);
+  } finally { other.close(); engine.close(); }
+});
+
+test('an observation names the drawn records an outbox entry still changes and counts its scope\'s entries by state', async () => {
+  const env = environment(), engine = await open(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    const view = engine.observe('self/probe');
+    await engine.commit('self/probe', card('card0001'), { hold: true });
+    await engine.commit('self/probe', card('card0002'));
+    let snapshot = view.getSnapshot();
+    assert.deepEqual(snapshot.pending.map(({ id }) => id), ['card0001', 'card0002']);
+    assert.ok(snapshot.pending.every((record, index) => record === snapshot.drawn[index]));
+    assert.deepEqual(snapshot.outbox, { held: 1, ready: 1, sent: 0, acked: 0 });
+    await engine.release(engine.device.activeReplica.entries().find((entry) => entry.state === 'held').localId);
+    await engine.send(); await until(() => !engine.sending);
+    assert.deepEqual(view.getSnapshot().outbox, { held: 0, ready: 0, sent: 0, acked: 2 });
+    engine.kickPull(); await engine.pull();
+    snapshot = view.getSnapshot();
+    assert.deepEqual(snapshot.pending, []);
+    assert.deepEqual(snapshot.outbox, { held: 0, ready: 0, sent: 0, acked: 0 });
+    assert.deepEqual(snapshot.drawn.map(({ id, seq }) => [id, typeof seq]), [['card0001', 'number'], ['card0002', 'number']]);
+  } finally { engine.close(); }
+});
+
 test('undo offers are the held gestures, each with its own deadline and records, until undone or released', async () => {
   const env = environment(), engine = await BrowserSyncEngine.open(env.options);
   const observation = engine.observe('self/probe');
@@ -288,7 +387,7 @@ test('persisted restore reopens storage and coordination and retains observation
   dispatch('pageshow'); await engine.restoring;
   assert.equal(engine.closed, false);
   assert.equal(engine.online, false);
-  assert.equal(engine.observe('self/probe'), observation);
+  assert.equal(engine.observe('self/probe').getSnapshot(), observation.getSnapshot());
   assert.equal(observation.getSnapshot().drawn[0].id, 'card0001');
   assert.equal(seen.at(-1), observation.getSnapshot());
   assert.deepEqual(events, ['suspended', 'restored']);
@@ -800,7 +899,6 @@ test('changed sign-out work re-pins Discard; Cancel resumes the account', async 
   engine.close();
 });
 
-const peer = async (env) => { const engine = await BrowserSyncEngine.open(env.options); await engine.start(); return engine; };
 
 test('a peer sign-out durably supersedes a delayed hello even after reload', async () => {
   const env = environment(), a = await open(env);
@@ -1168,8 +1266,8 @@ test('an opted act journals in IndexedDB, and its Undo survives a reopen, report
   const inverse = env.events.filter(({ name }) => name === 'sync-inverse').map(({ props }) => props);
   assert.equal(inverse.length, 3);
   assert.deepEqual(inverse[0], { outcome: 'pending' });
-  assert.deepEqual(Object.keys(inverse[1]).sort(), ['ageMs', 'count', 'outcome']);
-  assert.deepEqual([inverse[1].outcome, inverse[1].count], ['pending', 1]);
+  assert.deepEqual(Object.keys(inverse[1]).sort(), ['ageMs', 'outcome', 'waiting']);
+  assert.deepEqual([inverse[1].outcome, inverse[1].waiting], ['pending', 1]);
   assert.ok(Number.isSafeInteger(inverse[1].ageMs) && inverse[1].ageMs >= 0);
   assert.deepEqual(inverse[2], { outcome: 'settled', applied: 1, skipped: 0 });
   assert.deepEqual(reopened.device.activeReplica.journal, []);

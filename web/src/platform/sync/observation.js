@@ -7,22 +7,55 @@ import { effectsOf } from '../../../../packages/api-contract/sync/reference/clie
 import { noticesInScope } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
 import { foldDelta, viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
-const PENDING = new Set(['ready', 'sent', 'acked']);
+const QUEUED = ['held', 'ready', 'sent', 'acked'];
 const ENVELOPE = ['seq', 'rc', 'ru'];
 
-// A pending entry as the observation folded it: the deltas its active effects draw in the scope, in order,
-// and the record keys they name.
+// A queued entry as the observation folded it: its state, whether it belongs to or draws in the scope, the
+// deltas its active effects draw there, in order, and the record keys they name.
 class FoldedEntry {
   constructor(entry, scope) {
+    const effects = effectsOf(entry, { active: true }).filter((effect) => effect.scope === scope);
     this.source = entry;
+    this.state = entry.state;
     this.order = entry.commitOrder;
     this.held = entry.state === 'held';
-    this.deltas = effectsOf(entry, { active: true }).filter((effect) => effect.scope === scope).flatMap(({ d }) => d);
+    this.counted = entry.scope === scope || effects.length > 0;
+    this.deltas = effects.flatMap(({ d }) => d);
     this.keys = this.deltas.map((delta) => recordKey(delta.t, delta.id));
   }
 
   get signature() {
-    return (this.encoded ??= JSON.stringify([this.held, this.order, this.deltas]));
+    return (this.encoded ??= JSON.stringify([this.state, this.order, this.counted, this.deltas]));
+  }
+}
+
+// One holder's use of a scope's observation: its snapshot and the listeners it registered, until it releases them.
+class ObservationHold {
+  constructor(observation) {
+    this.observation = observation;
+    this.registered = new Set();
+    this.released = false;
+  }
+
+  getSnapshot = () => this.observation.snapshot;
+
+  subscribe = (listener) => {
+    if (this.released) return () => {};
+    const registered = (value) => listener(value);
+    this.registered.add(registered);
+    this.observation.listeners.add(registered);
+    return () => {
+      this.registered.delete(registered);
+      this.observation.listeners.delete(registered);
+    };
+  };
+
+  release() {
+    if (this.released) return;
+    this.released = true;
+    for (const registered of this.registered) this.observation.listeners.delete(registered);
+    this.registered.clear();
+    this.observation.letGo();
   }
 }
 
@@ -59,20 +92,24 @@ class RecordOrder {
 }
 
 // One scope's drawn and stored records, kept between publications: a publication folds again only the records
-// whose confirmed row changed identity or whose pending entries changed.
+// whose confirmed row changed identity or whose queued entries changed. It lives while a hold is unreleased.
 export class ScopeObservation {
-  constructor(scope, registry, { firstPullComplete, notify }) {
-    Object.assign(this, { scope, registry, firstPullComplete, notify });
+  constructor(scope, registry, { firstPullComplete, notify, idle }) {
+    Object.assign(this, { scope, registry, firstPullComplete, notify, idle });
+    this.holders = 0;
     this.listeners = new Set();
     this.replicaId = null;
   }
 
-  getSnapshot = () => this.snapshot;
+  hold() {
+    this.holders += 1;
+    return new ObservationHold(this);
+  }
 
-  subscribe = (listener) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
+  letGo() {
+    this.holders -= 1;
+    if (this.holders === 0) this.idle();
+  }
 
   refresh(replica) {
     if (replica.id !== this.replicaId) {
@@ -82,6 +119,7 @@ export class ScopeObservation {
       this.ordered = [];
       this.drawn = new Map();
       this.stored = new Map();
+      this.pending = new Set();
       this.order = new RecordOrder();
     }
     const changed = new Set();
@@ -89,7 +127,11 @@ export class ScopeObservation {
     this.readEntries(replica, changed);
     this.fold(changed);
     const records = (view) => this.order.keys.filter((key) => view.has(key)).map((key) => view.get(key));
+    const outbox = Object.fromEntries(QUEUED.map((state) => [state, 0]));
+    for (const entry of this.entries.values()) if (entry.counted) outbox[entry.state] += 1;
     this.snapshot = frozen({ replica: replica.id, drawn: records(this.drawn), stored: records(this.stored),
+      pending: this.order.keys.filter((key) => this.pending.has(key)).map((key) => this.drawn.get(key)), outbox,
+      loaded: !replica.confirmed[this.scope] || replica.loadedCaches?.has(`confirmed:${this.scope}`) === true,
       notices: structuredClone(noticesInScope(replica, this.scope)),
       undoOffers: undoOffers(replica, this.scope),
       firstPullComplete: this.firstPullComplete(replica) });
@@ -108,7 +150,7 @@ export class ScopeObservation {
     const entries = new Map();
     let moved = false;
     for (const entry of replica.outbox) {
-      if (!(entry.state === 'held' || PENDING.has(entry.state))) continue;
+      if (!QUEUED.includes(entry.state)) continue;
       const previous = this.entries.get(entry.localId);
       if (previous?.source === entry) { entries.set(entry.localId, previous); continue; }
       const folded = new FoldedEntry(entry, this.scope);
@@ -132,7 +174,7 @@ export class ScopeObservation {
 
   fold(changed) {
     if (!changed.size) return;
-    const drawn = new Map(), stored = new Map(), held = new Set();
+    const drawn = new Map(), stored = new Map(), held = new Set(), touched = new Set();
     for (const key of changed) {
       const row = this.confirmed[key];
       if (!row) continue;
@@ -142,6 +184,7 @@ export class ScopeObservation {
     }
     for (const entry of this.ordered) entry.keys.forEach((key, index) => {
       if (!changed.has(key)) return;
+      touched.add(key);
       foldDelta(drawn, this.registry, entry.deltas[index]);
       if (entry.held) held.add(key);
       else foldDelta(stored, this.registry, entry.deltas[index]);
@@ -158,6 +201,8 @@ export class ScopeObservation {
         if (record) view.set(key, record);
         else view.delete(key);
       }
+      if (touched.has(key)) this.pending.add(key);
+      else this.pending.delete(key);
       const record = drawnRecord ?? storedRecord;
       if (record && !present) { this.order.place(key, record); added.add(key); }
       if (!record && present) removed.add(key);

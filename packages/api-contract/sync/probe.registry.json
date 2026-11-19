@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "probe",
-  "version": 5,
+  "version": 6,
   "minVersion": 2,
   "products": {
     "probe": {
@@ -204,7 +204,8 @@
       "origins": ["replica"],
       "fields": {
         "done": { "kind": "lww", "writer": "client", "domain": { "type": "boolean", "nullable": true } },
-        "memo": { "kind": "text", "writer": "client", "unit": "bytes", "max": 40 }
+        "memo": { "kind": "text", "writer": "client", "unit": "bytes", "max": 40 },
+        "opens": { "kind": "lww", "writer": "client", "ref": "board" }
       }
     }
   ],

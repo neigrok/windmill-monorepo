@@ -55,7 +55,7 @@ TEST(fork_mints_an_id_and_inherits_the_title_when_given_neither) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
   CHECK_EQ(result.data.id.str(), std::string("t_d1"));        // "t_" + the minted digest
   CHECK_EQ(result.data.title, std::string("Learn to sail"));  // empty title means inherit
@@ -71,7 +71,7 @@ TEST(fork_plants_the_sources_live_title_and_guide_at_its_planting_stamp_so_a_fre
   h.trees.byId["t_src"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
   h.rooms.open(TreeId{"t_src"})->setGuide("Rig first, sail second, race last.", 10);
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
   CHECK_EQ(result.data.title, std::string("Learn to sail"));
   CHECK_EQ(result.data.guide, std::string("Rig first, sail second, race last."));
@@ -94,7 +94,7 @@ TEST(fork_under_a_requested_title_plants_that_title_at_the_planting_stamp) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "My own voyage", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "My own voyage", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
   CHECK_EQ(result.data.title, std::string("My own voyage"));
   CHECK(h.trees.byId["t_d1"].title == (Lww<std::string>{"My own voyage", Hlc{h.clock.nowMs(), 0, "srv"}}));
@@ -106,7 +106,7 @@ TEST(fork_clears_the_source_status_seeds) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
   for (const NodeSpec& node : result.data.nodes) CHECK_FALSE(node.status.has_value());
   for (const NodeStateEntry& node : h.trees.byId["t_d1"].state.nodes) {
@@ -149,12 +149,12 @@ TEST(a_fork_of_someone_elses_tree_opens_nothing_and_a_fork_of_your_own_keeps_eve
   const std::map<std::string, std::pair<std::string, Hlc>> nothing{
       {"charts", {"", Hlc{}}}, {"knots", {"", Hlc{}}}, {"leaf", {"", Hlc{}}}, {"nowhere", {"", Hlc{}}}, {"root", {"", Hlc{}}}};
 
-  ForkService::Result eves = h.service.fork(TreeId{"t_sams"}, "t_eves_copy", "", uid("eve"));
+  ForkService::Result eves = h.service.fork(TreeId{"t_sams"}, "t_eves_copy", "", uid("eve"), std::nullopt);
   CHECK(eves.outcome == ForkService::Outcome::forked);
   CHECK(opened(h.trees.byId["t_eves_copy"].state) == nothing);  // the pointer at Eve's own tree included
   for (const NodeSpec& node : eves.data.nodes) CHECK_EQ(node.opens, TreeId{});
 
-  ForkService::Result sams = h.service.fork(TreeId{"t_sams"}, "t_sams_copy", "", uid("sam"));
+  ForkService::Result sams = h.service.fork(TreeId{"t_sams"}, "t_sams_copy", "", uid("sam"), std::nullopt);
   CHECK(sams.outcome == ForkService::Outcome::forked);
   CHECK(opened(h.trees.byId["t_sams_copy"].state) == asInTheSource);  // the one at a missing tree included
   std::map<std::string, std::string> answered;
@@ -169,7 +169,7 @@ TEST(fork_adds_its_steps_at_the_moment_of_the_fork_and_leaves_the_source_stamps_
   h.seedSource("t_src", "Learn to sail");
   h.clock.now = 1'800'000'000'000;
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
 
   const std::vector<NodeStateEntry>& forked = h.trees.byId["t_d1"].state.nodes;
@@ -185,7 +185,7 @@ TEST(fork_honours_a_requested_id_and_title) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_copy", "My sail plan", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_copy", "My sail plan", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
   CHECK_EQ(result.data.id.str(), std::string("t_copy"));
   CHECK_EQ(result.data.title, std::string("My sail plan"));
@@ -197,7 +197,7 @@ TEST(fork_reports_a_conflict_when_the_requested_id_is_taken) {
   h.seedSource("t_src", "Learn to sail");
   h.seedSource("t_taken", "Already here");
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_taken", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_taken", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::conflict);
   CHECK_EQ(h.trees.byId["t_taken"].title.value, std::string("Already here"));
   CHECK(h.trees.forkedFrom.count("t_taken") == 0);
@@ -209,14 +209,14 @@ TEST(fork_reports_a_conflict_when_the_requested_id_is_soft_deleted) {
   h.seedSource("t_gone", "Retired");
   h.trees.softDelete(TreeId{"t_gone"});
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_gone", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_gone", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::conflict);
   CHECK(h.trees.forkedFrom.count("t_gone") == 0);
 }
 
 TEST(fork_reports_a_missing_source) {
   Harness h;
-  ForkService::Result result = h.service.fork(TreeId{"t_ghost"}, "", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_ghost"}, "", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::noSource);
   CHECK(h.trees.byId.empty());
 }
@@ -228,7 +228,7 @@ TEST(fork_lets_an_infrastructure_failure_through_instead_of_calling_the_source_m
 
   bool threw = false;
   try {
-    h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+    h.service.fork(TreeId{"t_src"}, "", "", uid("me"), std::nullopt);
   } catch (const std::runtime_error&) {
     threw = true;
   }
@@ -241,7 +241,7 @@ TEST(fork_of_a_private_source_you_dont_own_is_a_missing_source) {
   h.seedSource("t_priv", "Someone's private plan", uid("owner"), Visibility::private_);
 
   // Copying the whole document is a read: a private source you can't read is 404, byte-for-byte indistinguishable from a source that isn't there.
-  ForkService::Result result = h.service.fork(TreeId{"t_priv"}, "", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_priv"}, "", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::noSource);
   CHECK(h.trees.byId.size() == 1u);
   CHECK(h.trees.forkedFrom.empty());
@@ -251,7 +251,7 @@ TEST(fork_of_your_own_private_source_succeeds) {
   Harness h;
   h.seedSource("t_priv", "My private plan", uid("me"), Visibility::private_);
 
-  ForkService::Result result = h.service.fork(TreeId{"t_priv"}, "", "", uid("me"));
+  ForkService::Result result = h.service.fork(TreeId{"t_priv"}, "", "", uid("me"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
   CHECK_EQ(h.trees.forkedFrom["t_d1"], std::string("t_priv"));
   CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
@@ -261,7 +261,7 @@ TEST(fork_of_an_unlisted_source_by_a_stranger_succeeds) {
   Harness h;
   h.seedSource("t_shared", "A shared plan", uid("owner"), Visibility::unlisted);
 
-  ForkService::Result result = h.service.fork(TreeId{"t_shared"}, "", "", uid("stranger"));
+  ForkService::Result result = h.service.fork(TreeId{"t_shared"}, "", "", uid("stranger"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
   CHECK_EQ(h.trees.forkedFrom["t_d1"], std::string("t_shared"));
   CHECK(*h.trees.byId["t_d1"].owner == uid("stranger"));
@@ -274,7 +274,7 @@ TEST(fork_of_an_unowned_public_source_gives_the_forker_a_copy_and_leaves_the_sou
   h.trees.byId["t_demo"].owner = std::nullopt;
   const StoredTree before = h.trees.byId["t_demo"];
 
-  ForkService::Result result = h.service.fork(TreeId{"t_demo"}, "", "", uid("visitor"));
+  ForkService::Result result = h.service.fork(TreeId{"t_demo"}, "", "", uid("visitor"), std::nullopt);
 
   CHECK(result.outcome == ForkService::Outcome::forked);
   CHECK_EQ(result.data.nodes.size(), 2u);
@@ -399,11 +399,11 @@ TEST(fork_copies_the_roots_standing_branch_under_fresh_ids_and_never_a_subtree_a
   source.deleteNode(nid("gone"), Hlc{3, 0, "seed"});
   h.trees.byId["t_src"].state = source.exportState();
 
-  CHECK(h.service.fork(tid("t_s"), "", "", uid("me")).notARoot ==
+  CHECK(h.service.fork(tid("t_s"), "", "", uid("me"), std::nullopt).notARoot ==
         (std::optional<NotARoot>(NotARoot{OwningStep{tid("t_src"), nid("root")}, tid("t_src")})));
   CHECK(h.trees.forks.empty());
 
-  const ForkService::Result result = h.service.fork(tid("t_src"), "", "", uid("me"));
+  const ForkService::Result result = h.service.fork(tid("t_src"), "", "", uid("me"), std::nullopt);
   REQUIRE(result.outcome == ForkService::Outcome::forked);
   REQUIRE_EQ(h.trees.forks.size(), 1u);
   std::vector<std::string> copied;
@@ -433,7 +433,7 @@ TEST(fork_copies_no_subtrees_own_title_register) {
                                    uid("owner"), Visibility::private_};
   h.trees.subtrees["t_s"] = Subtree{tid("t_s"), tid("t_src"), OwningStep{tid("t_src"), nid("root")}, 1, 0};
 
-  REQUIRE(h.service.fork(tid("t_src"), "", "", uid("me")).outcome == ForkService::Outcome::forked);
+  REQUIRE(h.service.fork(tid("t_src"), "", "", uid("me"), std::nullopt).outcome == ForkService::Outcome::forked);
   REQUIRE_EQ(h.trees.forks.back().size(), 2u);
   CHECK(h.trees.forks.back()[1].title == Lww<std::string>{});
   CHECK_EQ(h.trees.nameOf(tid("t_d2")).value, std::string("Root"));

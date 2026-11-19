@@ -80,6 +80,7 @@ class ProbeServerRules : ServerRules {
     private fun branchReceipt(command: CheckedCommand) = Json.objectOf("parent" to Json.of(command.string("parent")), "title" to command.args.getValue("title"))
     override fun discoverEffectScopes(context: RuleContext, command: CheckedCommand?): Set<ScopeKey> {
         if (command?.name == "probe.branch") return setOf(ScopeKey("tree:${command.string("parent")}"), ScopeKey("tree:${command.string("child")}"))
+        if (command?.name == "probe.unbranch") return command.args.getValue("input").let { setOf(ScopeKey("tree:${it.member("parent").str()}"), ScopeKey("tree:${it.member("child").str()}")) }
         if (command?.name != "probe.copy" || replays(command, context) || context.idState(RecordKey("board", RecordID(command.string("dst")))).state != "none") return emptySet()
         return setOf(ScopeKey("tree:${command.string("dst")}"))
     }
@@ -139,6 +140,21 @@ class ProbeServerRules : ServerRules {
                     CommandOutcome(listOf(PlannedDelta.create(board)), listOf(WriteClaim(board, mintedBorn = true)), Json.objectOf("created" to Json.of(true)),
                         putEntry(c.product, "branches", c.scope, child, branchReceipt(command)), listOf(parent, child).associate { ScopeKey("tree:$it") to listOf(title) })
                 }
+            }
+            // K-3: the inverse of probe.branch, all or nothing. While the created board and its tree are unchanged since the branch, and
+            // the parent's title is still the one the branch wrote where the evidence owns it, the board dies, killing its tree, and the
+            // parent takes back its earlier title. Evidence that proves neither the board nor its tree is invalid.
+            "probe.unbranch" -> {
+                val input = command.args.getValue("input"); val parent = input.member("parent").str(); val child = input.member("child").str()
+                val evidence = command.evidence!!; val board = RecordKey("board", RecordID(child))
+                if (evidence.unchangedCreatedRecords.none { it.record == RecordAddress(c.scope.ref, board) } || evidence.unchangedCreatedScopes.none { it.scope == ScopeRef.tree(child) } ||
+                    parent == child) throw Refusal("invalid")
+                val skip = evidence.skip({ record -> c.scopedRecord(record.key, ScopeKey.resolve(record.scope, c.account)!!) },
+                    { scope -> c.state.scopes[ScopeKey.resolve(scope, c.account)!!.text]?.seq }, c.state.epoch)
+                if (skip != null) CommandOutcome(detail = InverseOutcome.detail(listOf(InverseOutcome(0, skip))), product = c.product)
+                else CommandOutcome(listOf(PlannedDelta.delete(board, c.record(board)?.lattice?.born)), detail = InverseOutcome.detail(listOf(InverseOutcome(0))), product = c.product,
+                    into = if (evidence.ownedFields.none { it.target.scope == ScopeRef.tree(parent) && it.target.key.type == "meta" && it.target.slot.name == "title" }) emptyMap()
+                        else mapOf(ScopeKey("tree:$parent") to listOf(PlannedDelta.update(RecordKey("meta", RecordID("meta")), null, mapOf("title" to input.member("title"))))))
             }
             // Creates board `child` owned by the step `{board, tag}`, its `parent`; a step that already owns an alive board answers
             // that board, so a retry, or another device's sprout of the same step, resolves to the subtree the step owns (E-8).

@@ -35,7 +35,7 @@ nonisolated enum TelemetryPrivacy {
     "first_run_screen_viewed", "first_run_choice",
     "journal_line_saved", "journal_save_refused", "journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful",
     "journal_echo_ink", "journal_echo_reader_opened", "journal_echo_intro_dismissed",
-    "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
+    "sync_pull_outcome", "sync_push_outcome", "sync_inverse", "api_request_failed", "client_error",
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_workout_adjusted", "gym_exercise_updated", "gym_setup_step", "gym_ask_started", "gym_ask_outcome", "coach_turn", "coach_ability", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
@@ -50,7 +50,7 @@ nonisolated enum TelemetryPrivacy {
     "screen": ["routine", "routine_editor", "edit_sets", "routine_movement_editor", "receipt", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "sources", "gym", "routines", "log", "on_this_phone", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
     "field": ["weight", "reps"],
     "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land"],
-    "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume"],
+    "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled"],
     "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other"],
     "cap": ["daily", "ceiling", "allowance"],
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
@@ -73,8 +73,9 @@ nonisolated enum TelemetryPrivacy {
     "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
-  // The counts a Coach turn carries (Coach §10.2): bounded numbers, never a word.
-  static let counts: Set<String> = ["ability_calls", "refusals", "answer_bytes"]
+  // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests and wait (`sync_inverse`):
+  // bounded numbers, never a word.
+  static let counts: Set<String> = ["ability_calls", "refusals", "answer_bytes", "applied", "skipped", "waiting", "age_ms"]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {
     var result: [String: EventValue] = [:]

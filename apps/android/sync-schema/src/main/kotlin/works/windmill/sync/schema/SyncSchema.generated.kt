@@ -4,6 +4,6 @@ package works.windmill.sync.schema
 import works.windmill.sync.core.Registry
 
 object SyncSchema {
-    val registry = Registry.compose("windmill", listOf(Gym.registry, Journal.registry))
+    val registry = Registry.compose("windmill", listOf(Gym.registry, Journal.registry, Roadmap.registry))
     val version = registry.version
 }

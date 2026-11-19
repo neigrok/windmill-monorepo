@@ -10,7 +10,7 @@ import {
 
 const workspaceStore = new WorkspaceStore();
 
-export function useWorkspace({ seedRef, sceneRef, treeRef }) {
+export function useWorkspace({ seedRef, sceneRef, treeRef, replicaRef }) {
   const [workspaceByNode, setWorkspaceByNode] = useState(() => ({})); // { nodeId: workspace } — sub-tasks, note, links
   const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
 
@@ -44,8 +44,16 @@ export function useWorkspace({ seedRef, sceneRef, treeRef }) {
     setWorkspaceByNode(saved);
   }, []);
 
-  // The one seam every workspace edit funnels through: fresh ref, render, persist.
+  // Seats the workspaces the replica holds, as it holds them now; the caller pushes the arcs.
+  const adoptWorkspaces = useCallback((byNode) => {
+    workspaceByNodeRef.current = byNode;
+    setWorkspaceByNode(byNode);
+  }, []);
+
+  // The one seam every workspace edit funnels through: fresh ref, render, persist. A room that reads the replica takes
+  // no edit until the domain's workspace actions are wired, so nothing shows that the replica does not hold.
   const commitWorkspace = useCallback((nodeId, nextWs) => {
+    if (replicaRef.current) return;
     const nextMap = { ...workspaceByNodeRef.current, [nodeId]: nextWs };
     workspaceByNodeRef.current = nextMap;
     setWorkspaceByNode(nextMap);
@@ -94,6 +102,7 @@ export function useWorkspace({ seedRef, sceneRef, treeRef }) {
   return {
     workspaceByNode,
     hydrateWorkspaces,
+    adoptWorkspaces,
     pushArcs,
     onAddSubtask,
     onToggleSubtask,

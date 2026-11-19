@@ -40,7 +40,7 @@ extension Benchmarks {
             _ = try phone.commit(Gestures.editRoutine(routine, name: "Routine \(round)", exercises: history.exercises, shift: round))
           }
           let receipt = try heldDelete.time { try phone.commit(Gestures.heldDelete(set)) }
-          #expect(try phone.engine.undo(receipt.gestureId))
+          #expect(try phone.engine.cancelHeld(receipt.gestureId))
           await phone.sync()
         }
         for samples in [logGiven, logMinted, logContext, edit, heldDelete] {

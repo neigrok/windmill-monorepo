@@ -31,7 +31,7 @@ TableMap tableOf(const std::string& type) {
       {"meta", {"probe_metas", {{"title", SqlType::text}, {"visibility", SqlType::text}}}},
       {"tag", {"probe_tags", {{"label", SqlType::text}}}},
       {"link", {"probe_links", {{"strength", SqlType::bigint}}}},
-      {"mark", {"probe_marks", {{"done", SqlType::boolean}, {"memo", SqlType::text}}, 1}},
+      {"mark", {"probe_marks", {{"done", SqlType::boolean}, {"memo", SqlType::text}, {"opens", SqlType::text}}, 1}},
   };
   const auto table = tables.find(type);
   if (table == tables.end()) throw std::logic_error("the probe stores no table for the type " + type);

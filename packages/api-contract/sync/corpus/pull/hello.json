@@ -236,7 +236,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": "A",
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2,
           "holdsRecords": {
             "probe": true
@@ -796,7 +796,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": "B",
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
@@ -860,7 +860,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": "B",
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
@@ -929,7 +929,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": "B",
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
@@ -998,7 +998,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": "B",
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2,
           "holdsRecords": {
             "probe": true
@@ -1250,7 +1250,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": "B",
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
@@ -1345,7 +1345,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": "B",
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2,
           "holdsRecords": {
             "probe": true
@@ -1597,7 +1597,7 @@
           "serverTime": 1000000,
           "epoch": "ep-1",
           "as": null,
-          "schema": 5,
+          "schema": 6,
           "minSchema": 2
         }
       }

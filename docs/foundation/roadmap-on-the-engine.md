@@ -14,7 +14,9 @@ gym's and journal's) and the engine's JavaScript reference model server carries 
 ([engine](engine.md) Appendix A.1). Roadmap syncs through a sync of its own:
 a lattice and a socket described in [graph sync](../GRAPH_SYNC_DESIGN.md) and
 [the roadmap tree engine](../../backend/SPEC.md), on the web only. The [sync engine](engine.md)
-serves gym and journal, and its tree and overlay scopes have run only against its test product. The
+serves gym and journal in production; on the review branch the C++ server binds roadmap
+(`backend/products/roadmap/sync/`) and serves its scopes only where `ROADMAP_ENGINE_ENABLED` is set,
+which production's configuration leaves unset. The
 build order lives in the Roadmap on the engine roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `roadmap-on-the-engine`.
 
@@ -279,7 +281,11 @@ What a device tells a person when a change of theirs met one made elsewhere.
 - **Fork is the server's.** It copies the branch of a readable roadmap into the caller's account
   under new ids and new stamps, so a step's created time is when it joined the copy. `status` is
   cleared, the guide is marked inherited when it was another person's, and pointers are copied only
-  into the owner's own fork. A device forks with a connection and receives the copy by sync.
+  into the owner's own fork. A device forks with a connection and receives the copy by sync. A fork sent with a
+  request key is one fork however often it is sent: its copies take ids derived from the caller, the key and the
+  source, and a resend completes the writes the first left undone and answers the same copy. The fork at sign-up
+  takes its key from the sign-up. A root stands only once its tree scope holds its `meta`, which a fork writes last: a
+  fork cut short — like a creation cut short — is listed, counted and opened nowhere until its resend finishes it.
 - **The activity feed** keeps `tree_ops`. The binding writes one row for each gesture that leaves a
   deed, with who made it. Until now it was one row a frame.
 - **Other read models** are fed from the typed tables: the gallery and the share page; the owner's
@@ -458,8 +464,8 @@ What changes is built only from boards marked ✅ Ready for dev:
   warning, both against canon.
 - The server and the browser break a tie between two marks differently.
 - A step's workspace lives in one browser.
-- The engine's tree and overlay scopes have run only against its test product, and production's
-  build refuses any composition but gym and journal.
+- The engine's tree and overlay scopes have run only against its test product, and production serves
+  no composition but gym and journal.
 - Roadmap's MCP write tools take no `requestId`.
 
 ## §15 Rulings

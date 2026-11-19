@@ -56,13 +56,13 @@ class Corpus(val root: File) {
             "text/" to CorpusRole.SERVER, "envelope/credentials.json" to CorpusRole.SERVER, "push/serve.json" to CorpusRole.SERVER,
             "pull/serve.json" to CorpusRole.SERVER, "pull/hello.json" to CorpusRole.SERVER, "live/death.json" to CorpusRole.SERVER,
             "machine/scope.json" to CorpusRole.SERVER, "gym/admit.json" to CorpusRole.SERVER,
-            "journal/admit.json" to CorpusRole.SERVER, "journal/revisions.json" to CorpusRole.SERVER,
+            "journal/admit.json" to CorpusRole.SERVER, "journal/revisions.json" to CorpusRole.SERVER, "roadmap/admit.json" to CorpusRole.SERVER,
             "journal/client.json" to CorpusRole.CLIENT, "journal/content-clock.json" to CorpusRole.CLIENT,
-            "journal/claim-edit.json" to CorpusRole.CLIENT, "hlc/offset.json" to CorpusRole.CLIENT,
+            "journal/claim-edit.json" to CorpusRole.CLIENT, "roadmap/client.json" to CorpusRole.CLIENT, "hlc/offset.json" to CorpusRole.CLIENT,
             "hlc/jump.json" to CorpusRole.CLIENT, "fracindex/" to CorpusRole.CLIENT, "view/" to CorpusRole.CLIENT,
             "commit/" to CorpusRole.CLIENT, "hold/" to CorpusRole.CLIENT, "refusal/" to CorpusRole.CLIENT,
             "write/" to CorpusRole.CLIENT, "refs/" to CorpusRole.CLIENT, "lineage/" to CorpusRole.CLIENT, "pull/pages.json" to CorpusRole.CLIENT,
-            "machine/intent.json" to CorpusRole.CLIENT, "machine/replica.json" to CorpusRole.CLIENT,
+            "machine/intent.json" to CorpusRole.CLIENT, "machine/replica.json" to CorpusRole.CLIENT, "undo/" to CorpusRole.CLIENT,
         )
         fun role(path: String): CorpusRole = roles.firstOrNull { it.first == path }?.second
             ?: roles.firstOrNull { it.first.endsWith('/') && path.startsWith(it.first) }?.second

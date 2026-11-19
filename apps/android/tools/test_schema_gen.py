@@ -57,18 +57,24 @@ class SchemaGeneratorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 gen.validate(schema, registry, schema)
 
-    def test_scoped_commands_validate_and_engine_capture_takes_no_arguments(self):
+    def test_scoped_commands_validate_and_engine_and_inverse_commands_keep_their_shapes(self):
         schema = gen.load(gen.CONTRACT / "registry.schema.json")
         probe = gen.load(gen.CONTRACT / "probe.registry.json")
         gen.validate(schema, probe, schema)
 
-        def capture(registry):
-            return next(command for command in registry["commands"] if command["name"] == "probe.capture")
+        def command(registry, name):
+            return next(command for command in registry["commands"] if command["name"] == name)
         mutations = [
-            lambda r: capture(r)["args"].update(id={"type": "ref<card>"}),
-            lambda r: capture(r).pop("scopedEffects"),
-            lambda r: capture(r).update(scopedEffects=False),
-            lambda r: capture(r).update(engine="restore"),
+            lambda r: command(r, "probe.capture")["args"].update(id={"type": "ref<card>"}),
+            lambda r: command(r, "probe.capture").pop("scopedEffects"),
+            lambda r: command(r, "probe.capture").update(scopedEffects=False),
+            lambda r: command(r, "probe.capture").update(engine="replay"),
+            lambda r: command(r, "probe.restore").pop("predicts"),
+            lambda r: command(r, "probe.restore").update(refPaths=[]),
+            lambda r: command(r, "probe.unbranch").pop("scopedEffects"),
+            lambda r: command(r, "probe.unbranch").update(engine="capture"),
+            lambda r: command(r, "probe.unbranch").update(inverse=False),
+            lambda r: command(r, "probe.unbranch")["args"].update(evidence={"type": "json"}),
         ]
         for mutate in mutations:
             registry = copy.deepcopy(probe)

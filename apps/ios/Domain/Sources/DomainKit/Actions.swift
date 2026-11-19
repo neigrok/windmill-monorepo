@@ -8,11 +8,15 @@ public protocol Decider: Sendable {
   associatedtype Result
   associatedtype Refusal: ProductRefusal
   var scope: ScopeRef { get }
+  // §9.6: a reversible action runs as a one-segment act, so a plan it writes may opt into Undo after its hold.
+  var reversible: Bool { get }
   func load(_ read: Reader) throws -> Loaded
   func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Result, Refusal>
 }
 
 extension Decider {
+  public var reversible: Bool { false }
+
   // The decision as the runner and a composing action read it: a violation decide throws is the refusal it maps to, so
   // every refusal arrives as `refuse`.
   public func decision(_ loaded: Loaded, ids: IDSource) -> Decision<Result, Refusal> {
@@ -60,22 +64,30 @@ extension Outcome {
 
 extension Outcome: Sendable where Result: Sendable, Refusal: Sendable {}
 
-// The ids a decision mints, valid only inside the run that passed it.
+// The ids a decision mints, valid only inside the run that passed it: a commit's, or a reversible action's act's in its
+// one scope.
 public struct IDSource {
-  let context: any CommitContext
+  let mintID: (String) throws -> RecordID
+  let opaque: () throws -> String
 
   package init(context: any CommitContext) {
-    self.context = context
+    mintID = context.mintID
+    opaque = context.opaqueID
+  }
+
+  init(act context: any ActContext, in scope: ScopeRef) {
+    mintID = { (type: String) throws -> RecordID in try context.mintID(type, in: scope) }
+    opaque = context.opaqueID
   }
 
   public func opaqueID() -> String {
-    do { return try context.opaqueID() }
+    do { return try opaque() }
     catch { preconditionFailure("minting an opaque identity failed: \(error)") }
   }
 
   public func mint<E: Entity>(_ type: E.Type) -> ID<E> {
     do {
-      return ID(try context.mintID(E.type))
+      return ID(try mintID(E.type))
     } catch {
       preconditionFailure("minting a \(E.type) id failed, a programming fault: \(error)")
     }
@@ -98,8 +110,20 @@ public final class ActionRunner: Sendable {
     self.holdRemovals = holdRemovals
   }
 
+  // A reversible action runs the one-segment act path (§9.6), its loads, decision, gone check and result as a run's, its
+  // receipt the one segment's.
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal> {
-    try perform(action)
+    guard action.reversible else { return try perform(action) }
+    switch try runAct(ReversibleAct(action: action)) {
+    case .committed(let result, let receipt):
+      precondition(receipt.segments.count == 1, "a reversible action commits one segment")
+      let segment = receipt.segments[0]
+      return .committed(result, CommitReceipt(
+        gestureId: receipt.gestureId, stamp: segment.stamp ?? .unset, localIds: segment.localIds, ids: segment.ids,
+        releaseAt: receipt.releaseAt, retired: receipt.retired, superseded: receipt.superseded))
+    case .unchanged(let result): return .unchanged(result)
+    case .refused(let refusal): return .refused(refusal)
+    }
   }
 
   public func read<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T {
@@ -107,9 +131,39 @@ public final class ActionRunner: Sendable {
     return try replica.read(scope) { source in try body(Reader(source, scope: scope, moment: moment, registry: registry)) }
   }
 
-  // Engine §7.3: true iff every entry of the gesture was still held.
-  public func undo(_ gestureId: String) throws -> Bool {
-    try replica.undo(gestureId)
+  // Engine §7.3, the held-only Undo: true iff every entry of the gesture was still held.
+  public func cancelHeld(_ gestureId: String) throws -> Bool {
+    try replica.cancelHeld(gestureId)
+  }
+
+  // §9.6 the inverse of an act opted into Undo: a wholly held act is cancelled in place; otherwise the inverse is reserved
+  // at once and settles as the act's sources do. An act that did not opt in is unavailable.
+  public func undo(_ actId: String) throws -> InverseResult {
+    try replica.requestInverse(actId, slots: nil)
+  }
+
+  // The inverse of an Undo: the values the act wrote, only where the Undo applied, or what `productSlots` name instead. A
+  // held act cancelled in place whose act ran a product command is unavailable without `productSlots`.
+  public func redo(_ requestId: String, productSlots: [ProductSlot]? = nil) throws -> InverseResult {
+    let undone = try inverseResult(requestId)
+    let inverseActId: String
+    switch undone {
+    case .cancelled(_, let id, _), .pending(_, let id, _), .settled(_, let id, _, _, _): inverseActId = id
+    case .unavailable: return undone
+    }
+    let slots = productSlots?.map { (slot: ProductSlot) -> ActUndo.Segment in
+      ActUndo.Segment(index: slot.index, recipes: slot.plan.undoRecipes(in: slot.scope) ?? [])
+    }
+    return try replica.requestInverse(inverseActId, slots: slots)
+  }
+
+  public func inverseResult(_ requestId: String) throws -> InverseResult {
+    try replica.readInverseResult(requestId)
+  }
+
+  // The product's stack no longer holds the act: its journal record and values go.
+  public func release(_ actId: String) throws {
+    _ = try replica.releaseReversibleAct(actId)
   }
 
   public func mint<E: ProductEntity>(_ type: E.Type) -> ID<E> {
@@ -144,6 +198,7 @@ public final class ActionRunner: Sendable {
           case .refuse(let refusal): return (nil, .done(.refused(refusal)))
           case .unchanged(let result): return (nil, .done(.unchanged(result)))
           case .write(let plan, let result):
+            guard plan.undo == nil else { throw PlanError(rule: 10, "only a reversible action opts its plan into Undo") }
             if let gone = try plan.firstGone(in: context, of: scope, registry: registry) { return (nil, .done(.refused(D.Refusal(gone)))) }
             return (try plan.gesture(in: scope, registry: registry, holdRemovals: holdRemovals), .writing(plan, result))
           }
@@ -153,6 +208,23 @@ public final class ActionRunner: Sendable {
       }
       if case .refused(_, _, let notice?)? = committed.outcome { try replica.dismissNotice(notice) }
       return committed.value.outcome(of: committed.outcome, registry: registry)
+    }
+  }
+}
+
+// §9.6 a reversible action as the one-segment act it runs: its load inside its scope, its decision as the act's.
+struct ReversibleAct<A: Action>: ActAction {
+  let action: A
+
+  func load(_ read: ActReader) throws -> A.Loaded {
+    try read.inScope(action.scope) { (reader: Reader) throws -> A.Loaded in try action.load(reader) }
+  }
+
+  func decide(_ loaded: A.Loaded, ids: ActIDSource) throws(Violation) -> ActDecision<A.Result, A.Refusal> {
+    switch action.decision(loaded, ids: IDSource(act: ids.context, in: action.scope)) {
+    case .write(let plan, let result): .write(ActPlan([ScopedPlan(action.scope, plan)]), result)
+    case .unchanged(let result): .unchanged(result)
+    case .refuse(let refusal): .refuse(refusal)
     }
   }
 }

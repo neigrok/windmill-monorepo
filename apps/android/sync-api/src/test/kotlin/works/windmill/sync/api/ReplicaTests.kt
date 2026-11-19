@@ -40,7 +40,10 @@ class ReplicaTests {
         }
             override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
             error("act vectors use the real engine")
-        override fun undo(gestureId: String) = true
+        override fun cancelHeld(gestureId: String) = true
+        override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult = error("inverse vectors use the real engine")
+        override fun readInverseResult(requestId: String): InverseResult = error("inverse vectors use the real engine")
+        override fun releaseReversibleAct(actId: String): Boolean = error("inverse vectors use the real engine")
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = body(context)
         override fun mintID(type: String) = context.mintID(type)
         override fun physNow() = context.now

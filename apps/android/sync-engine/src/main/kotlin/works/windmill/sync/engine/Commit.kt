@@ -3,6 +3,7 @@ package works.windmill.sync.engine
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.Command
 
 internal class DeltaBuilder(private val engine: Engine, private val replica: ReplicaState, private val scope: ScopeRef,
     private val stamp: Stamp, private val now: Long, private val gone: Set<Delta>) {
@@ -147,8 +148,10 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
     }
 }
 
+// `capture`, for an act segment opted into Undo with no command of its own, is the scope kind's capture command: it carries the gesture's
+// ordinary deltas when there are any (§7.3 Undo of an act).
 internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, now: Long,
-    actOffset: Int? = null, actFirstOrder: Long? = null): CommitOutcome {
+    actOffset: Int? = null, actFirstOrder: Long? = null, capture: String? = null): CommitOutcome {
     fun malformed(label: String): Nothing = throw CommitFailure.malformed(label)
     val product = registry.product(scope) ?: malformed("scope")
     if (actOffset == null && gesture.gestureId?.let { device.carriesGesture(it) } == true) malformed("gesture-id-taken")
@@ -160,7 +163,9 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     val stamp = clock.tick(now, actor)
     val gestures = replica.entries().groupBy { it.gestureId }
     val named = gesture.retire.map { it.key }.toSet()
-    val retiring = gestures.values.filter { entries -> entries.all { entry -> (actOffset == null || entry.gestureId != gesture.gestureId) && entry.state == "held" && entry.scope == scope && entry.intent.command == null &&
+    // A capture command is the ordinary deltas' own: it does not stop a retire from matching their removal.
+    val commandFree = { entry: Entry -> entry.intent.command?.let { registry.command(it.name)?.engine == "capture" } ?: true }
+    val retiring = gestures.values.filter { entries -> entries.all { entry -> (actOffset == null || entry.gestureId != gesture.gestureId) && entry.state == "held" && entry.scope == scope && commandFree(entry) &&
         entry.intent.deltas.isNotEmpty() && entry.intent.deltas.all { it.removes && it.key in named } } }.flatten()
     if (gesture.supersede.isNotEmpty() && (replica.state != "anon" || gesture.supersede.distinct().size != gesture.supersede.size)) malformed("supersede-anon")
     if (actOffset != null && gesture.gestureId in gesture.supersede) malformed("act-supersedes-itself")
@@ -187,7 +192,8 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         val first = deltas[at]
         deltas[at] = Delta(delta.key, Lattice(first.lattice.life, first.lattice.born, first.lattice.fields + delta.lattice.fields), first.texts + delta.texts)
     }
-    val definition = gesture.command?.let { registry.command(it.name) }
+    val given = gesture.command ?: capture?.takeIf { deltas.isNotEmpty() }?.let { Command(it, Json.objectOf()) }
+    val definition = given?.let { registry.command(it.name) }
     val scopedPredict = gesture.scopedPredict
     if (scopedPredict != null && definition?.scopedEffects != true) malformed("scoped-prediction-command")
     val predict = if (definition?.scopedEffects == true) emptyList() else gesture.predict.mapNotNull { builder.build(it, prediction = true) }
@@ -217,7 +223,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         if (!registry.lives(ref.type, scope) || registry.type(ref.type)?.fields?.get(ref.field)?.isLattice != true) malformed("guard-field")
         Guard(ref.key, ref.field, latticeView(replica, scope, ref.key, ViewMode.stored, gone)?.fields?.get(ref.field)?.stamp)
     }
-    val command = gesture.command?.let { cmd ->
+    val command = given?.let { cmd ->
         if (cmd.args !is Json.Obj) cmd else cmd.copy(args = Json.Obj(cmd.args.obj().map { (name, value) -> name to (registry.command(cmd.name)?.args?.get(name)?.domain?.rounded(value) ?: value) }))
     }
     // E-8: every typed leaf this commit writes holds an id of its type, in every delta, prediction and argument.
@@ -263,6 +269,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     retiring.forEach { replica.move(it, "retire", ended) }
     superseding.filter { it in replica.outbox }.forEach { replica.move(it, "silent-fold", ended) }
     applySilentFold(replica, folded)
+    replica.settleEnded("undone")
     replica.meta = replica.meta.with("hlc" to clock.json, "hlcHigh" to stamp.json)
     val firstOrder = actFirstOrder?.plus(actOffset ?: 0) ?: ((replica.outbox.maxOfOrNull { it.order } ?: 0) + 1)
     val localIds = intents.mapIndexed { index, intent ->

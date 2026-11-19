@@ -50,13 +50,12 @@ test('writer measurements are bounded numeric labels and never forward content o
 });
 
 test('inverse settlement and waiting counts are bounded numeric labels with no id or value', () => {
-  const events = [];
-  const telemetry = syncTelemetry({ event: (name, props) => events.push({ name, props }) });
+  const { telemetry, events } = recorded({});
   telemetry.event('sync-inverse', { outcome: 'settled', applied: 2, skipped: 5000, requestId: 'g3', before: 'secret' });
-  telemetry.event('sync-inverse', { outcome: 'pending', count: 1, ageMs: 9e12, actId: 'g1' });
+  telemetry.event('sync-inverse', { outcome: 'pending', waiting: 1, count: 4, ageMs: 9e12, actId: 'g1' });
   telemetry.event('sync-inverse', { outcome: 'settled', applied: -1, skipped: 0.5, ageMs: Infinity });
   assert.deepEqual(events, [
     { name: 'sync-inverse', props: { outcome: 'settled', applied: 2, skipped: 1000 } },
-    { name: 'sync-inverse', props: { outcome: 'pending', count: 1, ageMs: 2_592_000_000 } },
+    { name: 'sync-inverse', props: { outcome: 'pending', waiting: 1, ageMs: 2_592_000_000 } },
     { name: 'sync-inverse', props: { outcome: 'settled' } }]);
 });

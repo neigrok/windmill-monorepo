@@ -11,7 +11,11 @@ import Synchronization
 public protocol ClientDevice {
   // A nil gesture is a read-and-commit that decides none: nothing is written and the outcome is nil.
   mutating func commit(_ gesture: Gesture?, in scope: ScopeRef, instance: Instance, identities: IdentitySource) throws -> CommitOutcome?
-  mutating func commitAct(_ segments: [ScopedGesture]?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome?
+  mutating func commitAct(_ segments: [ScopedGesture]?, undo: ActUndo?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome?
+  // K-3 Undo of an act (§7.3): an inverse request, its result, and an act's release.
+  mutating func requestInverse(_ actId: String, slots: [ActUndo.Segment]?, instance: Instance, identities: IdentitySource) throws -> InverseResult
+  func readInverseResult(_ requestId: String) throws -> InverseResult
+  mutating func releaseReversibleAct(_ actId: String) throws -> Bool
   mutating func release(_ localId: String) throws -> Bool
   mutating func releaseAll() throws
   mutating func releaseDue(at deviceNow: Int64) throws
@@ -57,6 +61,7 @@ public struct PlannedDevice: ClientDevice {
   let pushes: PushPlanner
   let pages: PageApplier
   let lifecycle: ReplicaLifecycle
+  let inverses: Inverses
 
   public init(_ device: LoadedDevice, registry: Registry, limits: Limits, commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
               pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
@@ -66,6 +71,7 @@ public struct PlannedDevice: ClientDevice {
     pushes = PushPlanner(registry: registry, limits: limits, commandResultWrites: commandResultWrites)
     pages = PageApplier(registry: registry)
     lifecycle = ReplicaLifecycle(registry: registry, pendingDeviceWork: pendingDeviceWork)
+    inverses = Inverses(registry: registry)
   }
 
   public var events: [EngineEvent] { device.events }
@@ -82,12 +88,13 @@ public struct PlannedDevice: ClientDevice {
     }
   }
 
-  public mutating func commitAct(_ segments: [ScopedGesture]?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
+  public mutating func commitAct(_ segments: [ScopedGesture]?, undo: ActUndo?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
     let identities = UniqueGestureIDs(identities, carries: device.carries(gestureId:))
     return try device.modify(device.active) { replica in
       try commits.checkWritable(replica.meta)
       guard let segments, !segments.isEmpty else { return nil }
       var working = replica
+      let plan = try commits.undoPlan(undo, scopes: segments.map(\.scope), in: replica)
       let gestureId = try identities.gestureID()
       let firstOrder = replica.nextCommitOrder
       let held = segments.contains { $0.gesture.hold }
@@ -99,8 +106,9 @@ public struct PlannedDevice: ClientDevice {
         var gesture = item.gesture
         gesture.gestureId = gestureId; gesture.hold = held
         let before = working
+        let capture = plan?.opts(index) == true ? try commits.capture(for: gesture, in: item.scope) : nil
         switch try commits.commit(gesture, in: item.scope, to: &working, as: instance, identities: identities,
-                                  gestureIdTaken: false, actOffset: offset, actFirstOrder: firstOrder) {
+                                  gestureIdTaken: false, actOffset: offset, actFirstOrder: firstOrder, capture: capture) {
         case .refused(let code, let detail, _): return .refused(segment: index, code: code, detail: detail)
         case .committed(let receipt):
           let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
@@ -112,10 +120,24 @@ public struct PlannedDevice: ClientDevice {
         }
       }
       guard wrote else { return nil }
+      try commits.record(act: gestureId, plan: plan, receipts: receipts, in: &working)
       replica = working
       return .committed(ActReceipt(gestureId: gestureId, segments: receipts, retired: retired, superseded: superseded,
                                   releaseAt: held && offset > 0 ? instance.deviceNow + commits.limits.holdMs : nil))
     }
+  }
+
+  public mutating func requestInverse(_ actId: String, slots: [ActUndo.Segment]?, instance: Instance, identities: IdentitySource) throws -> InverseResult {
+    let identities = UniqueGestureIDs(identities, carries: device.carries(gestureId:))
+    return try device.modify(device.active) { try inverses.request(actId, replacing: slots, in: &$0, as: instance, identities: identities) }
+  }
+
+  public func readInverseResult(_ requestId: String) throws -> InverseResult {
+    inverses.read(requestId, in: device.activeReplica)
+  }
+
+  public mutating func releaseReversibleAct(_ actId: String) throws -> Bool {
+    device.modify(device.active) { inverses.release(actId, in: &$0) }
   }
 
   public mutating func release(_ localId: String) throws -> Bool {
@@ -265,12 +287,13 @@ public enum ClientSteps {
         returns.append(["throws": true])
       }
     }
+    let events = device.events.filter(\.isContract)
     var expect: JSON.Object = [
-      "returns": .array(returns), "device": try device.dump(), "ended": .array(device.events.filter(\.isEnded).map(\.json)),
+      "returns": .array(returns), "device": try device.dump(), "ended": .array(events.filter(\.isEnded).map(\.json)),
     ]
-    let telemetry = device.events.filter(\.isTelemetry)
+    let telemetry = events.filter(\.isTelemetry)
     if !telemetry.isEmpty { expect["telemetry"] = .array(telemetry.map(\.json)) }
-    let announced = device.events.filter { !$0.isEnded && !$0.isTelemetry }
+    let announced = events.filter { !$0.isEnded && !$0.isTelemetry }
     if !announced.isEmpty { expect["events"] = .array(announced.map(\.json)) }
     return .object(expect)
   }
@@ -294,7 +317,8 @@ public enum ClientSteps {
       let segments = try step["segments"].flatMap { value in
         value.isNull ? nil : try value.asArray().map { item in ScopedGesture(scope: try ScopeRef(json: item.member("scope")), gesture: try gesture(item)) }
       }
-      let outcome = try device.commitAct(segments, instance: instance, identities: identities)
+      let undo = try step["opts"]?["undo"].map { (undo: JSON) throws -> ActUndo in try ActUndo(json: undo) }
+      let outcome = try device.commitAct(segments, undo: undo, instance: instance, identities: identities)
       if outcome == nil { identities.restore(before) }
       if case .refused? = outcome { identities.restore(before) }
       return outcome.map(json) ?? .null
@@ -306,6 +330,13 @@ public enum ClientSteps {
       try device.releaseDue(at: deviceNow)
       return .null
     case "undo": return .bool(try device.undo(step.member("gestureId").asString()))
+    case "requestInverse":
+      let slots = try step["slots"].map { (slots: JSON) throws -> [ActUndo.Segment] in
+        try ActUndo(json: ["version": 1, "segments": slots]).segments
+      }
+      return try device.requestInverse(step.member("actId").asString(), slots: slots, instance: instance, identities: identities).json
+    case "readInverseResult": return try device.readInverseResult(step.member("requestId").asString()).json
+    case "releaseReversibleAct": return .bool(try device.releaseReversibleAct(step.member("actId").asString()))
     case "dismiss":
       try device.dismiss(step.member("id").asString())
       return .null

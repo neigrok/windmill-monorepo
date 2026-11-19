@@ -208,10 +208,44 @@ public final class SyncEngine: Replica {
   }
 
   // An Undo's silent fold may leave sendable what the held gesture held back, so an Undo kicks the sender.
-  public func undo(_ gestureId: String) throws -> Bool {
+  public func cancelHeld(_ gestureId: String) throws -> Bool {
     let undone = try core.write { store, _ in try store.undo(gestureId) }
     if undone { core.wakes.sender.kick() }
     return undone
+  }
+
+  // MARK: Undo of an act (§7.3, K-3)
+
+  // requestInverse(sourceActId, inverseSlots?): an act still wholly held is cancelled at once; otherwise its inverse slots
+  // are reserved and projected, and the sender takes them from here. `slots` replace the stored recipes whole. A failure
+  // of the transaction throws as a commit's does. Each request reports its outcome, never its ids.
+  public func requestInverse(_ sourceActId: String, slots: [ActUndo.Segment]? = nil) throws -> InverseResult {
+    let result: InverseResult
+    do {
+      result = try core.write(operation: .commit) { store, instance in
+        try store.requestInverse(sourceActId, replacing: slots, instance: instance, identities: core.identities)
+      }
+    } catch {
+      core.telemetry.event("sync_inverse", properties: ["outcome": "failed"])
+      throw error as? CommitFailure ?? CommitFailure(.storeFailure, "\(error)")
+    }
+    let outcome: String = switch result {
+    case .cancelled, .settled: "ok"
+    case .pending: "pending"
+    case .unavailable: "unavailable"
+    }
+    core.telemetry.event("sync_inverse", properties: ["outcome": outcome])
+    core.wakes.sender.kick()
+    return result
+  }
+
+  public func readInverseResult(_ requestId: String) throws -> InverseResult {
+    try core.storageOperation { try core.store.readInverseResult(requestId) }
+  }
+
+  // The product's stack no longer needs the act: its journal record goes once no unsettled request reads it.
+  public func releaseReversibleAct(_ actId: String) throws -> Bool {
+    try core.write { store, _ in try store.releaseReversibleAct(actId) }
   }
 
   public func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
@@ -430,6 +464,8 @@ final class EngineCore: Sendable {
         telemetry.failure("sync_digest", kind: "digest_mismatch", properties: ["scope_kind": kind])
       case .pushMalformed:
         telemetry.failure("sync_admission", kind: "malformed")
+      case .inverseSettled(let applied, let skipped):
+        telemetry.event("sync_inverse", properties: ["outcome": "settled", "applied": String(applied), "skipped": String(skipped)])
       case .ended, .activeReplicaChanged: break
       }
     }
@@ -698,11 +734,11 @@ final class EngineCore: Sendable {
     try write { store, _ in try store.reconcile(subscriptions()) }
   }
 
-  // §7.9 the active replica's own subscription set: the products its surface carries, the trees its governing records
-  // hold alive, and the scopes opened by hand. A transaction reads it against the replica as it then stands.
+  // §7.9 the active replica's own subscription set: the products its build carries for its surface, the trees its
+  // governing records hold alive, and the scopes opened by hand. A transaction reads it against the replica as it then
+  // stands.
   func subscriptions() -> SubscriptionSet {
-    .own(Subscriptions(
-      products: registry.products.filter { $0.surfaces.contains(config.surface) }.map(\.name), opened: opened.withLock { $0 }))
+    .own(Subscriptions(products: config.products(of: registry), opened: opened.withLock { $0 }))
   }
 
   var isForeground: Bool { foreground.load(ordering: .relaxed) }

@@ -28,7 +28,7 @@ refusal text never enter telemetry properties.
 | Events | Meaning |
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
-| `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with their `count` and the oldest one's `ageMs` |
+| `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with how many are `waiting` and the oldest one's `ageMs` |
 | `sync-signin`, `sync-signout`, `sync-auth-paused` | Lineage decisions and authentication transitions |
 | `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
 | `sync-refused`, `sync-push-malformed` | Terminal refusals, and malformed push responses or receipts: a 400, or a `200` whose receipt or inverse outcomes the replica cannot read, which still acknowledges its entry |
@@ -36,7 +36,7 @@ refusal text never enter telemetry properties.
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
 
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
-integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `count` (capped at
+integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
 1,000), `ageMs` (capped at 30 days), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `settled`,
 `paused`, `failed`, `acquired`, `released`). No id or value of an act, request or record enters them.
 Failures use only the static operations `storage`, `transport`, `live`, `leadership`,
@@ -364,11 +364,11 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-identity` | The identity row's render | `ViewSwitch` at the row's position |
 | `roadmap-board-step` | The shared step document's render | The step closes |
 | `roadmap-board-composer` | The composer's render | The composer closes |
-| `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface | The draft and its Retry stay; the failed Undo's toast closes |
+| `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface of a room that reads today's sync (a room on the replica has none to find) | The draft and its Retry stay; the failed Undo's toast closes |
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
 | `roadmap-step-draft-copy` | An unexpected clipboard exception; browser permission and security refusals emit only the failed attempt | The draft stays selectable with Select text and Try again |
 | `roadmap-step-draft-return` | Navigation or matching-editor adoption failed | The retained draft stays available with Try again; nothing is saved |
-| `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
+| `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session in a room that reads today's sync | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
 | `roadmap-step-copy` | An unexpected clipboard exception. Browser permission and security refusals (`NotAllowedError`, `SecurityError`) emit the failed attempt without an Issue; other failures report only the static operation and sanitized stack | *Couldn’t copy link*, Try again and Show link; a failed retry keeps the card, and success uses *Link copied*. Copy and Try again stay disabled while a write is pending, including across step navigation. A newer interaction keeps its focus when failure arrives; nested modal boundaries cover the recovery. A step or link change, dismissal or unmount makes a late result silent |
 | `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step document's inline offer | The offer leaves |
@@ -380,7 +380,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-opens-load` | The server could not follow the trees an owner's steps open (`503 opens-unavailable`), on the load or on the read that follows a pointer set while the roadmap is open | On the load: this device's copy of the roadmap, each such step shown as opening a tree with nothing said of it, or the load error where the device holds none. On the later read: the step keeps the tree's mark with nothing said of it until a reload |
 | `roadmap-progress-load` | A server tree's marks, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The load error and Try again, never a false count |
 | `roadmap-activity-load` | A server tree's activity, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The room opens with an empty feed |
-| `roadmap-load` | Anything else stopping a load, except a tree neither the server nor this device has | The load error |
+| `roadmap-load` | Anything else stopping a load, except a tree its reading does not find: neither the server nor this device has it, or the replica holds none the person may read | The load error |
 | `roadmap-tree-picker-load` | The tree picker's reads, tagged `read: list` (the person's roadmaps, `GET /v1/trees`) or `read: paste` (the roadmap an address names, `GET /v1/trees/{id}`) and `reason`: `server` for a 5xx, `network` for a request lost while visible and online, `shape` for a 200 that is not a list or a roadmap. At most once per read and reason for each opening of the picker, through `reportUnexpectedFailure` as the guides' read is (`shape` through `reportRoadmapFailure`). None while offline or hidden, for a 403 or another 4xx, or for a 401, which is the room's lapse (the picker tells the room as a refused write does, and the controls go with the session) | For the list, *Couldn’t load your trees* with Try again, never the empty list; for an address, *Couldn’t load this roadmap* with Try again in its place, the rest of the picker standing. No Try again after a 401 |
 | `roadmap-tree-attach` | Attaching, changing or detaching a step's tree throwing before the write applied, or its toast's Undo throwing | The act: *Couldn’t change the tree. Try again.*, the step as it was and the picker open. The Undo: the toast closes |
 | `roadmap-recovery-list` | Tablet Board recovery account/index list read failed; static operation and bounded `place: account/device`, `reason: auth/network/shape/server/read/index`. No IDs, bodies, titles, queries or raw error messages. Device database and corrupt-record failures already judged by `roadmap-device-opens-read` are not reported twice | The list says *Couldn’t load your roadmaps.* and keeps Retry list; no failed account list is combined with device rows. A failed eligibility read shows no device switcher |

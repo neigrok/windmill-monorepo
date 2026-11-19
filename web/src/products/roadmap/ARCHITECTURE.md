@@ -13,7 +13,7 @@ point for the component showcase.
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
-| `room/` | What the room holds: the load and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
+| `room/` | What the room holds: the load and its two readings of a roadmap (today's, and the device's copy behind its switch) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
@@ -97,11 +97,13 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 
 ## Loading a roadmap
 
-`room/useRoomLoad.js` loads a tree through `HttpTreeRepository` or the account's device fallback, constructs
-`SkillTree`, derives progress through `UnlockRules`, runs layout and installs the render model in
-`SkillTreeScene` when one is available. Without WebGL2 it installs the tree and model with null scene bounds,
-seeds activity and starts synchronization without any scene or camera calls. Layout is synchronous and cached
-by graph structure, effective engine and, for caption-aware engines, labels.
+`room/useRoomLoad.js` loads a tree through its reading, constructs `SkillTree`, derives progress through `UnlockRules`,
+runs layout and installs the render model in `SkillTreeScene` when one is available, then has the reading follow each
+change. Without WebGL2 it installs the tree and model with null scene bounds, seeds activity and starts following without
+any scene or camera calls. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
+engines, labels. The reading is `room/LatticeReading.js` (`HttpTreeRepository` or the account's device fallback, then
+`SyncSession`) everywhere a build does not turn the replica on, and for the demo; where it does, it is
+`room/ReplicaReading.js` (Reading the device's copy, below).
 
 The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A tree whose pointers the server
 could not follow (`503 opens-unavailable`) reports `roadmap-opens-load` and falls to the device's copy like any failed read. A server tree whose marks can't be
@@ -130,8 +132,8 @@ or Retry list after the read; Escape restores the trigger, outside dismissal pre
 and late replies cannot reopen it. Browser history supplies Back. New tree and the gallery use their existing
 navigation callbacks.
 
-After load, `SyncSession` owns the durable lattice. Local gestures and remote frames both produce a projection
-through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
+After a load through `LatticeReading`, `SyncSession` owns the durable lattice. Local gestures and remote frames both
+produce a projection through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
 projection.
 
 A saved camera is scoped to its layout engine and format. Without one, an owner opens at working zoom over the
@@ -142,13 +144,57 @@ scene stays silent unless it is told what to say. Without WebGL2, the planted su
 have no Board presentation and are absent; their undrawn states are in the
 [consistency ledger](../../../../docs/design/consistency.md).
 
+### Reading the device's copy
+
+[Roadmap on the sync engine](../../../../docs/foundation/roadmap-on-the-engine.md) §8.4 moves the room onto the replica.
+A build that sets `VITE_ROADMAP_REPLICA_ROOM=on` has the route table hand the room `replica`; production's build sets
+nothing (`test/products/roadmap/routes.test.js` holds every workflow to that), so its room reads as above. With the switch
+on, every room but the demo reads through `ReplicaReading`:
+
+- **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
+  it, E-3), observes the account's list `self/roadmap` and every scope the domain reads the roadmap through: every roadmap
+  of the account where the open one is in the list, else the open one and each roadmap above it (by its `meta.parent`),
+  each subscribed as it comes to be read. The room drops every scope it subscribed when it leaves.
+- **Opening.** It opens from what the device holds, asking nothing of the network first: the copy, once the engine
+  stands and the scope's stored rows are read. A roadmap the device holds nothing of waits for the server's first answer;
+  offline, or with no answer within ten seconds (`FIRST_COPY_MS`), the room shows its load error and Try again, as a
+  failed read does. A roadmap the server does not serve, one the device holds nothing of, and a hidden subtree (§5) are
+  in no address: the same load error.
+- **Shapes.** `room/ReplicaRoadmap.js` is the room's edge: each roadmap's records (`HeldRoadmap`) become the domain's
+  `RoadmapTree` (`readTree` for steps and links, the domain's entity types for the rest), the domain's `RoadmapAccount`
+  reads them, and the open roadmap comes out as the tree data `LatticeReading` hands on: present steps in authored order,
+  each following what `FollowGraph` reads it follows through absent steps (D-5), a step's `opening` from the account's
+  openings, the kinds that own their hue (`LegendRead`), its name and `TreePlace` from where the account locates it, the
+  owner's marks with the dates `RoadmapAccount.progress` reads (a mark the server holds is dated by its receipt, one it does
+  not by the device's stamp), the owner's workspace from the overlay, the guides above from `RoadmapAccount.guides`
+  (`useRoomGuide` asks the server nothing), and the switcher's and the sheet's list of roots that stand. It decides
+  nothing: a rule it would need belongs in `domain/`.
+- **Following.** Each publication of an observed scope is read once it has reached every observation; a roadmap whose
+  records did not change answers the reading it answered before. A changed one stands through the room's `onTreeChanged`;
+  the owner's marks go to `RoomProgress.adoptRemote`, as another device's do, and the workspace and guides are seated
+  again. A roadmap that stops standing while the room is open keeps its last picture; the next load says it is not there.
+- **Status.** The Saving, Saved and Offline line is the room's own (`sync/useRoomSyncNotices.js`), read from the engine:
+  `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the platform
+  session's connectivity, the engine's auth and upgrade stops, and the roadmap's outbox entries in `tree/T` and its
+  overlay that the server has not taken. It never says refused: §6's one list is not built.
+- **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
+  marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
+  steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
+- **Writes.** None reaches the replica yet; the room's gestures move onto the domain's actions in the next build. The
+  room shows the owner's screens, and a gesture writes nothing and shows nothing it did not write: `RoomProgress.mark`
+  and the workspace's edits do nothing while `replicaRef` holds the reading (a workspace control still emits its
+  `roadmap_board_workspace` step as the person acts), the legend's edits find no session and write and say nothing, a new
+  step's composer says *Couldn’t save. Your draft is kept.* (`BoardActs` reports no missing session where `readsReplica`
+  says there is none to find), and the step document's Tree section offers no control: `treeActs` is null while nothing
+  can take a write, the one way the owner's screens differ from today's (`SkillTreeView.replica.browser.test.js`).
+
 ## A step that opens a tree
 
 A step opens a tree two ways: it owns a subtree (below), or it points at another tree of its owner's. The pointer is the
 node register `opens`; what either comes to is an `Opening` (`model/Opening.js`): the opened tree's title, whether it is
 complete, done of total and whether it leads back, or that nothing of the owner's stands at the other end. A step that
 owns a subtree opens it whatever its pointer holds (`Opening.owned`, `owned: true`). `GET /v1/trees/{id}` answers the openings to the owner, the
-repository builds them, and `useRoomLoad` stands them on every projection it hands on (`Openings.onto`), so each such
+repository builds them, and `LatticeReading` stands them on every projection it hands on (`Openings.onto`), so each such
 step carries its `opening` through every tree built from it. Only the owner's room stands pointers: a reader, a shared
 address and the demo see a step that points at a tree as an ordinary one. A tree that lives only on this device is answered by the device instead (below). Until the session has joined the server's state the load is the newer word: a step it
 named opens that tree and a step it did not opens none, whatever an older copy on the device holds. From then on the

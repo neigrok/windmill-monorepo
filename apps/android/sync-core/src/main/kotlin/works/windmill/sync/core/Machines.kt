@@ -30,6 +30,7 @@ object Machines {
         StateMachine.Transition(listOf("sent"), "reidentify", listOf("ready")),
         StateMachine.Transition(listOf("sent"), "skew-return", listOf("ready")),
         StateMachine.Transition(listOf("sent"), "rewind", listOf("ready")),
+        StateMachine.Transition(listOf("ready"), "vacate", listOf("resolved")),
         StateMachine.Transition(listOf("acked"), "resolve", listOf("resolved")),
         StateMachine.Transition(listOf("acked"), "epoch", listOf("ready")),
         StateMachine.Transition(listOf("held", "ready", "sent", "acked"), "discard", listOf("discarded")),

@@ -69,7 +69,7 @@ object Gym {
         listOf(
             "{",
             "  \"registry\": \"gym\",",
-            "  \"version\": 12,",
+            "  \"version\": 13,",
             "  \"minVersion\": 11,",
             "  \"products\": {",
             "    \"gym\": {",

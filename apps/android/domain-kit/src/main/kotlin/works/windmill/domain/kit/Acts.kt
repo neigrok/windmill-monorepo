@@ -6,6 +6,8 @@ import works.windmill.sync.core.Registry
 import works.windmill.sync.core.ScopeRef
 
 data class ScopedPlan(val scope: ScopeRef, val plan: Plan)
+// §9.6: a product's Redo slot, replacing the recipes of the inverse act's source `index`, which wrote `scope`.
+data class ProductSlot(val index: Int, val scope: ScopeRef, val plan: Plan)
 class ActPlan(segments: List<ScopedPlan>) { val segments: List<ScopedPlan> = segments.toList() }
 
 interface ActAction<L, T, R> {
@@ -40,6 +42,8 @@ class ActIDSource internal constructor(private val context: ActContext) {
     }
     fun opaqueID(): String = try { context.opaqueID() }
         catch (failure: Exception) { throw ProgrammingFault("minting an opaque act identity failed", failure) }
+    // A single action's identities inside its one-segment act (§9.6): minted in `scope`.
+    internal fun inScope(scope: ScopeRef): IDSource = IDSource({ context.opaqueID() }, { type -> context.mintID(type, scope) })
 }
 
 // An act's load over `context` and its one decision (§9.5); a violation refuses the act. The runner commits what it decides.

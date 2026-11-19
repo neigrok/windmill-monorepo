@@ -12,6 +12,10 @@ import { t } from './i18n/entry/index.js';
 const StepDraftProvider = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftProvider })));
 const StepDraftNotice = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftNotice })));
 
+// The room reads a roadmap from the device's copy through the sync engine (roadmap-on-the-engine.md §8.4) only in a build
+// that sets VITE_ROADMAP_REPLICA_ROOM to `on`; production's build sets nothing, so its room reads as it does today.
+const ROOM_READS_REPLICA = import.meta.env?.VITE_ROADMAP_REPLICA_ROOM === 'on';
+
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
 const SkillTreeApp = lazy(importSkillTreeApp);
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
@@ -61,7 +65,7 @@ function render({ hash, pathname, search }) {
   // The hash wins over the /t/:id path when it names an app destination.
   const pathShare = pathTarget(pathname);
   if (pathShare && !hash.startsWith('#/')) {
-    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false }, inRoom: true };
+    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false, replica: ROOM_READS_REPLICA }, inRoom: true };
   }
 
   if (hash.startsWith('#/browse')) return { Component: BrowsePage, props: {} };
@@ -71,7 +75,7 @@ function render({ hash, pathname, search }) {
   if (!isApp) return null;
 
   const target = appTarget(hash);
-  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo }, inRoom: true };
+  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo, replica: ROOM_READS_REPLICA }, inRoom: true };
 }
 
 // Explicit sign-out and account replacement wipe stamped work; a session lapse never calls this hook.

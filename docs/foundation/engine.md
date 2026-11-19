@@ -13,8 +13,9 @@ on `/v1/sync`, and the engine is the only writer of their records: web (gym,
 journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's Coach among them, and MCP,
 the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract. The source composition also
-names roadmap (A.1), whose rules the JS reference model server carries; `windmill_server`'s build refuses that
-composition until roadmap's binding is registered beside gym's and journal's.
+names roadmap (A.1), whose rules the JS reference model server and the C++ binding carry; `windmill_server` binds
+roadmap and withholds its scopes (§9.2) unless its deployment serves them, which production does not until roadmap's
+cutover.
 
 **Registry contract:** The composed source registry is version 13 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
@@ -1857,7 +1858,13 @@ type UndoRecipe =
   changed-epoch answer that records its results before the change keeps those, which are the new epoch's.
   Adopting a first epoch drops nothing.
 - **Maps.** A write map's logical map (§7.7) renames the journal's scopes, targets, records, typed inputs and
-  receipts with the queue.
+  receipts with the queue, and so the scopes, targets, records, references and typed inputs of its inverse
+  requests and cancellation receipts: an Undo requested, or a held act cancelled, in a tree whose governor
+  the server redirects follows it into the redirected tree. A command input is renamed in the scope its
+  holder had, before that scope moves. A value recorded for a field (a preimage, a written value, a default,
+  an operation's earlier value, a redo value, a revival's registers) is renamed as that record's field
+  would be, so a typed reference it holds follows the map: an Undo of a `ref<tree>` field whose tree the
+  server redirects restores the redirected id.
 - **Release.** `releaseReversibleAct(actId)` says the product's stack no longer needs the act: its record and
   values go, once no unsettled inverse request reads it, with a settled request whose inverse act it is. No
   product stack outlives its process: engine start releases every act and cancellation that no unsettled
@@ -2002,7 +2009,7 @@ unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsB
 applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
-its size cap, and a `200` whose receipts the replica cannot accept) — so a product can tell a server
+its size cap, and a `200` whose continuation metadata or scoped size the replica cannot accept) — so a product can tell a server
 it never reached from one that answered with a failure.
 Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
 with a `5xx`, so a product can tell the log's outage from a refusal.
@@ -2450,7 +2457,9 @@ before its own result is recorded; its resend then carries another digest, the s
 ### §7.9 Subscriptions
 
 A bound replica subscribes the product scopes of the products its surface carries (the registry's
-`surfaces`), and no scope of another product. It also subscribes the tree and overlay scopes its
+`surfaces`), and no scope of another product. A build may carry fewer products than its surface lists:
+it names the products it carries (Swift `EngineConfig.carried`, Kotlin `products`), and subscribes only
+those. It also subscribes the tree and overlay scopes its
 product binding lists (A.1): the set holds a tree and its overlay per governing record alive in
 `drawn` or in `stored`, so a held create's tree is in it, and so is a tree inside its governing
 record's delete window, so an undo finds its rows. The engine also exposes `subscribe(scope)` and
@@ -2890,6 +2899,11 @@ query over visible rows (§6.5). A row of a `visibleWhen` type counts only while
 holds a value, so an account whose rows are all empty holds none. A sign-in's lineage rule uses the
 hello that precedes it (§7.10).
 
+A deployment MAY compose and bind a product it withholds: it holds nothing of it. Its `holdsRecords` is false and
+its `holdings` count 0; a pull answers its product scope as an absent one (§6.7 step 2) and its trees and overlays
+`not-found`, as does a `sub` to them; and admission refuses an intent in its product scope `forbidden` and in its
+trees and overlays `not-found`, before step 3 takes any lock or inserts a scope.
+
 `holdings` is present iff `holdsRecords` is, from the same snapshot. `holdings[p]` is present iff `p`
 declares a `headline` type (§2.4): `count` is the number of rows of that type in `acct:A/<p>` that
 `visible` accepts, and `lastWrittenAt` is the greatest `ru` among them (the server's receipt of the
@@ -3200,7 +3214,7 @@ own changes revived, until the person has been told, [Roadmap on the sync engine
 §7's. **Subscriptions** (§7.9): a tree and its overlay for each `tree` record the replica holds; a reader's
 roadmap and its subtrees are subscribed explicitly as the person opens them (Roadmap on the sync engine §5).
 **Adoption:** the cutover of Roadmap on the sync engine §8.1. **Binding:** the JS reference model server
-(`packages/api-contract/sync/reference/roadmap/`); the C++ binding is not built.
+(`packages/api-contract/sync/reference/roadmap/`) and the C++ server's (`backend/products/roadmap/sync/`).
 
 `tree` mints `t_` and 16 of `0-9a-f`. `node` and `kind` take ids by `idDomain`, 1–128 chars (§2.4), mint 16 of `0-9a-z` and derive with the fallbacks `step` and `kind` (D-26). `subtask` and
 `stepLink` mint 16 base-62 characters in their overlay's id space, matching `^[A-Za-z0-9_-]{8,64}$`; Coach's

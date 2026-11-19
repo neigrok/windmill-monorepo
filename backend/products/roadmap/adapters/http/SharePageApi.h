@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "products/roadmap/application/EngineReadModels.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Ids.h"
@@ -21,12 +22,13 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // Serves the SPA shell at GET /t/:id. For an anon-readable tree it rewrites the fenced unfurl
 // meta with the tree's own; a private or absent tree gets the shell byte-for-byte verbatim, so
-// private stays indistinguishable from absent.
+// private stays indistinguishable from absent. Where the engine serves roadmap, `engine` is set and the tree is read from
+// its records instead of its room (roadmap-on-the-engine.md §7).
 class SharePageApi {
 public:
   SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                std::shared_ptr<AuthService> auth, std::shared_ptr<OgVideoRepository> videos,
-               std::string webRoot, std::string appOrigin);
+               std::string webRoot, std::string appOrigin, std::shared_ptr<EngineReadModels> engine);
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
 
@@ -44,6 +46,7 @@ private:
   std::shared_ptr<OgVideoRepository> videos_;
   std::string webRoot_;
   std::string appOrigin_;
+  std::shared_ptr<EngineReadModels> engine_;
 };
 
 }

@@ -10,8 +10,12 @@ public struct ComposedServerRules: ServerRules {
     self.registry = registry; self.products = products
   }
 
+  // Windmill's products' rules, for each product the registry composes.
   public static func windmill(registry: Registry) -> ComposedServerRules {
-    ComposedServerRules(registry: registry, products: ["gym": GymServerRules(), "journal": JournalServerRules()])
+    let rules: [String: any ServerRules] = ["gym": GymServerRules(), "journal": JournalServerRules(), "roadmap": RoadmapServerRules()]
+    return ComposedServerRules(registry: registry, products: rules.filter { (name: String, _: any ServerRules) -> Bool in
+      registry.products.contains { $0.name.isSameID(as: name) }
+    })
   }
 
   func rules(_ context: RuleContext) -> any ServerRules { products[registry.product(of: context.scope.ref)!]! }

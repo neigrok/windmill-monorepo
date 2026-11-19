@@ -51,6 +51,7 @@ export class BrowserSyncEngine {
     this.leadershipOptions = leadership;
     this.visible = document?.visibilityState !== 'hidden';
     this.online = navigator?.onLine !== false;
+    this.unreachable = false;
     this.networkGeneration = 0;
     this.listeners = new Set();
     this.eventListeners = new Set();
@@ -183,7 +184,7 @@ export class BrowserSyncEngine {
     const replica = device.activeReplica;
     this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state,
       authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
-      pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null) });
+      pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), connection: this.connection() });
     for (const observation of this.views.values()) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
     this.notify(this.listeners);
@@ -239,18 +240,40 @@ export class BrowserSyncEngine {
   observeEngine = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   onEvent(listener) { this.eventListeners.add(listener); return () => this.eventListeners.delete(listener); }
 
+  // A hold on the scope's observation: the engine refreshes and hydrates the scope while any hold is unreleased.
   observe(scope) {
-    if (this.views.has(scope)) return this.views.get(scope);
+    const known = this.views.get(scope);
+    if (known) return known.hold();
     const observation = new ScopeObservation(scope, this.registry, {
       firstPullComplete: (replica) => firstPullComplete(replica, scope, this.scopes(replica)),
-      notify: (listeners) => this.notify(listeners) });
+      notify: (listeners) => this.notify(listeners),
+      idle: () => { if (this.views.get(scope) === observation) this.views.delete(scope); } });
     observation.refresh(this.device.activeReplica);
     this.views.set(scope, observation);
     if (this.device.activeReplica.confirmed[scope] && !this.device.activeReplica.loadedCaches.has(`confirmed:${scope}`)) {
       this.store.read([scope]).then((answer) => { if (!this.closed) this.publish({ ...answer, hydrated: true }); })
         .catch(() => { if (!this.closed) this.telemetry.failure('storage'); });
     }
-    return observation;
+    return observation.hold();
+  }
+
+  connection() {
+    if (!this.online) return 'offline';
+    return this.unreachable ? 'unreachable' : 'online';
+  }
+
+  // Whether the server answers: the leader learns it from its own requests and tells the other tabs.
+  answered(answered, { told = false } = {}) {
+    if (this.unreachable === !answered) return;
+    this.unreachable = !answered;
+    if (!told) this.coordination?.post({ type: 'connection', unreachable: this.unreachable });
+    this.tellConnection();
+  }
+
+  tellConnection() {
+    if (!this.snapshot || this.snapshot.connection === this.connection()) return;
+    this.snapshot = frozen({ ...this.snapshot, connection: this.connection() });
+    this.notify(this.listeners);
   }
 
   async start() {
@@ -274,11 +297,11 @@ export class BrowserSyncEngine {
     this.installLifecycle();
     this.requestPersistence();
     this.telemetry.event('sync-start', { outcome: 'ok' });
-    // Requests still waiting at engine start stay visible: their count and the oldest one's age.
-    const waiting = this.device.activeReplica.inverses.filter(({ state }) => state !== 'settled');
-    if (first && waiting.length) {
-      this.telemetry.event('sync-inverse', { outcome: 'pending', count: waiting.length,
-        ageMs: Math.max(0, this.now() - Math.min(...waiting.map(({ requestedAt }) => requestedAt))) });
+    // Requests still waiting at engine start stay visible: how many wait, and the oldest one's age.
+    const unsettled = this.device.activeReplica.inverses.filter(({ state }) => state !== 'settled');
+    if (first && unsettled.length) {
+      this.telemetry.event('sync-inverse', { outcome: 'pending', waiting: unsettled.length,
+        ageMs: Math.max(0, this.now() - Math.min(...unsettled.map(({ requestedAt }) => requestedAt))) });
     }
     this.armHolds();
     await this.cleanupCredentials();
@@ -300,6 +323,7 @@ export class BrowserSyncEngine {
 
   peerMessage(message) {
     if (message.type === 'upgrade') { this.refresh().catch(() => {}); return; }
+    if (message.type === 'connection') { this.answered(!message.unreachable, { told: true }); return; }
     const previous = ['scopes', 'bye'].includes(message.type) ? this.scopes() : [];
     if (message.type === 'scopes') this.peerScopes.set(message.tab, new Set(message.scopes));
     if (message.type === 'bye') this.peerScopes.delete(message.tab);
@@ -563,8 +587,15 @@ export class BrowserSyncEngine {
       if (device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true)
         return { response: { status: 426 }, timing: {} };
       if (endpoint !== 'hello' && this.signOutPaused(device)) throw new Error('sync paused');
-      const answer = await this.transport.request(endpoint, body, { ...options, signal: controller.signal,
-        anonymous: endpoint === 'pull' && device.activeReplica.meta.state === 'anon' });
+      let answer;
+      try {
+        answer = await this.transport.request(endpoint, body, { ...options, signal: controller.signal,
+          anonymous: endpoint === 'pull' && device.activeReplica.meta.state === 'anon' });
+      } catch (error) {
+        if (!controller.signal.aborted && error?.name !== 'AbortError') this.answered(false);
+        throw error;
+      }
+      this.answered(!(answer.response.status >= 500));
       if (answer.response.status === 426) await this.upgrade();
       return answer;
     } finally { this.inFlight.delete(controller); }
@@ -1163,6 +1194,7 @@ export class BrowserSyncEngine {
   setOnline(online) {
     if (this.online !== online) this.networkGeneration += 1;
     this.online = online;
+    this.tellConnection();
     if (online) this.kick();
     else this.stopNetwork();
   }

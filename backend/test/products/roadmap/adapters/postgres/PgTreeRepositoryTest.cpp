@@ -98,7 +98,7 @@ TEST(pg_an_erased_accounts_live_room_is_retired_so_its_tree_is_neither_served_no
   FakeTokens tokens;
   FakeClock clock;
   ForkService forks{registry, trees, tokens, clock};
-  CHECK(forks.fork(kTree, "", "", kEve).outcome == ForkService::Outcome::noSource);
+  CHECK(forks.fork(kTree, "", "", kEve, std::nullopt).outcome == ForkService::Outcome::noSource);
   registry.sweep(std::chrono::steady_clock::duration::zero());
   CHECK_EQ(rowsOfTheTree(), 0L);
 }
@@ -314,7 +314,7 @@ TEST(pg_a_fork_plants_the_title_and_guide_at_its_planting_stamp_for_the_new_owne
   FakeClock clock;
   ForkService forks{registry, trees, tokens, clock};
 
-  const ForkService::Result forked = forks.fork(kTree, kFork.str(), "", kEve);
+  const ForkService::Result forked = forks.fork(kTree, kFork.str(), "", kEve, std::nullopt);
 
   CHECK(forked.outcome == ForkService::Outcome::forked);
   CHECK_EQ(forked.data.guide, std::string("Rig first, then sail."));
@@ -348,7 +348,7 @@ TEST(pg_a_forks_copied_guide_stays_inherited_until_its_owner_writes_one_across_r
     FakeTokens tokens;
     FakeClock clock;
     ForkService forks{registry, trees, tokens, clock};
-    REQUIRE(forks.fork(kTree, kFork.str(), "", kEve).outcome == ForkService::Outcome::forked);
+    REQUIRE(forks.fork(kTree, kFork.str(), "", kEve, std::nullopt).outcome == ForkService::Outcome::forked);
     REQUIRE(registry.open(kFork)->guideInherited());
     registry.evict(kFork);  // saves the copied guide back under its own stamp
     CHECK(trees.load(kTree)->guideInherited == false);
@@ -2353,7 +2353,7 @@ TEST(pg_the_owners_walk_follows_each_step_into_the_subtree_it_owns_whatever_its_
         (std::map<NodeId, Opening>{{nid("empty"), {empty, false, "empty", false, 0, 0}},
                                    {nid("sail"), {kChild, false, "sail", true, 2, 2}}}));
   std::map<TreeId, std::string> readiness;
-  for (const TreeReadiness& tree : PgReminderRepository{pgTestPool()}.readinessFor(kAda))
+  for (const TreeReadiness& tree : PgReminderRepository{pgTestPool(), RoadmapEdits::trees}.readinessFor(kAda))
     readiness[tree.id] = tree.title + " " + std::to_string(tree.done) + "/" + std::to_string(tree.total);
   CHECK(readiness == (std::map<TreeId, std::string>{{kOther, "Planted 0/1"}, {kParent, "Planted 1/2"}}));
 

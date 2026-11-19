@@ -5,6 +5,7 @@
 #include "platform/domain/MailArming.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/TokenGenerator.h"
+#include "products/roadmap/application/EngineReadModels.h"
 #include "products/roadmap/domain/Reminders.h"
 #include "products/roadmap/ports/ReminderMailSender.h"
 #include "products/roadmap/ports/ReminderRepository.h"
@@ -18,11 +19,12 @@ namespace wm {
 
 // Supplies the halves MailSweep drives: who is due, the readiness decision, the weekly ledger, and
 // the reminder mail. A sweep is a pure function of (now, database) — never put a schedule in the
-// timer. Runs on the sweep's own event loop, never a drogon request loop; exceptions never escape it.
+// timer. Runs on the sweep's own event loop, never a drogon request loop; exceptions never escape it. Where the engine
+// serves roadmap, `engine` is set and readiness is read from its records (roadmap-on-the-engine.md §7).
 class ReminderSweep : public MailSweep<DueUser, ReminderDecision> {
 public:
   ReminderSweep(ReminderRepository& reminders, ReminderMailSender& mail, TokenGenerator& tokens,
-                Clock& clock, MailArming arming, std::string appBaseUrl);
+                Clock& clock, MailArming arming, std::string appBaseUrl, EngineReadModels* engine);
 
   // The first tick is jittered a minute or so past boot so a crash loop cannot hammer the database.
   void start();
@@ -49,6 +51,7 @@ private:
   ReminderMailSender& mail_;
   Clock& clock_;
   std::string appBaseUrl_;
+  EngineReadModels* engine_;
   // Declared LAST so it is destroyed FIRST: its destructor quits the loop and joins the thread,
   // which must happen while the collaborators above are still alive.
   Heartbeat heartbeat_;

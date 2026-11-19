@@ -1027,17 +1027,18 @@ class SyncRuntimeTests {
         }
     }
 
-    @Test fun anOkWithoutTheReceiptItsOptedCommandNeedsChangesNothingAndBacksOffAsMalformed() = runBlocking {
+    // §7.4: the server holds the write, so an ok whose receipt the replica cannot read still acknowledges its entry. Its projections end at
+    // once, sync goes on, and the malformed push is reported without its content.
+    @Test fun anOkWithoutTheReceiptItsOptedCommandNeedsAcknowledgesItsEntryAndReportsTheMalformedPush() = runBlocking {
         Fixture().use { fixture ->
             fixture.engine.commit(product, Gesture(emptyList(), command = Command("probe.capture", Json.objectOf())))
             val step = async { fixture.runtime.senderStep(leaving = true) }
             val push = fixture.push()
-            val sent = fixture.engine.snapshot()
             push.answer.complete(ok(push.request))
-            assertFalse(step.await())
-            assertEquals(sent, fixture.engine.snapshot())
-            settles(true) { EngineEvent(EngineOperation.push, EngineOutcome.failure, "malformed") in fixture.events }
-            settles(setOf(product)) { fixture.engine.status.state.value.unansweredPushes }
+            assertTrue(step.await())
+            assertEquals(emptyList<Entry>(), fixture.engine.device.current().entries())
+            settles(true) { EngineEvent(EngineOperation.sync, EngineOutcome.failure, "sync-push-malformed") in fixture.events }
+            assertEquals(emptyMap<String, Map<ScopeRef, PushFailure>>(), fixture.engine.pushFailures)
         }
     }
 

@@ -22,6 +22,10 @@ public struct LoadedReplica: Sendable {
   public private(set) var known: [ScopeRef: KnownKind]
   private(set) var loadedNotices: [Notice]?
   public private(set) var deviceRows: [String: JSON.Object]
+  // K-3 the journal, always loaded whole with the entries it names (§7.3 Undo of an act).
+  public private(set) var journal: Journal
+  // The inverse requests unsettled as the load found them: each one this transaction settles is reported.
+  let loadedUnsettledRequests: [String]
   public private(set) var writes: [StoreWrite] = []
   public private(set) var events: [EngineEvent] = []
   public private(set) var change = StoreChange()
@@ -36,7 +40,7 @@ public struct LoadedReplica: Sendable {
               projectionTargets: [ScopeRef] = [], confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
               spent: [ScopeRef: [RecordKey: SpentID]] = [:], cursors: [ScopeRef: CursorRecord] = [:],
               known: [ScopeRef: KnownKind] = [:], notices: [Notice]? = [], deviceRows: [String: JSON.Object] = [:],
-              wholeScopes: Bool, isActive: Bool = false) {
+              journal: Journal = Journal(), wholeScopes: Bool, isActive: Bool = false) {
     self.meta = meta
     loadedEntries = outbox.sorted { $0.commitOrder < $1.commitOrder }
     entrySelection = entries
@@ -49,6 +53,8 @@ public struct LoadedReplica: Sendable {
     self.known = known
     loadedNotices = notices
     self.deviceRows = deviceRows
+    self.journal = journal
+    loadedUnsettledRequests = journal.inverses.filter { $0.state != .settled }.map(\.requestId)
     self.wholeScopes = wholeScopes
     self.isActive = isActive
   }
@@ -148,6 +154,47 @@ public struct LoadedReplica: Sendable {
     loadedEntries.first { $0.localId.utf8.elementsEqual(localId.utf8) }
   }
 
+  // An entry the journal names, nil once it ended. A load of the journal reads every one it names; asking for another the
+  // load left unread traps.
+  public func named(_ localId: String) -> OutboxEntry? {
+    if let entry = entry(localId) { return entry }
+    let endedHere = writes.contains { write in
+      guard case .replica(_, .deleteEntry(let deleted)) = write else { return false }
+      return deleted.isSameID(as: localId)
+    }
+    precondition(entrySelection.all || entrySelection.localIds.contains(localId) || endedHere, "\(localId) was read but not loaded")
+    return nil
+  }
+
+  // The records `after` adds or changes over `before`, and the ids it drops.
+  static func changes<Record: Hashable>(_ before: [Record], _ after: [Record], id: (Record) -> String) -> (put: [Record], gone: [String]) {
+    let previous = Dictionary(before.map { (id($0), $0) }) { first, _ in first }
+    let kept = Set(after.map(id))
+    return (after.filter { previous[id($0)] != $0 }, before.map(id).filter { !kept.contains($0) })
+  }
+
+  // The journal changed through `body`: each act, request and cancellation it adds, changes or drops is one write, and each
+  // request the load found unsettled that settles now is reported.
+  public mutating func updateJournal<T>(_ body: (inout Journal) throws -> T) rethrows -> T {
+    var next = journal
+    let value = try body(&next)
+    let acts = LoadedReplica.changes(journal.acts, next.acts, id: \.actId)
+    let inverses = LoadedReplica.changes(journal.inverses, next.inverses, id: \.requestId)
+    let cancellations = LoadedReplica.changes(journal.cancellations, next.cancellations, id: \.inverseActId)
+    for request in inverses.put where loadedUnsettledRequests.contains(where: { $0.isSameID(as: request.requestId) }) {
+      guard case .settled(_, _, _, let applied, let skipped)? = request.result, journal.request(request.requestId)?.state != .settled else { continue }
+      record(.inverseSettled(applied: applied, skipped: skipped))
+    }
+    for id in acts.gone { apply(.deleteAct(id)) }
+    for act in acts.put { apply(.putAct(act)) }
+    for id in inverses.gone { apply(.deleteInverse(id)) }
+    for request in inverses.put { apply(.putInverse(request)) }
+    for id in cancellations.gone { apply(.deleteCancellation(id)) }
+    for cancellation in cancellations.put { apply(.putCancellation(cancellation)) }
+    journal = next
+    return value
+  }
+
   public func rows(_ scope: ScopeRef) -> Rows {
     if let rows = confirmed[scope] { return rows }
     precondition(wholeScopes, "the rows of \(scope) were read but not loaded")
@@ -220,6 +267,24 @@ public struct LoadedReplica: Sendable {
       staging[scope] = nil
     case .putKnown(let scope, let kind): known[scope] = kind
     case .deleteKnown(let scope): known[scope] = nil
+    case .putAct(let act):
+      journal.acts.removeAll { $0.actId.isSameID(as: act.actId) }
+      journal.acts.append(act)
+    case .deleteAct(let id): journal.acts.removeAll { $0.actId.isSameID(as: id) }
+    case .putInverse(let request):
+      if let index = journal.inverses.firstIndex(where: { $0.requestId.isSameID(as: request.requestId) }) {
+        journal.inverses[index] = request
+      } else {
+        journal.inverses.append(request)
+      }
+    case .deleteInverse(let id): journal.inverses.removeAll { $0.requestId.isSameID(as: id) }
+    case .putCancellation(let cancellation):
+      if let index = journal.cancellations.firstIndex(where: { $0.inverseActId.isSameID(as: cancellation.inverseActId) }) {
+        journal.cancellations[index] = cancellation
+      } else {
+        journal.cancellations.append(cancellation)
+      }
+    case .deleteCancellation(let id): journal.cancellations.removeAll { $0.inverseActId.isSameID(as: id) }
     case .putNotice(let notice):
       if let index = loadedNotices?.firstIndex(where: { $0.id.utf8.elementsEqual(notice.id.utf8) }) {
         loadedNotices?[index] = notice
@@ -375,6 +440,7 @@ public struct LoadedReplica: Sendable {
     case .beginStaging, .dropStaging: change.released = true
     case .putNotice, .moveNotice: change.notices = true
     case .putStagedRow, .deleteStagedRow, .stagingDigest, .putSpent: break
+    case .putAct, .deleteAct, .putInverse, .deleteInverse, .putCancellation, .deleteCancellation: change.outbox = true
     }
   }
 
@@ -429,11 +495,13 @@ public struct LoadedDevice: Sendable {
 
   public var anon: LoadedReplica? { replicas.first { $0.meta.state == .anon } }
 
-  // §2.5: an outbox entry or a notice of any replica on the device carries the gesture id.
+  // §2.5: an outbox entry, a notice, a reversible act, an inverse request or a cancellation of any replica on the device
+  // carries the gesture id.
   public func carries(gestureId: String) -> Bool {
     replicas.contains { replica in
       replica.outbox.contains { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }
         || replica.notices.contains { Notice.gestureId(ofNotice: $0.id)?.utf8.elementsEqual(gestureId.utf8) == true }
+        || replica.journal.carries(gestureId: gestureId)
     }
   }
 
@@ -521,6 +589,12 @@ extension LoadedReplica {
       }),
       notices: try object["notices"]?.asArray().map { try Notice(json: $0, registry: registry) } ?? [],
       deviceRows: try JSON.map(object["device"]) { try $0.asObject() },
+      journal: Journal(
+        acts: try (object["journal"]?.asArray() ?? []).map { (act: JSON) throws -> ReversibleAct in try ReversibleAct(json: act) },
+        inverses: try (object["inverses"]?.asArray() ?? []).map { (request: JSON) throws -> InverseRequest in try InverseRequest(json: request) },
+        cancellations: try (object["cancellations"]?.asArray() ?? []).map { (receipt: JSON) throws -> CancellationReceipt in
+          try CancellationReceipt(json: receipt)
+        }),
       wholeScopes: true)
   }
 
@@ -539,6 +613,10 @@ extension LoadedReplica {
     object["notices"] = notices.isEmpty ? nil : .array(notices.map(\.storedJSON))
     let device = deviceRows.compactMapValues { $0.isEmpty ? nil : JSON.object($0) }
     object["device"] = JSON.object(from: device) { $0 }
+    let stored = journal.json
+    object["journal"] = stored.acts.isEmpty ? nil : .array(stored.acts)
+    object["inverses"] = stored.inverses.isEmpty ? nil : .array(stored.inverses)
+    object["cancellations"] = stored.cancellations.isEmpty ? nil : .array(stored.cancellations)
     return .object(object)
   }
 }
