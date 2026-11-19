@@ -1,8 +1,8 @@
 // The room's edge on the device's copy (roadmap-on-the-engine.md §8.4): what the replica holds of the account's roadmaps,
 // read through the domain, in the shapes the Graph, the Board, the step page, the layout and the scene read today.
 // Nothing here is a rule. How a record reads and a mark is dated, what a step follows, where a roadmap sits and whether
-// it stands, what a step opens, what stands complete and when, the guides above a roadmap, which kind wears a hue and
-// the order of the person's list are the domain's reads.
+// it stands, what a step opens, what stands complete and when, the guides above a roadmap, which kind wears a hue, the
+// order of the person's list and what the device tells of its own changes are the domain's reads.
 
 import { Reader, Views } from '../../../platform/domain-kit/reading.js';
 import { FixedZone, Instant, Moment } from '../../../platform/domain-kit/time.js';
@@ -152,6 +152,24 @@ export class ReplicaRoadmap {
   // The guides above the open roadmap and its own, farthest first, in the shape the guide's read answers.
   get guides() {
     return { guides: this.account.guides(this.treeId).map((guide) => ({ treeId: guide.tree, title: guide.title, text: guide.text })) };
+  }
+
+  // §6 What the device tells of its own changes on the open roadmap, from the domain's `landingOf`: a line a step, in the
+  // room's names. `cameBack` where the person's change brought the step back; `follows` with the deleted steps it was
+  // linked from and the steps it follows through them. A deleted step's name is the one `named` remembers: the device
+  // keeps nothing of a step deleted elsewhere (engine.md §7.5), so a name the visit never read is ''. `told` is what
+  // saying the line clears from the device's note.
+  landed({ follows, cameBack, note }, named) {
+    const steps = this.account.trees.get(this.treeId).nodesById;
+    const name = (id) => steps.get(id)?.label ?? named.get(id) ?? '';
+    return [
+      ...follows.map(({ node, incoming, followed }) => ({
+        key: `follows:${node}:${incoming.map(([from]) => from).join('\n')}`, step: node, rule: 'follows',
+        removed: incoming.map(([from]) => name(from)), followed: followed.map(({ id }) => name(id)),
+        told: { nodes: note.nodes.includes(node) ? [node] : [], edges: incoming },
+      })),
+      ...cameBack.map((step) => ({ key: `cameBack:${step}`, step, rule: 'cameBack', told: { revived: [step] } })),
+    ];
   }
 
   // The person's roadmaps as the switcher lists them, in the domain's order. `place` says where they live: `account` for
