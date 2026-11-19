@@ -248,7 +248,9 @@ class Device {
 
 // A screenshot of what a device shows, for comparing with the boards, where WM_E2E_SHOTS names a folder; never printed.
 async function shoot(device, name) {
-  if (process.env.WM_E2E_SHOTS) await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
+  if (!process.env.WM_E2E_SHOTS) return;
+  await device.page.evaluate(() => Promise.all((document.querySelector('.st-kept')?.getAnimations() ?? []).map((animation) => animation.finished)));
+  await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
 }
 
 async function scenarios(mode, browser, secret, account, check) {
