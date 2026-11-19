@@ -175,7 +175,10 @@ what a person wrote: `demo_open`'s `treeId` is the one constant the bundle ships
 `test/products/roadmap/observability.test.mjs` reads the code's syntax tree. It fails when a roadmap event name or Sentry
 operation in the code is missing from these tables or a name in the tables is missing from the code, when an event's props
 fit no row of its event or a value reads a content field such as a title or an email, when a count goes around `countBucket`,
-and when a report's operation is not a literal or its error message is built at run time.
+when a report's operation is not a literal or its error message is built at run time, and when a row lists other values than
+the code gives a prop only running code knows: the doors into a step's tree, what an owner's room knows of its trees, why a
+room cannot show its roadmap (`UNSHOWN`) and why a birth planted nothing (`BirthFailure`), with the reasons `roadmap-plant`
+reports under.
 
 ### Events
 

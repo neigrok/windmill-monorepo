@@ -116,8 +116,11 @@ export class ReplicaReading {
     }
     const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting');
     if (signal.aborted) return null;
-    if (roadmap.state === 'missing') this.forgetLanding();
-    if (roadmap.state !== 'open') return this.unshown(roadmap.state === 'missing' ? 'missing' : 'unanswered');
+    if (roadmap.state === 'missing') {
+      this.forgetLanding();
+      return this.unshown('missing');
+    }
+    if (roadmap.state !== 'open') return this.unshown('unanswered');
     this.opened = roadmap;
     this.openWrites(roadmap.mine);
     const seed = roadmap.seed;
