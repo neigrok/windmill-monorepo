@@ -188,11 +188,13 @@ export class OldRoadmap {
   get marksDigest() { return this.marks === null ? null : hashText(jcs(this.marks)).slice(0, 16); }
 
   // Each workspace item, by the key the ledger keeps it under (its step, its kind and its old id) with a digest of what it
-  // holds.
+  // holds. An entry that does not read as an item is none.
   items() {
-    return Object.entries(this.workspace ?? {}).flatMap(([step, workspace]) => [
-      ...(workspace?.subtasks ?? []).map((subtask) => ({ step, type: 'subtask', old: String(subtask.id), values: { label: String(subtask.label ?? ''), done: subtask.done === true } })),
-      ...(workspace?.links ?? []).map((link) => ({ step, type: 'stepLink', old: String(link.id), values: { url: String(link.url ?? ''), title: String(link.title ?? '') } })),
+    const entries = (list) => (Array.isArray(list) ? list.filter((each) => each !== null && typeof each === 'object' && each.id !== undefined) : []);
+    const workspaces = this.workspace !== null && typeof this.workspace === 'object' ? Object.entries(this.workspace) : [];
+    return workspaces.flatMap(([step, workspace]) => [
+      ...entries(workspace?.subtasks).map((subtask) => ({ step, type: 'subtask', old: String(subtask.id), values: { label: String(subtask.label ?? ''), done: subtask.done === true } })),
+      ...entries(workspace?.links).map((link) => ({ step, type: 'stepLink', old: String(link.id), values: { url: String(link.url ?? ''), title: String(link.title ?? '') } })),
       ...(typeof workspace?.note === 'string' && workspace.note !== '' ? [{ step, type: 'stepNote', old: step, values: { text: workspace.note } }] : []),
     ]).map((item) => ({ ...item, key: jcs([item.step, item.type, item.old]), digest: hashText(jcs(item.values)).slice(0, 16) }));
   }
