@@ -88,6 +88,21 @@ test('signed in, the same radiogroup sits between the identity and the menu', as
     < elementsOf(popover.props.children).findIndex((each) => each.props.role === 'radiogroup'), 'identity first');
 });
 
+test('a member sees each row product sessions offer, as its label and count, after the row back to their work; choosing one closes the pop-up and hands focus to the seat first', async (t) => {
+  browser();
+  const user = { name: 'Ada Lovelace', email: 'ada@example.com' };
+  const told = [];
+  const offered = [{ label: 'Kept here', count: 4, onSelect: () => told.push('kept') }];
+  const { popover, seat } = await openSeat(t, { status: 'signed-in', user, offered, onConnect() {}, onSettings() {}, onSignOut() {} });
+  assert.deepEqual(shape(popover).menus, [['Kept here · 4', 'Connect your LLM tools', 'Account settings', 'Sign out']]);
+  seat().ref.current = { focus: () => told.push('seat') };
+  const row = elementsOf(popover.props.children).find((each) => each.props.role === 'menuitem' && textOf(each) === 'Kept here · 4');
+  row.props.onClick();
+  assert.deepEqual({ told, expanded: seat().props['aria-expanded'] }, { told: ['seat', 'kept'], expanded: false });
+  const ghost = await openSeat(t, { status: 'ghost', user: null, offered, onSignIn() {}, onSettings() {} });
+  assert.deepEqual(shape(ghost.popover).menus, [['Sign in', 'Settings']], 'a visitor is offered no product row');
+});
+
 test('Escape and a press outside both close the pop-up and hand focus back to the seat', async (t) => {
   for (const [type, event] of [['keydown', { key: 'Escape', preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } }], ['pointerdown', { target: {} }]]) {
     const dom = browser();

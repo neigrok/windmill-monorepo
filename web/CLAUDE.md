@@ -284,8 +284,8 @@ Product preparations run before networking; occupied rooms pin Add/Discard, and 
 Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
 of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
-`platform/sync/react.js` exports `useSyncEngine()` and
-`useSyncRecords(scope)`. The anonymous journal uses record observations; Gym retains its account gate.
+`platform/sync/react.js` exports `useSyncEngine()`,
+`useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; Gym retains its account gate.
 Gym and journal records change only through the engine; their REST clients carry server features.
 The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
 cache generation before promoting it; a failed update retains the previous complete shell. The build
@@ -300,4 +300,6 @@ Replacement and committed cleanup advance the epoch before invalidating product 
 changes; each invalidator is isolated. Lapse and same-owner recovery retain the epoch. Completion requires the
 current transition ticket and matching usable holder. `PageFrame` places actual header, session notices and
 contained content in normal flow; landing headers keep their responsive height. Headerless routes and fallbacks
-use the same top notice slot. Product session data never enters shell layout or navigation state.
+use the same top notice slot. Product session data never enters shell layout or navigation state. A session may offer
+the `/app` account menu one row, `{ label, count, onSelect }`, through `useAccountRowOffer` while it has something to
+say; the Shell reads the rows with `useOfferedAccountRows` and the seat shows a member each as its label and count.
