@@ -410,13 +410,17 @@ std::vector<Summed> PgAdoption::sums() {
     const sync::ScopeRow scope = *store_.scope(*txn, *key, sync::RowLock::none);
     std::vector<Json::Value> rows;
     Seq highest = 0;
+    bool opens = false;
+    const std::optional<sync::Opening>& opening = catalog_.opening();
     for (const sync::TypeDef* type : types) {
       for (const Row& row : catalog_.store(type->name).feed(*txn, *key, sync::FeedQuery{})) {
         highest = std::max(highest, row.seq);
         rows.push_back(row.toJson());
+        if (opening && row.t == opening->type) opens = opening->opens(row);
       }
     }
-    sums.push_back(Summed{*key, sync::scopeDigest(rows) == scope.digest, scope.seq >= highest});
+    sums.push_back(Summed{*key, sync::scopeDigest(rows) == scope.digest, scope.seq >= highest,
+                          key->kind() != sync::ScopeKind::tree || scope.open == opens});
   }
   return sums;
 }

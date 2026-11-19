@@ -247,7 +247,8 @@ StageReport Cutover::readModels() {
   return compareAnswers(*old, servers_.askNew(survey), record_);
 }
 
-// Every alive scope summed from its rows (§6.12), against the digest its row holds.
+// Every alive scope summed from its rows (§6.12), against the digest its row holds; and every tree's `open`, which lets a
+// stranger read it, against its reach.
 StageReport Cutover::digests() {
   StageReport report;
   std::vector<Json::Value> differ;
@@ -255,7 +256,8 @@ StageReport Cutover::digests() {
     report.counts.add("scopes.summed");
     report.counts.add(summed.digestHolds ? "scopes.digestHolds" : "scopes.digestDiffers");
     if (!summed.seqHolds) report.counts.add("scopes.seqBelowARow");
-    if (summed.digestHolds && summed.seqHolds) continue;
+    if (!summed.openHolds) report.counts.add("scopes.openDiffersFromItsReach");
+    if (summed.digestHolds && summed.seqHolds && summed.openHolds) continue;
     differ.push_back(Json::Value(summed.key.text()));
   }
   record_.write("digests.jsonl", differ);

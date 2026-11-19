@@ -34,11 +34,13 @@ struct Written {
   std::size_t already = 0;
 };
 
-// One alive scope's §6.12 sum against the digest its row holds, and whether its seq stands at or past every row's.
+// One alive scope's §6.12 sum against the digest its row holds, whether its seq stands at or past every row's, and, for a
+// tree, whether its `open` says what its opening field does: strangers read it exactly while its reach opens it.
 struct Summed {
   sync::ScopeKey key;
   bool digestHolds = false;
   bool seqHolds = false;
+  bool openHolds = true;
 };
 
 // Every roadmap the old server reads, through its own repositories, and the ids of those it cannot read: it throws on a

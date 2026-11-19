@@ -45,7 +45,7 @@ on a failure, which it reports to Sentry by the failure's type alone.
 | `demo` | Adopts the public demo from the rows `db/schema.sql` seeds, under the house account, where the engine holds no record of it; one it holds is never written again. | `present`, `seeded`; `noSource` and `stops` fail | — |
 | `after` | Reads every adopted roadmap back through the binding and the read domain and compares its document with the old server's; checks each deleted roadmap's id is spent. | `same`; `differs` fails | `after.jsonl`, `differences.jsonl` |
 | `read-models` | The new read models answer the same questions; compares them with `read-models-before`'s. | `same`; `differs` and `nothingAskedBefore` fail | `read-models.jsonl` (the differing answers) |
-| `digests` | Sums every alive scope the catalog binds from its rows (engine.md §6.12) against the digest its row holds, and checks its seq stands at or past every row's. | `summed`; `differs` fails | `digests.jsonl` (the scopes that differ) |
+| `digests` | Sums every alive scope the catalog binds from its rows (engine.md §6.12) against the digest its row holds, checks its seq stands at or past every row's, and checks every tree's `open`, which lets strangers read it, against its `reach`. | `summed`; `differs` fails | `digests.jsonl` (the scopes that differ) |
 
 Configuration: `DATABASE_URL`; `ROADMAP_ADOPTION_PRIVATE_DIR`; `ROADMAP_ADOPTION_EXPECTED_OWNERLESS`, a file of the
 ownerless roadmaps the move adopts under the house account, one id a line, which the public demo (`t_9e407a96b5330ebe`)

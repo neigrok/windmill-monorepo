@@ -375,8 +375,9 @@ tables, stopping where they differ from those it planned from.
   design: MCP's `seq`, which continues above the old one; a step's order key, the order itself being
   compared (MCP's steps by id); a mark's stamp, its time being compared; and what each subtree has
   come to, which the engine's progress answer adds. A roadmap holding a stamp the old server cannot
-  parse is unreadable to it today: it has no document, and its answers are counted apart. Every scope's digest sums, and
-  a second run changes nothing. What browsers hold is not proven by it.
+  parse is unreadable to it today: it has no document, and its answers are counted apart. Every
+  scope's digest sums, every tree's `open` matches its `reach`, and a second run changes nothing.
+  What browsers hold is not proven by it.
 - A failure before writes resume restores the backup. After that the move goes forward only.
 
 ### §8.2 What a browser holds

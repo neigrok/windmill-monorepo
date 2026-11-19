@@ -228,6 +228,11 @@ class AdoptionTest(ToolTest):
                          f"t_9e407a96b5330ebe\nt_c000000000000001\nt_d000000000000001")
         self.assertEqual(query(url, f"select email from users where id = '{HOUSE}'"), "house@windmill.invalid")
         self.assertEqual(query(url, f"select count(*), max(seq) from tree_ops where tree_id = '{cello}'"), "2|9")
+        query(url, f"update sync_scopes set open = false where key = 'tree:{cello}'")
+        result, reports = self.run_tool(url, "digests")
+        self.assertEqual((result.returncode, reports[0]["verdict"], reports[0]["counts"]),
+                         (3, "differs", {"scopes": {"digestHolds": 20, "openDiffersFromItsReach": 1, "summed": 20}}))
+        self.assertEqual((self.private / "digests.jsonl").read_text(), f'"tree:{cello}"\n')
 
     def test_a_run_killed_between_stages_and_in_the_middle_of_adopt_finishes_when_run_again(self):
         url = own_database(self, "killed")
