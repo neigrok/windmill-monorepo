@@ -69,39 +69,52 @@ TEST(a_stamp_is_kept_where_the_engine_would_write_it_and_otherwise_takes_the_low
 }
 
 TEST(life_is_alive_while_the_add_stamp_is_set_and_not_older_than_the_remove_stamp) {
-  const auto read = [](const char* text) { return readStamp(text, kNow); };
-  const std::optional<AdoptedLife> added = lifeOf(read("5:0:a"), read(""));
+  const std::optional<AdoptedLife> added = lifeOf("5:0:a", "", kNow);
   REQUIRE(added.has_value());
   CHECK(added->life.alive());
   CHECK(added->life.stamp == stamp(5, 0, "a"));
   CHECK(added->born == stamp(5, 0, "a"));
 
-  const std::optional<AdoptedLife> removed = lifeOf(read("5:0:a"), read("6:0:a"));
+  const std::optional<AdoptedLife> removed = lifeOf("5:0:a", "6:0:a", kNow);
   REQUIRE(removed.has_value());
   CHECK_FALSE(removed->life.alive());
   CHECK(removed->life.stamp == stamp(6, 0, "a"));
   CHECK(removed->born == stamp(5, 0, "a"));
 
-  const std::optional<AdoptedLife> revived = lifeOf(read("7:0:a"), read("6:0:a"));
+  const std::optional<AdoptedLife> revived = lifeOf("7:0:a", "6:0:a", kNow);
   REQUIRE(revived.has_value());
   CHECK(revived->life.alive());
   CHECK(revived->life.stamp == stamp(7, 0, "a"));
 
-  const std::optional<AdoptedLife> tie = lifeOf(read("6:0:a"), read("6:0:a"));
+  const std::optional<AdoptedLife> tie = lifeOf("6:0:a", "6:0:a", kNow);
   REQUIRE(tie.has_value());
   CHECK(tie->life.alive());
 
-  const std::optional<AdoptedLife> removedOnly = lifeOf(read(""), read("6:0:a"));
+  const std::optional<AdoptedLife> removedOnly = lifeOf("", "6:0:a", kNow);
   REQUIRE(removedOnly.has_value());
   CHECK_FALSE(removedOnly->life.alive());
   CHECK(removedOnly->born == kLowestServerStamp);
 
-  const std::optional<AdoptedLife> malformed = lifeOf(read("garbage"), read(""));
+  const std::optional<AdoptedLife> malformed = lifeOf("garbage", "", kNow);
   REQUIRE(malformed.has_value());
   CHECK(malformed->life.alive());
   CHECK(malformed->born == kLowestServerStamp);
 
-  CHECK_FALSE(lifeOf(read(""), read("0:0:")).has_value());
+  CHECK_FALSE(lifeOf("", "0:0:", kNow).has_value());
+}
+
+TEST(a_future_add_or_remove_stamp_keeps_the_life_the_old_server_reads_and_is_replaced_after) {
+  const std::optional<AdoptedLife> shown = lifeOf("4102444800000:0:a", "1740000000000:1:a", kNow);
+  REQUIRE(shown.has_value());
+  CHECK(shown->life.alive());
+  CHECK(shown->life.stamp == stamp(1740000000000, 1, "a"));
+  CHECK(shown->born == kLowestServerStamp);
+
+  const std::optional<AdoptedLife> hidden = lifeOf("1740000000000:2:a", "4102444800000:0:a", kNow);
+  REQUIRE(hidden.has_value());
+  CHECK_FALSE(hidden->life.alive());
+  CHECK(hidden->life.stamp == stamp(1740000000000, 2, "a"));
+  CHECK(hidden->born == stamp(1740000000000, 2, "a"));
 }
 
 TEST(empty_and_malformed_order_keys_become_keys_in_their_place_in_todays_order) {
@@ -266,7 +279,6 @@ TEST(a_deleted_roadmap_and_every_subtree_under_it_are_adopted_as_spent_ids_with_
     CHECK(roadmap->tree.rows.empty());
     CHECK(roadmap->overlays.empty());
   }
-  CHECK(documentsBefore(survey).empty());
 }
 
 TEST(a_subtree_is_read_by_whoever_may_read_its_root_while_every_owning_step_on_its_way_down_is_present) {
@@ -357,7 +369,7 @@ TEST(the_engines_reading_of_the_planned_rows_gives_the_old_servers_document_of_e
   cello.kinds[1] = OldKind{.id = "learn", .added = "3:0:a", .removed = "3:1:a", .hue = held("olive", "3:0:a"),
                            .label = held("Learn", "3:0:a"), .description = held("", ""), .rank = OldRegister{Json::Value(0.0), ""}};
   cello.marks.push_back(OldMark{"owner", "strings", "complete", false, "9:0:a", 1'741'000'000'000});
-  cello.marks.push_back(OldMark{"reader", "bow", "complete", true, "bad", 1'741'000'000'001});
+  cello.marks.push_back(OldMark{"reader", "bow", "complete", true, "9:1:b", 1'741'000'000'001});
   OldRoadmap subtree = root("t_0000000000000002", "owner");
   subtree.parent = read::Parent{"t_0000000000000001", "strings"};
   subtree.root = "t_0000000000000001";
@@ -400,7 +412,60 @@ TEST(the_engines_reading_of_the_planned_rows_gives_the_old_servers_document_of_e
     engine.push_back(std::move(read));
   }
 
-  const std::map<std::string, Document> before = documentsBefore(survey);
+  // The same roadmaps as the old server's repositories hand them over: stored trees, their access and each account's marks.
+  const auto node = [](const char* id, Hlc created, Hlc deleted, const char* order) {
+    NodeStateEntry entry;
+    entry.id = NodeId{std::string(id)};
+    entry.createdAt = created;
+    entry.deletedAt = deleted;
+    entry.label = id;
+    entry.labelAt = created;
+    entry.order = order;
+    entry.orderAt = created;
+    return entry;
+  };
+  const auto kind = [](const char* id, Hlc deleted, NodeColor hue, const char* label, double rank) {
+    KindStateEntry entry;
+    entry.id = KindId{std::string(id)};
+    entry.createdAt = stamp(3, 0, "a");
+    entry.deletedAt = deleted;
+    entry.hue = hue;
+    entry.label = label;
+    entry.rank = rank;
+    return entry;
+  };
+  const auto mark = [](ProgressStatus status, bool outOfOrder, std::uint64_t at) {
+    return ProgressMark{.status = status, .at = stamp(9, 0, "a"), .markedAt = at, .outOfOrder = outOfOrder};
+  };
+  OldReading celloRead{.id = "t_0000000000000001", .forkedFrom = "t_00000000000000aa"};
+  celloRead.stored.title = Lww<std::string>{"A roadmap", Hlc{}};
+  celloRead.stored.guide = Lww<std::string>{"Practise daily", stamp(4, 0, "a")};
+  celloRead.stored.guideInherited = true;
+  celloRead.stored.state.nodes = {node("strings", stamp(5, 0, "a"), Hlc{}, "a0"), node("bow", stamp(5, 1, "a"), Hlc{}, ""),
+                                  node("gone", stamp(5, 2, "a"), stamp(6, 0, "a"), "a5"), node("ghost", Hlc{}, Hlc{}, "a6")};
+  celloRead.stored.state.nodes[1].status = "none";
+  celloRead.stored.state.nodes[1].links = {Link{"", "https://example.com"}};
+  celloRead.stored.state.nodes[1].opens = TreeId{std::string("t_0000000000000003")};
+  celloRead.stored.state.edges = {EdgeStateEntry{Edge{NodeId{std::string("strings")}, NodeId{std::string("bow")}}, stamp(7, 0, "a"), Hlc{}},
+                                  EdgeStateEntry{Edge{NodeId{std::string("bow")}, NodeId{std::string("bow")}}, stamp(7, 1, "a"), Hlc{}},
+                                  EdgeStateEntry{Edge{NodeId{std::string("bow")}, NodeId{std::string("nowhere")}}, stamp(7, 2, "a"), Hlc{}},
+                                  EdgeStateEntry{Edge{NodeId{std::string("strings")}, NodeId{std::string("gone")}}, stamp(7, 3, "a"), stamp(8, 0, "a")}};
+  celloRead.stored.legend.kinds = {kind("build", Hlc{}, NodeColor::terracotta, "Build", 1), kind("learn", stamp(3, 1, "a"), NodeColor::olive, "Learn", 0)};
+  celloRead.stored.subtrees = {{NodeId{std::string("strings")}, TreeId{std::string("t_0000000000000002")}}};
+  celloRead.access = StoredAccess{TreeAccess{UserId{"owner"}, Visibility::public_, TreeId{std::string("t_0000000000000001")}, {}}, true};
+  celloRead.marks["owner"].record(NodeId{std::string("strings")}, mark(ProgressStatus::complete, false, 1'741'000'000'000));
+  celloRead.marks["reader"].record(NodeId{std::string("bow")}, mark(ProgressStatus::complete, true, 1'741'000'000'001));
+  OldReading subtreeRead{.id = "t_0000000000000002"};
+  subtreeRead.stored.state.nodes = {node("open-strings", stamp(5, 3, "a"), Hlc{}, "")};
+  subtreeRead.access = StoredAccess{TreeAccess{UserId{"owner"}, Visibility::public_, TreeId{std::string("t_0000000000000001")},
+                                               {OwningStep{TreeId{std::string("t_0000000000000001")}, NodeId{std::string("strings")}}}},
+                                    true};
+  OldReading musicRead{.id = "t_0000000000000003"};
+  musicRead.stored.title = Lww<std::string>{"A roadmap", Hlc{}};
+  musicRead.access = StoredAccess{TreeAccess{UserId{"owner"}, Visibility::private_, TreeId{std::string("t_0000000000000003")}, {}}, true};
+
+  const std::map<std::string, Document> before =
+      documentsBefore({celloRead, subtreeRead, musicRead}, Expectation{{}, kNow}, std::set<std::string>{"owner", "reader"});
   const std::map<std::string, Document> after = documentsAfter(engine);
   REQUIRE_EQ(before.size(), 3u);
   REQUIRE_EQ(after.size(), 3u);

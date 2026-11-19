@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -40,6 +41,13 @@ struct Summed {
   bool seqHolds = false;
 };
 
+// Every roadmap the old server reads, through its own repositories, and the ids of those it cannot read: it throws on a
+// stamp it cannot parse.
+struct OldReadings {
+  std::vector<OldReading> readings;
+  std::set<std::string> unreadable;
+};
+
 class PgAdoption {
 public:
   // `ownSessions` is the application name of every session this run opens, which counts no session of its own as
@@ -49,6 +57,9 @@ public:
   // Every roadmap of roadmap's own tables, a roadmap stored only as a whole document unfolded into rows as the old server
   // unfolds it, its links as the old server reads them; and every account.
   OldDatabase oldTables();
+
+  // The old server's reading of every roadmap the survey holds, deleted ones answering none as the old server's do.
+  OldReadings oldReadings(const Survey& survey);
 
   // The house account, inserted when absent; false when its address names another account, which stops the move.
   bool houseStands();

@@ -1,6 +1,7 @@
 #include "products/roadmap/adoption/Adoption.h"
 
 #include "platform/domain/sync/FractionalIndex.h"
+#include "products/roadmap/domain/Crdt.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/sync/RoadmapProduct.h"
@@ -70,9 +71,14 @@ const char* stampStateName(StampState state) {
   return "unset";
 }
 
-std::optional<AdoptedLife> lifeOf(const ReadStamp& added, const ReadStamp& removed) {
+std::optional<AdoptedLife> lifeOf(const std::string& addedText, const std::string& removedText, sync::Ms now) {
+  const ReadStamp added = readStamp(addedText, now);
+  const ReadStamp removed = readStamp(removedText, now);
   if (!added.set() && !removed.set()) return std::nullopt;
-  const bool alive = added.set() && !(removed.stamp > added.stamp);
+  const auto asTheOldServerReads = [](const std::string& text) { return text.empty() ? std::optional(Hlc{}) : parseHlc(text); };
+  const std::optional<Hlc> oldAdded = asTheOldServerReads(addedText);
+  const std::optional<Hlc> oldRemoved = asTheOldServerReads(removedText);
+  const bool alive = oldAdded && oldRemoved ? ElementSet{*oldAdded, *oldRemoved}.present() : added.set() && !(removed.stamp > added.stamp);
   return AdoptedLife{Life(alive ? LifeState::alive : LifeState::dead, std::max(added.stamp, removed.stamp)),
                      added.set() ? added.stamp : kLowestServerStamp};
 }
@@ -357,8 +363,7 @@ void Survey::place(const std::string& id) {
     const auto owning = std::find_if(holder.steps.begin(), holder.steps.end(),
                                      [&](const OldStep& step) { return step.id == up[at]->parent->step; });
     const std::optional<AdoptedLife> life =
-        owning == holder.steps.end() ? std::nullopt
-                                     : lifeOf(readStamp(owning->added, expectation_.now), readStamp(owning->removed, expectation_.now));
+        owning == holder.steps.end() ? std::nullopt : lifeOf(owning->added, owning->removed, expectation_.now);
     if (!life) {
       if (at == 0) stop(id, "stop.subtreeOfAStepNoRowHolds");
       surveyed.stands = false;
@@ -430,11 +435,12 @@ private:
     std::vector<OrderedStep> ordered;
     std::map<std::string, AdoptedLife> lives;
     for (const OldStep& step : roadmap_.steps) {
-      const std::optional<AdoptedLife> life = lifeOf(readStamp(step.added, now_), readStamp(step.removed, now_));
+      const std::optional<AdoptedLife> life = lifeOf(step.added, step.removed, now_);
       if (!life) {
         tally_.add("notAdopted.stepsWithNeitherStamp");
         continue;
       }
+      countLife(step.added, step.removed);
       lives.emplace(step.id, *life);
       ordered.push_back(OrderedStep{step.id, text(step.ord.value), life->born});
     }
@@ -485,15 +491,12 @@ private:
         tally_.add("notAdopted.linksToAnIdNoStepHolds");
         continue;
       }
-      const ReadStamp added = readStamp(link.added, now_);
-      const ReadStamp removed = readStamp(link.removed, now_);
-      const std::optional<AdoptedLife> life = lifeOf(added, removed);
+      const std::optional<AdoptedLife> life = lifeOf(link.added, link.removed, now_);
       if (!life) {
         tally_.add("notAdopted.linksWithNeitherStamp");
         continue;
       }
-      tally_.add(std::string("stamps.") + stampStateName(added.state));
-      tally_.add(std::string("stamps.") + stampStateName(removed.state));
+      countLife(link.added, link.removed);
       Json::Value ends(Json::arrayValue);
       ends.append(link.from);
       ends.append(link.to);
@@ -510,11 +513,12 @@ private:
     std::vector<OldKind> kinds;
     std::map<std::string, AdoptedLife> lives;
     for (const OldKind& kind : roadmap_.kinds) {
-      const std::optional<AdoptedLife> life = lifeOf(readStamp(kind.added, now_), readStamp(kind.removed, now_));
+      const std::optional<AdoptedLife> life = lifeOf(kind.added, kind.removed, now_);
       if (!life) {
         tally_.add("notAdopted.kindsWithNeitherStamp");
         continue;
       }
+      countLife(kind.added, kind.removed);
       lives.emplace(kind.id, *life);
       kinds.push_back(kind);
     }
@@ -588,6 +592,12 @@ private:
       tally_.add(reader == surveyed_.owner ? "overlays.owners" : "overlays.readers");
       overlays.push_back(std::move(overlay));
     }
+  }
+
+  // The add and remove stamps of an adopted step, link or kind, by what the move made of each.
+  void countLife(const std::string& added, const std::string& removed) {
+    tally_.add(std::string("lifeStamps.") + stampStateName(readStamp(added, now_).state));
+    tally_.add(std::string("lifeStamps.") + stampStateName(readStamp(removed, now_).state));
   }
 
   // A roadmap holding more than a type's cap stands as it is: the cap binds the next create (engine.md §6.5).

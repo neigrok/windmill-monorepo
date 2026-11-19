@@ -29,9 +29,10 @@ NAMED = [OWNER, READER, SCRIBBLER, "dddddddd-0000-4000-8000-00000000000d", DEMO,
          *[f"t_{prefix}{n:015x}" for prefix in "abcde" for n in range(1, 8)]]
 
 BEFORE = {
-    "documents": {"before": 11},
+    "documents": {"before": 9, "unreadableToday": 2},
     "kept": {"activityLines": 2, "shareCards": 1, "shareVideos": 1},
     "kinds": {"alive": 7, "dead": 1, "rankGivenAKey": 8},
+    "lifeStamps": {"kept": 84, "malformed": 2, "unset": 74},
     "links": {"alive": 27, "dead": 1},
     "marks": {"adopted": 7},
     "notAdopted": {"deletedRoadmaps": 2, "linksFromAStepToItself": 1, "linksToAnIdNoStepHolds": 3, "linksWithNeitherStamp": 1,
@@ -42,7 +43,7 @@ BEFORE = {
     "pointers": {"adopted": 2, "clearedReadAsNone": 1},
     "roadmaps": {"adopted": 11, "roots": 10, "subtrees": 3, "total": 13, "unreadableToday": 2, "wholeDocument": 1},
     "seq": {"continuedAboveAHead": 3},
-    "stamps": {"future": 1, "kept": 170, "malformed": 7, "unset": 249, "unsetHoldingAValue": 9},
+    "stamps": {"future": 1, "kept": 141, "malformed": 6, "unset": 223, "unsetHoldingAValue": 9},
     "steps": {"alive": 41, "dead": 3, "owningASubtree": 2},
     "subtrees": {"hidden": 1, "standing": 1},
     "values": {"markStatusReadAsNone": 1, "statusReadAsNone": 1, "unknownColorReadAsTerracotta": 1},
@@ -146,7 +147,7 @@ class AdoptionTest(ToolTest):
         self.assertEqual(counts["before"], BEFORE)
         self.assertEqual(counts["adopt"], {**ADOPTED, "adopted": {"owners": 4, "roadmaps": 13}})
         self.assertEqual(counts["demo"], {})
-        self.assertEqual(counts["after"], {"roadmaps": {"same": 11}, "spentIds": {"held": 2}})
+        self.assertEqual(counts["after"], {"roadmaps": {"same": 9, "unreadableToday": 2}, "spentIds": {"held": 2}})
         self.assertEqual(counts["read-models"], READ_MODELS)
         self.assertEqual(counts["digests"], {"scopes": {"digestHolds": 20, "summed": 20}})
         self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", report["verdict"]) for stage, report in zip(STAGES, reports)])
@@ -156,8 +157,10 @@ class AdoptionTest(ToolTest):
                           "read-models.jsonl", "stops.jsonl"])
         for path in self.private.iterdir():
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(len((self.private / "before.jsonl").read_text().splitlines()), 11)
-        self.assertEqual((self.private / "before.jsonl").read_text(), (self.private / "after.jsonl").read_text())
+        before = (self.private / "before.jsonl").read_text().splitlines()
+        after = (self.private / "after.jsonl").read_text().splitlines()
+        self.assertEqual((len(before), len(after)), (9, 11))
+        self.assertEqual([line for line in after if line in before], before)
 
         adopted = self.engine(url)
         again, reports = self.run_tool(url, "all")

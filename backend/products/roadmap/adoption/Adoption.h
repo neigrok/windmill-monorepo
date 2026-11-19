@@ -163,13 +163,16 @@ struct ReadStamp {
 ReadStamp readStamp(const std::string& text, sync::Ms now);
 const char* stampStateName(StampState state);
 
-// A step's, a link's or a kind's life: alive when its add stamp is set and not older than its remove stamp, dead when
-// the remove stamp is newer, at the greater of the two; born at its add stamp. None when neither is set.
+// A step's, a link's or a kind's life, from its add and remove stamps' texts: alive when the add stamp is set and not
+// older than the remove stamp, dead when the remove stamp is newer, decided on the stamps as the old server reads them
+// (ElementSet::present), a future one included, before either is replaced, and on the replaced stamps where the old server
+// cannot parse one. Its life's stamp is the greater of the two as kept or replaced, and it is born at its add stamp, or
+// at the lowest server stamp where only the remove stamp is set. None when neither is set.
 struct AdoptedLife {
   sync::Life life;
   sync::Stamp born;
 };
-std::optional<AdoptedLife> lifeOf(const ReadStamp& added, const ReadStamp& removed);
+std::optional<AdoptedLife> lifeOf(const std::string& added, const std::string& removed, sync::Ms now);
 
 // Today's order of a roadmap's steps, `(ord, created, id)` with an empty key first, as order keys: a key that is one is
 // kept, and an empty or malformed one becomes a key in the same place among them. Throws sync::OrderKeyError where no

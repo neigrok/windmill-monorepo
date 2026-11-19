@@ -3,11 +3,14 @@
 #include "products/roadmap/adoption/Adoption.h"
 #include "products/roadmap/domain/read/RoadmapAccount.h"
 #include "products/roadmap/domain/read/RoadmapTree.h"
+#include "products/roadmap/domain/Tree.h"
+#include "products/roadmap/ports/TreeRepository.h"
 
 #include <json/json.h>
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -83,10 +86,23 @@ inline constexpr const char* kSections[]{"owner", "title", "guide", "place", "vi
 // The parts in which `after` differs from `before`, in kSections' order.
 std::vector<std::string> differences(const Document& before, const Document& after);
 
-// The old server's reading of every roadmap the survey adopts, by id: each register's value as roadmap's tables hold it
-// and as the old server reads it (a colour it does not know as terracotta, active and inProgress as none, a link as its
-// lenient reading of it), each record's life by §8.1, and today's order. What the move does not adopt is not in it.
-std::map<std::string, Document> documentsBefore(const Survey& survey);
+// One roadmap as the old server reads it, through its own repositories: the tree it stores (PgTreeRepository::load), who
+// may read it and whether its branch stands (loadAccess), the copy it was forked from, and each account's marks on it
+// (PgProgressRepository::load). A roadmap the old server cannot read has none.
+struct OldReading {
+  std::string id;
+  StoredTree stored;
+  StoredAccess access;
+  std::optional<std::string> forkedFrom;
+  std::map<std::string, Progress> marks;
+};
+
+// The old server's reading of every roadmap it reads, by id, owned by its account, or by the house account where the move
+// was told to expect it with none. Nothing of the move's rules is in it: a record's life is its element set's (present
+// while added and not removed after), a step or a kind a record with a stamp, a link one the old server reads between
+// two of its steps (liveEdges: never from a step to itself), and the order of steps and kinds today's.
+std::map<std::string, Document> documentsBefore(const std::vector<OldReading>& readings, const Expectation& expectation,
+                                                const std::set<std::string>& accounts);
 
 // One roadmap as the engine's tables hold it, read through the binding: its records with its owner's marks and pointers,
 // its owner, the copy it was forked from, and the marks of every other account that keeps an overlay of it.

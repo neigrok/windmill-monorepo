@@ -1,5 +1,6 @@
 #include "products/roadmap/adoption/Audit.h"
 
+#include "products/roadmap/domain/Crdt.h"
 #include "products/roadmap/domain/Tree.h"
 
 #include <algorithm>
@@ -11,10 +12,6 @@
 namespace wm::roadmap::adoption {
 
 namespace {
-
-std::string text(const Json::Value& value) { return value.isString() ? value.asString() : ""; }
-
-std::string colorName(const std::string& value) { return std::string(toString(parseColor(value).value_or(NodeColor::terracotta))); }
 
 bool sameLinks(const std::vector<read::StepLink>& a, const std::vector<read::StepLink>& b) {
   return std::equal(a.begin(), a.end(), b.begin(), b.end(),
@@ -54,12 +51,6 @@ Json::Value linksJson(const std::vector<read::StepLink>& links) {
     out.append(entry);
   }
   return out;
-}
-
-std::vector<read::StepLink> linksOf(const Json::Value& links) {
-  std::vector<read::StepLink> read;
-  for (const Json::Value& link : links) read.push_back(read::StepLink{text(link["url"]), text(link["label"])});
-  return read;
 }
 
 void sortMarks(std::vector<DocMark>& marks) {
@@ -166,66 +157,68 @@ std::vector<std::string> differences(const Document& before, const Document& aft
   return differ;
 }
 
-std::map<std::string, Document> documentsBefore(const Survey& survey) {
-  const sync::Ms now = survey.expectation().now;
-  const auto life = [now](const std::string& added, const std::string& removed) { return lifeOf(readStamp(added, now), readStamp(removed, now)); };
+std::map<std::string, Document> documentsBefore(const std::vector<OldReading>& readings, const Expectation& expectation,
+                                                const std::set<std::string>& accounts) {
   std::map<std::string, Document> documents;
-  for (const auto& [id, surveyed] : survey.roadmaps()) {
-    if (surveyed.deleted) continue;
-    const OldRoadmap& roadmap = *surveyed.roadmap;
-    Document document{.id = id, .owner = surveyed.owner.str(), .title = text(roadmap.title.value), .guide = text(roadmap.guide.value),
-                      .guideInherited = roadmap.guideInherited, .forkedFrom = roadmap.forkedFrom.value_or(""), .root = roadmap.root,
-                      .parent = roadmap.parent, .depth = roadmap.depth, .visibility = surveyed.visibility, .reach = surveyed.reach,
-                      .stands = surveyed.stands};
+  for (const OldReading& reading : readings) {
+    const StoredTree& stored = reading.stored;
+    const TreeAccess& access = reading.access.access;
+    std::string owner;
+    if (access.owner && accounts.contains(access.owner->str())) owner = access.owner->str();
+    else if (expectation.ownerless.contains(access.root.str())) owner = kHouseAccount.str();
+    std::optional<read::Parent> parent;
+    if (const std::optional<OwningStep> place = access.parent()) parent = read::Parent{place->tree.str(), place->step.str()};
+    const std::string visibility = toString(access.visibility);
+    Document document{.id = reading.id, .owner = owner, .title = stored.title.value, .guide = stored.guide.value,
+                      .guideInherited = stored.guideInherited, .forkedFrom = reading.forkedFrom.value_or(""), .root = access.root.str(),
+                      .parent = parent, .depth = static_cast<std::int64_t>(access.path.size()), .visibility = visibility,
+                      .reach = reading.access.stands ? visibility : "private", .stands = reading.access.stands};
 
-    struct Today {
-      DocStep step;
-      std::string ord;
-      Hlc created;
-    };
-    std::vector<Today> steps;
-    std::set<std::string> held;
-    for (const OldStep& step : roadmap.steps) {
-      const std::optional<AdoptedLife> read = life(step.added, step.removed);
-      if (!read) continue;
-      held.insert(step.id);
-      const auto owned = surveyed.branches.find(step.id);
-      steps.push_back(Today{DocStep{.id = step.id, .present = read->life.alive(), .label = text(step.label.value), .icon = text(step.icon.value),
-                                    .color = colorName(text(step.color.value)),
-                                    .status = step.status.value.isString() ? *normalizeSeedStatus(step.status.value.asString()) : "none",
-                                    .description = text(step.description.value), .links = linksOf(step.links.value),
-                                    .opens = text(step.opens.value), .branch = owned == surveyed.branches.end() ? "" : owned->second},
-                            text(step.ord.value), read->born});
+    std::vector<const NodeStateEntry*> today;
+    for (const NodeStateEntry& node : stored.state.nodes) {
+      if (node.createdAt.isSet() || node.deletedAt.isSet()) today.push_back(&node);
     }
-    std::sort(steps.begin(), steps.end(),
-              [](const Today& a, const Today& b) { return std::tie(a.ord, a.created, a.step.id) < std::tie(b.ord, b.created, b.step.id); });
-    for (Today& step : steps) document.steps.push_back(std::move(step.step));
+    std::sort(today.begin(), today.end(), [](const NodeStateEntry* a, const NodeStateEntry* b) {
+      return std::tie(a->order, a->createdAt, a->id) < std::tie(b->order, b->createdAt, b->id);
+    });
+    std::set<std::string> held;
+    for (const NodeStateEntry* node : today) {
+      held.insert(node->id.str());
+      std::vector<read::StepLink> links;
+      for (const Link& link : node->links) links.push_back(read::StepLink{link.url, link.label});
+      const auto owned = stored.subtrees.find(node->id);
+      document.steps.push_back(DocStep{.id = node->id.str(), .present = ElementSet{node->createdAt, node->deletedAt}.present(),
+                                       .label = node->label, .icon = node->icon, .color = std::string(toString(node->color)),
+                                       .status = node->status.value_or("none"), .description = node->description, .links = links,
+                                       .opens = node->opens.str(), .branch = owned == stored.subtrees.end() ? "" : owned->second.str()});
+    }
 
-    for (const OldLink& link : roadmap.links) {
-      const std::optional<AdoptedLife> read = life(link.added, link.removed);
-      if (!read || link.from == link.to || !held.contains(link.from) || !held.contains(link.to)) continue;
-      document.links.push_back(DocLink{link.from, link.to, read->life.alive()});
+    for (const EdgeStateEntry& edge : stored.state.edges) {
+      const bool recorded = edge.addedAt.isSet() || edge.removedAt.isSet();
+      if (!recorded || edge.edge.from == edge.edge.to || !held.contains(edge.edge.from.str()) || !held.contains(edge.edge.to.str())) continue;
+      document.links.push_back(DocLink{edge.edge.from.str(), edge.edge.to.str(), ElementSet{edge.addedAt, edge.removedAt}.present()});
     }
     sortLinks(document.links);
 
-    std::vector<std::pair<double, DocKind>> kinds;
-    for (const OldKind& kind : roadmap.kinds) {
-      const std::optional<AdoptedLife> read = life(kind.added, kind.removed);
-      if (!read) continue;
-      const double rank = kind.rank.value.isNumeric() ? kind.rank.value.asDouble() : 0;
-      kinds.emplace_back(std::isnan(rank) ? std::numeric_limits<double>::infinity() : rank,
-                         DocKind{kind.id, read->life.alive(), colorName(text(kind.hue.value)), text(kind.label.value), text(kind.description.value)});
+    std::vector<const KindStateEntry*> kinds;
+    for (const KindStateEntry& kind : stored.legend.kinds) {
+      if (kind.createdAt.isSet() || kind.deletedAt.isSet()) kinds.push_back(&kind);
     }
-    std::sort(kinds.begin(), kinds.end(), [](const auto& a, const auto& b) { return std::tie(a.first, a.second.id) < std::tie(b.first, b.second.id); });
-    for (auto& [rank, kind] : kinds) document.kinds.push_back(std::move(kind));
+    const auto rank = [](const KindStateEntry* kind) { return std::isnan(kind->rank) ? std::numeric_limits<double>::infinity() : kind->rank; };
+    std::sort(kinds.begin(), kinds.end(), [&](const KindStateEntry* a, const KindStateEntry* b) {
+      return std::pair(rank(a), a->id) < std::pair(rank(b), b->id);
+    });
+    for (const KindStateEntry* kind : kinds)
+      document.kinds.push_back(DocKind{kind->id.str(), ElementSet{kind->createdAt, kind->deletedAt}.present(), std::string(toString(kind->hue)),
+                                       kind->label, kind->description});
 
-    for (const OldMark& mark : roadmap.marks) {
-      if (!survey.accounts().contains(mark.account)) continue;
-      const bool complete = parseProgressStatus(mark.status).value_or(ProgressStatus::none) == ProgressStatus::complete;
-      document.marks.push_back(DocMark{mark.account, mark.step, complete ? "complete" : "none", complete && mark.outOfOrder, mark.recordedAt});
+    for (const auto& [account, progress] : reading.marks) {
+      for (const auto& [step, mark] : progress.marks)
+        document.marks.push_back(DocMark{account, step.str(), progressStatusName(mark.status), mark.outOfOrder,
+                                         static_cast<std::int64_t>(mark.markedAt)});
     }
     sortMarks(document.marks);
-    documents.emplace(id, std::move(document));
+    documents.emplace(reading.id, std::move(document));
   }
   return documents;
 }

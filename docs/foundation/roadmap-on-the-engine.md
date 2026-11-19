@@ -331,9 +331,11 @@ tables, stopping where they differ from those it planned from.
   computes (`reach`, `root`, `parent`, `depth`, `forkedFrom`, `branch`), and each `tree` record's
   born and life.
 - **Life.** A step, link or kind is alive when its add stamp is set and not older than its remove
-  stamp, and dead when the remove stamp is the newer; its life's stamp is the greater of the two,
-  and it is born at its add stamp, or at the lowest server stamp where only the remove stamp is set.
-  A row with neither set is not adopted.
+  stamp, and dead when the remove stamp is the newer, decided on the two as the old server reads
+  them, a future one included, so each keeps the life a person sees today; only then is a stamp
+  replaced. Its life's stamp is the greater of the two as kept or replaced, and it is born at its add
+  stamp, or at the lowest server stamp where only the remove stamp is set. Every life stamp is
+  counted by what became of it. A row with neither set is not adopted.
 - **Sequence.** Each tree scope's `seq` continues above the roadmap's present head and its activity's
   last `seq`, so the activity feed's cursor, tending's runs and MCP's `expectedSeq` stay in order.
   `tree_ops` is kept as it is.
@@ -364,7 +366,8 @@ tables, stopping where they differ from those it planned from.
   parent row, a loop, another root, depth or owner, past `MAX_DEPTH`, no owning step row), a root
   that names another root or a depth, a visibility outside the three, and a whole document the old
   server's reading refuses.
-- **The audit.** Before the move, the old server writes one document a roadmap: title, guide,
+- **The audit.** Before the move, the old server writes one document a roadmap, read through its
+  own repositories and its own reading of a record's life, never the move's rules: title, guide,
   place, steps with fields and life, links, kinds, every account's marks with their times,
   visibility, and who may read each subtree. After it, the new server's tables must give the same
   document, and the MCP read tools, the owner's progress, the share page, the gallery, reminders'
@@ -372,7 +375,7 @@ tables, stopping where they differ from those it planned from.
   design: MCP's `seq`, which continues above the old one; a step's order key, the order itself being
   compared (MCP's steps by id); a mark's stamp, its time being compared; and what each subtree has
   come to, which the engine's progress answer adds. A roadmap holding a stamp the old server cannot
-  parse is unreadable to it today, and its answers are counted apart. Every scope's digest sums, and
+  parse is unreadable to it today: it has no document, and its answers are counted apart. Every scope's digest sums, and
   a second run changes nothing. What browsers hold is not proven by it.
 - A failure before writes resume restores the backup. After that the move goes forward only.
 

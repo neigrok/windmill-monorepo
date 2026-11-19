@@ -3,6 +3,8 @@
 #include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/adapters/postgres/PgProgressRepository.h"
+#include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 #include "products/roadmap/application/RoadmapRows.h"
 
 #include <pqxx/pqxx>
@@ -248,6 +250,28 @@ std::uint64_t PgAdoption::otherSessions() {
   return txn.exec("select count(*) from pg_stat_activity where datname = current_database() and backend_type = 'client backend' "
                   "and pid <> pg_backend_pid() and application_name is distinct from $1",
                   pqxx::params{ownSessions_})[0][0].as<std::uint64_t>();
+}
+
+OldReadings PgAdoption::oldReadings(const Survey& survey) {
+  PgTreeRepository trees(pool_);
+  PgProgressRepository progress(pool_);
+  OldReadings read;
+  for (const auto& [id, surveyed] : survey.roadmaps()) {
+    try {
+      const std::optional<StoredTree> stored = trees.load(TreeId{id});
+      const std::optional<StoredAccess> access = trees.loadAccess(TreeId{id});
+      if (!stored || !access) continue;
+      OldReading reading{.id = id, .stored = *stored, .access = *access, .forkedFrom = surveyed.roadmap->forkedFrom};
+      for (const OldMark& mark : surveyed.roadmap->marks) {
+        if (survey.accounts().contains(mark.account) && !reading.marks.contains(mark.account))
+          reading.marks.emplace(mark.account, progress.load(TreeId{id}, UserId{mark.account}));
+      }
+      read.readings.push_back(std::move(reading));
+    } catch (const std::invalid_argument&) {
+      read.unreadable.insert(id);
+    }
+  }
+  return read;
 }
 
 bool PgAdoption::houseStands() {

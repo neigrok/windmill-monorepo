@@ -90,7 +90,8 @@ StageReport Cutover::run(const std::string& stage) {
 // The old server's reading of every roadmap, one document each, what the move would count, and whether anything stops it.
 StageReport Cutover::before() {
   const Survey survey(adoption_.oldTables(), expectation_);
-  const std::map<std::string, Document> documents = documentsBefore(survey);
+  const OldReadings old = adoption_.oldReadings(survey);
+  const std::map<std::string, Document> documents = documentsBefore(old.readings, expectation_, survey.accounts());
   record_.write("before.jsonl", linesOf(documents));
   std::vector<Json::Value> stops;
   for (const auto& [roadmap, reason] : survey.stoppedBy()) {
@@ -105,6 +106,7 @@ StageReport Cutover::before() {
   report.counts += survey.stops();
   report.counts += plan(survey).tally;
   report.counts.add("documents.before", documents.size());
+  report.counts.add("documents.unreadableToday", old.unreadable.size());
   return report;
 }
 
@@ -162,11 +164,12 @@ StageReport Cutover::demo() {
   return report;
 }
 
-// Every roadmap the move adopts, read back through the binding and the read domain and compared with the old server's
-// reading of it; each deleted one's id spent.
+// Every roadmap the move adopts, read back through the binding and the read domain and compared with the old server's own
+// reading of it, one it cannot read counted apart; each deleted one's id spent.
 StageReport Cutover::after() {
   const Survey survey(adoption_.oldTables(), expectation_);
-  const std::map<std::string, Document> before = documentsBefore(survey);
+  const OldReadings old = adoption_.oldReadings(survey);
+  const std::map<std::string, Document> before = documentsBefore(old.readings, expectation_, survey.accounts());
   std::map<std::string, Document> after;
   for (const UserId& owner : adoption_.owners()) after.merge(documentsAfter(adoption_.roadmapsOf(owner)));
   record_.write("after.jsonl", linesOf(after));
@@ -191,7 +194,8 @@ StageReport Cutover::after() {
     differ.push_back(line);
   }
   for (const auto& [id, document] : after) {
-    if (!before.contains(id)) report.counts.add("roadmaps.inTheEngineAlone");
+    if (old.unreadable.contains(id)) report.counts.add("roadmaps.unreadableToday");
+    else if (!before.contains(id)) report.counts.add("roadmaps.inTheEngineAlone");
   }
   for (const auto& [id, roadmap] : survey.roadmaps()) {
     if (roadmap.deleted) report.counts.add(adoption_.adopted(id) ? "spentIds.held" : "spentIds.missing");

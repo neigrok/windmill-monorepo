@@ -9,8 +9,10 @@ the roadmaps' ids, which do not change.
 
 - `Adoption` is the move's domain: roadmap's rows as the move reads them, §8.1's rules, the `Survey` that decides each
   roadmap's owner, place, standing and reach and what stops the move, and the `Plan` of every scope it writes.
-- `Audit` is the audit's document: one a roadmap, built from roadmap's tables (`documentsBefore`) and from the engine's
-  records through the binding and the read domain (`documentsAfter`), and the parts in which two differ.
+- `Audit` is the audit's document: one a roadmap, built from the old server's own reading of it — its repositories
+  (`PgTreeRepository`, `PgProgressRepository`) and its graph's element sets, never the move's rules (`documentsBefore`) —
+  and from the engine's records through the binding and the read domain (`documentsAfter`), and the parts in which two
+  differ.
 - `PgAdoption` reads roadmap's tables whole, writes one owner's plan in one transaction through the binding's stores,
   reads the engine back, and sums every scope's digest.
 - `ReadModels` asks one server's read models the audit's questions — MCP's reads, the progress and activity routes, the
@@ -71,8 +73,9 @@ state.
 The document holds what a person and a reader see of a roadmap — its owner, title, guide, place, steps with their
 fields and life, links, kinds, every account's marks with when the server received them, its visibility, who may read
 it and whether it stands — and never a stamp or an order key, which the move may give: the order is the documents'
-order of steps and kinds. The read models' answers leave out what §8.1 names as changed by design (`ReadModels.h`); a
-roadmap the old server cannot read today, which throws on its stamps (`roadmapStamp`), is counted as `unreadableToday`.
+order of steps and kinds. The read models' answers leave out what §8.1 names as changed by design (`ReadModels.h`). A
+roadmap the old server cannot read today, which throws on its stamps (`roadmapStamp`), has no document; it and its
+answers are counted as `unreadableToday`.
 
 ## Tests
 
