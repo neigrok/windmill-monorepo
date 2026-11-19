@@ -189,6 +189,20 @@ class Device {
     await this.page.locator('.st-board-step-layer article').waitFor({ state: 'detached' });
   }
 
+  // The connection cut once the service worker controls the page and has primed the offline shell, so the room's
+  // lazy chunks still load: the run waits for what a person's second visit already has.
+  async offline() {
+    const end = Date.now() + 30_000;
+    const ready = () => this.page.evaluate(async () => !!navigator.serviceWorker.controller
+      && !!(await (await (await caches.open('windmill-shell-v2')).match('/offline-generation'))?.json()));
+    while (!await ready()) {
+      if (Date.now() > end) throw new Error('the offline shell was not primed within 30 s');
+      await settle(100);
+    }
+    await this.context.setOffline(true);
+    await settle(500);
+  }
+
   async rename(label, name) {
     const step = await this.openStep(label);
     await step.getByRole('button', { name: 'Edit name', exact: true }).click();
@@ -271,8 +285,7 @@ async function scenarios(mode, browser, secret, account, check) {
     const b = await Device.open(browser, secret);
     devices.push(b);
     await check('edits made with no connection stand on the device, and another device shows them once it returns', async () => {
-      await a.context.setOffline(true);
-      await settle(500);
+      await a.offline();
       const course = await a.openStep('Choose a course');
       await course.getByRole('button', { name: 'Complete', exact: true }).click();
       await a.closeStep();
@@ -287,8 +300,7 @@ async function scenarios(mode, browser, secret, account, check) {
     devices.push(c);
     await check(mode === 'on' ? 'INV-1: a step changed without knowing of its delete comes back, renamed, on every device'
       : 'today: a step renamed without knowing of its delete stays deleted', async () => {
-      await a.context.setOffline(true);
-      await settle(500);
+      await a.offline();
       await b.board(address);
       await b.deleteStep('Leave the dock');
       assert.ok(await c.until(address, async () => await c.card('Leave the dock').count() === 0), 'the delete reached the server');
@@ -301,8 +313,7 @@ async function scenarios(mode, browser, secret, account, check) {
     await a.board(address);
     if (mode === 'on') {
       await check('§6: a step linked offline to a step another device deleted is told once what it follows now, and a revival the device never saw is not', async () => {
-        await a.context.setOffline(true);
-        await settle(500);
+        await a.offline();
         await a.create('Trim the sail', /Read the wind/);
         await b.board(address);
         await b.deleteStep('Read the wind');
@@ -359,8 +370,7 @@ async function scenarios(mode, browser, secret, account, check) {
       const knotAddress = `#/app/${knot}`;
       assert.equal((await a.accountMenu()).some((row) => row.startsWith('Kept here')), false, 'nothing is kept before');
       await a.board(knotAddress);
-      await a.context.setOffline(true);
-      await settle(500);
+      await a.offline();
       await a.rename('Tie a bowline', 'Tie a running bowline');
       await b.board(knotAddress);
       await b.deleteFromSwitcher('Learn to knot');
