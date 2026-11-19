@@ -299,9 +299,11 @@ export class CarryOver {
   }
 
   // Whether the server holds a roadmap under `id`, as the engine's pull of its tree answers: `held` where it serves its
-  // records, `spent` where the roadmap is gone, `none` where it serves nothing of it, or null with no answer.
+  // records, `spent` where the roadmap is gone, `none` where it serves nothing of it, or null with no answer. The tree is
+  // let go only from the replica that took it up: once another stands, the engine keeps it for the page.
   async ask(engine, id) {
     const scope = RoadmapScopes.tree(id);
+    const binding = engine.activeBinding();
     try {
       if (await engine.subscribe(scope) === 'gone') return 'spent';
       if (!await this.pulled(engine, [scope])) return null;
@@ -314,7 +316,7 @@ export class CarryOver {
       this.report('roadmap-carry-read', error, { store: 'server', ...failureTags(error) });
       return null;
     } finally {
-      await engine.unsubscribe(scope).catch(() => {});
+      if (engine.activeBinding() === binding) await engine.unsubscribe(scope).catch(() => {});
     }
   }
 
@@ -376,7 +378,7 @@ export class CarryOver {
       const parts = [...roadmap.changes(fate.to, ledger, knows, opened), ...workspace.parts];
       return { ...await this.write(engine, runner, binding, roadmap.id, parts, { ...entry, frontier: roadmap.frontier(ledger), kept: workspace.kept }), awaiting: fate.awaiting === true };
     } finally {
-      if (signedIn) await engine.unsubscribe(scope).catch(() => {});
+      if (signedIn && engine.activeBinding() === binding) await engine.unsubscribe(scope).catch(() => {});
     }
   }
 

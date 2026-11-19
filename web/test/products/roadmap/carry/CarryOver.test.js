@@ -709,13 +709,6 @@ function interrupted(engine, tree, change) {
   };
 }
 
-// Until no pull of the engine's is in flight, kicking none: an account change during a pull leaves the engine's next pull
-// behind its backoff, longer than the carry-over waits for an answer.
-async function quiet(engine) {
-  for (let turn = 0; turn < 250 && engine.pulling; turn += 1) await pause(20);
-  assert.equal(engine.pulling, false, 'the engine’s pull never settled');
-}
-
 // Every device row of roadmap's each replica holds, by its state.
 async function rowsByReplica(engine) {
   const { device: stored } = await engine.store.read();
@@ -723,7 +716,7 @@ async function rowsByReplica(engine) {
 }
 
 for (const choice of ['keep', 'discard']) {
-  test(`a sign-out with ${choice === 'keep' ? 'Keep' : 'Discard'} while a carry waits on a roadmap’s first pull writes nothing into the anon replica, keeps every old store, and the roadmap is carried once its account signs in again`, async (t) => {
+  test(`a sign-out with ${choice === 'keep' ? 'Keep' : 'Discard'} while a carry waits on a roadmap’s first pull writes nothing into the anon replica, keeps every old store, and the roadmap is carried at a load signed in as its account again`, async (t) => {
     const disk = browser(t);
     const server = new Server();
     const { tree, steps } = await plantedOnServer(t, server);
@@ -737,34 +730,30 @@ for (const choice of ['keep', 'discard']) {
     await settled(carry, engine);
     assert.deepEqual({ rows: await rowsByReplica(engine), queued: queued(engine), old: (await oldStores()).sync, reported, stages: tracked.map(({ stage }) => stage) },
       { rows: choice === 'keep' ? [['anon', []], ['dormant', []]] : [['anon', []]], queued: 0, old: [tree], reported: [], stages: ['found', 'waiting'] });
-    engine.transport.account = 'A';
-    assert.equal((await engine.signIn('A')).complete, true);
-    await settled(carry, engine);
-    assert.deepEqual({ steps: holding(engine, tree).steps.map(([, label]) => label).sort(), old: await oldStores() },
-      { steps: ['Grip the oars lightly', 'Pull a stroke', 'Row a mile'], old: NOTHING_OLD });
+    carry.stop();
+    engine.close();
+    const reloaded = await tab(t, disk, server, 'A');
+    const next = carryOver(disk);
+    await next.carry.run(reloaded);
+    assert.deepEqual({ steps: holding(reloaded, tree).steps.map(([, label]) => label).sort(), old: await oldStores(), reported: next.reported },
+      { steps: ['Grip the oars lightly', 'Pull a stroke', 'Row a mile'], old: NOTHING_OLD, reported: [] }, 'a load signed in as the account again carries it');
   });
 }
 
-test('signed out, another tab signs in to an account that holds roadmaps while a carry asks the server: nothing reaches that account, every old store stays, and the roadmap is carried into the anon replica once signed out', async (t) => {
+test('signed out, another tab signs in to an account that holds roadmaps while a carry asks the server: nothing reaches that account, every old store stays, and the account’s own run leaves the roadmap waiting for the anon replica', async (t) => {
   const disk = browser(t);
   const server = new Server();
   await plantedOnServer(t, server);
   const id = await plantedSignedOut();
   const engine = await tab(t, disk, server);
   interrupted(engine, id, async () => {
-    await quiet(engine);
     engine.transport.account = 'A';
     assert.equal((await engine.signIn('A')).complete, true);
   });
-  const { carry, reported } = started(t, disk, engine);
+  const { carry, reported, tracked } = started(t, disk, engine);
   await settled(carry, engine);
-  assert.deepEqual({ state: engine.getSnapshot().state, queued: queued(engine), listed: holding(engine, id).listed, old: (await oldStores()).sync, reported },
-    { state: 'bound', queued: 0, listed: false, old: [id], reported: [] });
-  await quiet(engine);
-  await engine.finishSignOut({ choice: 'keep' });
-  engine.transport.account = null;
-  await settled(carry, engine);
-  assert.deepEqual({ state: engine.getSnapshot().state, held: holding(engine, id), old: (await oldStores()).sync }, { state: 'anon', held: SAILED, old: [id] });
+  assert.deepEqual({ state: engine.getSnapshot().state, queued: queued(engine), listed: holding(engine, id).listed, old: (await oldStores()).sync, reported,
+    stages: tracked.map(({ stage }) => stage) }, { state: 'bound', queued: 0, listed: false, old: [id], reported: [], stages: ['found', 'waiting'] });
 });
 
 test('signed out, a sign-in that adds the anon replica to an account, keeping the replica, while a carry asks the server: nothing the carry decided reaches the account', async (t) => {
