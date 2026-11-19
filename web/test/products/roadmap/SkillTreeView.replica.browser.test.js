@@ -22,6 +22,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 const registryJson = readFileSync(new URL('../../../../packages/api-contract/sync/roadmap.registry.json', import.meta.url), 'utf8');
 const registry = new Registry(JSON.parse(registryJson));
 const TREE = 't_5a11000000000001';
+const KNOT = 't_5a11000000000002';
 const GENESIS = [['build', 'terracotta', 'Build', 'Things you make', 'a0'], ['learn', 'olive', 'Learn', 'Things you figure out', 'a1'],
   ['milestone', 'gold', 'Milestone', 'Moments that matter', 'a2']];
 const STEPS = [['course', 'Choose a course', []], ['wind', 'Read the wind', ['course']], ['dock', 'Leave the dock', ['wind']]];
@@ -88,6 +89,11 @@ if (params.has('seed')) {
     if (turn === 200) throw new Error('the seed never settled');
     await new Promise((settle) => setTimeout(settle, 50));
   }
+}
+if (params.has('knot')) {
+  await engine.commit('self/roadmap', [{ op: 'create', t: 'tree', id: ${JSON.stringify(KNOT)} }]);
+  await engine.commit('tree/' + ${JSON.stringify(KNOT)}, [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Learn to knot' } },
+    { op: 'create', t: 'node', id: 'bowline', f: { label: 'Tie a bowline', ord: 'a0' } }], { atomic: true });
 }
 window.served = await (await fetch('/v1/trees/' + tree)).json().then((body) => body.data);
 const scope = new DocumentDataScope({ invalidate: () => stepDraftSession(document, { create: false })?.invalidate() });
@@ -218,8 +224,7 @@ test('an owner’s roadmap opens from the replica, and again from the device’s
     const lattice = await readRoom(today, { account: 'u_owner', replica: false, address: `#/app/${TREE}` });
     assert.deepEqual(online.columns, ['locked: Leave the dock', 'upNext: Read the wind', 'done: Choose a course']);
     assert.deepEqual(lattice.failures, []);
-    // The one difference is the read-only room's: the step document's Tree section offers no control while no write lands.
-    assert.deepEqual(online, { ...lattice, step: lattice.step.replace('Tree\nNone\n', '') });
+    assert.deepEqual(online, lattice);
     assert.deepEqual(fromCopy, { ...online, status: { line: 'Offline · changes will sync', short: 'Offline', icon: 'offline', narrow: 'icon', connectivity: 'offline' },
       events: [...online.events.slice(0, 1), 'roadmap_sync_offline {"step":"shown","pending":"0"}', ...online.events.slice(1)] });
   } finally {
@@ -289,7 +294,7 @@ test('with the switch on the owner’s marks and workspace land on the device’
     const onCopy = await markAndNote(replica, { replica: true });
     const lattice = await markAndNote(today, { replica: false });
     assert.deepEqual(onCopy.columns, ['locked: ', 'upNext: Leave the dock', 'done: Read the wind, Choose a course']);
-    assert.deepEqual(onCopy, { ...lattice, step: lattice.step.replace('Tree\nNone\n', '') });
+    assert.deepEqual(onCopy, lattice);
     await reachesServer(() => serverRows(`overlay/${TREE}`).some((row) => row.t === 'progress' && row.id === 'wind')
       && serverRows(`overlay/${TREE}`).some((row) => row.t === 'subtask'));
   } finally {
@@ -369,5 +374,44 @@ test('with the switch on the owner’s step gestures, their toasts’ Undo and t
   } finally {
     await replica.close();
     await today.close();
+  }
+});
+
+test('with the switch on the step document’s Tree section lists the person’s roadmaps from the device’s copy and attaches one, with its Undo', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    const failures = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+    await page.goto(`${origin}/room?account=u_owner&replica=on&knot=1#/app/${TREE}`);
+    await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
+    const step = page.getByRole('article', { name: 'Leave the dock', exact: true });
+    await step.getByRole('button', { name: 'Attach a tree' }).click();
+    const picker = page.getByRole('dialog', { name: 'Attach a tree' });
+    await picker.getByRole('radio', { name: /Learn to knot/ }).click();
+    const choices = await picker.getByRole('radio').allInnerTexts();
+    await picker.getByRole('button', { name: 'Attach', exact: true }).click();
+    const toast = page.locator('.st-board-toast');
+    await toast.getByText('Tree attached', { exact: true }).waitFor();
+    await step.getByText('Learn to knot').first().waitFor();
+    await toast.getByRole('button', { name: 'Undo', exact: true }).click();
+    await step.getByText('Learn to knot').first().waitFor({ state: 'detached' });
+    const told = await page.evaluate(() => ({ events: window.events.filter(({ name }) => name === 'roadmap_tree_attach').map(({ props }) => JSON.stringify(props)), issues: window.issues }));
+    assert.deepEqual({ choices, ...told, failures }, {
+      choices: ['Learn to knot\n0 of 1 done'],
+      events: [
+        '{"step":"open","band":"desktop","view":"board","place":"account"}',
+        '{"step":"attach","band":"desktop","view":"board","place":"account","mark":"none"}',
+        '{"step":"undo","band":"desktop","view":"board","place":"account"}',
+      ],
+      issues: [], failures: [],
+    });
+    await page.close();
+  } finally {
+    await context.close();
   }
 });

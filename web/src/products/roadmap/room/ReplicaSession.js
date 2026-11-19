@@ -12,7 +12,8 @@ import { t } from '../i18n/index.js';
 import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
 import { workspaceLink } from '../model/NodeWorkspace.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
-import { Complete, Reset } from '../domain/progress.js';
+import { ChangeKind, CreateKind, DeleteKind, RecolourKind } from '../domain/kinds.js';
+import { ClearPointer, Complete, Reset, SetPointer } from '../domain/progress.js';
 import { RoadmapChecks, RoadmapRefusals, RoadmapScopes } from '../domain/roadmapRules.js';
 import { SetVisibility, WriteRoadmap } from '../domain/roadmaps.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../domain/steps.js';
@@ -118,7 +119,8 @@ export class ReplicaSession {
   }
 
   // The domain's acts that make one of the room's gestures, in the order they run. A gesture on several steps is the act
-  // on each in turn; links to remove are each step's prerequisites, one act a step.
+  // on each in turn; links to remove are each step's prerequisites, one act a step; a paste's new kinds follow its steps,
+  // whose colours name their hues.
   actsOf(gesture) {
     const tree = this.treeId;
     const fields = (names) => Object.fromEntries(names.filter((name) => name in gesture).map((name) => [name, gesture[name]]));
@@ -158,8 +160,15 @@ export class ReplicaSession {
             ...(step.description ? { description: step.description } : {}), ...(step.links?.length ? { links: step.links } : {}) })),
           links: gesture.edges.filter((link) => keys.has(link.from)).map((link) => [link.from, link.to]),
         };
-        return [new ImportSteps(tree, imported, gesture.edges.find((link) => !keys.has(link.from))?.from ?? null)];
+        return [new ImportSteps(tree, imported, gesture.edges.find((link) => !keys.has(link.from))?.from ?? null),
+          ...(gesture.kinds ?? []).map((kind) => new CreateKind(tree, { hue: kind.hue, label: kind.label ?? '', description: kind.description ?? '' }))];
       }
+      case 'SetNodeTree': return [gesture.opens ? SetPointer(tree, gesture.id, gesture.opens) : ClearPointer(tree, gesture.id)];
+      case 'AddKind': return [new CreateKind(tree, { hue: gesture.hue })];
+      case 'RenameKind':
+      case 'DescribeKind': return [new ChangeKind(tree, gesture.id, fields(['label', 'description']))];
+      case 'RecolorKind': return [new RecolourKind(tree, gesture.id, gesture.hue)];
+      case 'RemoveKind': return [new DeleteKind(tree, gesture.id)];
       default: return [];
     }
   }

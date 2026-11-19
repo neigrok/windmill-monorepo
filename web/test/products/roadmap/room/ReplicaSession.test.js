@@ -198,3 +198,41 @@ test('links, a reorder and a paste: a link moved to another step, a link that wo
     a.close();
   }
 });
+
+test('the legend’s gestures and a step’s pointer: a kind made, named, described and recoloured with the steps that wear it, removed, and a roadmap opened and closed', async () => {
+  const { a, tree, steps, reading, session, told } = await gestures();
+  try {
+    const other = committed(await a.runner.runAct(new CreateRoadmap('Learn to knot', { steps: [{ key: 'bowline', label: 'Bowline' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(other.tree), RoadmapScopes.overlay(other.tree)]) a.observe(scope);
+    await a.sync();
+    const legend = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present)
+      .map(({ hue, label, description }) => ({ hue, label, description }));
+    const colours = () => reading.roadmap().seed.nodes.map((step) => step.color);
+    await session.dispatch({ kind: 'AddKind', id: 'legend-made', hue: 'sky' }).acts;
+    const made = reading.roadmap().account.trees.get(tree).kinds.find((kind) => kind.hue === 'sky').id;
+    await session.dispatch({ kind: 'RenameKind', id: made, label: 'Sea' }).acts;
+    await session.dispatch({ kind: 'DescribeKind', id: made, description: 'Time on the water' }).acts;
+    await session.dispatch({ kind: 'RecolorKind', id: 'build', hue: 'plum' }).acts;
+    assert.deepEqual({ legend: legend(), colours: colours() }, {
+      legend: [
+        { hue: 'plum', label: 'Build', description: 'Things you make' }, { hue: 'olive', label: 'Learn', description: 'Things you figure out' },
+        { hue: 'gold', label: 'Milestone', description: 'Moments that matter' }, { hue: 'sky', label: 'Sea', description: 'Time on the water' },
+      ],
+      colours: ['plum', 'plum', 'plum'],
+    });
+    await session.dispatch({ kind: 'RemoveKind', id: made }).acts;
+    const attached = session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: other.tree });
+    await attached.acts;
+    const opening = () => reading.roadmap().seed.nodes.find((step) => step.id === steps.dock).opening;
+    assert.deepEqual({ kinds: legend().length, opens: opening()?.treeId, title: opening()?.title, card: reading.card(other.tree) },
+      { kinds: 3, opens: other.tree, title: 'Learn to knot', card: { id: other.tree, title: 'Learn to knot', author: null, steps: 1, mine: true } });
+    session.revert(attached);
+    await until(() => opening() === undefined, 1000);
+    await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: other.tree }).acts;
+    await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: '' }).acts;
+    assert.deepEqual({ opening: opening(), told }, { opening: undefined, told: { said: [], events: [], statuses: 0 } });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});

@@ -200,12 +200,14 @@ on, every room but the demo reads through `ReplicaReading`:
   the id the room minted for it, so the room selects and reveals it as today; a change of its words or kind
   `ChangeStep`, a reorder `MoveStep` below the sibling the drop names, a delete `DeleteStep`, links `ChangePrerequisites`
   on the step they lead to, a paste `ImportSteps` under the step it lands beneath; an edit of a step's words and
-  prerequisites, a link moved to another step, and a gesture on several steps are each act in turn. The receipt holds
+  prerequisites, a link moved to another step, and a gesture on several steps are each act in turn. The legend's kinds
+  are `CreateKind`, `ChangeKind`, `RecolourKind` and `DeleteKind`, a paste's new kinds `CreateKind` after its steps, and
+  the tree a step opens `SetPointer` or `ClearPointer`, its picker listing the person's roadmaps as the replica keeps
+  them and reading an address of one of them there (any other from the server). The receipt holds
   them all, its Undo (`revert`) is each act's Undo, last first, and ⌘Z and ⇧⌘Z walk the session's stack of receipts over
   `runner.undo` and `runner.redo`, bumping `receiptVersion` as today; a held delete stays the room's own hold until it
   is released, and an act the engine still holds is cancelled in place. Each act leaves the engine's journal
-  (`runner.release`) as its receipt leaves the stacks. The gestures on kinds take nothing yet, and the step document's
-  Tree section offers no control (`treeActs` is null), the one way the owner's screens differ from today's
+  (`runner.release`) as its receipt leaves the stacks. The owner's screens and events are today's
   (`SkillTreeView.replica.browser.test.js`). Such a room draws no presence and hands its session
   neither to a reconnect nor to a claim of the device's trees: the engine reconnects, and its lineage rule takes what
   the device holds at sign-in.
@@ -363,7 +365,8 @@ that opens no tree, and a ⋯ on its heading on one that does, the heading and t
 
 The + and Change tree open `TreePicker`: a nested dialog in the step document from 744px and a full-screen page over the Shell
 on phones, with the field and the commit in the reach band. `TreeChoices` is its model: the person's roadmaps on the
-server but the one they are in (`listServerTrees`, the switcher's order), one choice, the tree the step opens
+server but the one they are in (`listServerTrees`, the switcher's order; where the room reads the device's copy, the
+replica's, in the same order), one choice, the tree the step opens
 arriving chosen, and Find a tree narrowing by title as the prerequisites picker does. On a tree that lives only on this
 device the rows are this device's trees but the one they are in, newest first, done of total worked out on the device
 (`listDeviceTrees`), each tagged *on this device* as the switcher tags them; the context says how many trees are on this

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { plantedToast, welcomeBackToast } from '../copy.js';
 import { DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
@@ -7,6 +7,7 @@ import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { deviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
+import { readTreeCard } from '../persistence/TreeRegistry.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { peekBorn, takePlantNote } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -206,12 +207,17 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   // What the picker knew of a tree chosen here, so its row stands at once; the server's read replaces it.
   const knowTree = useCallback((stepId, tree) => { knownRef.current.set(`${stepId}>${tree.id}`, Opening.chosen(tree)); }, []);
 
-  // The switcher's list where the room reads the replica: the account's roadmaps as the replica keeps them.
+  // The switcher's list where the room reads the replica: the account's roadmaps as the replica keeps them; and the tree
+  // picker's, with an address of one of them read there and any other from the server, which keeps other people's.
   const listTrees = useCallback(async () => readingRef.current?.list() ?? [], []);
+  const pickerTrees = useMemo(() => ({
+    list: async () => ({ rows: readingRef.current?.list() ?? [], authoritative: true }),
+    read: async (id) => readingRef.current?.card(id) ?? readTreeCard(id),
+  }), []);
 
   return {
     loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree, guides,
-    readsReplica, listTrees: readsReplica ? listTrees : null,
+    readsReplica, listTrees: readsReplica ? listTrees : null, pickerTrees: readsReplica ? pickerTrees : null,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }

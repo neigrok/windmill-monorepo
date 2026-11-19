@@ -1,6 +1,5 @@
-// The lattice is the authority: each edit is dispatched as one gesture and the displayed kinds
-// re-derive from the projection. Only the open flag is a local preference (LegendStore). With no session, as in a room
-// that reads the replica, an edit writes and says nothing.
+// The roadmap's session is the authority: each edit is dispatched as one gesture and the displayed kinds
+// re-derive from the projection. Only the open flag is a local preference (LegendStore).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../../../telemetry/beacon.js';

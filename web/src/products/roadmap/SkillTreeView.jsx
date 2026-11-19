@@ -262,13 +262,14 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     track, emit, report: reportRoadmapFailure,
   });
   // Attaching, changing and detaching the tree a step opens: the holder's, while the session can take a write, among the
-  // trees where the holder's lives (the server's, or this device's). A chosen tree's row stands at once from what the
-  // picker knew of it, and a read the server refuses for want of a session is the room's lapse, as a refused write is.
-  const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining && !load.readsReplica ? {
+  // trees where the holder's lives (the device's copy where the room reads it, else the server's or this device's). A
+  // chosen tree's row stands at once from what the picker knew of it, and a read the server refuses for want of a
+  // session is the room's lapse, as a refused write is.
+  const pickerTrees = load.pickerTrees
+    ?? (holder?.place === 'device' ? { list: listDeviceTrees, read: readDeviceTreeCard } : { list: listServerTrees, read: readTreeCard });
+  const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining ? {
     view: boardActive ? 'board' : 'graph',
-    trees: holder.place === 'device'
-      ? { place: 'device', signedIn: status === 'signed-in', list: listDeviceTrees, read: readDeviceTreeCard }
-      : { place: 'account', list: listServerTrees, read: readTreeCard },
+    trees: holder.place === 'device' ? { place: 'device', signedIn: status === 'signed-in', ...pickerTrees } : { place: 'account', ...pickerTrees },
     set: (id, chosen) => {
       if (chosen) load.knowTree(id, chosen);
       return boardActs.setTree(id, chosen?.id ?? '');

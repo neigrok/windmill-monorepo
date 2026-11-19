@@ -96,6 +96,13 @@ export class ReplicaReading {
     return this.roadmap().list(this.engine.getSnapshot().state === 'bound' ? 'account' : 'device');
   }
 
+  // An address of one of the person's roadmaps, as the tree picker reads one: null where the replica keeps no such roadmap
+  // of theirs.
+  card(id) {
+    const row = this.list().find((each) => each.id === id);
+    return row ? { id, title: row.title, author: null, steps: row.total ?? null, mine: true } : null;
+  }
+
   // The write door: the kit's runner over the engine, and the room's session over it, which takes the room's writes on
   // the open roadmap where it is the person's own (`mine`) and their roadmaps' names from any room.
   openWrites(mine) {
