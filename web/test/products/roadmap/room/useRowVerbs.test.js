@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { LINK_COPIED } from '../../../../src/products/roadmap/copy.js';
+import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 import { closuresIn } from '../sourceClosures.js';
 
 const verbs = await closuresIn('room/useRowVerbs.js');
@@ -148,17 +149,17 @@ test('where the room reads the device’s copy, a row is renamed and its deletio
     renameRoadmap: async (id, title) => { calls.push(['rename', id, title]); return title !== 'Refused'; },
     deleteRoadmap: async (id) => { calls.push(['delete', id]); return { held: id }; },
   };
-  const room = { treeId: 'sail', replicaRef: { current: { writes } }, sessionRef: { current: { renameTree: () => assert.fail('the open session takes no name') } },
+  const room = { treeId: 'sail', BoundaryFailure, replicaRef: { current: { writes } }, sessionRef: { current: { renameTree: () => assert.fail('the open session takes no name') } },
     renameTree: () => assert.fail('the server takes no name'), deleteTree: () => assert.fail('the server deletes nothing') };
   const onRename = verbs.property('onRename', room);
   const onDelete = verbs.property('onDelete', room);
   assert.deepEqual({
     renamed: await onRename('knot', 'Learn to knot'),
-    refused: await onRename('sail', 'Refused').catch((error) => error.message),
+    refused: await onRename('sail', 'Refused').catch((error) => ({ handled: error instanceof BoundaryFailure, message: error.message })),
     deleted: await onDelete('sail', { local: true }),
     calls,
   }, {
-    renamed: undefined, refused: 'The name was not written', deleted: { held: 'sail' },
+    renamed: undefined, refused: { handled: true, message: 'The name was not written' }, deleted: { held: 'sail' },
     calls: [['rename', 'knot', 'Learn to knot'], ['rename', 'sail', 'Refused'], ['delete', 'sail']],
   });
 });

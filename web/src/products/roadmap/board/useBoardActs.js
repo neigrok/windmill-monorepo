@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, receiptUndo, recolorOutcome } from './acts.js';
+import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, onceLanded, receiptUndo, recolorOutcome } from './acts.js';
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules, takesMark } from '../model/UnlockRules.js';
@@ -34,17 +34,19 @@ export class BoardActs {
       return { ok: false };
     }
     if (!receipt) return { ok: false };
-    const outcome = recolorOutcome(selection.ids);
-    c.showToast(outcome.message, {
-      surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
-      action: receiptUndo({
-        session: c.session, receipt,
-        before: () => this.collaborators.onQuiet(),
-        onReverted: () => this.collaborators.track('roadmap_board_undo', { act: 'recolor' }),
-        onFailure: (error) => this.collaborators.report('roadmap-board-recolor', error),
-      }),
+    onceLanded(receipt, () => {
+      const outcome = recolorOutcome(selection.ids);
+      c.showToast(outcome.message, {
+        surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
+        action: receiptUndo({
+          session: c.session, receipt,
+          before: () => this.collaborators.onQuiet(),
+          onReverted: () => this.collaborators.track('roadmap_board_undo', { act: 'recolor' }),
+          onFailure: (error) => this.collaborators.report('roadmap-board-recolor', error),
+        }),
+      });
+      c.track('roadmap_board_bulk', { step: 'recolor', count: countBucket(selection.count) });
     });
-    c.track('roadmap_board_bulk', { step: 'recolor', count: countBucket(selection.count) });
     return { ok: true, changed: true };
   }
 
@@ -77,21 +79,23 @@ export class BoardActs {
       return { ok: false };
     }
     if (!receipt) return { ok: false };
-    if ('label' in gesture) {
+    onceLanded(receipt, () => {
+      if ('label' in gesture) {
+        try {
+          c.emit({ verb: 'renamed', nodeId: id, label: gesture.label, kind: gesture.color ?? step.color }, { silent: true });
+        } catch (error) {
+          c.report('roadmap-board-edit', error);
+        }
+      }
       try {
-        c.emit({ verb: 'renamed', nodeId: id, label: gesture.label, kind: gesture.color ?? step.color }, { silent: true });
+        c.track('roadmap_board_edit', {
+          step: 'saved', name: 'label' in gesture, description: 'description' in gesture,
+          kind: 'color' in gesture, prerequisites: (gesture.addPrerequisites?.length ?? 0) > 0 || (gesture.removePrerequisites?.length ?? 0) > 0,
+        });
       } catch (error) {
         c.report('roadmap-board-edit', error);
       }
-    }
-    try {
-      c.track('roadmap_board_edit', {
-        step: 'saved', name: 'label' in gesture, description: 'description' in gesture,
-        kind: 'color' in gesture, prerequisites: (gesture.addPrerequisites?.length ?? 0) > 0 || (gesture.removePrerequisites?.length ?? 0) > 0,
-      });
-    } catch (error) {
-      c.report('roadmap-board-edit', error);
-    }
+    });
     return { ok: true };
   }
 
@@ -165,16 +169,18 @@ export class BoardActs {
       return { ok: false };
     }
     const detached = mark === 'kept' ? TREE_TOAST.detachedMarkBack : TREE_TOAST.detached;
-    c.showToast(opens ? TREE_TOAST.attached : detached, {
-      act: opens ? 'attach' : 'detach', reveal: null, holdMs: 6000,
-      action: receiptUndo({
-        session: c.session, receipt,
-        before: () => this.collaborators.onQuiet(),
-        onReverted: () => this.collaborators.track('roadmap_tree_attach', { step: 'undo', band: this.collaborators.band, view, place: this.collaborators.place }),
-        onFailure: (error) => this.collaborators.report('roadmap-tree-attach', error),
-      }),
+    onceLanded(receipt, () => {
+      c.showToast(opens ? TREE_TOAST.attached : detached, {
+        act: opens ? 'attach' : 'detach', reveal: null, holdMs: 6000,
+        action: receiptUndo({
+          session: c.session, receipt,
+          before: () => this.collaborators.onQuiet(),
+          onReverted: () => this.collaborators.track('roadmap_tree_attach', { step: 'undo', band: this.collaborators.band, view, place: this.collaborators.place }),
+          onFailure: (error) => this.collaborators.report('roadmap-tree-attach', error),
+        }),
+      });
+      c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, place: c.place, mark });
     });
-    c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, place: c.place, mark });
     return { ok: true };
   }
 
@@ -199,25 +205,27 @@ export class BoardActs {
       return { ok: false };
     }
     if (!receipt) return { ok: false };
-    if (outcome.filterCleared) c.setQuery(outcome.query);
-    const reveal = graph ? c.onGraphReveal : c.onReveal;
-    reveal(outcome.reveal);
-    c.showToast(outcome.message, {
-      surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
-      ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
-      action: receiptUndo({
-        session: c.session, receipt,
-        onReverted: () => {
-          const current = this.collaborators;
-          current.onQuiet();
-          if (graph) current.track('roadmap_graph_toast', { act: 'create', step: 'undo' });
-          else current.track('roadmap_board_undo', { act: 'create' });
-        },
-        onFailure: (error) => this.collaborators.report('roadmap-board-create', error),
-      }),
+    onceLanded(receipt, () => {
+      if (outcome.filterCleared) c.setQuery(outcome.query);
+      const reveal = graph ? c.onGraphReveal : c.onReveal;
+      reveal(outcome.reveal);
+      c.showToast(outcome.message, {
+        surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
+        ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
+        action: receiptUndo({
+          session: c.session, receipt,
+          onReverted: () => {
+            const current = this.collaborators;
+            current.onQuiet();
+            if (graph) current.track('roadmap_graph_toast', { act: 'create', step: 'undo' });
+            else current.track('roadmap_board_undo', { act: 'create' });
+          },
+          onFailure: (error) => this.collaborators.report('roadmap-board-create', error),
+        }),
+      });
+      if (graph) c.track('roadmap_graph_toast', { act: 'create', step: 'shown' });
+      c.track('roadmap_board_create', { step: 'saved', column: outcome.column, filterCleared: outcome.filterCleared });
     });
-    if (graph) c.track('roadmap_graph_toast', { act: 'create', step: 'shown' });
-    c.track('roadmap_board_create', { step: 'saved', column: outcome.column, filterCleared: outcome.filterCleared });
     return { ok: true };
   }
 
@@ -293,7 +301,7 @@ export class BoardActs {
     let outcome = null;
     try {
       const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids });
-      if (receipt) c.track('roadmap_board_delete', { step: 'sent', via, view: pending.surface });
+      if (receipt) onceLanded(receipt, () => c.track('roadmap_board_delete', { step: 'sent', via, view: pending.surface }));
       if (!receipt) c.onQuiet();
       if (!receipt && !pending.session.ready) outcome = 'not_ready';
     } catch (error) {

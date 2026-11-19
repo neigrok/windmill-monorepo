@@ -518,12 +518,18 @@ async function onTheGraph(context, { replica }) {
   await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor();
   await page.getByRole('button', { name: 'Graph', exact: true }).click();
   await page.waitForFunction(() => window.scene?.options?.onSetKind);
-  await page.evaluate(() => window.scene.options.onSetKind('wind', 'olive'));
-  await page.evaluate(() => window.scene.options.onConnectNodes('course', 'dock'));
-  await page.evaluate(() => window.scene.options.onDeleteEdge('course', 'dock'));
-  await page.evaluate(() => window.scene.options.onReconnectEdge('course', 'wind', 'course', 'dock'));
-  await page.evaluate(() => window.scene.options.onSetNodeOrder('dock', 'Zz'));
-  await page.evaluate(() => window.scene.options.onCreateChild('course'));
+  // Each gesture once the one before it has said it saved, as a person makes them.
+  const saved = async (run) => {
+    const before = await page.evaluate(() => window.events.length);
+    await page.evaluate(run);
+    await page.waitForFunction((before) => window.events.slice(before).some(({ props }) => props?.step === 'saved'), before);
+  };
+  await saved(() => window.scene.options.onSetKind('wind', 'olive'));
+  await saved(() => window.scene.options.onConnectNodes('course', 'dock'));
+  await saved(() => window.scene.options.onDeleteEdge('course', 'dock'));
+  await saved(() => window.scene.options.onReconnectEdge('course', 'wind', 'course', 'dock'));
+  await saved(() => window.scene.options.onSetNodeOrder('dock', 'Zz'));
+  await saved(() => window.scene.options.onCreateChild('course'));
   await page.evaluate(() => window.scene.options.onDeleteNode('wind'));
   await page.locator('.st-graph-toast .st-board-toast-undo').click();
   await page.locator('.st-graph-toast').waitFor({ state: 'detached' });
@@ -548,5 +554,96 @@ test('with the switch on the Graph’s gestures land on the device’s copy as t
   } finally {
     await replica.close();
     await today.close();
+  }
+});
+
+// A replica room open on the owner's roadmap, with what it says and emits.
+async function replicaPage(context) {
+  await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  const failures = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+  await page.goto(`${origin}/room?account=u_owner&replica=on#/app/${TREE}`);
+  await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor();
+  const told = (names) => page.evaluate((names) => window.events.filter(({ name }) => names.includes(name)).map(({ name, props }) => `${name} ${JSON.stringify(props)}`), names);
+  return { page, failures, told };
+}
+
+test('with the switch on a gesture the domain refuses shows no success: a loop is said in today’s words, and a name past its bound keeps its draft as today’s failure does', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const { page, failures, told } = await replicaPage(context);
+    await page.getByRole('button', { name: 'Graph', exact: true }).click();
+    await page.waitForFunction(() => window.scene?.options?.onConnectNodes);
+    await page.evaluate(() => window.scene.options.onConnectNodes('dock', 'course'));
+    await page.locator('.st-board-toast', { hasText: 'This would create a loop' }).waitFor();
+    const loop = { toasts: await page.locator('.st-board-toast').allInnerTexts(), events: await told(['roadmap_board_edit', 'roadmap_write_refused']) };
+
+    await page.getByRole('button', { name: 'Board', exact: true }).click();
+    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
+    const composer = page.getByRole('dialog', { name: 'New step', exact: true });
+    await composer.locator('input').first().fill('x'.repeat(201));
+    await composer.getByRole('button', { name: 'Create step', exact: true }).click();
+    await composer.getByText('Couldn’t save. Your draft is kept.', { exact: true }).waitFor();
+    const named = { columns: await boardColumns(page), toasts: await page.locator('.st-board-toast').count(),
+      events: await told(['roadmap_board_create', 'roadmap_write_refused']) };
+    assert.deepEqual({ loop, named, failures }, {
+      loop: { toasts: ['This would create a loop'], events: ['roadmap_write_refused {"write":"AddEdge","refusal":"invalid"}'] },
+      named: {
+        columns: ['locked: Leave the dock', 'upNext: Read the wind', 'done: Choose a course'], toasts: 0,
+        events: [
+          'roadmap_write_refused {"write":"AddEdge","refusal":"invalid"}',
+          'roadmap_board_create {"step":"open","door":"verbs","view":"board"}',
+          'roadmap_write_refused {"write":"CreateNode","refusal":"invalid"}',
+          'roadmap_board_create {"step":"failed"}',
+        ],
+      },
+      failures: [],
+    });
+    await page.close();
+  } finally {
+    await context.close();
+  }
+});
+
+test('with the switch on a pasted plan’s steps are pulsed and told under the ids the domain gave them, once they have landed', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const { page, failures, told } = await replicaPage(context);
+    await page.getByRole('button', { name: 'Graph', exact: true }).click();
+    await page.waitForFunction(() => window.scene?.options?.onSetKind);
+    await page.evaluate(() => {
+      window.pulses = [];
+      window.scene.pulseNode = (id) => window.pulses.push(id);
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', '- Rent a boat\n- Find a crew');
+      window.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+    });
+    await page.locator('.pc-plant').click();
+    await page.locator('.st-board-toast', { hasText: 'Added 2 steps' }).waitFor();
+    await page.getByRole('button', { name: 'Board', exact: true }).click();
+    await page.locator('.st-board-card-title', { hasText: 'Find a crew' }).waitFor();
+    const pasted = await page.evaluate(() => [...document.querySelectorAll('.st-board-card')]
+      .filter((card) => ['Rent a boat', 'Find a crew'].includes(card.querySelector('.st-board-card-title').textContent)).map((card) => card.dataset.stepId).sort());
+    const pulses = await page.evaluate(() => [...window.pulses].sort());
+    assert.deepEqual({ minted: pasted.every((id) => /^[0-9a-z]{16}$/.test(id)), pulses: pulses.join() === pasted.join() && pulses.length === 2,
+      events: await told(['roadmap_board_create', 'roadmap_graph_toast']), failures }, {
+      minted: true, pulses: true,
+      events: [
+        'roadmap_board_create {"step":"open","door":"paste","view":"graph"}',
+        'roadmap_graph_toast {"act":"graft","step":"shown"}',
+        'roadmap_board_create {"step":"saved","door":"paste","view":"graph","count":"2-5"}',
+      ],
+      failures: [],
+    });
+    await page.close();
+  } finally {
+    await context.close();
   }
 });

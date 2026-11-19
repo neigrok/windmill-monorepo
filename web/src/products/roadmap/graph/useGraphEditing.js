@@ -3,7 +3,7 @@ import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parsePlan } from '../paste/planGrammar.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
-import { countBucket, receiptUndo, takesEveryRoot } from '../board/acts.js';
+import { countBucket, onceLanded, receiptUndo, takesEveryRoot } from '../board/acts.js';
 import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -21,6 +21,7 @@ function trackEdit(changed) {
 }
 
 // Every write the Graph's own surfaces make; a write returns what `announce` needs for its own Undo, or null when nothing took.
+// What a write says of its success, it says once the write has landed (`onceLanded`).
 export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, emit, showToast }) {
   const { sessionRef, projectionRef, sceneRef, treeRef, standingTreeRef } = room;
   const { selectedId, selectedIdRef, selectedIdsRef, selectedEdgesRef, setSelectedId, leaveMulti } = selection;
@@ -52,27 +53,29 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
 
   const writeEdit = useCallback((gesture, changed) => {
     const written = write(gesture);
-    if (written) trackEdit(changed);
+    if (written) onceLanded(written.receipt, () => trackEdit(changed));
     return written;
   }, [write]);
 
   const announce = useCallback((written, act, message, onReverted) => {
     if (!written) return;
-    showToast(message, {
-      surface: 'graph', act,
-      action: undoOf(written, () => {
-        onReverted?.();
-        track('roadmap_graph_toast', { act, step: 'undo' });
-      }),
+    onceLanded(written.receipt, () => {
+      showToast(message, {
+        surface: 'graph', act,
+        action: undoOf(written, () => {
+          onReverted?.();
+          track('roadmap_graph_toast', { act, step: 'undo' });
+        }),
+      });
+      track('roadmap_graph_toast', { act, step: 'shown' });
     });
-    track('roadmap_graph_toast', { act, step: 'shown' });
   }, [showToast]);
 
   const handleRename = useCallback((id, label) => {
     const node = projectionRef.current?.nodes.find((n) => n.id === id);
     if (!node || node.label === label) return null;
     const written = writeEdit({ kind: 'RenameNode', id, label }, { name: true });
-    if (written && node.label.trim() !== '') emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
+    if (written && node.label.trim() !== '') onceLanded(written.receipt, () => emit({ verb: 'renamed', nodeId: id, label, kind: node.color }));
     return written;
   }, [emit]);
 
@@ -86,8 +89,10 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     scene.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
-    emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
-    track('roadmap_board_create', { step: 'saved', door: 'canvas', view: 'graph' });
+    onceLanded(written.receipt, () => {
+      emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
+      track('roadmap_board_create', { step: 'saved', door: 'canvas', view: 'graph' });
+    });
     return { id, ...written };
   }, [setSelectedId, emit]);
 
@@ -95,12 +100,15 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (!desktopEditorRef.current) return;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
     const color = legendRef.current[0]?.hue ?? 'terracotta';
-    if (!write({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color })) return;
+    const written = write({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color });
+    if (!written) return;
     sceneRef.current?.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
-    emit({ verb: 'added', nodeId: id, label: '', kind: color });
-    track('roadmap_board_create', { step: 'saved', door: 'empty', view: 'graph' });
+    onceLanded(written.receipt, () => {
+      emit({ verb: 'added', nodeId: id, label: '', kind: color });
+      track('roadmap_board_create', { step: 'saved', door: 'empty', view: 'graph' });
+    });
   }, [emit, setSelectedId]);
 
   const handleConnect = useCallback((sourceId, targetId) => writeEdit({ kind: 'AddEdge', from: sourceId, to: targetId }, { prerequisites: true }), []);
@@ -118,8 +126,10 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (!written) return;
     if (selectedIdRef.current === id) setSelectedId(null);
     announce(written, 'delete', GRAPH_TOAST.stepDeleted);
-    emit({ verb: 'removed', nodeId: id, label: node.label, kind: node.color });
-    track('roadmap_board_delete', { step: 'sent', via: 'direct', view: 'graph' });
+    onceLanded(written.receipt, () => {
+      emit({ verb: 'removed', nodeId: id, label: node.label, kind: node.color });
+      track('roadmap_board_delete', { step: 'sent', via: 'direct', view: 'graph' });
+    });
   }, [emit, announce]);
   const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
 
@@ -132,10 +142,12 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
     const written = write({ kind: 'BulkDelete', nodeIds: ids, edges });
     if (!written) return;
-    for (const node of doomed) emit({ verb: 'removed', nodeId: node.id, label: node.label, kind: node.color });
     leaveMulti();
     announce(written, 'delete', deletedSelectionToast({ steps: ids.length, links: edges.length }));
-    track('roadmap_board_bulk', { step: 'delete', count: countBucket(ids.length), view: 'graph' });
+    onceLanded(written.receipt, () => {
+      for (const node of doomed) emit({ verb: 'removed', nodeId: node.id, label: node.label, kind: node.color });
+      track('roadmap_board_bulk', { step: 'delete', count: countBucket(ids.length), view: 'graph' });
+    });
   }, [emit, announce, leaveMulti]);
 
   const handleSetKind = useCallback((id, kind) => {
@@ -167,10 +179,12 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (!ids.length) return;
     const written = write({ kind: 'BulkRecolor', nodeIds: ids, color });
     if (!silent) announce(written, 'recolor', recoloredToast({ count: ids.length }));
-    if (written) track('roadmap_board_bulk', { step: 'recolor', count: countBucket(ids.length), view: 'graph' });
+    if (written) onceLanded(written.receipt, () => track('roadmap_board_bulk', { step: 'recolor', count: countBucket(ids.length), view: 'graph' }));
   }, [announce]);
 
-  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed; the toast stands on the view that took the plan.
+  // A grafted step is named by the id it was written under: the graft's own on roadmap's session, the one the domain gave it on
+  // the device's copy (the import's result). Its model reaches the scene before the graft lands, so it is seated before it
+  // is pulsed; the toast stands on the view that took the plan.
   const graftImported = useCallback((parse, view) => {
     const nodes = projectionRef.current?.nodes;
     const session = sessionRef.current;
@@ -192,17 +206,19 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
 
     const written = write({ kind: 'ImportSubgraph', nodes: graft.nodes, edges: graft.edges, kinds: graft.kinds });
     if (!written) return;
-
-    for (const grafted of graft.nodes) {
-      emit({ verb: 'added', nodeId: grafted.id, label: grafted.label, kind: grafted.color }, { silent: true });
-      sceneRef.current?.pulseNode(grafted.id);
-    }
+    setComposerOpen(false);
+    onceLanded(written.receipt, (results) => {
+      const idOf = (grafted) => results?.[0]?.[grafted.id] ?? grafted.id;
+      for (const grafted of graft.nodes) {
+        emit({ verb: 'added', nodeId: idOf(grafted), label: grafted.label, kind: grafted.color }, { silent: true });
+        sceneRef.current?.pulseNode(idOf(grafted));
+      }
+    });
     const under = targetId ? (nodes.find((node) => node.id === targetId)?.label || t('roadmap.toast.graftedUnderTree')) : null;
     const message = graftedToast({ count: graft.nodes.length, under });
-    if (view === 'board') showToast(message, { surface: 'board', act: 'graft', action: undoOf(written, () => track('roadmap_board_undo', { act: 'graft' })) });
+    if (view === 'board') onceLanded(written.receipt, () => showToast(message, { surface: 'board', act: 'graft', action: undoOf(written, () => track('roadmap_board_undo', { act: 'graft' })) }));
     else announce(written, 'graft', message);
-    track('roadmap_board_create', { step: 'saved', door: 'paste', view, count: countBucket(graft.nodes.length) });
-    setComposerOpen(false);
+    onceLanded(written.receipt, () => track('roadmap_board_create', { step: 'saved', door: 'paste', view, count: countBucket(graft.nodes.length) }));
   }, [emit, announce, showToast]);
 
   return {

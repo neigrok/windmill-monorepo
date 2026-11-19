@@ -5,7 +5,7 @@ import { Board } from '../board/Board.js';
 import { LINK_COPIED } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { deleteTree, listAllTrees, renameTree } from '../persistence/TreeRegistry.js';
-import { reportRoadmapFailure } from '../reportFailure.js';
+import { BoundaryFailure, reportRoadmapFailure } from '../reportFailure.js';
 import { buildRoadmapExport, downloadExport } from '../settings/exportArchive.js';
 import { treeShareUrl } from '../share/ShareDialog.jsx';
 import { deleteDeviceTree, deleteLocalTree, readDeviceTrees, renameLocalTree } from '../sync/localTrees.js';
@@ -147,7 +147,7 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
     onRename: async (id, title, { local = false } = {}) => {
       const replica = replicaRef.current;
       if (replica) {
-        if (!await replica.writes.renameRoadmap(id, title)) throw new Error('The name was not written');
+        if (!await replica.writes.renameRoadmap(id, title)) throw new BoundaryFailure('The name was not written');
         return undefined;
       }
       if (id === treeId && sessionRef.current?.renameTree(title)) return undefined;

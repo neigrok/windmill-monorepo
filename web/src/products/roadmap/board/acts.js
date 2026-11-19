@@ -42,6 +42,16 @@ export function receiptUndo({ session, receipt, before, onReverted, onFailure })
   };
 }
 
+// What a write's success says, once the write has landed: at once on roadmap's own session, whose writes stand as they are
+// made; on the device's copy once every act of it is written, with their results, and never for one that was not.
+export function onceLanded(receipt, landed) {
+  if (!receipt.landed) {
+    landed(null);
+    return;
+  }
+  receipt.landed.then((results) => { if (results) landed(results); });
+}
+
 // A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves standing.
 export function takesEveryRoot(tree, ids) {
   const roots = tree?.roots() ?? [];

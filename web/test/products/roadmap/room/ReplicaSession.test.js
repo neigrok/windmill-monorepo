@@ -10,6 +10,7 @@ import { InadmissibleGuide } from '../../../../src/products/roadmap/guide/GuideD
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
 import { ReplicaSession } from '../../../../src/products/roadmap/room/ReplicaSession.js';
+import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 
 const committed = (outcome) => {
   assert.equal(outcome.kind, 'committed', JSON.stringify(outcome));
@@ -116,10 +117,12 @@ async function gestures() {
   const { a, tree, steps } = await sailing();
   const { reading } = await openRoom(a, tree);
   const told = { said: [], events: [], statuses: 0 };
+  const reports = [];
   const session = new ReplicaSession({ treeId: tree, runner: a.runner, roadmap: () => reading.roadmap(),
-    say: (words) => told.said.push(words), onStatus: () => { told.statuses += 1; }, track: (name, props) => told.events.push([name, props]) });
+    say: (words) => told.said.push(words), onStatus: () => { told.statuses += 1; }, track: (name, props) => told.events.push([name, props]),
+    report: (operation, error, tags) => reports.push([operation, tags]) });
   const shown = () => Object.fromEntries(reading.roadmap().seed.nodes.map((step) => [step.label, step.prerequisites.map((id) => reading.roadmap().seed.nodes.find((each) => each.id === id)?.label ?? id)]));
-  return { a, tree, steps, reading, session, told, shown };
+  return { a, tree, steps, reading, session, told, reports, shown };
 }
 
 test('a gesture is the domain’s acts under one receipt: a step made under the room’s id, an edit of its words and prerequisites, and each toast’s Undo', async () => {
@@ -181,16 +184,16 @@ test('links, a reorder and a paste: a link moved to another step, a link that wo
   try {
     await session.dispatch({ kind: 'ReconnectEdge', oldFrom: steps.wind, oldTo: steps.dock, newFrom: steps.wind, newTo: steps.solo }).acts;
     assert.deepEqual(shown(), { 'Read the wind': [], 'Leave the dock': [], 'Sail solo': ['Read the wind'] });
-    const loop = session.dispatch({ kind: 'AddEdge', from: steps.solo, to: steps.wind });
-    assert.deepEqual(await loop.acts, []);
+    assert.equal(session.dispatch({ kind: 'AddEdge', from: steps.solo, to: steps.wind }), null);
     const roots = reading.roadmap().seed.nodes.filter((step) => step.prerequisites.length === 0).map((step) => step.id);
     assert.deepEqual(roots, [steps.wind, steps.dock]);
     await session.dispatch({ kind: 'SetNodeOrder', id: steps.dock, order: 'Zz', below: null, siblings: [steps.wind] }).acts;
     await session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'gold' }, { id: 'bowline', label: 'Bowline', color: 'gold' }],
       edges: [{ from: steps.dock, to: 'knots' }, { from: 'knots', to: 'bowline' }], kinds: [] }).acts;
     await session.dispatch({ kind: 'BulkDelete', nodeIds: [], edges: [{ from: steps.wind, to: steps.solo }] }).acts;
-    assert.deepEqual({ order: reading.roadmap().seed.nodes.map((step) => step.label), shown: shown(), told }, {
-      order: ['Leave the dock', 'Read the wind', 'Knots', 'Bowline', 'Sail solo'],
+    const reordered = reading.roadmap().seed.nodes.filter((step) => ['Leave the dock', 'Read the wind'].includes(step.label));
+    assert.deepEqual({ order: reordered.map((step) => step.label), shown: shown(), told }, {
+      order: ['Leave the dock', 'Read the wind'],
       shown: { 'Leave the dock': [], 'Read the wind': [], 'Sail solo': [], Knots: ['Leave the dock'], Bowline: ['Knots'] },
       told: { said: ['This would create a loop'], events: [['roadmap_write_refused', { write: 'AddEdge', refusal: 'invalid' }]], statuses: 0 },
     });
@@ -260,6 +263,49 @@ test('a roadmap’s deletion is held nine seconds: hidden from the person’s li
       { undone: false, listed: ['Learn to knot'], first: ['Learn to knot', 'Learn to sail'] });
     page.close();
   } finally {
+    a.close();
+  }
+});
+
+test('a gesture the domain refuses is decided before anything is written; one it takes says it landed, with its acts’ results', async () => {
+  const { a, steps, reading, session, told, reports, shown } = await gestures();
+  try {
+    const before = journaled(a);
+    assert.equal(session.dispatch({ kind: 'CreateNode', id: 'f0c1e9d0-1111-4c5e-8000-000000000002', label: 'x'.repeat(201), prerequisites: [] }), null);
+    assert.equal(session.markProgress([steps.solo], 'complete'), false);
+    const pasted = session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots' }], edges: [{ from: steps.dock, to: 'knots' }], kinds: [] });
+    const [imported] = await pasted.landed;
+    assert.deepEqual({ shown: shown(), minted: /^[0-9a-z]{16}$/.test(imported.knots), present: reading.roadmap().seed.nodes.some((step) => step.id === imported.knots),
+      told, reports, journaled: journaled(a) - before }, {
+      shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [], Knots: ['Leave the dock'] },
+      minted: true, present: true,
+      told: { said: [], events: [['roadmap_write_refused', { write: 'CreateNode', refusal: 'invalid' }], ['roadmap_write_refused', { write: 'mark', refusal: 'invalid' }]], statuses: 0 },
+      reports: [], journaled: 1,
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('a write the store does not take is reported once, by the write door; the doors above it hear a failure already reported', async () => {
+  const { a, tree, reading, session, reports } = await gestures();
+  try {
+    a.failNextCommit();
+    const renamed = await session.renameRoadmap(tree, 'Learn to sail fast');
+    a.failNextCommit();
+    const shared = await session.setVisibility('public').catch((error) => error instanceof BoundaryFailure);
+    a.failNextCommit();
+    const deleted = await session.deleteRoadmap(tree).catch((error) => error instanceof BoundaryFailure);
+    a.failNextCommit();
+    const landed = await session.dispatch({ kind: 'RenameNode', id: reading.roadmap().seed.nodes[0].id, label: 'Watch the wind' }).landed;
+    assert.deepEqual({ renamed, shared, deleted, landed, reports }, {
+      renamed: false, shared: true, deleted: true, landed: null,
+      reports: [['roadmap-replica-write', { write: 'title' }], ['roadmap-replica-write', { write: 'visibility' }],
+        ['roadmap-replica-write', { write: 'deleteRoadmap' }], ['roadmap-replica-write', { write: 'RenameNode' }]],
+    });
+  } finally {
+    reading.close();
     a.close();
   }
 });

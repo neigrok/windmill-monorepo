@@ -195,8 +195,14 @@ on, every room but the demo reads through `ReplicaReading`:
     share dialog's visibility `SetVisibility`; the workspace's edits go through `ReplicaWorkspace`, subtasks and links by
     the domain's workspace actions and the note through the kit's one draft of it, saved in place. Each such act is
     released at once, so the engine keeps no Undo of it.
-  - *Gestures:* `dispatch(gesture)` as today, each one or more of the domain's acts written one after another, each
-    loading what the one before it wrote. A new step is `CreateStep` under the id the room minted for it, so the room
+  - *Gestures:* `dispatch(gesture)` as today, each one or more of the domain's acts. They are decided first over what
+    the replica holds (`ReplicaSession.decide`, the kit runner's load, decision and gone check, before anything is
+    written): a gesture the domain refuses is null, so the room shows what it shows today for that gesture's failure,
+    and its refusal is said in today's words where there are some. Then they are written one after another, each
+    loading what the one before it wrote; the receipt's `landed` answers their results once every act was taken, and
+    the room says a gesture's success (its toast, its `saved` event, its activity line) only then (`onceLanded` in
+    `board/acts.js`, at once on roadmap's own session). A paste's steps are pulsed and told under the ids the domain
+    gave them, from the import's result. A new step is `CreateStep` under the id the room minted for it, so the room
     selects and reveals it as today; a change of its words or kind `ChangeStep`, a reorder `MoveStep` below the sibling
     the drop names, a delete `DeleteStep`, links `ChangePrerequisites` on the step they lead to, a paste `ImportSteps`
     under the step it lands beneath and its new kinds `CreateKind` after; an edit of a step's words and prerequisites, a
@@ -208,9 +214,10 @@ on, every room but the demo reads through `ReplicaReading`:
     session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A step's held
     delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in place. Each
     act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks.
-  - *Refusals and failures:* a write the domain refuses where it is made is said in today's words where there are some (a
-    roadmap at its cap, a link that would close a loop) and emits `roadmap_write_refused`; one the store does not take
-    reports `roadmap-replica-write`.
+  - *Refusals and failures:* a write the domain refuses is said in today's words where there are some (a roadmap at its
+    cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
+    store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
+    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
   - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
     engine reconnects, and its lineage rule takes what the device holds at sign-in.
 

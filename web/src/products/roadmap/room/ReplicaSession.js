@@ -1,17 +1,22 @@
 // The room's writes on the device's copy (roadmap-on-the-engine.md §5, §8.4): the slice of roadmap's own session that the
 // room's write paths call, each write one of the domain's acts on the kit's runner, so every control, toast and event
-// stays the room's own. A gesture made of several of the domain's acts runs them one after another, each loading what
-// the one before it wrote, and its one receipt holds them all: its Undo takes back every one. The keyboard's Undo and
-// Redo walk the room's own stack of those receipts (§5 Undo). It decides nothing: what a write is and what it refuses
-// are the domain's.
+// stays the room's own. A gesture is decided before anything is written: one the domain refuses applies nothing, as a
+// gesture nothing applies to today, and is said in today's words; one it takes is written, and its receipt says once it
+// has landed, so the room shows a success only for what was written. A gesture made of several of the domain's acts
+// runs them one after another, each loading what the one before it wrote, and its one receipt holds them all: its Undo
+// takes back every one. The keyboard's Undo and Redo walk the room's own stack of those receipts (§5 Undo). It decides
+// nothing itself: what a write is and what it refuses are the domain's.
 
+import { ActDecision, ActIDSource, ActReader } from '../../../platform/domain-kit/acts.js';
+import { firstGone } from '../../../platform/domain-kit/actions.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
+import { Violation } from '../../../platform/domain-kit/values.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { REFUSED_CAPACITY } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
 import { workspaceLink } from '../model/NodeWorkspace.js';
-import { reportRoadmapFailure } from '../reportFailure.js';
+import { BoundaryFailure, reportRoadmapFailure } from '../reportFailure.js';
 import { ChangeKind, CreateKind, DeleteKind, RecolourKind } from '../domain/kinds.js';
 import { ClearPointer, Complete, Reset, SetPointer } from '../domain/progress.js';
 import { RoadmapChecks, RoadmapRefusals, RoadmapScopes } from '../domain/roadmapRules.js';
@@ -42,7 +47,8 @@ export class ReplicaSession {
     this.ready = true;
     this.closed = false;
     this.receiptVersion = 0;
-    // Each gesture's receipt, `{ acts }`: the ids of the acts it wrote, once they have.
+    // Each gesture's receipt, `{ acts, landed }`: the ids of the acts it wrote, once they have, and their results once
+    // every act was taken (null where one was not).
     this.undoStack = [];
     // Each gesture taken back, `{ inverses }`: each act's Undo, in the order the acts were written.
     this.redoStack = [];
@@ -50,12 +56,13 @@ export class ReplicaSession {
     this.workspace = new ReplicaWorkspace(this);
   }
 
-  // Runs one write's acts in order and answers the receipts of those that wrote (`ids`, their act ids), and whether
-  // every act was taken. A refusal ends it and is said, in the words the room says it today; a failure is reported under
-  // the write's name and ends it.
+  // Runs one write's acts in order and answers the receipts of those that wrote (`ids`, their act ids), each act's
+  // result, and whether every act was taken. A refusal ends it and is said, in the words the room says it today; a
+  // failure is reported under the write's name, the one report it gets, and ends it.
   async write(acts, what) {
     const written = [];
-    const answer = (complete) => ({ receipts: written, ids: written.map((receipt) => receipt.gestureId), complete });
+    const results = [];
+    const answer = (complete) => ({ receipts: written, ids: written.map((receipt) => receipt.gestureId), results, complete });
     for (const act of acts) {
       let outcome;
       try {
@@ -69,8 +76,52 @@ export class ReplicaSession {
         return answer(false);
       }
       if (outcome.kind === 'committed') written.push(outcome.receipt);
+      results.push(outcome.result);
     }
     return answer(true);
+  }
+
+  // An act's decision over what the replica holds now, before anything is written (plan time), in the steps the kit's
+  // runner takes: its load, its decision with a violation as its refusal, and a record a segment names that the replica
+  // no longer draws. The commit decides again over what it reads; a mint here is spent on nothing.
+  decide(act) {
+    const { replica, registry } = this.runner;
+    const moment = this.runner.moment();
+    const context = {
+      now: moment.now.ms,
+      inScope: (scope, body) => body({ ...replica.read(scope), now: moment.now.ms }),
+      finishLoad: () => {},
+      mintID: (type) => replica.mintId(type, new Set()),
+      opaqueID: () => replica.opaqueID(),
+    };
+    const reader = new ActReader(context, registry, moment);
+    let loaded;
+    try {
+      loaded = act.load(reader);
+    } finally {
+      reader.end();
+    }
+    let decided;
+    try {
+      decided = act.decide(loaded, new ActIDSource(context));
+    } catch (error) {
+      if (!(error instanceof Violation)) throw error;
+      return ActDecision.refuse(act.refusals.ofViolation(error));
+    }
+    if (decided.kind !== 'write') return decided;
+    for (const { scope, plan } of decided.plan.segments) {
+      const missing = firstGone(plan, this.runner.viewsOf(scope, replica.read(scope)), scope, registry);
+      if (missing) return ActDecision.refuse(act.refusals.ofRefused(missing));
+    }
+    return decided;
+  }
+
+  // The first of the acts the domain refuses at plan time, said in today's words, or null where it takes them all.
+  refusedOf(acts, what) {
+    const refused = acts.map((act) => this.decide(act)).find((decided) => decided.kind === 'refuse');
+    if (!refused) return null;
+    this.refused(refused.refusal, what);
+    return refused.refusal;
   }
 
   refused(refusal, what) {
@@ -96,12 +147,14 @@ export class ReplicaSession {
     }
   }
 
-  // One of the room's gestures as the domain's acts, written one after another; its receipt is on the Undo stack at once,
-  // and its Undo waits for them to be written. A gesture none of the acts applies to is null, as today.
+  // One of the room's gestures as the domain's acts, decided first and then written one after another; its receipt is on
+  // the Undo stack at once, and its Undo waits for them to be written. A gesture none of the acts applies to, or one the
+  // domain refuses, is null, as a gesture nothing applies to is today.
   dispatch(gesture) {
     const acts = this.actsOf(gesture);
-    if (acts.length === 0) return null;
-    const receipt = Object.freeze({ acts: this.write(acts, gesture.kind).then((written) => written.ids) });
+    if (acts.length === 0 || this.refusedOf(acts, gesture.kind)) return null;
+    const written = this.write(acts, gesture.kind);
+    const receipt = Object.freeze({ acts: written.then(({ ids }) => ids), landed: written.then(({ complete, results }) => (complete ? results : null)) });
     this.undoStack.push(receipt);
     this.dropRedo();
     return receipt;
@@ -162,14 +215,18 @@ export class ReplicaSession {
     }
   }
 
-  // The owner's marks: each step's Complete or Reset. A step whose pointer opens a standing roadmap is read so from the
-  // account, as the domain asks of its caller.
+  // The owner's marks: each step's Complete or Reset, decided first; false where the domain refuses one, so the room
+  // marks nothing. A step whose pointer opens a standing roadmap is read so from the account, as the domain asks of its
+  // caller.
   markProgress(nodeIds, status) {
     const roadmap = this.roadmap();
     const opening = new Map(roadmap.account.openingsOf(this.treeId).map((each) => [each.node, each]));
     const opensStanding = (id) => opening.get(id)?.kind === 'pointer' && roadmap.account.locate(opening.get(id).tree).standing === 'standing';
     const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
-    this.settle(ids.map((id) => (status === 'complete' ? Complete(this.treeId, id, { opensStanding: opensStanding(id) }) : Reset(this.treeId, id))), 'mark');
+    const acts = ids.map((id) => (status === 'complete' ? Complete(this.treeId, id, { opensStanding: opensStanding(id) }) : Reset(this.treeId, id)));
+    if (this.refusedOf(acts, 'mark')) return false;
+    this.settle(acts, 'mark');
+    return true;
   }
 
   // A roadmap's name, out of the Undo stack as a rename is today. A subtree's name is its owning step's label, so a
@@ -190,10 +247,10 @@ export class ReplicaSession {
 
   // A root's deletion, held nine seconds and permanent once the hold ends (R-7), out of the Undo stack: its one Undo is
   // `undeleteRoadmap` within the hold. Answers the deletion while it is held, null where the roadmap was gone already;
-  // throws where it was not written.
+  // where it was not written, throws what this door has already reported or said.
   async deleteRoadmap(id) {
     const { receipts, complete } = await this.write([new DeleteRoadmap(id)], 'deleteRoadmap');
-    if (!complete) throw new Error('The roadmap was not deleted');
+    if (!complete) throw new BoundaryFailure('The roadmap was not deleted');
     const [held] = receipts;
     return held ? new HeldDeletion({ treeId: id, actId: held.gestureId, releaseAt: held.releaseAt }) : null;
   }
@@ -216,10 +273,10 @@ export class ReplicaSession {
   }
 
   // A root's visibility, settled before the share dialog says so; a write that did not land throws, as a refused
-  // request does.
+  // request does, what this door has already reported or said.
   async setVisibility(visibility) {
     const { complete } = await this.settle([new SetVisibility(this.treeId, visibility)], 'visibility');
-    if (!complete) throw new Error('The visibility was not written');
+    if (!complete) throw new BoundaryFailure('The visibility was not written');
   }
 
   // A held delete is the last act though nothing is written yet: the next Undo takes it back.
