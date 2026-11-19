@@ -1260,6 +1260,47 @@ test('while a credential\'s deletion is owed and cannot run, the anon replica pu
   engine.close();
 });
 
+test('an anon replica a frame paused with no deletion owed and no sign-in pending asks whose credential the browser holds, on its own timer and at start, and pulls once none is held', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  cookieBrowser(env);
+  const asked = [];
+  env.options.credentials = { clear: async () => false, held: async () => { asked.push(env.transport.account); return env.transport.account; } };
+  let engine = await open(env);
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await engine.subscribe(tree);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await engine.receiveFrame({ op: 'change', scope: tree, as: 'A' });
+  const paused = { owed: engine.device.meta.clearCredential, pendingSignIn: engine.device.meta.pendingSignIn,
+    authPaused: engine.device.activeReplica.meta.authPaused };
+  env.timers.advance(30_000);
+  await until(() => asked.length === 1);
+  await tick();
+  const stillHeld = { asked: [...asked], authPaused: engine.device.activeReplica.meta.authPaused };
+  engine.close();
+  env.timers.advance(30_000);
+  await tick();
+  const closed = asked.length;
+  env.transport.account = null;
+  engine = await open(env);
+  await engine.subscribe(tree);
+  await until(() => engine.device.activeReplica.meta.authPaused === false);
+  const pulls = env.requests.filter(({ endpoint }) => endpoint === 'pull').length;
+  await engine.pull();
+  assert.deepEqual({ paused, stillHeld, closed, asked, authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync(),
+    pulled: env.requests.filter(({ endpoint }) => endpoint === 'pull').length > pulls }, {
+    paused: { owed: undefined, pendingSignIn: undefined, authPaused: true },
+    stillHeld: { asked: ['A'], authPaused: true },
+    closed: 1,
+    asked: ['A', null],
+    authPaused: false, canSync: true, pulled: true,
+  });
+  env.timers.advance(30_000);
+  await tick();
+  assert.equal(asked.length, 2, 'an unpaused replica asks no more');
+  engine.close();
+});
+
 test('changed sign-out work re-pins Discard; Cancel resumes the account', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A'; await engine.signIn('A'); engine.setOnline(false);

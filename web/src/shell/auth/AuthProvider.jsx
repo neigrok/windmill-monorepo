@@ -385,8 +385,12 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     let alive = true;
     const hooks = PRODUCTS.map((product) => product.sync ?? {});
-    // Answers whether the browser holds no credential after it: another account's cookie, or a session it must keep, stays.
-    syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
+    // `held` answers whose credential the browser holds, null for none, undefined when the server cannot say. `clear`
+    // answers whether the browser holds no credential after it: another account's cookie, or a session it must keep, stays.
+    syncSession.open({ base: API_BASE, credentials: { held: async () => {
+      const current = await fetchMe();
+      return current === undefined ? undefined : current?.id ?? null;
+    }, clear: async (account) => {
       const revision = roomOwnership.current.revision;
       const current = await fetchMe();
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');

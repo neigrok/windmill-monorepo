@@ -736,6 +736,19 @@ test('the credentials port answers that the browser holds no credential once it 
     { own: true, none: true, loggedOut: 1 });
 });
 
+test('the credentials port answers whose credential the browser holds: its account, none, or nothing when it cannot tell', async (t) => {
+  const state = await account(t);
+  const answers = [{ ok: true, status: 200, user: { id: 'A', name: 'Ada' } }, { ok: false, status: 401 }, { ok: false, status: 503 }];
+  globalThis.fetch.mock.mockImplementation(async () => {
+    const answer = answers.shift();
+    if (!answer) throw new TypeError('offline');
+    return { ok: answer.ok, status: answer.status, json: async () => ({ user: answer.user }) };
+  });
+  const held = [];
+  for (let i = 0; i < 4; i++) held.push(await state.engine.credentials.held());
+  assert.deepEqual(held, ['A', null, undefined, undefined]);
+});
+
 test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {
   const state = await account(t);
   const words = { title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],

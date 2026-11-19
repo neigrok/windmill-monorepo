@@ -2808,7 +2808,7 @@ doubt (§7.9), whether or not its id changed.
 | `bound(A)` | sign-out, empty outbox or Keep | `dormant(A)` |
 | `bound(A)` | sign-out, Discard | deleted |
 | `bound(A)` | 401, `account-mismatch`, an answer served as another principal, or (browser) the session owner finding the browser holds no credential of A (§9.1) / re-authentication as A | `authPaused` set / cleared |
-| `anon` (browser) | an answer or frame served as an account (§9.1) / a finished sign-out, or a deletion that leaves no credential | `authPaused` set / cleared |
+| `anon` (browser) | an answer or frame served as an account (§9.1) / a finished sign-out, a deletion that leaves no credential, or the session owner finding the browser holds none | `authPaused` set / cleared |
 | `dormant` | explicit discard | deleted |
 | any | fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change | same state, new replica id |
 
@@ -2905,7 +2905,11 @@ a deletion that leaves the browser no credential (§7.10 **Credentials**) unpaus
 replica; one that leaves another account's cookie in place does not. The session owner learns whose
 credential the browser holds outside the sync endpoints too, and tells the browser engine
 (`credentialHeld(account)`, `null` for none): a bound replica whose account's credential the browser
-no longer holds is `authPaused` as a `401` would pause it.
+no longer holds is `authPaused` as a `401` would pause it, and a paused `anon` replica unpauses once
+the browser holds none. The leader asks it itself (the port's `held()`) while its active `anon`
+replica is paused with no deletion owed and no sign-in pending, which nothing else would end: at
+engine start and every `CREDENTIAL_CHECK_MS` while that lasts. A frame's `as` never deletes a
+credential: it may name a cookie a sign-in set before the sign-in recorded `pendingSignIn`.
 
 An HTTP request is checked in this order, and the first failing check answers:
 1. the registry version (above);
@@ -3909,6 +3913,7 @@ the engine's codes.
 | `CLOCK_JUMP_MS` | 1000 |
 | `SCOPE_HORIZON` / `REPLICA_GC` / `REQUEST_RETENTION` | 30 / 365 / 90 days |
 | `REQUEST_LEASE_MS` | 60 000 |
+| `CREDENTIAL_CHECK_MS` (browser) | 30 000: how often the leader asks whose credential the browser holds while its active `anon` replica is paused with nothing else to end it (§9.1) |
 | Gym stale window | 4 h |
 
 ---
