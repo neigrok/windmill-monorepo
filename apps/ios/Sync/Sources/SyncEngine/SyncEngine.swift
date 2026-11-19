@@ -171,8 +171,8 @@ public final class SyncEngine: Replica {
     do {
       committed = try core.write(operation: .commit) { store, instance in
         var newMints: Set<ScopeRef> = []
-        return try store.commitAct(instance: instance, identities: core.identities, prepare: { [core] tx in
-          let context = try TransactionActContext(tx, core: core, instance: instance)
+        return try store.commitAct(instance: instance, identities: core.identities, prepare: { [core] tx, staging in
+          let context = try TransactionActContext(tx, core: core, instance: instance, staging: staging)
           defer { context.end() }
           let prepared: (ActRequest?, T)
           do { prepared = try prepare(context) }

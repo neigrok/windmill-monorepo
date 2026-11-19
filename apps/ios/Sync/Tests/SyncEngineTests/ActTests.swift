@@ -57,6 +57,59 @@ struct ActTests {
     #expect(try rig.engine.commitAct([board, tree]) != nil)
   }
 
+  // §7.1 a composed act, staged: a later part's load reads through the segment staged before it, and the request's
+  // segments then commit afresh as one act.
+  @Test func aLaterLoadReadsThroughAStagedSegmentAndTheRequestCommitsEverySegmentAsOneAct() throws {
+    let rig = try Rig(account: "A")
+    let scope = Rig.scope
+    let title = { (reader: any ScopeReader) throws -> JSON in try reader.drawn("card", "card0001")?.values["title"] ?? .null }
+    let rename = { (title: String) -> Gesture in Gesture(changes: [.update("card", "card0001", ["title": .string(title)])]) }
+    var reads: [JSON] = []
+    var staged: [StagedRefusal?] = []
+    let result = try rig.engine.commitAct({ act in
+      reads.append(try act.inScope(scope, title))
+      staged.append(try act.stage(scope) { _ in Gesture(changes: [Rig.card("card0001", "First")]) })
+      try act.beginPart()
+      reads.append(try act.inScope(scope, title))
+      staged.append(try act.stage(scope) { context in rename("\(try title(context).asString())!") })
+      return (ActRequest(scopes: [scope, scope]), ())
+    }, segment: { _, index, _ in index == 0 ? Gesture(changes: [Rig.card("card0001", "First")]) : rename("First!") })
+    guard case .committed(let receipt)? = result.outcome else { Issue.record("the act did not commit"); return }
+    let expectedReads: [JSON] = [.null, "First"]
+    #expect(reads == expectedReads)
+    let unstaged: [StagedRefusal?] = [nil, nil]
+    let localIds: [[String]] = [["\(receipt.gestureId)/0"], ["\(receipt.gestureId)/1"]]
+    let outbox: [String] = ["\(receipt.gestureId)/0 ready", "\(receipt.gestureId)/1 ready"]
+    let drawn: JSON = try rig.engine.read(scope) { try title($0) }
+    #expect(staged == unstaged)
+    #expect(receipt.segments.map(\.localIds) == localIds)
+    #expect(drawn == "First!")
+    #expect(try rig.outbox() == outbox)
+  }
+
+  // A staged local refusal is answered where the part stages it, and the act it ends writes nothing.
+  @Test func aStagedLocalRefusalIsAnsweredAndTheActItEndsWritesNothing() async throws {
+    let rig = try Rig(account: "A")
+    let gone = ScopeRef.tree("b_00000005")
+    _ = try rig.engine.subscribe(gone)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.page(gone, "gone")]))
+    _ = await rig.engine.puller.step()
+    let before = try rig.store.read { try $0.device(rows: true).json }
+    var staged: [StagedRefusal?] = []
+    let result = try rig.engine.commitAct({ act in
+      staged.append(try act.stage(Rig.scope) { _ in Gesture(changes: [Rig.card("card0001", "First")]) })
+      staged.append(try act.stage(gone) { _ in Gesture(changes: [.create("tag", id: .given("elm"), ["label": "Elm"])]) })
+      return (nil, ())
+    }, segment: { _, _, _ in
+      Issue.record("a refused act reaches no segment")
+      return Gesture(changes: [])
+    })
+    let refused: [StagedRefusal?] = [nil, StagedRefusal(code: .scopeDead, detail: nil)]
+    #expect(result.outcome == nil)
+    #expect(staged == refused)
+    #expect(try rig.store.read { try $0.device(rows: true).json } == before)
+  }
+
   @Test func aLaterScopeSQLiteFailureRollsBackEarlierBatches() async throws {
     let rig = try Rig()
     let before = try rig.store.read { try $0.device(rows: true).json }

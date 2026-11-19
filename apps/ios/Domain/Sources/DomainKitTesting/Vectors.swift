@@ -252,6 +252,14 @@ package final class VectorScene: ActContext {
   package func opaqueID() throws -> String {
     throw CommitFailure.malformed("an act case mints no opaque id")
   }
+
+  package func stage(_ scope: ScopeRef, _ segment: (any CommitContext) throws -> Gesture) throws -> StagedRefusal? {
+    throw CommitFailure.malformed("an act case decides one act, and stages nothing")
+  }
+
+  package func beginPart() throws {
+    throw CommitFailure.malformed("an act case decides one act, and has no second part")
+  }
 }
 
 // MARK: - Value vectors
