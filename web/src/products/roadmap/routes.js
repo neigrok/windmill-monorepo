@@ -88,7 +88,7 @@ function render({ hash, pathname, search }) {
 // device's copy, Keep or Discard; a session lapse never calls this hook.
 async function forgetDevice({ next, navigation }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.
-  const [{ forgetDeviceTrees }, { forgetReplicaRoom }] = await Promise.all([import('./sync/localTrees.js'), import('./room/signOut.js')]);
+  const [{ forgetDeviceTrees }, { forgetReplicaRoom }] = await Promise.all([import('./sync/localTrees.js'), import('./sync/signOut.js')]);
   await forgetReplicaRoom();
   await forgetDeviceTrees();
   confirmDeviceOwner(next ?? null);

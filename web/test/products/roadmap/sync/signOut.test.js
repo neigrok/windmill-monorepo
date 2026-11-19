@@ -20,7 +20,7 @@ async function rowsOf(engine) {
 for (const choice of ['keep', 'discard']) {
   test(`signing out with ${choice === 'keep' ? 'Keep' : 'Discard'} leaves no landing note and no told notice on the device`, async () => {
     browserWith();
-    const { forgetReplicaRoom } = await import('../../../../src/products/roadmap/room/signOut.js');
+    const { forgetReplicaRoom } = await import('../../../../src/products/roadmap/sync/signOut.js');
     const env = environment();
     const at = { wall: env.timers.time, mono: env.timers.time, boot: 'test' };
     env.transport.response = async () => ({ response: hello({ state: env.state, registry, account: 'A', serverTime: env.timers.time }), timing: { send: at, recv: at } });

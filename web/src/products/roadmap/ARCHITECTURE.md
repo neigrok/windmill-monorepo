@@ -22,7 +22,7 @@ point for the component showcase.
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
 | `layout/` | Deterministic layout engines behind `index.js` |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools |
-| `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB |
+| `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB, and what signing out takes from the device |
 | `persistence/` | HTTP repository, account tree registry and device preferences and ledgers |
 | `shortcuts/`, `input/` | The room's keys and the pure hold recognizer |
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
@@ -213,7 +213,7 @@ on, every room but the demo reads through `ReplicaReading`:
   `roadmap-kept-unexpected` once, `kept/toldNotices.js` keeping the told ids for the page load and, where the browser
   keeps storage, the ids of the told notices the engine still holds. A Discard the engine answers `false`, the notice no
   longer held, closes the change quietly.
-- **Sign-out.** Roadmap's `forgetDevice` runs `room/signOut.js` after the engine's sign-out, Keep or Discard: it takes
+- **Sign-out.** Roadmap's `forgetDevice` runs `sync/signOut.js` after the engine's sign-out, Keep or Discard: it takes
   every `landing:*` device row from each replica the device holds (Keep leaves the account's dormant replica with its
   device rows) and the told notice ids. What Keep holds for the next sign-in, unsent work and kept notices, the
   engine keeps.
