@@ -72,9 +72,10 @@ function openingOf(opening, title) {
     done: opening.counts.done, total: opening.counts.total, loop: opening.loop });
 }
 
-// The roadmaps the replica holds, as the domain's account reads them, and the open one in the room's shapes. `held` is
-// every roadmap of the account's list and every other roadmap the room reads (the open one, and the roadmaps above it);
-// `listRead` says the device has read the account's list, so a roadmap missing from it is someone else's.
+// The roadmaps the replica holds, as the domain's account reads them, and each in the room's shapes, the open one first
+// among them. `held` is every roadmap of the account's list and every other roadmap the room reads (the open one, and the
+// roadmaps above it); `listRead` says the device has read the account's list, so a roadmap missing from it is someone
+// else's.
 export class ReplicaRoadmap {
   constructor(registry, treeId, held, { listRead = true } = {}) {
     this.registry = registry;
@@ -101,22 +102,32 @@ export class ReplicaRoadmap {
   // The open roadmap is the person's own: it is in their account's list.
   get mine() { return this.open?.record != null; }
 
-  // The open roadmap as the room's tree data: its present steps in authored order, each following what the domain
-  // reads it follows through absent steps (D-5) and carrying the roadmap it opens; the kinds that own their hue; its
-  // name, guide, place and the visibility its share reads.
-  get seed() {
-    const tree = this.account.trees.get(this.treeId);
-    const location = this.account.locate(this.treeId);
-    const graph = this.account.graph(this.treeId);
-    const openings = new Map(this.account.openingsOf(this.treeId).map((opening) => {
+  // Whether the device has read the person's list and every roadmap in it.
+  get everyRoadmapRead() {
+    return this.listRead && this.account.list().every(({ id }) => this.account.trees.get(id)?.read === 'loaded');
+  }
+
+  get seed() { return this.seedOf(this.treeId); }
+
+  get marks() { return this.marksOf(this.treeId); }
+
+  // A roadmap as the room's tree data: its present steps in authored order, each following what the domain reads it
+  // follows through absent steps (D-5) and carrying the roadmap it opens; the kinds that own their hue; its name, guide,
+  // place and the visibility its share reads. Null where the device has not read it or it does not stand.
+  seedOf(id) {
+    const graph = this.account.graph(id);
+    if (graph === null) return null;
+    const tree = this.account.trees.get(id);
+    const location = this.account.locate(id);
+    const openings = new Map(this.account.openingsOf(id).map((opening) => {
       const shown = openingOf(opening, this.account.locate(opening.tree).title);
-      return [opening.node, opening.tree === this.treeId ? shown.inItsOwnTree() : shown];
+      return [opening.node, opening.tree === id ? shown.inItsOwnTree() : shown];
     }));
     const owners = new Set(new LegendRead(tree).result().owners.map((owner) => owner.id));
     const place = new TreePlace(location.place);
     return {
-      id: this.treeId, title: location.title ?? '', guide: tree.meta?.guide ?? '', author: null,
-      visibility: (place.subtree ? tree.meta?.reach : tree.meta?.visibility) ?? 'private', mine: this.mine, place,
+      id, title: location.title ?? '', guide: tree.meta?.guide ?? '', author: null,
+      visibility: (place.subtree ? tree.meta?.reach : tree.meta?.visibility) ?? 'private', mine: this.held.get(id)?.record != null, place,
       kinds: tree.kinds.filter((kind) => kind.present && owners.has(kind.id))
         .map((kind) => ({ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description })),
       nodes: graph.nodes.map((step) => {
@@ -134,11 +145,11 @@ export class ReplicaRoadmap {
     };
   }
 
-  // The owner's marks as the room holds them: the steps they marked complete, and the date each step that stands
-  // complete reads, its mark's or the roadmap's it opens.
-  get marks() {
-    const tree = this.account.trees.get(this.treeId);
-    const progress = this.account.progress(this.treeId);
+  // A roadmap's owner's marks as the room holds them: the steps they marked complete, and the date each step that
+  // stands complete reads, its mark's or the roadmap's it opens.
+  marksOf(id) {
+    const tree = this.account.trees.get(id);
+    const progress = this.account.progress(id);
     return {
       completed: new Set([...tree.marks.values()].filter((mark) => mark.status === 'complete' && tree.nodesById.get(mark.node)?.present)
         .map((mark) => mark.node)),
