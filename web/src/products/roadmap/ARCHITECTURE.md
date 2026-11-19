@@ -187,30 +187,32 @@ on, every room but the demo reads through `ReplicaReading`:
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
   `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
-  stands and takes the slice of its calls the room's write paths make. The owner's marks are each step's `Complete` or
-  `Reset` (whether a step's pointer opens a standing roadmap read from the account, as the domain asks); a roadmap's name,
-  from the room or a switcher's row, is `WriteRoadmap`, and a subtree's is its owning step's label (`ChangeStep`); the
-  guide is `WriteRoadmap`, the share dialog's visibility `SetVisibility`; and the workspace's edits go through
-  `ReplicaWorkspace`, subtasks and links by the domain's workspace actions and the note through the kit's one draft of it,
-  saved in place. None of these enters the Undo stack, as none does today, so each act is released and the engine keeps
-  no Undo of it. A write the domain refuses where it is made is said in today's words where there are some (a roadmap at
-  its cap, a link that would close a loop) and emits `roadmap_write_refused`; one the store does not take reports
-  `roadmap-replica-write`. The room's gestures on steps are `dispatch(gesture)` as today, each one or more of the
-  domain's acts written one after another, each loading what the one before it wrote: a new step is `CreateStep` under
-  the id the room minted for it, so the room selects and reveals it as today; a change of its words or kind
-  `ChangeStep`, a reorder `MoveStep` below the sibling the drop names, a delete `DeleteStep`, links `ChangePrerequisites`
-  on the step they lead to, a paste `ImportSteps` under the step it lands beneath; an edit of a step's words and
-  prerequisites, a link moved to another step, and a gesture on several steps are each act in turn. The legend's kinds
-  are `CreateKind`, `ChangeKind`, `RecolourKind` and `DeleteKind`, a paste's new kinds `CreateKind` after its steps, and
-  the tree a step opens `SetPointer` or `ClearPointer`, its picker listing the person's roadmaps as the replica keeps
-  them and reading an address of one of them there (any other from the server). The receipt holds
-  them all, its Undo (`revert`) is each act's Undo, last first, and ⌘Z and ⇧⌘Z walk the session's stack of receipts over
-  `runner.undo` and `runner.redo`, bumping `receiptVersion` as today; a step's held delete stays the room's own hold until it
-  is released, and an act the engine still holds is cancelled in place. Each act leaves the engine's journal
-  (`runner.release`) as its receipt leaves the stacks. The owner's screens and events are today's
-  (`SkillTreeView.replica.browser.test.js`), but for a roadmap's own deletion, held (The switcher's delete, below). Such a room draws no presence and hands its session
-  neither to a reconnect nor to a claim of the device's trees: the engine reconnects, and its lineage rule takes what
-  the device holds at sign-in.
+  stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's
+  (`SkillTreeView.replica.browser.test.js`), but for a roadmap's own deletion, held (The switcher's delete, below).
+  - *Out of the Undo stack, as today:* the owner's marks are each step's `Complete` or `Reset` (whether a step's pointer
+    opens a standing roadmap read from the account, as the domain asks); a roadmap's name, from the room or a switcher's
+    row, is `WriteRoadmap`, and a subtree's is its owning step's label (`ChangeStep`); the guide is `WriteRoadmap`, the
+    share dialog's visibility `SetVisibility`; the workspace's edits go through `ReplicaWorkspace`, subtasks and links by
+    the domain's workspace actions and the note through the kit's one draft of it, saved in place. Each such act is
+    released at once, so the engine keeps no Undo of it.
+  - *Gestures:* `dispatch(gesture)` as today, each one or more of the domain's acts written one after another, each
+    loading what the one before it wrote. A new step is `CreateStep` under the id the room minted for it, so the room
+    selects and reveals it as today; a change of its words or kind `ChangeStep`, a reorder `MoveStep` below the sibling
+    the drop names, a delete `DeleteStep`, links `ChangePrerequisites` on the step they lead to, a paste `ImportSteps`
+    under the step it lands beneath and its new kinds `CreateKind` after; an edit of a step's words and prerequisites, a
+    link moved to another step and a gesture on several steps are each act in turn. The legend's kinds are
+    `CreateKind`, `ChangeKind`, `RecolourKind` and `DeleteKind`; the tree a step opens `SetPointer` or `ClearPointer`,
+    its picker listing the person's roadmaps as the replica keeps them and reading an address of one of them there (any
+    other from the server).
+  - *Undo:* a receipt holds a gesture's acts, and its Undo (`revert`) is each act's Undo, last first; ⌘Z and ⇧⌘Z walk the
+    session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A step's held
+    delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in place. Each
+    act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks.
+  - *Refusals and failures:* a write the domain refuses where it is made is said in today's words where there are some (a
+    roadmap at its cap, a link that would close a loop) and emits `roadmap_write_refused`; one the store does not take
+    reports `roadmap-replica-write`.
+  - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
+    engine reconnects, and its lineage rule takes what the device holds at sign-in.
 
 ## A step that opens a tree
 
