@@ -1,0 +1,48 @@
+name: Browser system libraries
+description: >-
+  Installs the Ubuntu libraries that Playwright's Chromium and WebKit need. The first run on a runner image downloads
+  them from the Ubuntu archive and caches the packages; every later run on that image installs the cached packages
+  with no download.
+
+runs:
+  using: composite
+  steps:
+    # dpkg installs the cached packages without resolving them against the image, so a package set is reused only on
+    # the exact image whose apt chose it: on another image it could downgrade a library the image ships.
+    - name: Name the package cache
+      id: packages
+      shell: bash
+      working-directory: web
+      run: |
+        playwright=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")
+        echo "key=browser-system-libraries-chromium-webkit-${ImageOS:?}-${ImageVersion:?}-playwright-$playwright" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the cached packages
+      id: cache
+      uses: actions/cache/restore@v5
+      with:
+        path: ~/.cache/browser-system-libraries
+        key: ${{ steps.packages.outputs.key }}
+
+    - name: Install the cached packages
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: sudo DEBIAN_FRONTEND=noninteractive dpkg --install ~/.cache/browser-system-libraries/*.deb
+
+    # apt keeps every package it downloads in its archive; emptying it first leaves exactly this install's packages.
+    - name: Download and install the packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: web
+      run: |
+        sudo apt-get clean
+        node node_modules/playwright/cli.js install-deps chromium webkit
+        mkdir -p ~/.cache/browser-system-libraries
+        cp /var/cache/apt/archives/*.deb ~/.cache/browser-system-libraries/
+
+    - name: Cache the packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ~/.cache/browser-system-libraries
+        key: ${{ steps.packages.outputs.key }}
