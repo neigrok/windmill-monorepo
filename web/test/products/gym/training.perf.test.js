@@ -14,7 +14,7 @@ const row = (t, id, fields) => ({ t, id, born: stamp, life: ['alive', stamp], f:
 function log(t, rows = []) {
   browserWith();
   let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], firstPullComplete: true };
-  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
   const engine = { registry, now: () => Date.now(), device: { activeReplica: { meta: { serverOffsetMs: 0 } } },
     readMetadata: () => ({ firstPullComplete: records.firstPullComplete }), activeReplica: () => 'bound', observe: () => observation,
     getSnapshot: () => ({ state: 'bound' }), observeEngine: () => () => {} };
