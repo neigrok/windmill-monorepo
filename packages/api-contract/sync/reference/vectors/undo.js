@@ -782,6 +782,59 @@ function revival() {
   return [offline, redrawn];
 }
 
+// A revival of a tag the device knows only by its spent id: its preimages are read over the dead row the spent id
+// keeps, so the Undo walks from that row to the revival's receipt and applies. A spent id that keeps no seq, and a
+// write another device made before the revival reached the server, leave nothing to walk from, and the Undo skips.
+function spentRevival() {
+  const oak = { t: 'tag', id: 'oak', born: st(1300) };
+  const revive = { op: 'commitAct', deviceNow: 8000, segments: [{ scope: TREE, changes: [{ op: 'revive', t: 'tag', id: 'oak', f: { label: 'Next' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [
+      { target: target(TREE, 'tag', 'oak', 'life'), defaultValue: 'dead' },
+      { target: target(TREE, 'tag', 'oak', 'field', 'label'), defaultValue: 'Oak' }] }] }] } } };
+  const deletedElsewhere = () => {
+    const session = new Session(world());
+    session.elsewhere({ scope: TREE, d: [{ ...oak, life: ['dead', st(6500, 0, OTHER)] }] });
+    session.pull([TREE]);
+    return session;
+  };
+  const undo = (session) => {
+    session.flush();
+    session.local(requestStep('g1', session.serverNow));
+    session.flush();
+    session.pull([TREE]);
+    return session.local({ op: 'readInverseResult', requestId: 'g3' }, viewStep(TREE));
+  };
+  const oakOf = (session) => session.state.rows[`tree:${BOARD}`][JSON.stringify(['tag', 'oak'])];
+  const aliveIn = (returned) => returned.records.some((record) => record.t === 'tag' && record.id === 'oak' && record.life?.[0] === 'alive');
+
+  const spent = deletedElsewhere();
+  const deathSeq = oakOf(spent).seq;
+  const applied = undo(spent.local(revive))
+    .vector('an Undo of a revival of a tag the device knew only by its spent id walks from the dead row that id keeps, and the tag dies again with its label back');
+  assert.deepEqual(journalOf(applied)[0].sourceEntries[0].preimages.map(({ rowSeq }) => rowSeq), [deathSeq, deathSeq]);
+  assert.deepEqual(applied.expect.returns.at(-2), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 2, skippedCount: 0 });
+  assert.equal(aliveIn(applied.expect.returns.at(-1)), false);
+  assert.deepEqual([oakOf(spent).life[0], oakOf(spent).f.label[0]], ['dead', 'Oak']);
+
+  const pulled = deletedElsewhere();
+  const device = pulled.run().device;
+  for (const replica of device.replicas) for (const ids of Object.values(replica.spentIds ?? {})) ids.forEach((id) => delete id.seq);
+  const withoutSeq = new Session({ device, state: pulled.state });
+  withoutSeq.serverNow = pulled.serverNow;
+  const unknown = undo(withoutSeq.local(revive))
+    .vector('an Undo of a revival from a spent id that keeps no seq skips: nothing proves the revival wrote over the row the server held');
+  assert.deepEqual(unknown.expect.returns.at(-2), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: false, appliedCount: 0, skippedCount: 2 });
+  assert.equal(aliveIn(unknown.expect.returns.at(-1)), true);
+
+  const raced = deletedElsewhere().local(revive);
+  raced.elsewhere({ scope: TREE, d: [{ ...oak, life: ['alive', st(8200, 0, OTHER)], f: { label: ['Theirs', st(8200, 0, OTHER)] } }] });
+  const unseen = undo(raced)
+    .vector('an Undo of a revival from a spent id skips when another device wrote the tag before the revival reached the server');
+  assert.deepEqual(unseen.expect.returns.at(-2), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: false, appliedCount: 0, skippedCount: 2 });
+  assert.deepEqual([oakOf(raced).life[0], oakOf(raced).f.label[0]], ['alive', 'Next']);
+  return [applied, unknown, unseen];
+}
+
 // A write map that redirects a governor moves the journal with the queue: an Undo requested, or a held act
 // cancelled, in the tree of a child board the server redirects follows it into the redirected tree.
 function redirected() {
@@ -897,6 +950,6 @@ export function files() {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...redirected(), ...typedValues()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues()],
   };
 }

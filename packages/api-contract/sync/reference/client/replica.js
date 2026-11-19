@@ -164,9 +164,10 @@ export class Replica {
     return this.spentIds[scope]?.[recordKey(t, id)]?.born;
   }
 
-  addSpent(scope, t, id, born) {
+  // §7.5: a dead derived row leaves its record's spent id, which keeps the row's born and seq.
+  addSpent(scope, { t, id, born, seq }) {
     this.spentIds[scope] ??= {};
-    this.spentIds[scope][recordKey(t, id)] = { t, id, born };
+    this.spentIds[scope][recordKey(t, id)] = { t, id, born, seq };
   }
 
   cursorOf(scope) {
