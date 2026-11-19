@@ -83,7 +83,9 @@ export function QuestShelf({ replica = false } = {}) {
       window.location.hash = `#/app/${treeId}`;
     } catch (error) {
       BirthFailure.reportFailed(error);
-      track('roadmap_board_create', { step: 'failed', door: 'quest', reason: BirthFailure.reasonOf(error) });
+      const reason = BirthFailure.reasonOf(error);
+      if (reason) track('roadmap_board_create', { step: 'failed', door: 'quest', reason });
+      else track('roadmap_board_create', { step: 'failed', door: 'quest' });
       setSeed(null);
       setPickedId(null);
       pickingRef.current = false;

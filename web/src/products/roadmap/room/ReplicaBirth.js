@@ -37,7 +37,8 @@ export class BirthFailure extends Error {
     else if (BirthFailure.REPORTED.includes(error.reason)) report('roadmap-plant', error, { reason: error.reason });
   }
 
-  // The reason the door's `roadmap_board_create` carries: a failed birth's, and none for a failure of another road.
+  // The reason the door's `roadmap_board_create` carries: a failed birth's, and none (undefined) for a failure of another
+  // road, whose event carries no reason.
   static reasonOf(error) {
     return error instanceof BirthFailure ? error.reason : undefined;
   }

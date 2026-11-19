@@ -140,7 +140,9 @@ export function NewTreeBirth({ replica = false } = {}) {
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
-      track('roadmap_board_create', { step: 'failed', door: 'blank', reason: BirthFailure.reasonOf(err) });
+      const reason = BirthFailure.reasonOf(err);
+      if (reason) track('roadmap_board_create', { step: 'failed', door: 'blank', reason });
+      else track('roadmap_board_create', { step: 'failed', door: 'blank' });
       setPhase('error');
     }
   }
@@ -171,7 +173,9 @@ export function NewTreeBirth({ replica = false } = {}) {
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
-      track('roadmap_board_create', { step: 'failed', door: 'import', reason: BirthFailure.reasonOf(err) });
+      const reason = BirthFailure.reasonOf(err);
+      if (reason) track('roadmap_board_create', { step: 'failed', door: 'import', reason });
+      else track('roadmap_board_create', { step: 'failed', door: 'import' });
       setPhase('error');
     }
   }
