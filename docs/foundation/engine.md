@@ -2212,8 +2212,8 @@ engine stops on any `426`.
        that kind, and unsubscribe;
      - acked entries of the scope resolve;
      - pending entries stay, and the server refuses them.
-   - A subscribe and an alive governing row (§7.9) clear a `not-found` `KnownScope` record; nothing
-     clears a `gone` one.
+   - A subscribe and an alive governing row (§7.9) clear a `not-found` `KnownScope` record, and so does
+     a browser's reconcile once no product holds the tree open (§7.9); nothing clears a `gone` one.
    - Every change to the scope's confirmed rows changes `CursorRec.digest`, and every change to its
      staging changes the staging digest (§6.12), in the chunk that makes the change.
    - Every chunk observes the stamps of its rows and updates `admittedHigh`. The last chunk stores
@@ -2538,6 +2538,13 @@ denies exists, so the answer that wrote it is stale (a restore, then a create re
 scopes rejoin the subscription set, so the next puller run pulls them (§7.5). An `anon` replica
 pulls only readable trees it opens. Every scope a replica pulls is held in full: a boot sends every
 alive row (§6.7).
+
+In a browser, reconciling the set (below) first deletes the `not-found` records of every tree that no
+product holds open (`subscribe`, in any tab) and no entry writes, in the tree or its overlay. A
+`not-found` is all a tree the person may not read leaves (§6.7), and once the tree is closed nothing
+needs its id on the device: opened again, it is pulled again and answered as before. A `gone` stays,
+since only a tree's owner hears one (§6.7) and it refuses a write into the account's own dead tree
+(§7.1 step 2).
 
 Uncovered scoped prediction and receipt-only targets join a bound replica's subscription set, so the
 puller proactively obtains their watermarks even when no product screen has opened them.

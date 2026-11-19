@@ -1734,6 +1734,62 @@ test('a public tree read signed out goes from the device at a sign-in that leave
   } finally { engine.close(); }
 });
 
+test('an anon replica forgets the not-found of a tree it may not read once no product holds it open, and keeps one an entry still writes', async () => {
+  const env = environment(), denied = 'tree/b_00000001', written = 'tree/b_00000002';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001'), 'tree:b_00000002': treeScope('A', 'b_00000002') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 }),
+      row({ t: 'board', id: 'b_00000002', life: ['alive', st(1)], born: st(1), seq: 2 })] },
+  }));
+  const engine = await open(env);
+  const stored = async () => (await engine.store.read()).device.activeReplica.known;
+  try {
+    await engine.subscribe(denied);
+    await engine.subscribe(written);
+    await engine.commit(written, [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }]);
+    await engine.pull();
+    const open = await stored();
+    await engine.pull();
+    const pulledAgain = await stored();
+    await engine.unsubscribe(denied);
+    await engine.unsubscribe(written);
+    await engine.pull();
+    assert.deepEqual({ open, pulledAgain, closed: await stored(), entries: engine.device.activeReplica.entries().map(({ scope }) => scope) }, {
+      open: { [denied]: 'not-found', [written]: 'not-found' },
+      pulledAgain: { [denied]: 'not-found', [written]: 'not-found' },
+      closed: { [written]: 'not-found' },
+      entries: [written],
+    });
+  } finally { engine.close(); }
+});
+
+test('a bound replica forgets the not-found of another account\'s tree it may not read once it is closed, and keeps the gone of its own dead tree', async () => {
+  const env = environment(), denied = 'tree/b_00000001', dead = 'tree/b_00000003';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'acct:B/probe': productScope('B'),
+      'tree:b_00000001': treeScope('A', 'b_00000001'), 'tree:b_00000003': treeScope('B', 'b_00000003', { state: 'dead' }) },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const stored = async () => (await engine.store.read()).device.activeReplica.known;
+  try {
+    env.transport.account = 'B';
+    assert.equal((await engine.signIn('B')).complete, true);
+    await engine.subscribe(denied);
+    await engine.subscribe(dead);
+    await engine.pull();
+    const open = await stored();
+    await engine.unsubscribe(denied);
+    await engine.unsubscribe(dead);
+    await engine.pull();
+    assert.deepEqual({ open, closed: await stored(), reopened: await engine.subscribe(dead) }, {
+      open: { [denied]: 'not-found', 'self/overlay/b_00000001': 'not-found', [dead]: 'gone', 'self/overlay/b_00000003': 'gone' },
+      closed: { [dead]: 'gone', 'self/overlay/b_00000003': 'gone' },
+      reopened: 'gone',
+    });
+  } finally { engine.close(); }
+});
+
 test('an opted act journals in IndexedDB, and its Undo survives a reopen, reports its wait and settles through the reference server', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A';

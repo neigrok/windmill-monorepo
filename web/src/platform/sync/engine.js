@@ -385,10 +385,29 @@ export class BrowserSyncEngine {
     this.coordination?.post({ type: 'scopes', scopes: [...this.openScopes] });
   }
 
+  // The trees products hold open with `subscribe`, in this tab and its peers.
+  opened() {
+    return [...this.openScopes, ...[...this.peerScopes.values()].flatMap((set) => [...set])];
+  }
+
   scopes(replica = this.device.activeReplica) {
     const products = Object.keys(this.registry.products).filter((product) => this.registry.products[product].surfaces.includes('web'));
-    const opened = [...this.openScopes, ...[...this.peerScopes.values()].flatMap((set) => [...set])];
-    return subscriptionsOf(replica, this.registry, products, opened);
+    return subscriptionsOf(replica, this.registry, products, this.opened());
+  }
+
+  // Reconciles the replica's subscription set (engine.md §7.9), first forgetting the `not-found` of every tree no product
+  // holds open and no entry writes: the end a reader's tree leaves. A `gone` ends the account's own tree, and stays.
+  reconcileSet(replica, ctx) {
+    const opened = new Set(this.opened());
+    const written = new Set(replica.entries().flatMap((entry) => effectsOf(entry).map(({ scope }) => scope)));
+    for (const [scope, kind] of Object.entries(replica.known)) {
+      const id = scope.split('/').pop();
+      if (kind !== 'not-found' || opened.has(`tree/${id}`) || written.has(`tree/${id}`) || written.has(`self/overlay/${id}`)) continue;
+      delete replica.known[scope];
+    }
+    const scopes = this.scopes(replica);
+    reconcile(replica, ctx, scopes);
+    return scopes;
   }
 
   // A scope opens only under the opening its subscribe began in: an unsubscribe called before the subscribe resolves ends
@@ -411,7 +430,7 @@ export class BrowserSyncEngine {
     this.openScopes.delete(scope);
     this.announceScopes();
     this.kickPull();
-    return this.write(null, (device, ctx) => reconcile(device.activeReplica, ctx, this.scopes(device.activeReplica)));
+    return this.write(null, (device, ctx) => { this.reconcileSet(device.activeReplica, ctx); });
   }
 
   // A caller that must know its gesture id before the commit (the domain kit's runner) mints it here and
@@ -889,8 +908,7 @@ export class BrowserSyncEngine {
       request = await this.write(null, (device, ctx) => {
         const replica = device.activeReplica;
         seat = { handle: replica.storageHandle, replica: replica.id, binding: bindingOf(replica) };
-        const scopes = this.scopes(replica);
-        reconcile(replica, ctx, scopes);
+        const scopes = this.reconcileSet(replica, ctx);
         for (const scope of [...this.doubts.scopes.keys()]) if (!scopes.includes(scope)) this.doubts.left(scope);
         const solo = [...this.repullSolo].find((scope) => scopes.includes(scope));
         const pending = solo ? [solo] : [...this.pullDirty].filter((scope) => scopes.includes(scope)).slice(0, this.limits.PULL_MAX_SCOPES);
