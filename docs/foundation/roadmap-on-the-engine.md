@@ -188,7 +188,8 @@ product inverses, each all or nothing on the evidence the engine builds from the
 Every gesture is an action on the domain kit, the same in each language.
 
 - **Create a roadmap** commits the `tree` record, then one intent in its tree scope with the title,
-  the genesis kinds and the first steps. The second is dropped if the first is refused.
+  its kinds and the first steps: the genesis kinds, or a legend of its own (a pasted plan's or a
+  quest's) in which no two kinds wear one hue. The second is dropped if the first is refused.
 - **Create a step** writes the step and one link from each prerequisite, in one intent. A
   prerequisite deleted elsewhere is linked all the same.
 - **Any change to a step or a kind** carries the record's life as alive, under the gesture's stamp,

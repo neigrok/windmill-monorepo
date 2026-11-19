@@ -50,7 +50,7 @@ const corpus = new RoadmapCorpus(roadmapBook, RoadmapRules.spec);
 function actOf(input) {
   const { action, input: given } = input;
   switch (action) {
-    case 'CreateRoadmap': return new CreateRoadmap(given.title, given.steps);
+    case 'CreateRoadmap': return new CreateRoadmap(given.title, given.steps, given.kinds);
     case 'DeleteRoadmap': return new DeleteRoadmap(given.tree);
     case 'SetVisibility': return new SetVisibility(given.tree, given.visibility);
     case 'CreateSubtree': return new CreateSubtree(given.tree, given.step);
