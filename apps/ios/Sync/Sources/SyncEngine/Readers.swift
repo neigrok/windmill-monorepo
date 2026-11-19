@@ -212,6 +212,14 @@ final class TransactionReader: CommitContext {
     try reading { try records(Listing(type, .stored, where: Listing.Narrowing(field: field, id: id), in: scope, registry: registry)) }
   }
 
+  func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? {
+    try reading {
+      try checkLives(type)
+      let key = RecordKey(type, id)
+      return try load(RowSelection(keys: [key])).spentIDs(scope)[key]?.born
+    }
+  }
+
   // Found by the key's bytes, as the store compares text.
   func device(_ key: String) throws -> JSON? {
     try reading {

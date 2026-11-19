@@ -212,6 +212,7 @@ enum Kit {
     func stored(_ type: String) throws -> [Record] { try drawn(type) }
     func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] { [] }
     func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] { [] }
+    func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { nil }
     func device(_ key: String) throws -> JSON? { nil }
     func firstPullComplete() throws -> Bool { true }
     func confirmed(_ type: String, _ id: RecordID) throws -> Record? { try stored(type, id) }

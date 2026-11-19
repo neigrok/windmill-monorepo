@@ -118,17 +118,21 @@ extension Moment {
 
 // MARK: - Records
 
-// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, and the
-// device keys it lists, each key's value.
+// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, the
+// device keys it lists, each key's value, and the scope's spent ids it lists, `{t, id, born}`, each id's born.
 package struct VectorRecords: Sendable {
   package var drawn: [Record]
   package var stored: [Record]
   package var device: JSON.Object
+  package var spent: [RecordKey: Stamp]
 
-  package init(drawn: JSON?, stored: JSON?, device: JSON? = nil, registry: Registry) throws {
+  package init(drawn: JSON?, stored: JSON?, device: JSON? = nil, spent: JSON? = nil, registry: Registry) throws {
     self.drawn = try VectorRecords.records(drawn, registry: registry)
     self.stored = try VectorRecords.records(stored, registry: registry)
     self.device = try device?.asObject() ?? [:]
+    self.spent = Dictionary(uniqueKeysWithValues: try (spent?.asArray() ?? []).map { (spentID: JSON) throws -> (RecordKey, Stamp) in
+      (RecordKey(try spentID.member("t").asString(), try RecordID(json: spentID.member("id"))), try Stamp(json: spentID.member("born")))
+    })
   }
 
   // A case's records in `scope`, `stored` defaulting to `drawn`: its `records`, device rows among them, or, in a scene of
@@ -148,9 +152,10 @@ package struct VectorRecords: Sendable {
   }
 }
 
-// A reader over a vector's records: the folded record by id visible or not, and the visible records of a type in id
-// order, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another scope as they do. It
-// mints the ids the vector lists, in order, opaque ones included, and no other; the replica it writes to is one no vector names.
+// A reader over a vector's records: the folded record by id visible or not, the visible records of a type in id order,
+// and the born of a spent id, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another
+// scope as they do. It mints the ids the vector lists, in order, opaque ones included, and no other; the replica it
+// writes to is one no vector names.
 package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
@@ -182,6 +187,8 @@ package final class VectorReader: CommitContext {
   package func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
     visible(records.stored, try lives(type)).filter { $0.values[field] == id.json }
   }
+
+  package func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { records.spent[RecordKey(try lives(type), id)] }
 
   // The engine's readers throw on a type of another scope.
   func lives(_ type: String) throws -> String {
