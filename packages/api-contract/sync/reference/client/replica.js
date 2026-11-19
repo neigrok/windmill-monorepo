@@ -166,12 +166,13 @@ export class Replica {
 
   // The scope's spent ids as a read-and-commit function reads them (§7.1): `{t, id, born}` each.
   spentRows(scope) {
-    return Object.values(this.spentIds[scope] ?? {});
+    return Object.values(this.spentIds[scope] ?? {}).map(({ t, id, born }) => ({ t, id, born }));
   }
 
-  addSpent(scope, t, id, born) {
+  // §7.5: a dead derived row leaves its record's spent id, which keeps the row's born and seq.
+  addSpent(scope, { t, id, born, seq }) {
     this.spentIds[scope] ??= {};
-    this.spentIds[scope][recordKey(t, id)] = { t, id, born };
+    this.spentIds[scope][recordKey(t, id)] = { t, id, born, seq };
   }
 
   cursorOf(scope) {

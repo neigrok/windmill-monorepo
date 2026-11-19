@@ -2620,7 +2620,8 @@
                 {
                   "t": "node",
                   "id": "macros",
-                  "born": "1000:0:r_aaaaaaaaaaaa"
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 4
                 }
               ]
             },

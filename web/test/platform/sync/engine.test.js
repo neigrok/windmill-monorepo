@@ -10,9 +10,10 @@ import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wi
 import { scopeDigest } from '../../../../packages/api-contract/sync/reference/core/digest.js';
 import { hashText } from '../../../src/platform/sync/core/encoding.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { environment, until, tick } from './fakes.js';
-import { overlayScope, productScope, row, serverState, st, treeScope } from './oracle-adapters/fixtures.js';
+import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './oracle-adapters/fixtures.js';
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { Device } from '../../../../packages/api-contract/sync/reference/client/replica.js';
 
@@ -1272,5 +1273,42 @@ test('an opted act journals in IndexedDB, and its Undo survives a reopen, report
   assert.deepEqual(inverse[2], { outcome: 'settled', applied: 1, skipped: 0 });
   assert.deepEqual(reopened.device.activeReplica.journal, []);
   assert.equal(await reopened.releaseReversibleAct(act.gestureId), false);
+  reopened.close();
+});
+
+test('a tag deleted on another device keeps its dead row\'s seq in IndexedDB, so the Undo of its revival after a reopen applies', async () => {
+  const env = environment(), tree = 'tree/b_00000001', oak = { t: 'tag', id: 'oak', born: st(1) };
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ ...oak, life: ['alive', st(1)], f: { label: ['Oak', st(1)] }, seq: 1 })] },
+  }));
+  const serverOak = () => env.state.rows['tree:b_00000001'][JSON.stringify(['tag', 'oak'])];
+  const engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
+  env.state = push({ state: env.state, registry, product, account: 'A', serverNow: env.timers.time, request: { replica: 'rp_0000000000000000000000000000000b',
+    account: 'A', ackThrough: 0, intents: [{ n: 1, scope: tree, d: [{ ...oak, life: ['dead', st(2, 0, OTHER)] }] }] } }).state;
+  engine.kickPull(); await engine.pull();
+  const deathSeq = serverOak().seq;
+  assert.deepEqual(engine.device.activeReplica.confirmedRows(tree), []);
+  engine.close();
+
+  const reopened = await open(env);
+  const life = { scope: tree, t: 'tag', id: 'oak', slot: { kind: 'life' } };
+  const label = { scope: tree, t: 'tag', id: 'oak', slot: { kind: 'field', name: 'label' } };
+  const { outcome: act } = await reopened.commitAct([{ scope: tree, changes: [{ op: 'revive', t: 'tag', id: 'oak', f: { label: 'Next' } }] }],
+    { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree',
+      targets: [{ target: life, defaultValue: 'dead' }, { target: label, defaultValue: 'Oak' }] }] }] } });
+  assert.deepEqual(reopened.device.activeReplica.journal[0].sourceEntries[0].preimages.map(({ rowSeq }) => rowSeq), [deathSeq, deathSeq]);
+  await reopened.send(); await reopened.pull();
+  assert.deepEqual([serverOak().life[0], serverOak().f.label[0]], ['alive', 'Next']);
+  const requested = await reopened.requestInverse(act.gestureId);
+  await reopened.send(); await reopened.pull();
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), { kind: 'settled', requestId: requested.requestId,
+    inverseActId: requested.inverseActId, changed: true, appliedCount: 2, skippedCount: 0 });
+  assert.deepEqual([serverOak().life[0], serverOak().f.label[0]], ['dead', 'Oak']);
+  assert.deepEqual(reopened.device.activeReplica.confirmedRows(tree), []);
+  assert.deepEqual(env.failures, []);
   reopened.close();
 });
