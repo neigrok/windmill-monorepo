@@ -406,11 +406,13 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and nine script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and ten script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
-`domain`, `mcp`, `sync` and `adapters` are the C++ suites. `deploy` checks that the production
+`domain`, `mcp`, `sync` and `adapters` are the C++ suites. `one_definition` checks that no two files of
+`platform/` and `products/` define a class or struct under one qualified name: every binary links them all, and the
+linker would keep one copy of the inline code the two share. `deploy` checks that the production
 Caddyfile forwards every credential line as received, `deploy_stop_grace` that the time the compose
 file gives the server to stop covers the server's own deadline and exit flush, `deploy_production` runs
 `deploy/deploy-production.sh` against a modeled Docker host, `auth_differential` tests the
