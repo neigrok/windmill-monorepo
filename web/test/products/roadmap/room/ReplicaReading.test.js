@@ -98,7 +98,8 @@ test('the room follows each change the replica draws: a step deleted elsewhere i
 });
 
 // The device keeps nothing of a step deleted elsewhere but its spent id (engine.md §7.5): a line names it as the device's
-// note took it when the device linked from it, and an edit made after the delete arrived brings the step back.
+// note took it when the device linked from it, the link reaching the server after the delete, and an edit made after the
+// delete arrived brings the step back.
 test('the device tells its own changes once: a new step that follows past a step another device deleted, and a step its edit brought back; a read that fails tells nothing and reports once', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
@@ -117,10 +118,11 @@ test('the device tells its own changes once: a new step that follows past a step
     const landed = [];
     reading.follow({ onTree: () => {}, onProgress: () => {}, onWorkspace: () => {}, onGuides: () => {}, onLanding: (lines) => landed.push(lines), onActivity: () => {} });
 
-    const reef = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Reef the sail' }, [steps.wind])));
     committed(await b.runner.runAct(new DeleteStep(tree, steps.wind)));
     committed(await b.runner.runAct(new DeleteStep(tree, steps.dock)));
     await a.advance(CONSTANTS.HOLD_MS);
+    await b.senderStep();
+    const reef = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Reef the sail' }, [steps.wind])));
     await a.sync();
     committed(await a.runner.runAct(new ChangeStep(tree, steps.dock, { description: 'Cast off the lines' })));
     await a.sync();
