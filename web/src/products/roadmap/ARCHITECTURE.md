@@ -158,7 +158,8 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
 - **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
   it, E-3), observes the account's list `self/roadmap` and every scope the domain reads the roadmap through: every roadmap
   of the account where the open one is in the list, else the open one and each roadmap above it (by its `meta.parent`),
-  each subscribed as it comes to be read. It keeps one hold on each scope it observes. The room drops every scope it
+  each subscribed as it comes to be read, and read only once the engine has taken that subscription (it reads a scope it
+  does not pull as pulled and empty, which would hide a subtree whose roadmap above it is not subscribed yet). It keeps one hold on each scope it observes. The room drops every scope it
   subscribed, and releases every hold, when it leaves. It reads the engine only through its public API
   (`test/products/roadmap/room/engineBoundary.test.js` holds every `room/` file to that).
 - **Opening.** It opens from what the device holds, asking nothing of the network first: the copy, once the engine

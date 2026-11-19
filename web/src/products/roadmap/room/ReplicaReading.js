@@ -71,6 +71,7 @@ export class ReplicaReading {
     this.writes = null;
     this.engine = null;
     this.subscribed = new Set();
+    this.subscribing = new Set();
     this.holds = new Map();
     this.listeners = new Set([() => this.emitStatus(), () => this.writes?.followInverses()]);
     this.statusHandlers = new Set();
@@ -315,11 +316,17 @@ export class ReplicaReading {
     return ids;
   }
 
-  // A scope the reading comes to read, subscribed once, so the server's copy of it arrives.
+  // A scope the reading comes to read, subscribed once, so the server's copy of it arrives. Until the engine has taken the
+  // subscription it is not read: the engine reads a scope it does not pull as pulled and holding nothing, so a roadmap
+  // above the open one would read as empty, and the open one as hidden.
   subscribeTo(scope) {
     if (this.subscribed.has(scope)) return;
     this.subscribed.add(scope);
-    this.engine.subscribe(scope).catch(() => {});
+    this.subscribing.add(scope);
+    this.engine.subscribe(scope).catch(() => {}).finally(() => {
+      this.subscribing.delete(scope);
+      this.changed();
+    });
   }
 
   // What the replica holds of one roadmap, its tree scope subscribed, the same holding while its records are the same.
@@ -327,7 +334,7 @@ export class ReplicaReading {
     this.subscribeTo(RoadmapScopes.tree(id));
     const tree = this.observe(RoadmapScopes.tree(id));
     const overlay = this.observe(RoadmapScopes.overlay(id));
-    const read = tree.firstPullComplete && tree.loaded;
+    const read = !this.subscribing.has(RoadmapScopes.tree(id)) && tree.firstPullComplete && tree.loaded;
     const known = this.holdings.get(id);
     if (known && known.record === record && known.read === read && same(known.tree, tree.drawn) && same(known.overlay, overlay.drawn)
       && same(known.queued, overlay.pending)) return known.held;

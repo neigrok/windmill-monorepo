@@ -354,3 +354,48 @@ test('the bare roadmap door reads the person’s list once the device has read i
     a.close();
   }
 });
+
+test('a reader who goes into a subtree waits for the roadmap above it to be subscribed: a scope the engine does not pull yet is not read empty', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('My year', { steps: [{ key: 'sail', label: 'Learn to sail' }], links: [] })));
+    const { subtree } = committed(await a.runner.runAct(new CreateSubtree(tree, steps.sail)));
+    committed(await a.runner.runAct(new CreateStep(subtree, { label: 'Tie a bowline' }, [])));
+    for (const id of [tree, subtree]) for (const scope of [RoadmapScopes.tree(id), RoadmapScopes.overlay(id)]) a.observe(scope);
+    await a.sync();
+    // The engine as a stranger's browser sees it: no roadmap of theirs in the list, and the roadmap above the subtree not
+    // yet in its subscriptions, which it reads, as it reads any scope it does not pull, as pulled and holding nothing.
+    let above = null;
+    let taken = false;
+    const nothing = { drawn: [], stored: [], pending: [], outbox: { held: 0, ready: 0, sent: 0, acked: 0 }, loaded: true, firstPullComplete: true };
+    const seen = (scope, shown) => {
+      const hold = a.engine.observe(scope);
+      return { subscribe: (listener) => hold.subscribe(listener), getSnapshot: () => (shown() ? hold.getSnapshot() : nothing), release: () => hold.release() };
+    };
+    const engine = Object.create(a.engine, {
+      observe: { value: (scope) => {
+        if (scope === RoadmapScopes.account) return seen(scope, () => false);
+        if (scope === RoadmapScopes.tree(tree)) return seen(scope, () => taken);
+        return a.engine.observe(scope);
+      } },
+      subscribe: { value: (scope) => (scope === RoadmapScopes.tree(tree)
+        ? new Promise((resolve) => { above = () => { taken = true; resolve('subscribed'); }; }) : a.engine.subscribe(scope)) },
+    });
+    const snapshot = { engine, ready: true, online: true, error: false };
+    const told = [];
+    const reading = new ReplicaReading({ treeId: subtree, timers: a.env.timers, track: (name, props) => told.push([name, props]),
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async (seed) => ({ completed: new Set(), completedAt: {}, server: true, seed }), loadActivity: async () => [] } });
+    let answered = 'pending';
+    reading.read({ signal: new AbortController().signal }).then((read) => { answered = read; });
+    await until(() => above !== null);
+    await until(() => true);
+    assert.deepEqual({ answered, told }, { answered: 'pending', told: [] }, 'the subtree is not judged before the roadmap above it is subscribed');
+    above();
+    await until(() => answered !== 'pending');
+    assert.deepEqual({ title: answered?.seed.title, steps: answered?.seed.nodes.map((step) => step.label), told }, { title: 'Learn to sail', steps: ['Tie a bowline'], told: [] });
+    reading.close();
+  } finally {
+    a.close();
+  }
+});
