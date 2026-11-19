@@ -100,19 +100,22 @@ export const StepNote = new EntityType({
 export function SaveStepNote(draft) { return SaveDraft.ofDraft(draft, RoadmapRefusals); }
 
 // A new subtask or link, at the bottom of its step's list. Its step must be one the roadmap knows, present or
-// deleted elsewhere.
+// deleted elsewhere. An item given its id (`id`, null to mint one) is made once: where the overlay holds that id, or
+// knows it deleted, nothing is written.
 export class AddToWorkspace {
   /**
    * @param {EntityType<any, null>} type
    * @param {string} tree
    * @param {string} step
    * @param {(id: Id<any>) => WorkspaceItem} item
+   * @param {string | null} id
    */
-  constructor(type, tree, step, item) {
+  constructor(type, tree, step, item, id = null) {
     this.type = type;
     this.tree = tree;
     this.step = step;
     this.item = item;
+    this.id = id;
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
@@ -122,19 +125,21 @@ export class AddToWorkspace {
     const known = read.inScope(RoadmapScopes.tree(this.tree), (tree) => HeldRecord.read(tree.repository(RoadmapStep), new Id(this.step, RoadmapStep)).known);
     return read.inScope(RoadmapScopes.overlay(this.tree), (overlay) => {
       const items = overlay.repository(this.type);
-      return { known, anchor: items.anchor(Placement.bottom), capacity: items.capacity(), moment: overlay.moment };
+      const held = this.id !== null && (items.record(this.id, 'stored') !== undefined || items.spentBorn(new Id(this.id, this.type)) !== null);
+      return { known, held, anchor: items.anchor(Placement.bottom), capacity: items.capacity(), moment: overlay.moment };
     });
   }
 
   /**
-   * @param {{ known: boolean, anchor: import('../../../platform/domain-kit/entities.js').RecordID | null,
+   * @param {{ known: boolean, held: boolean, anchor: import('../../../platform/domain-kit/entities.js').RecordID | null,
    *   capacity: import('../../../platform/domain-kit/reading.js').Capacity, moment: import('../../../platform/domain-kit/time.js').Moment }} loaded
    * @param {ActIDSource} ids
    */
-  decide({ known, anchor, capacity, moment }, ids) {
+  decide({ known, held, anchor, capacity, moment }, ids) {
     if (!known) return gone(RoadmapStep.type, this.step);
+    if (held) return ActDecision.unchanged(this.id);
     const scope = RoadmapScopes.overlay(this.tree);
-    const valid = new Valid(this.item(ids.mint(this.type, scope)), moment);
+    const valid = new Valid(this.item(this.id === null ? ids.mint(this.type, scope) : new Id(this.id, this.type)), moment);
     const refused = full(capacity, 1, valid.id.ref);
     if (refused) return refused;
     const plan = new Plan();
@@ -144,14 +149,14 @@ export class AddToWorkspace {
   }
 }
 
-/** @param {string} tree @param {string} step @param {string} label */
-export function AddSubtask(tree, step, label) {
-  return new AddToWorkspace(Subtask, tree, step, (id) => new SubtaskValue(id, step, { label }));
+/** @param {string} tree @param {string} step @param {string} label @param {{ id?: string | null, done?: boolean }} [given] */
+export function AddSubtask(tree, step, label, { id = null, done = false } = {}) {
+  return new AddToWorkspace(Subtask, tree, step, (minted) => new SubtaskValue(minted, step, { label, done }), id);
 }
 
-/** @param {string} tree @param {string} step @param {{ url: string, title?: string }} link */
-export function AddStepLink(tree, step, link) {
-  return new AddToWorkspace(StepLink, tree, step, (id) => new StepLinkValue(id, step, link));
+/** @param {string} tree @param {string} step @param {{ url: string, title?: string }} link @param {{ id?: string | null }} [given] */
+export function AddStepLink(tree, step, link, { id = null } = {}) {
+  return new AddToWorkspace(StepLink, tree, step, (minted) => new StepLinkValue(minted, step, link), id);
 }
 
 // One workspace item as the overlay draws it, and its step's items in their order.

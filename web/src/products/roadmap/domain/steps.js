@@ -203,7 +203,7 @@ function loopAt(link, at) {
 }
 
 // One imported step and the links that lead to it: the unit a chunk holds whole.
-class ImportUnit {
+export class ImportUnit {
   /**
    * @param {Valid<RoadmapStepValue>} step
    * @param {Valid<RoadmapLinkValue>[]} links
@@ -241,28 +241,34 @@ class ImportPlan {
 
   get links() { return this.units.flatMap((unit) => unit.links); }
 
-  // §5 Import and paste: chunks of at most IMPORT_CHUNK records and half the engine's push limit, a step's
-  // prerequisites in its chunk or an earlier one. The first chunk keeps room for `reserved` records.
   /** @param {number} reserved */
-  chunks(reserved = 0) {
-    /** @type {ImportUnit[][]} */
-    const chunks = [[]];
-    let count = reserved;
-    let bytes = 0;
-    for (const unit of this.units) {
-      const current = chunks.at(-1) ?? [];
-      if (count > 0 && (count + unit.count > RoadmapLimits.importChunk || bytes + unit.bytes > RoadmapLimits.importChunkBytes)) {
-        chunks.push([unit]);
-        count = unit.count;
-        bytes = unit.bytes;
-        continue;
-      }
-      current.push(unit);
-      count += unit.count;
-      bytes += unit.bytes;
+  chunks(reserved = 0) { return importChunks(this.units, reserved); }
+}
+
+// §5 Import and paste: chunks of at most IMPORT_CHUNK records and half the engine's push limit, a step's
+// prerequisites in its chunk or an earlier one. The first chunk keeps room for `reserved` records.
+/**
+ * @param {ImportUnit[]} units
+ * @param {number} reserved
+ */
+export function importChunks(units, reserved = 0) {
+  /** @type {ImportUnit[][]} */
+  const chunks = [[]];
+  let count = reserved;
+  let bytes = 0;
+  for (const unit of units) {
+    const current = chunks.at(-1) ?? [];
+    if (count > 0 && (count + unit.count > RoadmapLimits.importChunk || bytes + unit.bytes > RoadmapLimits.importChunkBytes)) {
+      chunks.push([unit]);
+      count = unit.count;
+      bytes = unit.bytes;
+      continue;
     }
-    return chunks;
+    current.push(unit);
+    count += unit.count;
+    bytes += unit.bytes;
   }
+  return chunks;
 }
 
 // What an import brings: its steps under fresh ids, ordered after their trunk parents' steps, with their

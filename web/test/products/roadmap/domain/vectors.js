@@ -70,11 +70,11 @@ function actOf(input) {
     case 'Reset': return Reset(given.tree, given.step);
     case 'SetPointer': return SetPointer(given.tree, given.step, given.opens);
     case 'ClearPointer': return ClearPointer(given.tree, given.step);
-    case 'AddSubtask': return AddSubtask(given.tree, given.step, given.label);
+    case 'AddSubtask': return AddSubtask(given.tree, given.step, given.label, { id: given.id ?? null, done: given.done ?? false });
     case 'ChangeSubtask': return ChangeSubtask(given.tree, given.subtask, given.changes);
     case 'MoveSubtask': return MoveSubtask(given.tree, given.subtask, given.below);
     case 'DeleteSubtask': return DeleteSubtask(given.tree, given.subtask);
-    case 'AddStepLink': return AddStepLink(given.tree, given.step, given.link);
+    case 'AddStepLink': return AddStepLink(given.tree, given.step, given.link, { id: given.id ?? null });
     case 'ChangeStepLink': return ChangeStepLink(given.tree, given.link, given.changes);
     case 'MoveStepLink': return MoveStepLink(given.tree, given.link, given.below);
     case 'DeleteStepLink': return DeleteStepLink(given.tree, given.link);

@@ -3241,7 +3241,9 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 `self/overlay/<T>` (a person's marks; the owner's pointers and workspace). **Device scope** `device/roadmap`,
 with rows `landing:<T>` (`{nodes, edges, revived, names?}`: the device's own new steps and links, the steps its
 own changes revived, and the name of each step it linked from, until the person has been told,
-[Roadmap on the sync engine](roadmap-on-the-engine.md) §6), `runningTurn:<turnId>`, `applying:<proposalId>` (`{stamp}`) and `picture:<id>` (`localOnly`), as
+[Roadmap on the sync engine](roadmap-on-the-engine.md) §6), `carry:<T>` (the carry-over's ledger of what it carried of
+the old bundle's roadmap `T` and the words of each record it set aside, Roadmap on the sync engine §8.2),
+`runningTurn:<turnId>`, `applying:<proposalId>` (`{stamp}`) and `picture:<id>` (`localOnly`), as
 [Roadmap Coach](roadmap-coach.md) §7–§9 use them.
 **Surfaces:** web, iOS. Roadmap's server-origin doors (MCP, tending, the fork) are Roadmap on the sync engine
 §7's. **Subscriptions** (§7.9): a tree and its overlay for each `tree` record the replica holds; a reader's

@@ -289,6 +289,7 @@ public enum Roadmap {
               "type": "object",
             ],
           ],
+          "carry": ["keyPattern": "^carry:t_[0-9a-f]{16}$", "value": ["type": "json"]],
           "landing": [
             "keyPattern": "^landing:t_[0-9a-f]{16}$",
             "value": [

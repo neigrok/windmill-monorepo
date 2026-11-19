@@ -31,6 +31,7 @@
             }
           }
         },
+        "carry": { "keyPattern": "^carry:t_[0-9a-f]{16}$", "value": { "type": "json" } },
         "runningTurn": { "keyPattern": "^runningTurn:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } },
         "applying": {
           "keyPattern": "^applying:[A-Za-z0-9_-]{8,64}$",
