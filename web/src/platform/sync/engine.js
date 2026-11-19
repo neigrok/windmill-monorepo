@@ -1,5 +1,5 @@
 import { IndexedDBStore, WriterSlice, frozen } from './store.js';
-import { ScopeObservation } from './observation.js';
+import { ProductNotices, ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
 import { syncTelemetry } from './telemetry.js';
@@ -56,6 +56,7 @@ export class BrowserSyncEngine {
     this.listeners = new Set();
     this.eventListeners = new Set();
     this.views = new Map();
+    this.noticeViews = new Map();
     this.openScopes = new Set();
     this.peerScopes = new Map();
     this.doubts = new Doubts();
@@ -185,7 +186,7 @@ export class BrowserSyncEngine {
     this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state,
       authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
       pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), connection: this.connection() });
-    for (const observation of this.views.values()) observation.refresh(replica);
+    for (const observation of [...this.views.values(), ...this.noticeViews.values()]) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
     this.notify(this.listeners);
     if (this.upgradeRequired || this.signingOut) this.stopNetwork();
@@ -254,6 +255,18 @@ export class BrowserSyncEngine {
       this.store.read([scope]).then((answer) => { if (!this.closed) this.publish({ ...answer, hydrated: true }); })
         .catch(() => { if (!this.closed) this.telemetry.failure('storage'); });
     }
+    return observation.hold();
+  }
+
+  // A hold on one product's notices in every scope (engine.md §7.6), published again whenever they change.
+  observeNotices(product) {
+    const known = this.noticeViews.get(product);
+    if (known) return known.hold();
+    const observation = new ProductNotices(product, this.registry, {
+      notify: (listeners) => this.notify(listeners),
+      idle: () => { if (this.noticeViews.get(product) === observation) this.noticeViews.delete(product); } });
+    observation.refresh(this.device.activeReplica);
+    this.noticeViews.set(product, observation);
     return observation.hold();
   }
 

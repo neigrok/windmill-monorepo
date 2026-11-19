@@ -46,6 +46,10 @@ snapshot carries:
 - `notices`, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and the records it
   changes) and `firstPullComplete`.
 
+`observeNotices(product)` answers a hold of the same kind on one product's notices in every scope (engine.md §7.6):
+its snapshot is `{replica, notices}`, each notice whole and none dismissed, a scope known gone's among them. The
+engine publishes it again only when the product's notices change.
+
 `observeEngine` and `getSnapshot` expose replica/auth/upgrade state and `connection`: `offline` while the
 browser reports no network, `unreachable` after a request to the server got no answer or a 5xx answer
 and before one answers again, else `online`. The tab that makes a request tells the other tabs whether it
@@ -155,9 +159,9 @@ lost push reply. It requires `windmill_server` and Postgres client tools from `b
 territory; scheduling this script there remains an integration task. `npm run build` also bundles
 the browser engine separately and rejects Node builtins. The app shell caches the built room assets for offline reload; product adapters own their projections and migration.
 
-`react.js` exports `useSyncEngine()` (the open bound engine, or null during boot/sign-out) and
+`react.js` exports `useSyncEngine()` (the open bound engine, or null during boot/sign-out),
 `useSyncRecords(scope)` (the scope's snapshot through `useSyncExternalStore`, holding the scope for the
-document). Records can observe the anonymous replica; only the session owner opens
+document) and `useSyncNotices(product)` (the product's notices the same way). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
 `onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)` and `signedOutWork` — the record type a
 sign-in question counts, with the product's own words for it (`counted(n)`, `many`) — and the session owner composes every group into the engine options;

@@ -2308,6 +2308,15 @@ capCount(t) = |{ id : visible(stored(t, id)) }|
   never visible, and a record of a type with life is visible only while alive.
 - Appendix A may add a product view rule (A.2).
 
+**A product's notices.** A client reads one product's notices (D-17), observable and published again whenever a
+notice is written, dismissed or folded into (§7.7): every notice whose scope is one of the product's (a product
+scope, and for the product whose type governs trees, its tree and overlay scopes), whole, as copy and discard read
+them, but a dismissed one. It reads no scope's rows, so a notice outlives its scope: a tree known gone (§7.5), whose
+rows the device has forgotten and which nothing the device holds still names, keeps its `scope-dead` notice
+readable. The JS reference reads it as `noticesOfProduct`, the browser engine as `observeNotices`, Swift as
+`NoticesView` and Kotlin as `notices(product)`. A browser scope observation also carries the notices whose content
+draws in its scope, projected to it (§7.7), dismissed ones marked.
+
 ### §7.7 Refusal, rebase, recovery and maps
 
 On `refused(code)` for entry `e`, in one local transaction (an orphan's refusal ends it without a
