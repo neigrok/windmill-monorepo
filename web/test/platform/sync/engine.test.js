@@ -606,6 +606,31 @@ for (const [name, { before, change }] of Object.entries(bindingChanges)) test(`a
   engine.close();
 });
 
+test('a sign-in another tab completes in place stops the leader\'s socket, so a frame that socket carried lands nowhere', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const leader = await open(env), tab = await peer(env);
+  await leader.subscribe(tree);
+  await leader.pull();
+  const socket = env.sockets.at(-1);
+  socket.readyState = 1; socket.onopen();
+  const deliver = socket.onmessage;
+  await tab.commit('self/probe', card('card0009'));
+  env.transport.account = 'B';
+  assert.equal((await tab.signIn('B')).complete, true);
+  await until(() => leader.device.activeReplica.meta.state === 'bound');
+  deliver({ data: JSON.stringify({ op: 'not-found', scope: tree, as: null }) });
+  await until(() => !leader.live.draining);
+  assert.deepEqual({ sameReplica: leader.activeReplica() === tab.activeReplica(), followedBy: leader.live.socket === socket ? 'the old socket' : 'another',
+    oldSocket: socket.readyState, authPaused: leader.device.activeReplica.meta.authPaused, known: leader.device.activeReplica.known },
+  { sameReplica: true, followedBy: 'another', oldSocket: 3, authPaused: false, known: {} });
+  tab.close(); leader.close();
+});
+
 test('an act planned before a re-identify of the active replica commits: the binding outlives the replica\'s id', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A';

@@ -2166,8 +2166,7 @@ engine stops on any `426`.
    chunk takes the next rows of the page, whole and in the page's order. A page's chunks apply one
    after another, with no other page or frame of the scope between them, and each first checks that
    the page is not stale, that its scope is in the subscription set and that its replica is still
-   active and bound to the account it was pulled for (§7.12); a chunk that fails a check applies
-   nothing, and neither does the rest of the page.
+   active (§7.12); a chunk that fails a check applies nothing, and neither does the rest of the page.
    A page in one transaction is its own first and last chunk.
    - **Stale page.** A page requested with a cursor other than the scope's stored cursor is dropped,
      and the scope is pulled again, so a cursor never moves backwards.
@@ -2236,7 +2235,7 @@ engine stops on any `426`.
 
    A chunk fails its check only after a transaction outside the page moved the scope's cursor (an
    epoch change leaves it `null`), took the scope out of the subscription set, or changed the active
-   replica or its account. It leaves the same state as a death, with the process alive.
+   replica. It leaves the same state as a death, with the process alive.
 
    A straight-in boot's chunks are visible before `booted`, in the page's `(seq, type, id)` order, so
    a record can arrive before one it references (a roadmap `edge` before its `node`). The pages of a
@@ -2704,12 +2703,9 @@ re-identify leaves alone, and the id lives in `ReplicaMeta` alone. Its work grow
 One replica of the device is **active**: the one `commit` (§7.1), the views (§7.6), the sender
 (§7.4), the puller and the live socket (§7.5) act on. It is the `bound` replica while an account is
 signed in, and otherwise the `anon` replica, which stays active through an incomplete sign-in
-(§7.10). A re-identify changes the active replica's id, not which replica is active. A pull's answer,
-a page or a frame that arrives for a replica no longer active, or no longer bound to the account it
-was asked under (a sign-in that rebinds the `anon` replica in place), applies nothing and pauses
-nothing, and the puller does not back off for it: the sign-in or sign-out that overtook it runs the
-puller itself (below). Push results still in flight are recorded in the replica that sent them
-(§7.10).
+(§7.10). A re-identify changes the active replica's id, not which replica is active. A page or frame
+that arrives for a replica no longer active applies nothing; push results still in flight are
+recorded in the replica that sent them (§7.10).
 
 The engine exposes:
 - `activeReplica()`: the active replica's id (D-3).
@@ -2738,7 +2734,12 @@ The browser engine adds `activeBinding()`: an opaque string that changes wheneve
 the account it is bound to changes, so a switch to another replica, a sign-in (the one that binds the
 anon replica in place, whose id stands, included) and a sign-out each change it, and a re-identify does
 not; null before the engine's first publication. An act planned under it commits only while it stands
-(§7.1 Ordered local acts), and a pull or a frame received under it lands only while it stands.
+(§7.1 Ordered local acts). A pull's answer and its pages land only under the binding the pull was sent
+under, and the answer only under the replica id it was sent under as well; a frame lands only under the
+binding its live socket opened under, and a change of binding, another tab's included, closes that
+socket and ends every doubt (§7.9), so the socket opens again under the new one. An answer or frame
+these rules turn away applies nothing and pauses nothing, and the puller does not back off for it: it
+pulls the answer's scopes again for the replica now active.
 
 The Kotlin engine adds two reads of this state. `activeReplicaRebinds()` announces each completed sign-in
 that rebinds the active `anon` replica, whose id stands and whose seat does not (gym Coach D-10), with the

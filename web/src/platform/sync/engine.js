@@ -82,7 +82,7 @@ export class BrowserSyncEngine {
     this.pullChunk = new WriterSlice(64, this.limits.WRITER_SLICE_MS);
     this.inFlight = new Set();
     this.live = new LiveChannel({ transport: this.transport, timers, now: monotonic, draw,
-      limits: this.limits, onFrame: (frame) => this.receiveFrame(frame),
+      limits: this.limits, binding: () => this.activeBinding(), onFrame: (frame, opened) => this.receiveFrame(frame, opened),
       onFollowing: (current, previous) => {
         for (const scope of previous) if (!current.has(scope)) this.doubts.unfollowed(scope, this.monotonic());
         for (const scope of current) this.doubts.followed(scope, this.monotonic());
@@ -187,6 +187,12 @@ export class BrowserSyncEngine {
       pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), connection: this.connection() });
     for (const observation of [...this.views.values(), ...this.noticeViews.values()]) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
+    // A sign-in or a sign-out, another tab's in-place rebind included, ends every doubt and the socket opened for the binding
+    // before it, which opens again for the new one (engine.md §7.9, §7.12).
+    if (previous && bindingOf(previous) !== bindingOf(replica)) {
+      this.doubts.clear();
+      this.live.stop({ reset: true });
+    }
     this.notify(this.listeners);
     if (this.upgradeRequired || this.signingOut) this.stopNetwork();
     if (replica.meta.authPaused) {
@@ -963,7 +969,7 @@ export class BrowserSyncEngine {
     for (const scope of this.live.following) this.doubts.followed(scope, this.monotonic());
   }
 
-  // A frame lands only under the binding it was received under, a frame deferred behind a pull included (engine.md §7.12).
+  // A frame lands only under the binding its socket opened under, a frame deferred behind a pull included (engine.md §7.12).
   async receiveFrame(frame, binding = this.activeBinding()) {
     const replica = this.device.activeReplica;
     const handle = replica.storageHandle;

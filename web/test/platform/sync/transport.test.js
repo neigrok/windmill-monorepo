@@ -114,6 +114,21 @@ for (const data of [new Uint8Array([1]), 'é'.repeat(70_000), '{'])
     live.stop(); assert.equal(timers.tasks.size, 0);
   });
 
+test('a live frame carries the binding its socket opened under, not the one standing when it arrives', async () => {
+  const timers = new FakeTimers(), sockets = [], received = [];
+  let binding = 'signed out';
+  const live = new LiveChannel({ timers, now: () => timers.time, draw: () => 100, binding: () => binding,
+    transport: { openLive: () => { const socket = { readyState: 0, send() {}, close() { this.readyState = 3; } }; sockets.push(socket); return socket; } },
+    onFrame: (frame, opened) => received.push([frame.scope, opened]), onReconnect() {}, onFailure() {} });
+  live.start(); sockets[0].readyState = 1; sockets[0].onopen();
+  binding = 'signed in';
+  sockets[0].onmessage({ data: '{"op":"change","scope":"tree/a"}' }); await tick();
+  live.stop({ reset: true }); live.start(); sockets[1].readyState = 1; sockets[1].onopen();
+  sockets[1].onmessage({ data: '{"op":"change","scope":"tree/b"}' }); await tick();
+  assert.deepEqual(received, [['tree/a', 'signed out'], ['tree/b', 'signed in']]);
+  live.stop(); assert.equal(timers.tasks.size, 0);
+});
+
 test('the default browser fetch preserves its global receiver', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async function () {

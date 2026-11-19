@@ -63,8 +63,10 @@ suspension, restoration and restore failure.
 replica in place included, and a re-identify does not (engine.md §7.12). `commitAct(prepare, segment, {binding})` commits
 an act only while the binding its caller planned it under stands: otherwise it throws `ReplicaChanged` in the write
 transaction, before its prepare callback runs, writes nothing and reports nothing (engine.md §7.1 Ordered local acts).
-A pull's answer, its pages and a live frame land the same way, only under the binding they were asked under: one a
-sign-in or a sign-out overtook applies nothing, pauses nothing and leaves the puller's backoff as it was (engine.md §7.12).
+A pull's answer and its pages land the same way, only under the binding the pull was sent under, and a live frame only
+under the binding its socket opened under: a change of binding, another tab's included, closes the socket. One that a
+sign-in, a sign-out or a re-identify overtook applies nothing, pauses nothing and leaves the puller's backoff as it was
+(engine.md §7.12).
 `commitAct(segments, {undo})` journals an act opted into Undo after its hold (engine.md §7.3 Undo of an act);
 `requestInverse(actId, slots?)` asks for its inverse in one transaction and answers an `InverseResult`,
 `readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a
