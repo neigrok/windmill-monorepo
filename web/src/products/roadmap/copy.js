@@ -192,8 +192,8 @@ export function reasonLine({ needs, unlocks }) {
 }
 
 // §6's quiet line under a step, where it is listed and on its page (flow 48): what the person's edit brought back, and
-// the deleted steps it was linked from with what it follows past them. Null for a step that follows nothing past them,
-// which no approved line says.
+// the deleted steps it was linked from with what it follows past them. Null where no approved line says it: a step that
+// follows nothing past them, or one linked from a deleted step whose name the visit never read.
 export function landingLine(line) {
   if (line.rule === 'cameBack') return t('roadmap.landing.cameBack');
   if (line.followed.length === 0 || !line.removed.every(Boolean)) return null;
