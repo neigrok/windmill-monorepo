@@ -327,3 +327,30 @@ test('a roadmap another device deleted takes the device’s note of it along: on
     a.close();
   }
 });
+
+test('the bare roadmap door reads the person’s list once the device has read it, newest first; with no copy, none', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const plant = async (title) => {
+      const { tree } = committed(await a.runner.runAct(new CreateRoadmap(title)));
+      for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+      await a.sync();
+      return tree;
+    };
+    const sail = await plant('Learn to sail');
+    await a.advance(1000);
+    const row = await plant('Learn to row');
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const reading = new ReplicaReading({ treeId: null, timers: a.env.timers, session: { getSnapshot: () => snapshot, subscribe: () => () => {} } });
+    const listed = await reading.readList({ signal: new AbortController().signal });
+    reading.close();
+    assert.deepEqual(listed.map(({ id, title }) => [id, title]), [[row, 'Learn to row'], [sail, 'Learn to sail']]);
+
+    const unkept = new ReplicaReading({ treeId: null, timers: a.env.timers,
+      session: { getSnapshot: () => ({ engine: null, ready: false, online: true, error: true }), subscribe: () => () => {} } });
+    assert.deepEqual(await unkept.readList({ signal: new AbortController().signal }), []);
+    unkept.close();
+  } finally {
+    a.close();
+  }
+});
