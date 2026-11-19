@@ -504,3 +504,49 @@ test('with the switch on a roadmap’s deletion lands on the person’s roadmaps
     await phone.close();
   }
 });
+
+// One owner's script on the Graph: a kind set, a link made, removed and moved, a reorder, a step made on the canvas and a
+// step deleted there with its toast's Undo; then the Board the Graph's writes leave, and what the room told.
+async function onTheGraph(context, { replica }) {
+  await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  const failures = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+  await page.goto(`${origin}/room?account=u_owner&replica=${replica ? 'on' : 'off'}#/app/${TREE}`);
+  await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor();
+  await page.getByRole('button', { name: 'Graph', exact: true }).click();
+  await page.waitForFunction(() => window.scene?.options?.onSetKind);
+  await page.evaluate(() => window.scene.options.onSetKind('wind', 'olive'));
+  await page.evaluate(() => window.scene.options.onConnectNodes('course', 'dock'));
+  await page.evaluate(() => window.scene.options.onDeleteEdge('course', 'dock'));
+  await page.evaluate(() => window.scene.options.onReconnectEdge('course', 'wind', 'course', 'dock'));
+  await page.evaluate(() => window.scene.options.onSetNodeOrder('dock', 'Zz'));
+  await page.evaluate(() => window.scene.options.onCreateChild('course'));
+  await page.evaluate(() => window.scene.options.onDeleteNode('wind'));
+  await page.locator('.st-graph-toast .st-board-toast-undo').click();
+  await page.locator('.st-graph-toast').waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Board', exact: true }).click();
+  await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('.st-board-card').length === 4);
+  const read = { columns: await boardColumns(page),
+    ...await page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues })), failures };
+  await page.close();
+  return read;
+}
+
+test('with the switch on the Graph’s gestures land on the device’s copy as they do today', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const onCopy = await onTheGraph(replica, { replica: true });
+    const lattice = await onTheGraph(today, { replica: false });
+    assert.deepEqual(onCopy, lattice);
+  } finally {
+    await replica.close();
+    await today.close();
+  }
+});
