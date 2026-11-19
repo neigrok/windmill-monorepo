@@ -120,7 +120,8 @@ test('INV-1: a change made after the device heard of another device\'s delete br
     await a.sync();
     assert.deepEqual(steps(a, tree), []);
     committed(await a.runner.runAct(new ChangeStep(tree, basics, { label: 'The basics' })));
-    assert.deepEqual(a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))), { nodes: [basics], edges: [], revived: [basics], names: [] });
+    assert.deepEqual(a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))), { nodes: [], edges: [], revived: [basics], names: [] },
+      'the step its create noted had landed and said nothing, and the revival lets it go');
     await a.sync();
     for (const phone of [a, b]) {
       assert.deepEqual(phone.drawn(RoadmapStep, RoadmapScopes.tree(tree)).map((step) => [step.id.record, step.label, step.icon]), [[basics, 'The basics', 'book']]);
@@ -251,6 +252,57 @@ test('a stale public sent after a newer private loses on the server and on both 
     const meta = (/** @type {Harness} */ phone, /** @type {string} */ id) => phone.drawn(RoadmapMeta, RoadmapScopes.tree(id)).map((value) => [value.visibility, value.reach]);
     for (const phone of [a, b]) assert.deepEqual([meta(phone, tree), meta(phone, subtree)], [[['private', 'private']], [['private', 'private']]]);
     assert.deepEqual([a.server.row(`tree:${tree}`, 'meta', 'meta').f.reach[0], a.server.row(`tree:${subtree}`, 'meta', 'meta').f.reach[0]], ['private', 'private']);
+  } finally {
+    a.close();
+  }
+});
+
+test("§6 a roadmap built step by step keeps a note of its newest step alone, and one built offline lets go of all it noted once it lands", async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: unbound, scope: RoadmapScopes.account });
+  try {
+    const name = 'A step whose name is sixty characters long, as a long one is.';
+    const note = (/** @type {string} */ tree) => /** @type {any} */ (a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))));
+    const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
+    a.observe(RoadmapScopes.tree(tree));
+    let previous = committed(await a.runner.runAct(new CreateStep(tree, { label: name }))).result;
+    await a.sync();
+    for (let made = 1; made < 100; made++) {
+      const step = committed(await a.runner.runAct(new CreateStep(tree, { label: name }, [previous]))).result;
+      await a.sync();
+      assert.deepEqual(note(tree), { nodes: [step], edges: [[previous, step]], revived: [], names: [{ id: previous, name }] },
+        `after step ${made} the note holds that step alone`);
+      previous = step;
+    }
+    assert.ok(JSON.stringify(note(tree)).length < 300, 'the note of a roadmap of a hundred steps stays the size of one');
+
+    /** @type {string[][]} */
+    const offline = [];
+    for (let made = 0; made < 30; made++) {
+      const step = committed(await a.runner.runAct(new CreateStep(tree, { label: name }, [previous]))).result;
+      offline.push([previous, step]);
+      previous = step;
+    }
+    assert.deepEqual(note(tree)?.edges, offline, 'what has not landed stays noted, and the last step made online, which landed, is let go');
+    await a.sync();
+    const last = committed(await a.runner.runAct(new CreateStep(tree, { label: name }, [previous]))).result;
+    assert.deepEqual(note(tree), { nodes: [last], edges: [[previous, last]], revived: [], names: [{ id: previous, name }] },
+      'once all of it landed, the next write keeps only its own step');
+  } finally {
+    a.close();
+  }
+});
+
+test('§6 deleting a roadmap lets go of the note of it at once', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: unbound, scope: RoadmapScopes.account });
+  try {
+    const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
+    const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics' }))).result;
+    committed(await a.runner.runAct(new CreateStep(tree, { label: 'Lifetimes' }, [basics])));
+    a.observe(RoadmapScopes.tree(tree));
+    await a.sync();
+    assert.notEqual(a.runner.read(RoadmapScopes.account, (read) => read.device(RoadmapScopes.landing(tree))), null, 'the device notes its new steps');
+    committed(await a.runner.runAct(new DeleteRoadmap(tree)));
+    assert.equal(a.runner.read(RoadmapScopes.account, (read) => read.device(RoadmapScopes.landing(tree))), null, 'the note left with the deletion');
   } finally {
     a.close();
   }

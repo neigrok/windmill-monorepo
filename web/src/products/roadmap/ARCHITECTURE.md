@@ -188,7 +188,10 @@ on, every room but the demo reads through `ReplicaReading`:
   composer covers, or the page open on its step, the reading's `tell` writes the domain's `ClearLanding` out of the Undo
   stack and the room emits `roadmap_landing`; a later opening is quiet. A line no approved words say, a step that
   follows nothing past the deleted one or past one whose name the visit never read, stays in the note untold. A read
-  that throws reports `roadmap-replica-landing` once and tells nothing that visit; the room reads on.
+  that throws reports `roadmap-replica-landing` once and tells nothing that visit; the room reads on. Every write of the
+  note lets go of what has landed and says nothing (`readNote`), `DeleteRoadmap` takes the notes of the roadmap and its
+  subtrees, and a room that finds its roadmap gone as it opens, or sees the person's own roadmap leave their list,
+  writes `ClearLanding`, which lets the whole note go where the domain reads the roadmap gone from the list.
 - **Status.** The Saving, Saved and Offline line is the room's own (`sync/useRoomSyncNotices.js`), read from the engine:
   `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the engine's
   `connection` and its auth and upgrade stops (Offline while the browser reports no network, and after the grace while
