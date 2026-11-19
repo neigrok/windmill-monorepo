@@ -179,9 +179,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
               {appearance && <AppearanceRow />}
               <div role="menu" aria-label={t('shell.account.label')}>
                 {mine && <MenuRow label={mine.label} detail={mine.count != null ? String(mine.count) : null} onSelect={() => choose(mine.onSelect)} />}
-                {offered.map((row, index) => (
-                  <MenuRow key={index} label={t('shell.account.offered', { label: row.label, count: String(row.count) })} onSelect={() => hand(row.onSelect)} />
-                ))}
+                {offered.map((row, index) => <OfferedRow key={index} row={row} onSelect={() => hand(row.onSelect)} />)}
                 {onConnect && <MenuRow label={t('shell.connect.title')} onSelect={() => choose(onConnect)} />}
                 <MenuRow label={t('shell.settings.title')} onSelect={() => choose(onSettings)} />
                 <MenuRow label={t('shell.auth.signOut')} onSelect={() => choose(onSignOut)} />
@@ -222,6 +220,11 @@ function AppearanceRow() {
       <SegmentedControl labelledBy={labelId} options={APPEARANCE_OPTIONS} value={choice} onChange={set} />
     </div>
   );
+}
+
+// A row a product session offers, in its one visual form: a menu row reading the label and its count.
+function OfferedRow({ row, onSelect }) {
+  return <MenuRow label={t('shell.account.offered', { label: row.label, count: String(row.count) })} onSelect={onSelect} />;
 }
 
 function MenuRow({ label, detail = null, onSelect }) {
