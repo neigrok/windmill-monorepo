@@ -359,10 +359,10 @@ tables, stopping where they differ from those it planned from.
 - Marks move to their owners' overlays, a row each, a cleared `none` among them.
 - **What is not adopted,** each counted by the audit: a step, link, kind or mark of a roadmap no row
   holds; a mark whose owner is no account; a link to or from an id no adopted step holds, and a link
-  from a step to itself; the rows of a deleted
-  roadmap and of every roadmap under it, whose `tree` record is adopted dead and without fields, so
-  its id is spent, its tree scope dead since the deletion. A roadmap with no owner goes to the house
-  account, and the move stops on any other it was not told to expect.
+  from a step to itself; the rows of a deleted roadmap and of every roadmap under it, whose `tree`
+  record is adopted dead and without fields, so its id is spent, its tree scope dead since the
+  deletion. A roadmap with no owner goes to the house account, and the move stops on any other it was
+  not told to expect.
 - **The move also stops,** writing nothing, on any value it would write outside its field's domain, as
   admission holds a write (past a bound, or a reference outside its type's pattern), counted by field,
   so a rehearsal surfaces each for the owner to decide; on a roadmap id outside `tree`'s pattern, a

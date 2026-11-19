@@ -43,7 +43,7 @@ on a failure, which it reports to Sentry by the failure's type alone.
 | `before` | Reads every roadmap, writes the old server's reading of each as a document, counts what the move would do, and says whether anything stops it, a scope the engine already holds for a roadmap it would create among them. Writes nothing. | `ready`; `stops` fails | `before.jsonl`, `stops.jsonl` (each stop with its roadmap) |
 | `adopt` | Adopts every owner's roadmaps that hold no `tree` record yet, one owner a transaction under an advisory lock, after inserting the house account when absent. Nothing is written while anything stops the move. An owner whose transaction stops or fails is written not at all; the stage prints its counts so far with the reason's static code. | `adopted`, `unchanged` (a second run); `stops` fails; `failed` exits 1 | `adopt-failure.jsonl` (owner, roadmap, reason) |
 | `demo` | Adopts the public demo from the rows `db/schema.sql` seeds, under the house account, where the engine holds no record of it; one it holds is never written again. | `present`, `seeded`; `noSource` and `stops` fail | — |
-| `after` | Reads every adopted roadmap back through the binding and the read domain and compares its document with the old server's; checks each deleted roadmap's id is spent. | `same`; `differs` fails | `after.jsonl`, `differences.jsonl` |
+| `after` | Reads every adopted roadmap back through the binding and the read domain and compares its document with the old server's own reading of it, a roadmap the old server cannot read counted apart; checks each deleted roadmap's id is spent. | `same`; `differs` fails | `after.jsonl`, `differences.jsonl` |
 | `read-models` | The new read models answer the same questions; compares them with `read-models-before`'s. | `same`; `differs` and `nothingAskedBefore` fail | `read-models.jsonl` (the differing answers) |
 | `digests` | Sums every alive scope the catalog binds from its rows (engine.md §6.12) against the digest its row holds, checks its seq stands at or past every row's, and checks every tree's `open`, which lets strangers read it, against its `reach`. | `summed`; `differs` fails | `digests.jsonl` (the scopes that differ) |
 
@@ -81,7 +81,8 @@ answers are counted as `unreadableToday`.
 
 `test/platform/infra/roadmap_adopt_test.py` (ctest `roadmap_adopt`) runs the tool under `WM_PG_TEST` on databases of its
 own built from `db/schema.sql` and `roadmap_adopt_fixture.sql`, one §8.1 case a row: every stage's counts, a second run,
-a run killed between stages and in the middle of `adopt`, the rows that stop the move, and that nothing printed names a
-record. `test/products/roadmap/adoption/AdoptionTest.cpp` holds the rules (`windmill_domain_tests`), and reads a plan's
+a run killed between stages and in the middle of `adopt`, a client connected beside it and a row changed after the plan,
+a scope already in the engine and a store that refuses a row, a value outside its field's domain, an id repeated in a
+whole document, a roadmap of more steps than a page, and that nothing printed names a record. `test/products/roadmap/adoption/AdoptionTest.cpp` holds the rules (`windmill_domain_tests`), and reads a plan's
 rows back through `recordsOf` and the read domain over fakes. `test/e2e/roadmap_adoption.mjs` serves an adopted fixture
 with `ROADMAP_ENGINE_ENABLED=1` and reads it back through the browser engine (`test/e2e/README.md`).
