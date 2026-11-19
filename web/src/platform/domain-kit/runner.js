@@ -34,6 +34,11 @@ let insideRun = false;
  * @typedef {{ receipt: import('./acts.js').ActReceipt } | { refused: { segment: number, code: string, detail: Json | null } }} ActCommitOutcome
  */
 /**
+ * The binding an act was planned under, read from the engine's `activeBinding()` before the awaits that came between:
+ * the engine commits the act only while it stands (engine §7.1 Ordered local acts).
+ * @typedef {{ binding?: string | null }} ActGuard
+ */
+/**
  * K-3 (engine §7.3 Undo of an act): what an Undo or a Redo answers.
  * @typedef {{ kind: 'cancelled', requestId: string, inverseActId: string, changed: boolean }
  *   | { kind: 'pending', requestId: string, inverseActId: string, localChanged: boolean }
@@ -45,7 +50,7 @@ let insideRun = false;
  * answers after it; a body returning no gesture writes nothing. `EngineReplica` is the browser engine's.
  * @typedef {{
  *   commit<T>(scope: string, body: (views: CommitViews) => { gesture: Gesture | null, value: T }): Promise<{ outcome: CommitOutcome | null, value: T }> | { outcome: CommitOutcome | null, value: T },
- *   commitAct<T>(prepare: (context: import('./acts.js').ActContext) => { request: import('./acts.js').ActRequest | null, value: T }, segment: (value: T, index: number, views: CommitViews) => Gesture): Promise<{ outcome: ActCommitOutcome | null, value: T }> | { outcome: ActCommitOutcome | null, value: T },
+ *   commitAct<T>(prepare: (context: import('./acts.js').ActContext) => { request: import('./acts.js').ActRequest | null, value: T }, segment: (value: T, index: number, views: CommitViews) => Gesture, guard?: ActGuard): Promise<{ outcome: ActCommitOutcome | null, value: T }> | { outcome: ActCommitOutcome | null, value: T },
  *   read(scope: string): ReadViews,
  *   cancelHeld(gestureId: string): Promise<boolean> | boolean,
  *   requestInverse?(actId: string, slots?: { index: number, recipes: Json[] }[]): Promise<InverseResult> | InverseResult,
@@ -109,12 +114,15 @@ export class ActionRunner {
     return Outcome.committed(outcome.result, { gestureId, localIds: segment.localIds, retired, ...(superseded.length ? { superseded } : {}), releaseAt });
   }
 
+  // `guard.binding`, when given, commits the act only while the binding it was planned under stands; otherwise the
+  // engine's `ReplicaChanged` rejects the run and nothing is written.
   /**
    * @template L, T, R
    * @param {import('./acts.js').ActAction<L, T, R>} action
+   * @param {ActGuard} [guard]
    * @returns {Promise<import('./acts.js').ActOutcome<T, R>>}
    */
-  async runAct(action) {
+  async runAct(action, guard = {}) {
     precondition(!insideRun, 'a run cannot enter inside a run');
     /** @typedef {{ done: import('./acts.js').ActOutcome<T, R> } | { writing: { plan: import('./acts.js').ActPlan, result: T } }} Step */
     try {
@@ -131,7 +139,7 @@ export class ActionRunner {
         const scoped = value.writing.plan.segments[index];
         precondition(scoped !== undefined, 'the act segment index is in its plan');
         return this.segmentOf(scoped.scope, scoped.plan, input);
-      });
+      }, guard);
       const { outcome, value } = committed;
       if ('done' in value) return value.done;
       if (outcome === null) return { kind: 'unchanged', result: value.writing.result };
@@ -150,12 +158,14 @@ export class ActionRunner {
   // §9.7: several acts as one. Each part loads through the segments of the parts before it, which the engine stages
   // on the act's tentative copy, and then decides. A refusal of any part, a failed check, a gone record or a segment
   // the engine refuses refuses the whole act before anything is written. The parts' segments then commit as one act:
-  // one gesture id, one hold (held when any part's plan holds) and one Undo carrying every part's recipes.
+  // one gesture id, one hold (held when any part's plan holds) and one Undo carrying every part's recipes. `guard` is
+  // `runAct`'s.
   /**
    * @param {import('./acts.js').ActAction<any, any, any>[]} parts
+   * @param {ActGuard} [guard]
    * @returns {Promise<import('./acts.js').ComposedOutcome>}
    */
-  async runComposed(parts) {
+  async runComposed(parts, guard = {}) {
     precondition(!insideRun, 'a run cannot enter inside a run');
     precondition(parts.length > 0, 'a composed act has parts');
     /** @typedef {{ part: number, scope: string, plan: import('./plans.js').Plan }} PartSegment */
@@ -203,7 +213,7 @@ export class ActionRunner {
           if (error instanceof ActPrediction) throw new ActPrediction(error.refusal, segment.part);
           throw error;
         }
-      });
+      }, guard);
       const { outcome, value } = committed;
       if ('done' in value) return value.done;
       if (outcome === null) return { kind: 'unchanged', results: value.writing.results };
@@ -531,9 +541,10 @@ export class EngineReplica {
    * @template T
    * @param {(context: import('./acts.js').ActContext) => { request: import('./acts.js').ActRequest | null, value: T }} prepare
    * @param {(value: T, index: number, views: CommitViews) => Gesture} segment
+   * @param {ActGuard} [guard]
    * @returns {Promise<{ outcome: ActCommitOutcome | null, value: T }>}
    */
-  async commitAct(prepare, segment) {
+  async commitAct(prepare, segment, guard = {}) {
     const engineGesture = (/** @type {Gesture} */ { changes, atomic, hold, guards, retire, cmd, predict, scopedPredict, local, supersede }) => {
       const opts = { atomic, hold, guard: guards, retire, predict, ...(scopedPredict ? { scopedPredict } : {}),
         ...(supersede?.length ? { supersede } : {}), local: Object.fromEntries(local.map((write) => [write.key, write.value])) };
@@ -543,7 +554,7 @@ export class EngineReplica {
       stage: (/** @type {string} */ scope, /** @type {(views: CommitViews) => Gesture} */ body) => {
         const refused = context.stage(scope, (/** @type {CommitViews} */ input) => engineGesture(body(input)));
         return refused === null ? null : { code: refused.refused, detail: refused.detail ?? null };
-      } }), (/** @type {T} */ value, /** @type {number} */ index, /** @type {CommitViews} */ input) => engineGesture(segment(value, index, input)));
+      } }), (/** @type {T} */ value, /** @type {number} */ index, /** @type {CommitViews} */ input) => engineGesture(segment(value, index, input)), guard);
     if (outcome === null) return { outcome: null, value };
     if (outcome.refused !== undefined) return { outcome: { refused: { segment: outcome.segment, code: outcome.refused, detail: outcome.detail ?? null } }, value };
     return { outcome: { receipt: outcome }, value };

@@ -51,7 +51,9 @@ shell update reports the static `offline-shell-update` operation. A persisted pa
 reports storage failures and keeps its local records available for a retry.
 Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
 completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
-through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. Escape
+through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. A
+product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWords`, `signOutWords`) reports
+`auth-product-words`, and the shell asks as it would of a product that says nothing. Escape
 on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
 cancel that fails reports `auth-session` and keeps the question, and the cookie is let go as a finished sign-out's is. Revoking this session uses the sign-out question before clearing its cookie.
 Account closure persists its account and current session before the server request and discards local
@@ -439,6 +441,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
+| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records) or `signout` (`signOutWords`). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree

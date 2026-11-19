@@ -79,8 +79,10 @@ Readers and plan translation check both the registry's scope kind and any fixed 
 `new ActionRunner(new EngineReplica(engine), engine.registry, zone)`, where `engine` is the shell's
 `BrowserSyncEngine`. The runner mints the gesture id through `engine.newGestureId()` and passes it as
 `opts.gestureId`, so a `too-large` refusal names the notice the commit wrote and the runner dismisses it;
-a held removal's receipt reads `releaseAt` from the gesture's entry. Reads outside a run come from
-`engine.observe(scope).getSnapshot()` and `engine.readMetadata(scope)`. Inside a run, confirmed rows,
+a held removal's receipt reads `releaseAt` from the gesture's entry. `runAct(act, {binding})` and
+`runComposed(parts, {binding})` hand `commitAct` the `engine.activeBinding()` a product planned the act under, so
+a sign-in or a sign-out in between rejects the run with the engine's `ReplicaChanged` and writes nothing. Reads
+outside a run come from `engine.observe(scope).getSnapshot()` and `engine.readMetadata(scope)`. Inside a run, confirmed rows,
 device rows, commands, actor, anonymity and checkpoint are loaded from the commit's own transaction.
 The checkpoint exposes `cleanSeq` only for a complete, same-epoch live cursor with no staging,
 lagging pull, digest reset or digest stop. `firstPullComplete` retains the engine's separate first-boot

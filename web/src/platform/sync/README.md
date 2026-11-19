@@ -2,7 +2,8 @@
 
 `BrowserSyncEngine.open()` opens IndexedDB and returns stable local snapshots without a network
 request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
-requests persistent storage and starts synchronization. No product or UI imports this engine.
+requests persistent storage and starts synchronization. Products and UI reach the engine through `session.js`;
+from this module they import only `ReplicaChanged`.
 
 The registry composes the shared gym, journal and roadmap registries at version 13, minimum 11. The deterministic
 core and replica rules import `packages/api-contract/sync/reference/core` and `client` directly.
@@ -58,6 +59,10 @@ browser reports no network, `unreachable` after a request to the server got no a
 and before one answers again, else `online`. The tab that makes a request tells the other tabs whether it
 was answered. `onEvent` delivers active replica changes after durable commits and persisted-page
 suspension, restoration and restore failure.
+`activeBinding()` answers an opaque string that a sign-in or a sign-out changes, the sign-in that binds the anon
+replica in place included, and a re-identify does not (engine.md §7.12). `commitAct(prepare, segment, {binding})` commits
+an act only while the binding its caller planned it under stands: otherwise it throws `ReplicaChanged` in the write
+transaction, before its prepare callback runs, writes nothing and reports nothing (engine.md §7.1 Ordered local acts).
 `commitAct(segments, {undo})` journals an act opted into Undo after its hold (engine.md §7.3 Undo of an act);
 `requestInverse(actId, slots?)` asks for its inverse in one transaction and answers an `InverseResult`,
 `readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a

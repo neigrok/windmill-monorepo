@@ -33,6 +33,19 @@ function secureDraw(bound) {
 const replicaId = () => `rp_${crypto.randomUUID().replace(/-/g, '')}`;
 const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[secureDraw(62)]).join('')}`;
 
+// What a commit lands in: the replica's storage, which a re-identify keeps, and the account it is bound to. A sign-in or
+// a sign-out changes it, the sign-in that binds the anon replica in place included (engine.md §7.12).
+const bindingOf = (replica) => JSON.stringify([replica.storageHandle, replica.meta.account ?? null]);
+
+// An act planned under one binding, committed after a sign-in or a sign-out changed it (engine.md §7.1 Ordered local
+// acts). It writes nothing; its caller decides what the act becomes.
+export class ReplicaChanged extends Error {
+  constructor() {
+    super('the active binding changed since the act was planned');
+    this.name = 'ReplicaChanged';
+  }
+}
+
 export class BrowserSyncEngine {
   constructor({ store, registry = composedRegistry, transport, telemetry, leadership, navigator = globalThis.navigator,
     document = globalThis.document, window = globalThis.window, timers = globalThis, now = Date.now,
@@ -231,6 +244,9 @@ export class BrowserSyncEngine {
   }
 
   activeReplica() { return this.device.activeReplica.id; }
+  // An opaque string that changes whenever the active replica or the account it is bound to does (engine.md §7.12), or
+  // null before the engine's first publication. A caller planning an act across awaits passes it as `commitAct`'s.
+  activeBinding() { return this.device ? bindingOf(this.device.activeReplica) : null; }
   getSnapshot = () => this.snapshot;
   observeEngine = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   onEvent(listener) { this.eventListeners.add(listener); return () => this.eventListeners.delete(listener); }
@@ -478,7 +494,9 @@ export class BrowserSyncEngine {
     return this.write(null, (device) => releaseReversibleAct(device.activeReplica, actId));
   }
 
-  async commitAct(prepare, segment) {
+  // `binding` is the `activeBinding()` the caller planned the act under, across awaits outside this transaction: the act
+  // commits only while it stands, and otherwise throws `ReplicaChanged` before its prepare callback runs.
+  async commitAct(prepare, segment, { binding } = {}) {
     if (typeof prepare !== 'function') {
       const segments = prepare;
       const options = segment ?? {};
@@ -488,6 +506,7 @@ export class BrowserSyncEngine {
     const act = new ActCommit();
     const scopes = [];
     const result = await this.write('sync-commit', (device, ctx) => {
+      if (binding !== undefined && bindingOf(device.activeReplica) !== binding) throw new ReplicaChanged();
       ctx.opaqueID = () => this.newGestureId();
       ctx.metadata = (replica, scope) => this.readMetadata(scope, replica, act.actor ?? ctx.actor);
       const result = act.advance(device.activeReplica, ctx, (context) => {
