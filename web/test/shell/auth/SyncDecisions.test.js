@@ -140,3 +140,17 @@ test('a worded sign-out question that a product’s notice adds to keeps the she
   const without = renderHook(t, () => SyncDecisions({ question: worded })).tree;
   assert.deepEqual({ withNotice: withNotice.props.title, without: without.type === AccountDecision }, { withNotice: 'Sign out?', without: true });
 });
+
+test('a question asked again in fresh words while it stands, as each refresh asks it, is told shown once', async (t) => {
+  const { AccountDecision } = await loadScreen('shell/auth/SyncDecisions.jsx');
+  page(t, { wide: true });
+  const steps = [];
+  const wordsOf = () => ({ title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],
+    note: 'Choosing Discard removes this browser roadmap.', onStep: (step) => steps.push(step) });
+  let props = { question: { ...question, product: 'roadmap', words: wordsOf() }, busy: false, error: false, onDecision() {}, onCancel() {} };
+  const view = renderHook(t, () => AccountDecision(props));
+  props = { ...props, question: { ...props.question, words: wordsOf() } };
+  view.redraw();
+  view.unmount();
+  assert.deepEqual(steps, ['shown']);
+});

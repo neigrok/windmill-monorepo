@@ -85,7 +85,8 @@ export function AccountDecision({ question, busy, error, onDecision, onCancel })
   };
   useLayoutEffect(() => { titleRef.current?.focus(); }, []);
   const onKeyDown = useDialogFocus({ open: true, cardRef, onClose: busy ? null : cancel });
-  useEffect(() => { words.onStep('shown'); }, [words]);
+  // Once a question: a refresh asks it again in fresh words while it stands, and a question of other work mounts anew.
+  useEffect(() => { words.onStep('shown'); }, []);
 
   const kept = signin ? 'add' : 'keep';
   const answers = [
