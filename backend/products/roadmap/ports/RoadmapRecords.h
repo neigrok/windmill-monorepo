@@ -41,7 +41,7 @@ struct RoadmapRecords {
   // and throws FollowTimedOut.
   virtual AccountRoadmaps roadmapsOf(const UserId& owner, const std::optional<std::set<TreeId>>& only = std::nullopt,
                                      std::optional<std::chrono::milliseconds> budget = std::nullopt) = 0;
-  // Every alive public root, each with its lineage.
+  // Every alive public root but the house account's, each with its lineage.
   virtual std::vector<ListedRoot> publicRoots() = 0;
   // Whether `tree` is a copy, the name of its source while that source is an alive public root, and how many alive roots
   // copy it.

@@ -32,6 +32,9 @@ public:
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
   void index(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
 
+  // The whole wall as `viewer` is shown it, ranked: what both routes page.
+  std::vector<GalleryEntry> wall(const Viewer& viewer);
+
   // The card grid, spliced between gallery.html's sentinels; an empty wall returns the shell as is.
   static std::string renderWall(const std::string& shell, const std::vector<GalleryEntry>& wall);
 

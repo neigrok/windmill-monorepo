@@ -413,7 +413,7 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and eleven script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and twelve script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
@@ -436,7 +436,11 @@ a sync pull a worker answers late — and checks its exit code, the deadline it 
 after the signal and its log. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
 databases of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
 counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
-it counts a chain of 200,001 trees to its end.
+it counts a chain of 200,001 trees to its end. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
+it builds databases of its own beside `DATABASE_URL`'s from `db/schema.sql` and `test/platform/infra/roadmap_adopt_fixture.sql`
+and runs every stage on them: their counts, a second run that writes nothing, a run killed between stages and in the middle
+of its adoption, the rows that stop it, and that nothing it prints names a record
+(`products/roadmap/adoption/README.md`).
 
 Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z
 assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` cut short; *skipped*
@@ -459,7 +463,7 @@ psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|server_stop)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|roadmap_adopt|server_stop)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product
@@ -516,7 +520,8 @@ dropdb -h /tmp wm_sync_test
 
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
-`mcp`, `sync`, `adapters` and `sync_epoch` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service
+`mcp`, `sync`, `adapters`, `sync_epoch`, `subtree_inventory`, `roadmap_adopt` and `server_stop` tests in one `ctest` run
+under `WM_PG_TEST` against a Postgres 16 service
 with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `windmill_sync_test` for
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third

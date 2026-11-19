@@ -2,6 +2,7 @@
 
 #include "platform/adapters/json/JsonText.h"
 #include "platform/domain/sync/Scope.h"
+#include "products/roadmap/domain/Access.h"
 
 #include <pqxx/pqxx>
 
@@ -190,8 +191,8 @@ AccountRoadmaps PgRoadmapRecords::roadmapsOf(const UserId& owner, const std::opt
 std::vector<ListedRoot> PgRoadmapRecords::publicRoots() {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // A root is public while its visibility, and so its reach, says so. A source is named only while it is an alive public
-  // root itself.
+  // A root is public while its visibility, and so its reach, says so; the house account's are nobody's to list. A source
+  // is named only while it is an alive public root itself.
   const pqxx::result rows = txn.exec(
       "select t.id, s.owner::text, m.forked_from, coalesce(source.title, ''), "
       "(select count(*) from roadmap_metas copy join roadmap_trees c on 'tree:' || c.id = copy.scope_key and c.life = 'alive' "
@@ -201,7 +202,9 @@ std::vector<ListedRoot> PgRoadmapRecords::publicRoots() {
       "left join roadmap_trees st on st.id = m.forked_from and st.life = 'alive' "
       "left join roadmap_metas source on source.scope_key = 'tree:' || st.id and source.id = 'meta' and source.reach = 'public' "
       "  and jsonb_typeof(source.parent) is distinct from 'object' "
-      "where t.life = 'alive' and jsonb_typeof(t.parent) is distinct from 'object' and m.reach = 'public' order by t.id");
+      "where t.life = 'alive' and jsonb_typeof(t.parent) is distinct from 'object' and m.reach = 'public' and s.owner <> $1::uuid "
+      "order by t.id",
+      pqxx::params{kHouseAccount.str()});
   std::vector<ListedRoot> roots;
   for (std::size_t i = 0; i < rows.size(); ++i) {
     const auto row = rows[i];

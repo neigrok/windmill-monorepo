@@ -313,40 +313,76 @@ What a device tells a person when a change of theirs met one made elsewhere.
 ### §8.1 Production's roadmaps
 
 The data moves in one planned cutover, rehearsed against a copy of production, with the site in
-maintenance for its length and a verified backup to return to. (R-5)
+maintenance for its length and a verified backup to return to. (R-5) `windmill_roadmap_adopt` runs it
+stage by stage, printing counts and verdicts alone
+([its README](../../backend/products/roadmap/adoption/README.md)). The server is stopped for the move,
+and the tool checks it: a stage refuses to start while any other client is connected to the database,
+and each owner's adoption reads their rows again under a lock that holds every writer off roadmap's
+tables, stopping where they differ from those it planned from.
 
 - Roadmap's tables take the engine's envelope: scope, `seq`, `rc`, `ru`, `born`, life and a stamp
   for each field.
-- **Stamps.** A stamp roadmap holds is kept where it is a stamp as the engine writes one. An unset
-  register stays unset. A register that holds a value under a malformed stamp takes the lowest
-  server stamp, so nothing made later loses to it; so does a root's `visibility`, which today
-  holds no stamp.
+- **Stamps.** A stamp roadmap holds is kept where it is a stamp as the engine writes one: D-1, and no
+  more than `MAX_SKEW_MS` past the move's start. Any other, malformed or later, takes the lowest
+  server stamp, `0:0:srv`, so nothing made later loses to it.
+- An unset register stays unset while it holds its field's default. One holding another value, as
+  the title every roadmap was created with, takes the lowest server stamp; so do a root's
+  `visibility` and a true `guideInherited`, which today hold no stamp, every register the move
+  computes (`reach`, `root`, `parent`, `depth`, `forkedFrom`, `branch`), and each `tree` record's
+  born and life.
 - **Life.** A step, link or kind is alive when its add stamp is set and not older than its remove
-  stamp, and dead when the remove stamp is the newer; its life's stamp is the greater of the two. A
-  row with neither set is not adopted.
-- **Sequence.** Each tree scope's `seq` continues above the roadmap's present head, so the activity
-  feed's cursor, tending's runs and MCP's `expectedSeq` stay in order. `tree_ops` is kept as it is.
+  stamp, and dead when the remove stamp is the newer, decided on the two as the old server reads
+  them, a future one included, so each keeps the life a person sees today; only then is a stamp
+  replaced. Its life's stamp is the greater of the two as kept or replaced, and it is born at its add
+  stamp, or at the lowest server stamp where only the remove stamp is set. Every life stamp is
+  counted by what became of it. A row with neither set is not adopted.
+- **Sequence.** Each tree scope's `seq` continues above the roadmap's present head and its activity's
+  last `seq`, so the activity feed's cursor, tending's runs and MCP's `expectedSeq` stay in order.
+  `tree_ops` is kept as it is.
 - **Times.** A mark's `rc` and `ru` are its recorded time. A step's, link's and kind's `rc` is its
-  add stamp's time, and `ru` its newest stamp's, neither later than the roadmap's own.
-- An empty or malformed `ord` becomes a key that keeps today's order, and a kind's `rank` becomes
-  an `ord`.
-- A step's `status` keeps `none` and `complete`; `active` and `inProgress` become `none`, as today.
-  The audit counts every other value, and the move stops on any.
-- A pointer moves from its step to a `pointer` record in its owner's overlay. A subtree's place
-  becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and `node.branch`, and every
-  `reach` is computed.
-- A roadmap stored only as a whole document is unfolded into rows first.
-- Marks move to their owners' overlays.
-- **What is not adopted,** each counted by the audit: a mark whose owner is no account; a link to
-  or from an id no step row holds, and a link from a step to itself; the rows of a deleted roadmap,
-  whose id becomes spent. A roadmap with no owner goes to the house account, and the move stops on
-  any other it was not told to expect.
-- **The audit.** Before the move, the old server writes one document a roadmap: title, guide,
+  add stamp's time, and `ru` its newest stamp's; a pointer's are both its stamp's. Each is kept
+  between the roadmap's own creation and last change.
+- An empty or malformed `ord` becomes a key in its place in today's order, `(ord, created, id)` over
+  the whole roadmap. A kind's `rank` becomes an `ord`, `a0`, `a1`, … by `(rank, id)`, under the
+  rank's stamp, or the lowest server stamp where the rank holds none.
+- A step's `status` keeps `none` and `complete`; `active` and `inProgress` become `none`, as today,
+  and so does a mark's. The audit counts every other value, and the move stops on any.
+- Every value is stored as the old server reads it: a colour or hue it does not know as terracotta,
+  a link as its lenient reading of it. Each such value is counted.
+- A pointer moves from its step to a `pointer` record in its owner's overlay; a cleared one becomes
+  none. A subtree's place becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and
+  `node.branch`, and every `reach` is computed.
+- A roadmap stored only as a whole document is unfolded into rows first, by the old server's own
+  reading as it opens the roadmap; the time each roadmap last changed is kept as it was before the
+  move. One whose stamps it cannot read is unfolded by the move, each stamp's text kept for the rules
+  above; a step or kind in it repeating an id stops the move.
+- Marks move to their owners' overlays, a row each, a cleared `none` among them.
+- **What is not adopted,** each counted by the audit: a step, link, kind or mark of a roadmap no row
+  holds; a mark whose owner is no account; a link to or from an id no adopted step holds, and a link
+  from a step to itself; the rows of a deleted roadmap and of every roadmap under it, whose `tree`
+  record is adopted dead and without fields, so its id is spent, its tree scope dead since the
+  deletion. A roadmap with no owner goes to the house account, and the move stops on any other it was
+  not told to expect.
+- **The move also stops,** writing nothing, on any value it would write outside its field's domain, as
+  admission holds a write (past a bound, or a reference outside its type's pattern), counted by field,
+  so a rehearsal surfaces each for the owner to decide; on a roadmap id outside `tree`'s pattern, a
+  step, kind or marked step id outside its domain, a subtree whose place does not follow from its
+  parent's (no parent row, a loop, another root, depth or owner, past `MAX_DEPTH`, no owning step
+  row), a root that names another root or a depth, a visibility outside the three, a whole document
+  the old server's reading refuses, and a scope the engine already holds for a roadmap the move would
+  create. A move that stops or fails short of its end says at which owner and roadmap, and why.
+- **The audit.** Before the move, the old server writes one document a roadmap, read through its
+  own repositories and its own reading of a record's life, never the move's rules: title, guide,
   place, steps with fields and life, links, kinds, every account's marks with their times,
   visibility, and who may read each subtree. After it, the new server's tables must give the same
   document, and the MCP read tools, the owner's progress, the share page, the gallery, reminders'
-  readiness and the tail of the activity feed must answer as before. Every scope's digest sums, and
-  a second run changes nothing. What browsers hold is not proven by it.
+  readiness and the tail of the activity feed must answer as before, but for four changes made by
+  design: MCP's `seq`, which continues above the old one; a step's order key, the order itself being
+  compared (MCP's steps by id); a mark's stamp, its time being compared; and what each subtree has
+  come to, which the engine's progress answer adds. A roadmap holding a stamp the old server cannot
+  parse is unreadable to it today: it has no document, and its answers are counted apart. Every
+  scope's digest sums, every tree's `open` matches its `reach`, and a second run changes nothing.
+  What browsers hold is not proven by it.
 - A failure before writes resume restores the backup. After that the move goes forward only.
 
 ### §8.2 What a browser holds

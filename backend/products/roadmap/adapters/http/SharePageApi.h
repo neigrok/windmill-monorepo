@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "platform/ports/FailureReporter.h"
 #include "products/roadmap/application/EngineReadModels.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Access.h"
@@ -14,6 +15,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace wm {
@@ -26,11 +28,17 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // its records instead of its room (roadmap-on-the-engine.md §7).
 class SharePageApi {
 public:
+  // `failures` takes the failure of every read this route observes; none reports it as the request's Issue, as the
+  // server does.
   SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                std::shared_ptr<AuthService> auth, std::shared_ptr<OgVideoRepository> videos,
-               std::string webRoot, std::string appOrigin, std::shared_ptr<EngineReadModels> engine);
+               std::string webRoot, std::string appOrigin, std::shared_ptr<EngineReadModels> engine,
+               std::shared_ptr<FailureReporter> failures);
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
+
+  // What the page names of the tree for `caller`: nothing where it serves the shell verbatim.
+  std::optional<SharedRoadmap> sharedOf(const std::string& id, const std::optional<UserId>& caller);
 
   // Splice this tree's unfurl meta between the index.html sentinels, keeping the sentinels;
   // returns the shell unchanged if the fence is absent. `title` is escaped here. The page's own
@@ -47,6 +55,7 @@ private:
   std::string webRoot_;
   std::string appOrigin_;
   std::shared_ptr<EngineReadModels> engine_;
+  std::shared_ptr<FailureReporter> failures_;
 };
 
 }
