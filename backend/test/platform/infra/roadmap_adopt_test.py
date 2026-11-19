@@ -141,7 +141,7 @@ class AdoptionTest(ToolTest):
         self.assertEqual([(report["stage"], report["verdict"]) for report in reports],
                          list(zip(STAGES, ["unfolded", "asked", "ready", "adopted", "present", "same", "same", "summed"])))
         counts = {report["stage"]: report["counts"] for report in reports}
-        self.assertEqual(counts["unfold"], {"oldServer": {"couldNotOpen": 2, "opened": 9},
+        self.assertEqual(counts["unfold"], {"oldServer": {"couldNotOpen": 2, "opened": 9}, "roadmaps": {"lastChangeKept": 1},
                                             "wholeDocuments": {"leftAsTheyWere": 1, "unfoldedIntoRows": 1}})
         self.assertEqual(counts["read-models-before"], {"answers": 72})
         self.assertEqual(counts["before"], BEFORE)
@@ -196,7 +196,8 @@ class AdoptionTest(ToolTest):
         self.assertEqual(nodes["unset"][3:5], ["Tune", "0:0:srv"])
         self.assertEqual(nodes["active"][5:7], ["terracotta", "none"])
         self.assertEqual(nodes["owning"][8], "t_a000000000000002")
-        self.assertEqual(nodes["late"][-1], "1750000000000")
+        self.assertEqual(nodes["late"][-1], "1748736000000")
+        self.assertEqual(query(url, f"select (extract(epoch from updated_at) * 1000)::bigint from trees where id = '{cello}'"), "1748736000000")
         self.assertEqual(query(url, "select rc, ru from roadmap_nodes where scope_key = 'tree:t_b000000000000001' and id = 'late'"),
                          "1740000000000|1748736000000")
         self.assertEqual(nodes["kept"][-2:], ["1740000000000", "1740000000000"])

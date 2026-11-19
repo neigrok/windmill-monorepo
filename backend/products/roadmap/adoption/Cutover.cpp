@@ -226,7 +226,7 @@ StageReport Cutover::after() {
   return report;
 }
 
-// The old server's own opening of every roadmap, and what it unfolded.
+// The old server's own opening of every roadmap, and what it unfolded, each roadmap's last change kept as it was.
 StageReport Cutover::unfold() {
   std::set<std::string> documents;
   {
@@ -237,8 +237,10 @@ StageReport Cutover::unfold() {
   }
   StageReport report{.verdict = "unfolded", .passed = true};
   {
+    const std::map<std::string, std::string> lastChanges = adoption_.lastChanges();
     const Survey survey(adoption_.oldTables(), expectation_);
     report.counts += servers_.settleOld(survey);
+    report.counts.add("roadmaps.lastChangeKept", adoption_.keepLastChanges(lastChanges));
   }
   const Survey settled(adoption_.oldTables(), expectation_);
   for (const auto& [id, surveyed] : settled.roadmaps()) {

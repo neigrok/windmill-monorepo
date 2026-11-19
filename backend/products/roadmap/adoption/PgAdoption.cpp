@@ -257,6 +257,27 @@ std::uint64_t PgAdoption::otherSessions() {
                   pqxx::params{ownSessions_})[0][0].as<std::uint64_t>();
 }
 
+std::map<std::string, std::string> PgAdoption::lastChanges() {
+  PgLease conn{*pool_};
+  pqxx::read_transaction txn{*conn};
+  std::map<std::string, std::string> changed;
+  for (const auto& row : txn.exec("select id, updated_at::text from trees")) changed.emplace(row[0].as<std::string>(), row[1].as<std::string>());
+  return changed;
+}
+
+std::size_t PgAdoption::keepLastChanges(const std::map<std::string, std::string>& changed) {
+  Json::Value times(Json::objectValue);
+  for (const auto& [id, at] : changed) times[id] = at;
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result kept = txn.exec(
+      "update trees t set updated_at = v.value::timestamptz from jsonb_each_text($1::jsonb) v "
+      "where t.id = v.key and t.updated_at is distinct from v.value::timestamptz returning t.id",
+      pqxx::params{dump(times)});
+  txn.commit();
+  return kept.size();
+}
+
 OldReadings PgAdoption::oldReadings(const Survey& survey) {
   PgTreeRepository trees(pool_);
   PgProgressRepository progress(pool_);

@@ -7,6 +7,7 @@
 #include "products/roadmap/adoption/Audit.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -59,6 +60,12 @@ public:
   // Every roadmap of roadmap's own tables, a roadmap stored only as a whole document unfolded into rows as the old server
   // unfolds it, its links as the old server reads them; and every account.
   OldDatabase oldTables();
+
+  // When each roadmap last changed (`trees.updated_at`, as its text), and that time put back on every roadmap whose row
+  // now says another, answering how many it put back: the old server's opening of a roadmap moves it to the time of
+  // opening, which would become the roadmap's record's, its gallery card's and its reminders' last change.
+  std::map<std::string, std::string> lastChanges();
+  std::size_t keepLastChanges(const std::map<std::string, std::string>& changed);
 
   // The old server's reading of every roadmap the survey holds, deleted ones answering none as the old server's do.
   OldReadings oldReadings(const Survey& survey);

@@ -38,7 +38,7 @@ on a failure, which it reports to Sentry by the failure's type alone.
 
 | Stage | What it does | Verdicts | Private record |
 |---|---|---|---|
-| `unfold` | The old server (`RoomRegistry`) opens every roadmap and closes it, writing what it writes on opening one: a roadmap stored only as a whole document unfolded into rows, a head behind its activity taken past it. | `unfolded` | — |
+| `unfold` | The old server (`RoomRegistry`) opens every roadmap and closes it, writing what it writes on opening one: a roadmap stored only as a whole document unfolded into rows, a head behind its activity taken past it. Each roadmap's `updated_at`, which that opening moves to the time of the move, is put back as it was. | `unfolded` | — |
 | `read-models-before` | The old server's read models answer the audit's questions. | `asked`; `noPrivateRecord` fails | `read-models-before.jsonl` |
 | `before` | Reads every roadmap, writes the old server's reading of each as a document, counts what the move would do, and says whether anything stops it, a scope the engine already holds for a roadmap it would create among them. Writes nothing. | `ready`; `stops` fails | `before.jsonl`, `stops.jsonl` (each stop with its roadmap) |
 | `adopt` | Adopts every owner's roadmaps that hold no `tree` record yet, one owner a transaction under an advisory lock, after inserting the house account when absent. Nothing is written while anything stops the move. An owner whose transaction stops or fails is written not at all; the stage prints its counts so far with the reason's static code. | `adopted`, `unchanged` (a second run); `stops` fails; `failed` exits 1 | `adopt-failure.jsonl` (owner, roadmap, reason) |

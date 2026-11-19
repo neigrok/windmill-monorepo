@@ -353,8 +353,9 @@ tables, stopping where they differ from those it planned from.
   none. A subtree's place becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and
   `node.branch`, and every `reach` is computed.
 - A roadmap stored only as a whole document is unfolded into rows first, by the old server's own
-  reading as it opens the roadmap. One whose stamps it cannot read is unfolded by the move, each
-  stamp's text kept for the rules above.
+  reading as it opens the roadmap; the time each roadmap last changed is kept as it was before the
+  move. One whose stamps it cannot read is unfolded by the move, each stamp's text kept for the rules
+  above.
 - Marks move to their owners' overlays, a row each, a cleared `none` among them.
 - **What is not adopted,** each counted by the audit: a step, link, kind or mark of a roadmap no row
   holds; a mark whose owner is no account; a link to or from an id no adopted step holds, and a link
@@ -362,14 +363,14 @@ tables, stopping where they differ from those it planned from.
   roadmap and of every roadmap under it, whose `tree` record is adopted dead and without fields, so
   its id is spent, its tree scope dead since the deletion. A roadmap with no owner goes to the house
   account, and the move stops on any other it was not told to expect.
-- **The move also stops,** writing nothing, on any value it would write outside its field's domain,
-  as admission holds a write (past a bound, or a reference outside its type's pattern), counted by
-  field, so a rehearsal surfaces each for the owner to decide; on a roadmap id outside `tree`'s
-  pattern, a step, kind or marked step id outside its domain, a subtree whose place does not follow from its parent's (no
-  parent row, a loop, another root, depth or owner, past `MAX_DEPTH`, no owning step row), a root
-  that names another root or a depth, a visibility outside the three, a whole document the old
-  server's reading refuses, and a scope the engine already holds for a roadmap the move would create.
-  A move that stops or fails short of its end says at which owner and roadmap, and why.
+- **The move also stops,** writing nothing, on any value it would write outside its field's domain, as
+  admission holds a write (past a bound, or a reference outside its type's pattern), counted by field,
+  so a rehearsal surfaces each for the owner to decide; on a roadmap id outside `tree`'s pattern, a
+  step, kind or marked step id outside its domain, a subtree whose place does not follow from its
+  parent's (no parent row, a loop, another root, depth or owner, past `MAX_DEPTH`, no owning step
+  row), a root that names another root or a depth, a visibility outside the three, a whole document
+  the old server's reading refuses, and a scope the engine already holds for a roadmap the move would
+  create. A move that stops or fails short of its end says at which owner and roadmap, and why.
 - **The audit.** Before the move, the old server writes one document a roadmap, read through its
   own repositories and its own reading of a record's life, never the move's rules: title, guide,
   place, steps with fields and life, links, kinds, every account's marks with their times,
