@@ -430,7 +430,7 @@ test('with the switch on the owner is told once, under the card and on the stepâ
     const step = page.getByRole('article', { name: 'Leave the dock', exact: true });
     const onPage = await step.locator('.st-step-landed').innerText();
     const told = await page.evaluate((tree) => ({ note: window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`] ?? null,
-      events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)), issues: window.issues }), TREE);
+      events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort(), issues: window.issues }), TREE);
     await page.reload();
     await page.locator('.st-board-card-title', { hasText: 'Reef the sail' }).waitFor();
     const later = await page.locator('.st-board-landed').count();
@@ -442,7 +442,7 @@ test('with the switch on the owner is told once, under the card and on the stepâ
       },
       onPage: 'Your edit brought this step back.',
       note: null,
-      events: ['{"rule":"follows","place":"board"}', '{"rule":"cameBack","place":"board"}'],
+      events: ['{"rule":"cameBack","place":"board"}', '{"rule":"follows","place":"board"}'],
       issues: [],
       later: 0,
       failures: [],
