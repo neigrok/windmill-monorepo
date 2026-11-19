@@ -26,7 +26,7 @@ let insideRun = false;
 /**
  * What a replica hands a read or a commit body: the scope's views and reconciliation metadata,
  * all read from the same replica; a commit adds its `now`.
- * @typedef {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & import('./reading.js').ViewMetadata} ReadViews
+ * @typedef {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: import('./reading.js').ConfirmedRows } & import('./reading.js').ViewMetadata} ReadViews
  * @typedef {ReadViews & { now: number }} CommitViews
  * @typedef {{ receipt: CommitReceipt } | { refused: { code: string, detail: Json | null, notice: string | null } }} CommitOutcome
  */

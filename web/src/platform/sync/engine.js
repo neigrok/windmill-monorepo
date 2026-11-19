@@ -390,15 +390,19 @@ export class BrowserSyncEngine {
     return { syncLive, serverNow: syncLive ? reading.wall + replica.meta.serverOffsetMs : null };
   }
 
-  // Confirmed rows and reconciliation metadata must come from the same replica as a commit's views.
+  // Confirmed rows and reconciliation metadata must come from the same replica as a commit's views. A confirmed row is
+  // copied when a reader asks for it, so a read of a large scope costs what it reads.
   readMetadata(scope, replica = this.device.activeReplica, actor = this.actor) {
     const record = replica.cursorOf(scope);
     const cursor = Cursor.decode(record.cursor);
     const clean = cursor?.e === replica.meta.serverEpoch && cursor?.m === 'live' && cursor.k === undefined
       && !record.behind && record.digestStop === undefined && !record.mismatchReset && !replica.staging[scope];
     return {
-      confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id),
-        structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }), ...(row.ru === undefined ? {} : { ru: row.ru }) })])),
+      confirmed: { get: (key) => {
+        const row = replica.confirmed[scope]?.[key];
+        return row === undefined ? undefined
+          : structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }), ...(row.ru === undefined ? {} : { ru: row.ru }) });
+      } },
       freshness: this.freshness(scope, replica),
       spent: replica.spentRows(scope),
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),

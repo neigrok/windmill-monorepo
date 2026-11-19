@@ -20,6 +20,7 @@ import { precondition } from './values.js';
 /** @typedef {{ gestureId: string, command: import('./plans.js').Command, canSupersede: boolean, isAdmitted?: boolean }} QueuedCommand */
 /** @typedef {{ epoch: string | null, cleanSeq: number | null }} ScopeCheckpoint */
 /** @typedef {{ t: string, id: RecordID, born: string }} SpentId */
+/** @typedef {{ get(key: string): ViewRecord | undefined }} ConfirmedRows the scope's confirmed records by record key */
 /**
  * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
  *   commands?: QueuedCommand[], checkpoint?: ScopeCheckpoint, mintId?: (type: string) => RecordID,
@@ -41,7 +42,7 @@ export class Views {
 
   /**
    * @param {Registry} registry
-   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & ViewMetadata} source
+   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: ConfirmedRows } & ViewMetadata} source
    */
   constructor(registry, { drawn, stored, confirmed = new Map(), spent = [], devices = {}, firstPullComplete = true,
     actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID, assertOpen = () => {} }) {

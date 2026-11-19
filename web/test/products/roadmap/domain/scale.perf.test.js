@@ -4,6 +4,13 @@ import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js'
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
 import { BoardRead } from '../../../../src/products/roadmap/domain/reads.js';
+import { landingOf } from '../../../../src/products/roadmap/domain/landing.js';
+import { ChangeStep } from '../../../../src/products/roadmap/domain/steps.js';
+import { ActionRunner, EngineReplica } from '../../../../src/platform/domain-kit/runner.js';
+import { FixedZone } from '../../../../src/platform/domain-kit/time.js';
+import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
+import { environment } from '../../../platform/sync/fakes.js';
+import { roadmapRegistry } from './vectors.js';
 
 const id = (index) => `n${String(index).padStart(5, '0')}`;
 
@@ -85,4 +92,51 @@ test('Disconnected retained tombstones do not allocate reachability rows', () =>
   assert.equal(history.tree.nodesById.size, 50002);
   assert.deepEqual({ raw: history.rawIds.length, reach: history.reach.bits.byteLength, rows: history.rows.size, debt: history.owedIndex().closure.bits.byteLength },
     { raw: small.rawIds.length, reach: small.reach.bits.byteLength, rows: small.rows.size, debt: small.owedIndex().closure.bits.byteLength });
+});
+
+// The kit reads a scope's confirmed rows only to look one up, so a read of the device's copy copies none it does not ask
+// for: the reconciliation metadata of a 10,000-step roadmap costs what a small one does. A read, the landing read and one
+// change are reported.
+test('A 10,000-step roadmap on the device\'s engine: its read metadata copies no confirmed row a reader does not ask for', async (t) => {
+  const engine = await BrowserSyncEngine.open({ ...environment().options, registry: roadmapRegistry });
+  try {
+    await engine.signIn('A');
+    const tree = 't_00000000000000aa';
+    const scope = `tree/${tree}`;
+    const stamp = '1000:0:r_aaaaaaaaaaaa';
+    await engine.write(null, (/** @type {any} */ device) => {
+      const replica = device.activeReplica;
+      replica.putConfirmed('self/roadmap', { t: 'tree', id: tree, seq: 1, born: stamp, life: ['alive', stamp], f: {} });
+      for (let index = 0; index < 10000; index++) {
+        replica.putConfirmed(scope, { t: 'node', id: id(index), seq: index + 1, born: stamp, life: ['alive', stamp],
+          f: { label: [`Step ${index}`, stamp], ord: ['a0', stamp], description: [`What step ${index} is about`, stamp] } });
+      }
+      let seq = 10001;
+      for (let index = 0; index < 10000; index++) {
+        for (const gap of [1, 2]) if (index >= gap) replica.putConfirmed(scope, { t: 'edge', id: [id(index - gap), id(index)], seq: seq++, life: ['alive', stamp] });
+      }
+    }, ['self/roadmap', scope]);
+    const hold = engine.observe(scope);
+    const runner = new ActionRunner(new EngineReplica(engine), roadmapRegistry, new FixedZone(0));
+    const median = async (/** @type {(run: number) => unknown} */ body) => {
+      const timings = [];
+      for (let run = 0; run < 7; run++) {
+        const start = performance.now();
+        await body(run);
+        timings.push(performance.now() - start);
+      }
+      return timings.sort((a, b) => a - b)[3] ?? 0;
+    };
+    assert.equal(engine.device.activeReplica.confirmedRows(scope).length, 29997);
+    assert.deepEqual(engine.readMetadata(scope).confirmed.get(JSON.stringify(['node', id(7)]))?.f?.label, ['Step 7', stamp]);
+    const metadata = await median(() => engine.readMetadata(scope));
+    const read = await median(() => new EngineReplica(engine).read(scope));
+    const landing = await median(() => runner.read(scope, (reader) => landingOf(tree, reader)));
+    const change = await median((run) => runner.runAct(new ChangeStep(tree, id(5000), { label: `Renamed ${run}` })));
+    t.diagnostic(`10k steps/20k links: read metadata ${metadata.toFixed(1)} ms, a read ${read.toFixed(1)} ms, the landing read ${landing.toFixed(1)} ms, one change ${change.toFixed(1)} ms`);
+    assert.ok(metadata < 5, `read metadata ${metadata.toFixed(1)} ms`);
+    hold.release();
+  } finally {
+    engine.close();
+  }
 });
