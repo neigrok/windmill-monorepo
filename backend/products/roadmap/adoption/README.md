@@ -46,60 +46,27 @@ joins always; and the tools' `SENTRY_DSN` and `SENTRY_ENVIRONMENT`.
 A run cut short is run again from its first stage: `unfold` and the read stages change nothing the second time, and
 `adopt` takes up at the first owner it had not committed. A stage killed mid-transaction commits nothing of it.
 
-## The rules as the move applies them
+## How the rules land in the engine's tables
 
-- **Envelope.** Each owner's `acct:<A>/roadmap` holds a `tree` record for each of their roadmaps, born and alive at the
-  lowest server stamp `0:0:srv`, its place in `parent` for a subtree; `rc` and `ru` are `trees.created_at` and
-  `updated_at`. Each roadmap's `tree:<T>` holds its `meta`, steps, links and kinds; each account's `acct:<A>/overlay/<T>`
-  its marks, and the owner's its pointers. Rows are numbered in the registry's type order, then by id; the scope's seq is
-  the last, its digest the sum over its alive rows, its counters the alive count of each capped type, and a tree's
-  `open` whether its reach opens it. Each scope is new: the move creates no row in a scope it did not create, and adds
-  each owner's records at the next seqs of their roadmap scope.
-- **Stamps.** A stamp that parses as D-1 is kept, unless it lies more than `MAX_SKEW_MS` past the move's start, which
-  the engine would never have stored (INV-14). `''` and `0:0:` are unset. Every other stamp, and a future one, takes the
-  lowest server stamp. An unset register that holds its field's default stays unset; one that holds another value — the
-  title every roadmap was created with, under no stamp — takes the lowest server stamp, as a root's `visibility` and a
-  true `guideInherited`, which roadmap holds under none, do. The registers the move computes (`reach`, `root`,
-  `parent`, `depth`, `forkedFrom`, `branch`) take it too.
-- **Life.** A step, link or kind is alive when its add stamp is set and not older than its remove stamp, dead when the
-  remove stamp is newer, its life at the greater; born at its add stamp, or the lowest server stamp when only its
-  remove stamp is set. A row with neither is not adopted.
-- **Sequence.** Each tree scope's rows are numbered above the greater of `trees.head_seq` and its last `tree_ops.seq`.
-- **Times.** A step's, link's and kind's `rc` is its add stamp's time and `ru` its newest stamp's, each kept between the
-  roadmap's `created_at` and `updated_at`, so no record reads as changed after the roadmap did; a mark's are the time the
-  server recorded it; a pointer's its stamp's.
-- **Order.** Steps keep a key that is one (D-25); an empty or malformed one becomes a key in its place in today's order,
-  `(ord, created, id)` with an empty key first, over the whole roadmap, which keeps every trunk parent's order. Kinds take
-  `a0`, `a1`, … by `(rank, id)`, under their rank's stamp when it is kept and the lowest server stamp otherwise.
-- **Values.** As the old server reads them: a colour or hue it does not know is terracotta, a status `active` or
-  `inProgress` is `none`, a link is its lenient reading of it (`linksFromJson`), a mark of `complete` keeps its
-  out-of-order word. A step status, or a mark's, outside `none`, `complete`, `active` and `inProgress` stops the move.
-- **Pointers and subtrees.** A step's `opens` becomes a `pointer` alive at its stamp in the owner's overlay; a cleared one
-  becomes none. A subtree's place becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and its owning step's
-  `branch`; `reach` is the root's visibility while every owning step on its way down is present, `private` otherwise.
-- **Marks** move to their owners' overlays, each a row of its own, a mark of `none` included.
-- **Whole documents** are unfolded first by the old server (`unfold`); one it cannot read is unfolded by the move, with
-  each stamp's text kept for the rules above.
-- **Not adopted, each counted:** a mark whose owner is no account; a link from a step to itself, or to or from an id no
-  adopted step holds; a step, link or kind with neither stamp; and the rows of a deleted roadmap — one whose row, or a row
-  above it, is deleted — whose `tree` record is adopted dead, so its id is spent, and its tree scope dead since then.
-- **Owners.** A roadmap's owner is its root's; an owner that is no account counts as none. A roadmap with no owner goes to
-  the house account when it is expected, and stops the move otherwise.
-- **What else stops the move:** a roadmap id outside `^t_[0-9a-f]{16}$`; a step, kind or marked step id outside 1–128
-  code points; a subtree whose parent no row holds, whose way up meets itself, whose root, depth or owner does not follow
-  from its parent's, which sits past depth 8, or whose owning step no row holds; a visibility outside the three; a whole
-  document whose shape the old server's reading refuses.
-- **The house account** (`kHouseAccount`, `products/roadmap/domain/Access.h`) has an address that takes no mail, so
-  nobody signs in as it. The gallery lists none of its roadmaps, as it listed no ownerless one.
+The rules are [§8.1](../../../../docs/foundation/roadmap-on-the-engine.md)'s; these are the facts of the envelope it does not
+state.
+
+- Each owner's `acct:<A>/roadmap` holds a `tree` record for each of their roadmaps, its place in `parent` for a subtree;
+  `rc` and `ru` are `trees.created_at` and `updated_at`. Each roadmap's `tree:<T>` holds its `meta`, steps, links and kinds;
+  each account's `acct:<A>/overlay/<T>` its marks, and the owner's its pointers.
+- Rows are numbered in the registry's type order, then by id; the scope's seq is the last, its digest the sum over its
+  alive rows, its counters the alive count of each capped type, and a tree's `open` whether its reach opens it. Every tree
+  and overlay scope is new; each owner's records take the next seqs of their roadmap scope.
+- The house account (`kHouseAccount`, `products/roadmap/domain/Access.h`) has an address that takes no mail, so nobody
+  signs in as it. The gallery lists none of its roadmaps, as it listed no ownerless one.
 
 ## The audit
 
 The document holds what a person and a reader see of a roadmap — its owner, title, guide, place, steps with their
 fields and life, links, kinds, every account's marks with when the server received them, its visibility, who may read
 it and whether it stands — and never a stamp or an order key, which the move may give: the order is the documents'
-order of steps and kinds. The read models' answers leave out what changes by design (`ReadModels.h`). A roadmap holding a
-stamp the old server cannot parse is unreadable today: the old server throws on it (`roadmapStamp`), so its questions are
-counted apart, as `unreadableToday`.
+order of steps and kinds. The read models' answers leave out what §8.1 names as changed by design (`ReadModels.h`); a
+roadmap the old server cannot read today, which throws on its stamps (`roadmapStamp`), is counted as `unreadableToday`.
 
 ## Tests
 
