@@ -520,7 +520,8 @@ dropdb -h /tmp wm_sync_test
 
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
-`mcp`, `sync`, `adapters` and `sync_epoch` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service
+`mcp`, `sync`, `adapters`, `sync_epoch`, `subtree_inventory`, `roadmap_adopt` and `server_stop` tests in one `ctest` run
+under `WM_PG_TEST` against a Postgres 16 service
 with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `windmill_sync_test` for
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
