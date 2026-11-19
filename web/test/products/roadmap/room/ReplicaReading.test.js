@@ -239,6 +239,75 @@ test('the room subscribes the roadmap it opens and drops it on leaving; with no 
   }
 });
 
+test('a room that leaves while the engine takes its roadmap’s subscription leaves the roadmap unfollowed, however soon it leaves', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    await a.sync();
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const followed = {};
+    for (const turns of [0, 1, 2, 3, 4, 6, 10]) {
+      const tree = `t_00000000000000${(0xa0 + turns).toString(16)}`;
+      const reading = new ReplicaReading({ treeId: tree, timers: a.env.timers,
+        session: { getSnapshot: () => snapshot, subscribe: () => () => {} }, repository: { loadActivity: async () => [] } });
+      const leaving = new AbortController();
+      const read = reading.read({ signal: leaving.signal });
+      for (let turn = 0; turn < turns; turn++) await Promise.resolve();
+      leaving.abort();
+      reading.close();
+      assert.equal(await read, null);
+      await until(() => true);
+      followed[turns] = a.engine.openScopes.has(RoadmapScopes.tree(tree));
+    }
+    assert.deepEqual(followed, { 0: false, 1: false, 2: false, 3: false, 4: false, 6: false, 10: false });
+  } finally {
+    a.close();
+  }
+});
+
+test('a reader who leaves a subtree while the roadmap above it is being subscribed leaves that roadmap unfollowed too', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('My year', { steps: [{ key: 'sail', label: 'Learn to sail' }], links: [] })));
+    const { subtree } = committed(await a.runner.runAct(new CreateSubtree(tree, steps.sail)));
+    for (const id of [tree, subtree]) for (const scope of [RoadmapScopes.tree(id), RoadmapScopes.overlay(id)]) a.observe(scope);
+    await a.sync();
+    // A stranger's browser: no roadmap of theirs in the list, so the subtree is read with the roadmap above it, which it
+    // holds nothing of until the engine takes its subscription, once `above` lets it.
+    let above = null;
+    let taken = false;
+    const nothing = { drawn: [], stored: [], pending: [], outbox: { held: 0, ready: 0, sent: 0, acked: 0 }, loaded: true, firstPullComplete: true };
+    const seen = (scope, shown) => {
+      const hold = a.engine.observe(scope);
+      return { subscribe: (listener) => hold.subscribe(listener), getSnapshot: () => (shown() ? hold.getSnapshot() : nothing), release: () => hold.release() };
+    };
+    const engine = Object.create(a.engine, {
+      observe: { value: (scope) => {
+        if (scope === RoadmapScopes.account) return seen(scope, () => false);
+        if (scope === RoadmapScopes.tree(tree)) return seen(scope, () => taken);
+        return a.engine.observe(scope);
+      } },
+      subscribe: { value: (scope) => (scope === RoadmapScopes.tree(tree)
+        ? new Promise((resolve) => { above = () => a.engine.subscribe(scope).then((answer) => { taken = true; resolve(answer); }); })
+        : a.engine.subscribe(scope)) },
+    });
+    const snapshot = { engine, ready: true, online: true, error: false };
+    const reading = new ReplicaReading({ treeId: subtree, timers: a.env.timers, session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => assert.fail('the subtree is never shown'), loadActivity: async () => [] } });
+    const leaving = new AbortController();
+    const read = reading.read({ signal: leaving.signal });
+    await until(() => above !== null);
+    leaving.abort();
+    reading.close();
+    assert.equal(await read, null);
+    await above();
+    await until(() => true);
+    assert.deepEqual({ above: a.engine.openScopes.has(RoadmapScopes.tree(tree)), subtree: a.engine.openScopes.has(RoadmapScopes.tree(subtree)) },
+      { above: false, subtree: false });
+  } finally {
+    a.close();
+  }
+});
+
 test('a browser whose copy could not open, as one that keeps nothing, is told at once that the roadmap cannot be shown; one whose copy does not open within the bound, after it', async () => {
   const timers = new FakeTimers();
   const told = [];
@@ -330,7 +399,7 @@ test('a roadmap another device deleted takes the device’s note of it along: on
   }
 });
 
-test('the bare roadmap door reads the person’s list once the device has read it, newest first; with no copy, none', async () => {
+test('the bare roadmap door reads the person’s list once the device has read it, newest first; with no copy it cannot say which, and tells why', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
     const plant = async (title) => {
@@ -348,9 +417,11 @@ test('the bare roadmap door reads the person’s list once the device has read i
     reading.close();
     assert.deepEqual(listed.map(({ id, title }) => [id, title]), [[row, 'Learn to row'], [sail, 'Learn to sail']]);
 
-    const unkept = new ReplicaReading({ treeId: null, timers: a.env.timers,
+    const told = [];
+    const unkept = new ReplicaReading({ treeId: null, timers: a.env.timers, track: (name, props) => told.push([name, props]),
       session: { getSnapshot: () => ({ engine: null, ready: false, online: true, error: true }), subscribe: () => () => {} } });
-    assert.deepEqual(await unkept.readList({ signal: new AbortController().signal }), []);
+    assert.deepEqual({ listed: await unkept.readList({ signal: new AbortController().signal }), list: unkept.list(), card: unkept.card(sail), told },
+      { listed: null, list: null, card: null, told: [['roadmap_load', { outcome: 'unkept' }]] });
     unkept.close();
   } finally {
     a.close();

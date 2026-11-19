@@ -276,7 +276,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   // trees where the holder's lives (the device's copy where the room reads it, else the server's or this device's). A
   // chosen tree's row stands at once from what the picker knew of it, and a read the server refuses for want of a
   // session is the room's lapse, as a refused write is.
-  const pickerTrees = load.pickerTrees
+  const pickerTrees = load.heldTrees
     ?? (holder?.place === 'device' ? { list: listDeviceTrees, read: readDeviceTreeCard } : { list: listServerTrees, read: readTreeCard });
   const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining ? {
     view: boardActive ? 'board' : 'graph',
@@ -505,7 +505,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
             loading={boardAwaitsRoadmap && !loadError}
             back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap && !inSubtree ? <TreeSwitcher {...verbs.switcher} /> : null}
-            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place} listHeld={load.listTrees}
+            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place} listHeld={load.heldTrees?.list ?? null}
               onPickTree={verbs.identitySheet.onPickTree} onNew={verbs.identitySheet.onNewRoadmap} onBrowse={verbs.identitySheet.onBrowse} />}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}

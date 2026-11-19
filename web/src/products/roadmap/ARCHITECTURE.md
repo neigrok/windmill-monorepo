@@ -119,7 +119,9 @@ A failed Board load at 744–1023px offers `RecoveryTreeSwitcher` to authenticat
 independently of the failed tree's ownership. Shared routes never offer this door. A signed-out device route
 must first establish its unclaimed index row through `LocalTreeRegistry.readList`; a failed read grants no
 capability. Where the room reads the device's copy, that row is the anon replica's list holding the roadmap, and the
-switcher lists the person's roadmaps as the replica keeps them, the account's and the browser's alike (`listHeld`). Recovery has no current tree, counts, checkmark or edit actions. Account lists use
+switcher lists the person's roadmaps as the replica keeps them, the account's and the browser's alike (`listHeld`, the room's
+`heldTrees`); before the copy opens it cannot say which are the person's, so the list fails as an account list does, with
+Retry list, and reports nothing the copy's own failure has told. Recovery has no current tree, counts, checkmark or edit actions. Account lists use
 `listServerTrees` and preserve authoritative empty versus failed responses, without adding device rows.
 Device lists strictly read the anonymous index and readable local records. Index, storage and corrupt-record
 failures retain Retry list. The existing array-only registry reads retain their contracts.
@@ -250,9 +252,11 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   subtree is subscribed as the person goes in. A signed-in reader's own overlay of the roadmap comes with its tree scope
   (E-3), where their own marks live; the room shows the owner's, and offers a reader no mark. A roadmap the person may not
   read, a private one a stranger opens among them, is in no address: the load error.
-- **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`): the copy could
-  not open (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here
-  (`missing`), or no answer came (`unanswered`). A browser that keeps nothing (no IndexedDB) has no copy to open: until
+- **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`, `UNSHOWN`), once
+  a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
+  (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
+  no answer came (`unanswered`). A room that leaves while the engine takes a subscription drops it once the engine
+  answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
   the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
   reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
 - **Births.** A roadmap is born through the domain on the replica the engine holds active (`room/ReplicaBirth.js`): the
@@ -261,7 +265,8 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   browser's anon replica (§5 Signed out) and signed in in the account's, which the engine sends; nothing goes to
   `POST /v1/trees` or the old stores. A browser whose copy could not open is told before anyone types, signed in or not,
   as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to the newest of the person's list
-  as the replica keeps it (`ReplicaReading.readList`), or to the quests.
+  as the replica keeps it (`ReplicaReading.readList`), or to the quests; where the copy cannot open it cannot say which,
+  so it stays, and the reading tells why (`roadmap_load`).
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
   `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
   stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's

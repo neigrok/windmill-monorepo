@@ -43,6 +43,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   const plantNoteRef = useRef(null); // null until read; survives StrictMode’s double effect
   const knownRef = useRef(new Map()); // `<step>><tree>` → what the picker knew of a tree chosen here, until the server's read
   const readingRef = useRef(null);
+  const loadToldRef = useRef(false); // the visit has told why its roadmap cannot be shown (`roadmap_load`), whatever readings it runs
   const latest = useRef(null);
   latest.current = { structure, onRemoteProgress, onLanding };
   const { layoutRef } = structure;
@@ -63,7 +64,8 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
     knownRef.current = new Map();
     framing.firstFrameRef.current = null;
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
-    const reading = readsReplica ? new ReplicaReading({ treeId, room, say: showToast }) : new LatticeReading({ treeId, demo, shared, demotion, known: knownRef, room });
+    const reading = readsReplica ? new ReplicaReading({ treeId, room, say: showToast, toldRef: loadToldRef })
+      : new LatticeReading({ treeId, demo, shared, demotion, known: knownRef, room });
     readingRef.current = reading;
     replicaRef.current = readsReplica ? reading : null;
 
@@ -208,18 +210,24 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   // What the picker knew of a tree chosen here, so its row stands at once; the server's read replaces it.
   const knowTree = useCallback((stepId, tree) => { knownRef.current.set(`${stepId}>${tree.id}`, Opening.chosen(tree)); }, []);
 
-  // The switcher's list where the room reads the replica: the account's roadmaps as the replica keeps them; and the tree
-  // picker's, with an address of one of them read there and any other from the server, which keeps other people's.
+  // Where the room reads the replica: the open room's switcher's list, the account's roadmaps as the replica keeps them;
+  // and the person's roadmaps as the recovery switcher and the tree picker read a list, as the server's is read
+  // (`listServerTrees`): not authoritative before the device's copy opens, when it cannot say which are theirs, the copy's
+  // failure already told. An address of one of them is read there, and any other from the server, which keeps other
+  // people's.
   const listTrees = useCallback(async () => readingRef.current?.list() ?? [], []);
   const card = useCallback((id) => readingRef.current?.card(id) ?? null, []);
-  const pickerTrees = useMemo(() => ({
-    list: async () => ({ rows: readingRef.current?.list() ?? [], authoritative: true }),
+  const heldTrees = useMemo(() => ({
+    list: async () => {
+      const rows = readingRef.current?.list() ?? null;
+      return rows === null ? { rows: [], authoritative: false, status: 0, reported: true } : { rows, authoritative: true };
+    },
     read: async (id) => readingRef.current?.card(id) ?? readTreeCard(id),
   }), []);
 
   return {
     loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree, guides,
-    readsReplica, listTrees: readsReplica ? listTrees : null, card: readsReplica ? card : null, pickerTrees: readsReplica ? pickerTrees : null,
+    readsReplica, listTrees: readsReplica ? listTrees : null, card: readsReplica ? card : null, heldTrees: readsReplica ? heldTrees : null,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }

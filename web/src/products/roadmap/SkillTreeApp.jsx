@@ -6,7 +6,8 @@ import { listAllTrees } from './persistence/TreeRegistry.js';
 import { ReplicaReading } from './room/ReplicaReading.js';
 
 // The roadmap door with no roadmap named goes to the person's newest roadmap, or to the quests where they have none: as the
-// replica lists them where the room reads the device's copy, else as the server and this device's index do.
+// replica lists them where the room reads the device's copy, else as the server and this device's index do. Where the
+// device's copy cannot be read the door cannot say which, so it stays, and the reading tells why (`roadmap_load`).
 export function SkillTreeApp({ treeId, birth, start, demo = false, replica = false }) {
   useEffect(() => {
     if (birth || start || treeId) return undefined;
@@ -14,7 +15,7 @@ export function SkillTreeApp({ treeId, birth, start, demo = false, replica = fal
     const reading = replica ? new ReplicaReading({ treeId: null }) : null;
     (reading ? reading.readList({ signal: wanted.signal }) : listAllTrees()).then((trees) => {
       reading?.close();
-      if (wanted.signal.aborted) return;
+      if (wanted.signal.aborted || trees === null) return;
       window.location.hash = trees.length > 0 ? `#/app/${trees[0].id}` : '#/app/start';
     });
     return () => {
