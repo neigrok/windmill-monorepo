@@ -1139,9 +1139,15 @@ export class BrowserSyncEngine {
     if (!account || !this.online || !this.credentials?.clear) return;
     try {
       await this.credentials.clear(account);
-      await this.write(null, (device) => {
+      // With the credential gone, nothing serves the anon replica as an account, so its pause ends (engine.md §9.1).
+      const resumed = await this.write(null, (device) => {
         if (device.meta.clearCredential === account) delete device.meta.clearCredential;
+        const replica = device.activeReplica;
+        if (replica.meta.state !== 'anon' || !replica.meta.authPaused) return false;
+        replica.meta.authPaused = false;
+        return true;
       });
+      if (resumed) this.kick();
     } catch { this.telemetry.failure('auth'); }
   }
 

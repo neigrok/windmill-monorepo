@@ -2668,7 +2668,8 @@ Then, in one local transaction:
      resume on the next sign-in as A. On Discard:
      delete the replica with its device rows, and its entries end `discarded`. Discard removes them from this device; it
      cannot recall a sent entry the server may already have admitted.
-  4. The `anon` replica, created if absent, becomes the active one, and A's credential is deleted.
+  4. The `anon` replica, created if absent, becomes the active one, unpaused (§9.1), and A's
+     credential is deleted.
 
   Cancel ends the session with A signed in: the sender resumes, and the released holds stay
   released. A sign-out is not durable: a process death before the finish leaves A signed in, as
@@ -2676,7 +2677,7 @@ Then, in one local transaction:
 - **Credentials.** The engine keeps an account's credential only while the account is bound or its
   sign-in is pending (`pendingSignIn`). Engine start deletes every other stored credential, so a
   deletion a finished sign-out did not reach (a process death after its transaction) is retried
-  there.
+  there. A deletion unpauses the active `anon` replica (§9.1).
 - **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
@@ -2786,6 +2787,7 @@ doubt (§7.9), whether or not its id changed.
 | `bound(A)` | sign-out, empty outbox or Keep | `dormant(A)` |
 | `bound(A)` | sign-out, Discard | deleted |
 | `bound(A)` | 401, `account-mismatch`, or an answer served as another principal (§9.1) / re-authentication as A | `authPaused` set / cleared |
+| `anon` (browser) | an answer or frame served as an account (§9.1) / a finished sign-out, or a credential deleted | `authPaused` set / cleared |
 | `dormant` | explicit discard | deleted |
 | any | fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change | same state, new replica id |
 
@@ -2871,7 +2873,12 @@ every `401`. Every `change`, `gone` and `not-found` frame carries its socket's `
 describes what that principal sees, not the replica's account. A replica of account A handles a
 `200` or `409`, and a frame, whose `as` is not A (`null`, another account, or absent) as a `401`
 (§9.6): `authPaused`, nothing applied and nothing forgotten. These are the answers whose handling
-depends on the principal; a `400`, `413`, `426` or `503` is handled by its status alone.
+depends on the principal; a `400`, `413`, `426` or `503` is handled by its status alone. The browser
+engine's `anon` replica handles a `200`, and a frame, whose `as` is an account the same way: its
+requests carry no credential, but its live socket carries whatever cookie the browser holds, such as
+one a sign-in set before it completed. No re-authentication ends that pause, since the replica has no
+account: the credential going does. A finished sign-out makes the `anon` replica active unpaused, and
+the deletion of a credential (§7.10 **Credentials**) unpauses the active `anon` replica.
 
 An HTTP request is checked in this order, and the first failing check answers:
 1. the registry version (above);

@@ -927,6 +927,58 @@ test('anonymous replicas reject authenticated scope answers without caching exis
   engine.close();
 });
 
+test('an anon replica answered as an account stays paused through the sign-in, and the sign-out that ends it pulls its open tree, after a reload too', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 }),
+        row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 2 })] },
+  }));
+  const reading = (engine) => ({ state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+    firstPullComplete: engine.readMetadata(tree).firstPullComplete, rows: engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id) });
+  let engine = await open(env);
+  await engine.subscribe(tree);
+  env.transport.account = 'A';
+  await engine.pull();
+  assert.deepEqual(reading(engine), { state: 'anon', authPaused: true, firstPullComplete: false, rows: [] });
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  env.transport.account = null;
+  engine.close();
+  engine = await open(env);
+  await engine.subscribe(tree);
+  await engine.pull();
+  assert.deepEqual(reading(engine), { state: 'anon', authPaused: false, firstPullComplete: true, rows: ['meta', 'oak'] });
+  engine.close();
+});
+
+test('an anon replica a live frame served as an account paused resumes once that credential is deleted, as a cancelled sign-in deletes it', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const cleared = [];
+  env.options.credentials = { clear: async (account) => { cleared.push(account); } };
+  const engine = await open(env);
+  await engine.commit('self/probe', card());
+  await engine.subscribe(tree);
+  await engine.pull();
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, false);
+  await engine.receiveFrame({ op: 'change', scope: tree, as: 'A' });
+  assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync() }, { authPaused: true, canSync: false });
+  await engine.write(null, (device) => { delete device.meta.pendingSignIn; device.meta.clearCredential = 'A'; });
+  env.transport.account = null;
+  await engine.cleanupCredentials();
+  assert.deepEqual({ cleared, state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+    canSync: engine.canSync(), owed: engine.device.meta.clearCredential },
+  { cleared: ['A'], state: 'anon', authPaused: false, canSync: true, owed: undefined });
+  engine.close();
+});
+
 test('finished offline sign-out durably owes cookie cleanup; restart retries a failed cleanup', async () => {
   const env = environment();
   let calls = 0;
