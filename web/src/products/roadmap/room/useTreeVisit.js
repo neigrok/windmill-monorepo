@@ -76,8 +76,8 @@ const deviceTrees = new LocalTreeRegistry();
 
 // The room's side of it. `arrival` is what the entry said as the room opened; `holder` who holds this room as its owner
 // (`useRoomHolder`), or null; `heldCard` the holder's roadmap of an id as the device's copy keeps it, where the room reads
-// it (null elsewhere: this device's index names them); `visitor` whether the room reads a tree that is not its own, demo aside, which lets it go
-// into subtrees as a holder does; `place` where the tree sits, null until the server has said; `route` the address
+// it (null elsewhere: this device's index names them); `visitor` whether the room reads a tree that is not its own, demo
+// aside, which lets it go into subtrees as a holder does; `place` where the tree sits, null until the server has said; `route` the address
 // family it stands on and `role` whose room it is (`owner` or `reader`), null until the room has loaded and knows. A
 // room that may go nowhere acts on nothing the entry says: no way back, no carried view or step, no door into a tree and
 // nothing said; one that may go into subtrees alone acts only on an entry a subtree's door left. `open` goes into a tree
