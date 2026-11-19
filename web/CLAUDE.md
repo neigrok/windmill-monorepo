@@ -188,6 +188,14 @@ When Roadmap events or failure boundaries change, run the existing cheap observa
 browser tests and include it in the final verification gates:
 `node --test --test-concurrency=1 --test-timeout=120000 test/products/roadmap/observability.test.mjs`.
 
+`npm run test:roadmap:server -- /absolute/backend/build` drives the roadmap room's writes end to end on a local stack
+(`scripts/e2e-roadmap-replica.mjs`), once with the server's roadmap engine and the room's replica switch on and once with
+both off: Undo and Redo, edits made offline syncing on reconnect, a change against another device's delete, and a
+roadmap's deletion. Build `windmill_server` first (`backend/RUNNING.md`). It builds the app into a temporary folder,
+serves it on 5183 against the server on 8095 (`WM_E2E_WEB_PORT`, `WM_E2E_PORT`), uses its own databases
+(`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops and drops what it started. The journal's twin,
+`test:journal:server`, is described in `src/products/journal/README.md`.
+
 The test runner caps ordinary file concurrency at four, using one fewer than the available CPUs
 with a minimum of one. This bounds concurrent browser and Vite hosts. Runtime fuzz and performance
 files run separately, one at a time.

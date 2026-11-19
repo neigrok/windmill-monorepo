@@ -5,8 +5,9 @@ import { isOwnershipRefusal, isSessionRefusal } from '../sync/refusals.js';
 
 // Who holds this room: the session's lapse, the claim of device trees at sign-in, the demotion an ownership refusal forces,
 // and the holder the room acts for. Signing in on a roadmap that loaded as someone else's loads it again, as a demotion
-// does: it may be theirs.
-export function useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room: { sessionRef, sceneRef } }) {
+// does: it may be theirs. A room that reads the device's copy has the engine reconnect and its lineage rule take what
+// the device holds at sign-in, so its session is neither reconnected nor handed to a claim.
+export function useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room: { sessionRef, replicaRef, sceneRef } }) {
   const [lapsed, setLapsed] = useState(false);
   const [demotion, setDemotion] = useState(null); // { edits, cardOpen } | null
   const [claims, setClaims] = useState(0); // trees any tab's claims took from this device to the account
@@ -22,7 +23,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
   const kickClaim = useCallback(() => {
     if (claimRunRef.current) return;
     claimRunRef.current = true;
-    claimLocalTrees({ openTreeId: treeId, openSession: () => sessionRef.current })
+    claimLocalTrees({ openTreeId: treeId, openSession: () => (replicaRef.current ? null : sessionRef.current) })
       .finally(() => { claimRunRef.current = false; });
   }, [treeId]);
 
@@ -34,6 +35,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
 
   // A sign-in or sign-out must reconnect: the socket’s principal is fixed at connect.
   useEffect(() => {
+    const reconnect = () => { if (!replicaRef.current) sessionRef.current?.forceReconnect(); };
     const prev = prevAuthRef.current;
     prevAuthRef.current = status;
     if (prev === status) return;
@@ -46,13 +48,13 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
       return;
     }
     if (prev === 'ghost' && status === 'signed-in') {
-      sessionRef.current?.forceReconnect();
+      reconnect();
       kickClaim();
       return;
     }
     if (prev === 'signed-in') {
       if (suspectRef.current) { suspectRef.current = false; setLapsed(true); }
-      sessionRef.current?.forceReconnect();
+      reconnect();
     }
   }, [status, kickClaim]);
 

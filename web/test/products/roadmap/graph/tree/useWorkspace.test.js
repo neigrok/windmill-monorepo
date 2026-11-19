@@ -90,20 +90,37 @@ test('useWorkspace — a step that opens a tree gauges that tree in place of its
   assert.deepEqual(calls.at(-1), ['setArcs', { plan: 0, sail: 3 / 8, book: 0 }]);
 });
 
-test('useWorkspace — a room that reads the replica seats the replica’s workspaces and takes no edit until its actions are wired', async (t) => {
+test('useWorkspace — a room that reads the replica seats the replica’s workspaces and sends each edit through its workspace door, keeping none here', async (t) => {
   browserWith();
   const { useWorkspace } = await import('../../../../../src/products/roadmap/graph/tree/useWorkspace.js');
   const calls = [];
   const sceneRef = { current: new Proxy({}, { get: (_, name) => (arcs) => calls.push([name, Object.fromEntries(arcs)]) }) };
-  const hook = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-replica' } }, sceneRef, treeRef: { current: null }, replicaRef: { current: {} } }));
+  const workspace = new Proxy({}, { get: (_, name) => (...args) => calls.push([name, ...args]) });
+  const hook = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-replica' } }, sceneRef, treeRef: { current: null }, replicaRef: { current: { writes: { workspace } } } }));
   const held = { rig: { subtasks: [{ id: 'mast', label: 'Raise the mast', done: true }], note: 'Calm day', links: [] } };
   hook.tree.adoptWorkspaces(held);
   hook.tree.pushArcs();
   hook.tree.onAddSubtask('rig', 'Bend on the sails');
   hook.tree.onToggleSubtask('rig', 'mast');
+  hook.tree.onEditSubtask('rig', 'mast', 'Step the mast');
+  hook.tree.onDeleteSubtask('rig', 'mast');
   hook.tree.onSetNote('rig', 'Rough day');
+  hook.tree.onAddLink('rig', 'example.com');
+  hook.tree.onDeleteLink('rig', 'chart');
   const reopened = renderHook(t, () => useWorkspace({ seedRef: { current: { id: 'tree-replica' } }, sceneRef, treeRef: { current: null }, replicaRef: { current: null } }));
   reopened.tree.hydrateWorkspaces('tree-replica');
-  assert.deepEqual({ shown: hook.tree.workspaceByNode, calls, kept: reopened.tree.workspaceByNode },
-    { shown: held, calls: [['setArcs', { rig: 1 }], ['setArcs', { rig: 1 }], ['setArcs', { rig: 1 }]], kept: {} });
+  assert.deepEqual({ shown: hook.tree.workspaceByNode, calls, kept: reopened.tree.workspaceByNode }, {
+    shown: held,
+    calls: [
+      ['setArcs', { rig: 1 }],
+      ['addSubtask', 'rig', 'Bend on the sails'], ['setArcs', { rig: 1 }],
+      ['toggleSubtask', 'rig', 'mast'], ['setArcs', { rig: 1 }],
+      ['editSubtask', 'rig', 'mast', 'Step the mast'],
+      ['deleteSubtask', 'rig', 'mast'], ['setArcs', { rig: 1 }],
+      ['setNote', 'rig', 'Rough day'],
+      ['addLink', 'rig', 'example.com'],
+      ['deleteLink', 'rig', 'chart'],
+    ],
+    kept: {},
+  });
 });

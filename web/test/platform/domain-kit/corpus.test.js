@@ -17,7 +17,7 @@ import { Plan, PlanError, Prediction, UndoRecipe, UndoTarget } from '../../../sr
 import { ProbeProduct } from '../../../../packages/api-contract/sync/reference/probe/product.js';
 import { Harness } from './harness.js';
 import { Capacity, Reader } from '../../../src/platform/domain-kit/reading.js';
-import { DomainNotice } from '../../../src/platform/domain-kit/refusals.js';
+import { DomainNotice, Refused } from '../../../src/platform/domain-kit/refusals.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { Move, Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { Instant, LocalDay } from '../../../src/platform/domain-kit/time.js';
@@ -274,7 +274,9 @@ function inverseForm(result) {
 
 // run/undo.json: an act opted into Undo over the real engine and the reference server, then its Undo and Redo.
 /** @param {any} input */
-async function undoVector(input) {
+// run/undo.json and run/composed.json: an act, a composed act, a single action or a draft's save over the real local
+// engine and the reference server, then Undo, Redo and held-cancel steps.
+async function engineActVector(input) {
   const phone = await Harness.open({ registry: probeRegistry, product: new ProbeProduct(), scope: PROBE_SCOPE });
   try {
     for (const scope of input.observe ?? []) phone.observe(scope);
@@ -289,10 +291,30 @@ async function undoVector(input) {
       assert.equal(done.kind, 'committed');
       await phone.sync();
     }
+    // A composed act's part: a plan as given, or `append`, which reads a record through the parts before it and
+    // writes a field's value with a suffix, refusing when the record is gone.
+    const partOf = (/** @type {any} */ item) => ({
+      refusals: ProbeRefusals,
+      load: (/** @type {import('../../../src/platform/domain-kit/acts.js').ActReader} */ read) => (item.append
+        ? read.inScope(item.scope, (reader) => reader.repository(probeEntity(item.append.t)).find(new Id(item.append.id, probeEntity(item.append.t)), 'drawn'))
+        : null),
+      decide: (/** @type {any} */ found) => {
+        if (item.unchanged) return ActDecision.unchanged(null);
+        if (!item.append) return ActDecision.write(new ActPlan(plans([item])), null);
+        const { t, id, field, suffix } = item.append;
+        if (found === null) return ActDecision.refuse(ProbeRefusals.ofRefused(new Refused('unknown-record', new Id(id, probeEntity(t)).ref, null, 'predicted')));
+        return ActDecision.write(new ActPlan(plans([{ ...item, plan: [{ op: 'update', t, id, f: { [field]: `${found.fields()[field]}${suffix}` }, fields: [field] }] }])), null);
+      },
+    });
     let actId = null;
     let outcome;
     try {
-      if (input.save) {
+      if (input.parts) {
+        const ran = await phone.runner.runComposed(input.parts.map(partOf));
+        outcome = ran.kind === 'committed' ? { kind: ran.kind, counts: ran.receipt.segments.map((item) => item.localIds.length), held: ran.receipt.releaseAt !== null }
+          : ran.kind === 'refused' ? { kind: ran.kind, part: ran.part, refusal: refusalForm(/** @type {any} */ (ran.refusal)) } : { kind: ran.kind };
+        if (ran.kind === 'committed') actId = ran.receipt.gestureId;
+      } else if (input.save) {
         const type = probeEntity(input.save.t);
         const opened = phone.runner.open(type, new Id(input.save.id, type), input.save.scope ?? probeScope(type));
         if (opened === null) throw new ContractError('a save opens a record the phone holds');
@@ -319,6 +341,7 @@ async function undoVector(input) {
     let requestId = null;
     for (const step of input.steps) {
       if (step === 'sync') await phone.sync();
+      else if (step === 'cancel') results.push({ cancelled: await phone.runner.cancelHeld(/** @type {string} */ (actId)) });
       else if (step === 'read') results.push(inverseForm(phone.runner.inverseResult(/** @type {string} */ (requestId))));
       else {
         /** @type {import('../../../src/platform/domain-kit/runner.js').InverseResult} */
@@ -511,7 +534,8 @@ const handlers = {
   'run/pipeline.json': pipelineVector,
   'run/acts.json': actVector,
   'run/act-decisions.json': actDecisionVector,
-  'run/undo.json': undoVector,
+  'run/composed.json': engineActVector,
+  'run/undo.json': engineActVector,
   'draft/save.json': saveVector,
   'draft/script.json': scriptVector,
   'scope/bindings.json': scriptVector,

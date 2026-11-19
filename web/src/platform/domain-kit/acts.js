@@ -6,7 +6,14 @@ import { precondition } from './values.js';
 /** @typedef {{ scope: string, stamp: string | null, localIds: string[], ids: (import('./entities.js').RecordID | null)[] }} ActSegmentReceipt */
 /** @typedef {{ gestureId: string, segments: ActSegmentReceipt[], retired: string[], superseded: string[], releaseAt: number | null }} ActReceipt */
 /** @typedef {{ scopes: string[], hold: boolean, gestureId?: string, undo?: { version: 1, segments: { index: number, recipes: import('./values.js').Json[] }[] } }} ActRequest */
-/** @typedef {{ now: number, finishLoad(): void, inScope<T>(scope: string, body: (views: import('./runner.js').CommitViews) => T): T, mintID(type: string, scope: string): import('./entities.js').RecordID, opaqueID(): string }} ActContext */
+/**
+ * The engine's act context (engine §7.1 Ordered local acts). In a composed act, `stage` commits one part's segment to the
+ * act's tentative copy and answers its local refusal, or null, and `beginPart` opens the next part's load, which reads
+ * and draws identities through every segment staged so far.
+ * @typedef {{ now: number, finishLoad(): void, inScope<T>(scope: string, body: (views: import('./runner.js').CommitViews) => T): T,
+ *   mintID(type: string, scope: string): import('./entities.js').RecordID, opaqueID(): string, beginPart(): void,
+ *   stage(scope: string, segment: (views: import('./runner.js').CommitViews) => import('./translation.js').Gesture): { code: string, detail: import('./values.js').Json | null } | null }} ActContext
+ */
 /**
  * @template L, T, R
  * @typedef {{ refusals: import('./refusals.js').Refusals<R>, load(read: ActReader): L, decide(loaded: L, ids: ActIDSource): ActDecision<T, R> }} ActAction
@@ -18,6 +25,10 @@ import { precondition } from './values.js';
 /**
  * @template T, R
  * @typedef {{ kind: 'committed', result: T, receipt: ActReceipt } | { kind: 'unchanged', result: T } | { kind: 'refused', refusal: R }} ActOutcome
+ */
+/**
+ * §9.7: a composed act's outcome, each part's result in order, or the refusal of the part that met it.
+ * @typedef {{ kind: 'committed', results: unknown[], receipt: ActReceipt } | { kind: 'unchanged', results: unknown[] } | { kind: 'refused', part: number, refusal: unknown }} ComposedOutcome
  */
 export class ScopedPlan {
   /** @param {string} scope @param {import('./plans.js').Plan} plan */
@@ -57,7 +68,8 @@ export class ActIDSource {
   mint(type, scope = type.scope) { return new Id(this.#context.mintID(type.type, type.boundScope(scope)), type); }
   opaqueID() { return this.#context.opaqueID(); }
 }
+// A segment the kit refuses before the engine writes it (a gone record), naming the composed act's part it belongs to.
 export class ActPrediction extends Error {
-  /** @param {import('./refusals.js').Refused} refusal */
-  constructor(refusal) { super('an act segment was refused'); this.refusal = refusal; }
+  /** @param {import('./refusals.js').Refused} refusal @param {number} [part] */
+  constructor(refusal, part = 0) { super('an act segment was refused'); this.refusal = refusal; this.part = part; }
 }

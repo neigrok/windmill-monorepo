@@ -93,6 +93,8 @@ export class ProductCorpus {
         return body({ drawn: views.drawn, stored: views.stored, confirmed: views.confirmed, devices: views.devices, firstPullComplete: views.firstPullComplete, now: moment.now.ms });
       },
       mintID: (type) => mint(type),
+      stage: () => { throw new Fault('an act case decides one act, and stages nothing'); },
+      beginPart: () => { throw new Fault('an act case decides one act, and has no second part'); },
       opaqueID: () => { throw new Fault('an act case mints no opaque id'); },
     };
     const reader = new ActReader(context, this.book.registry, moment);

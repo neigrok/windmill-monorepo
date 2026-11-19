@@ -1479,6 +1479,9 @@ export class SyncSession {
   // Present and tombstoned ids, so a colliding slug never resurrects a deleted node.
   knownNodeIds() { return this.lattice.knownNodeIds(); }
 
+  // The tree as the lattice projects it now.
+  treeData() { return this.lattice.toTreeData(); }
+
   clearDurable() { this.store.clear(this.treeId).catch(() => {}); }
 
   close() {

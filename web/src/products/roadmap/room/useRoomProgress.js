@@ -67,15 +67,14 @@ export class RoomProgress {
   }
 
   // A step that opens a tree takes no mark: no door offers one, and a call that reaches here for one changes and sends nothing.
-  // A room that reads the replica marks nothing until the domain's Complete and Reset are wired, so no mark shows that
-  // the replica does not hold.
+  // A mark the session refuses (the device's copy decides first) changes nothing either.
   mark(ids, target, wire = ids, at = Date.now()) {
-    if (this.progressBlocked || this.collaborators.replicaRef.current || (!this.collaborators.demo && !this.ownMarks)) return false;
+    if (this.progressBlocked || (!this.collaborators.demo && !this.ownMarks)) return false;
     const steps = this.collaborators.treeRef.current?.nodesById;
     if (ids.some((id) => !takesMark(steps?.get(id)))) return false;
     const next = advanceProgress(this.snapshot, ids, target, at);
     const { demo, sessionRef } = this.collaborators;
-    if (!demo) sessionRef.current?.markProgress(wire, target);
+    if (!demo && sessionRef.current?.markProgress(wire, target) === false) return false;
     this.commit(next);
     this.witness(next, { ids, target });
     return next;

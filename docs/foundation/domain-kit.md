@@ -1212,7 +1212,8 @@ ability's writes (gym Coach §4.3 step 2): on `write` it adds the unguarded mess
 plan, on `refuse` it writes that update alone. A plan the engine refuses at commit records nothing, so
 an executor that can hear of such a refusal in decide does: `cap` by the growth rule (§7.3), as
 `save_note` does at the 10-note cap. It saves a note of its own with `SaveDraft(creating:)` and
-returns a result of its own, never `Saved` (§10.1).
+returns a result of its own, never `Saved` (§10.1). Acts that must read each other's writes compose
+into one act through `runComposed` (§9.7).
 
 ### §9.4 Abilities
 
@@ -1328,6 +1329,37 @@ public struct ProductSlot: Sendable { public let index: Int; public let scope: S
   A product keeps its own stack of acts for its Undo and Redo keys; the engine keeps no stack, and at its start
   releases every act no unsettled request reads, since no product stack outlives its process.
 - The kit corpus's `run/undo.json` holds these results over the real engine and the reference server.
+
+### §9.7 Composed acts
+
+A gesture that is several acts, one after another (a bulk delete or recolour, an edit with its prerequisites, a
+link moved to another step, a paste that also creates kinds), runs as one act through
+`ActionRunner.runComposed(parts)`. A gesture refused where it is made writes nothing.
+
+```swift
+public enum ComposedOutcome<R> {
+  case committed(results: [Any], receipt: ActReceipt)   // each part's result, in order
+  case unchanged(results: [Any])
+  case refused(part: Int, refusal: R)
+}
+extension ActionRunner {
+  public func runComposed<R>(_ parts: [AnyActAction<R>]) async throws -> ComposedOutcome<R>
+}
+```
+
+- **In order.** Each part loads through an `ActReader` and decides as `runAct` decides one act (§9.5), but reads
+  through every segment of the parts before it: the runner stages each part's segments with the engine's
+  `ActContext.stage` (engine §7.1) once the part decides, checking `firstGone` and translating each against the
+  tentative projection, and opens the next part's load with `ActContext.beginPart`. A later part therefore reads an earlier part's create, update or removal, and an
+  identity it mints avoids theirs. Decisions stay pure: staging is the engine's, inside the one transaction.
+- **All or nothing.** A part's refusal, a failed check, a gone record, or a segment the engine would refuse
+  locally refuses the whole act before anything is written, as `refused(part, refusal)`, the refusal in that
+  part's own words. A part that decides `unchanged` adds no segment; an act none of whose parts writes is
+  `unchanged`.
+- **One act.** The parts' segments commit as one act's ordered segments (§9.5): one gesture id, one hold, held
+  when any part's plan holds, and one Undo carrying every part's recipes by their segment index (§9.6). An
+  engine refusal at commit names its segment, and so its part. `cancelHeld` and `undo` take back every part.
+- The kit corpus's `run/composed.json` holds these over the real engine and the reference server.
 
 ## §10 Drafts
 

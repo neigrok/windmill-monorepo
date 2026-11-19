@@ -5,7 +5,7 @@ import { Board } from '../board/Board.js';
 import { LINK_COPIED } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { deleteTree, listAllTrees, renameTree } from '../persistence/TreeRegistry.js';
-import { reportRoadmapFailure } from '../reportFailure.js';
+import { BoundaryFailure, reportRoadmapFailure } from '../reportFailure.js';
 import { buildRoadmapExport, downloadExport } from '../settings/exportArchive.js';
 import { treeShareUrl } from '../share/ShareDialog.jsx';
 import { deleteDeviceTree, deleteLocalTree, readDeviceTrees, renameLocalTree } from '../sync/localTrees.js';
@@ -14,7 +14,7 @@ import { withDeviceOpeners } from '../identity/deleteCost.js';
 // What the identity row reads and does: Find's handoff, the Next chip, the switcher, the phone's sheet and its verbs.
 // `listTrees` reads the account's roadmaps where the room keeps its own list (the replica's); without it the switcher
 // and the sheet read the server's and the device's.
-export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast, listTrees = null }) {
+export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, replicaRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast, listTrees = null }) {
   const { owner, phone, breakpoint } = who;
   const { boardActive, canvasView, switchView } = view;
   const { completed, completedAt } = progress;
@@ -142,14 +142,23 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
     onPreviewTitle: (id, title) => {
       if (id === treeId) document.title = t('roadmap.room.pageTitle', { title: title.trim() || t('roadmap.common.untitled') });
     },
-    // A local row renames the blob and device index; a server row goes through the registry.
-    onRename: (id, title, { local = false } = {}) => {
+    // Where the room reads the device's copy, any row is renamed there. Otherwise a local row renames the blob and device
+    // index, and a server row goes through the registry.
+    onRename: async (id, title, { local = false } = {}) => {
+      const replica = replicaRef.current;
+      if (replica) {
+        if (!await replica.writes.renameRoadmap(id, title)) throw new BoundaryFailure('The name was not written');
+        return undefined;
+      }
       if (id === treeId && sessionRef.current?.renameTree(title)) return undefined;
       return local ? renameLocalTree(id, title) : renameTree(id, title);
     },
-    // The server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
+    // Where the room reads the device's copy, any row's deletion is held there, and answers itself while held. Otherwise the
+    // server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
     // A tree that lives only here goes with the steps of the other trees here that open it, or not at all (deleteDeviceTree).
     onDelete: async (id, { local = false } = {}) => {
+      const replica = replicaRef.current;
+      if (replica) return replica.writes.deleteRoadmap(id);
       if (local) return deleteDeviceTree(id, { live: sessionRef.current });
       await deleteTree(id);
       if (id === treeId) sessionRef.current?.close();

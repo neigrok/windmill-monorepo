@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './skilltree.css';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
-import { requestNavigation } from '../../shell/navigation.js';
+import { readNavigation, requestNavigation, updateNavigationState } from '../../shell/navigation.js';
 import { Button, ErrorBoundary } from '../../design-system';
 import { track } from '../../telemetry/beacon.js';
 import { ActivityPanel } from './activity/ActivityRows.jsx';
@@ -13,6 +13,7 @@ import { useActivity } from './activity/useActivity.js';
 import { BoardQuery } from './board/Board.js';
 import { BoardToast } from './board/BoardToast.jsx';
 import BoardView from './board/BoardView.jsx';
+import { HeldDeletion } from './identity/HeldDeletion.js';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './identity/RoadmapIdentity.jsx';
 import { GuideEntry } from './guide/GuideEntry.jsx';
 import { GuideNote } from './guide/GuideNote.jsx';
@@ -140,7 +141,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const graphUnavailable = graphAvailability === 'unavailable';
   const load = useRoomLoad({
     treeId, accountId: account?.id ?? null, demo, shared, demotion, replica, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
-    legend: legendKit, workspace: { hydrateWorkspaces, adoptWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
+    legend: legendKit, workspace: { hydrateWorkspaces, adoptWorkspaces, pushArcs }, selection, showToast, dismissToast, desktopEditorRef,
     onRemoteProgress: (remote) => {
       const said = progressActs.adoptRemote(remote);
       if (!said) return;
@@ -204,6 +205,13 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     if (decidedView === null || !load.takeForkNote()) return;
     showToast(forkedToast({ count: tree.nodes.length }), { surface: decidedView === 'board' ? 'board' : 'graph', act: 'fork' });
   }, [decidedView]);
+  // An Undo of this roadmap's deletion returns here, which says so once its view stands, and once (flow 51).
+  const [undoneDeletion] = useState(() => HeldDeletion.of(readNavigation().state));
+  useEffect(() => {
+    if (decidedView === null || !undoneDeletion?.undone || undoneDeletion.treeId !== treeId) return;
+    showToast(t('roadmap.deletion.undone'), { surface: decidedView === 'board' ? 'board' : 'graph', act: 'notice' });
+    updateNavigationState(HeldDeletion.without);
+  }, [decidedView]);
 
   // The Board's query, its acts and what a held delete projects.
   const [boardQuery, setBoardQuery] = useState(() => new BoardQuery());
@@ -237,14 +245,14 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     const session = sessionRef.current;
     const currentSession = !loading && session?.treeId === treeId && !session.closed ? session : null;
     const ready = Boolean(currentSession?.ready);
-    const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.lattice.toTreeData()).tree) : null;
+    const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.treeData()).tree) : null;
     const onDevice = holder?.place === 'device' && new LocalTreeRegistry().onDevice(treeId) !== null;
     const editable = owner && sharedWritesAllowed() && (onDevice || session?.reach !== 'reader') && !session?.closed;
     return { tree: currentTree, ready, editable, session, savingBlocked: !ready || Boolean(session?.rebaselining || session?.discardPending) };
   };
   const { held: boardHeld, acts: boardActs } = useBoardActs({
     readEditAuthority, readInlineDraft: () => draftHost?.store.getSnapshot()?.draft,
-    active: boardActive, graphActive: canvasView, owner, treeId, tree, readsReplica: load.readsReplica,
+    active: boardActive, graphActive: canvasView, owner, treeId, tree,
     progress, query: boardQuery, session: sessionRef.current,
     completeStep: (id, options) => progressActs.complete(id, { ...options, tree: boardTree }),
     restoreStep: (id, snapshot) => progressActs.restore(id, snapshot),
@@ -262,13 +270,14 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     track, emit, report: reportRoadmapFailure,
   });
   // Attaching, changing and detaching the tree a step opens: the holder's, while the session can take a write, among the
-  // trees where the holder's lives (the server's, or this device's). A chosen tree's row stands at once from what the
-  // picker knew of it, and a read the server refuses for want of a session is the room's lapse, as a refused write is.
+  // trees where the holder's lives (the device's copy where the room reads it, else the server's or this device's). A
+  // chosen tree's row stands at once from what the picker knew of it, and a read the server refuses for want of a
+  // session is the room's lapse, as a refused write is.
+  const pickerTrees = load.pickerTrees
+    ?? (holder?.place === 'device' ? { list: listDeviceTrees, read: readDeviceTreeCard } : { list: listServerTrees, read: readTreeCard });
   const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining ? {
     view: boardActive ? 'board' : 'graph',
-    trees: holder.place === 'device'
-      ? { place: 'device', signedIn: status === 'signed-in', list: listDeviceTrees, read: readDeviceTreeCard }
-      : { place: 'account', list: listServerTrees, read: readTreeCard },
+    trees: holder.place === 'device' ? { place: 'device', signedIn: status === 'signed-in', ...pickerTrees } : { place: 'account', ...pickerTrees },
     set: (id, chosen) => {
       if (chosen) load.knowTree(id, chosen);
       return boardActs.setTree(id, chosen?.id ?? '');
@@ -466,7 +475,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
         style={boardActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
       />
 
-      {desktopEditor && (
+      {desktopEditor && !load.readsReplica && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} sessionRef={sessionRef} selection={selectedId} />
       )}
 
@@ -759,6 +768,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
         title={tree?.title ?? ''}
         subtrees={tree?.nodes.some((step) => step.opening?.owned) ?? false}
         onStanceChange={setTreeVisibility}
+        writeVisibility={load.readsReplica ? (id, visibility) => sessionRef.current.setVisibility(visibility) : undefined}
       />
 
       {loading && !loadError && !boardActive && <div className="st-loading"><span className="st-loading-msg">{GRAPH_LOAD.planting}</span></div>}

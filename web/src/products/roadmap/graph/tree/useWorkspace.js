@@ -1,5 +1,6 @@
-// Every edit funnels through one commit seam — fresh ref, render, persist — and the sub-task
-// gauges ride out to the scene as arcs.
+// A step's workspace: on this device's own store every edit funnels through one commit seam — fresh ref, render,
+// persist — and on the device's copy through the replica's workspace door; the sub-task gauges ride out to the scene
+// as arcs.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WorkspaceStore } from '../../persistence/WorkspaceStore.js';
@@ -50,54 +51,33 @@ export function useWorkspace({ seedRef, sceneRef, treeRef, replicaRef }) {
     setWorkspaceByNode(byNode);
   }, []);
 
-  // The one seam every workspace edit funnels through: fresh ref, render, persist. A room that reads the replica takes
-  // no edit until the domain's workspace actions are wired, so nothing shows that the replica does not hold.
+  // The one seam every edit on this device's own store funnels through: fresh ref, render, persist.
   const commitWorkspace = useCallback((nodeId, nextWs) => {
-    if (replicaRef.current) return;
     const nextMap = { ...workspaceByNodeRef.current, [nodeId]: nextWs };
     workspaceByNodeRef.current = nextMap;
     setWorkspaceByNode(nextMap);
     persistWorkspace(nextMap);
   }, [persistWorkspace]);
 
-  const onAddSubtask = useCallback((nodeId, label) => {
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, addSubtask(current, label));
-    pushArcs();
-  }, [commitWorkspace, pushArcs]);
+  // Where an edit goes: the replica's workspace door where the room reads the device's copy, whose overlay the room then
+  // seats (none on a roadmap someone else owns), else this device's own store.
+  const writes = useCallback(() => {
+    if (replicaRef.current) return replicaRef.current.writes?.workspace ?? null;
+    const edit = (change) => (nodeId, ...args) => commitWorkspace(nodeId, change(workspaceByNodeRef.current[nodeId] ?? emptyWorkspace(), ...args));
+    return {
+      addSubtask: edit(addSubtask), toggleSubtask: edit(toggleSubtask), editSubtask: edit(editSubtask), deleteSubtask: edit(deleteSubtask),
+      setNote: edit(setNote), addLink: edit(addLink), deleteLink: edit(deleteLink),
+    };
+  }, [commitWorkspace]);
 
   // A check moves only the gauge: the step's progress is the person's own Complete, never the checklist's.
-  const onToggleSubtask = useCallback((nodeId, subtaskId) => {
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, toggleSubtask(current, subtaskId));
-    pushArcs();
-  }, [commitWorkspace, pushArcs]);
-
-  const onEditSubtask = useCallback((nodeId, subtaskId, label) => {
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, editSubtask(current, subtaskId, label));
-  }, [commitWorkspace]);
-
-  const onDeleteSubtask = useCallback((nodeId, subtaskId) => {
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, deleteSubtask(current, subtaskId));
-    pushArcs();
-  }, [commitWorkspace, pushArcs]);
-
-  const onSetNote = useCallback((nodeId, markdown) => {
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, setNote(current, markdown));
-  }, [commitWorkspace]);
-
-  const onAddLink = useCallback((nodeId, rawUrl) => {
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, addLink(current, rawUrl));
-  }, [commitWorkspace]);
-
-  const onDeleteLink = useCallback((nodeId, linkId) => {
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, deleteLink(current, linkId));
-  }, [commitWorkspace]);
+  const onAddSubtask = useCallback((nodeId, label) => { writes()?.addSubtask(nodeId, label); pushArcs(); }, [writes, pushArcs]);
+  const onToggleSubtask = useCallback((nodeId, subtaskId) => { writes()?.toggleSubtask(nodeId, subtaskId); pushArcs(); }, [writes, pushArcs]);
+  const onEditSubtask = useCallback((nodeId, subtaskId, label) => writes()?.editSubtask(nodeId, subtaskId, label), [writes]);
+  const onDeleteSubtask = useCallback((nodeId, subtaskId) => { writes()?.deleteSubtask(nodeId, subtaskId); pushArcs(); }, [writes, pushArcs]);
+  const onSetNote = useCallback((nodeId, markdown) => writes()?.setNote(nodeId, markdown), [writes]);
+  const onAddLink = useCallback((nodeId, rawUrl) => writes()?.addLink(nodeId, rawUrl), [writes]);
+  const onDeleteLink = useCallback((nodeId, linkId) => writes()?.deleteLink(nodeId, linkId), [writes]);
 
   return {
     workspaceByNode,

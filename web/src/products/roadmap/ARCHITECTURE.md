@@ -185,13 +185,42 @@ on, every room but the demo reads through `ReplicaReading`:
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
-- **Writes.** None reaches the replica yet; the room's gestures move onto the domain's actions in the next build. The
-  room shows the owner's screens, and a gesture writes nothing and shows nothing it did not write: `RoomProgress.mark`
-  and the workspace's edits do nothing while `replicaRef` holds the reading (a workspace control still emits its
-  `roadmap_board_workspace` step as the person acts), the legend's edits find no session and write and say nothing, a new
-  step's composer says *Couldn’t save. Your draft is kept.* (`BoardActs` reports no missing session where `readsReplica`
-  says there is none to find), and the step document's Tree section offers no control: `treeActs` is null while nothing
-  can take a write, the one way the owner's screens differ from today's (`SkillTreeView.replica.browser.test.js`).
+- **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
+  `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
+  stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's
+  (`SkillTreeView.replica.browser.test.js`), but for a roadmap's own deletion, held (The switcher's delete, below).
+  - *Out of the Undo stack, as today:* the owner's marks are each step's `Complete` or `Reset` (whether a step's pointer
+    opens a standing roadmap read from the account, as the domain asks); a roadmap's name, from the room or a switcher's
+    row, is `WriteRoadmap`, and a subtree's is its owning step's label (`ChangeStep`); the guide is `WriteRoadmap`, the
+    share dialog's visibility `SetVisibility`; the workspace's edits go through `ReplicaWorkspace`, subtasks and links by
+    the domain's workspace actions and the note through the kit's one draft of it, saved in place. Each such act is
+    released at once, so the engine keeps no Undo of it.
+  - *Gestures:* `dispatch(gesture)` as today, each one or more of the domain's acts. They are decided first over what
+    the replica holds (`ReplicaSession.decide`, the kit runner's `decideAct` and gone check, each act on its own, before
+    anything is written): a gesture the domain refuses is null, so the room shows what it shows today for that
+    gesture's failure, and its refusal is said in today's words where there are some. Then they are written as one
+    composed act (`runner.runComposed`, domain-kit.md §9.7), each part reading what the parts before it plan; a part
+    refused there writes nothing of the gesture. The receipt's `landed` answers the parts' results once the act was
+    taken, and the room says a gesture's success (its toast, its `saved` event, its activity line) only then (`onceLanded` in
+    `board/acts.js`, at once on roadmap's own session). A paste's steps are pulsed and told under the ids the domain
+    gave them, from the import's result. A new step is `CreateStep` under the id the room minted for it, so the room
+    selects and reveals it as today; a change of its words or kind `ChangeStep`, a reorder `MoveStep` below the sibling
+    the drop names, a delete `DeleteStep`, links `ChangePrerequisites` on the step they lead to, a paste `ImportSteps`
+    under the step it lands beneath and its new kinds `CreateKind` after; an edit of a step's words and prerequisites, a
+    link moved to another step and a gesture on several steps are each act in turn, parts of the one act. The legend's kinds are
+    `CreateKind`, `ChangeKind`, `RecolourKind` and `DeleteKind`; the tree a step opens `SetPointer` or `ClearPointer`,
+    its picker listing the person's roadmaps as the replica keeps them and reading an address of one of them there (any
+    other from the server).
+  - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
+    ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A
+    step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
+    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks.
+  - *Refusals and failures:* a write the domain refuses is said in today's words where there are some (a roadmap at its
+    cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
+    store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
+    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
+  - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
+    engine reconnects, and its lineage rule takes what the device holds at sign-in.
 
 ## A step that opens a tree
 
@@ -346,7 +375,8 @@ that opens no tree, and a ⋯ on its heading on one that does, the heading and t
 
 The + and Change tree open `TreePicker`: a nested dialog in the step document from 744px and a full-screen page over the Shell
 on phones, with the field and the commit in the reach band. `TreeChoices` is its model: the person's roadmaps on the
-server but the one they are in (`listServerTrees`, the switcher's order), one choice, the tree the step opens
+server but the one they are in (`listServerTrees`, the switcher's order; where the room reads the device's copy, the
+replica's, in the same order), one choice, the tree the step opens
 arriving chosen, and Find a tree narrowing by title as the prerequisites picker does. On a tree that lives only on this
 device the rows are this device's trees but the one they are in, newest first, done of total worked out on the device
 (`listDeviceTrees`), each tagged *on this device* as the switcher tags them; the context says how many trees are on this
@@ -573,6 +603,18 @@ tree takes it through its stored record, as any device edit, so another tab with
 load. A write that fails reports `roadmap-device-cascade` once, under the name of what failed, and its tree keeps its
 steps on disk: the open tab's own steps vanish from its screen and come back after a reload, each opening a tree that is
 not found and following its mark, to detach or delete by hand. Nothing on the server is touched.
+
+**A held deletion on the device's copy.** Where the room reads the device's copy, the confirmed delete is the domain's
+`DeleteRoadmap` (`ReplicaSession.deleteRoadmap`), held nine seconds and permanent once the hold ends (R-7): the roadmap
+and its branch leave every list at once, and no request is made. The deletion answers itself as a `HeldDeletion`
+(`identity/HeldDeletion.js`). A row that is not the open roadmap goes as today. The open roadmap's lands the person on
+their roadmaps (`#/app/roadmaps`, `identity/YourRoadmaps.jsx`, flow 51), the deletion in that history entry: the page
+lists the person's roots as the replica keeps them, one row each leading into it (a chevron from 744px), and while the
+hold stands says *Roadmap deleted* with Undo in the room's toast, for what is left of the hold, with no countdown, its
+280 ms fade and a polite word that moves no focus. Undo is the engine's `cancelHeld` (`undeleteRoadmap`), true only
+while every entry of the deletion is still held; it returns the person to the roadmap, whose room says *Deletion undone*
+once its view stands. A page reached after the hold, or reloaded, offers no Undo. A build without the switch has no such
+page: its route table serves `#/app/roadmaps` as any roadmap address.
 
 **Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
 `<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a
@@ -897,8 +939,9 @@ switch.
 Complete restores that step's progress and a held delete cancels. Every other write holds its session receipt:
 `SyncSession.dispatch(gesture)` returns an opaque receipt or null when nothing applies, and `receiptUndo` calls
 `revert(receipt)`, which restamps that captured inverse once, leaving alone any field written since the receipt by this
-person or a peer, and removes it from the stack. A write the session refused says nothing happened. Ask AI wrote on the
-server, so its Undo deletes exactly what the run says it planted.
+person or a peer, and removes it from the stack. A write the session refused says nothing happened. A room on the
+device's copy holds `ReplicaSession`'s receipts instead, each act's Undo the kit's (Reading the device's copy, above). Ask
+AI wrote on the server, so its Undo deletes exactly what the run says it planted.
 
 ⌘Z and ⇧⌘Z walk the session's global structural stack across both views, refused under a covering layer and in a text
 field. A held delete is the last act though it is not on the stack: ⌘Z during a hold cancels it as the toast's Undo does,
