@@ -140,6 +140,11 @@ export function edgeOrder(a, b) {
 // The names a note keeps at most, one for each step a roadmap holds at most (§4); the oldest goes first.
 const NAMES_KEPT = 10_000;
 
+// The order the device knows of a roadmap's writes (§6), as `landingOrder` reads it: whether the write of a step or a
+// link of the device's own has landed, and whether a link met the delete of the step it comes from, the server having
+// taken the delete before the link.
+/** @typedef {{ step(id: string): boolean, link(from: string, to: string): boolean, met(from: string, to: string): boolean }} LandingOrder */
+
 // The device's own note of what it made and revived in one roadmap (§6), held in its `landing:<tree>` row
 // until the person has been told, or until it can tell nothing: its new steps, its new links, the steps its changes
 // brought back, and the name of each step a link it still notes comes from, as it was when the device made the link.
@@ -194,20 +199,37 @@ export class LandingNote {
     });
   }
 
-  // The note less each entry whose write has landed (`landed`) and that says nothing of `tree` as it now stands: a step
-  // or a link of the device's that follows through no absent step, and a step its change brought back that is absent
-  // again. Once a write has landed the device holds all the server held before it, so what the entry meets from then on
-  // was made after it, and it can say nothing more.
+  // The links whose lines the note says of `tree` as it now stands: each link it notes, and each into a step it notes,
+  // that is read through a step the server took the delete of before it took the link (`order.met`).
   /**
    * @param {RoadmapTree} tree
-   * @param {{ step(id: string): boolean, link(from: string, to: string): boolean }} landed
+   * @param {LandingOrder} order
    */
-  settled(tree, landed) {
+  saying(tree, order) {
     const { index } = tree;
+    /** @type {Map<string, string[]>} */
+    const links = new Map();
+    for (const to of this.nodes) for (const from of index.absentParents(to)) links.set(jcs([from, to]), [from, to]);
+    for (const [from = '', to = ''] of this.edges) if (index.absentParents(to).includes(from)) links.set(jcs([from, to]), [from, to]);
+    return [...links.values()].filter(([from = '', to = '']) => order.met(from, to));
+  }
+
+  // The note less each entry whose write has landed and that says nothing of `tree` as it now stands: a step or a link of
+  // the device's through which no line is said (`saying`), and a step its change brought back that is absent again. A
+  // line is said only of a delete the server took before the write, and once the write has landed the device holds every
+  // such delete, so an entry let go of could never say more.
+  /**
+   * @param {RoadmapTree} tree
+   * @param {LandingOrder} order
+   */
+  settled(tree, order) {
+    const said = this.saying(tree, order);
+    const saidLinks = new Set(said.map((link) => jcs(link)));
+    const saidInto = new Set(said.map(([, to]) => to));
     return new LandingNote({
-      nodes: this.nodes.filter((id) => !landed.step(id) || index.absentParents(id).length > 0),
-      edges: this.edges.filter(([from = '', to = '']) => !landed.link(from, to) || index.absentParents(to).includes(from)).map((edge) => [...edge]),
-      revived: this.revived.filter((id) => !landed.step(id) || tree.nodesById.get(id)?.present === true),
+      nodes: this.nodes.filter((id) => !order.step(id) || saidInto.has(id)),
+      edges: this.edges.filter(([from = '', to = '']) => !order.link(from, to) || saidLinks.has(jcs([from, to]))).map((edge) => [...edge]),
+      revived: this.revived.filter((id) => !order.step(id) || tree.nodesById.get(id)?.present === true),
       names: [...this.names],
     });
   }

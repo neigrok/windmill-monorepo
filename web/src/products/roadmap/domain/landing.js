@@ -9,7 +9,7 @@ import { LandingNote } from './records.js';
 import { landingFacts } from './reads.js';
 import { RoadmapRefusals, RoadmapScopes, writeIn } from './roadmapRules.js';
 import { Roadmap } from './roadmaps.js';
-import { readNote, readTree } from './steps.js';
+import { landingOrder, readNote, readTree } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -18,10 +18,11 @@ import { readNote, readTree } from './steps.js';
 /** @typedef {'roadmapDeleted' | 'capFilled' | 'accessEnded' | 'noteTooLong'} CannotLandReason */
 
 // §6 What a device tells a person once, read from its note and the roadmap as it now stands: each of its own
-// new steps and links that follows through a step deleted elsewhere, with the steps removed and the steps it now
-// follows, each by name; and each step its change brought back. A step the device still holds is named as it stands;
-// one deleted elsewhere, of which it keeps nothing (engine.md §7.5), by the name its note took when it made the link,
-// and by none (null) where the note holds none.
+// new steps and links that follows through a step whose delete the server took before the link (`LandingNote.saying`),
+// with the steps removed and the steps it now follows, each by name; and each step its change brought back. A link
+// whose write has not landed tells nothing yet. A step the device still holds is named as it stands; one deleted
+// elsewhere, of which it keeps nothing (engine.md §7.5), by the name its note took when it made the link, and by none
+// (null) where the note holds none.
 /**
  * @param {string} tree
  * @param {Reader} read
@@ -30,7 +31,7 @@ export function landingOf(tree, read) {
   const note = LandingNote.of(read.device(RoadmapScopes.landing(tree)));
   const roadmap = readTree(tree, read);
   const name = (/** @type {string} */ id) => roadmap.nodesById.get(id)?.label ?? note.nameOf(id);
-  const facts = landingFacts(new FollowGraph(roadmap), { nodes: [...note.nodes], edges: note.edges.map((edge) => [...edge]) });
+  const facts = landingFacts(new FollowGraph(roadmap), { nodes: [], edges: note.saying(roadmap, landingOrder(read)) });
   return {
     follows: facts.map(({ node, incoming, followed }) => ({
       node, incoming,

@@ -11,9 +11,9 @@ import { Fault, precondition } from './values.js';
 /** @typedef {{ t: string, id: RecordID }} RecordRef */
 /**
  * The engine's view record (engine §7.6): lattice registers `[value, stamp]`, texts as plain strings,
- * serials as numbers.
+ * serials as numbers; a confirmed record also keeps its row's `seq`.
  * @typedef {{ t: string, id: RecordID, life?: [string, string], born?: string, f?: Record<string, [Json, string]>,
- *   x?: Record<string, string>, v?: Record<string, number>, rc?: number }} ViewRecord
+ *   x?: Record<string, string>, v?: Record<string, number>, seq?: number, rc?: number }} ViewRecord
  */
 /**
  * An entity value: its id, and when written, every client field as JSON.

@@ -131,7 +131,33 @@ test('INV-1: a change made after the device heard of another device\'s delete br
   }
 });
 
-test('INV-1: a step another device deleted is still linked from, and each line about a step that follows through it names it as the device noted it', async () => {
+test('INV-1: a step another device deleted is still linked from, and the line of a link the server took after the delete names the step as the device noted it', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: unbound, scope: RoadmapScopes.account });
+  try {
+    const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
+    const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics' }))).result;
+    const lifetimes = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Lifetimes' }, [basics]))).result;
+    committed(await a.runner.runAct(new CreateStep(tree, { label: 'Traits' }, [lifetimes])));
+    a.observe(RoadmapScopes.tree(tree));
+    await a.sync();
+    const b = await a.device();
+    await a.sync();
+    committed(await b.runner.runAct(new DeleteStep(tree, lifetimes)));
+    await a.advance(CONSTANTS.HOLD_MS);
+    await b.senderStep();
+    const generics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Generics' }, [lifetimes]))).result;
+    const lines = () => a.runner.read(RoadmapScopes.tree(tree), (read) => landingOf(tree, read).follows
+      .map(({ node, removed, followed }) => [node, removed, followed.map(({ id, name }) => [id, name])]));
+    assert.deepEqual(lines(), [], 'the device still holds the step, and its new link has not landed');
+    await a.sync();
+    assert.deepEqual(lines(), [[generics, [{ id: lifetimes, name: 'Lifetimes' }], [[basics, 'Basics']]]],
+      'the link from the step to Traits landed before the delete and says nothing');
+  } finally {
+    a.close();
+  }
+});
+
+test('§6 a link that landed before another device deleted its step tells nothing and goes with the next write of the note; a link made after the device heard of the delete waits until it lands', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: unbound, scope: RoadmapScopes.account });
   try {
     const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
@@ -140,18 +166,23 @@ test('INV-1: a step another device deleted is still linked from, and each line a
     const traits = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Traits' }, [lifetimes]))).result;
     a.observe(RoadmapScopes.tree(tree));
     await a.sync();
+    const note = () => a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree)));
+    const lines = () => a.runner.read(RoadmapScopes.tree(tree), (read) => landingOf(tree, read).follows
+      .map(({ node, removed, followed }) => [node, removed, followed.map(({ id, name }) => [id, name])]));
     const b = await a.device();
     await a.sync();
     committed(await b.runner.runAct(new DeleteStep(tree, lifetimes)));
     await a.advance(CONSTANTS.HOLD_MS);
     await a.sync();
+    assert.deepEqual(note(), { nodes: [basics, lifetimes, traits], edges: [[basics, lifetimes], [lifetimes, traits]], revived: [],
+      names: [{ id: basics, name: 'Basics' }, { id: lifetimes, name: 'Lifetimes' }] }, 'no write of the note came between the landing and the delete');
+    assert.deepEqual(lines(), [], 'the delete reached the device after the link from the step landed');
     const generics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Generics' }, [lifetimes]))).result;
-    const lines = a.runner.read(RoadmapScopes.tree(tree), (read) => landingOf(tree, read).follows
-      .map(({ node, removed, followed }) => [node, removed, followed.map(({ id, name }) => [id, name])]));
-    assert.deepEqual(lines, [
-      [traits, [{ id: lifetimes, name: 'Lifetimes' }], [[basics, 'Basics']]],
-      [generics, [{ id: lifetimes, name: 'Lifetimes' }], [[basics, 'Basics']]],
-    ]);
+    assert.deepEqual(note(), { nodes: [generics], edges: [[lifetimes, generics]], revived: [], names: [] },
+      'the write lets go of the link that landed before the delete, and the device holds no name of the deleted step');
+    assert.deepEqual(lines(), [], 'the new link has not landed');
+    await a.sync();
+    assert.deepEqual(lines(), [[generics, [{ id: lifetimes, name: null }], [[basics, 'Basics']]]], 'the server took the new link after the delete');
   } finally {
     a.close();
   }

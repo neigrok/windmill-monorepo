@@ -52,8 +52,9 @@ web runner tests cover load, decide and refusal mapping: §15.2's pipeline vecto
 loader that does nothing.
 
 `Reader.confirmed(type, id)` reads the confirmed record below pending predictions; the port hands the confirmed rows as
-a lookup (`get(key)`), so a read copies only the rows it asks for. `Repository.spentBorn(id)` answers the born of a record
-the device keeps only by its spent id (engine §7.5), which a revival takes (§9.2 step 5). `EngineReplica.read` lets go of
+a lookup (`get(key)`), so a read copies only the rows it asks for, each keeping its row's `seq`. `Repository.spentBorn(id)`
+answers the born of a record the device keeps only by its spent id (engine §7.5), which a revival takes (§9.2 step 5), and
+`spentSeq(id)` the `seq` of the dead row it came from (engine §2.5), null where it keeps none (§7.2). `EngineReplica.read` lets go of
 the observation hold it takes, so a read keeps no scope observed that the app does not; it answers the device's rows
 of a scope nothing holds all the same, since every engine publication reads every scope whole (engine §7.8), and a
 snapshot that is not loaded is a `Fault`, never an empty answer. `devices(prefix)`,
