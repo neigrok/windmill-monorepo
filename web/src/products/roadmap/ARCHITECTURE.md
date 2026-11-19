@@ -28,6 +28,7 @@ point for the component showcase.
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, authored starter roadmaps and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
+| `kept/` | The one list of what cannot land (§6, flow 49): the engine's notices for roadmap's scopes read by the domain, each a kept change in the list's words. Nothing mounts the list yet: its entry is a row of the shell's account menu |
 | `tending/`, `reminders/`, `settings/` | Ask AI, reminder preferences and account data export |
 | `marketing/` | Product landing, metadata and self-playing scenes |
 

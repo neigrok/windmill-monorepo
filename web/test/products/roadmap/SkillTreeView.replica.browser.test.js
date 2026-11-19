@@ -393,7 +393,7 @@ test('with the switch on the owner’s step gestures, their toasts’ Undo and t
 });
 
 // §6, flow 48: the device tells its owner once, under the step on the Board and on its page, of their own changes that met
-// another device's. The engine keeps nothing of a step deleted elsewhere (engine.md §7.5), so no edit made here finds one
+// another device's, and nothing else is shown as refused (INV-3). The engine keeps nothing of a step deleted elsewhere (engine.md §7.5), so no edit made here finds one
 // absent: the revival the domain notes is written to the device's note as the domain writes it.
 test('with the switch on the owner is told once, under the card and on the step’s page, of their changes that met a delete', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
@@ -423,7 +423,9 @@ test('with the switch on the owner is told once, under the card and on the step�
     await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor({ state: 'detached' });
     await page.locator('.st-board-landed').nth(1).waitFor();
     const board = { columns: await boardColumns(page), lines: await page.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
-      .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent])) };
+      .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent])),
+    // Flow 43's refused card and the Restore offer for a step whose link a delete hid retire with the old sync.
+    retired: await page.locator('.board-refused-sync').count() + await page.getByRole('button', { name: 'Restore', exact: true }).count() };
     await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
     const step = page.getByRole('article', { name: 'Leave the dock', exact: true });
     const onPage = await step.locator('.st-step-landed').innerText();
@@ -436,6 +438,7 @@ test('with the switch on the owner is told once, under the card and on the step�
       board: {
         columns: ['locked: ', 'upNext: Leave the dock, Reef the sail', 'done: Choose a course'],
         lines: [['Leave the dock', 'Your edit brought this step back.'], ['Reef the sail', 'Read the wind was removed. This now follows Choose a course.']],
+        retired: 0,
       },
       onPage: 'Your edit brought this step back.',
       note: null,
