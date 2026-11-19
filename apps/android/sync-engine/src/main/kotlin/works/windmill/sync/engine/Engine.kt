@@ -366,11 +366,12 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         val rows = if (field != null && id != null) store.matching(replica.id, scope, type, field, id) else store.rows(replica.id, scope, type)
         return rows.map { it.key }.toSet() + replica.entries().flatMap { it.activeDeltas(scope) }.filter { it.key.type == type }.map { it.key }
     }
-    internal inner class Reader(private val replicaState: ReplicaState, private val scope: ScopeRef, override val now: Long) : CommitContext {
+    // `minted` holds the identities already drawn in its scope, which an act's reservations share across its readers.
+    internal inner class Reader(private val replicaState: ReplicaState, private val scope: ScopeRef, override val now: Long,
+        private val minted: MutableSet<RecordID> = mutableSetOf()) : CommitContext {
         private var open = true
         var failure: Exception? = null
             private set
-        private val minted = mutableSetOf<RecordID>()
         init { if (registry.scopeKind(scope) == null) throw CommitFailure.malformed("scope") }
         fun end() { open = false }
         fun finish() { failure?.let { throw it } }

@@ -160,7 +160,7 @@ internal fun Engine.requestInverse(replica: ReplicaState, sourceActId: String, r
     val hlc = Hlc(replica.meta.member("hlc"))
     hlc.observe(Stamp(replica.meta.member("hlcHigh").str()))
     val stamp = hlc.tick(now(replica), actor)
-    val firstOrder = (replica.outbox.maxOfOrNull { it.order } ?: 0) + 1
+    val firstOrder = replica.nextCommitOrder()
     val slots = planned.mapIndexed { k, slot -> "$inverseActId/$k" to slot }
     val before = planned.map { it.scope }.distinct().associateWith { drawn(replica, it) }
     val journal = inverseJournal(inverseActId, slots, act?.forward() ?: cancellation!!.forward(), before)

@@ -2,13 +2,27 @@ package works.windmill.domain.kit
 
 import works.windmill.sync.api.ActContext
 import works.windmill.sync.api.ActReceipt
+import works.windmill.sync.api.ActRequest
+import works.windmill.sync.api.CommitContext
+import works.windmill.sync.api.Gesture
 import works.windmill.sync.core.Registry
 import works.windmill.sync.core.ScopeRef
 
-data class ScopedPlan(val scope: ScopeRef, val plan: Plan)
+data class ScopedPlan(val scope: ScopeRef, val plan: Plan) {
+    // The segment's gesture over the views through the act's earlier segments; a gone record refuses it.
+    internal fun gesture(over: CommitContext, registry: Registry): Gesture {
+        plan.firstGone(over, scope, registry)?.let { throw ActPrediction(it) }
+        return plan.gesture(scope, registry)
+    }
+}
 // §9.6: a product's Redo slot, replacing the recipes of the inverse act's source `index`, which wrote `scope`.
 data class ProductSlot(val index: Int, val scope: ScopeRef, val plan: Plan)
-class ActPlan(segments: List<ScopedPlan>) { val segments: List<ScopedPlan> = segments.toList() }
+class ActPlan(segments: List<ScopedPlan>) {
+    val segments: List<ScopedPlan> = segments.toList()
+    // The engine's request for these segments: their scopes in order, one hold when any plan holds, and each opted segment's Undo by its index.
+    internal fun request() = ActRequest(segments.map { it.scope }, segments.any { it.plan.isHeld },
+        undo = segments.mapIndexedNotNull { index, segment -> segment.plan.undoSegment(index, segment.scope) }.takeIf { it.isNotEmpty() })
+}
 
 interface ActAction<L, T, R> {
     val refusals: Refusals<R>
@@ -24,6 +38,12 @@ sealed interface ActOutcome<out T, out R> {
     data class Committed<T>(val result: T, val receipt: ActReceipt) : ActOutcome<T, Nothing>
     data class Unchanged<T>(val result: T) : ActOutcome<T, Nothing>
     data class Refused<R>(val refusal: R) : ActOutcome<Nothing, R>
+}
+// §9.7: a composed act's outcome, each part's result in order, or the refusal of the part that met it.
+sealed interface ComposedOutcome<out R> {
+    data class Committed(val results: List<Any?>, val receipt: ActReceipt) : ComposedOutcome<Nothing>
+    data class Unchanged(val results: List<Any?>) : ComposedOutcome<Nothing>
+    data class Refused<R>(val part: Int, val refusal: R) : ComposedOutcome<R>
 }
 
 class ActReader internal constructor(private val context: ActContext, private val registry: Registry, val moment: Moment) {
@@ -54,8 +74,15 @@ fun <L, T, R> ActAction<L, T, R>.decision(context: ActContext, registry: Registr
     return try { decide(loaded, ActIDSource(context)) } catch (violation: Violation) { ActDecision.Refuse(refusals.of(violation)) }
 }
 
-internal class ActPrediction(val refusal: Refused) : RuntimeException()
+// A segment the kit refuses before the engine writes it (a gone record), naming the composed act's part it belongs to.
+internal class ActPrediction(val refusal: Refused, val part: Int = 0) : RuntimeException()
 internal sealed interface ActStep<out T, out R> {
     data class Done<T, R>(val outcome: ActOutcome<T, R>) : ActStep<T, R>
     data class Writing<T>(val plan: ActPlan, val result: T) : ActStep<T, Nothing>
 }
+// A composed act's prepare value: its outcome when it ends there, or else its parts' segments in order, each with its part, and their results.
+internal sealed interface ComposedStep<out R> {
+    data class Done<R>(val outcome: ComposedOutcome<R>) : ComposedStep<R>
+    data class Writing(val segments: List<PartSegment>, val results: List<Any?>) : ComposedStep<Nothing>
+}
+internal data class PartSegment(val part: Int, val scoped: ScopedPlan)

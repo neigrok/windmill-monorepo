@@ -271,7 +271,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     applySilentFold(replica, folded)
     replica.settleEnded("undone")
     replica.meta = replica.meta.with("hlc" to clock.json, "hlcHigh" to stamp.json)
-    val firstOrder = actFirstOrder?.plus(actOffset ?: 0) ?: ((replica.outbox.maxOfOrNull { it.order } ?: 0) + 1)
+    val firstOrder = actFirstOrder?.plus(actOffset ?: 0) ?: replica.nextCommitOrder()
     val localIds = intents.mapIndexed { index, intent ->
         val localId = "$gestureId/${(actOffset ?: 0) + index}"
         val texts = intent.deltas.flatMap { d -> d.texts.keys.map { name -> Json.array(Json.of(d.key.type), d.key.id.json, Json.of(name)).jcs } }

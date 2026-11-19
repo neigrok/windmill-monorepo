@@ -260,6 +260,53 @@ class EngineTests {
         }
     }
 
+    @Test fun aLaterLoadReadsThroughAStagedSegmentAndTheRequestCommitsEverySegmentAsOneAct() {
+        val card = RecordID("card0001")
+        fun title(reader: ScopeReader) = reader.drawn("card", card)?.values?.get("title")
+        fun titled(title: String, change: (Map<String, Json>) -> Change) = Gesture(listOf(change(mapOf("title" to Json.of(title)))))
+        val create = titled("First") { Change.create("card", NewID.Given(card), it) }
+        val rename = titled("First!") { Change.update("card", card, it) }
+        engine().use { engine ->
+            val reads = mutableListOf<Json?>()
+            val outcome = engine.commitAct({ context ->
+                reads.add(context.inScope(scope, ::title))
+                assertNull(context.stage(scope) { create })
+                context.beginPart()
+                reads.add(context.inScope(scope, ::title))
+                assertNull(context.stage(scope) { reader -> titled("${title(reader)!!.str()}!") { Change.update("card", card, it) } })
+                ActRequest(listOf(scope, scope)) to listOf(create, rename)
+            }, { gestures, index, _ -> gestures[index] }).first as ActCommitOutcome.Committed
+            assertEquals(listOf(null, Json.of("First")), reads)
+            val gestureId = outcome.receipt.gestureId
+            assertEquals(listOf(listOf("$gestureId/0"), listOf("$gestureId/1")), outcome.receipt.segments.map { it.localIds })
+            assertEquals(Json.of("First!"), engine.read(scope, ::title))
+        }
+    }
+
+    @Test fun aStagedLocalRefusalIsAnsweredReportedAndTheActItEndsWritesNothing() = runBlocking<Unit> {
+        val gone = ScopeRef.tree("b_00000005")
+        val replica = freshReplica("replica").json().with("known" to Json.objectOf(gone.text to Json.of("gone")))
+        val store = MemoryStore(registry, Json.objectOf("active" to Json.of("replica"), "replicas" to Json.array(replica)))
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
+        Engine(registry, store, object : EngineClock { override fun now() = 5_000L }, identities, "actor", telemetry = EngineTelemetry { events.send(it) }).use { engine ->
+            val before = engine.snapshot()
+            val outcome = engine.commitAct({ context ->
+                assertNull(context.stage(scope) { create("card0001") })
+                assertEquals(CommitOutcome.Refused(RefusalCode.scopeDead, null),
+                    context.stage(gone) { Gesture(listOf(Change.create("tag", NewID.Given(RecordID("elm")), mapOf("label" to Json.of("Elm"))))) })
+                null to Unit
+            }, { _, _, _ -> throw AssertionError("a refused act reaches no segment") })
+            assertNull(outcome.first)
+            assertEquals(before, engine.snapshot())
+            val reported = withTimeout(2_000) {
+                var event = events.receive()
+                while (event.operation != EngineOperation.commit) event = events.receive()
+                event
+            }
+            assertEquals(EngineEvent(EngineOperation.commit, EngineOutcome.refused, "scope-dead"), reported)
+        }
+    }
+
     private val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
     private val identities = object : IdentitySource {
         var number = 0

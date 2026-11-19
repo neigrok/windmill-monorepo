@@ -28,6 +28,9 @@ interface CommitContext : ScopeReader {
     fun mintID(type: String): RecordID
 }
 
+// Engine §7.1 Ordered local acts. A composed act decides in parts: `stage` commits one part's segment to the act's tentative copy, through
+// every segment staged before it, and answers its local refusal, or null; `beginPart` opens the next part's load, whose reads and identities
+// go through every staged segment. Nothing staged is durable: the request's segments commit afresh, under the act's one hold.
 interface ActContext {
     val now: Long
     val replica: String
@@ -37,6 +40,8 @@ interface ActContext {
     fun <T> inScope(scope: ScopeRef, body: (ScopeReader) -> T): T
     fun mintID(type: String, scope: ScopeRef): RecordID
     fun opaqueID(): String
+    fun stage(scope: ScopeRef, segment: (CommitContext) -> Gesture): CommitOutcome.Refused?
+    fun beginPart()
 }
 
 class CommitFailure(val kind: Kind, val description: String) : Exception(description) {

@@ -181,7 +181,7 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
         else -> freshReplica(identities.replicaID(), account).also { device.replicas.add(it) }
     }
     if (anon != null && anon !== target && hasAnonymousWork) {
-        var nextOrder = 1 + (target.outbox.maxOfOrNull { it.order } ?: 0)
+        var nextOrder = target.nextCommitOrder()
         for (entry in anon.entries()) {
             entry.json = entry.json.with("commitOrder" to Json.of(nextOrder++))
             target.outbox.add(entry)

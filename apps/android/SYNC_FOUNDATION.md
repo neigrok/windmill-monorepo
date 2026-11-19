@@ -98,6 +98,12 @@ SQLite schema version 2 keeps each as one row of its replica in `reversible_act`
 `cancellation`, written only when it changes. A version 1 store gains the three empty tables when it
 opens. Android's registries declare no restore or inverse command.
 
+A composed act (engine §7.1, domain-kit §9.7) decides in parts inside one act's prepare: `ActContext.stage`
+commits a part's segment to a tentative copy of the replica and answers its local refusal, and `beginPart`
+opens the next part's load, which reads and mints through every staged segment. The copy is thrown away;
+the request's segments commit afresh under the act's one hold. The kit's `ActionRunner.runComposed` runs
+its parts this way and refuses them all, in the refusing part's words, before anything is written.
+
 The JVM model server implements probe, gym, journal and roadmap bindings. Step mode drives the production
 engine's sender/result batches and puller/page chunks/settling, with virtual clocks and transport.
 Step mode leaves sender waits pending until the caller advances its virtual clock; timed-out pulls

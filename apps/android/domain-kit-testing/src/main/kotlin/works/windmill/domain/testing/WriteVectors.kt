@@ -176,54 +176,89 @@ internal object WriteVectors {
             Json.objectOf("outcome" to outcome, "records" to Json.Arr(records))
         }
     } }
-    // K-3 run/undo.json (§9.6): an act opted into Undo over the real engine and the reference server, then its Undo and Redo. Each
-    // result drops the ids the engine draws.
-    fun undo(input: Json): Json = runBlocking { withActionContext { context ->
+    // run/undo.json (§9.6) and run/composed.json (§9.7): an act, a composed act, a single action or a draft's save over the real local
+    // engine and the reference server, then Undo, Redo and held-cancel steps. Each result drops the ids the engine draws.
+    fun engineAct(input: Json): Json = runBlocking { withActionContext { context ->
         val registry = probeRegistry()
         SteppedEngine(registry, Probe.start, rules = ProbeServerRules()).use { phone ->
             val runner = ActionRunner(phone.replica, registry, FixedZone(0), context)
             input["observe"]?.arr().orEmpty().forEach { phone.engine.subscribe(ScopeRef(it)) }
             fun plans(segments: Json) = segments.arr().map { item -> ScopedPlan(ScopeRef(item.member("scope")), build(item, runner.moment()).also { plan ->
                 item["undo"]?.arr()?.map(::undoRecipe)?.let { recipes -> if (recipes.isEmpty()) plan.evidenceForUndo() else plan.undoBy(*recipes.toTypedArray()) } }) }
-            fun writing(plans: List<ScopedPlan>) = object : ActAction<Unit, Unit, ProbeRefusal> {
+            // An act that writes `segments`, each built as it decides, so a failed check refuses it.
+            fun writing(segments: Json) = object : ActAction<Unit, Unit, ProbeRefusal> {
                 override val refusals = ProbeRefusals
                 override fun load(read: ActReader) = Unit
-                override fun decide(loaded: Unit, ids: ActIDSource): ActDecision<Unit, ProbeRefusal> = ActDecision.Write(ActPlan(plans), Unit)
+                override fun decide(loaded: Unit, ids: ActIDSource): ActDecision<Unit, ProbeRefusal> = ActDecision.Write(ActPlan(plans(segments)), Unit)
+            }
+            // A composed act's part: a plan as given, `unchanged`, or `append`, which reads a record through the parts before it and
+            // writes a field's value with a suffix, refusing when the record is gone.
+            fun part(item: Json): ActAction<*, *, ProbeRefusal> {
+                if (item["unchanged"]?.bool() == true) return object : ActAction<Unit, Unit, ProbeRefusal> {
+                    override val refusals = ProbeRefusals
+                    override fun load(read: ActReader) = Unit
+                    override fun decide(loaded: Unit, ids: ActIDSource): ActDecision<Unit, ProbeRefusal> = ActDecision.Unchanged(Unit)
+                }
+                val append = item["append"] ?: return writing(Json.array(item))
+                val type = Probe.entity(append.member("t").str())
+                val id = Id(RecordID(append.member("id")), type)
+                val field = append.member("field").str()
+                return object : ActAction<ProbeEntity?, Unit, ProbeRefusal> {
+                    override val refusals = ProbeRefusals
+                    override fun load(read: ActReader) = read.inScope(ScopeRef(item.member("scope"))) { it.repository(type).find(id, ViewMode.drawn) }
+                    override fun decide(loaded: ProbeEntity?, ids: ActIDSource): ActDecision<Unit, ProbeRefusal> {
+                        if (loaded == null) return ActDecision.Refuse(ProbeRefusals.of(Refused(RefusalCode.unknownRecord, RecordRef(type.type, id.record), null, Refused.Path.predicted)))
+                        val value = Json.of("${loaded.values.getValue(field).str()}${append.member("suffix").str()}")
+                        return ActDecision.Write(ActPlan(plans(Json.array(item.with("plan" to Json.array(Json.objectOf("op" to Json.of("update"),
+                            "t" to Json.of(type.type), "id" to id.record.json, "f" to Json.objectOf(field to value), "fields" to Json.array(Json.of(field)))))))), Unit)
+                    }
+                }
             }
             for (setup in input["before"]?.arr().orEmpty()) {
-                check(runner.runAct(writing(plans(setup))) is ActOutcome.Committed) { "a setup act commits" }
+                check(runner.runAct(writing(setup)) is ActOutcome.Committed) { "a setup act commits" }
                 phone.sync()
             }
             val (outcome, actId) = try {
                 val declared = input["reversible"]?.bool()
                 val save = input["save"]
-                if (save != null) {
-                    val type = draftable(save.member("t").str())
-                    val id = Id(RecordID(save.member("id")), type)
-                    val opened = runner.open(type, id, save["scope"]?.let(::ScopeRef) ?: type.fixtureScope) ?: throw ContractError("a save opens a record the phone holds")
-                    when (val saved = runner.save(opened.edit { (type as ProbeType).entity(id.record, fields(save.member("current"))) }, type, ProbeRefusals) { }) {
-                        is SaveResult.Saved -> Json.objectOf("kind" to Json.of("saved")) to saved.receipt?.gestureId
-                        is SaveResult.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
-                        is SaveResult.Failed -> Json.objectOf("kind" to Json.of("failed")) to null
+                val parts = input["parts"]
+                when {
+                    parts != null -> when (val ran = runner.runComposed(parts.arr().map(::part))) {
+                        is ComposedOutcome.Committed -> Json.objectOf("kind" to Json.of("committed"), "counts" to Json.Arr(ran.receipt.segments.map { Json.of(it.localIds.size) }),
+                            "held" to Json.of(ran.receipt.releaseAt != null)) to ran.receipt.gestureId
+                        is ComposedOutcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged")) to null
+                        is ComposedOutcome.Refused -> Json.objectOf("kind" to Json.of("refused"), "part" to Json.of(ran.part), "refusal" to ran.refusal.form) to null
                     }
-                } else if (declared != null) {
-                    val segment = plans(input.member("segments")).single()
-                    when (val ran = runner.run(object : Action<Unit, Unit, ProbeRefusal> {
-                        override val scope = segment.scope
-                        override val refusals = ProbeRefusals
-                        override val reversible: Boolean = declared
-                        override fun load(read: Reader) = Unit
-                        override fun decide(loaded: Unit, ids: IDSource): Decision<Unit, ProbeRefusal> = Decision.Write(segment.plan, Unit)
-                    })) {
-                        is Outcome.Committed -> Json.objectOf("kind" to Json.of("committed"), "count" to Json.of(ran.receipt.localIds.size)) to ran.receipt.gestureId
-                        is Outcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged")) to null
-                        is Outcome.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                    save != null -> {
+                        val type = draftable(save.member("t").str())
+                        val id = Id(RecordID(save.member("id")), type)
+                        val opened = runner.open(type, id, save["scope"]?.let(::ScopeRef) ?: type.fixtureScope) ?: throw ContractError("a save opens a record the phone holds")
+                        when (val saved = runner.save(opened.edit { (type as ProbeType).entity(id.record, fields(save.member("current"))) }, type, ProbeRefusals) { }) {
+                            is SaveResult.Saved -> Json.objectOf("kind" to Json.of("saved")) to saved.receipt?.gestureId
+                            is SaveResult.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                            is SaveResult.Failed -> Json.objectOf("kind" to Json.of("failed")) to null
+                        }
                     }
-                } else when (val ran = runner.runAct(writing(plans(input.member("segments"))))) {
-                    is ActOutcome.Committed -> Json.objectOf("kind" to Json.of("committed"), "counts" to Json.Arr(ran.receipt.segments.map { Json.of(it.localIds.size) }),
-                        "held" to Json.of(ran.receipt.releaseAt != null)) to ran.receipt.gestureId
-                    is ActOutcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged")) to null
-                    is ActOutcome.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                    declared != null -> {
+                        val segment = plans(input.member("segments")).single()
+                        when (val ran = runner.run(object : Action<Unit, Unit, ProbeRefusal> {
+                            override val scope = segment.scope
+                            override val refusals = ProbeRefusals
+                            override val reversible: Boolean = declared
+                            override fun load(read: Reader) = Unit
+                            override fun decide(loaded: Unit, ids: IDSource): Decision<Unit, ProbeRefusal> = Decision.Write(segment.plan, Unit)
+                        })) {
+                            is Outcome.Committed -> Json.objectOf("kind" to Json.of("committed"), "count" to Json.of(ran.receipt.localIds.size)) to ran.receipt.gestureId
+                            is Outcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged")) to null
+                            is Outcome.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                        }
+                    }
+                    else -> when (val ran = runner.runAct(writing(input.member("segments")))) {
+                        is ActOutcome.Committed -> Json.objectOf("kind" to Json.of("committed"), "counts" to Json.Arr(ran.receipt.segments.map { Json.of(it.localIds.size) }),
+                            "held" to Json.of(ran.receipt.releaseAt != null)) to ran.receipt.gestureId
+                        is ActOutcome.Unchanged -> Json.objectOf("kind" to Json.of("unchanged")) to null
+                        is ActOutcome.Refused -> Json.objectOf("kind" to Json.of("refused")) to null
+                    }
                 }
             } catch (_: PlanError) { return@use Json.objectOf("error" to Json.of(true)) }
               catch (_: ProgrammingFault) { return@use Json.objectOf("error" to Json.of(true)) }
@@ -232,6 +267,7 @@ internal object WriteVectors {
                 when (step.str()) {
                     "sync" -> { phone.sync(); null }
                     "read" -> runner.inverseResult(checkNotNull(requestId)).form
+                    "cancel" -> Json.objectOf("cancelled" to Json.of(runner.cancelHeld(checkNotNull(actId))))
                     else -> {
                         val result = if (step.str() == "undo") runner.undo(checkNotNull(actId)) else runner.redo(checkNotNull(requestId))
                         result.form.also { (result.json["requestId"] as? Json.Str)?.let { requestId = it.value } }
