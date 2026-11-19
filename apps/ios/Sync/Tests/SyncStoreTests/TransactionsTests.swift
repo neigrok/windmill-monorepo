@@ -664,15 +664,17 @@ struct TransactionsTests {
     #expect(try store.read { try $0.device(rows: true).json } == device.json)
   }
 
-  // D-17: dismissing a notice the active replica does not hold throws, and nothing is written.
-  @Test func dismissingANoticeTheActiveReplicaDoesNotHoldThrows() throws {
+  // D-17: dismissing a notice the active replica does not hold answers false: it neither throws nor writes.
+  @Test func dismissingANoticeTheActiveReplicaDoesNotHoldChangesNothing() throws {
     let device = try LoadedDevice(json: try JSON(parsing: """
       {"active": "rp_00000000000000000000000000000001", "replicas": [{"meta": {"replica": "rp_00000000000000000000000000000001",
         "state": "bound", "account": "A", "nextN": 1, "hlc": {"ms": 0, "counter": 0}, "hlcHigh": "0:0:", "admittedHigh": "0:0:",
         "serverOffsetMs": 0, "offsetSamples": [], "serverEpoch": "ep-1", "ackThrough": 0, "authPaused": false}}]}
       """), registry: Self.probe)
     let store = try Store.inMemory(holding: device, registry: Self.probe)
-    #expect(throws: StoreError.noNotice("notice:g1/0")) { try store.dismissNotice("notice:g1/0") }
+    let written = try store.dismissNotice("notice:g1/0")
+    #expect(written.value == false)
+    #expect(written.change == StoreChange())
     #expect(try store.read { try $0.device(rows: true).json } == device.json)
   }
 
@@ -742,7 +744,7 @@ struct StoredDevice: ClientDevice {
   mutating func releaseAll() throws { _ = take(try store.releaseAll()) }
   mutating func releaseDue(at deviceNow: Int64) throws { take(try store.releaseDue(at: deviceNow)) }
   mutating func undo(_ gestureId: String) throws -> Bool { take(try store.undo(gestureId)) }
-  mutating func dismiss(_ noticeId: String) throws { take(try store.dismissNotice(noticeId)) }
+  mutating func dismiss(_ noticeId: String) throws -> Bool { take(try store.dismissNotice(noticeId)) }
   mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest? { take(try store.number(limit: limit, at: deviceNow)) }
 
   mutating func apply(_ step: PushStep, instance: inout Instance, timing: Timing, identities: IdentitySource) throws {

@@ -15,7 +15,7 @@ import { ServerState } from '../../../../packages/api-contract/sync/reference/se
 import { environment, until, tick } from './fakes.js';
 import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './oracle-adapters/fixtures.js';
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
-import { Device } from '../../../../packages/api-contract/sync/reference/client/replica.js';
+import { Device, Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
 
 const card = (id = 'card0001') => [{ op: 'create', t: 'card', id, f: { title: 'secret' } }];
 const readyHello = (env) => {
@@ -170,21 +170,52 @@ test('durable commits publish stable React snapshots; exceptions publish no part
   unsubscribe(); engine.close();
 });
 
-test('a store that cannot commit is a store failure reported as storage; the read-and-commit function’s own throw is neither', async () => {
+test('a store that cannot commit is a store failure reported as storage; a transaction body’s own throw passes to its caller unreported', async () => {
   const env = environment(), engine = await BrowserSyncEngine.open(env.options);
   const refusal = new Error('the product refuses this');
   await assert.rejects(engine.commit('self/probe', () => { throw refusal; }), (error) => error === refusal);
   await assert.rejects(engine.commit('self/probe', [{ op: 'nope', t: 'card', id: 'card0002' }]),
     (error) => error instanceof CommitError && error.kind === 'malformed');
-  assert.deepEqual(env.failures, []);
-  const bug = new TypeError('an engine step broke');
+  const bug = new TypeError('a step broke');
   await assert.rejects(engine.write(null, () => { throw bug; }), (error) => error === bug);
-  assert.deepEqual(env.failures, ['storage'], 'the engine’s own broken step still reports');
+  assert.deepEqual(env.failures, []);
   const quota = new DOMException('quota', 'QuotaExceededError');
   engine.store.transact = () => Promise.reject(quota);
   await assert.rejects(engine.commit('self/probe', card('card0003')),
     (error) => error instanceof CommitError && error.kind === 'store' && error.cause === quota);
-  assert.deepEqual(env.failures, ['storage', 'storage']);
+  assert.deepEqual(env.failures, ['storage']);
+  engine.close();
+});
+
+test('the engine’s own release, which no caller hears, reports its broken step as storage, and a store failure once', async () => {
+  const env = environment(), engine = await open(env);
+  const entries = Replica.prototype.entries;
+  const releaseDue = async (failures) => {
+    env.timers.tasks.get(engine.holdTimer).callback();
+    await until(() => env.failures.length === failures);
+    for (let turn = 0; turn < 20; turn++) await tick();
+  };
+  try {
+    await engine.commit('self/probe', card('card0001'), { hold: true });
+    Replica.prototype.entries = function () { throw new TypeError('a release broke'); };
+    await releaseDue(1);
+    Replica.prototype.entries = entries;
+    assert.deepEqual(env.failures, ['storage']);
+    await engine.commit('self/probe', card('card0002'), { hold: true });
+    const quota = new DOMException('quota', 'QuotaExceededError');
+    engine.store.transact = () => Promise.reject(quota);
+    await releaseDue(2);
+    assert.deepEqual(env.failures, ['storage', 'storage']);
+  } finally { Replica.prototype.entries = entries; engine.close(); }
+});
+
+test('dismissing a notice the active replica does not hold answers false, changes nothing and reports nothing', async () => {
+  const env = environment(), engine = await open(env);
+  const before = (await engine.store.read()).device.toJSON();
+  const revision = engine.revision;
+  assert.equal(await engine.dismissNotice('notice:gone/0'), false);
+  assert.deepEqual({ device: (await engine.store.read()).device.toJSON(), revision: engine.revision, failures: env.failures },
+    { device: before, revision, failures: [] });
   engine.close();
 });
 
@@ -810,7 +841,7 @@ test('changed-epoch successes and product receipts commit together, survive relo
   engine.close();
   engine = await BrowserSyncEngine.open(env.options);
   assert.deepEqual(engine.device.toJSON(), recovered);
-  assert.deepEqual(env.failures, ['storage']);
+  assert.deepEqual(env.failures, [], 'the receipt callback’s own throw is its caller’s to report');
   engine.close();
 });
 

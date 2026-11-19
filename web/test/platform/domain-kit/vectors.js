@@ -175,7 +175,10 @@ export class VectorReplica {
     return this.now;
   }
 
-  /** @param {string} id */
+  /**
+   * @param {string} id
+   * @returns {boolean}
+   */
   dismissNotice(id) {
     throw new ContractError(`a vector's commit writes no notice, and ${id} was dismissed`);
   }

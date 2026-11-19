@@ -54,7 +54,7 @@ let insideRun = false;
  *   mintId(type: string, taken: Set<string>): RecordID,
  *   opaqueID?(): string,
  *   physNow(): number,
- *   dismissNotice(id: string): Promise<unknown> | unknown,
+ *   dismissNotice(id: string): Promise<boolean> | boolean,
  * }} Replica
  */
 

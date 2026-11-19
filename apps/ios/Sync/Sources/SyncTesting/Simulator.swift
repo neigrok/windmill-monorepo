@@ -950,7 +950,7 @@ package final class Simulator {
 
   func dismissNotice(on phone: Phone) {
     guard let notices = try? phone.engine.currentNotices("probe"), !notices.isEmpty else { return }
-    try? phone.engine.dismissNotice(rng.pick(notices).id)
+    _ = try? phone.engine.dismissNotice(rng.pick(notices).id)
     count("notice dismissed")
   }
 

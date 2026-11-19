@@ -20,8 +20,8 @@ public protocol ClientDevice {
   mutating func releaseAll() throws
   mutating func releaseDue(at deviceNow: Int64) throws
   mutating func undo(_ gestureId: String) throws -> Bool
-  // D-17: the active replica's notice takes `dismissed`; a notice the replica does not hold throws.
-  mutating func dismiss(_ noticeId: String) throws
+  // D-17: the active replica's notice takes `dismissed`, true; a notice the replica does not hold is left alone, false.
+  mutating func dismiss(_ noticeId: String) throws -> Bool
   mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest?
   // One transaction of a push answer, on the active replica.
   mutating func apply(_ step: PushStep, instance: inout Instance, timing: Timing, identities: IdentitySource) throws
@@ -156,10 +156,8 @@ public struct PlannedDevice: ClientDevice {
     try device.modify(device.active) { try hold.undo(gestureId, in: &$0) }
   }
 
-  public mutating func dismiss(_ noticeId: String) throws {
-    guard device.modify(device.active, { $0.dismiss(notice: noticeId) }) else {
-      throw VectorError("\(noticeId) is not a notice of \(device.active)")
-    }
+  public mutating func dismiss(_ noticeId: String) throws -> Bool {
+    device.modify(device.active) { $0.dismiss(notice: noticeId) }
   }
 
   public mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest? {
@@ -337,9 +335,7 @@ public enum ClientSteps {
       return try device.requestInverse(step.member("actId").asString(), slots: slots, instance: instance, identities: identities).json
     case "readInverseResult": return try device.readInverseResult(step.member("requestId").asString()).json
     case "releaseReversibleAct": return .bool(try device.releaseReversibleAct(step.member("actId").asString()))
-    case "dismiss":
-      try device.dismiss(step.member("id").asString())
-      return .null
+    case "dismiss": return .bool(try device.dismiss(step.member("id").asString()))
     case "push":
       context.lastPush = try device.push(limit: try step["limit"].map { Int(try $0.asInteger()) }, at: deviceNow)
       return context.lastPush?.json ?? .null

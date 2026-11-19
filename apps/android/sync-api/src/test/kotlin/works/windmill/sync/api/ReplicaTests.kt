@@ -48,7 +48,7 @@ class ReplicaTests {
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = body(context)
         override fun mintID(type: String) = context.mintID(type)
         override fun physNow() = context.now
-        override fun dismissNotice(id: String) = Unit
+        override fun dismissNotice(id: String) = false
     }
 
     @Test fun nullableGestureAndGenericBodyValueAreIndependent() {

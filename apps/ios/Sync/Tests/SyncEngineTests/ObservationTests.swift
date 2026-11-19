@@ -369,7 +369,10 @@ struct ObservationTests {
     _ = try rig.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1"))
     await rig.engine.settle()
     #expect(notices.notices.map { "\($0.id) \($0.product) \($0.scope) \($0.code)" } == ["notice:g1/0 probe self/probe too-large"])
-    try rig.engine.dismissNotice("notice:g1/0")
+    #expect(try rig.engine.dismissNotice("notice:g2/0") == false)
+    await rig.engine.settle()
+    #expect(notices.notices.map(\.id) == ["notice:g1/0"])
+    #expect(try rig.engine.dismissNotice("notice:g1/0"))
     await rig.engine.settle()
     #expect(notices.notices.isEmpty)
   }

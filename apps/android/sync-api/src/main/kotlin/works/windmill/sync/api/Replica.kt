@@ -69,7 +69,8 @@ interface Replica {
     fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T
     fun mintID(type: String): RecordID
     fun physNow(): Long
-    fun dismissNotice(id: String)
+    // Engine D-17: hides a notice of the active replica, true iff it holds it; one it does not hold is left alone: false, no throw.
+    fun dismissNotice(id: String): Boolean
     fun commit(scope: ScopeRef, gesture: Gesture): CommitOutcome = commit(scope) { gesture to Unit }.first
         ?: throw IllegalStateException("a commit of a gesture always has an outcome")
 }

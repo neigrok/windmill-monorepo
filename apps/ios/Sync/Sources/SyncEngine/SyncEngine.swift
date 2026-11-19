@@ -298,7 +298,8 @@ public final class SyncEngine: Replica {
     core.publisher.events()
   }
 
-  public func dismissNotice(_ id: String) throws {
+  @discardableResult
+  public func dismissNotice(_ id: String) throws -> Bool {
     try core.write { store, _ in try store.dismissNotice(id) }
   }
 

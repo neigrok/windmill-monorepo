@@ -246,13 +246,13 @@ extension Store {
     }
   }
 
-  // D-17: a dismissed notice is hidden, never deleted, since an orphan's refusal may still fold into it. A notice the
-  // active replica does not hold throws.
-  public func dismissNotice(_ id: String) throws -> Written<Void> {
+  // D-17: a dismissed notice is hidden, never deleted, since an orphan's refusal may still fold into it; true iff the
+  // active replica holds it. A notice it does not hold is left alone: false, nothing written and nothing thrown.
+  public func dismissNotice(_ id: String) throws -> Written<Bool> {
     try write(.dismissNotice) { tx in
       var replica = try loaded(try tx.activeReplica(), in: tx, notices: true)
-      guard replica.dismiss(notice: id) else { throw StoreError.noNotice(id) }
-      return Planned((), replica.batch)
+      let held = replica.dismiss(notice: id)
+      return Planned(held, replica.batch)
     }
   }
 

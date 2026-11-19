@@ -204,7 +204,7 @@ object ClientCorpus {
                         "releaseAll" -> { stepped.engine.releaseHeld(true); Json.Null }
                         "releaseDue" -> { stepped.engine.releaseHeld(); Json.Null }
                         "release" -> Json.of(stepped.engine.release(step.member("localId").str()))
-                        "dismiss" -> { stepped.engine.dismissNotice(step.member("id").str()); Json.Null }
+                        "dismiss" -> Json.of(stepped.engine.dismissNotice(step.member("id").str()))
                         "view" -> {
                             val scope = ScopeRef(step.member("scope"))
                             val shown = stepped.engine.materialized(scope, if (step.member("withHeld").bool()) ViewMode.drawn else ViewMode.stored)

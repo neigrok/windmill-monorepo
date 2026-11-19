@@ -49,7 +49,9 @@ snapshot carries:
 
 `observeNotices(product)` answers a hold of the same kind on one product's notices in every scope (engine.md §7.6):
 its snapshot is `{replica, notices}`, each notice whole and none dismissed, a scope known gone's among them. The
-engine publishes it again only when the product's notices change.
+engine publishes it again only when the product's notices change. `dismissNotice(id)` hides a notice (engine.md
+D-17) and resolves to true; one the active replica does not hold is left alone, and its dismissal resolves to false
+and reports nothing.
 
 `observeEngine` and `getSnapshot` expose replica/auth/upgrade state and `connection`: `offline` while the
 browser reports no network, `unreachable` after a request to the server got no answer or a 5xx answer
@@ -148,7 +150,7 @@ checks the stop before using the network. CI uses `VITE_RELEASE` as the build id
 bound active plus pending work to 64 frames and 1 MiB; overflow closes the socket and recovers through
 pulls. A hidden leader yields to a visible peer. Unsupported coordination fails explicitly.
 
-`npm run test:sync` claims all 52 client/all corpus files (897 vectors/transcript steps) and runs the
+`npm run test:sync` claims all 63 client/all corpus files (1204 vectors/transcript steps) and runs the
 persisted runtime, fake IndexedDB and real Chromium tests. Playwright is dev-only. Test/build scripts
 install Chromium automatically; Linux CI also installs its system dependencies. No browser test is
 skipped when Chromium is unavailable. `npm run test:sync:fuzz` runs 500×300 core replay, 20×80 random

@@ -28,7 +28,7 @@ nonisolated final class ClockCountingReplica: Replica {
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try base.read(scope, body) }
   func mintID(_ type: String) throws -> RecordID { try base.mintID(type) }
   func physNow() throws -> Int64 { clockReads.withLock { $0 += 1 }; return try base.physNow() }
-  func dismissNotice(_ id: String) throws { try base.dismissNotice(id) }
+  func dismissNotice(_ id: String) throws -> Bool { try base.dismissNotice(id) }
 }
 
 @Suite @MainActor struct JournalScreenTests {

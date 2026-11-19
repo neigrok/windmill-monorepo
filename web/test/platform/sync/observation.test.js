@@ -134,7 +134,7 @@ test('a product\'s notices are observed in every scope: a tree\'s scope-dead not
     assert.deepEqual(notices.getSnapshot().notices, read());
 
     const dead = notices.getSnapshot().notices[0].id;
-    await engine.dismissNotice(dead);
+    assert.equal(await engine.dismissNotice(dead), true);
     assert.deepEqual(shown(), []);
 
     await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Thirteen char' } }]);

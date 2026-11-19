@@ -370,8 +370,8 @@ public struct LoadedReplica: Sendable {
     }
   }
 
-  // D-17: the product dismisses a notice, which hides it until content folds into it. False when the replica holds no
-  // notice `id`.
+  // D-17: the product dismisses a notice, which hides it until content folds into it; true iff the replica holds it. A
+  // notice the replica does not hold is left alone.
   public mutating func dismiss(notice id: String) -> Bool {
     guard let notice = notices.first(where: { $0.id.utf8.elementsEqual(id.utf8) }) else { return false }
     if !notice.isDismissed { apply(.putNotice(notice.dismissed)) }

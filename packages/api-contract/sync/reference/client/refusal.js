@@ -189,11 +189,13 @@ function refuseOrphan(replica, ctx, orphan, event = 'refuse') {
   delete notice.dismissed;
 }
 
-// D-17: a product dismisses a notice, which hides it until content folds into it.
+// D-17: a product dismisses a notice, which hides it until content folds into it; true iff the replica holds it. A
+// notice the replica does not hold is left alone: dismissing it changes nothing and is no failure.
 export function dismiss(replica, noticeId) {
   const notice = replica.notices.find((candidate) => candidate.id === noticeId);
-  if (!notice) throw new Error(`${noticeId} is not a notice of ${replica.id}`);
+  if (!notice) return false;
   notice.dismissed = true;
+  return true;
 }
 
 // §7.6: one product's notices in every scope, each the durable notice whole, but those dismissed (D-17). It reads no

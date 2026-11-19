@@ -167,7 +167,7 @@ class VectorReplica(records: VectorRecords, val now: Long, val registry: Registr
     override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T) = body(VectorReader(scopes[scope] ?: records, now, scope = scope, registry = registry))
     override fun mintID(type: String): RecordID = throw CommitFailure.malformed("a vector mints no id")
     override fun physNow() = now
-    override fun dismissNotice(id: String): Unit = throw ContractError("a vector's commit writes no notice, and $id was dismissed")
+    override fun dismissNotice(id: String): Boolean = throw ContractError("a vector's commit writes no notice, and $id was dismissed")
 }
 
 val RecordRef.form: Json get() = Json.objectOf("t" to Json.of(type), "id" to id.json)

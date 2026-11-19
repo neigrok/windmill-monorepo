@@ -458,7 +458,15 @@ class EngineTests {
             assertFalse(engine.cancelHeld("del"))
             engine.commit(scope, Gesture(listOf(Change.delete("card", id)), hold = true, gestureId = "later"))
             assertTrue(engine.release("later/0")); assertFalse(engine.release("later/0")); assertFalse(engine.cancelHeld("later"))
-            assertThrows(CommitFailure::class.java) { engine.dismissNotice("missing") }
+        }
+    }
+    @Test fun dismissingANoticeTheReplicaDoesNotHoldAnswersFalseWritesNothingAndReportsNothing() = runBlocking<Unit> {
+        val dismissals = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
+        engine(EngineTelemetry { if (it.operation == EngineOperation.dismiss) dismissals.send(it) }).use { engine ->
+            val before = engine.snapshot()
+            assertFalse(engine.dismissNotice("notice:missing/0"))
+            assertEquals(before, engine.snapshot())
+            assertNull(withTimeoutOrNull(200) { dismissals.receive() })
         }
     }
     @Test fun referenceReadAndObservationDoNotScanTenThousandUnrelatedRows() = runBlocking {

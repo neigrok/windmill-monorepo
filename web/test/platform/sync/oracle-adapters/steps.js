@@ -165,8 +165,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(releaseReversibleAct(replica, step.actId));
           break;
         case 'dismiss':
-          dismiss(replica, step.id);
-          answer(null);
+          answer(dismiss(replica, step.id));
           break;
         case 'push':
           lastPush = nextPush(replica, ctx, step.limit === undefined ? {} : { limit: step.limit });

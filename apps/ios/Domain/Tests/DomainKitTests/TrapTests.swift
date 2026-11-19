@@ -197,7 +197,7 @@ enum Kit {
     func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try body(Context(records: records)) }
     func mintID(_ type: String) throws -> RecordID { throw CommitFailure.malformed("\(type) mints no id here") }
     func physNow() throws -> Int64 { Kit.moment.now.ms }
-    func dismissNotice(_ id: String) throws { throw CommitFailure(.storeFailure, "no notice \(id) here") }
+    func dismissNotice(_ id: String) throws -> Bool { throw CommitFailure(.storeFailure, "no notice \(id) here") }
   }
 
   struct Context: CommitContext {

@@ -81,7 +81,7 @@ object NetworkCorpus {
                         "requestInverse" -> engine.requestInverse(step.member("actId").str(), step["slots"]?.let(ClientCorpus::undoSegments)).json
                         "readInverseResult" -> engine.readInverseResult(step.member("requestId").str()).json
                         "releaseReversibleAct" -> Json.of(engine.releaseReversibleAct(step.member("actId").str()))
-                        "dismiss" -> { engine.dismissNotice(step.member("id").str()); Json.Null }
+                        "dismiss" -> Json.of(engine.dismissNotice(step.member("id").str()))
                         "push" -> engine.nextPush(step["limit"]?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS).also { lastPush = it } ?: Json.Null
                         // A response with no push in the vector answers one its device sent before a restart, from the active replica.
                         "pushResponse" -> engine.onPushResponse(lastPush ?: Json.objectOf("replica" to Json.of(engine.activeReplica()), "intents" to Json.array()), response(), timing,

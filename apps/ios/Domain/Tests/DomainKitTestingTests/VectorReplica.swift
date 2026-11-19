@@ -85,7 +85,7 @@ final class VectorReplica: Replica {
 
   func physNow() throws -> Int64 { now }
 
-  func dismissNotice(_ id: String) throws {
+  func dismissNotice(_ id: String) throws -> Bool {
     throw ContractError("a vector's commit writes no notice, and \(id) was dismissed")
   }
 }

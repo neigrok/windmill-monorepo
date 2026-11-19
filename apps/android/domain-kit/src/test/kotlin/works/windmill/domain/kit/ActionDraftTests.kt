@@ -105,9 +105,10 @@ class ActionDraftTests {
         override fun releaseReversibleAct(actId: String): Boolean = error("inverse vectors use the real engine")
         override fun mintID(type: String) = context.mintID(type)
         override fun physNow() = context.now
-        override fun dismissNotice(id: String) {
+        override fun dismissNotice(id: String): Boolean {
             dismissalFailure?.let { throw it }
             dismissed = id
+            return true
         }
     }
 

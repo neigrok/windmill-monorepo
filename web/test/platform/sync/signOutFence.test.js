@@ -81,7 +81,7 @@ test('throwing or asynchronous fences abort before persistence and publication',
     assert.equal(engine.device.activeReplica.meta.account, 'A');
     assert.equal((await engine.store.read()).device.activeReplica.meta.account, 'A');
   }
-  assert.ok(env.failures.length >= 2);
+  assert.deepEqual(env.failures, [], 'a fence that throws or awaits is the shell’s to report, at its own boundary');
 });
 
 test('fence precedes persistence and stays visible while committed publication is suspended', async (t) => {

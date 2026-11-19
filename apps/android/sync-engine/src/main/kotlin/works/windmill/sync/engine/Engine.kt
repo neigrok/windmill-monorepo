@@ -278,11 +278,13 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     override fun releaseReversibleAct(actId: String): Boolean = write(EngineOperation.undo) { it.releaseReversibleAct(actId) }
     // A gesture id no entry, notice or journal record of the device carries yet.
     internal fun freshGestureId(): String = generateSequence { opaqueID() }.first { !device.carriesGesture(it) }
-    override fun dismissNotice(id: String) { write(EngineOperation.dismiss) { replica ->
+    // D-17: true iff the active replica holds the notice. One it does not hold is left alone: false, nothing written or thrown.
+    override fun dismissNotice(id: String): Boolean = write(EngineOperation.dismiss) { replica ->
         val at = replica.notices.indexOfFirst { it.member("id").str() == id }
-        if (at < 0) throw CommitFailure.malformed("unknown-notice")
+        if (at < 0) return@write false
         replica.notices[at] = replica.notices[at].with("dismissed" to Json.of(true))
-    } }
+        true
+    }
     fun releaseHeld(all: Boolean = false): List<String> = write(EngineOperation.release) { replica ->
         val due = replica.entries().filter { it.state == "held" && (all || it.json.member("releaseAt").long() <= clock.now()) }
         due.forEach { replica.move(it, "release", ended) }; due.map { it.id }

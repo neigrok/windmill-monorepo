@@ -188,8 +188,12 @@ Transitions are in §8.1.
 
 **D-17 Notice.** The durable, per-product client record of a refused intent, holding the code, the
 intent's content and the content of the dependents folded into it (§7.7). A product MAY dismiss a
-notice, which hides it; content that later folds into a dismissed notice shows it again. A notice
-that an outbox entry's `orphanOf` names is never deleted.
+notice, which hides it; content that later folds into a dismissed notice shows it again. A dismissal
+answers true when the active replica holds the notice, dismissed already or not, and leaves it
+dismissed. A notice the active replica does not hold (another replica's, once the active replica
+changed, or an id no notice has) is left alone: its dismissal answers false, as a release does for an
+entry no longer held, changes nothing and is no failure, neither throwing nor reporting. A notice that
+an outbox entry's `orphanOf` names is never deleted.
 
 **D-18 Seq, epoch, cursor.**
 - `seq`: a per-scope counter, incremented once per committed intent that changes the scope.

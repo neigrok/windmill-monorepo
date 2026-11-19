@@ -18,7 +18,7 @@ import { effectsOf } from '../../../../packages/api-contract/sync/reference/clie
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
-import { applyPushResult, nextPush, onHello, onPushResponse, ResponseError, SenderWait, validatePushEnvelope, validatePushReceipts } from '../../../../packages/api-contract/sync/reference/client/sender.js';
+import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope, validatePushReceipts } from '../../../../packages/api-contract/sync/reference/client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf, unsubscribe } from '../../../../packages/api-contract/sync/reference/client/subscriptions.js';
 import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
@@ -104,6 +104,8 @@ export class BrowserSyncEngine {
       nextGestureId: () => this.newGestureId(), pendingDeviceWork: this.pendingDeviceWork, adoptDeviceRows: this.adoptDeviceRows };
   }
 
+  // One transaction over the device. A failure of the store reports `storage` once and reaches the caller as a
+  // `CommitError` of kind `store`; the body's own throw is its caller's to report, and passes through unreported.
   async write(operation, change, scopes = []) {
     let context;
     let answer;
@@ -124,12 +126,9 @@ export class BrowserSyncEngine {
         return result;
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
-      if (error !== thrown) {
-        if (!this.closed) this.telemetry.failure('storage');
-        throw new CommitError('the device store did not commit', 'store', { cause: error });
-      }
-      if (!(error instanceof CommitError) && !(error instanceof ResponseError) && error !== context.callerError) this.telemetry.failure('storage');
-      throw error;
+      if (error === thrown) throw error;
+      if (!this.closed) this.telemetry.failure('storage');
+      throw new CommitError('the device store did not commit', 'store', { cause: error });
     }
     this.actor = context.actor;
     this.lastWrite = answer.measurement;
@@ -224,6 +223,11 @@ export class BrowserSyncEngine {
 
   emit(event) {
     this.notify(this.eventListeners, frozen(structuredClone(event)));
+  }
+
+  // A failure of the engine's own step, which no caller hears: the store's own was reported where it happened.
+  unheard(error) {
+    if (!(error instanceof CommitError && error.kind === 'store')) this.telemetry.failure('storage');
   }
 
   activeReplica() { return this.device.activeReplica.id; }
@@ -426,11 +430,8 @@ export class BrowserSyncEngine {
       const replica = device.activeReplica;
       const read = typeof changes === 'function'
         ? (views) => {
-          const seen = { ...views, ...this.readMetadata(scope, replica, ctx.actor) };
-          try {
-            if (!didPrepare) { prepared = changes(seen); didPrepare = true; }
-            return prepared;
-          } catch (error) { ctx.callerError = error; throw error; }
+          if (!didPrepare) { prepared = changes({ ...views, ...this.readMetadata(scope, replica, ctx.actor) }); didPrepare = true; }
+          return prepared;
         }
         : changes;
       return commit(replica, ctx, scope, read, opts);
@@ -490,17 +491,13 @@ export class BrowserSyncEngine {
       ctx.opaqueID = () => this.newGestureId();
       ctx.metadata = (replica, scope) => this.readMetadata(scope, replica, act.actor ?? ctx.actor);
       const result = act.advance(device.activeReplica, ctx, (context) => {
-        try {
-          const prepared = prepare(context);
-          if (prepared?.then) throw new CommitError('an act prepare callback is synchronous');
-          return prepared;
-        } catch (error) { ctx.callerError = error; throw error; }
+        const prepared = prepare(context);
+        if (prepared?.then) throw new CommitError('an act prepare callback is synchronous');
+        return prepared;
       }, (value, index, context) => {
-        try {
-          const gesture = segment(value, index, context);
-          if (gesture?.then) throw new CommitError('an act segment callback is synchronous');
-          return gesture;
-        } catch (error) { ctx.callerError = error; throw error; }
+        const gesture = segment(value, index, context);
+        if (gesture?.then) throw new CommitError('an act segment callback is synchronous');
+        return gesture;
       });
       scopes.push(...act.prepared.request?.scopes ?? []);
       return result;
@@ -528,7 +525,7 @@ export class BrowserSyncEngine {
     this.holdTimer = this.timers.setTimeout(() => {
       this.write('sync-release', (device, ctx) => {
         for (const replica of device.replicas) releaseDue(replica, this.registry, ctx.ended, ctx.deviceNow);
-      }).then(() => this.kick()).catch(() => {});
+      }).then(() => this.kick()).catch((error) => this.unheard(error));
     }, delay);
   }
 
@@ -1150,7 +1147,7 @@ export class BrowserSyncEngine {
     this.connectivityChanged = () => this.setOnline(this.navigator.onLine !== false);
     this.pageHidden = (event) => {
       if (event.persisted) { this.close({ persisted: true }); return; }
-      if (this.coordination.lastTab()) this.leave().finally(() => this.close()).catch(() => {});
+      if (this.coordination.lastTab()) this.leave().finally(() => this.close()).catch((error) => this.unheard(error));
       else this.close();
     };
     this.pageShown ??= (event) => {
@@ -1212,7 +1209,7 @@ export class BrowserSyncEngine {
     this.timers.clearTimeout(this.fallbackTimer);
     this.fallbackAt = undefined;
     this.leaveTimer = this.timers.setTimeout(() => {
-      if (!this.coordination.anyVisible()) this.leave().catch(() => {});
+      if (!this.coordination.anyVisible()) this.leave().catch((error) => this.unheard(error));
     }, this.limits.LEAVE_DEBOUNCE_MS);
   }
 
