@@ -1,9 +1,10 @@
 // §8.2 The carry-over: on every load while an old store holds anything, again whenever another replica becomes active or
 // the active one is bound to another account, and again when the connection returns to a run that left roadmaps waiting,
 // under one browser lock across tabs, what roadmap's old bundle kept moves into the engine's replica through the domain's
-// actions, and each old entry goes once the ledger in the replica shows it carried (INV-4). A run pins the replica it
-// starts on and writes only while that replica, bound as it was, is the active one: a sign-in or a sign-out between ends
-// the run with every old store whole, and the next replica's run carries it where it belongs.
+// actions, and each old entry goes once the ledger in the replica shows it carried (INV-4). A run pins the engine's
+// active binding as it starts and passes it to every write, which the engine commits only while that binding stands: a
+// sign-in or a sign-out between ends the run (`ReplicaChanged`, an expected end, reported nowhere) with every old store
+// whole, and the next replica's run carries it where it belongs.
 //
 // Where a roadmap goes: only to the replica it belongs to, so nothing reaches an account without the lineage rule's
 // question. One made signed out that names nobody goes to the anon replica, and waits while an account is signed in;
@@ -30,6 +31,7 @@ import { effectsOf } from '../../../../../packages/api-contract/sync/reference/c
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
 import { FixedZone } from '../../../platform/domain-kit/time.js';
+import { ReplicaChanged } from '../../../platform/sync/engine.js';
 import { syncSession } from '../../../platform/sync/session.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
@@ -57,19 +59,6 @@ const TAKEN = new Set(['id-taken', 'id-spent']);
 function activeAccount(engine) {
   const { state, account } = engine.device.activeReplica.meta;
   return state === 'bound' ? account : null;
-}
-
-// The active replica as it is bound, one opaque string: a run pins it as it starts.
-function activeBinding(engine) {
-  return JSON.stringify([engine.device.activeReplica.id, activeAccount(engine)]);
-}
-
-// A run's replica is no longer the active one, or is bound to another account: the run ends there.
-export class ReplicaChanged extends Error {
-  constructor() {
-    super('The active replica changed');
-    this.name = 'ReplicaChanged';
-  }
 }
 
 // The one list's reason for a part the domain refused, or null for one dropped.
@@ -122,17 +111,19 @@ export class CarryOver {
   }
 
   // A run for each replica that becomes active, or is bound to another account (a sign-in or a sign-out, once its
-  // question is answered), and again when the connection comes back to a run that left roadmaps waiting.
+  // question is answered), and again when the connection comes back to a run that left roadmaps waiting. A run its
+  // binding's change ended takes up whichever binding stands once it ends, the one it began on included.
   consider() {
     const { engine } = this;
     const { pendingSignIn, connection } = engine.getSnapshot();
     const returned = connection === 'online' && this.connection !== null && this.connection !== 'online';
     this.connection = connection;
     if (pendingSignIn || engine.signingOut || engine.device?.meta?.signOut) return;
-    const binding = activeBinding(engine);
+    const binding = engine.activeBinding();
     if (binding === this.binding && !(returned && this.unfinished)) return;
     this.binding = binding;
-    this.running = this.running.then(() => this.run(engine)).catch((error) => this.report('roadmap-carry-read', error, { store: 'replica', ...failureTags(error) }));
+    this.running = this.running.then(() => this.run(engine)).catch((error) => this.report('roadmap-carry-read', error, { store: 'replica', ...failureTags(error) }))
+      .then(() => { if (this.binding === null) this.consider(); });
   }
 
   // One carry-over, the only one on this browser while it runs.
@@ -142,7 +133,7 @@ export class CarryOver {
   }
 
   async carry(engine) {
-    const binding = activeBinding(engine);
+    const binding = engine.activeBinding();
     const { roadmaps, unread } = await this.stores.read();
     for (const { store, error } of this.notes.unreported(unread)) this.report('roadmap-carry-read', error, { store, ...failureTags(error) });
     const tally = { roadmap: 0, moved: 0, change: 0, mark: 0, item: 0, kept: 0, gone: 0 };
@@ -152,6 +143,7 @@ export class CarryOver {
       else if (roadmaps.length > 0) await this.carryEach(engine, binding, roadmaps, tally, waiting);
     } catch (error) {
       if (!(error instanceof ReplicaChanged)) throw error;
+      if (this.binding === binding) this.binding = null;
       this.unfinished = true;
       this.tell(roadmaps, tally, null);
       return;
@@ -222,21 +214,17 @@ export class CarryOver {
     if (tally.gone > 0) this.track('roadmap_carry', { stage: 'cleared', stores: countBucket(tally.gone) });
   }
 
-  // The old roadmap's entries, gone once its ledger shows it carried, while the run's replica is still the active one; a
-  // store that fails to delete keeps them for the next load. Answers how many went.
+  // The old roadmap's entries, gone once its ledger shows it carried, while the run's binding still stands, for the old
+  // stores are no engine write the engine can refuse; a store that fails to delete keeps them for the next load. Answers
+  // how many went.
   async forget(engine, binding, roadmap) {
-    this.standing(engine, binding);
+    if (engine.activeBinding() !== binding) throw new ReplicaChanged();
     try {
       return await this.stores.forget(roadmap);
     } catch (error) {
       this.report('roadmap-carry-write', error, { stage: 'clear', ...failureTags(error) });
       return 0;
     }
-  }
-
-  // Ends the run where its replica is no longer the active one, bound as it was.
-  standing(engine, binding) {
-    if (activeBinding(engine) !== binding) throw new ReplicaChanged();
   }
 
   // Where one old roadmap goes, in the active replica of `account` (null signed out): `{ kind: 'create' | 'changes', to,
@@ -392,15 +380,14 @@ export class CarryOver {
     }
   }
 
-  // The parts and the ledger's entry as one composed act, the ledger last, written while the run's replica is the active
-  // one. A part the domain refuses is set aside, kept for the one list where its reason is one, and the rest written
+  // The parts and the ledger's entry as one composed act, the ledger last, which the engine commits only while the run's
+  // binding stands. A part the domain refuses is set aside, kept for the one list where its reason is one, and the rest written
   // again; an act the engine holds is released at once, and the engine keeps no Undo of it. Answers what each written
   // part counted as and how many records were set aside.
   async write(engine, runner, binding, old, parts, entry) {
     let standing = parts;
     const setAside = [...entry.kept];
     for (;;) {
-      this.standing(engine, binding);
       const outcome = await runner.runComposed([...standing.map((each) => each.act), new RecordCarry(old, new CarryLedger({ ...entry, kept: setAside }))], { binding });
       if (outcome.kind === 'refused') {
         const refused = standing[outcome.part];
@@ -410,7 +397,7 @@ export class CarryOver {
         standing = standing.filter((each) => each !== refused);
         continue;
       }
-      if (outcome.kind === 'committed' && activeBinding(engine) === binding) await this.settle(engine, runner, outcome.receipt);
+      if (outcome.kind === 'committed' && engine.activeBinding() === binding) await this.settle(engine, runner, outcome.receipt);
       return { counted: standing.map((each) => each.counted), kept: setAside.length };
     }
   }

@@ -62,11 +62,11 @@ export class OldRoadmap {
   // server keeps it for the account that claimed it.
   get claimBegan() { return this.madeSignedOut && this.record?.confirmed?.structure != null; }
 
-  // Whether the roadmap goes to `account`'s replica, where that account's list holds it or held it (`listed`: alive,
-  // spent or null): one its row names, and one its row names nobody for that the list holds, a claim of it having landed.
+  // Whether the roadmap goes to `account`'s replica, as that account's list holds it (`listed`: alive, spent or null): one
+  // its row names, and one its row names nobody for that the list holds alive, a claim of it having landed.
   belongsTo(account, listed) {
     if (account === null) return false;
-    return this.owner === account || (listed !== null && (this.owner ?? null) === null);
+    return this.owner === account || (listed === 'alive' && (this.owner ?? null) === null);
   }
 
   // The roadmap's name as this browser last showed it.

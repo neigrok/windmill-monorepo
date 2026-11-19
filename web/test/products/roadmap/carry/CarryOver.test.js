@@ -123,8 +123,10 @@ function started(t, disk, engine, options = {}) {
   return carrying;
 }
 
-// Until the runs a started carry-over has queued, the ones queued while they ran among them, are done.
-async function settled(carry) {
+// Until a started carry-over has taken up the engine's active binding and the runs it queued, the ones queued while they
+// ran among them, are done.
+async function settled(carry, engine) {
+  await until(engine, () => carry.binding === engine.activeBinding(), 'the carry-over taking up the active replica');
   for (let running = null; running !== carry.running;) {
     running = carry.running;
     await running;
@@ -530,12 +532,12 @@ test('a roadmap made here while an account was signed in waits for that account,
   const { carry, tracked } = carryOver(disk, { session: { getSnapshot: () => ({ engine, ready: true }), subscribe: () => () => {} } });
   carry.start();
   t.after(() => carry.stop());
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync, tracked: tracked.map(({ stage }) => stage) },
     { listed: false, old: [id], tracked: ['found', 'waiting'] });
   engine.transport.account = 'A';
   assert.equal((await engine.signIn('A')).complete, true);
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ steps: holding(engine, id).steps, old: await oldStores() }, { steps: [['cast', 'Cast on']], old: NOTHING_OLD });
 });
 
@@ -548,14 +550,14 @@ test('with no connection a roadmap made signed out waits for the server’s answ
   engine.setOnline(false);
   const before = Date.now();
   const { carry, tracked, reported } = started(t, disk, engine);
-  await carry.running;
+  await settled(carry, engine);
   assert.ok(Date.now() - before < 5000, 'nothing waits on a server the engine cannot reach');
   assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync, stages: tracked.map(({ stage }) => stage), reported },
     { listed: false, old: [id], stages: ['found', 'waiting'], reported: [] });
   server.reachable = true;
   engine.setOnline(true);
   await until(engine, () => holding(engine, id).listed, 'the carry once the connection came back');
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ held: holding(engine, id), stages: tracked.map(({ stage }) => stage), reported }, { held: SAILED, stages: ['found', 'waiting', 'found', 'carried'], reported: [] });
 });
 
@@ -565,12 +567,12 @@ test('signed out, then signed in to an account that holds no roadmaps: what was 
   const id = await plantedSignedOut();
   const engine = await tab(t, disk, server);
   const { carry, tracked, reported } = started(t, disk, engine);
-  await carry.running;
+  await settled(carry, engine);
   const before = holding(engine, id);
   assert.deepEqual({ held: before, old: (await oldStores()).sync }, { held: SAILED, old: [id] });
   engine.transport.account = 'B';
   assert.equal((await engine.signIn('B')).complete, true);
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ old: await oldStores(), stages: tracked.map(({ stage }) => stage), reported }, { old: NOTHING_OLD, stages: ['found', 'carried', 'waiting', 'found', 'cleared'], reported: [] });
   await sent(engine);
   const phone = await device(t, server, 'B');
@@ -587,18 +589,18 @@ test('a claim the server answered goes only to the account whose list holds it: 
   await claimAnswered(id);
   const engine = await tab(t, disk, server);
   const { carry, tracked } = started(t, disk, engine);
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync, queued: queued(engine) }, { listed: false, old: [id], queued: 0 }, 'signed out');
   engine.transport.account = 'B';
   assert.equal((await engine.signIn('B')).complete, true);
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync }, { listed: false, old: [id] }, 'signed in as another account');
   await engine.finishSignOut({ choice: 'keep' });
   engine.transport.account = null;
-  await carry.running;
+  await settled(carry, engine);
   engine.transport.account = 'A';
   assert.equal((await engine.signIn('A')).complete, true);
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ steps: holding(engine, id).steps, old: await oldStores() },
     { steps: [['dock', 'Leave the dock'], ['solo', 'Sail solo'], ['wind', 'Read the wind']], old: NOTHING_OLD }, 'signed in as the account that claimed it');
   assert.deepEqual(tracked.map(({ stage }) => stage), ['found', 'waiting', 'found', 'carried', 'cleared']);
@@ -610,11 +612,11 @@ test('a roadmap made signed out waits while an account is signed in, for the lin
   const id = await plantedSignedOut();
   const engine = await tab(t, disk, server, 'A');
   const { carry } = started(t, disk, engine);
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync }, { listed: false, old: [id] });
   await engine.finishSignOut({ choice: 'keep' });
   engine.transport.account = null;
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ state: engine.getSnapshot().state, steps: holding(engine, id).steps.length, old: (await oldStores()).sync }, { state: 'anon', steps: 3, old: [id] });
 });
 
@@ -627,17 +629,17 @@ for (const choice of ['keep', 'discard']) {
     const engine = await tab(t, disk, server, 'A');
     engine.setOnline(false);
     const { carry, tracked } = started(t, disk, engine);
-    await carry.running;
+    await settled(carry, engine);
     assert.deepEqual({ old: (await oldStores()).sync, stages: tracked.map(({ stage }) => stage) }, { old: [tree], stages: ['found', 'waiting'] }, 'with no connection it waits');
     await engine.finishSignOut({ choice });
     engine.transport.account = null;
-    await carry.running;
+    await settled(carry, engine);
     assert.deepEqual({ old: (await oldStores()).sync, queued: queued(engine), stages: tracked.map(({ stage }) => stage) },
       { old: [tree], queued: 0, stages: ['found', 'waiting'] }, 'signed out, nothing of it reaches the anon replica');
     engine.setOnline(true);
     engine.transport.account = 'A';
     assert.equal((await engine.signIn('A')).complete, true);
-    await carry.running;
+    await settled(carry, engine);
     assert.deepEqual({ steps: holding(engine, tree).steps.map(([, label]) => label).sort(), old: await oldStores() },
       { steps: ['Grip the oars lightly', 'Pull a stroke', 'Row a mile'], old: NOTHING_OLD });
   });
@@ -666,12 +668,12 @@ test('a claim whose create landed but whose answer never came back, carried sign
   await servedAs(t, server, 'A', id, 'Learn to sail');
   const engine = await tab(t, disk, server);
   const { carry, reported } = started(t, disk, engine);
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ held: holding(engine, id), old: (await oldStores()).sync }, { held: SAILED, old: [id] }, 'signed out, in the anon replica, its old stores kept');
   engine.transport.account = 'A';
   const due = (await engine.signIn('A')).due.find((question) => question.product === 'roadmap');
   assert.equal((await engine.signIn('A', { decisions: { roadmap: 'add' }, counted: { roadmap: due.counted } })).complete, true);
-  await carry.running;
+  await settled(carry, engine);
   await sent(engine);
   assert.deepEqual({ held: holding(engine, id), fresh: holding(engine, CarriedIds.roadmap(id)).listed, old: await oldStores(), notices: noticeCodes(engine), reported },
     { held: SAILED, fresh: false, old: NOTHING_OLD, notices: [], reported: [] });
@@ -707,6 +709,13 @@ function interrupted(engine, tree, change) {
   };
 }
 
+// Until no pull of the engine's is in flight, kicking none: an account change during a pull leaves the engine's next pull
+// behind its backoff, longer than the carry-over waits for an answer.
+async function quiet(engine) {
+  for (let turn = 0; turn < 250 && engine.pulling; turn += 1) await pause(20);
+  assert.equal(engine.pulling, false, 'the engine’s pull never settled');
+}
+
 // Every device row of roadmap's each replica holds, by its state.
 async function rowsByReplica(engine) {
   const { device: stored } = await engine.store.read();
@@ -725,12 +734,12 @@ for (const choice of ['keep', 'discard']) {
       engine.transport.account = null;
     });
     const { carry, reported, tracked } = started(t, disk, engine);
-    await settled(carry);
+    await settled(carry, engine);
     assert.deepEqual({ rows: await rowsByReplica(engine), queued: queued(engine), old: (await oldStores()).sync, reported, stages: tracked.map(({ stage }) => stage) },
       { rows: choice === 'keep' ? [['anon', []], ['dormant', []]] : [['anon', []]], queued: 0, old: [tree], reported: [], stages: ['found', 'waiting'] });
     engine.transport.account = 'A';
     assert.equal((await engine.signIn('A')).complete, true);
-    await settled(carry);
+    await settled(carry, engine);
     assert.deepEqual({ steps: holding(engine, tree).steps.map(([, label]) => label).sort(), old: await oldStores() },
       { steps: ['Grip the oars lightly', 'Pull a stroke', 'Row a mile'], old: NOTHING_OLD });
   });
@@ -743,16 +752,18 @@ test('signed out, another tab signs in to an account that holds roadmaps while a
   const id = await plantedSignedOut();
   const engine = await tab(t, disk, server);
   interrupted(engine, id, async () => {
+    await quiet(engine);
     engine.transport.account = 'A';
     assert.equal((await engine.signIn('A')).complete, true);
   });
   const { carry, reported } = started(t, disk, engine);
-  await settled(carry);
+  await settled(carry, engine);
   assert.deepEqual({ state: engine.getSnapshot().state, queued: queued(engine), listed: holding(engine, id).listed, old: (await oldStores()).sync, reported },
     { state: 'bound', queued: 0, listed: false, old: [id], reported: [] });
+  await quiet(engine);
   await engine.finishSignOut({ choice: 'keep' });
   engine.transport.account = null;
-  await settled(carry);
+  await settled(carry, engine);
   assert.deepEqual({ state: engine.getSnapshot().state, held: holding(engine, id), old: (await oldStores()).sync }, { state: 'anon', held: SAILED, old: [id] });
 });
 
@@ -878,7 +889,7 @@ test('a run that fails, and a question to the server that fails, are reported as
   const stores = new OldStores();
   stores.read = async () => { throw new TypeError('the store broke'); };
   const { carry, reported } = started(t, disk, engine, { stores });
-  await carry.running;
+  await settled(carry, engine);
   assert.deepEqual({ asked: asking.reported, ran: reported, old: (await oldStores()).sync },
     { asked: [{ operation: 'roadmap-carry-read', tags: { store: 'server', name: 'other' } }], ran: [{ operation: 'roadmap-carry-read', tags: { store: 'replica', name: 'other' } }], old: [id] });
 });
