@@ -1,25 +1,26 @@
 // The roadmap room's writes end to end on a local stack, once with the server's roadmap engine and the web's switch on
 // (the room on the device's copy) and once with both off (today's room). One owner on several devices, each a browser
-// context with its own store: Undo and Redo, edits made offline syncing once the connection returns, a change made
-// without knowing of another device's delete (INV-1), a change made on a device that already holds that delete (INV-1,
-// the server keeping the step's other fields), the line that tells the person once of a link of theirs that reached the
-// server after another device's delete of its step, named from the device's note in a room opened after a reload (§6), a
-// roadmap's deletion and a sign-out that leave no step's name in the device's store (§6), a roadmap's deletion from the
-// switcher, a change to a roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49), and the
-// sign-in and sign-out questions of flow 50 (§5 Signed out): a browser's signed-out roadmaps added without asking to an
-// account that holds none, Add, Discard and Escape where it holds some, and Keep and Discard at a sign-out with a change
-// unsent, only with the switch on; with it off, today's silent claim and plain sign-out; and the carry-over of what the
-// last old bundle kept in a browser (§8.2), its stores written by the old bundle's own code: with the switch on, a roadmap
-// made signed out, its marks and workspace carried and kept through a sign-in, and a signed-in browser's unsent changes
-// carried to the server, the old stores gone each time; with it off, the old stores untouched. Each run has its own
-// database, server and built app on the given ports, and stops and drops them.
+// context with its own store: Undo and Redo, edits made offline syncing once the connection returns, Settings' export of
+// every roadmap read from the device's copy with no connection (with the switch on), a change made without knowing of
+// another device's delete (INV-1), a change made on a device that already holds that delete (INV-1, the server keeping
+// the step's other fields), the line that tells the person once of a link of theirs that reached the server after another
+// device's delete of its step, named from the device's note in a room opened after a reload (§6), a roadmap's deletion and
+// a sign-out that leave no step's name in the device's store (§6), a roadmap's deletion from the switcher, a change to a
+// roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49), and the sign-in and sign-out
+// questions of flow 50 (§5 Signed out): a browser's signed-out roadmaps added without asking to an account that holds
+// none, Add, Discard and Escape where it holds some, and Keep and Discard at a sign-out with a change unsent, only with the
+// switch on; with it off, today's silent claim and plain sign-out; and the carry-over of what the last old bundle kept in
+// a browser (§8.2), its stores written by the old bundle's own code: with the switch on, a roadmap made signed out, its
+// marks and workspace carried and kept through a sign-in, and a signed-in browser's unsent changes carried to the server,
+// the old stores gone each time; with it off, the old stores untouched. Each run has its own database, server and built
+// app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
 // name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
 // error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { createWriteStream, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -526,6 +527,18 @@ async function listedTitles(secret) {
   return (await response.json()).trees.map((tree) => tree.title ?? '');
 }
 
+// The files of a stored zip, as the export writes one, in its order.
+function filesIn(bytes) {
+  const files = [];
+  for (let at = 0; bytes.readUInt32LE(at) === 0x04034b50;) {
+    const size = bytes.readUInt32LE(at + 18);
+    const nameLength = bytes.readUInt16LE(at + 26);
+    files.push({ name: bytes.toString('utf8', at + 30, at + 30 + nameLength), text: bytes.toString('utf8', at + 30 + nameLength, at + 30 + nameLength + size) });
+    at += 30 + nameLength + size;
+  }
+  return files;
+}
+
 // A screenshot of what a device shows, for comparing with the boards, where WM_E2E_SHOTS names a folder; never printed.
 async function shoot(device, name) {
   if (!process.env.WM_E2E_SHOTS) return;
@@ -562,6 +575,25 @@ async function scenarios(mode, browser, { secret, second, session, empty, carrie
       assert.ok(await b.until(address, async () => await b.card('Reef the sail').count() === 1 && await b.columnOf('Choose a course') === 'done'
         && await b.card('Tie a reef knot').count() === 1), 'another device shows the new steps and the mark');
     });
+
+    if (mode === 'on') {
+      await check('Settings’ export reads every roadmap from the device’s copy with no connection: a file each, with every step and mark', async () => {
+        assert.ok(await a.storeUntil((store) => [sail, knot, row].every((tree) => rowsOf(store, 'confirmed', `tree/${tree}`).some((each) => each.t === 'node'))),
+          'the device holds every roadmap of the account');
+        await a.page.goto(`${origin}/app/settings`);
+        const exportAll = a.page.getByRole('button', { name: 'Export my trees', exact: true });
+        await exportAll.waitFor();
+        await a.offline();
+        const [download] = await Promise.all([a.page.waitForEvent('download'), exportAll.click()]);
+        const files = filesIn(readFileSync(await download.path()));
+        const lines = files.flatMap((file) => file.text.split('\n'));
+        assert.deepEqual({ files: files.length, steps: lines.filter((line) => /^\s*- /.test(line)).length, marks: lines.filter((line) => /^\s*- \[x\] /.test(line)).length },
+          { files: 3, steps: 7, marks: 1 }, 'the archive holds a file for each roadmap, every step and the one mark');
+        await a.page.getByText('Exported 3 roadmaps.', { exact: true }).waitFor();
+        await a.context.setOffline(false);
+      });
+      await a.board(address);
+    }
 
     const c = await Device.open(browser, secret);
     devices.push(c);
@@ -1177,6 +1209,8 @@ async function run(mode, browser) {
       .toString().match(/roadmap_sign[a-z_]*:[a-z]+(?:,roadmap_sign[a-z_]*:[a-z]+)*/)?.[0] ?? '';
     assert.equal(asked, mode === 'on' ? 'roadmap_signin:add,roadmap_signin:cancel,roadmap_signin:discard,roadmap_signin:shown,roadmap_signout:discard,roadmap_signout:keep,roadmap_signout:shown' : '',
       'each step of the sign-in and sign-out questions reached the local intake only with the switch on');
+    const exported = Number(sql("select count(*) from events where name = 'roadmap_export' and props->>'door' = 'settings' and props->>'outcome' = 'done'").toString().match(/\d+/)?.[0] ?? 0);
+    assert.equal(exported, mode === 'on' ? 1 : 0, 'Settings’ export reached the local intake once it had a connection again');
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
@@ -1192,7 +1226,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 19, off: 9 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 20, off: 9 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   log.write(`\n${error?.stack ?? error}\n`);

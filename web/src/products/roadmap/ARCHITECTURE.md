@@ -149,9 +149,10 @@ have no Board presentation and are absent; their undrawn states are in the
 ### Reading the device's copy
 
 [Roadmap on the sync engine](../../../../docs/foundation/roadmap-on-the-engine.md) §8.4 moves the room onto the replica.
-A build that sets `VITE_ROADMAP_REPLICA_ROOM=on` has the route table hand the room `replica`; production's build sets
-nothing (`test/products/roadmap/routes.test.js` holds every workflow to that), so its room reads as above. With the switch
-on, every room but the demo reads through `ReplicaReading`:
+A build that sets `VITE_ROADMAP_REPLICA_ROOM=on`, read in one place (`replicaRoom.js`), has the route table hand the room
+`replica`, and Settings' export reads the device's copy too (`settings/YourDataSection.jsx`); production's build sets
+nothing (`test/products/roadmap/routes.test.js` holds every workflow to that), so its room and export read as above.
+With the switch on, every room but the demo reads through `ReplicaReading`:
 
 - **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
   it, E-3), observes the account's list `self/roadmap` and every scope the domain reads the roadmap through: every roadmap
@@ -271,6 +272,18 @@ on, every room but the demo reads through `ReplicaReading`:
     delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
   - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
     engine reconnects, and its lineage rule takes what the device holds at sign-in.
+- **Export.** The row's Export writes the room's picture (below), here `ReplicaRoadmap.seed` and the owner's marks.
+  Settings' export (`readReplicaRoadmaps` in `settings/exportArchive.js`) opens a reading of no roadmap, which subscribes and
+  holds what it reads as any reading does and lets go when the export ends, and asks nothing of the server itself:
+  `readEveryRoadmap` waits until the device has read the person's list and every roadmap in it, or, where the engine
+  cannot reach the server, until the device's stored rows are loaded, within `FIRST_COPY_MS`. Each root of the list is
+  then a file from `ReplicaRoadmap.seedOf` and `marksOf`, the reads the room opens a roadmap from; one the device has not
+  read stays out, and a copy that does not open is the export's error. For the same records the file is the one today's
+  export makes, but where the replica reads them otherwise: steps in their authored order (`ord`, born, id) where today's
+  server sends them in id order, so siblings and a step's first prerequisite follow the roadmap's order; a step that
+  followed a step deleted elsewhere follows what that step followed (D-5) where today's server drops the link; and a step
+  is done by the owner's mark alone, as the room shows it, where today's export falls back to the steps' seed `status`
+  for a roadmap the owner never marked.
 
 ## A step that opens a tree
 
@@ -666,13 +679,16 @@ while every entry of the deletion is still held; it returns the person to the ro
 once its view stands. A page reached after the hold, or reloaded, offers no Undo. A build without the switch has no such
 page: its route table serves `#/app/roadmaps` as any roadmap address.
 
-**Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
+**Export** builds one Markdown file through `buildRoadmapExport` in `exportArchive.js`, with a
 `<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a
 replant reads past, and every step, including each root, is a list item with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
 Markdown viewers. Indentation preserves primary prerequisites; additional prerequisites become `needs also`
-notes. Kind descriptions and link labels are outside the paste format. Settings exports all roadmaps as a zip. A roadmap it
-can't read stays out, marks included, and the line says *Exported 1 of 2 roadmaps.*; with none read nothing downloads and the
-line is the export's error.
+notes. Kind descriptions, link labels and the workspace are outside the paste format. The row's Export writes the room's
+picture of the open roadmap, a subtree included, with a step whose delete is held left out. Settings exports every roadmap
+of the person's list as a zip (`buildExportArchive`), a subtree being no row of it: from the server and this device's store
+(`readAccountRoadmaps`), or where the room reads the device's copy, from there (`readReplicaRoadmaps`, Reading the device's
+copy, above). A roadmap it can't read stays out, marks included, and the line says *Exported 1 of 2 roadmaps.*; with none
+read nothing downloads and the line is the export's error.
 
 **The device line.** The host derives an anonymous or lapsed line: the Shell carries it from 744px, and both
 phone views receive the tappable `DeviceLine`. A restored paused account keeps `lapsed` true after reload;

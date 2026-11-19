@@ -72,7 +72,7 @@ export class ReplicaReading {
       return null;
     }
     this.subscribed.add(this.scope);
-    const roadmap = await this.firstCopy(signal);
+    const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting');
     if (roadmap?.state === 'missing') this.forgetLanding();
     if (roadmap?.state !== 'open' || signal.aborted) return null;
     this.opened = roadmap;
@@ -157,6 +157,16 @@ export class ReplicaReading {
     return true;
   }
 
+  // The person's roadmaps whole, for a reading that takes every one of them (Settings' export; a reading of no roadmap):
+  // once the device can say what each is, from the copy it holds or the server's first answer. Null where the engine did
+  // not stand within the bound.
+  async readEveryRoadmap({ signal }) {
+    this.engine = await this.engineWithin(signal);
+    if (!this.engine || signal.aborted) return null;
+    this.unwatch = this.engine.observeEngine(this.changed);
+    return this.whenRead(signal, (roadmaps) => roadmaps.everyRoadmapRead);
+  }
+
   // The account's roadmaps as the switcher lists them, where the replica keeps them.
   list() {
     return this.roadmap().list(this.engine.getSnapshot().state === 'bound' ? 'account' : 'device');
@@ -214,17 +224,17 @@ export class ReplicaReading {
     });
   }
 
-  // The roadmap once the device can say what it is: the copy it holds, or the server's first answer. Where the engine
-  // cannot reach the server, once nothing is left to read from the device, it says what it holds; with no answer within
-  // the bound, it stops waiting.
-  firstCopy(signal) {
+  // The roadmaps once `read` says the device can say what they are: from the copy it holds, or the server's first answer.
+  // Where the engine cannot reach the server, once nothing is left to read from the device, it says what it holds; with
+  // no answer within the bound, it stops waiting.
+  whenRead(signal, read) {
     return new Promise((resolve) => {
       let roadmap = null;
       const check = () => {
         roadmap = this.roadmap();
         const { connection, authPaused, upgradeRequired } = this.engine.getSnapshot();
         const cut = connection !== 'online' || authPaused || upgradeRequired;
-        if (roadmap.state !== 'waiting' || (cut && [...this.holds.values()].every(({ hold }) => hold.getSnapshot().loaded))) finish();
+        if (read(roadmap) || (cut && [...this.holds.values()].every(({ hold }) => hold.getSnapshot().loaded))) finish();
       };
       const finish = () => {
         this.listeners.delete(check);
