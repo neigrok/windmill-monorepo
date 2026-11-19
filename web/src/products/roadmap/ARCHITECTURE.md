@@ -243,7 +243,9 @@ on, every room but the demo reads through `ReplicaReading`:
   - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
     ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A
     step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
-    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks.
+    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. What each Undo and
+    Redo came to (`applied`, `skipped`, `unavailable`) is emitted as `roadmap_undo` once the engine knows: the reading's
+    every change asks the session to follow the ones the server still settles (`followInverses`).
   - *Refusals and failures:* a write the domain refuses is said in today's words where there are some (a roadmap at its
     cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and

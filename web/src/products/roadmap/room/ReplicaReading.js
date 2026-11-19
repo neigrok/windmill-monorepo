@@ -46,7 +46,7 @@ export class ReplicaReading {
     this.engine = null;
     this.subscribed = new Set();
     this.holds = new Map();
-    this.listeners = new Set([() => this.emitStatus()]);
+    this.listeners = new Set([() => this.emitStatus(), () => this.writes?.followInverses()]);
     this.statusHandlers = new Set();
     this.told = null;
     this.landingFailed = false;
