@@ -95,6 +95,7 @@ StageReport Cutover::before() {
   record_.write("before.jsonl", linesOf(documents));
   const Plan planned = plan(survey);
   std::vector<std::pair<std::string, std::string>> stoppedBy = survey.stoppedBy();
+  stoppedBy.insert(stoppedBy.end(), planned.stoppedBy.begin(), planned.stoppedBy.end());
   for (const std::string& roadmap : adoption_.scopesInTheWay(planned)) stoppedBy.emplace_back(roadmap, "stop.scopeAlreadyThere");
   std::vector<Json::Value> stops;
   StageReport report;

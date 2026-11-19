@@ -239,6 +239,7 @@ Survey::Survey(OldDatabase database, Expectation expectation)
     const auto holder = roadmaps_.find(surveyed.roadmap->parent->tree);
     if (holder != roadmaps_.end()) holder->second.branches[surveyed.roadmap->parent->step] = id;
   }
+  for (const auto& [kind, count] : database_.rowsOfNoRoadmap) tally_.add("notAdopted." + kind + "OfNoRoadmap", count);
   for (const auto& [id, surveyed] : roadmaps_) {
     const OldRoadmap& roadmap = *surveyed.roadmap;
     tally_.add("roadmaps.total");
@@ -622,11 +623,26 @@ Plan plan(const Survey& survey, const std::optional<std::set<std::string>>& only
   Plan planned;
   planned.stops = survey.stops();
   if (survey.stopped()) return planned;
+  const auto admitted = [&](const std::string& roadmap, const Row& row) {
+    const sync::TypeDef& type = typeOf(row.t);
+    for (const auto& [name, reg] : row.lattice.f) {
+      if (engine::registry().admitsValue(type.fields.at(name), reg.value)) continue;
+      const std::string reason = "stop.outsideItsDomain." + row.t + "." + name;
+      planned.stops.add(reason);
+      planned.stoppedBy.emplace_back(roadmap, reason);
+    }
+  };
   std::map<UserId, OwnerPlan> owners;
   for (const auto& [id, surveyed] : survey.roadmaps()) {
     if (only && !only->contains(id)) continue;
     OwnerPlan& owner = owners.try_emplace(surveyed.owner, OwnerPlan{surveyed.owner, {}, {}}).first->second;
-    owner.roadmaps.push_back(RoadmapPlanner(survey, surveyed, planned.tally).plan());
+    RoadmapPlan roadmap = RoadmapPlanner(survey, surveyed, planned.tally).plan();
+    admitted(id, roadmap.record);
+    for (const Row& row : roadmap.tree.rows) admitted(id, row);
+    for (const ScopePlan& overlay : roadmap.overlays) {
+      for (const Row& row : overlay.rows) admitted(id, row);
+    }
+    owner.roadmaps.push_back(std::move(roadmap));
     owner.readFrom.push_back(*surveyed.roadmap);
   }
   for (auto& [account, owner] : owners) planned.owners.push_back(std::move(owner));

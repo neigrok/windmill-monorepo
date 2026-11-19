@@ -354,6 +354,29 @@ class AdoptionTest(ToolTest):
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual((reports[6]["verdict"], reports[6]["counts"]["same"]["mcp"]), ("same", {"getProgress": 6, "getTree": 6, "listTrees": 2}))
 
+    def test_a_value_outside_its_fields_domain_stops_the_move_and_a_row_of_no_roadmap_is_counted(self):
+        url = own_database(self, "domain", """
+            update tree_kinds set label = 'A label far longer than twenty four' where tree_id = 't_a000000000000001' and kind_id = 'later';
+            update tree_nodes set opens = 'not a roadmap' where tree_id = 't_a000000000000001' and node_id = 'opener';
+            update trees set title = repeat('x', 201) where id = 't_b000000000000001';
+            insert into tree_nodes (tree_id, node_id, created_hlc, present) values ('t_f00000000000000e', 'orphan', '1740000000000:1:r_owner', true);
+            insert into node_progress (tree_id, user_id, node_id, status, hlc) values
+              ('t_f00000000000000e', 'aaaaaaaa-0000-4000-8000-00000000000a', 'orphan', 'complete', '1740000000000:2:r_owner');""")
+        for stage in ("before", "adopt"):
+            with self.subTest(stage=stage):
+                result, reports = self.run_tool(url, stage)
+                self.assertEqual(result.returncode, 3, result.stderr.decode())
+                self.assertEqual(reports[0]["counts"]["stop"],
+                                 {"outsideItsDomain": {"kind": {"label": 1}, "meta": {"title": 1}, "pointer": {"opens": 1}}})
+                self.assert_names_nothing(result)
+        result, reports = self.run_tool(url, "before")
+        self.assertEqual(reports[0]["counts"]["notAdopted"], {**BEFORE["notAdopted"], "marksOfNoRoadmap": 1, "stepsOfNoRoadmap": 1})
+        self.assertEqual(sorted((self.private / "stops.jsonl").read_text().splitlines()),
+                         ['{"reason":"stop.outsideItsDomain.kind.label","roadmap":"t_a000000000000001"}',
+                          '{"reason":"stop.outsideItsDomain.meta.title","roadmap":"t_b000000000000001"}',
+                          '{"reason":"stop.outsideItsDomain.pointer.opens","roadmap":"t_a000000000000001"}'])
+        self.assertEqual(query(url, "select count(*) from roadmap_trees"), "0")
+
     def test_a_roadmap_with_no_owner_it_was_not_told_to_expect_stops_the_move(self):
         url = own_database(self, "ownerless")
         env = {key: value for key, value in self.env.items() if key != "ROADMAP_ADOPTION_EXPECTED_OWNERLESS"}

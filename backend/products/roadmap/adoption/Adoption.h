@@ -137,10 +137,12 @@ struct OldRoadmap {
   bool operator==(const OldRoadmap&) const = default;
 };
 
-// Every roadmap, and the id of every account (users.id as text).
+// Every roadmap, the id of every account (users.id as text), and how many rows of each kind name a roadmap no `trees`
+// row holds, by kind: `steps`, `links`, `kinds`, `marks`.
 struct OldDatabase {
   std::vector<OldRoadmap> roadmaps;
   std::set<std::string> accounts;
+  std::map<std::string, std::uint64_t> rowsOfNoRoadmap;
 };
 
 // What the move is told: the roadmaps with no owner it adopts under the house account, and when it started.
@@ -274,11 +276,15 @@ struct Plan {
   std::vector<OwnerPlan> owners;
   Tally tally;
   Tally stops;
+  // The stops the plan found itself, each with the roadmap it came from, for the private record alone.
+  std::vector<std::pair<std::string, std::string>> stoppedBy;
 
   bool stopped() const { return !stops.empty(); }
 };
 
-// The plan of every roadmap the survey reads, or of those among `only` alone. A plan of a stopped survey is empty.
+// The plan of every roadmap the survey reads, or of those among `only` alone. A plan of a stopped survey is empty. Every
+// register it writes is held to its field's domain as admission holds a write (Registry::admitsValue): a value outside it,
+// past a bound, or a reference outside its type's id pattern stops the move, counted by type and field.
 Plan plan(const Survey& survey, const std::optional<std::set<std::string>>& only = std::nullopt);
 
 }

@@ -241,6 +241,11 @@ OldDatabase PgAdoption::oldTables() {
   txn.exec("set local statement_timeout = 0");
   OldDatabase database{.roadmaps = roadmapsIn(txn, std::nullopt)};
   for (const auto& row : txn.exec("select id::text from users")) database.accounts.insert(row[0].as<std::string>());
+  for (const auto& [kind, table] : std::map<std::string, std::string>{{"steps", "tree_nodes"}, {"links", "tree_edges"},
+                                                                      {"kinds", "tree_kinds"}, {"marks", "node_progress"}}) {
+    const pqxx::result rows = txn.exec("select count(*) from " + table + " r where not exists (select 1 from trees t where t.id = r.tree_id)");
+    database.rowsOfNoRoadmap[kind] = rows[0][0].as<std::uint64_t>();
+  }
   return database;
 }
 
