@@ -1655,6 +1655,52 @@ test('an open anonymous tree resolves its overlay separately for each bound acco
   } finally { engine.close(); }
 });
 
+test('a tree unsubscribed before its subscribe resolves stays closed, neither pulled nor followed, and opens with the next subscribe', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const pulled = () => env.requests.filter(({ endpoint, request }) => endpoint === 'pull' && request.scopes.some(({ scope }) => scope === tree)).length;
+  const reading = () => ({ open: engine.openScopes.has(tree), scopes: engine.scopes(), pulled: pulled(), sockets: env.sockets.length });
+  try {
+    await Promise.all([engine.subscribe(tree), engine.unsubscribe(tree)]);
+    await engine.pull();
+    const closed = reading();
+    await engine.subscribe(tree);
+    await engine.pull();
+    assert.deepEqual({ closed, reopened: reading() },
+      { closed: { open: false, scopes: [], pulled: 0, sockets: 0 }, reopened: { open: true, scopes: [tree], pulled: 1, sockets: 1 } });
+  } finally { engine.close(); }
+});
+
+test('an anon replica whose last tree is unsubscribed has nothing to pull, and its puller run still ends following it on the live socket', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  try {
+    await engine.subscribe(tree);
+    await engine.pull();
+    const socket = env.sockets.at(-1);
+    socket.readyState = 1;
+    socket.onopen();
+    const followed = [...engine.live.following];
+    const pulls = env.requests.filter(({ endpoint }) => endpoint === 'pull').length;
+    await engine.unsubscribe(tree);
+    env.timers.advance(0);
+    await until(() => socket.readyState === 3);
+    assert.deepEqual({ followed, following: [...engine.live.following], sent: socket.sent, running: engine.live.running,
+      pulls: env.requests.filter(({ endpoint }) => endpoint === 'pull').length - pulls },
+    { followed: [tree], following: [], sent: [{ op: 'sub', scopes: [tree] }, { op: 'unsub', scopes: [tree] }], running: false, pulls: 0 });
+  } finally { engine.close(); }
+});
+
 test('an opted act journals in IndexedDB, and its Undo survives a reopen, reports its wait and settles through the reference server', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A';

@@ -75,6 +75,7 @@ export class BrowserSyncEngine {
     this.views = new Map();
     this.noticeViews = new Map();
     this.openScopes = new Set();
+    this.openings = new Map();
     this.peerScopes = new Map();
     this.doubts = new Doubts();
     this.wait = new SenderWait(this.limits);
@@ -390,10 +391,14 @@ export class BrowserSyncEngine {
     return subscriptionsOf(replica, this.registry, products, opened);
   }
 
+  // A scope opens only under the opening its subscribe began in: an unsubscribe called before the subscribe resolves ends
+  // that opening, so the scope stays closed, neither pulled nor followed.
   async subscribe(scope) {
     if (this.registry.scopeKindOf(scope) !== 'tree') throw new CommitError('only readable trees may be opened');
+    if (!this.openings.has(scope)) this.openings.set(scope, Symbol(scope));
+    const opening = this.openings.get(scope);
     const result = await this.write(null, (device) => subscribe(device.activeReplica, scope));
-    if (result !== 'gone') this.openScopes.add(scope);
+    if (result !== 'gone' && this.openings.get(scope) === opening) this.openScopes.add(scope);
     this.announceScopes();
     for (const observation of this.views.values()) observation.refresh(this.device.activeReplica);
     const overlay = `self/overlay/${scope.slice('tree/'.length)}`;
@@ -402,6 +407,7 @@ export class BrowserSyncEngine {
   }
 
   unsubscribe(scope) {
+    this.openings.delete(scope);
     this.openScopes.delete(scope);
     this.announceScopes();
     this.kickPull();
@@ -897,7 +903,9 @@ export class BrowserSyncEngine {
         }
         return request;
       });
-      if (!request) return;
+      // A run with nothing to pull still keeps the socket in step with the set it reconciled, so a scope that left it is
+      // no longer followed (engine.md §7.9 Following).
+      if (!request) { this.follow(); return; }
       const { response, timing } = await this.request('pull', request);
       if (response.status === 426) return;
       this.validateResponse('pull', response, request);
