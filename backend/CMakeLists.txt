@@ -4,6 +4,11 @@ project(windmill_backend C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# GCC, which builds production, refuses designated initializers out of declaration order; clang only warns.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=reorder-init-list>)
+endif()
+
 # An unset build type means -O0, and -O0's fat un-inlined frames overflow drogon's ~512 KB
 # worker-thread stack once a request handler calls a few layers deep (Caller -> Api -> Service ->
 # Pg -> pqxx) — corrupting by-value return slots (a page read back as an empty/garbage struct) with
