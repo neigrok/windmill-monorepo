@@ -256,6 +256,7 @@ Survey::Survey(OldDatabase database, Expectation expectation)
     tally_.add("kept.activityLines", roadmap.activity);
     if (roadmap.parent) tally_.add(surveyed.stands ? "subtrees.standing" : "subtrees.hidden");
     if (roadmap.unreadableDocument) stop(id, "stop.unreadableDocument");
+    for (std::uint64_t repeated = 0; repeated < roadmap.repeatedDocumentIds; ++repeated) stop(id, "stop.idRepeatedInAWholeDocument");
     for (const OldStep& step : roadmap.steps) {
       if (!inIdDomain(step.id)) stop(id, "stop.stepIdOutsideItsDomain");
       if (step.status.value.isString() && !kStatuses.contains(step.status.value.asString())) stop(id, "stop.unknownStepStatus");

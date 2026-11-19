@@ -123,8 +123,10 @@ struct OldRoadmap {
   std::string root;
   std::int64_t depth = 0;
   bool wholeDocument = false;
-  // A whole document whose shape the old server could not read either.
+  // A whole document whose shape the old server could not read either, and how many of its steps and kinds repeat an id
+  // one before it holds.
   bool unreadableDocument = false;
+  std::uint64_t repeatedDocumentIds = 0;
   // Its share card and video, keyed by its id, and how many lines its activity feed holds: kept as they are.
   bool ogImage = false;
   bool ogVideo = false;

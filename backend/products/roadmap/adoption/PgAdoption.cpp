@@ -66,7 +66,8 @@ OldRegister documentRegister(const Json::Value& record, const char* name, const 
 
 // A roadmap that holds no row, unfolded from its whole document as the old server unfolds it (graphStateFromJson and
 // legendStateFromJson), keeping each stamp's text for §8.1 to read. A document whose shape that reading refuses — a step
-// without a string id, an `opens` that names no tree — is marked unreadable, which stops the move.
+// without a string id, an `opens` that names no tree — is marked unreadable, and a step or kind repeating an id one before
+// it holds is counted, either of which stops the move.
 void unfold(OldRoadmap& roadmap, const Json::Value& document) {
   if (!document.isObject()) {
     roadmap.unreadableDocument = true;
@@ -77,9 +78,14 @@ void unfold(OldRoadmap& roadmap, const Json::Value& document) {
     if (!items.isNull() && !items.isArray()) roadmap.unreadableDocument = true;
     return items.isArray() ? items : Json::Value(Json::arrayValue);
   };
+  std::set<std::string> steps;
   for (const Json::Value& n : list("nodes")) {
     if (!n.isObject() || !n["id"].isString() || (!n["opens"].isNull() && !n["opens"].isString())) {
       roadmap.unreadableDocument = true;
+      continue;
+    }
+    if (!steps.insert(n["id"].asString()).second) {
+      ++roadmap.repeatedDocumentIds;
       continue;
     }
     OldStep step{.id = n["id"].asString(), .added = stampIn(n, "createdAt"), .removed = stampIn(n, "deletedAt")};
@@ -100,9 +106,14 @@ void unfold(OldRoadmap& roadmap, const Json::Value& document) {
     }
     roadmap.links.push_back(OldLink{e["from"].asString(), e["to"].asString(), stampIn(e, "addedAt"), stampIn(e, "removedAt")});
   }
+  std::set<std::string> kinds;
   for (const Json::Value& k : list("kinds")) {
     if (!k.isObject() || !k["id"].isString()) {
       roadmap.unreadableDocument = true;
+      continue;
+    }
+    if (!kinds.insert(k["id"].asString()).second) {
+      ++roadmap.repeatedDocumentIds;
       continue;
     }
     OldKind kind{.id = k["id"].asString(), .added = stampIn(k, "createdAt"), .removed = stampIn(k, "deletedAt")};

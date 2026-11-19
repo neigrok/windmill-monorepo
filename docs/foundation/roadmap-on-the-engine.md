@@ -355,7 +355,7 @@ tables, stopping where they differ from those it planned from.
 - A roadmap stored only as a whole document is unfolded into rows first, by the old server's own
   reading as it opens the roadmap; the time each roadmap last changed is kept as it was before the
   move. One whose stamps it cannot read is unfolded by the move, each stamp's text kept for the rules
-  above.
+  above; a step or kind in it repeating an id stops the move.
 - Marks move to their owners' overlays, a row each, a cleared `none` among them.
 - **What is not adopted,** each counted by the audit: a step, link, kind or mark of a roadmap no row
   holds; a mark whose owner is no account; a link to or from an id no adopted step holds, and a link

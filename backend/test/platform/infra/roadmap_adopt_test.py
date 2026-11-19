@@ -378,6 +378,17 @@ class AdoptionTest(ToolTest):
                           '{"reason":"stop.outsideItsDomain.pointer.opens","roadmap":"t_a000000000000001"}'])
         self.assertEqual(query(url, "select count(*) from roadmap_trees"), "0")
 
+    def test_an_id_repeated_in_a_whole_document_the_move_unfolds_stops_it(self):
+        url = own_database(self, "repeated", """update trees set document = '{"nodes": [
+            {"id": "only", "createdAt": "1740000000000:70:r_scribbler", "label": "Only", "labelAt": 17},
+            {"id": "only", "createdAt": "1740000000000:71:r_scribbler", "label": "Again", "labelAt": "1740000000000:71:r_scribbler"}]}'
+            where id = 't_e000000000000002';""")
+        for stage in ("unfold", "before", "adopt"):
+            result, reports = self.run_tool(url, stage)
+        self.assertEqual(result.returncode, 3, result.stderr.decode())
+        self.assertEqual((reports[0]["verdict"], reports[0]["counts"]["stop"]), ("stops", {"idRepeatedInAWholeDocument": 1}))
+        self.assertEqual(query(url, "select count(*) from roadmap_trees"), "0")
+
     def test_a_roadmap_with_no_owner_it_was_not_told_to_expect_stops_the_move(self):
         url = own_database(self, "ownerless")
         env = {key: value for key, value in self.env.items() if key != "ROADMAP_ADOPTION_EXPECTED_OWNERLESS"}
