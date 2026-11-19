@@ -346,6 +346,14 @@ class AdoptionTest(ToolTest):
                          f'{{"owner":"{SCRIBBLER}","reason":"storeRefusedARow","roadmap":"t_e000000000000001"}}\n')
         self.assert_names_nothing(result)
 
+    def test_a_roadmap_of_more_steps_than_a_page_answers_the_same_whole(self):
+        url = own_database(self, "pages", "insert into tree_nodes (tree_id, node_id, created_hlc, label, label_hlc, present) "
+                                          "select 't_b000000000000001', 's' || lpad((2000 - k)::text, 5, '0'), '1740000000000:' || k || ':r_reader', "
+                                          "'Step ' || k, '1740000000000:' || k || ':r_reader', true from generate_series(100, 1199) k;")
+        result, reports = self.run_tool(url, "all")
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual((reports[6]["verdict"], reports[6]["counts"]["same"]["mcp"]), ("same", {"getProgress": 6, "getTree": 6, "listTrees": 2}))
+
     def test_a_roadmap_with_no_owner_it_was_not_told_to_expect_stops_the_move(self):
         url = own_database(self, "ownerless")
         env = {key: value for key, value in self.env.items() if key != "ROADMAP_ADOPTION_EXPECTED_OWNERLESS"}

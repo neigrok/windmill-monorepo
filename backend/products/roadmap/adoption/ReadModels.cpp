@@ -109,6 +109,22 @@ Json::Value answered(const std::function<Json::Value()>& ask) {
 
 bool failed(const Json::Value& answer) { return answer.isString() && answer.asString().rfind("failed: ", 0) == 0; }
 
+// get_tree's every page, one after another, its steps gathered and its cursor dropped: each server pages a roadmap's
+// steps in an order of its own, so the pages compare only whole.
+Json::Value wholeTree(ToolHost& host, Json::Value arguments, const UserId& caller, std::optional<std::int64_t>& seq) {
+  Json::Value answer = told(host, "get_tree", arguments, caller, seq);
+  while (answer["value"].isObject() && answer["value"]["nextCursor"].isString()) {
+    arguments["cursor"] = answer["value"]["nextCursor"];
+    std::optional<std::int64_t> pageSeq;
+    const Json::Value page = told(host, "get_tree", arguments, caller, pageSeq);
+    if (!page["value"].isObject() || !page["value"]["tree"]["nodes"].isArray()) return page;
+    for (const Json::Value& node : page["value"]["tree"]["nodes"]) answer["value"]["tree"]["nodes"].append(node);
+    answer["value"]["nextCursor"] = page["value"].get("nextCursor", Json::Value());
+  }
+  if (answer["value"].isObject()) answer["value"].removeMember("nextCursor");
+  return answer;
+}
+
 // MCP's steps by id: the engine's tools list a roadmap's steps in its order, the rooms' by id.
 Json::Value stepsById(Json::Value answer) {
   const Json::Value& value = answer["value"];
@@ -177,7 +193,7 @@ std::vector<Json::Value> answersOf(ReadModelSide& side, const Survey& survey) {
     tree["kindFields"] = list({"id", "hue", "label", "description"});
     tree["limit"] = kPageLimit;
     answers.ask("mcp.getTree", id, readable,
-                [&](ReadModelSide& on, std::optional<std::int64_t>& seq) { return stepsById(told(on.mcp, "get_tree", tree, owner, seq)); });
+                [&](ReadModelSide& on, std::optional<std::int64_t>& seq) { return stepsById(wholeTree(on.mcp, tree, owner, seq)); });
     Json::Value progress(Json::objectValue);
     progress["treeId"] = id;
     progress["fields"] = list({"completed", "cleared", "outOfOrder"});

@@ -30,7 +30,7 @@ struct ReadModelSide {
 };
 
 // For each adopted roadmap, as a stranger: the progress the route answers and what the share page names of it; and as its
-// owner: MCP's get_tree with every field and its edges, guides and kinds, get_progress, the progress, the activity's
+// owner: MCP's get_tree with every field and its edges, guides and kinds, every page of it, get_progress, the progress, the activity's
 // last lines and the share page. For each owner, list_trees and reminders' readiness; and the gallery once. A roadmap the
 // house account owns is asked a stranger's questions alone, its activity among them: nobody signs in as the house. One
 // line an answer: the question, its subject, whether the old server reads that subject today, the answer, and an MCP
