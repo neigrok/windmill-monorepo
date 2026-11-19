@@ -889,9 +889,10 @@ async function run(mode, browser) {
     assert.ok(events > 0, 'the room’s events reached the local intake');
     const kept = Number(sql("select count(distinct name) from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')").toString().match(/\d+/)?.[0] ?? 0);
     assert.equal(kept, mode === 'on' ? 2 : 0, 'the kept list’s events reached the local intake only with the switch on');
-    const carried = sql("select coalesce(string_agg(distinct props->>'stage', ',' order by props->>'stage'), '') from events where name = 'roadmap_carry'")
-      .toString().match(/(?:carried|cleared|found|waiting)(?:,(?:carried|cleared|found|waiting))*/)?.[0] ?? '';
-    assert.equal(carried, mode === 'on' ? 'carried,cleared,found' : '', 'the carry-over’s stages reached the local intake only with the switch on');
+    const stages = sql("select coalesce(string_agg(distinct props->>'stage', ',' order by props->>'stage'), '') as stages from events where name = 'roadmap_carry'")
+      .toString().split('\n').map((line) => line.trim()).find((line) => line !== 'stages' && /^[a-z]+(?:,[a-z]+)*$/.test(line))?.split(',') ?? [];
+    assert.deepEqual(['carried', 'cleared', 'discarded', 'found'].filter((stage) => stages.includes(stage)), mode === 'on' ? ['carried', 'cleared', 'found'] : [],
+      'the carry-over’s stages reached the local intake only with the switch on, a fresh browser’s first run waiting for its sign-in');
     const undone = sql("select coalesce(string_agg(distinct (props->>'action') || ':' || (props->>'outcome'), ',' order by (props->>'action') || ':' || (props->>'outcome')), '') from events where name = 'roadmap_undo'")
       .toString().match(/(?:undo|redo):[a-z]+(?:,(?:undo|redo):[a-z]+)*/)?.[0] ?? '';
     assert.equal(undone, mode === 'on' ? 'redo:applied,undo:applied' : '', 'what the room’s Undo and Redo came to reached the local intake only with the switch on');

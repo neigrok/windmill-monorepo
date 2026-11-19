@@ -29,7 +29,7 @@ point for the component showcase.
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, authored starter roadmaps and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
 | `kept/` | The one list of what cannot land (§6, flow 49), where the room reads the device's copy: roadmap's notices in every scope read by the domain, and the records the carry-over set aside, each a kept change in the list's words, offered from the shell's account menu and shown as a dialog or as pages; `RoadmapSession.jsx` mounts it beside every room |
-| `carry/` | The carry-over (§8.2), where the room reads the device's copy: what the old bundle's stores hold (`OldStores.js`, the stores read through their own classes) and what each roadmap's entries come to as the domain's acts, and the run (`CarryOver.js`) that moves them into the replica under a browser lock with its ledger and deletes each entry once carried; `RoadmapSession.jsx` starts it on every load |
+| `carry/` | The carry-over (§8.2), where the room reads the device's copy: what the old bundle's stores hold (`OldStores.js`, the stores read through their own classes) and what each roadmap's entries come to as the domain's acts, and the run (`CarryOver.js`) that moves each roadmap only into the replica it belongs to, under a browser lock with its ledger, and deletes each entry once carried or once its account's Discard takes it; `RoadmapSession.jsx` starts it on every load and again as each replica becomes active |
 | `tending/`, `reminders/`, `settings/` | Ask AI, reminder preferences and account data export |
 | `marketing/` | Product landing, metadata and self-playing scenes |
 

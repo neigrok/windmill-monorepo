@@ -155,8 +155,8 @@ const queued = (engine) => engine.device.activeReplica.outbox.filter((entry) => 
 
 // The old bundle plants a roadmap with nobody signed in, as its new-roadmap door does from a paste, and marks a step in
 // its room; it keeps a workspace on two steps, and a mark left undrained from before roadmap's present sync.
-async function plantedSignedOut() {
-  globalThis.window.wmDeviceConfirmation = { owner: null };
+async function plantedSignedOut(owner = null) {
+  globalThis.window.wmDeviceConfirmation = { owner };
   const id = await bearImportedTree({ title: 'Learn to sail', kinds: DEFAULT_KINDS, nodes: [
     { id: 'wind', label: 'Read the wind', color: 'olive', prerequisites: [] },
     { id: 'dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['wind'], description: 'Quietly, at slack water' },
@@ -286,10 +286,8 @@ test('a claim cut short, a roadmap made signed out that the server already holds
   const disk = browser(t);
   const server = new Server();
   const id = await plantedSignedOut();
-  const phone = await device(t, server, 'A');
-  const claimed = new CarriedRoadmap(id, { title: 'Learn to sail', guide: '', kinds: DEFAULT_KINDS, steps: [], links: [] }, roadmapRegistry, runner(phone).moment());
-  assert.equal((await runner(phone).runAct(new CarryRoadmap(id, claimed))).kind, 'committed');
-  await sent(phone);
+  await servedAs(t, server, 'A', id);
+  await claimAnswered(id);
   const engine = await tab(t, disk, server, 'A');
   await until(engine, () => holding(engine, id).listed, 'the account’s list');
   const { carry, reported } = carryOver(disk);
@@ -318,6 +316,19 @@ async function pointingAt(sail) {
   return row;
 }
 
+// The old bundle's claim of a roadmap made signed out, cut short once the server had answered it: its session took the
+// server's graft of the roadmap the claim created, its title and genesis legend, and sent nothing the server confirmed.
+async function claimAnswered(id) {
+  const at = '1700000000000:0:server';
+  const claim = new SyncSession({ treeId: id, title: 'Learn to sail' });
+  await claim.start();
+  claim.receiveState({ t: 'subgraph', intent: 'graft', seq: 1, reach: 'writer', title: { v: 'Learn to sail', at }, nodes: [], edges: [],
+    kinds: DEFAULT_KINDS.map((kind, rank) => ({ id: kind.id, createdAt: at, hue: kind.hue, hueAt: at, label: kind.label, labelAt: at,
+      description: kind.description, descriptionAt: at, rank, rankAt: at })) });
+  await claim.persistNow();
+  claim.close();
+}
+
 // A roadmap the server keeps under `id` for `account`, planted on that account's other device.
 async function servedAs(t, server, account, id) {
   const phone = await device(t, server, account);
@@ -327,12 +338,12 @@ async function servedAs(t, server, account, id) {
   return phone;
 }
 
-test('a roadmap made signed out whose id the person deleted on the server is created under a fresh id, and the device’s pointers at it move with it', async (t) => {
+test('a claim cut short whose roadmap the person deleted on the server is created under a fresh id in their account', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const sail = await plantedSignedOut();
-  const row = await pointingAt(sail);
   const phone = await servedAs(t, server, 'A', sail);
+  await claimAnswered(sail);
   const deleted = await runner(phone).runAct(new DeleteRoadmap(sail));
   for (const segment of deleted.receipt.segments) for (const localId of segment.localIds) await phone.release(localId);
   await sent(phone);
@@ -340,17 +351,17 @@ test('a roadmap made signed out whose id the person deleted on the server is cre
   const { carry, reported, tracked } = carryOver(disk);
   await carry.run(engine);
   const fresh = CarriedIds.roadmap(sail);
-  assert.deepEqual({ sail: holding(engine, fresh).steps.length, kept: holding(engine, sail).listed, row: holding(engine, row).steps, pointers: holding(engine, row).pointers },
-    { sail: 3, kept: false, row: [['sea', 'Row out to sea']], pointers: [['sea', fresh]] });
+  assert.deepEqual({ sail: holding(engine, fresh).steps.length, kept: holding(engine, sail).listed }, { sail: 3, kept: false });
   assert.equal(tracked.find(({ stage }) => stage === 'carried').moved, '1');
   assert.deepEqual(await oldStores(), NOTHING_OLD);
   assert.deepEqual(reported, []);
 });
 
-test('signed out, a roadmap made here whose id the server serves for another account is created under a fresh id', async (t) => {
+test('signed out, a roadmap made here whose id the server serves for another account is created under a fresh id, and the device’s pointers at it move with it', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const sail = await plantedSignedOut();
+  const row = await pointingAt(sail);
   const phone = await servedAs(t, server, 'B', sail);
   assert.equal((await runner(phone).runAct(new SetVisibility(sail, 'public'))).kind, 'committed');
   await sent(phone);
@@ -358,7 +369,8 @@ test('signed out, a roadmap made here whose id the server serves for another acc
   const { carry, reported } = carryOver(disk);
   await carry.run(engine);
   const fresh = CarriedIds.roadmap(sail);
-  assert.deepEqual({ fresh: holding(engine, fresh).steps.length, theirs: holding(engine, sail).listed }, { fresh: 3, theirs: false });
+  assert.deepEqual({ fresh: holding(engine, fresh).steps.length, theirs: holding(engine, sail).listed, pointers: holding(engine, row).pointers },
+    { fresh: 3, theirs: false, pointers: [['sea', fresh]] });
   assert.deepEqual(await oldStores(), NOTHING_OLD);
   assert.deepEqual(reported, []);
 });
@@ -471,7 +483,7 @@ test('the ledger holds a person’s words, so a sign-out’s Keep keeps it with 
   for (const choice of ['keep', 'discard']) {
     const disk = browser(t);
     const server = new Server();
-    const id = await plantedSignedOut();
+    const id = await plantedSignedOut('A');
     const engine = await tab(t, disk, server, 'A');
     await carryOver(disk).carry.run(engine);
     await sent(engine);
@@ -537,3 +549,79 @@ test('signed out, then signed in to an account that holds no roadmaps: what was 
   for (const scope of [RoadmapScopes.tree(id)]) await phone.subscribe(scope);
   await until(phone, () => JSON.stringify(holding(phone, id)) === JSON.stringify(before), 'the carried roadmap on another device');
 });
+
+// The carry-over of a tab, started as the app starts it: once the engine stands and again as each replica becomes active.
+function started(t, disk, engine) {
+  const carrying = carryOver(disk, { session: { getSnapshot: () => ({ engine, ready: true }), subscribe: () => () => {} } });
+  carrying.carry.start();
+  t.after(() => carrying.carry.stop());
+  return carrying;
+}
+
+test('a claim the server answered goes only to the account whose list holds it: never into the anon replica, nor another account’s', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  await servedAs(t, server, 'A', id);
+  await claimAnswered(id);
+  const engine = await tab(t, disk, server);
+  const { carry, tracked } = started(t, disk, engine);
+  await carry.running;
+  assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync, queued: queued(engine) }, { listed: false, old: [id], queued: 0 }, 'signed out');
+  engine.transport.account = 'B';
+  assert.equal((await engine.signIn('B')).complete, true);
+  await carry.running;
+  assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync }, { listed: false, old: [id] }, 'signed in as another account');
+  await engine.finishSignOut({ choice: 'keep' });
+  engine.transport.account = null;
+  await carry.running;
+  engine.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await carry.running;
+  assert.deepEqual({ steps: holding(engine, id).steps, old: await oldStores() },
+    { steps: [['dock', 'Leave the dock'], ['solo', 'Sail solo'], ['wind', 'Read the wind']], old: NOTHING_OLD }, 'signed in as the account that claimed it');
+  assert.deepEqual(tracked.map(({ stage }) => stage), ['found', 'waiting', 'found', 'waiting', 'found', 'waiting', 'found', 'carried', 'cleared']);
+});
+
+test('a roadmap made signed out waits while an account is signed in, for the lineage rule to ask of it, and is carried into the anon replica once signed out', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  const engine = await tab(t, disk, server, 'A');
+  const { carry } = started(t, disk, engine);
+  await carry.running;
+  assert.deepEqual({ listed: holding(engine, id).listed, old: (await oldStores()).sync }, { listed: false, old: [id] });
+  await engine.finishSignOut({ choice: 'keep' });
+  engine.transport.account = null;
+  await carry.running;
+  assert.deepEqual({ state: engine.getSnapshot().state, steps: holding(engine, id).steps.length, old: await oldStores() }, { state: 'anon', steps: 3, old: NOTHING_OLD });
+});
+
+for (const choice of ['keep', 'discard']) {
+  test(`an account's roadmap left uncarried at its sign-out ${choice === 'keep' ? 'waits with its replica, and is carried once the account signs in again' : 'goes with its Discard, carried nowhere'}`, async (t) => {
+    const disk = browser(t);
+    const server = new Server();
+    const { tree, steps } = await plantedOnServer(t, server);
+    await editedOffline(tree, steps);
+    const engine = await tab(t, disk, server, 'A');
+    engine.setOnline(false);
+    const { carry, tracked } = started(t, disk, engine);
+    await carry.running;
+    assert.deepEqual({ old: (await oldStores()).sync, stages: tracked.map(({ stage }) => stage) }, { old: [tree], stages: ['found', 'waiting'] }, 'with no connection it waits');
+    await engine.finishSignOut({ choice });
+    engine.transport.account = null;
+    await carry.running;
+    if (choice === 'discard') {
+      assert.deepEqual({ old: await oldStores(), queued: queued(engine), stages: tracked.slice(2).map(({ stage }) => stage) },
+        { old: NOTHING_OLD, queued: 0, stages: ['found', 'discarded', 'cleared'] });
+      return;
+    }
+    assert.deepEqual({ old: (await oldStores()).sync, queued: queued(engine) }, { old: [tree], queued: 0 }, 'signed out, nothing of it reaches the anon replica');
+    engine.setOnline(true);
+    engine.transport.account = 'A';
+    assert.equal((await engine.signIn('A')).complete, true);
+    await carry.running;
+    assert.deepEqual({ steps: holding(engine, tree).steps.map(([, label]) => label).sort(), old: await oldStores() },
+      { steps: ['Grip the oars lightly', 'Pull a stroke', 'Row a mile'], old: NOTHING_OLD });
+  });
+}

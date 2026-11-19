@@ -2,13 +2,16 @@
 // active, under one browser lock across tabs, what roadmap's old bundle kept moves into the engine's replica through
 // the domain's actions, and each old entry goes once the ledger in the replica shows it carried (INV-4).
 //
-// Where a roadmap goes. One made signed out goes to the replica its row names: the active one where it names nobody, as
-// the claim the old bundle had begun, and that account's where it names one, waiting until that account is signed in.
-// The browser first asks the server whether its id exists: an id the server does not hold becomes a creation under that
-// id; one the person's list holds is carried as changes to it; one the server holds for someone else, or as spent, is
-// created under a fresh id derived from the old one, and the device's pointers at it move with it. A roadmap the server
-// keeps carries its unsent changes to the account its row names, after that roadmap's first pull; one gone from the
-// person's list keeps its worded changes for the one list. A roadmap that cannot be placed yet waits for a later load.
+// Where a roadmap goes: only to the replica it belongs to, so nothing reaches an account without the lineage rule's
+// question. One made signed out that names nobody goes to the anon replica, and waits while an account is signed in;
+// one that names an account, to that account's. One the server answered a claim for (its record holds what the server
+// confirmed) goes only to the account whose list holds it, or that deleted it. The browser first asks the server whether
+// the id exists: an id the server does not hold becomes a creation under that id; one the person's list holds is carried
+// as changes to it; one the server holds for someone else, or as spent, is created under a fresh id derived from the old
+// one, and the device's pointers at it move with it. A roadmap the server keeps carries its unsent changes to the account
+// its row names, or whose list holds it, after that roadmap's first pull; one gone from the account's list keeps its
+// worded changes for that account's one list. An account's roadmaps wait while the device keeps that account's replica,
+// and go uncarried once the carry-over sees its sign-out's Discard take it. A roadmap that cannot be placed yet waits.
 //
 // What cannot land. Each roadmap's acts are written as one composed act with the ledger last; a part the domain refuses
 // is set aside, in the ledger's one list where it is past a bound, past a cap, of a roadmap deleted or of one no longer
@@ -18,7 +21,6 @@ import { Id } from '../../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
 import { FixedZone } from '../../../platform/domain-kit/time.js';
 import { syncSession } from '../../../platform/sync/session.js';
-import { restoredDeviceHolder } from '../../../shell/auth/accountChange.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
 import { CarriedIds, CarryLedger, RecordCarry, carryLedgerOf, kept } from '../domain/carry.js';
@@ -37,6 +39,12 @@ const ANSWER_MS = 10_000;
 
 // The carry-over's acts read no local date.
 const ZONE = new FixedZone(0);
+
+// The account whose replica is active: the one the carry-over writes into, null signed out.
+function activeAccount(engine) {
+  const { state, account } = engine.device.activeReplica.meta;
+  return state === 'bound' ? account : null;
+}
 
 // The one list's reason for a part the domain refused, or null for one dropped.
 function keptReason(refusal) {
@@ -58,6 +66,7 @@ export class CarryOver {
     this.report = report;
     this.track = track;
     this.carried = null;
+    this.account = null;
     this.running = Promise.resolve();
     this.stops = [];
   }
@@ -80,21 +89,27 @@ export class CarryOver {
     for (const stop of this.stops.splice(0)) stop();
   }
 
+  // A run for each replica that becomes active. Where the account carried for last left no replica behind, its sign-out
+  // was a Discard, which takes that account's uncarried roadmaps too.
   consider() {
     const { engine } = this;
     const { replica, pendingSignIn } = engine.getSnapshot();
     if (pendingSignIn || engine.signingOut || engine.device?.meta?.signOut || replica === this.carried) return;
+    const account = activeAccount(engine);
+    const discarded = this.account !== null && this.account !== account && !engine.device.replicas.some((each) => each.meta.account === this.account) ? this.account : null;
     this.carried = replica;
-    this.running = this.running.then(() => this.run(engine)).catch((error) => this.report('roadmap-carry-write', error, { stage: 'run', ...failureTags(error) }));
+    this.account = account;
+    this.running = this.running.then(() => this.run(engine, discarded)).catch((error) => this.report('roadmap-carry-write', error, { stage: 'run', ...failureTags(error) }));
   }
 
-  // One carry-over, the only one on this browser while it runs.
-  run(engine) {
+  // One carry-over, the only one on this browser while it runs. `discarded` names the account whose sign-out's Discard
+  // the carry-over saw, or null.
+  run(engine, discarded = null) {
     if (!this.locks) return Promise.resolve();
-    return this.locks.request(CARRY_LOCK, () => this.carry(engine));
+    return this.locks.request(CARRY_LOCK, () => this.carry(engine, discarded));
   }
 
-  async carry(engine) {
+  async carry(engine, discarded) {
     const { roadmaps, unread } = await this.stores.read();
     for (const { store, error } of unread) this.report('roadmap-carry-read', error, { store, ...failureTags(error) });
     if (roadmaps.length === 0) return;
@@ -102,20 +117,21 @@ export class CarryOver {
       changed: countBucket(roadmaps.filter((each) => !each.madeSignedOut && each.changed).length),
       workspaces: countBucket(roadmaps.filter((each) => each.workspace !== null).length), marks: countBucket(roadmaps.filter((each) => each.marks !== null).length) });
     const runner = new ActionRunner(new EngineReplica(engine), engine.registry, ZONE);
-    const account = restoredDeviceHolder(engine);
+    const account = activeAccount(engine);
     if (!await this.pulled(engine, [RoadmapScopes.account])) {
       this.track('roadmap_carry', { stage: 'waiting', roadmaps: countBucket(roadmaps.length) });
       return;
     }
     const fates = new Map();
-    for (const roadmap of roadmaps) fates.set(roadmap, await this.fateOf(engine, runner, roadmap, account));
+    for (const roadmap of roadmaps) fates.set(roadmap, await this.fateOf(engine, runner, roadmap, { account, discarded }));
     const moved = new Map(runner.read(RoadmapScopes.account, (read) => Object.entries(read.devices('carry:'))
       .map(([key, row]) => [key.slice('carry:'.length), CarryLedger.of(row).to]).filter(([, to]) => to !== null)));
     for (const [roadmap, fate] of fates) if (fate.to && fate.to !== roadmap.id) moved.set(roadmap.id, fate.to);
     const opened = (tree) => moved.get(tree) ?? tree;
-    const tally = { roadmap: 0, moved: 0, change: 0, mark: 0, item: 0, kept: 0, waiting: 0, gone: 0 };
+    const tally = { roadmap: 0, moved: 0, change: 0, mark: 0, item: 0, kept: 0, waiting: 0, discarded: 0, gone: 0 };
     for (const [roadmap, fate] of fates) {
-      if (fate.kind === 'empty') {
+      if (fate.kind === 'empty' || fate.kind === 'discarded') {
+        if (fate.kind === 'discarded') tally.discarded += 1;
         tally.gone += await this.forget(roadmap);
         continue;
       }
@@ -144,6 +160,7 @@ export class CarryOver {
         marks: countBucket(tally.mark), items: countBucket(tally.item), kept: countBucket(tally.kept) });
     }
     if (tally.waiting > 0) this.track('roadmap_carry', { stage: 'waiting', roadmaps: countBucket(tally.waiting) });
+    if (tally.discarded > 0) this.track('roadmap_carry', { stage: 'discarded', roadmaps: countBucket(tally.discarded) });
     if (tally.gone > 0) this.track('roadmap_carry', { stage: 'cleared', stores: countBucket(tally.gone) });
   }
 
@@ -158,16 +175,15 @@ export class CarryOver {
     }
   }
 
-  // Where one old roadmap goes: `{ kind: 'create' | 'changes', to }`, `{ kind: 'lost', reason }` for a roadmap of the
-  // server's the person no longer holds, `{ kind: 'empty' }` for a row made signed out whose record the browser no longer
-  // holds, or `{ kind: 'wait' }`.
-  async fateOf(engine, runner, roadmap, account) {
+  // Where one old roadmap goes, in the active replica of `account` (null signed out): `{ kind: 'create' | 'changes', to }`,
+  // `{ kind: 'lost', reason }` for a roadmap of the server's the account no longer holds, `{ kind: 'empty' }` for a row
+  // made signed out whose record the browser no longer holds, `{ kind: 'discarded' }` for one of the account whose
+  // Discard the carry-over saw, or `{ kind: 'wait' }` for one that belongs to another replica or cannot be placed yet.
+  async fateOf(engine, runner, roadmap, { account, discarded }) {
     const ledger = runner.read(RoadmapScopes.account, (read) => carryLedgerOf(read, roadmap.id));
     if (ledger.to !== null) return { kind: 'changes', to: ledger.to };
     if (roadmap.madeSignedOut && roadmap.record === null) return { kind: 'empty' };
-    const owner = roadmap.owner ?? null;
-    const placed = owner === null ? roadmap.madeSignedOut || account !== null : owner === account;
-    if (!placed) return { kind: 'wait' };
+    if (typeof roadmap.owner === 'string' && roadmap.owner !== account) return roadmap.owner === discarded ? { kind: 'discarded' } : { kind: 'wait' };
     const listed = (id) => runner.read(RoadmapScopes.account, (read) => {
       const roadmaps = read.repository(Roadmap);
       if (roadmaps.record(id, 'stored')?.life?.[0] === 'alive') return 'alive';
@@ -175,15 +191,19 @@ export class CarryOver {
     });
     const held = listed(roadmap.id);
     if (!roadmap.madeSignedOut) {
+      if (account === null) return { kind: 'wait' };
       if (held === 'alive') return { kind: 'changes', to: roadmap.id };
+      if (roadmap.owner !== account) return { kind: 'wait' };
       if (held === 'spent' || (!roadmap.changed && roadmap.workspace === null)) return { kind: 'lost', reason: 'roadmapDeleted' };
       const answer = await this.ask(engine, roadmap.id);
       if (answer === null) return { kind: 'wait' };
       return { kind: 'lost', reason: answer === 'spent' ? 'roadmapDeleted' : 'accessEnded' };
     }
+    const anonymous = roadmap.owner === null && !roadmap.claimBegan;
+    if ((anonymous && account !== null) || (roadmap.claimBegan && account === null)) return { kind: 'wait' };
     if (held === 'alive') return { kind: 'changes', to: roadmap.id };
     const answer = held === 'spent' ? 'spent' : await this.ask(engine, roadmap.id);
-    if (answer === null) return { kind: 'wait' };
+    if (answer === null || (roadmap.claimBegan && answer !== 'spent')) return { kind: 'wait' };
     if (answer === 'none') return { kind: 'create', to: roadmap.id };
     const fresh = CarriedIds.roadmap(roadmap.id);
     return { kind: listed(fresh) === 'alive' ? 'changes' : 'create', to: fresh };

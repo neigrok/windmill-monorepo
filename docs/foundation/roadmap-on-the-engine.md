@@ -406,9 +406,11 @@ writes a ledger of what it carried in the replica it carried to: a device row a 
 (`carry:<T>`), written in the act that carries, which records the roadmap the old one became, the
 changes and workspace items it carried, and each record it set aside for §6's one list.
 
-- **A roadmap made signed out** goes to the replica its index row names: the active one where the
-  row names nobody, a signed-in browser's claim the old bundle had begun included, and an account's
-  once that account is signed in. The browser first asks the server whether the id exists. An id
+- **A roadmap made signed out** goes only to the replica it belongs to, so nothing reaches an
+  account but by the lineage rule: one whose index row names nobody to the `anon` replica, waiting
+  while an account is signed in; one whose row names an account to that account's. One whose claim
+  the server answered (its record holds what the server confirmed) goes only to the account whose
+  list holds it, or that deleted it. The browser first asks the server whether the id exists. An id
   the server does not hold becomes a creation that keeps every id the roadmap held. One the person's
   list holds, a claim cut short, is carried as unsent changes to it. One the server serves for
   another account, or holds as spent, is created under a new id derived from the old one, with the
@@ -416,9 +418,11 @@ changes and workspace items it carried, and each record it set aside for §6's o
   so a private id reads as one it does not hold.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
   after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
-  connection counts as made now. A roadmap gone from the person's list keeps them for §6's one list,
-  as changes to a deleted roadmap where the server holds it spent and as changes after access ended
-  otherwise.
+  connection counts as made now. They go only to the account the index row names, or whose list
+  holds the roadmap. A roadmap gone from that account's list keeps them for its §6 one list, as
+  changes to a deleted roadmap where the server holds it spent and as changes after access ended
+  otherwise. An account's roadmaps wait while the device keeps its replica; once its sign-out's
+  Discard takes the replica, they go uncarried with it.
 - **Marks** a device roadmap holds, and marks left undrained from before roadmap's present sync,
   are carried as marks; a step a claim would have marked from its seed is marked. A mark left
   undrained or found on a seed stands only where the person holds no mark of the step.

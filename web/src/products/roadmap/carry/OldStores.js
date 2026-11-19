@@ -55,6 +55,10 @@ export class OldRoadmap {
   // The account its row names: null for one made with nobody signed in, undefined where no row names one.
   get owner() { return this.index ? this.index.owner : undefined; }
 
+  // A roadmap made signed out whose claim the server answered: its record holds what the server confirmed of it, so the
+  // server keeps it for the account that claimed it.
+  get claimBegan() { return this.madeSignedOut && this.record?.confirmed?.structure != null; }
+
   // The roadmap as the old bundle showed it: its words, its kinds in their order, its present steps in the order its
   // Board drew them (`cmpOrder`), and the links among them.
   roadmap() {
