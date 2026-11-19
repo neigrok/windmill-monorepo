@@ -83,6 +83,22 @@ function recordAct(replica, registry, actId, plan, receipts) {
 }
 
 
+// A copy of the replica an act writes before it publishes: its queue, notices, device rows, journal and clocks
+// its own, its confirmed rows shared.
+function tentative(replica) {
+  return Object.assign(Object.create(Object.getPrototypeOf(replica)), replica, {
+    meta: structuredClone(replica.meta), outbox: structuredClone(replica.outbox),
+    notices: structuredClone(replica.notices), device: structuredClone(replica.device), journal: structuredClone(replica.journal),
+  });
+}
+
+// A segment's scope hydrated before it is read or written, with a tree's or overlay's governing product scope.
+function ensureSegmentScope(ctx, scope) {
+  ctx.ensureScope?.(scope);
+  if (['tree', 'overlay'].includes(ctx.registry.scopeKindOf(scope)) && ctx.registry.governingType)
+    ctx.ensureScope?.(`self/${ctx.registry.productOfScopeKind(ctx.registry.governingType.scope)}`);
+}
+
 function newActScope(replica, registry, scope) {
   const kind = registry.scopeKindOf(scope);
   if (kind !== 'tree' && kind !== 'overlay') return false;
@@ -95,7 +111,13 @@ function newActScope(replica, registry, scope) {
 }
 
 // The storage edge may resume after hydrating a demanded scope in the same transaction. Preparation
-// finishes once; ordered segments start only after their scopes are hydrated.
+// finishes once; ordered segments start only after their scopes are hydrated. A composed act decides in parts
+// while it prepares: `stage` commits a part's segment to a tentative copy of the replica and answers its local
+// refusal, if any, and `beginPart` opens the next part's load, which reads, and draws identities, through every
+// segment staged so far. The tentative copy is thrown away; the request's segments commit afresh, under the
+// act's one hold.
+const STAGED = 'staged';
+
 export class ActCommit {
   advance(replica, ctx, prepare, segment) {
     if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError('the replica cannot commit an act', 'not-writable');
@@ -106,7 +128,7 @@ export class ActCommit {
       now: this.now, replica: source.id, actor: this.actor, isAnonymous: source.meta.state === 'anon',
       ...ctx.metadata?.(source, scope) });
     if (!this.prepared) {
-      let open = true, loading = true, failure;
+      let open = true, loading = true, failure, staged = null, stagedOffset = 0;
       const borrowed = new Set();
       const reserved = new Map();
       const newMints = new Set();
@@ -124,8 +146,27 @@ export class ActCommit {
           } catch (error) { failure ??= error; throw error; }
           borrowed.add(scope);
           let loan = true;
-          try { return body({ ...views(replica, scope), assertOpen: () => { check(); if (!loan) { failure ??= new CommitError('an act reader loan has ended'); throw failure; } } }); }
+          try { return body({ ...views(staged ?? replica, scope), assertOpen: () => { check(); if (!loan) { failure ??= new CommitError('an act reader loan has ended'); throw failure; } } }); }
           finally { loan = false; }
+        },
+        stage: (scope, prepareSegment) => {
+          finishLoad();
+          if (!ctx.registry.scopeKindOf(scope)) throw new CommitError('an act stages a scope of its registry');
+          ensureSegmentScope(ctx, scope);
+          staged ??= tentative(replica);
+          let loan = true;
+          let gesture;
+          try { gesture = prepareSegment({ ...views(staged, scope), assertOpen: () => { check(); if (!loan) throw new CommitError('an act segment reader has ended'); } }); }
+          finally { loan = false; }
+          const result = commitGesture(staged, { ...ctx, actor: this.actor, deviceNow: this.deviceNow, ended: [] }, this.now, scope, gesture.changes,
+            { ...(gesture.opts ?? {}), gestureId: STAGED }, { offset: stagedOffset, firstOrder: replica.nextCommitOrder() });
+          if (result.refused) return { refused: result.refused, ...(result.detail ? { detail: result.detail } : {}) };
+          stagedOffset += result.localIds.length;
+          return null;
+        },
+        beginPart: () => {
+          finishLoad();
+          loading = true;
         },
         mintID: (type, scope) => {
           finishLoad();
@@ -138,7 +179,7 @@ export class ActCommit {
             }
             const taken = reserved.get(scope) ?? new Set();
             reserved.set(scope, taken);
-            const current = drawn(replica, ctx.registry, scope);
+            const current = drawn(staged ?? replica, ctx.registry, scope);
             let id;
             do { id = mintId(definition, ctx.draw); }
             while (taken.has(id) || current.has(recordKey(type, id)) || replica.spentIds[scope]?.[recordKey(type, id)]);
@@ -152,19 +193,12 @@ export class ActCommit {
     }
     const { request, value } = this.prepared;
     if (!request || request.scopes.length === 0) return { outcome: null, value };
-    for (const scope of request.scopes) {
-      ctx.ensureScope?.(scope);
-      if (['tree', 'overlay'].includes(ctx.registry.scopeKindOf(scope)) && ctx.registry.governingType)
-        ctx.ensureScope?.(`self/${ctx.registry.productOfScopeKind(ctx.registry.governingType.scope)}`);
-    }
+    for (const scope of request.scopes) ensureSegmentScope(ctx, scope);
     if (!this.working) {
       if (request.gestureId !== undefined && request.gestureId !== null && ctx.device.carriesGesture(request.gestureId)) throw new CommitError('the act gesture id is taken');
       this.undoPlan = planUndo(replica, ctx.registry, request);
       this.gestureId = request.gestureId ?? ctx.nextGestureId();
-      this.working = Object.assign(Object.create(Object.getPrototypeOf(replica)), replica, {
-        meta: structuredClone(replica.meta), outbox: structuredClone(replica.outbox),
-        notices: structuredClone(replica.notices), device: structuredClone(replica.device), journal: structuredClone(replica.journal),
-      });
+      this.working = tentative(replica);
       this.firstOrder = replica.nextCommitOrder();
       this.index = 0; this.offset = 0; this.receipts = []; this.retired = new Set(); this.superseded = new Set(); this.ended = [];
       this.wrote = false;
