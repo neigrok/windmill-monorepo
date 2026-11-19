@@ -187,8 +187,8 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
 - **Landing.** On the person's own roadmap the reading reads what the device tells of their changes that met another
   device's (§6), the domain's `landingOf`, as the room opens and after each change; `ReplicaReading.landing` puts each in
   the room's names, a line a step: the step their edit brought back, or the step they made or linked that now follows
-  past a step deleted elsewhere before their link landed. The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a deleted step
-  is named from the note, which took its name when the person made the step or link. `room/useRoomLanding.js` holds each line for the rest of the visit and shows it
+  past a step deleted elsewhere before their link landed. The device keeps nothing of a step deleted elsewhere
+  (engine.md §7.5), so a deleted step is named from the note, which took its name when the person made the step or link. `room/useRoomLanding.js` holds each line for the rest of the visit and shows it
   (flow 48, `copy.js` `landingNote`) under the step's card on the Board (`ColumnCards`, counted in the card's slot of the
   run) and under the step page's toolbar. The first time either shows it, half of it in view on a Board no step page or
   composer covers, or the page open on its step, the reading's `tell` writes the domain's `ClearLanding` out of the Undo
@@ -270,9 +270,9 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   there reports `marks` and costs the marks alone, so a retry never makes a second roadmap. A birth that plants nothing
   throws a `BirthFailure` with a bounded reason, `unkept`, `unopened` or `refused`, which the door's
   `roadmap_board_create` carries; only `unopened` and `marks` report. A browser whose copy could not open is told before
-  anyone types, signed in or not, as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to the newest of the person's list
-  as the replica keeps it (`ReplicaReading.readList`), or to the quests; where the copy cannot open it cannot say which,
-  so it stays, and the reading tells why (`roadmap_load`).
+  anyone types, signed in or not, as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to
+  the newest of the person's list as the replica keeps it (`ReplicaReading.readList`), or to the quests; where the copy
+  cannot open it cannot say which, so it stays, and the reading tells why (`roadmap_load`).
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
   `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
   stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's
