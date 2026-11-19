@@ -231,29 +231,25 @@ class AdoptionTest(ToolTest):
         for stage in STAGES[:3]:
             result, _ = self.run_tool(url, stage)
             self.assertEqual(result.returncode, 0, result.stderr.decode())
-        # The scribbler's account held: the move commits the house's, the owner's and the reader's roadmaps, one owner a
-        # transaction, then waits on the scribbler's, the last owner, whose transaction writes its own scopes alone.
-        locker = subprocess.Popen(["psql", url, "-XAtq", "-c", "begin", "-c", f"select 1 from users where id = '{SCRIBBLER}' for update",
-                                   "-c", "select pg_sleep(60)"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.addCleanup(locker.wait)
-        self.addCleanup(locker.kill)
+        # The scribbler's first roadmap held mid-insert: the move commits the house's, the owner's and the reader's
+        # roadmaps, one owner a transaction, then sleeps inside the scribbler's, the last owner's.
+        query(url, "create function held_insert() returns trigger language plpgsql as $$ begin "
+                   "if new.id = 't_e000000000000001' then perform pg_sleep(60); end if; return new; end $$; "
+                   "create trigger held_insert before insert on roadmap_trees for each row execute function held_insert()")
         tool = subprocess.Popen([TOOL, "adopt"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**self.env, "DATABASE_URL": url})
         self.addCleanup(tool.wait)
         self.addCleanup(tool.kill)
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            waiting = query(url, "select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()")
-            if waiting == "1" and query(url, "select count(*) from roadmap_trees") == "11":
+            if query(url, "select count(*) from pg_stat_activity where wait_event = 'PgSleep' and datname = current_database()") == "1":
                 break
             time.sleep(0.1)
         self.assertEqual(query(url, "select count(*) from roadmap_trees"), "11")
-        self.assertEqual(query(url, "select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()"), "1")
         tool.send_signal(signal.SIGKILL)
         tool.wait(timeout=30)
-        locker.kill()
-        locker.wait(timeout=30)
-        # The sessions of both killed clients, which Postgres ends once it notices their clients gone.
+        # The killed run's session, which Postgres ends once it notices its client gone, and the trigger.
         query(url, "select count(pg_terminate_backend(pid)) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()")
+        query(url, "drop trigger held_insert on roadmap_trees; drop function held_insert()")
         self.assertEqual(query(url, f"select count(*) from sync_scopes where owner = '{SCRIBBLER}'"), "0")
 
         result, reports = self.run_tool(url, "all")
@@ -262,6 +258,46 @@ class AdoptionTest(ToolTest):
         self.assertEqual(reports[3]["counts"]["alreadyAdopted"], {"roadmaps": 11})
         self.assertEqual([(report["stage"], report["verdict"]) for report in reports[5:]],
                          [("after", "same"), ("read-models", "same"), ("digests", "summed")])
+
+    def test_no_stage_runs_beside_another_client_and_a_row_changed_after_the_plan_stops_the_move(self):
+        url = own_database(self, "alone")
+        sleeper = subprocess.Popen(["psql", url, "-XAtq", "-c", "select pg_sleep(60)"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and query(url, "select count(*) from pg_stat_activity where wait_event = 'PgSleep'") != "1":
+            time.sleep(0.1)
+        for stage in STAGES:
+            with self.subTest(stage=stage):
+                result, reports = self.run_tool(url, stage)
+                self.assertEqual(result.returncode, 3, result.stderr.decode())
+                self.assertEqual((reports[0]["verdict"], reports[0]["counts"]), ("othersConnected", {"sessions": {"otherClients": 1}}))
+                self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", "othersConnected")])
+        sleeper.kill()
+        sleeper.wait(timeout=30)
+        query(url, "select count(pg_terminate_backend(pid)) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()")
+        self.assertEqual(query(url, "select count(*) from sync_scopes"), "0")
+
+        # A writer that reaches roadmap's tables once the stage began: the house's transaction is held open while it
+        # commits a step of the scribbler's, which the scribbler's transaction finds on reading their rows again.
+        query(url, "create function held_house() returns trigger language plpgsql as $$ begin "
+                   f"if new.id = '{DEMO}' then perform pg_sleep(2); end if; return new; end $$; "
+                   "create trigger held_house before insert on roadmap_trees for each row execute function held_house()")
+        tool = subprocess.Popen([TOOL, "adopt"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env={**self.env, "DATABASE_URL": url})
+        self.addCleanup(tool.kill)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and query(url, "select count(*) from pg_stat_activity where wait_event = 'PgSleep'") != "1":
+            time.sleep(0.02)
+        query(url, "insert into tree_nodes (tree_id, node_id, created_hlc, label, label_hlc, present) values "
+                   "('t_e000000000000001', 'late', '1740000000000:99:r_scribbler', 'Late', '1740000000000:99:r_scribbler', true)")
+        stdout, _ = tool.communicate(timeout=60)
+        self.assertEqual(tool.returncode, 3)
+        report = json.loads(stdout)
+        self.assertEqual((report["verdict"], report["counts"]["stop"], report["counts"]["adopted"]),
+                         ("stops", {"oldRowsChangedSinceThePlan": 1}, {"owners": 3, "roadmaps": 11}))
+        self.assertEqual((self.private / "adopt-failure.jsonl").read_text(),
+                         f'{{"owner":"{SCRIBBLER}","reason":"oldRowsChangedSinceThePlan","roadmap":""}}\n')
+        self.assertEqual(query(url, "select count(*) from roadmap_trees where id like 't_e%'"), "0")
 
     def test_a_row_the_move_cannot_read_as_the_spec_says_stops_it_before_it_writes_anything(self):
         url = own_database(self, "corrupted", "insert into tree_nodes (tree_id, node_id, created_hlc, status, status_hlc, present) "

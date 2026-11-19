@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,13 @@ struct StageReport {
 
   // One line for a public log: the stage, its verdict, its time and its counts, never an id or a text.
   Json::Value toJson() const;
+};
+
+// A stage that failed before its end, and what it had counted by then, the failure's static code among the counts.
+struct StageFailure : std::runtime_error {
+  explicit StageFailure(StageReport report);
+
+  StageReport report;
 };
 
 // The files a stage writes what it read into, one JSON value a line, in a directory kept apart from every log and meant
@@ -68,6 +76,8 @@ public:
   Cutover(PgAdoption& adoption, Expectation expectation, PrivateRecord record, ReadModelServers& servers);
 
   static const std::vector<std::string>& stages();
+  // The stage, unless another client is connected to the database: the server is stopped for the move, and nothing
+  // else may write roadmap's tables while it runs. Throws StageFailure for a stage that fails before its end.
   StageReport run(const std::string& stage);
 
 private:

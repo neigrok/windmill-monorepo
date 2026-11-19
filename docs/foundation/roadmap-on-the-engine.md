@@ -315,7 +315,10 @@ What a device tells a person when a change of theirs met one made elsewhere.
 The data moves in one planned cutover, rehearsed against a copy of production, with the site in
 maintenance for its length and a verified backup to return to. (R-5) `windmill_roadmap_adopt` runs it
 stage by stage, printing counts and verdicts alone
-([its README](../../backend/products/roadmap/adoption/README.md)).
+([its README](../../backend/products/roadmap/adoption/README.md)). The server is stopped for the move,
+and the tool checks it: a stage refuses to start while any other client is connected to the database,
+and each owner's adoption reads their rows again under a lock that holds every writer off roadmap's
+tables, stopping where they differ from those it planned from.
 
 - Roadmap's tables take the engine's envelope: scope, `seq`, `rc`, `ru`, `born`, life and a stamp
   for each field.

@@ -6,7 +6,9 @@
 #include "products/roadmap/adoption/Adoption.h"
 #include "products/roadmap/adoption/Audit.h"
 
+#include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,6 +16,16 @@
 // the binding's stores, the engine's tables read back through the binding, and every scope's digest summed from its rows.
 
 namespace wm::roadmap::adoption {
+
+// Why writing one owner's roadmaps stopped short, writing nothing of that owner's: a static code, the roadmap it was at
+// (none before it reached one), and whether the move must stop there for its operator to look, or failed.
+struct AdoptionFailure : std::runtime_error {
+  AdoptionFailure(std::string code, std::string roadmap, bool stops);
+
+  std::string code;
+  std::string roadmap;
+  bool stops = false;
+};
 
 // What writing one owner's plan did: the roadmaps it adopted, and those whose `tree` record it found already there.
 struct Written {
@@ -30,7 +42,9 @@ struct Summed {
 
 class PgAdoption {
 public:
-  PgAdoption(std::shared_ptr<PgPool> pool, const sync::SyncCatalog& catalog, sync::SyncStore& store);
+  // `ownSessions` is the application name of every session this run opens, which counts no session of its own as
+  // another client's.
+  PgAdoption(std::shared_ptr<PgPool> pool, const sync::SyncCatalog& catalog, sync::SyncStore& store, std::string ownSessions);
 
   // Every roadmap of roadmap's own tables, a roadmap stored only as a whole document unfolded into rows as the old server
   // unfolds it, its links as the old server reads them; and every account.
@@ -39,10 +53,16 @@ public:
   // The house account, inserted when absent; false when its address names another account, which stops the move.
   bool houseStands();
 
-  // One transaction: under the move's lock and the owner's account held, each of the owner's roadmaps whose `tree` record
-  // no row holds is written, its record into the owner's roadmap scope at that scope's next seqs, its tree scope and its
-  // overlays as the plan has them. A roadmap whose record is there is left as it is, so a second run writes nothing.
-  // Throws, writing nothing, when the owner's account is gone or a scope the plan creates is already there.
+  // How many client sessions other than this run's are connected to the database: the move runs with none, so no writer
+  // changes roadmap's tables under it.
+  std::uint64_t otherSessions();
+
+  // One transaction: under the move's lock, roadmap's own tables held in SHARE mode, and the owner's account held, the
+  // owner's rows are read again and each of the owner's roadmaps whose `tree` record no row holds is written, its record
+  // into the owner's roadmap scope at that scope's next seqs, its tree scope and its overlays as the plan has them. A
+  // roadmap whose record is there is left as it is, so a second run writes nothing. Throws AdoptionFailure, writing
+  // nothing: a stop when the owner's account is gone, their rows differ from those the plan was made from, or a scope
+  // the plan creates is already there; a failure when the store refuses a row or the commit.
   Written write(const OwnerPlan& owner);
 
   // Every account whose roadmap scope holds a `tree` record.
@@ -59,6 +79,7 @@ private:
   std::shared_ptr<PgPool> pool_;
   const sync::SyncCatalog& catalog_;
   sync::SyncStore& store_;
+  std::string ownSessions_;
 };
 
 }

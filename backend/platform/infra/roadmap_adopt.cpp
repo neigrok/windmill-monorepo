@@ -37,6 +37,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <string>
 
@@ -203,11 +204,18 @@ int main(int argc, char** argv) {
     return 2;
   }
   setenv("PGCONNECT_TIMEOUT", "10", 0);
+  // Every session this run opens carries one name no other client's does, so a stage counts every other connected
+  // client and refuses to run beside one.
+  std::random_device entropy;
+  char tag[17];
+  std::snprintf(tag, sizeof tag, "%08x%08x", entropy(), entropy());
+  const std::string ownSessions = std::string("windmill_roadmap_adopt ") + tag;
+  setenv("PGAPPNAME", ownSessions.c_str(), 1);
   const std::vector<std::string> stages = requested == "all" ? order : std::vector<std::string>{requested};
   const auto pool = std::make_shared<PgPool>(url, 4);
   const std::shared_ptr<sync::SyncCatalog> catalog = sync::productCatalog(sync::RoadmapServing::served);
   sync::PgSyncStore store(pool, sync::Limits{}.lockTimeoutMs);
-  PgAdoption adoption(pool, *catalog, store);
+  PgAdoption adoption(pool, *catalog, store, ownSessions);
   const char* privateDir = configured("ROADMAP_ADOPTION_PRIVATE_DIR");
   PrivateRecord record(privateDir ? std::optional<std::filesystem::path>(privateDir) : std::nullopt);
   Servers servers(pool, *catalog, store);
@@ -220,6 +228,15 @@ int main(int argc, char** argv) {
       std::fflush(stdout);
       observation.finish(report.verdict);
       if (!report.passed) return 3;
+    } catch (const StageFailure& failure) {
+      StageReport report = failure.report;
+      report.stage = stage;
+      report.verdict = "failed";
+      std::printf("%s\n", dump(report.toJson()).c_str());
+      std::fflush(stdout);
+      std::fputs(kFailed, stderr);
+      observation.fail(failure);
+      return 1;
     } catch (const std::exception& error) {
       std::fputs(kFailed, stderr);
       observation.fail(error);

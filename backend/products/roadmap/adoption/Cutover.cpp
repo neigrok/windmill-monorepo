@@ -29,6 +29,9 @@ Json::Value StageReport::toJson() const {
   return out;
 }
 
+StageFailure::StageFailure(StageReport report)
+    : std::runtime_error("a stage of the roadmap adoption failed before its end"), report(std::move(report)) {}
+
 PrivateRecord::PrivateRecord(std::optional<std::filesystem::path> directory) : directory_(std::move(directory)) {}
 
 void PrivateRecord::write(const std::string& name, const std::vector<Json::Value>& lines) const {
@@ -67,7 +70,10 @@ const std::vector<std::string>& Cutover::stages() {
 StageReport Cutover::run(const std::string& stage) {
   const auto started = std::chrono::steady_clock::now();
   StageReport report;
-  if (stage == "unfold") report = unfold();
+  if (const std::uint64_t others = adoption_.otherSessions(); others > 0) {
+    report.verdict = "othersConnected";
+    report.counts.add("sessions.otherClients", others);
+  } else if (stage == "unfold") report = unfold();
   else if (stage == "read-models-before") report = readModelsBefore();
   else if (stage == "before") report = before();
   else if (stage == "adopt") report = adopt();
@@ -114,10 +120,21 @@ StageReport Cutover::adopt() {
     return report;
   }
   for (const OwnerPlan& owner : planned.owners) {
-    const Written written = adoption_.write(owner);
-    report.counts.add("adopted.roadmaps", written.adopted);
-    report.counts.add("adopted.owners", written.adopted > 0 ? 1 : 0);
-    report.counts.add("alreadyAdopted.roadmaps", written.already);
+    try {
+      const Written written = adoption_.write(owner);
+      report.counts.add("adopted.roadmaps", written.adopted);
+      report.counts.add("adopted.owners", written.adopted > 0 ? 1 : 0);
+      report.counts.add("alreadyAdopted.roadmaps", written.already);
+    } catch (const AdoptionFailure& failure) {
+      Json::Value line(Json::objectValue);
+      line["owner"] = owner.owner.str();
+      line["roadmap"] = failure.roadmap;
+      line["reason"] = failure.code;
+      record_.write("adopt-failure.jsonl", {line});
+      report.counts.add((failure.stops ? "stop." : "failure.") + failure.code);
+      if (!failure.stops) throw StageFailure(std::move(report));
+      return report;
+    }
   }
   if (report.counts["adopted.roadmaps"] > 0) report.counts += planned.tally;
   report.verdict = report.counts["adopted.roadmaps"] > 0 ? "adopted" : "unchanged";

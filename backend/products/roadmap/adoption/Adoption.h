@@ -51,6 +51,8 @@ private:
 struct OldRegister {
   Json::Value value;
   std::string stamp;
+
+  bool operator==(const OldRegister&) const = default;
 };
 
 // A step's row; its links as the old server reads them, each {url, label}.
@@ -66,6 +68,8 @@ struct OldStep {
   OldRegister description;
   OldRegister links;
   OldRegister opens;
+
+  bool operator==(const OldStep&) const = default;
 };
 
 struct OldLink {
@@ -73,6 +77,8 @@ struct OldLink {
   std::string to;
   std::string added;
   std::string removed;
+
+  bool operator==(const OldLink&) const = default;
 };
 
 struct OldKind {
@@ -83,6 +89,8 @@ struct OldKind {
   OldRegister label;
   OldRegister description;
   OldRegister rank;
+
+  bool operator==(const OldKind&) const = default;
 };
 
 // One account's mark on one step, as node_progress keeps it, `recordedAt` the time the server received it.
@@ -93,6 +101,8 @@ struct OldMark {
   bool outOfOrder = false;
   std::string stamp;
   std::int64_t recordedAt = 0;
+
+  bool operator==(const OldMark&) const = default;
 };
 
 // One `trees` row with its rows, times in epoch ms. `head` is the greater of its head_seq and its activity's last seq.
@@ -123,6 +133,8 @@ struct OldRoadmap {
   std::vector<OldLink> links;
   std::vector<OldKind> kinds;
   std::vector<OldMark> marks;
+
+  bool operator==(const OldRoadmap&) const = default;
 };
 
 // Every roadmap, and the id of every account (users.id as text).
@@ -247,9 +259,11 @@ struct RoadmapPlan {
   std::vector<ScopePlan> overlays;
 };
 
+// One owner's roadmaps, and the rows of roadmap's tables the plan of them was made from.
 struct OwnerPlan {
   UserId owner;
   std::vector<RoadmapPlan> roadmaps;
+  std::vector<OldRoadmap> readFrom;
 };
 
 // Every owner's roadmaps as the engine takes them, in owner order, and what the plan counted.

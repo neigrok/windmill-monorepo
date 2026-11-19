@@ -120,26 +120,35 @@ sync::RowWrite rowWrite(const sync::TypeDef& type, Row row) {
 
 }
 
-PgAdoption::PgAdoption(std::shared_ptr<PgPool> pool, const sync::SyncCatalog& catalog, sync::SyncStore& store)
-    : pool_(std::move(pool)), catalog_(catalog), store_(store) {}
+AdoptionFailure::AdoptionFailure(std::string code, std::string roadmap, bool stops)
+    : std::runtime_error("the adoption of an owner's roadmaps stopped short"), code(std::move(code)), roadmap(std::move(roadmap)), stops(stops) {}
 
-OldDatabase PgAdoption::oldTables() {
-  PgLease conn{*pool_};
-  pqxx::read_transaction txn{*conn};
-  txn.exec("set local statement_timeout = 0");
-  OldDatabase database;
-  for (const auto& row : txn.exec("select id::text from users")) database.accounts.insert(row[0].as<std::string>());
+PgAdoption::PgAdoption(std::shared_ptr<PgPool> pool, const sync::SyncCatalog& catalog, sync::SyncStore& store, std::string ownSessions)
+    : pool_(std::move(pool)), catalog_(catalog), store_(store), ownSessions_(std::move(ownSessions)) {}
 
+namespace {
+
+// The roadmaps of roadmap's own tables in `sql`'s view, every one or those of `only` alone, each with its rows in a fixed
+// order, a roadmap that holds no row unfolded from its whole document.
+std::vector<OldRoadmap> roadmapsIn(pqxx::transaction_base& sql, const std::optional<std::vector<std::string>>& only) {
+  Json::Value among(Json::nullValue);
+  if (only) {
+    among = Json::Value(Json::arrayValue);
+    for (const std::string& id : *only) among.append(id);
+  }
+  const std::optional<std::string> ids = only ? std::optional(dump(among)) : std::nullopt;
+  const std::string ofTrees = " where ($1::jsonb is null or t.id in (select jsonb_array_elements_text($1::jsonb)))";
+  const std::string ofRows = " where ($1::jsonb is null or tree_id in (select jsonb_array_elements_text($1::jsonb)))";
   std::map<std::string, OldRoadmap> roadmaps;
   std::map<std::string, std::string> documents;
-  const pqxx::result trees = txn.exec(
+  const pqxx::result trees = sql.exec(
       "select t.id, t.owner_id::text, t.title, t.title_hlc, t.guide, t.guide_hlc, t.guide_inherited, t.visibility, t.head_seq, "
       "t.forked_from, t.document::text, (extract(epoch from t.deleted_at) * 1000)::bigint, "
       "(extract(epoch from t.created_at) * 1000)::bigint, (extract(epoch from t.updated_at) * 1000)::bigint, "
       "t.parent_tree, t.parent_step, t.root_tree, t.depth, "
       "(select max(o.seq) from tree_ops o where o.tree_id = t.id), (select count(*) from tree_ops o where o.tree_id = t.id), "
       "exists (select 1 from tree_og_images i where i.tree_id = t.id), exists (select 1 from tree_og_videos v where v.tree_id = t.id) "
-      "from trees t");
+      "from trees t" + ofTrees, pqxx::params{ids});
   for (std::size_t i = 0; i < trees.size(); ++i) {
     const auto row = trees[i];
     OldRoadmap roadmap{.id = row[0].as<std::string>(), .owner = maybeTextOf(row[1]), .title = textRegister(row[2], row[3]),
@@ -163,9 +172,10 @@ OldDatabase PgAdoption::oldTables() {
     return found == roadmaps.end() ? nullptr : &found->second;
   };
 
-  const pqxx::result nodes = txn.exec(
+  const pqxx::result nodes = sql.exec(
       "select tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, icon, icon_hlc, color, color_hlc, ord, ord_hlc, "
-      "status, status_hlc, description, description_hlc, links::text, links_hlc, opens, opens_hlc from tree_nodes");
+      "status, status_hlc, description, description_hlc, links::text, links_hlc, opens, opens_hlc from tree_nodes" + ofRows +
+      " order by tree_id, node_id", pqxx::params{ids});
   for (std::size_t i = 0; i < nodes.size(); ++i) {
     const auto row = nodes[i];
     OldRoadmap* roadmap = holder(row[0]);
@@ -181,15 +191,17 @@ OldDatabase PgAdoption::oldTables() {
     step.opens = textRegister(row[18], row[19]);
     roadmap->steps.push_back(std::move(step));
   }
-  const pqxx::result edges = txn.exec("select tree_id, from_id, to_id, added_hlc, removed_hlc from tree_edges");
+  const pqxx::result edges =
+      sql.exec("select tree_id, from_id, to_id, added_hlc, removed_hlc from tree_edges" + ofRows + " order by tree_id, from_id, to_id",
+               pqxx::params{ids});
   for (std::size_t i = 0; i < edges.size(); ++i) {
     const auto row = edges[i];
     if (OldRoadmap* roadmap = holder(row[0]))
       roadmap->links.push_back(OldLink{row[1].as<std::string>(), row[2].as<std::string>(), textOf(row[3]), textOf(row[4])});
   }
-  const pqxx::result kinds = txn.exec(
+  const pqxx::result kinds = sql.exec(
       "select tree_id, kind_id, created_hlc, deleted_hlc, hue, hue_hlc, label, label_hlc, description, description_hlc, rank, rank_hlc "
-      "from tree_kinds");
+      "from tree_kinds" + ofRows + " order by tree_id, kind_id", pqxx::params{ids});
   for (std::size_t i = 0; i < kinds.size(); ++i) {
     const auto row = kinds[i];
     OldRoadmap* roadmap = holder(row[0]);
@@ -201,8 +213,9 @@ OldDatabase PgAdoption::oldTables() {
     kind.rank = OldRegister{Json::Value(row[10].as<double>()), textOf(row[11])};
     roadmap->kinds.push_back(std::move(kind));
   }
-  const pqxx::result marks = txn.exec(
-      "select tree_id, user_id, node_id, status, out_of_order, hlc, (extract(epoch from updated_at) * 1000)::bigint from node_progress");
+  const pqxx::result marks = sql.exec(
+      "select tree_id, user_id, node_id, status, out_of_order, hlc, (extract(epoch from updated_at) * 1000)::bigint from node_progress" +
+      ofRows + " order by tree_id, user_id, node_id", pqxx::params{ids});
   for (std::size_t i = 0; i < marks.size(); ++i) {
     const auto row = marks[i];
     if (OldRoadmap* roadmap = holder(row[0]))
@@ -210,11 +223,31 @@ OldDatabase PgAdoption::oldTables() {
                                        textOf(row[5]), msOf(row[6])});
   }
 
+  std::vector<OldRoadmap> read;
   for (auto& [id, roadmap] : roadmaps) {
     if (roadmap.steps.empty() && roadmap.links.empty() && roadmap.kinds.empty()) unfold(roadmap, parse(documents.at(id)));
-    database.roadmaps.push_back(std::move(roadmap));
+    read.push_back(std::move(roadmap));
   }
+  return read;
+}
+
+}
+
+OldDatabase PgAdoption::oldTables() {
+  PgLease conn{*pool_};
+  pqxx::read_transaction txn{*conn};
+  txn.exec("set local statement_timeout = 0");
+  OldDatabase database{.roadmaps = roadmapsIn(txn, std::nullopt)};
+  for (const auto& row : txn.exec("select id::text from users")) database.accounts.insert(row[0].as<std::string>());
   return database;
+}
+
+std::uint64_t PgAdoption::otherSessions() {
+  PgLease conn{*pool_};
+  pqxx::read_transaction txn{*conn};
+  return txn.exec("select count(*) from pg_stat_activity where datname = current_database() and backend_type = 'client backend' "
+                  "and pid <> pg_backend_pid() and application_name is distinct from $1",
+                  pqxx::params{ownSessions_})[0][0].as<std::uint64_t>();
 }
 
 bool PgAdoption::houseStands() {
@@ -232,8 +265,12 @@ Written PgAdoption::write(const OwnerPlan& owner) {
   pqxx::transaction_base& sql = sync::sqlOf(*txn);
   sql.exec("set local statement_timeout = 0");
   sql.exec("select pg_advisory_xact_lock(hashtext('roadmap.adoption'))");
+  sql.exec("lock table trees, tree_nodes, tree_edges, tree_kinds, node_progress, tree_ops in share mode");
   if (sql.exec("select 1 from users where id = $1::uuid for key share", pqxx::params{owner.owner.str()}).empty())
-    throw std::runtime_error("an owner's account is gone");
+    throw AdoptionFailure("ownerAccountGone", "", true);
+  std::vector<std::string> planned;
+  for (const OldRoadmap& roadmap : owner.readFrom) planned.push_back(roadmap.id);
+  if (roadmapsIn(sql, planned) != owner.readFrom) throw AdoptionFailure("oldRowsChangedSinceThePlan", "", true);
   Json::Value ids(Json::arrayValue);
   for (const RoadmapPlan& roadmap : owner.roadmaps) ids.append(roadmap.id);
   std::set<std::string> there;
@@ -245,8 +282,8 @@ Written PgAdoption::write(const OwnerPlan& owner) {
   const ScopeKey account = ScopeKey::product(owner.owner, "roadmap");
   store_.insertScope(*txn, account, owner.owner, std::nullopt);
   sync::ScopeRow accountRow = *store_.scope(*txn, account, sync::RowLock::update);
-  const auto created = [&](const ScopePlan& scope) {
-    if (!store_.insertScope(*txn, scope.key, scope.owner, scope.governedBy)) throw std::runtime_error("a scope the move creates is already there");
+  const auto created = [&](const std::string& roadmap, const ScopePlan& scope) {
+    if (!store_.insertScope(*txn, scope.key, scope.owner, scope.governedBy)) throw AdoptionFailure("scopeAlreadyThere", roadmap, true);
     if (scope.deadAt) {
       store_.killTree(*txn, scope.key, *scope.deadAt);
       return;
@@ -267,16 +304,26 @@ Written PgAdoption::write(const OwnerPlan& owner) {
   const sync::TypeDef& tree = catalog_.store("tree").def();
   for (const RoadmapPlan& roadmap : owner.roadmaps) {
     if (there.contains(roadmap.id)) continue;
-    Row record = roadmap.record;
-    record.seq = ++accountRow.seq;
-    accountRow.digest = accountRow.digest + sync::rowHash(record.toJson());
-    catalog_.store("tree").apply(*txn, account, {rowWrite(tree, std::move(record))});
-    created(roadmap.tree);
-    for (const ScopePlan& overlay : roadmap.overlays) created(overlay);
+    try {
+      Row record = roadmap.record;
+      record.seq = ++accountRow.seq;
+      accountRow.digest = accountRow.digest + sync::rowHash(record.toJson());
+      catalog_.store("tree").apply(*txn, account, {rowWrite(tree, std::move(record))});
+      created(roadmap.id, roadmap.tree);
+      for (const ScopePlan& overlay : roadmap.overlays) created(roadmap.id, overlay);
+    } catch (const AdoptionFailure&) {
+      throw;
+    } catch (const std::exception&) {
+      throw AdoptionFailure("storeRefusedARow", roadmap.id, false);
+    }
     ++written.adopted;
   }
-  store_.saveScope(*txn, accountRow);
-  txn->commit();
+  try {
+    store_.saveScope(*txn, accountRow);
+    txn->commit();
+  } catch (const std::exception&) {
+    throw AdoptionFailure("commitFailed", "", false);
+  }
   return written;
 }
 

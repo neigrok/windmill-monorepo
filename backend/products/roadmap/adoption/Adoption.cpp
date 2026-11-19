@@ -615,8 +615,9 @@ Plan plan(const Survey& survey, const std::optional<std::set<std::string>>& only
   std::map<UserId, OwnerPlan> owners;
   for (const auto& [id, surveyed] : survey.roadmaps()) {
     if (only && !only->contains(id)) continue;
-    OwnerPlan& owner = owners.try_emplace(surveyed.owner, OwnerPlan{surveyed.owner, {}}).first->second;
+    OwnerPlan& owner = owners.try_emplace(surveyed.owner, OwnerPlan{surveyed.owner, {}, {}}).first->second;
     owner.roadmaps.push_back(RoadmapPlanner(survey, surveyed, planned.tally).plan());
+    owner.readFrom.push_back(*surveyed.roadmap);
   }
   for (auto& [account, owner] : owners) planned.owners.push_back(std::move(owner));
   return planned;

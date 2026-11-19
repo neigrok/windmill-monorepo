@@ -20,6 +20,12 @@ the roadmaps' ids, which do not change.
 
 ## Stages
 
+The server is stopped for the move, the cutover's maintenance, and nothing else writes roadmap's tables while it runs.
+The tool checks it: every session it opens carries one random application name, and a stage refuses to start while
+any other client session is connected to the database (verdict `othersConnected`, the count alone). `adopt` holds
+roadmap's own tables in SHARE mode in each owner's transaction, reads that owner's rows again and stops if they differ
+from those its plan was made from.
+
 Each stage prints one JSON line on stdout — `{"stage", "verdict", "ms", "counts"}` — and logs one write line on stderr
 (`roadmap.adoption.<stage>`, door `tool`, the verdict as its outcome). Neither names a roadmap, a step, an account or a
 text: the counts' names are the code's words. Everything finer goes to the private record, the directory
@@ -33,7 +39,7 @@ on a failure, which it reports to Sentry by the failure's type alone.
 | `unfold` | The old server (`RoomRegistry`) opens every roadmap and closes it, writing what it writes on opening one: a roadmap stored only as a whole document unfolded into rows, a head behind its activity taken past it. | `unfolded` | — |
 | `read-models-before` | The old server's read models answer the audit's questions. | `asked`; `noPrivateRecord` fails | `read-models-before.jsonl` |
 | `before` | Reads every roadmap, writes the old server's reading of each as a document, counts what the move would do, and says whether anything stops it. Writes nothing. | `ready`; `stops` fails | `before.jsonl`, `stops.jsonl` (each stop with its roadmap) |
-| `adopt` | Adopts every owner's roadmaps that hold no `tree` record yet, one owner a transaction under an advisory lock, after inserting the house account when absent. Nothing is written while anything stops the move. | `adopted`, `unchanged` (a second run); `stops` fails | — |
+| `adopt` | Adopts every owner's roadmaps that hold no `tree` record yet, one owner a transaction under an advisory lock, after inserting the house account when absent. Nothing is written while anything stops the move. An owner whose transaction stops or fails is written not at all; the stage prints its counts so far with the reason's static code. | `adopted`, `unchanged` (a second run); `stops` fails; `failed` exits 1 | `adopt-failure.jsonl` (owner, roadmap, reason) |
 | `demo` | Adopts the public demo from the rows `db/schema.sql` seeds, under the house account, where the engine holds no record of it; one it holds is never written again. | `present`, `seeded`; `noSource` and `stops` fail | — |
 | `after` | Reads every adopted roadmap back through the binding and the read domain and compares its document with the old server's; checks each deleted roadmap's id is spent. | `same`; `differs` fails | `after.jsonl`, `differences.jsonl` |
 | `read-models` | The new read models answer the same questions; compares them with `read-models-before`'s. | `same`; `differs` and `nothingAskedBefore` fail | `read-models.jsonl` (the differing answers) |
