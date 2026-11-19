@@ -185,9 +185,9 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   the owner's marks go to `RoomProgress.adoptRemote`, as another device's do, and the workspace and guides are seated
   again. A roadmap that stops standing while the room is open keeps its last picture; the next load says it is not there.
 - **Landing.** On the person's own roadmap the reading reads what the device tells of their changes that met another
-  device's (§6), the domain's `landingOf`, as the room opens and after each change; `ReplicaRoadmap.landed` puts each in
+  device's (§6), the domain's `landingOf`, as the room opens and after each change; `ReplicaReading.landing` puts each in
   the room's names, a line a step: the step their edit brought back, or the step they made or linked that now follows
-  past a step deleted elsewhere. The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a deleted step
+  past a step deleted elsewhere before their link landed. The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a deleted step
   is named from the note, which took its name when the person made the step or link. `room/useRoomLanding.js` holds each line for the rest of the visit and shows it
   (flow 48, `copy.js` `landingNote`) under the step's card on the Board (`ColumnCards`, counted in the card's slot of the
   run) and under the step page's toolbar. The first time either shows it, half of it in view on a Board no step page or

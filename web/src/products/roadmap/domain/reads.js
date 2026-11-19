@@ -108,17 +108,16 @@ function dateOrder(a, b, newest) {
   return newest ? b - a : a - b;
 }
 
-/** @param {FollowGraph} graph @param {{nodes:string[],edges:string[][]}} own */
-export function landingFacts(graph, own) {
-  const nodes = new Set(own.nodes);
-  const edges = new Map();
-  for (const [from, to] of own.edges) {
-    if (!edges.has(to)) edges.set(to, new Set());
-    edges.get(to).add(from);
+/** @param {FollowGraph} graph @param {string[][]} edges the device's own links, `[from, to]` */
+export function landingFacts(graph, edges) {
+  const linked = new Map();
+  for (const [from, to] of edges) {
+    if (!linked.has(to)) linked.set(to, new Set());
+    linked.get(to).add(from);
   }
   return graph.ids.flatMap((node) => {
-    if (!nodes.has(node) && !edges.has(node)) return [];
-    const sources = new Set(graph.tree.index.absentParents(node).filter((from) => nodes.has(node) || edges.get(node)?.has(from)));
+    if (!linked.has(node)) return [];
+    const sources = new Set(graph.tree.index.absentParents(node).filter((from) => linked.get(node).has(from)));
     if (!sources.size) return [];
     const incoming = [...sources].sort(compareText).map((from) => [from, node]);
     const followed = graph.followed(node).flatMap((entry) => {

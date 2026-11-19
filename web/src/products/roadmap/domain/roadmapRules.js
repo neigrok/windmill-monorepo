@@ -40,8 +40,6 @@ export const RoadmapScopes = Object.freeze({
   overlay: (tree) => `self/overlay/${tree}`,
   /** @param {string} tree */
   landing: (tree) => `landing:${tree}`,
-  /** @param {string} key */
-  isLanding: (key) => key.startsWith('landing:'),
 });
 
 /** @param {string} path @param {number} max @param {{ min?: number, trim?: boolean }} [rule] */

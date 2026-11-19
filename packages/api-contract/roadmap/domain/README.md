@@ -37,7 +37,7 @@ ID byte order.
 | `board` | Overall progress, query facts, three columns, folding and structured card reasons | no |
 | `diagnostics` | Bounded graph errors and warnings | yes |
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
-| `landing` | Own newly created steps/links whose current followed prerequisites bridge absence | no |
+| `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree | no |
 | `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
