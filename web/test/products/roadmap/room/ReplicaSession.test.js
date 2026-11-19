@@ -250,6 +250,23 @@ test('links, a reorder and a paste: a link moved to another step, a link that wo
   }
 });
 
+test('a pasted plan names a web link by its bare address, as the paste grammar reads one: it lands as that address with no label, and one with no address carries nothing', async () => {
+  const { a, reading, session, told } = await gestures();
+  try {
+    const pasted = session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'gold', links: ['https://example.com/knots', ' '] },
+      { id: 'bowline', label: 'Bowline', color: 'gold', links: [{ url: 'https://example.com/bowline', label: 'How to' }] }], edges: [{ from: 'knots', to: 'bowline' }], kinds: [] });
+    await pasted.act;
+    const links = Object.fromEntries(reading.roadmap().seed.nodes.filter((step) => ['Knots', 'Bowline'].includes(step.label)).map((step) => [step.label, step.links]));
+    assert.deepEqual({ links, told }, {
+      links: { Knots: [{ url: 'https://example.com/knots', label: '' }], Bowline: [{ url: 'https://example.com/bowline', label: 'How to' }] },
+      told: { said: [], events: [], statuses: 0 },
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
 test('the legend’s gestures and a step’s pointer: a kind made, named, described and recoloured with the steps that wear it, removed, and a roadmap opened and closed', async () => {
   const { a, tree, steps, reading, session, told } = await gestures();
   try {

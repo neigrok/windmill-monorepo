@@ -11,6 +11,7 @@ import { Complete } from '../domain/progress.js';
 import { CreateRoadmap } from '../domain/roadmaps.js';
 import { GENESIS_KINDS } from '../domain/roadmapRules.js';
 import { DEVICE_ZONE, standingEngine } from './ReplicaReading.js';
+import { importedStep } from './ReplicaSession.js';
 
 export class ReplicaBirth {
   constructor({ session = syncSession, timers = globalThis } = {}) {
@@ -38,15 +39,10 @@ export class ReplicaBirth {
   }
 
   // The domain's creation of a plan as the blank birth, a pasted plan or a quest names it (`{ title, nodes, kinds }`):
-  // its steps with their words, a web link they name by its bare address taken as one with no label and one with no
-  // address left out, each step after those it follows; and its legend, where it is not the genesis kinds'.
+  // its steps as the room's paste imports them, each after those it follows; and its legend, where it is not the
+  // genesis kinds'.
   static creation({ title, nodes, kinds = [] }) {
-    const steps = nodes.map((node) => {
-      const links = (node.links ?? []).map((link) => (typeof link === 'string' ? { url: link, label: '' } : { url: link?.url ?? '', label: link?.label ?? '' }))
-        .filter((link) => link.url.trim() !== '');
-      return { key: node.id, label: node.label ?? '', icon: node.icon ?? '', color: node.color,
-        ...(node.description ? { description: node.description } : {}), ...(links.length > 0 ? { links } : {}) };
-    });
+    const steps = nodes.map(importedStep);
     const links = nodes.flatMap((node) => (node.prerequisites ?? []).map((from) => [from, node.id]));
     const legend = kinds.map(({ hue, label, description }) => ({ hue, label: label ?? '', description: description ?? '' }));
     const genesis = GENESIS_KINDS.map(({ hue, label, description }) => ({ hue, label, description }));
