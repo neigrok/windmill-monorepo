@@ -82,8 +82,12 @@ cookie; anonymous pulls explicitly omit credentials. The `credentials` port
 belongs to the session owner: `clear(account)` removes the credential after a completed sign-out or a cancelled
 sign-in, and answers `true` when the browser then holds none. The anon replica, which a live socket carrying a cookie
 can have paused, comes out of a finished sign-out unpaused, and a `clear` that answers `true` unpauses it again
-(engine.md §9.1).
-The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably records cookie cleanup until the credentials port succeeds. Sign-in uses a fresh
+(engine.md §9.1). `credentialHeld(account)` takes what the session owner found of the browser's credential (`null`
+for none, `undefined` when it could not tell): a bound replica of another account pauses, as a 401 pauses it.
+The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably
+records cookie cleanup until the credentials port succeeds, and so does `cancelSignIn(account)`, which in the same write
+drops the pending sign-in; `cleanupCredentials()` runs the deletion owed. Sign-in drops a deletion owed for an earlier
+session, since the credential the browser holds is the one signing in. Sign-in uses a fresh
 hello and pins Add/Discard decisions. Same-account refreshes preserve held work until its deadline
 or a lifecycle transition. `beginSignOut`, `finishSignOut` and `cancelSignOut` expose the
 bounded flush and Keep/Discard session. `cancelSignOut()` resolves after the shared pause is durably
@@ -96,7 +100,10 @@ same transaction. The optional synchronous `beforeSignOutCommit` callback runs a
 accepts completion on an isolated transaction device, before persistence or publication. It is a commit-attempt
 boundary for fencing document data; counted mismatches and earlier failures never invoke it. A throwing or
 asynchronous callback aborts the transaction. A later persistence failure does not reverse the caller's fence.
-The callback cannot await or call the engine again. The shell clears that exact marker after product cleanup succeeds and replays it after reload.
+The callback cannot await or call the engine again. The shell passes that exact marker to `clearDeviceCleanup(change)`
+after product cleanup succeeds, and replays it after reload. `recordAccountClosure(account, sessionId)` keeps the
+session owner's closure of the bound account through the sign-out that ends it and any reload, until
+`clearAccountClosure(sessionId)`. The shell writes no engine state of its own: these calls are its only door.
 
 Each store mutation uses one strict-durability IndexedDB transaction. Indexed reads precede the
 synchronous read-and-commit callback inside that same transaction; it cannot await. Writes hydrate

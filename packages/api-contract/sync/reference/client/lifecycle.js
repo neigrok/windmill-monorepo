@@ -192,6 +192,13 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   return { complete: true, due };
 }
 
+// Cancelling the incomplete sign-in as `account`: its record goes, the anon replica stays active with its work, and
+// nothing resumes at the next engine start. A sign-in that completed leaves nothing to cancel.
+export function cancelSignIn(device, account) {
+  if (device.activeReplica.meta.state !== 'anon') throw new Error('no sign-in is pending');
+  if (device.meta.pendingSignIn?.account === account) delete device.meta.pendingSignIn;
+}
+
 // Sign-out after the caller's flush (at most SIGNOUT_FLUSH_MS). Without a finish (`choice` keep, the
 // confirm when nothing is left, or discard) it answers the question {unsent, ready, sent, counted},
 // the counted local ids of the ready and sent entries and the byte-pinned durable device work

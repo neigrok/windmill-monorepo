@@ -15,7 +15,7 @@ import { release, releaseAll, releaseDue, undo } from '../../../../packages/api-
 import { readInverseResult, requestInverse } from '../../../../packages/api-contract/sync/reference/client/inverse.js';
 import { releaseReversibleAct } from '../../../../packages/api-contract/sync/reference/client/journal.js';
 import { effectsOf } from '../../../../packages/api-contract/sync/reference/client/projections.js';
-import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
+import { cancelSignIn, engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
 import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope, validatePushReceipts } from '../../../../packages/api-contract/sync/reference/client/sender.js';
@@ -1022,6 +1022,8 @@ export class BrowserSyncEngine {
         if (device.activeReplica.meta.state === 'bound' && device.activeReplica.meta.account !== account)
           throw new CommitError('finish sign-out before changing accounts');
         generation = device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
+        // The credential the browser holds is the one signing in, so a deletion owed for an earlier session is moot.
+        delete device.meta.clearCredential;
         if (device.activeReplica.meta.state !== 'bound') device.meta.pendingSignIn = { account };
         if (device.activeReplica.meta.state !== 'bound')
           for (const replica of device.replicas) releaseAll(replica, this.registry, ctx.ended);
@@ -1057,6 +1059,15 @@ export class BrowserSyncEngine {
     } finally {
       this.authenticating--;
     }
+  }
+
+  // Gives up the incomplete sign-in as `account` (engine.md §7.10): one write drops its record and owes the deletion of the
+  // account's credential, which `cleanupCredentials` runs. The anon replica stays active with its work.
+  async cancelSignIn(account) {
+    await this.write(null, (device) => {
+      cancelSignIn(device, account);
+      device.meta.clearCredential = account;
+    });
   }
 
   async beginSignOut() {
@@ -1158,6 +1169,38 @@ export class BrowserSyncEngine {
       });
       if (resumed) this.kick();
     } catch { this.telemetry.failure('auth'); }
+  }
+
+  // What the session owner found of the browser's credential: the account it holds one of, null for none, or undefined
+  // when it could not tell (engine.md §9.1). A bound replica of another account pauses, as a 401 pauses it.
+  async credentialHeld(held) {
+    const pauses = (replica) => held !== undefined && replica.meta.state === 'bound' && held !== replica.meta.account
+      && !replica.meta.authPaused;
+    if (!pauses(this.device.activeReplica)) return;
+    await this.write(null, (device) => { if (pauses(device.activeReplica)) device.activeReplica.meta.authPaused = true; });
+  }
+
+  // The product cleanup a finished sign-out recorded (`finishSignOut`'s `deviceCleanup`) is done: its marker goes, unless a
+  // later sign-out recorded another.
+  async clearDeviceCleanup({ previous, generation }) {
+    await this.write(null, (device) => {
+      const owed = device.meta.deviceCleanup;
+      if (owed?.previous === previous && owed?.generation === generation) delete device.meta.deviceCleanup;
+    });
+  }
+
+  // The session owner's closure of `account`, asked by its session `sessionId`: recorded while the account is the one bound,
+  // and kept through the sign-out that ends it and any reload until the owner clears it.
+  async recordAccountClosure(account, sessionId) {
+    await this.write(null, (device) => {
+      if (device.activeReplica.meta.state !== 'bound' || device.activeReplica.meta.account !== account)
+        throw new CommitError('account changed during closure');
+      device.meta.closingAccount = { account, sessionId };
+    });
+  }
+
+  async clearAccountClosure(sessionId) {
+    await this.write(null, (device) => { if (device.meta.closingAccount?.sessionId === sessionId) delete device.meta.closingAccount; });
   }
 
   async cancelSignOut() {

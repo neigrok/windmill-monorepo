@@ -2617,9 +2617,11 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
   `anon` replica stays active, no replica changes and nothing is sent. Leaving an incomplete
   sign-in changes nothing more; it resumes, with a new hello and every decision still due, at the
   next engine start. Cancelling it (Swift `SyncEngine.cancelSignIn()`, store transaction
-  `signInCancel`; Kotlin `SyncRuntime.abandonSignIn`, for the attempt whose credential is still A's)
-  clears `pendingSignIn` and deletes A's credential: the `anon` replica stays active and nothing
-  resumes.
+  `signInCancel`; Kotlin `SyncRuntime.abandonSignIn`, for the attempt whose credential is still A's;
+  the JS reference's `cancelSignIn(device, A)` and the browser engine's `cancelSignIn(A)`, which
+  record the credential's deletion in the same transaction) clears `pendingSignIn` and deletes A's
+  credential: the `anon` replica stays active and nothing resumes. Once a sign-in completed, there
+  is none to cancel.
 - **Adoption boundary:** entries of another account's lineage are never adopted. A `dormant(B)`
   replica stays dormant.
 
@@ -2678,7 +2680,8 @@ Then, in one local transaction:
   sign-in is pending (`pendingSignIn`). Engine start deletes every other stored credential, so a
   deletion a finished sign-out did not reach (a process death after its transaction) is retried
   there. In a browser, a deletion that leaves no credential unpauses the active `anon` replica
-  (§9.1): the session owner's port answers whether it did.
+  (§9.1): the session owner's port answers whether it did. A browser sign-in drops a deletion owed
+  for an earlier session: the credential the browser holds is the one signing in.
 - **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
@@ -2792,7 +2795,7 @@ doubt (§7.9), whether or not its id changed.
 | `anon` | sign-in as A with a decision still due, or cancelled | unchanged; nothing sent (§7.10) |
 | `bound(A)` | sign-out, empty outbox or Keep | `dormant(A)` |
 | `bound(A)` | sign-out, Discard | deleted |
-| `bound(A)` | 401, `account-mismatch`, or an answer served as another principal (§9.1) / re-authentication as A | `authPaused` set / cleared |
+| `bound(A)` | 401, `account-mismatch`, an answer served as another principal, or (browser) the session owner finding the browser holds no credential of A (§9.1) / re-authentication as A | `authPaused` set / cleared |
 | `anon` (browser) | an answer or frame served as an account (§9.1) / a finished sign-out, or a deletion that leaves no credential | `authPaused` set / cleared |
 | `dormant` | explicit discard | deleted |
 | any | fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change | same state, new replica id |
@@ -2885,7 +2888,10 @@ requests carry no credential, but its live socket carries whatever cookie the br
 one a sign-in set before it completed. No re-authentication ends that pause, since the replica has no
 account: the credential going does. A finished sign-out makes the `anon` replica active unpaused, and
 a deletion that leaves the browser no credential (§7.10 **Credentials**) unpauses the active `anon`
-replica; one that leaves another account's cookie in place does not.
+replica; one that leaves another account's cookie in place does not. The session owner learns whose
+credential the browser holds outside the sync endpoints too, and tells the browser engine
+(`credentialHeld(account)`, `null` for none): a bound replica whose account's credential the browser
+no longer holds is `authPaused` as a `401` would pause it.
 
 An HTTP request is checked in this order, and the first failing check answers:
 1. the registry version (above);

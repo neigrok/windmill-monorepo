@@ -131,11 +131,7 @@ export default function AuthProvider({ children }) {
   // here, unsent, and the account's credential goes, recorded first so a reload or another tab finishes it.
   const cancelSignIn = useCallback(async () => {
     const engine = syncSession.engine;
-    const account = pending.current?.user.id;
-    await engine.write(null, (device) => {
-      if (device.meta.pendingSignIn?.account === account) delete device.meta.pendingSignIn;
-      device.meta.clearCredential = account;
-    });
+    await engine.cancelSignIn(pending.current?.user.id);
     pending.current = null; setQuestion(null); setError(false);
     await engine.cleanupCredentials();
     settle(null, { signedOut: true });
@@ -149,10 +145,7 @@ export default function AuthProvider({ children }) {
     roomOwnership.current.blocked = true;
     flushSync(() => setRoomChanging(true));
     await seat.finishDeviceCleanup({ previous: change.previous, next, ...(navigation ? { navigation } : {}) });
-    await engine.write(null, (device) => {
-      if (device.meta.deviceCleanup?.previous === change.previous && device.meta.deviceCleanup?.generation === change.generation)
-        delete device.meta.deviceCleanup;
-    });
+    await engine.clearDeviceCleanup(change);
   }, [seat, dataScope]);
   const finishSignOut = useCallback(async (options, next = null, navigation = null) => {
     const engine = syncSession.engine;
@@ -187,7 +180,7 @@ export default function AuthProvider({ children }) {
           try { await requestAccountClosure(account); }
           catch (error) {
             if (error.status && error.status !== 401) {
-              await engine.write(null, (device) => { if (device.meta.closingAccount?.sessionId === sessionId) delete device.meta.closingAccount; });
+              await engine.clearAccountClosure(sessionId);
               await engine.cancelSignOut();
             }
             if (error.status !== 401) throw error;
@@ -201,7 +194,7 @@ export default function AuthProvider({ children }) {
       await engine.cleanupCredentials();
       if (engine.device.meta.clearCredential === account) throw new Error('account-closure-cleanup-unavailable');
     }
-    await engine.write(null, (device) => { if (device.meta.closingAccount?.sessionId === sessionId) delete device.meta.closingAccount; });
+    await engine.clearAccountClosure(sessionId);
     signedOut();
   }, [signedOut, finishSignOut, confirmRoom]);
   const bind = useCallback(async (me, answers = {}, revision = roomOwnership.current.revision) => {
@@ -272,11 +265,8 @@ export default function AuthProvider({ children }) {
     }
     if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision); return me; }
     const ended = signedOut || Boolean(seat.previousAccount && engine.device.activeReplica.meta.state === 'anon');
-    if (ended && engine.device.activeReplica.meta.state === 'bound') {
-      await finishSignOut({ choice: 'keep' }, me?.id ?? null);
-    } else if (engine.device.activeReplica.meta.state === 'bound' && !engine.device.activeReplica.meta.authPaused) {
-      await engine.write(null, (device) => { device.activeReplica.meta.authPaused = true; });
-    }
+    if (ended && engine.device.activeReplica.meta.state === 'bound') await finishSignOut({ choice: 'keep' }, me?.id ?? null);
+    else await engine.credentialHeld(null);
     pending.current = null; setQuestion(null); settle(null, { signedOut: ended }, confirmedRevision);
     return null;
   }), [enqueue, settle, bind, seat, finishClosure, finishSignOut, cleanupDevice, confirmRoom, dataScope]);
@@ -287,8 +277,6 @@ export default function AuthProvider({ children }) {
       await cleanupDevice(syncSession.engine);
       seat.restoreHolder(syncSession.engine);
       if (syncSession.engine.device.meta.closingAccount) await finishClosure();
-      // A freshly verified cookie supersedes any cleanup owed for an earlier session.
-      await syncSession.engine.write(null, (device) => { delete device.meta.clearCredential; });
       await bind(me, {}, revision);
       channel.current?.postMessage({ type: 'signed-in' });
     });
@@ -323,11 +311,7 @@ export default function AuthProvider({ children }) {
         const current = (await listSessions()).find((session) => session.current);
         if (!current?.id) throw new Error('account-closure-session-unavailable');
         if (!engine.releaseSignOut) await engine.beginSignOut();
-        try { await engine.write(null, (device) => {
-          if (device.activeReplica.meta.state !== 'bound' || device.activeReplica.meta.account !== account)
-            throw new Error('account-changed-during-closure');
-          device.meta.closingAccount = { account, sessionId: current.id };
-        }); }
+        try { await engine.recordAccountClosure(account, current.id); }
         catch (error) { await engine.cancelSignOut(); throw error; }
         track('sync_signout', { outcome: 'pending' });
       }

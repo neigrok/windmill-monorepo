@@ -1046,7 +1046,7 @@ for (const [left, gone] of [['no credential', true], ['another account\'s creden
     assert.equal((await engine.signIn('A')).complete, false);
     await engine.receiveFrame({ op: 'change', scope: tree, as: 'A' });
     assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync() }, { authPaused: true, canSync: false });
-    await engine.write(null, (device) => { delete device.meta.pendingSignIn; device.meta.clearCredential = 'A'; });
+    await engine.cancelSignIn('A');
     env.transport.account = gone ? null : 'B';
     await engine.cleanupCredentials();
     assert.deepEqual({ cleared, state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
@@ -1054,6 +1054,83 @@ for (const [left, gone] of [['no credential', true], ['another account\'s creden
     { cleared: ['A'], state: 'anon', authPaused: !gone, canSync: gone, owed: undefined });
     engine.close();
   });
+
+test('cancelling a pending sign-in drops it and owes the account\'s credential in one write, leaving the anon replica active with its work', async () => {
+  const env = environment();
+  const cleared = [];
+  env.options.credentials = { clear: async (account) => { cleared.push(account); return true; } };
+  const engine = await open(env);
+  await engine.commit('self/probe', card());
+  const replica = engine.activeReplica();
+  const entries = structuredClone(engine.device.activeReplica.entries());
+  assert.deepEqual(await engine.signIn('A'), { complete: false, authPaused: true });
+  const writes = [];
+  const write = engine.write.bind(engine);
+  engine.write = (...args) => { writes.push(args[0]); return write(...args); };
+  await engine.cancelSignIn('A');
+  assert.deepEqual({ writes, pendingSignIn: engine.device.meta.pendingSignIn, owed: engine.device.meta.clearCredential, cleared,
+    replica: engine.activeReplica(), state: engine.device.activeReplica.meta.state, entries: engine.device.activeReplica.entries() },
+  { writes: [null], pendingSignIn: undefined, owed: 'A', cleared: [], replica, state: 'anon', entries });
+  await engine.cleanupCredentials();
+  assert.deepEqual({ cleared, owed: engine.device.meta.clearCredential }, { cleared: ['A'], owed: undefined });
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  const bound = structuredClone(engine.device.meta);
+  await assert.rejects(engine.cancelSignIn('A'), /no sign-in is pending/);
+  assert.deepEqual({ meta: engine.device.meta, state: engine.device.activeReplica.meta.state }, { meta: bound, state: 'bound' });
+  engine.close();
+});
+
+test('a sign-in supersedes a credential deletion owed for an earlier session: the credential the browser holds is the one signing in', async () => {
+  const env = environment();
+  env.options.credentials = { clear: async () => { throw new Error('network unavailable'); } };
+  const engine = await open(env);
+  assert.equal((await engine.signIn('A')).complete, false);
+  await engine.cancelSignIn('A');
+  await engine.cleanupCredentials();
+  assert.equal(engine.device.meta.clearCredential, 'A');
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.deepEqual({ owed: engine.device.meta.clearCredential, pendingSignIn: engine.device.meta.pendingSignIn, account: engine.device.activeReplica.meta.account },
+    { owed: undefined, pendingSignIn: undefined, account: 'A' });
+  engine.close();
+});
+
+test('the session owner\'s records ride the engine\'s calls: a device cleanup clears only the marker it finished, and an account closure is recorded only for the account bound', async () => {
+  const env = environment();
+  const engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await assert.rejects(engine.recordAccountClosure('B', 'session-1'), /account changed during closure/);
+  await engine.recordAccountClosure('A', 'session-1');
+  assert.deepEqual(engine.device.meta.closingAccount, { account: 'A', sessionId: 'session-1' });
+  await engine.clearAccountClosure('session-0');
+  assert.deepEqual(engine.device.meta.closingAccount, { account: 'A', sessionId: 'session-1' });
+  await engine.clearAccountClosure('session-1');
+  assert.equal(engine.device.meta.closingAccount, undefined);
+  await engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+  const owed = structuredClone(engine.device.meta.deviceCleanup);
+  await engine.clearDeviceCleanup({ ...owed, generation: owed.generation - 1 });
+  assert.deepEqual(engine.device.meta.deviceCleanup, owed);
+  await engine.clearDeviceCleanup(owed);
+  assert.deepEqual({ previous: owed.previous, left: engine.device.meta.deviceCleanup }, { previous: 'A', left: undefined });
+  engine.close();
+});
+
+test('a bound replica pauses once the session owner finds the browser holds another credential, or none; an unknown answer changes nothing', async () => {
+  const env = environment();
+  const engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await engine.credentialHeld(undefined);
+  await engine.credentialHeld('A');
+  assert.equal(engine.device.activeReplica.meta.authPaused, false);
+  await engine.credentialHeld(null);
+  assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync(),
+    paused: env.events.filter(({ name }) => name === 'sync-auth-paused').map(({ props }) => props.outcome) },
+  { authPaused: true, canSync: false, paused: ['paused'] });
+  engine.close();
+});
 
 test('finished offline sign-out durably owes cookie cleanup; restart retries a failed cleanup', async () => {
   const env = environment();
@@ -1310,8 +1387,7 @@ test('stale sign-out cannot finish against another account after a missed invali
   assert.equal(stale.device.activeReplica.meta.account, 'A');
   await assert.rejects(stale.finishSignOut({ choice: 'keep' }), /account changed during sign-out/);
   const { device } = await peerEngine.store.read();
-  assert.equal(device.activeReplica.meta.account, 'B');
-  assert.equal(device.meta.clearCredential, 'A');
+  assert.deepEqual({ account: device.activeReplica.meta.account, owed: device.meta.clearCredential }, { account: 'B', owed: undefined });
   stale.close(); peerEngine.close();
 });
 
