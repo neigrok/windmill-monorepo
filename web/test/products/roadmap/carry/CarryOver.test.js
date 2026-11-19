@@ -521,3 +521,19 @@ test('with no connection a roadmap made signed out waits for the server’s answ
   await carryOver(disk).carry.run(engine);
   assert.deepEqual({ listed: holding(engine, id).listed, old: await oldStores() }, { listed: true, old: NOTHING_OLD });
 });
+
+test('signed out, then signed in to an account that holds no roadmaps: what was carried into the anon replica reaches the server whole', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  const engine = await tab(t, disk, server);
+  await carryOver(disk).carry.run(engine);
+  const before = holding(engine, id);
+  engine.transport.account = 'B';
+  assert.equal((await engine.signIn('B')).complete, true);
+  await sent(engine);
+  const phone = await device(t, server, 'B');
+  await until(phone, () => holding(phone, id).listed, 'the account’s list on another device');
+  for (const scope of [RoadmapScopes.tree(id)]) await phone.subscribe(scope);
+  await until(phone, () => JSON.stringify(holding(phone, id)) === JSON.stringify(before), 'the carried roadmap on another device');
+});

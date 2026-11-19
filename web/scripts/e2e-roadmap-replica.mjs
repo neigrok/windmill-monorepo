@@ -780,6 +780,7 @@ async function carryScenario(mode, browser, { secret, carrier }, account, check)
       await page.goto(`${origin}/app`);
       const phone = await OwnerDevice.open('carrier', carrier.secret, carrier.account);
       try {
+        await phone.engine.start();
         const { Id } = await source('src/platform/domain-kit/entities.js');
         const { StepMark } = await source('src/products/roadmap/domain/progress.js');
         const { StepNote, Subtask } = await source('src/products/roadmap/domain/workspace.js');
