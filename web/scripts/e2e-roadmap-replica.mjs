@@ -15,7 +15,7 @@
 // browser's unsent changes carried to the server, its old stores gone once carried; with it off, the old stores untouched.
 // With the switch on, also readers and signed-out births (§5): a stranger, signed out and signed in, opening a public
 // roadmap and its subtree by link, each followed on the live socket as the room opens it (a signed-in reader's own overlay
-// with it) and dropped as they leave; a private roadmap no stranger can read; a browser that keeps nothing shown the
+// with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a browser that keeps nothing shown the
 // room's load error (E-5 is not built); and a roadmap made at the birth door signed out, held in the browser's anon replica
 // and joining at sign-in an account that holds none. Each run has its own database, server and built app on the given
 // ports, and stops and drops them.
@@ -1345,8 +1345,8 @@ async function run(mode, browser) {
       .toString().match(/roadmap_sign[a-z_]*:[a-z]+(?:,roadmap_sign[a-z_]*:[a-z]+)*/)?.[0] ?? '';
     assert.equal(asked, mode === 'on' ? 'roadmap_signin:add,roadmap_signin:cancel,roadmap_signin:discard,roadmap_signin:shown,roadmap_signout:discard,roadmap_signout:keep,roadmap_signout:shown' : '',
       'each step of the sign-in and sign-out questions reached the local intake only with the switch on');
-    const unshown = sql("select coalesce(string_agg(distinct props->>'outcome', ',' order by props->>'outcome'), '') from events where name = 'roadmap_load'")
-      .toString().match(/[a-z]+(?:,[a-z]+)*/)?.[0] ?? '';
+    const unshown = sql("select coalesce(string_agg(distinct props->>'outcome', ',' order by props->>'outcome'), '') as outcomes from events where name = 'roadmap_load'")
+      .toString().split('\n').map((line) => line.trim()).find((line) => line !== 'outcomes' && /^[a-z]+(?:,[a-z]+)*$/.test(line)) ?? '';
     assert.deepEqual(['missing', 'unkept'].filter((outcome) => unshown.split(',').includes(outcome)), mode === 'on' ? ['missing', 'unkept'] : [],
       'why a room could not show its roadmap reached the local intake only with the switch on: a private roadmap a stranger opened, a browser that keeps nothing');
     const exported = Number(sql("select count(*) from events where name = 'roadmap_export' and props->>'door' = 'settings' and props->>'outcome' = 'done'").toString().match(/\d+/)?.[0] ?? 0);
