@@ -200,6 +200,10 @@ each row's full bytes with its key so a stale Add or Discard is asked again.
 `adoptDeviceRows(product, incomingRows, keptRows)` returns the merged product rows, or `undefined`
 when unhandled. A differing pending-work collision without a merge fails the transaction and keeps
 both replicas intact; ordinary device settings retain the destination value on a shared key.
+A product reads its rows with `readDeviceRows(product)` (the active replica's, frozen) and drops one kind of them from
+every replica, a dormant one's included, with `dropDeviceRows(product, row)`, the registry's device row matched by its
+`keyPattern`. A sweep after a sign-out reads `hasReplicaOf(account)` and `anonymousRecords()` (the anon replica's scopes
+and the records its entries write) rather than the device's replicas (engine.md §2.5, §7.10).
 
 Command predictions may include local deaths and serial values; only the command arguments go on
 the wire.

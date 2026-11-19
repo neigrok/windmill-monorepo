@@ -2,10 +2,9 @@
 // of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and of its sign-out question,
 // Keep or Discard, where every unsent change is roadmap's, each naming every roadmap its Discard takes, so a Discard
 // covers exactly the work it named (engine.md §7.10); and what an explicit sign-out, an account replacement and an
-// account closure take from the browser: every replica's landing notes (no engine API reaches a dormant replica, so it
-// writes the device's store itself), the told notice ids, what the browser kept of every roadmap but the anonymous ones,
-// and, where the account's replica went with a Discard, the old stores its question named. The route table hands these
-// to the shell only where the room reads the copy.
+// account closure take from the browser: every replica's landing notes, a dormant one's included, the told notice ids,
+// what the browser kept of every roadmap but the anonymous ones, and, where the account's replica went with a Discard,
+// the old stores its question named. The route table hands these to the shell only where the room reads the copy.
 
 import { effectsOf } from '../../../../../packages/api-contract/sync/reference/client/projections.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
@@ -172,19 +171,11 @@ export async function signOutWords(engine, question, track = beacon, { stores = 
 // The roadmaps that stay with whoever is at the browser next: the anon replica's own and those it reads, and the old
 // stores' roadmaps made signed out that name nobody.
 async function anonymousTrees(engine, stores) {
-  const anon = engine?.device?.replicas.find((replica) => replica.meta.state === 'anon');
-  const trees = new Set();
-  for (const entry of anon?.entries() ?? []) {
-    for (const { scope, d } of effectsOf(entry)) {
-      if (scope === RoadmapScopes.account) for (const delta of d) if (delta.t === Roadmap.type) trees.add(String(delta.id));
-      const tree = RoadmapNames.roadmapOf(scope);
-      if (tree) trees.add(tree);
-    }
-  }
-  for (const scope of Object.keys(anon?.confirmed ?? {})) {
-    const tree = RoadmapNames.roadmapOf(scope);
-    if (tree) trees.add(tree);
-  }
+  const { scopes, records } = engine?.anonymousRecords() ?? { scopes: [], records: [] };
+  const trees = new Set([
+    ...records.filter((record) => record.scope === RoadmapScopes.account && record.t === Roadmap.type).map((record) => String(record.id)),
+    ...scopes.map((scope) => RoadmapNames.roadmapOf(scope)).filter(Boolean),
+  ]);
   const { roadmaps } = await stores.read();
   for (const roadmap of roadmaps) if (roadmap.madeSignedOut && roadmap.owner === null) trees.add(roadmap.id);
   return trees;
@@ -200,14 +191,9 @@ export async function forgetReplicaRoom({ engine = syncSession.engine, previous 
   forgetToldNotices();
   forgetTreeResidue(await anonymousTrees(engine, stores));
   if (!engine) return;
-  await engine.write(null, (device) => {
-    for (const replica of device.replicas) {
-      const rows = replica.deviceRows('roadmap');
-      for (const key of Object.keys(rows)) if (RoadmapScopes.isLanding(key)) delete rows[key];
-    }
-  });
+  await engine.dropDeviceRows('roadmap', 'landing');
   const counted = notes.counted;
-  if (previous === null || engine.device.replicas.some((replica) => replica.meta.account === previous)) {
+  if (previous === null || engine.hasReplicaOf(previous)) {
     if (counted?.account === previous) notes.counted = null;
     return;
   }

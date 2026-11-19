@@ -541,6 +541,41 @@ export class BrowserSyncEngine {
 
   dismissNotice(id) { return this.write(null, (device) => dismiss(device.activeReplica, id)); }
 
+  // The active replica's device rows of `product`, as the engine published them: frozen, and the same object while they
+  // stand (engine.md §2.5).
+  readDeviceRows(product) {
+    return frozen(this.device.activeReplica.device[product] ?? {});
+  }
+
+  // Every device row of `product`'s kind `row`, matched by the registry's `keyPattern`, dropped from every replica of the
+  // device, a dormant one's included, in one write (engine.md §2.5).
+  async dropDeviceRows(product, row) {
+    const declared = this.registry.products[product]?.device?.[row];
+    if (!declared) throw new CommitError(`${product} declares no device row ${row}`);
+    const pattern = new RegExp(declared.keyPattern, 'u');
+    await this.write(null, (device) => {
+      for (const replica of device.replicas) {
+        const rows = replica.device[product] ?? {};
+        for (const key of Object.keys(rows)) if (pattern.test(key)) delete rows[key];
+      }
+    });
+  }
+
+  // What the anon replica holds and writes, for a product that keeps what stays with whoever is at the browser next: the
+  // scopes it holds rows of or its entries write, and the records `{scope, t, id}` they write. Empty without an anon replica.
+  anonymousRecords() {
+    const anon = this.device.anonReplica();
+    const effects = (anon?.entries() ?? []).flatMap((entry) => effectsOf(entry));
+    const records = new Map(effects.flatMap(({ scope, d }) => d.map(({ t, id }) => [`${scope}|${recordKey(t, id)}`, { scope, t, id }])));
+    const scopes = new Set([...Object.keys(anon?.confirmed ?? {}), ...effects.map(({ scope }) => scope)]);
+    return { scopes: [...scopes], records: [...records.values()] };
+  }
+
+  // Whether the device keeps a replica of `account`, bound or dormant: a sign-out's Discard deletes it (engine.md §7.10).
+  hasReplicaOf(account) {
+    return this.device.replicas.some((replica) => replica.meta.account === account);
+  }
+
   armHolds() {
     this.timers.clearTimeout(this.holdTimer);
     if (this.closed || !this.device) return;

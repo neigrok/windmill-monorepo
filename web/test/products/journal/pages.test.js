@@ -22,8 +22,9 @@ test('the corpus reads the replica for its own account, and makes no REST reques
   const engine = { registry, now: () => Date.parse('2026-08-05T12:00:00Z'), activeReplica: () => 'replica',
     readMetadata: () => ({ devices: {}, confirmed: new Map(), firstPullComplete: snapshot.firstPullComplete,
       commands: [], actor: 'writer', isAnonymous: false, checkpoint: { epoch: null, cleanSeq: null } }),
+    readDeviceRows: () => ({}),
     observe: () => ({ getSnapshot: () => snapshot, release() {} }), device: { activeReplica: {
-    meta: { state: 'bound', account: 'A', serverOffsetMs: 0 }, deviceRows: () => ({}), confirmedRow: () => null,
+    meta: { state: 'bound', account: 'A', serverOffsetMs: 0 }, confirmedRow: () => null,
   } } };
   holding(t, { engine, snapshot: { ...syncSession.snapshot, engine, ready: true } });
   t.mock.method(globalThis, 'fetch', () => assert.fail('local pages used REST'));

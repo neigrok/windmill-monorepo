@@ -66,21 +66,22 @@ export function pagesOf(engine, snapshot = engine.observe(SCOPE).getSnapshot()) 
   }));
   // Refused commands leave the outbox, but their full document remains durable in the notice.
   const replica = engine.device.activeReplica;
+  const rows = engine.readDeviceRows('journal');
   for (const notice of snapshot.notices) {
     const cmd = notice.content.cmd;
     if (notice.dismissed || !['journal.savePage', 'journal.claimPage'].includes(cmd?.name)) continue;
     const args = cmd.args;
-    if (Object.values(replica.deviceRows('journal')).some((row) => row?.claimId && row.day === args.day)) continue;
+    if (Object.values(rows).some((row) => row?.claimId && row.day === args.day)) continue;
     if (cmd.name === 'journal.savePage') {
       const newer = [replica.confirmedRow(SCOPE, 'page', args.day)?.f.documentStamp?.[0],
         ...replica.entries(SCOPE).filter((entry) => entry.intent.cmd?.name === 'journal.savePage' && entry.intent.cmd.args.day === args.day)
           .map((entry) => entry.intent.cmd.args.stamp)].filter(Boolean);
       if (newer.some((stamp) => compareDocumentStamps(stamp, args.stamp) >= 0)) continue;
     }
-    const pending = args.claimId && replica.deviceRows('journal')[pendingClaimKey(args.claimId)];
+    const pending = args.claimId && rows[pendingClaimKey(args.claimId)];
     pages.set(args.day, { ...normalizePage(args), ...(pending ? pending.latest : {}) });
   }
-  const draft = replica.deviceRows('journal')[EditorDraft.key];
+  const draft = rows[EditorDraft.key];
   if (draft) {
     const retained = EditorDraft.fromJSON(draft);
     pages.set(retained.day.text, { day: retained.day.text, ...retained.document.fields() });
@@ -146,7 +147,7 @@ export function retainRecoveredPage(replica, doc) {
 }
 
 export function recoveredDrafts(engine = syncSession.engine) {
-  return Object.entries(engine?.device.activeReplica.deviceRows('journal') ?? {})
+  return Object.entries(engine?.readDeviceRows('journal') ?? {})
     .filter(([key]) => key.startsWith(EditorDraft.recoveryPrefix)).map(([key, value]) => {
       const draft = EditorDraft.fromJSON(value);
       return { key, day: draft.day.text, ...draft.document.fields() };
@@ -186,7 +187,7 @@ export function watchClaims(engine) {
       while (dirty && !engine.closed) {
         dirty = false;
         if (engine.device.activeReplica.meta.state !== 'bound') continue;
-        const pending = Object.values(engine.device.activeReplica.deviceRows('journal')).filter((row) => row?.claimResult && !row.refusal);
+        const pending = Object.values(engine.readDeviceRows('journal')).filter((row) => row?.claimResult && !row.refusal);
         if (!pending.length) continue;
         const runner = journalRunner(engine);
         for (const row of pending) {

@@ -609,6 +609,11 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
   storage excluded from device backups (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web
   runs no fork guard.
 - `DeviceMeta.pendingSignIn`: an incomplete sign-in, resumed at the next engine start (§7.10).
+- `DeviceRow`: a product's own device work, which only its product reads and writes. The browser
+  engine answers the active replica's rows of a product (`readDeviceRows(product)`, frozen, the same
+  object while they stand), and drops one kind of them, the registry's device row `row` matched by
+  its `keyPattern`, from every replica, a dormant one's included, in one transaction
+  (`dropDeviceRows(product, row)`). A product reaches its rows through these, never into a replica.
 - `liveHint` (§7.4) is not stored: the product's view rule computes it when the sender backs off
   (Appendix A).
 - `ReversibleAct`: the journal of an act opted into Undo (§7.3 Undo of an act), in its replica's
@@ -2685,6 +2690,11 @@ Then, in one local transaction:
 - **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
+
+The browser engine adds two reads for a product's sweep after a sign-out: `hasReplicaOf(account)`,
+whether a bound or dormant replica of the account remains (a Discard deleted it), and
+`anonymousRecords()`, the scopes the `anon` replica holds rows of or its entries write, and the
+records `{scope, t, id}` those entries write: what stays with whoever is at the browser next.
 
 ### §7.11 Fork guard and re-identify
 

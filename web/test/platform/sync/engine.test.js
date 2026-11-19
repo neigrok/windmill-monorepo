@@ -1132,6 +1132,33 @@ test('a bound replica pauses once the session owner finds the browser holds anot
   engine.close();
 });
 
+test('a product drops one kind of its device rows from every replica in one write, and reads its rows, the anon replica\'s records and whether an account\'s replica stays only through the engine', async () => {
+  const env = environment();
+  const engine = await open(env);
+  const picture = { at: 1 };
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await engine.commit('self/probe', [], { local: { 'picture:account01': picture, rack: { body: 'account' } } });
+  await engine.finishSignOut({ choice: 'keep' });
+  await engine.commit('self/probe', card(), { local: { 'picture:anon0001': picture, rack: { body: 'anon' } } });
+  const rows = engine.readDeviceRows('probe');
+  const read = { rows, frozen: Object.isFrozen(rows), same: engine.readDeviceRows('probe') === rows, other: engine.readDeviceRows('gym'),
+    anonymous: engine.anonymousRecords(), keepsA: engine.hasReplicaOf('A'), keepsB: engine.hasReplicaOf('B') };
+  const writes = [];
+  const write = engine.write.bind(engine);
+  engine.write = (...args) => { writes.push(args[0]); return write(...args); };
+  await engine.dropDeviceRows('probe', 'picture');
+  await assert.rejects(engine.dropDeviceRows('probe', 'landing'), /probe declares no device row landing/);
+  const replicas = (await engine.store.read()).device.replicas.map((replica) => [replica.meta.state, replica.device.probe]);
+  assert.deepEqual({ ...read, writes, replicas }, {
+    rows: { 'picture:anon0001': picture, rack: { body: 'anon' } }, frozen: true, same: true, other: {},
+    anonymous: { scopes: ['self/probe'], records: [{ scope: 'self/probe', t: 'card', id: 'card0001' }] }, keepsA: true, keepsB: false,
+    writes: [null],
+    replicas: [['anon', { rack: { body: 'anon' } }], ['dormant', { rack: { body: 'account' } }]],
+  });
+  engine.close();
+});
+
 test('finished offline sign-out durably owes cookie cleanup; restart retries a failed cleanup', async () => {
   const env = environment();
   let calls = 0;
