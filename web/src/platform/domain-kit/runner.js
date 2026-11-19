@@ -121,37 +121,16 @@ export class ActionRunner {
       const committed = await this.replica.commitAct(/** @returns {{ request: import('./acts.js').ActRequest | null, value: Step }} */ (context) => {
         insideRun = true;
         try {
-          const reader = new ActReader(context, this.registry, new Moment(new Instant(context.now), this.zone));
-          let loaded;
-          try { loaded = action.load(reader); precondition(!isThenable(loaded), 'an act loads synchronously'); }
-          finally { reader.end(); }
-          let decided;
-          try { decided = action.decide(loaded, new ActIDSource(context)); }
-          catch (error) {
-            if (!(error instanceof Violation)) throw error;
-            decided = ActDecision.refuse(action.refusals.ofViolation(error));
-          }
-          precondition(!isThenable(decided), 'an act decides synchronously');
+          const decided = this.decideAct(action, context, new Moment(new Instant(context.now), this.zone));
           if (decided.kind === 'refuse') return { request: null, value: { done: { kind: 'refused', refusal: decided.refusal } } };
           if (decided.kind === 'unchanged') return { request: null, value: { done: { kind: 'unchanged', result: decided.result } } };
-          const opted = decided.plan.segments.flatMap(({ scope, plan }, index) => {
-            const recipes = translateUndo(plan, scope);
-            return recipes === null ? [] : [{ index, recipes }];
-          });
-          return { request: { scopes: decided.plan.segments.map((item) => item.scope), hold: decided.plan.segments.some((item) => item.plan.isHeld),
-            ...(opted.length ? { undo: { version: 1, segments: opted } } : {}) }, value: { writing: decided } };
+          return { request: this.actRequest(decided.plan.segments), value: { writing: decided } };
         } finally { insideRun = false; }
       }, (value, index, input) => {
         precondition('writing' in value, 'an act segment requires a plan');
-        insideRun = true;
-        try {
-          const scoped = value.writing.plan.segments[index];
-          precondition(scoped !== undefined, 'the act segment index is in its plan');
-          const { scope, plan } = scoped;
-          const gone = firstGone(plan, this.viewsOf(scope, input), scope, this.registry);
-          if (gone) throw new ActPrediction(gone);
-          return translate(plan, scope, this.registry);
-        } finally { insideRun = false; }
+        const scoped = value.writing.plan.segments[index];
+        precondition(scoped !== undefined, 'the act segment index is in its plan');
+        return this.segmentOf(scoped.scope, scoped.plan, input);
       });
       const { outcome, value } = committed;
       if ('done' in value) return value.done;
@@ -160,19 +139,158 @@ export class ActionRunner {
       const { segment, code, detail } = outcome.refused;
       const scoped = value.writing.plan.segments[segment];
       precondition(scoped !== undefined, 'the refused segment index is in its plan');
-      const plan = scoped.plan;
-      insideRun = true;
-      try { return { kind: 'refused', refusal: action.refusals.ofRefused(new Refused(code, refusalSubject(plan, code, detail, this.registry), detail, 'predicted')) }; }
-      finally { insideRun = false; }
+      return { kind: 'refused', refusal: this.refusalOf(action, this.refusedBy(scoped.plan, code, detail)) };
     } catch (error) {
-      if (error instanceof ActPrediction) {
-        insideRun = true;
-        try { return { kind: 'refused', refusal: action.refusals.ofRefused(error.refusal) }; }
-        finally { insideRun = false; }
-      }
+      if (error instanceof ActPrediction) return { kind: 'refused', refusal: this.refusalOf(action, error.refusal) };
       if (error instanceof Error && 'kind' in error && error.kind === 'malformed') throw new Fault(`a malformed act is a programming fault: ${error.message}`);
       throw error;
     }
+  }
+
+  // §9.7: several acts as one. Each part loads through the segments of the parts before it, which the engine stages
+  // on the act's tentative copy, and then decides. A refusal of any part, a failed check, a gone record or a segment
+  // the engine refuses refuses the whole act before anything is written. The parts' segments then commit as one act:
+  // one gesture id, one hold (held when any part's plan holds) and one Undo carrying every part's recipes.
+  /**
+   * @param {import('./acts.js').ActAction<any, any, any>[]} parts
+   * @returns {Promise<import('./acts.js').ComposedOutcome>}
+   */
+  async runComposed(parts) {
+    precondition(!insideRun, 'a run cannot enter inside a run');
+    precondition(parts.length > 0, 'a composed act has parts');
+    /** @typedef {{ part: number, scope: string, plan: import('./plans.js').Plan }} PartSegment */
+    /** @typedef {{ done: import('./acts.js').ComposedOutcome } | { writing: { segments: PartSegment[], results: unknown[] } }} Step */
+    const refused = (/** @type {number} */ part, /** @type {import('./refusals.js').Refused} */ refusal) => {
+      const action = parts[part];
+      precondition(action !== undefined, 'the refusing part is one of the act\'s');
+      return { kind: /** @type {const} */ ('refused'), part, refusal: this.refusalOf(action, refusal) };
+    };
+    try {
+      const committed = await this.replica.commitAct(/** @returns {{ request: import('./acts.js').ActRequest | null, value: Step }} */ (context) => {
+        insideRun = true;
+        try {
+          const moment = new Moment(new Instant(context.now), this.zone);
+          /** @type {unknown[]} */
+          const results = [];
+          /** @type {PartSegment[]} */
+          const segments = [];
+          for (const [part, action] of parts.entries()) {
+            if (part > 0) context.beginPart();
+            const decided = this.decideAct(action, context, moment);
+            if (decided.kind === 'refuse') return { request: null, value: { done: { kind: 'refused', part, refusal: decided.refusal } } };
+            results.push(decided.result);
+            if (decided.kind === 'unchanged') continue;
+            for (const { scope, plan } of decided.plan.segments) {
+              let staged;
+              try { staged = context.stage(scope, (input) => this.segmentOf(scope, plan, input)); }
+              catch (error) {
+                if (error instanceof ActPrediction) return { request: null, value: { done: refused(part, error.refusal) } };
+                throw error;
+              }
+              if (staged !== null) return { request: null, value: { done: refused(part, this.refusedBy(plan, staged.code, staged.detail)) } };
+              segments.push({ part, scope, plan });
+            }
+          }
+          if (segments.length === 0) return { request: null, value: { done: { kind: 'unchanged', results } } };
+          return { request: this.actRequest(segments), value: { writing: { segments, results } } };
+        } finally { insideRun = false; }
+      }, (value, index, input) => {
+        precondition('writing' in value, 'an act segment requires a plan');
+        const segment = value.writing.segments[index];
+        precondition(segment !== undefined, 'the act segment index is in its plan');
+        try { return this.segmentOf(segment.scope, segment.plan, input); }
+        catch (error) {
+          if (error instanceof ActPrediction) throw new ActPrediction(error.refusal, segment.part);
+          throw error;
+        }
+      });
+      const { outcome, value } = committed;
+      if ('done' in value) return value.done;
+      if (outcome === null) return { kind: 'unchanged', results: value.writing.results };
+      if ('receipt' in outcome) return { kind: 'committed', results: value.writing.results, receipt: outcome.receipt };
+      const { segment, code, detail } = outcome.refused;
+      const refusedSegment = value.writing.segments[segment];
+      precondition(refusedSegment !== undefined, 'the refused segment index is in its plan');
+      return refused(refusedSegment.part, this.refusedBy(refusedSegment.plan, code, detail));
+    } catch (error) {
+      if (error instanceof ActPrediction) return refused(error.part, error.refusal);
+      if (error instanceof Error && 'kind' in error && error.kind === 'malformed') throw new Fault(`a malformed act is a programming fault: ${error.message}`);
+      throw error;
+    }
+  }
+
+  // An act's load through its reader and its decision, a failed check refusing it.
+  /**
+   * @template L, T, R
+   * @param {import('./acts.js').ActAction<L, T, R>} action
+   * @param {import('./acts.js').ActContext} context
+   * @param {Moment} moment
+   * @returns {import('./acts.js').ActDecision<T, R>}
+   */
+  decideAct(action, context, moment) {
+    const reader = new ActReader(context, this.registry, moment);
+    let loaded;
+    try { loaded = action.load(reader); precondition(!isThenable(loaded), 'an act loads synchronously'); }
+    finally { reader.end(); }
+    let decided;
+    try { decided = action.decide(loaded, new ActIDSource(context)); }
+    catch (error) {
+      if (!(error instanceof Violation)) throw error;
+      decided = ActDecision.refuse(action.refusals.ofViolation(error));
+    }
+    precondition(!isThenable(decided), 'an act decides synchronously');
+    return decided;
+  }
+
+  // The engine's request for an act's segments: their scopes in order, one hold when any plan holds, and each opted
+  // segment's Undo recipes by its index.
+  /** @param {readonly { scope: string, plan: import('./plans.js').Plan }[]} segments */
+  actRequest(segments) {
+    const opted = segments.flatMap(({ scope, plan }, index) => {
+      const recipes = translateUndo(plan, scope);
+      return recipes === null ? [] : [{ index, recipes }];
+    });
+    return { scopes: segments.map((item) => item.scope), hold: segments.some((item) => item.plan.isHeld),
+      ...(opted.length ? { undo: { version: /** @type {const} */ (1), segments: opted } } : {}) };
+  }
+
+  // One segment's gesture over the views through the act's earlier segments, a gone record refusing it.
+  /**
+   * @param {string} scope
+   * @param {import('./plans.js').Plan} plan
+   * @param {CommitViews} input
+   */
+  segmentOf(scope, plan, input) {
+    insideRun = true;
+    try {
+      const gone = firstGone(plan, this.viewsOf(scope, input), scope, this.registry);
+      if (gone) throw new ActPrediction(gone);
+      return translate(plan, scope, this.registry);
+    } finally { insideRun = false; }
+  }
+
+  // An engine refusal of a plan's segment, as the kit names it.
+  /**
+   * @param {import('./plans.js').Plan} plan
+   * @param {string} code
+   * @param {Json | null} detail
+   */
+  refusedBy(plan, code, detail) {
+    insideRun = true;
+    try { return new Refused(code, refusalSubject(plan, code, detail, this.registry), detail, 'predicted'); }
+    finally { insideRun = false; }
+  }
+
+  // A refusal in the words of the act that met it.
+  /**
+   * @template R
+   * @param {{ refusals: import('./refusals.js').Refusals<R> }} action
+   * @param {import('./refusals.js').Refused} refusal
+   */
+  refusalOf(action, refusal) {
+    insideRun = true;
+    try { return action.refusals.ofRefused(refusal); }
+    finally { insideRun = false; }
   }
 
   // Steps 2–7 of §9.2: one commit whose body loads, decides, checks for gone records and translates.
@@ -416,12 +534,16 @@ export class EngineReplica {
    * @returns {Promise<{ outcome: ActCommitOutcome | null, value: T }>}
    */
   async commitAct(prepare, segment) {
-    const { outcome, value } = await this.engine.commitAct(prepare, (/** @type {T} */ value, /** @type {number} */ index, /** @type {CommitViews} */ input) => {
-      const { changes, atomic, hold, guards, retire, cmd, predict, scopedPredict, local, supersede } = segment(value, index, input);
+    const engineGesture = (/** @type {Gesture} */ { changes, atomic, hold, guards, retire, cmd, predict, scopedPredict, local, supersede }) => {
       const opts = { atomic, hold, guard: guards, retire, predict, ...(scopedPredict ? { scopedPredict } : {}),
         ...(supersede?.length ? { supersede } : {}), local: Object.fromEntries(local.map((write) => [write.key, write.value])) };
       return { changes, opts: cmd === null ? opts : { ...opts, cmd } };
-    });
+    };
+    const { outcome, value } = await this.engine.commitAct((/** @type {any} */ context) => prepare({ ...context,
+      stage: (/** @type {string} */ scope, /** @type {(views: CommitViews) => Gesture} */ body) => {
+        const refused = context.stage(scope, (/** @type {CommitViews} */ input) => engineGesture(body(input)));
+        return refused === null ? null : { code: refused.refused, detail: refused.detail ?? null };
+      } }), (/** @type {T} */ value, /** @type {number} */ index, /** @type {CommitViews} */ input) => engineGesture(segment(value, index, input)));
     if (outcome === null) return { outcome: null, value };
     if (outcome.refused !== undefined) return { outcome: { refused: { segment: outcome.segment, code: outcome.refused, detail: outcome.detail ?? null } }, value };
     return { outcome: { receipt: outcome }, value };

@@ -1,6 +1,7 @@
 #include "products/roadmap/application/RoadmapRows.h"
 
 #include "platform/domain/sync/FractionalIndex.h"
+#include "products/roadmap/domain/read/RoadmapAccount.h"
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
@@ -180,6 +181,13 @@ std::vector<sync::Row> RoadmapRows::rows(sync::SyncTxn& txn, const sync::ScopeKe
   return catalog_.store(type).feed(txn, key, sync::FeedQuery{});
 }
 
+read::Location RoadmapRows::standingOf(sync::SyncTxn& txn, const AccountRows& account, const std::string& tree) const {
+  std::vector<read::RoadmapTree> way;
+  for (const OwningStep& step : account.pathOf(tree)) way.emplace_back(recordsOf(this->tree(txn, step.tree.str(), std::nullopt), account));
+  way.emplace_back(recordsOf(this->tree(txn, tree, std::nullopt), account));
+  return read::RoadmapAccount(std::move(way)).locationOf(tree);
+}
+
 std::optional<sync::ScopeRow> RoadmapRows::scope(sync::SyncTxn& txn, const sync::ScopeKey& key) const {
   return store_.scope(txn, key, sync::RowLock::none);
 }
@@ -209,16 +217,14 @@ TreeRows RoadmapRows::tree(sync::SyncTxn& txn, const std::string& tree, const st
 read::TreeRecords recordsOf(const TreeRows& rows, const AccountRows& account) {
   read::TreeRecords records;
   records.id = rows.tree;
-  records.present = rows.exists() && account.isAlive(rows.tree) && (account.placeOf(rows.tree) || rows.meta.has_value());
+  records.present = rows.exists() && account.isAlive(rows.tree);
   records.parent = account.placeOf(rows.tree);
   if (rows.meta) {
-    records.meta.title = textOf(*rows.meta, "title");
-    records.meta.guide = textOf(*rows.meta, "guide");
-    records.meta.guideInherited = valueOf(*rows.meta, "guideInherited").asBool();
-    records.meta.root = textOf(*rows.meta, "root");
-    records.meta.depth = valueOf(*rows.meta, "depth").isIntegral() ? valueOf(*rows.meta, "depth").asInt64() : 0;
-    records.meta.visibility = textOf(*rows.meta, "visibility", "private");
-    records.meta.reach = textOf(*rows.meta, "reach", "private");
+    const Json::Value depth = valueOf(*rows.meta, "depth");
+    records.meta = read::Meta{.title = textOf(*rows.meta, "title"), .guide = textOf(*rows.meta, "guide"),
+                              .guideInherited = valueOf(*rows.meta, "guideInherited").asBool(), .root = textOf(*rows.meta, "root"),
+                              .depth = depth.isIntegral() ? depth.asInt64() : 0,
+                              .visibility = textOf(*rows.meta, "visibility", "private"), .reach = textOf(*rows.meta, "reach", "private")};
   }
   for (const sync::Row& row : rows.nodes) {
     read::Step step{.id = row.id.column(), .present = alive(row), .born = row.lattice.born.value_or(Hlc{}),

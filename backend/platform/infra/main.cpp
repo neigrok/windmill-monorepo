@@ -1308,7 +1308,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
       .tokens = tokens, .clock = systemClock,
       .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,
-      .allowedOrigins = allowedOrigins, .engineReads = engineReads};
+      .engineReads = engineReads, .allowedOrigins = allowedOrigins};
   lifetime.onStop([] { stopCollab(); }, registry, oplog, bus, progressService, ownerProgress, progress, authService,
                   presence, systemClock, authRepo, emailSender, resendClient, tokens, oauthService, oauthRepo,
                   accountFootprint, liveSessions, engineReads, roadmapRecords);

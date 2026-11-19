@@ -327,6 +327,8 @@ TreeEdit editTree(Call& call, const TreeId& tree, const UserId& caller, const Ro
       edited.answer = edit(*room, rows, account, txn);
       if (edited.answer.isError) refuse(edited.answer);
       const Json::Value writes = roadmap::writesOf(rows, *room);
+      // The binding records the intent's deed as it admits it (RoadmapDeeds): the room's own op rows go nowhere.
+      room->dropLandedOps(room->pendingOps().size());
       if (writes.empty()) return std::nullopt;
       return roadmap::intentIn("tree/" + tree.str(), writes);
     });
@@ -745,14 +747,14 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
       if (std::optional<std::string> bad = optionalBool(arguments["includeGuides"], "includeGuides")) return ToolResult::failure(*bad);
       const read::FollowGraph graph = reading->graph();
       const TreeData data = documentOf(*reading, graph);
-      const std::optional<Page> page = pageOf(data.nodes, arguments, error);
+      const std::optional<NodePage> page = pageOf(data.nodes, arguments, error);
       if (!page) return ToolResult::failure(error);
       const NodeReadContext context = contextOf(*reading, graph, *nodeFields, appOrigin_, false);
       ProjectedPage projected = projectPage(data.nodes, *page, *nodeFields, context);
       Json::Value kinds(Json::arrayValue);
       for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
-      const bool inherited = reading->rows.meta && reading->mine.meta.guideInherited;
+      const bool inherited = reading->mine.meta && reading->mine.meta->guideInherited;
       Json::Value guide(Json::objectValue);
       guide["text"] = data.guide;
       guide["yours"] = reading->writer && !inherited;
@@ -908,7 +910,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
         const bool owns = arguments["owns"].asBool();
         std::erase_if(matches, [&](const NodeSpec& node) { return owning.contains(node.id.str()) != owns; });
       }
-      const std::optional<Page> page = pageOf(matches, arguments, error);
+      const std::optional<NodePage> page = pageOf(matches, arguments, error);
       if (!page) return ToolResult::failure(error);
       ProjectedPage projected = projectPage(matches, *page, *fields, context);
       Json::Value out(Json::objectValue);

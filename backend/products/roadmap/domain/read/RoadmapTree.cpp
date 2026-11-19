@@ -20,7 +20,7 @@ bool authoredBefore(const Record& a, const Record& b) {
 RoadmapTree::RoadmapTree(TreeRecords records)
     : id(records.id), present(records.present), read(records.read), parent(records.parent), meta(records.meta),
       nodes(std::move(records.nodes)), edges(std::move(records.edges)), kinds(std::move(records.kinds)) {
-  if (meta.root.empty()) meta.root = id;
+  if (meta && meta->root.empty()) meta->root = id;
   std::stable_sort(nodes.begin(), nodes.end(), authoredBefore<Step>);
   std::stable_sort(kinds.begin(), kinds.end(), authoredBefore<Kind>);
   std::stable_sort(edges.begin(), edges.end(), [](const Edge& a, const Edge& b) {

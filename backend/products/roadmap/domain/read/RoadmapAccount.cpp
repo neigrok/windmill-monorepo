@@ -188,14 +188,15 @@ Location RoadmapAccount::locate(const std::string& id) {
     }
     const RoadmapTree* tree = this->tree(current);
     if (!tree) break;
-    if (!tree->present) {
+    // D-3: a root stands once its tree scope holds its meta; one read without it, a creation or a fork under way, does not.
+    if (!tree->present || (!tree->parent && tree->read == Read::loaded && !tree->meta)) {
       base = Location{Standing::hidden, std::nullopt, std::nullopt};
       locations_[current] = base;
       break;
     }
     if (!tree->parent) {
       base = Location{Standing::standing, Place{tree->id, std::nullopt, {}, 0},
-                      tree->read == Read::loaded ? std::optional<std::string>(tree->meta.title) : std::nullopt};
+                      tree->read == Read::loaded && tree->meta ? std::optional<std::string>(tree->meta->title) : std::nullopt};
       locations_[current] = base;
       break;
     }
@@ -331,8 +332,8 @@ std::vector<Guide> RoadmapAccount::guides(const std::string& id) const {
   std::vector<Candidate> candidates;
   for (const auto& [treeId, way] : waysBack(id)) {
     const RoadmapTree* tree = this->tree(treeId);
-    if (!tree || tree->read != Read::loaded || tree->meta.guide.empty()) continue;
-    candidates.push_back(Candidate{Guide{treeId, locationOf(treeId).title.value_or(""), tree->meta.guide, !tree->meta.guideInherited},
+    if (!tree || tree->read != Read::loaded || !tree->meta || tree->meta->guide.empty()) continue;
+    candidates.push_back(Candidate{Guide{treeId, locationOf(treeId).title.value_or(""), tree->meta->guide, !tree->meta->guideInherited},
                                    way.distance});
   }
   std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {

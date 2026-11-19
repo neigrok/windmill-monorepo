@@ -64,7 +64,6 @@ Source sourceOf(const roadmap::RoadmapRows& rows, sync::SyncTxn& txn, const Tree
   if (const std::optional<read::Parent> place = found.owner.placeOf(source.str()))
     return refused({TreeForks::Outcome::notARoot, {},
                     NotARoot{OwningStep{TreeId{place->tree}, NodeId{place->step}}, TreeId{found.owner.rootOf(source.str())}}});
-  if (!root.meta) return refused({TreeForks::Outcome::noSource, {}, std::nullopt});
   std::vector<read::RoadmapTree> roadmaps;
   for (const auto& [id, record] : found.owner.trees) {
     TreeRows treeRows = rows.tree(txn, id, std::nullopt);
@@ -72,6 +71,8 @@ Source sourceOf(const roadmap::RoadmapRows& rows, sync::SyncTxn& txn, const Tree
     found.trees.emplace(id, std::move(treeRows));
   }
   const read::RoadmapAccount account(std::move(roadmaps));
+  if (account.locationOf(source.str()).standing != read::Standing::standing)
+    return refused({TreeForks::Outcome::noSource, {}, std::nullopt});
   std::vector<std::pair<std::int64_t, std::string>> standing;
   for (const auto& [id, tree] : account.trees()) {
     const read::Location location = account.locationOf(id);
@@ -295,9 +296,10 @@ TreeForks::Result DoorForks::fork(const TreeId& source, const std::string& reque
 std::optional<TreeForks::Description> DoorForks::describe(const TreeId& source) {
   return door_.read([&](sync::SyncTxn& txn) -> std::optional<Description> {
     const TreeRows rows = door_.rows().tree(txn, source.str(), std::nullopt);
-    if (!rows.exists() || !rows.meta || !opensToReaders(rows.reach())) return std::nullopt;
+    if (!rows.exists() || !opensToReaders(rows.reach())) return std::nullopt;
     const AccountRows trees = door_.rows().account(txn, rows.owner());
-    if (!trees.isAlive(source.str()) || trees.placeOf(source.str())) return std::nullopt;
+    if (trees.placeOf(source.str()) || door_.rows().standingOf(txn, trees, source.str()).standing != read::Standing::standing)
+      return std::nullopt;
     const std::size_t steps = std::count_if(rows.nodes.begin(), rows.nodes.end(), [](const sync::Row& node) { return node.alive(); });
     return Description{rows.metaText("title"), steps};
   });

@@ -1744,6 +1744,16 @@ replaying decisions, identity draws or the segment callback. No decision, identi
 load; an unborrowed new tree or overlay requires no initial cache, cursor, known state, pending
 entry or governing record, and an earlier segment must create its governor before those IDs are used.
 
+A composed act (domain kit §9.7) decides in parts, each through what the parts before it plan.
+`ActContext.stage(scope, segment)` ends the current load, calls `segment` with a `CommitContext` over
+the act's tentative copy through every segment staged so far, commits its gesture to that copy as an
+act segment, and answers its local refusal `{refused, detail?}`, or nothing. `beginPart()` ends the
+current part and opens the next part's load: its `inScope` reads, and its identities are drawn,
+through the staged segments, so a part sees an earlier part's writes.
+Staging writes nothing durable: the tentative copy is thrown away, and the request's segments commit
+afresh in the segment phase, under the act's one hold. A storage replay re-runs prepare from the
+initial snapshot, staging included.
+
 All actual entries share one gesture ID and globally flat local IDs `<gestureId>/<ordinal>`, with
 consecutive commit order. Every segment uses the captured physical time; real segment stamps increase
 strictly. A segment with no write need not have a stamp. When any segment is held, every actual entry

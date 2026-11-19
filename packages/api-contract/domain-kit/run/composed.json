@@ -1,0 +1,559 @@
+[
+  {
+    "name": "each part decides through what the parts before it plan: a later part reads an earlier part's create, and one act writes both",
+    "input": {
+      "parts": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "Plan",
+                "claim": ""
+              },
+              "below": null
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "append": {
+            "t": "card",
+            "id": "card0001",
+            "field": "title",
+            "suffix": "!"
+          }
+        }
+      ],
+      "steps": [
+        "sync"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "counts": [
+          1,
+          1
+        ],
+        "held": false,
+        "kind": "committed"
+      },
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "Plan!"
+          }
+        ]
+      ],
+      "results": []
+    }
+  },
+  {
+    "name": "a later part's refusal refuses the whole composed act, and nothing is written",
+    "input": {
+      "parts": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "Plan",
+                "claim": ""
+              },
+              "below": null
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "append": {
+            "t": "card",
+            "id": "card0009",
+            "field": "title",
+            "suffix": "!"
+          }
+        }
+      ],
+      "steps": [],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "refused",
+        "part": 1,
+        "refusal": {
+          "refused": {
+            "code": "unknown-record",
+            "detail": null,
+            "path": "predicted",
+            "subject": {
+              "id": "card0009",
+              "t": "card"
+            }
+          }
+        }
+      },
+      "records": [
+        []
+      ],
+      "results": []
+    }
+  },
+  {
+    "name": "a later part's failed check refuses the whole composed act, and nothing is written",
+    "input": {
+      "parts": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "Plan",
+                "claim": ""
+              },
+              "below": null
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0002",
+              "f": {
+                "title": "Far too long a title",
+                "claim": ""
+              },
+              "below": null
+            }
+          ]
+        }
+      ],
+      "steps": [],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "refused",
+        "part": 1,
+        "refusal": {
+          "violation": {
+            "max": 12,
+            "measured": 20,
+            "path": "title",
+            "reason": "tooLong",
+            "rule": "card.title",
+            "unit": "chars"
+          }
+        }
+      },
+      "records": [
+        []
+      ],
+      "results": []
+    }
+  },
+  {
+    "name": "a later part that writes a record an earlier part removes meets it gone, and nothing is written",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "parts": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "remove",
+              "t": "card",
+              "id": "card0001"
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "New"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "kind": "refused",
+        "part": 1,
+        "refusal": {
+          "refused": {
+            "code": "unknown-record",
+            "detail": null,
+            "path": "predicted",
+            "subject": {
+              "id": "card0001",
+              "t": "card"
+            }
+          }
+        }
+      },
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "Old"
+          }
+        ]
+      ],
+      "results": []
+    }
+  },
+  {
+    "name": "an Undo of a composed act takes back every part",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "parts": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "New"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ],
+          "undo": [
+            {
+              "kind": "fields",
+              "restoreCommand": "probe.restore",
+              "targets": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "slot": {
+                    "kind": "field",
+                    "name": "title"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "insert",
+              "t": "card",
+              "id": "card0002",
+              "f": {
+                "title": "Made",
+                "claim": ""
+              },
+              "below": null
+            }
+          ],
+          "undo": [
+            {
+              "kind": "createdRecord",
+              "restoreCommand": "probe.restore",
+              "t": "card",
+              "id": "card0002"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "sync",
+        "undo",
+        "sync",
+        "read"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "counts": [
+          1,
+          1
+        ],
+        "held": false,
+        "kind": "committed"
+      },
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "Old"
+          }
+        ]
+      ],
+      "results": [
+        {
+          "kind": "pending",
+          "localChanged": true
+        },
+        {
+          "appliedCount": 2,
+          "changed": true,
+          "kind": "settled",
+          "skippedCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "a part that removes a held type holds the whole composed act, and cancelling it takes back every part in place",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          },
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0002",
+                "f": {
+                  "title": "Two",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "parts": [
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "New"
+              },
+              "fields": [
+                "title"
+              ]
+            }
+          ]
+        },
+        {
+          "scope": "self/probe",
+          "plan": [
+            {
+              "op": "remove",
+              "t": "card",
+              "id": "card0002"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        "cancel"
+      ],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "counts": [
+          1,
+          1
+        ],
+        "held": true,
+        "kind": "committed"
+      },
+      "records": [
+        [
+          {
+            "id": "card0002",
+            "title": "Two"
+          },
+          {
+            "id": "card0001",
+            "title": "Old"
+          }
+        ]
+      ],
+      "results": [
+        {
+          "cancelled": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "a part that decides unchanged adds no segment, and the part after it still loads",
+    "input": {
+      "before": [
+        [
+          {
+            "scope": "self/probe",
+            "plan": [
+              {
+                "op": "insert",
+                "t": "card",
+                "id": "card0001",
+                "f": {
+                  "title": "Old",
+                  "claim": ""
+                },
+                "below": null
+              }
+            ]
+          }
+        ]
+      ],
+      "parts": [
+        {
+          "scope": "self/probe",
+          "unchanged": true
+        },
+        {
+          "scope": "self/probe",
+          "append": {
+            "t": "card",
+            "id": "card0001",
+            "field": "title",
+            "suffix": "!"
+          }
+        }
+      ],
+      "steps": [],
+      "inspect": [
+        {
+          "scope": "self/probe",
+          "t": "card"
+        }
+      ]
+    },
+    "expect": {
+      "outcome": {
+        "counts": [
+          1
+        ],
+        "held": false,
+        "kind": "committed"
+      },
+      "records": [
+        [
+          {
+            "id": "card0001",
+            "title": "Old!"
+          }
+        ]
+      ],
+      "results": []
+    }
+  }
+]

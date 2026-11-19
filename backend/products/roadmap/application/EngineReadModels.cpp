@@ -29,7 +29,7 @@ TreeData treeDataOf(const read::RoadmapAccount& account, const std::string& id) 
   TreeData data;
   data.id = TreeId{id};
   data.title = account.locationOf(id).title.value_or("");
-  data.guide = tree.meta.guide;
+  data.guide = tree.meta ? tree.meta->guide : "";
   for (const std::string& stepId : graph.ids()) {
     const read::Step& step = *tree.step(stepId);
     NodeSpec node;
@@ -106,15 +106,15 @@ std::optional<ReadableRoadmap> EngineReadModels::open(const TreeId& tree, const 
   read::RoadmapAccount account = accountOf(records_.roadmapsOf(*owner));
   if (account.locationOf(tree.str()).standing != read::Standing::standing) return std::nullopt;
   const bool mine = caller && *caller == *owner;
-  if (!mine && parseVisibility(account.tree(tree.str())->meta.reach) == Visibility::private_) return std::nullopt;
+  if (!mine && parseVisibility(account.tree(tree.str())->meta.value_or(read::Meta{}).reach) == Visibility::private_) return std::nullopt;
   return ReadableRoadmap{tree, *owner, mine, std::move(account)};
 }
 
 std::optional<TreeAccess> EngineReadModels::access(const TreeId& tree, const std::optional<UserId>& caller) {
   const std::optional<ReadableRoadmap> roadmap = open(tree, caller);
   if (!roadmap) return std::nullopt;
-  const read::Place& place = *roadmap->account.locationOf(tree.str()).place;
-  TreeAccess access{roadmap->owner, parseVisibility(roadmap->account.tree(tree.str())->meta.reach), TreeId{place.root}, {}};
+  const read::Place place = *roadmap->account.locationOf(tree.str()).place;
+  TreeAccess access{roadmap->owner, parseVisibility(roadmap->account.tree(tree.str())->meta.value_or(read::Meta{}).reach), TreeId{place.root}, {}};
   for (const read::PlaceStep& step : place.path) access.path.push_back(OwningStep{TreeId{step.tree}, NodeId{step.step}});
   return access;
 }
@@ -137,7 +137,7 @@ ShownProgress EngineReadModels::progress(const ReadableRoadmap& roadmap) {
 SharedRoadmap EngineReadModels::shared(const ReadableRoadmap& roadmap) {
   const std::string& id = roadmap.tree.str();
   return SharedRoadmap{roadmap.account.locationOf(id).title.value_or(""), roadmap.account.counts(id)->total,
-                       parseVisibility(roadmap.account.tree(id)->meta.reach), records_.lineageOf(roadmap.tree)};
+                       parseVisibility(roadmap.account.tree(id)->meta.value_or(read::Meta{}).reach), records_.lineageOf(roadmap.tree)};
 }
 
 EngineWall EngineReadModels::wall(std::chrono::milliseconds cap) {
@@ -200,7 +200,7 @@ std::vector<TreeReadiness> EngineReadModels::readiness(const UserId& owner) {
     const read::Counts counts = *account.counts(id);
     TreeReadiness row;
     row.id = TreeId{id};
-    row.title = tree.meta.title;
+    row.title = tree.meta ? tree.meta->title : "";
     row.lastActivityAtMs = lastActiveAt(editedAtOf(editedAt, id), lastMarkedAt(tree));
     row.total = static_cast<int>(counts.total);
     row.done = static_cast<int>(counts.done);

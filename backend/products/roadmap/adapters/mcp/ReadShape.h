@@ -148,8 +148,9 @@ inline constexpr std::size_t kNodeBatchByteBudget = 256 * 1024;
 inline constexpr int kDefaultLimit = 200;
 inline constexpr int kMaxLimit = 1000;
 
-// `[begin, end)` index the caller's own ordered match list; `nextCursor` is empty on the last page.
-struct Page {
+// One page of a node read: `[begin, end)` index the caller's own ordered match list; `nextCursor` is empty on the last
+// page.
+struct NodePage {
   std::size_t begin = 0;
   std::size_t end = 0;
   std::string nextCursor;
@@ -157,7 +158,7 @@ struct Page {
 
 // The page `args` asks for out of `matches`. Fails, naming the offending value, on a limit out
 // of range or a cursor these matches no longer hold.
-std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Value& args, std::string& error);
+std::optional<NodePage> pageOf(const std::vector<NodeSpec>& matches, const Json::Value& args, std::string& error);
 
 // A page whose fields carry `description` is also held to a byte budget, measured on the wire it
 // is sent as (`\uXXXX` escapes included): once the nodes serialized so far pass kPageByteBudget the
@@ -170,7 +171,7 @@ struct ProjectedPage {
   std::string nextCursor;
   std::optional<std::size_t> bytes;
 };
-ProjectedPage projectPage(const std::vector<NodeSpec>& matches, const Page& page, const NodeFields& fields,
+ProjectedPage projectPage(const std::vector<NodeSpec>& matches, const NodePage& page, const NodeFields& fields,
                           const NodeReadContext& context);
 
 }

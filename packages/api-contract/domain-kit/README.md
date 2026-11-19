@@ -259,6 +259,16 @@ attempts and catches an invalid scope read before minting, which must still fail
 engine act context directly so a missing-load programming fault can be asserted without a kit trap.
 A refusal keeps the ordinary product refusal form. Repeated scopes are intentional.
 
+### `run/composed.json`
+
+§9.7, a composed act, over the real local engine and the reference server, in `run/undo.json`'s shape (below)
+with `parts` in place of `segments`. A part is `{scope, plan, undo?}`, a plan as a segment states it, or
+`{scope, append: {t, id, field, suffix}, undo?}`, which loads the record through the parts before it (`drawn`),
+refuses `unknown-record` when it is absent, and else updates `field` to its value with `suffix` added, or
+`{scope, unchanged: true}`, which decides `unchanged`. The
+outcome is `{kind, counts, held}` as `runAct`'s, or `{kind: refused, part, refusal}` in the product refusal
+form. The `cancel` step cancels the held act by its gesture id (`cancelHeld`) and answers `{cancelled}`.
+
 ### `run/undo.json`
 
 K-3, Undo of an act (domain-kit §9.6, engine §7.3). Each input lists `before`, acts committed and synced first,
@@ -272,7 +282,7 @@ A segment whose `undo` is `[]` is named for evidence alone (`evidenceForUndo`). 
 replaces `segments`: the phone opens the record's draft, edits `current` over it and saves it through
 `ActionRunner.save`, the act being the save's; its outcome is `{kind}` of the `SaveResult`.
 `steps` run in order over the real local engine and the reference server: `sync`, `undo` (of the act),
-`redo` (of the last request) and `read` (the last request's result). The output names the act's outcome, each
+`redo` (of the last request), `read` (the last request's result) and `cancel` (as `run/composed.json` reads it). The output names the act's outcome, each
 step's `InverseResult` without its engine-drawn ids, and inspected records as `{id, <field>}`, `field` an
 inspect item's (default `title`). A plan that opts into Undo outside a reversible action is a programming fault,
 `{error: true}`.

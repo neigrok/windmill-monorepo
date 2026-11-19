@@ -8,6 +8,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tree.h"
+#include "products/roadmap/domain/read/RoadmapAccount.h"
 #include "products/roadmap/domain/read/RoadmapTree.h"
 
 #include <json/json.h>
@@ -67,6 +68,9 @@ public:
   // A tree scope with its owner's pointers, and `reader`'s marks when one is named.
   TreeRows tree(sync::SyncTxn&, const std::string& tree, const std::optional<UserId>& reader) const;
   std::optional<sync::ScopeRow> scope(sync::SyncTxn&, const sync::ScopeKey&) const;
+  // Where a roadmap stands as the read domain reads it (D-3), over the roadmaps on its way down from its root: a root
+  // without its meta, and every subtree under it or under an absent step, does not.
+  read::Location standingOf(sync::SyncTxn&, const AccountRows& account, const std::string& tree) const;
 
 private:
   std::vector<sync::Row> rows(sync::SyncTxn&, const sync::ScopeKey&, const std::string& type) const;
@@ -75,9 +79,8 @@ private:
   sync::SyncStore& store_;
 };
 
-// The read domain's records of one roadmap, its place and presence as `account` holds them. A root stands only once its
-// tree scope holds its `meta`: one whose record has landed and whose meta has not — a creation or a fork cut short —
-// is present nowhere until the call that made it is sent again and finishes it.
+// The read domain's records of one roadmap, its place and presence as `account` holds them, and its meta, none while
+// its tree scope holds none: the read domain decides what then stands (D-3).
 read::TreeRecords recordsOf(const TreeRows& rows, const AccountRows& account);
 // A step's or a kind's present state as a reply reads it.
 TreeData documentOf(const TreeRows& rows, const std::string& title);

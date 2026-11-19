@@ -4,6 +4,11 @@ project(windmill_backend C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# GCC, which builds production, refuses designated initializers out of declaration order; clang only warns.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=reorder-init-list>)
+endif()
+
 # An unset build type means -O0, and -O0's fat un-inlined frames overflow drogon's ~512 KB
 # worker-thread stack once a request handler calls a few layers deep (Caller -> Api -> Service ->
 # Pg -> pqxx) — corrupting by-value return slots (a page read back as an empty/garbage struct) with
@@ -575,6 +580,8 @@ target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
 target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_product_sync)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# One binary links the platform and every product, so no two files define a class under one qualified name.
+add_test(NAME one_definition COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/one_definition_test.py)
 add_test(NAME sync_epoch COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/sync_epoch_test.py $<TARGET_FILE:windmill_rotate_sync_epoch>)
 set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
