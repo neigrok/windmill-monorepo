@@ -10,32 +10,67 @@ import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jc
 import { Complete } from '../domain/progress.js';
 import { CreateRoadmap } from '../domain/roadmaps.js';
 import { GENESIS_KINDS } from '../domain/roadmapRules.js';
+import { reportRoadmapFailure, reportUnexpectedFailure } from '../reportFailure.js';
 import { DEVICE_ZONE, standingEngine } from './ReplicaReading.js';
 import { importedStep } from './ReplicaSession.js';
 
-export class ReplicaBirth {
-  constructor({ session = syncSession, timers = globalThis } = {}) {
-    this.session = session;
-    this.timers = timers;
+// What a birth on the device's copy came to, short of a roadmap that stands with every mark, in a bounded word: `unkept`
+// where the browser's copy could not open, as in a browser that keeps nothing, `unopened` where it did not open within the
+// bound, and `refused` where the domain refused the plan, as a name past its bound; each of these plants nothing. `marks`
+// is a roadmap born whose done steps could not be marked. `unopened` and `marks` are ours to fix and report; `unkept` and
+// `refused` are answers, which the platform and the domain already give.
+export class BirthFailure extends Error {
+  static REASONS = Object.freeze(['unkept', 'unopened', 'refused', 'marks']);
+  static REPORTED = Object.freeze(['unopened', 'marks']);
+
+  constructor(reason) {
+    if (!BirthFailure.REASONS.includes(reason)) throw new TypeError('a birth fails for a reason BirthFailure.REASONS names');
+    super('the birth on the device’s copy did not stand whole');
+    this.name = 'BirthFailure';
+    this.reason = reason;
   }
 
-  // Plants `plan` and answers the new roadmap's id and whether it lives in the anon replica (`local`). Throws, with no
-  // words of the person's, where the copy did not open within the bound or the domain refused the plan.
+  // A birth that failed at its door, reported as the door reports it: a failure of ours with its reason as a tag, an
+  // answer not at all, and anything else as any unexpected failure.
+  static reportFailed(error, report = reportUnexpectedFailure) {
+    if (!(error instanceof BirthFailure)) report('roadmap-plant', error);
+    else if (BirthFailure.REPORTED.includes(error.reason)) report('roadmap-plant', error, { reason: error.reason });
+  }
+
+  // The reason the door's `roadmap_board_create` carries: a failed birth's, and none for a failure of another road.
+  static reasonOf(error) {
+    return error instanceof BirthFailure ? error.reason : undefined;
+  }
+}
+
+export class ReplicaBirth {
+  constructor({ session = syncSession, timers = globalThis, report = reportRoadmapFailure } = {}) {
+    this.session = session;
+    this.timers = timers;
+    this.report = report;
+  }
+
+  // Plants `plan` and answers the new roadmap's id and whether it was born in the anon replica (`local`), once its creation
+  // commits: what follows the creation cannot unmake it, so a failure there reports `marks` and the birth stands. Throws a
+  // `BirthFailure`, with no words of the person's, where nothing was planted.
   async plant(plan) {
-    const { engine } = await standingEngine(this.session, new AbortController().signal, this.timers);
-    if (!engine) throw new Error('the device’s copy did not open');
+    const { engine, unshown } = await standingEngine(this.session, new AbortController().signal, this.timers);
+    if (!engine) throw new BirthFailure(unshown);
+    const local = engine.getSnapshot().state !== 'bound';
     const runner = new ActionRunner(new EngineReplica(engine), engine.registry, DEVICE_ZONE);
     const created = await runner.runAct(ReplicaBirth.creation(plan));
-    if (created.kind !== 'committed') throw new Error(`the birth was ${created.kind}`);
-    await runner.release(created.receipt.gestureId);
+    if (created.kind !== 'committed') throw new BirthFailure('refused');
     const { tree, steps } = created.result;
     const done = plan.nodes.filter((node) => node.status === 'complete').map((node) => Complete(String(tree), steps[node.id]));
-    if (done.length > 0) {
-      const marked = await runner.runComposed(done);
-      if (marked.kind !== 'committed') throw new Error(`the birth's marks were ${marked.kind}`);
-      await runner.release(marked.receipt.gestureId);
+    try {
+      await runner.release(created.receipt.gestureId);
+      const marked = done.length === 0 ? null : await runner.runComposed(done);
+      if (marked?.kind === 'committed') await runner.release(marked.receipt.gestureId);
+      else if (marked !== null) this.report('roadmap-plant', new BirthFailure('marks'), { reason: 'marks' });
+    } catch (error) {
+      this.report('roadmap-plant', error, { reason: 'marks' });
     }
-    return { treeId: String(tree), local: engine.getSnapshot().state !== 'bound' };
+    return { treeId: String(tree), local };
   }
 
   // The domain's creation of a plan as the blank birth, a pasted plan or a quest names it (`{ title, nodes, kinds }`):

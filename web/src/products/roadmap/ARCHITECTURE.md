@@ -263,8 +263,12 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   blank birth and a pasted plan (`paste/NewTreeBirth.jsx`) and a quest (`quests/QuestShelf.jsx`) are `CreateRoadmap`, with
   a plan's legend of its own in place of the genesis kinds and the steps it brings done then marked, signed out in the
   browser's anon replica (§5 Signed out) and signed in in the account's, which the engine sends; nothing goes to
-  `POST /v1/trees` or the old stores. A browser whose copy could not open is told before anyone types, signed in or not,
-  as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to the newest of the person's list
+  `POST /v1/trees` or the old stores. A birth answers its roadmap once the creation commits, and whether it was born in
+  the anon replica as the engine stood before it: marking the done steps is a second commit, and a refusal or failure
+  there reports `marks` and costs the marks alone, so a retry never makes a second roadmap. A birth that plants nothing
+  throws a `BirthFailure` with a bounded reason, `unkept`, `unopened` or `refused`, which the door's
+  `roadmap_board_create` carries; only `unopened` and `marks` report. A browser whose copy could not open is told before
+  anyone types, signed in or not, as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to the newest of the person's list
   as the replica keeps it (`ReplicaReading.readList`), or to the quests; where the copy cannot open it cannot say which,
   so it stays, and the reading tells why (`roadmap_load`).
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and

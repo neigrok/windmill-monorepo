@@ -3,7 +3,7 @@ import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { syncSession } from '../../../platform/sync/session.js';
 import { createTree } from '../persistence/TreeRegistry.js';
 import { bearLocalTree, bearImportedTree, deviceKeepsTrees } from '../sync/localTrees.js';
-import { ReplicaBirth } from '../room/ReplicaBirth.js';
+import { BirthFailure, ReplicaBirth } from '../room/ReplicaBirth.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
 import { parsePlan } from './planGrammar.js';
 import { PasteComposer } from './PasteComposer.jsx';
@@ -16,7 +16,6 @@ import { prefersReducedMotion } from '../theme.js';
 import { DEVICE_REFUSED } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { countBucket } from '../board/acts.js';
-import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 
 
@@ -133,7 +132,7 @@ export function NewTreeBirth({ replica = false } = {}) {
       }
       openBorn(await plantLocally(title));
     } catch (err) {
-      reportUnexpectedFailure('roadmap-plant', err);
+      BirthFailure.reportFailed(err);
       // A signed-in plant the server refuses for want of a session falls back to the local birth.
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
@@ -141,7 +140,7 @@ export function NewTreeBirth({ replica = false } = {}) {
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
-      track('roadmap_board_create', { step: 'failed', door: 'blank' });
+      track('roadmap_board_create', { step: 'failed', door: 'blank', reason: BirthFailure.reasonOf(err) });
       setPhase('error');
     }
   }
@@ -165,14 +164,14 @@ export function NewTreeBirth({ replica = false } = {}) {
       }
       openBorn(await plantImportedLocally(plan));
     } catch (err) {
-      reportUnexpectedFailure('roadmap-plant', err);
+      BirthFailure.reportFailed(err);
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
           openBorn(await plantImportedLocally(plan));
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
-      track('roadmap_board_create', { step: 'failed', door: 'import' });
+      track('roadmap_board_create', { step: 'failed', door: 'import', reason: BirthFailure.reasonOf(err) });
       setPhase('error');
     }
   }

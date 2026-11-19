@@ -3,10 +3,9 @@ import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
 import { notePlantedQuest, stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
-import { ReplicaBirth } from '../room/ReplicaBirth.js';
+import { BirthFailure, ReplicaBirth } from '../room/ReplicaBirth.js';
 import { useViewMode } from '../room/useViewMode.js';
 import { countBucket } from '../board/acts.js';
-import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR, prefersReducedMotion } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';
@@ -83,8 +82,8 @@ export function QuestShelf({ replica = false } = {}) {
       stampBorn(treeId); // a quest's first open is the canvas
       window.location.hash = `#/app/${treeId}`;
     } catch (error) {
-      reportUnexpectedFailure('roadmap-plant', error);
-      track('roadmap_board_create', { step: 'failed', door: 'quest' });
+      BirthFailure.reportFailed(error);
+      track('roadmap_board_create', { step: 'failed', door: 'quest', reason: BirthFailure.reasonOf(error) });
       setSeed(null);
       setPickedId(null);
       pickingRef.current = false;
