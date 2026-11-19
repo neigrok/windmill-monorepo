@@ -2684,9 +2684,11 @@ Then, in one local transaction:
 - **Credentials.** The engine keeps an account's credential only while the account is bound or its
   sign-in is pending (`pendingSignIn`). Engine start deletes every other stored credential, so a
   deletion a finished sign-out did not reach (a process death after its transaction) is retried
-  there. In a browser, a deletion that leaves no credential unpauses the active `anon` replica
-  (§9.1): the session owner's port answers whether it did. A browser sign-in drops a deletion owed
-  for an earlier session: the credential the browser holds is the one signing in.
+  there. In a browser, a reconnection retries it too, before the live socket opens again, and while a
+  deletion is owed no live socket stays open (§9.1). A deletion that leaves no credential unpauses
+  the active `anon` replica (§9.1): the session owner's port answers whether it did. A browser
+  sign-in drops a deletion owed for an earlier session: the credential the browser holds is the one
+  signing in.
 - **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
@@ -2896,7 +2898,9 @@ depends on the principal; a `400`, `413`, `426` or `503` is handled by its statu
 engine's `anon` replica handles a `200`, and a frame, whose `as` is an account the same way: its
 requests carry no credential, but its live socket carries whatever cookie the browser holds, such as
 one a sign-in set before it completed. No re-authentication ends that pause, since the replica has no
-account: the credential going does. A finished sign-out makes the `anon` replica active unpaused, and
+account: the credential going does. So while a credential's deletion is owed (§7.10 **Credentials**)
+the browser engine keeps its live socket closed, and its anonymous pulls go on; a reconnection runs the
+deletion before the socket opens again. A finished sign-out makes the `anon` replica active unpaused, and
 a deletion that leaves the browser no credential (§7.10 **Credentials**) unpauses the active `anon`
 replica; one that leaves another account's cookie in place does not. The session owner learns whose
 credential the browser holds outside the sync endpoints too, and tells the browser engine

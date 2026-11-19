@@ -1185,6 +1185,81 @@ test('finished offline sign-out durably owes cookie cleanup; restart retries a f
   engine.close();
 });
 
+// A browser's anonymous pull carries no cookie, and its live socket carries whichever cookie the browser holds as it opens,
+// which the server serves every frame on that socket as.
+function cookieBrowser(env) {
+  const request = env.transport.request.bind(env.transport);
+  env.transport.request = async (endpoint, body, options = {}) => {
+    if (!options.anonymous) return request(endpoint, body, options);
+    const held = env.transport.account;
+    env.transport.account = null;
+    try { return await request(endpoint, body, options); } finally { env.transport.account = held; }
+  };
+  const openLive = env.transport.openLive.bind(env.transport);
+  env.transport.openLive = () => Object.assign(openLive(), { servedAs: env.transport.account });
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+}
+
+test('a sign-out made offline deletes the credential it owes before the live socket reopens, so the reopened socket serves the anon replica as nobody and it stays unpaused and pulling', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  cookieBrowser(env);
+  env.options.credentials = { clear: async (account) => {
+    if (env.transport.account === account) env.transport.account = null;
+    return env.transport.account === null;
+  } };
+  const engine = await open(env);
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  engine.setOnline(false);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  assert.equal(engine.device.meta.clearCredential, 'A');
+  await engine.subscribe(tree);
+  const sockets = env.sockets.length;
+  engine.setOnline(true);
+  for (let i = 0; i < 100 && engine.device.meta.clearCredential !== undefined; i++) await tick();
+  await engine.pull();
+  engine.follow();
+  const socket = env.sockets.at(-1);
+  socket.readyState = 1;
+  socket.onopen();
+  socket.onmessage({ data: JSON.stringify({ op: 'change', scope: tree, as: socket.servedAs }) });
+  await until(() => !engine.live.draining);
+  const pulls = env.requests.filter(({ endpoint }) => endpoint === 'pull').length;
+  await engine.pull();
+  assert.deepEqual({ reopened: env.sockets.length > sockets, servedAs: socket.servedAs, owed: engine.device.meta.clearCredential,
+    state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync(),
+    pulled: env.requests.filter(({ endpoint }) => endpoint === 'pull').length > pulls },
+  { reopened: true, servedAs: null, owed: undefined, state: 'anon', authPaused: false, canSync: true, pulled: true });
+  engine.close();
+});
+
+test('while a credential\'s deletion is owed and cannot run, the anon replica pulls but opens no live socket, and closes one it held', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  cookieBrowser(env);
+  env.options.credentials = { clear: async () => { throw new Error('network unavailable'); } };
+  const engine = await open(env);
+  await engine.subscribe(tree);
+  await engine.pull();
+  engine.follow();
+  const held = env.sockets.at(-1);
+  assert.deepEqual(await engine.signIn('A'), { complete: false, authPaused: true });
+  await engine.cancelSignIn('A');
+  await engine.cleanupCredentials();
+  const sockets = env.sockets.length;
+  const pulls = env.requests.filter(({ endpoint }) => endpoint === 'pull').length;
+  engine.kickPull([tree]);
+  await engine.pull();
+  engine.follow();
+  assert.deepEqual({ owed: engine.device.meta.clearCredential, held: held.readyState, opened: env.sockets.length - sockets, live: engine.live.running,
+    pulled: env.requests.filter(({ endpoint }) => endpoint === 'pull').length > pulls, authPaused: engine.device.activeReplica.meta.authPaused },
+  { owed: 'A', held: 3, opened: 0, live: false, pulled: true, authPaused: false });
+  engine.close();
+});
+
 test('changed sign-out work re-pins Discard; Cancel resumes the account', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A'; await engine.signIn('A'); engine.setOnline(false);

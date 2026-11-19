@@ -193,6 +193,9 @@ export class BrowserSyncEngine {
       this.doubts.clear();
       this.live.stop({ reset: true });
     }
+    // The live socket carries whatever cookie the browser holds, so none stays open while a credential's deletion is owed
+    // (engine.md §9.1).
+    if (device.meta.clearCredential) this.live.stop();
     this.notify(this.listeners);
     if (this.upgradeRequired || this.signingOut) this.stopNetwork();
     if (replica.meta.authPaused) {
@@ -994,7 +997,7 @@ export class BrowserSyncEngine {
   }
 
   follow() {
-    if (!this.canSync() || !this.visible) { this.live.stop(); return; }
+    if (!this.canSync() || !this.visible || this.device.meta.clearCredential) { this.live.stop(); return; }
     const request = pullRequest(this.device.activeReplica, this.registry, this.scopes());
     const wanted = (request?.scopes ?? []).map(({ scope }) => scope).filter((scope) => this.doubts.mayFollow(scope));
     for (const scope of this.live.following) if (!wanted.includes(scope)) this.doubts.unfollowed(scope, this.monotonic());
@@ -1195,14 +1198,13 @@ export class BrowserSyncEngine {
       const none = await this.credentials.clear(account);
       // Once the browser holds no credential, nothing serves the anon replica as an account, so its pause ends; one another
       // account's cookie still rides the socket keeps it (engine.md §9.1).
-      const resumed = await this.write(null, (device) => {
+      await this.write(null, (device) => {
         if (device.meta.clearCredential === account) delete device.meta.clearCredential;
         const replica = device.activeReplica;
-        if (none !== true || replica.meta.state !== 'anon' || !replica.meta.authPaused) return false;
-        replica.meta.authPaused = false;
-        return true;
+        if (none === true && replica.meta.state === 'anon' && replica.meta.authPaused) replica.meta.authPaused = false;
       });
-      if (resumed) this.kick();
+      // The live socket waited for the deletion.
+      this.kick();
     } catch { this.telemetry.failure('auth'); }
   }
 
@@ -1308,8 +1310,9 @@ export class BrowserSyncEngine {
     if (this.online !== online) this.networkGeneration += 1;
     this.online = online;
     this.tellConnection();
-    if (online) this.kick();
-    else this.stopNetwork();
+    if (!online) { this.stopNetwork(); return; }
+    this.kick();
+    this.cleanupCredentials();
   }
 
   setVisible(visible) {
