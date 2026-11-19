@@ -77,10 +77,14 @@ struct ActTests {
     guard case .committed(let receipt)? = result.outcome else { Issue.record("the act did not commit"); return }
     let expectedReads: [JSON] = [.null, "First"]
     #expect(reads == expectedReads)
-    #expect(staged == [nil, nil])
-    #expect(receipt.segments.map(\.localIds) == [["\(receipt.gestureId)/0"], ["\(receipt.gestureId)/1"]])
-    #expect(try rig.engine.read(scope) { try title($0) } == "First!")
-    #expect(try rig.outbox() == ["\(receipt.gestureId)/0 ready", "\(receipt.gestureId)/1 ready"])
+    let unstaged: [StagedRefusal?] = [nil, nil]
+    let localIds: [[String]] = [["\(receipt.gestureId)/0"], ["\(receipt.gestureId)/1"]]
+    let outbox: [String] = ["\(receipt.gestureId)/0 ready", "\(receipt.gestureId)/1 ready"]
+    let drawn: JSON = try rig.engine.read(scope) { try title($0) }
+    #expect(staged == unstaged)
+    #expect(receipt.segments.map(\.localIds) == localIds)
+    #expect(drawn == "First!")
+    #expect(try rig.outbox() == outbox)
   }
 
   // A staged local refusal is answered where the part stages it, and the act it ends writes nothing.
@@ -100,8 +104,9 @@ struct ActTests {
       Issue.record("a refused act reaches no segment")
       return Gesture(changes: [])
     })
+    let refused: [StagedRefusal?] = [nil, StagedRefusal(code: .scopeDead, detail: nil)]
     #expect(result.outcome == nil)
-    #expect(staged == [nil, StagedRefusal(code: .scopeDead, detail: nil)])
+    #expect(staged == refused)
     #expect(try rig.store.read { try $0.device(rows: true).json } == before)
   }
 
