@@ -6,8 +6,8 @@ import { createServer } from 'vite';
 import { beacon, withBrowserErrors } from '../products/roadmap/browserFixture.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-// The app over stand-ins for accounts, sessions and the rooms. `land` mounts it afresh on an address, so a room whose
-// module an earlier landing resolved mounts in the app's first commit, before the commit's layout effects run.
+// The app over stand-ins for accounts, the products' sessions and the rooms. `land` mounts it afresh on an address, so a
+// room whose module an earlier landing resolved mounts in the app's first commit, before its layout effects run.
 const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -45,7 +45,7 @@ const stand = {
   entitlements: `export const useEntitlements = () => ({}); export default function EntitlementsProvider({ children }) { return children; }`,
   door: `export const useSignInDoor = () => () => {}; export const useSignInDoorHost = () => () => {};
     export function SignInDoorProvider({ children }) { return children; } export default SignInDoorProvider;`,
-  sessions: `export function ProductSessions({ children }) { return children; } export function ProductSessionNotices() { return null; }`,
+  sessions: `export * from '/src/shell/ProductSessions.jsx'; export function ProductSessions({ children }) { return children; }`,
 };
 let server, origin, browser;
 const ready = (async () => {
@@ -58,7 +58,7 @@ const ready = (async () => {
         if (id.endsWith('/auth/AuthProvider.jsx')) return '\0app-door-auth';
         if (id.endsWith('/billing/EntitlementsProvider.jsx')) return '\0app-door-entitlements';
         if (id.endsWith('/auth/SignInDoor.jsx')) return '\0app-door-door';
-        if (id.endsWith('/ProductSessions.jsx')) return '\0app-door-sessions';
+        if (id.endsWith('/ProductSessions.jsx') && importer !== '\0app-door-sessions') return '\0app-door-sessions';
         if (id.endsWith('/telemetry/beacon.js')) return '\0app-door-events';
       },
       load(id) {
