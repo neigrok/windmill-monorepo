@@ -7,6 +7,7 @@ final class TransactionActContext: ActContext {
   let tx: StoreTransaction
   let core: EngineCore
   let instance: Instance
+  let staging: ActStaging
   let meta: ReplicaMeta
   var minted: [ScopeRef: TransactionReader] = [:]
   var borrowed: Set<ScopeRef> = []
@@ -20,8 +21,8 @@ final class TransactionActContext: ActContext {
   var actor: String { instance.actor.text }
   var isAnonymous: Bool { meta.state == .anon }
 
-  init(_ tx: StoreTransaction, core: EngineCore, instance: Instance) throws {
-    self.tx = tx; self.core = core; self.instance = instance
+  init(_ tx: StoreTransaction, core: EngineCore, instance: Instance, staging: ActStaging) throws {
+    self.tx = tx; self.core = core; self.instance = instance; self.staging = staging
     let active = try tx.activeReplica()
     guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
     self.meta = meta
@@ -80,6 +81,24 @@ final class TransactionActContext: ActContext {
   func opaqueID() throws -> String {
     try finishLoad()
     return try core.identities.replicaID()
+  }
+
+  // A part's segment, decided over the act's transaction through every segment staged before it, staged there in turn.
+  func stage(_ scope: ScopeRef, _ segment: (any CommitContext) throws -> Gesture) throws -> StagedRefusal? {
+    try finishLoad()
+    guard core.registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("an act stages a scope of its registry") }
+    let reader = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: actor)
+    defer { reader.end() }
+    let gesture: Gesture
+    do { gesture = try segment(reader) }
+    catch { failure = failure ?? reader.failure; throw error }
+    try reader.finish()
+    return try staging.stage(gesture, in: scope)
+  }
+
+  func beginPart() throws {
+    try finishLoad()
+    loading = true
   }
 
   func finish() throws { try finishLoad(); for reader in minted.values { try reader.finish() } }

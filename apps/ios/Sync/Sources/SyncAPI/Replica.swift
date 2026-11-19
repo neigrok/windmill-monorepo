@@ -38,6 +38,10 @@ public protocol CommitContext: ScopeReader {
   func mintID(_ type: String) throws -> RecordID
 }
 
+// The context an act prepares through (§7.1 Ordered local acts). A composed act decides in parts: `stage` ends the current
+// load, commits the gesture `segment` decides over the views through every segment staged so far to the act's tentative
+// copy, and answers its local refusal, or nil; `beginPart` opens the next part's load, whose reads and identities go
+// through the staged segments. Staging writes nothing durable: the request's segments commit afresh.
 public protocol ActContext {
   var now: Int64 { get }
   var replica: String { get }
@@ -47,6 +51,19 @@ public protocol ActContext {
   func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T
   func mintID(_ type: String, in scope: ScopeRef) throws -> RecordID
   func opaqueID() throws -> String
+  func stage(_ scope: ScopeRef, _ segment: (any CommitContext) throws -> Gesture) throws -> StagedRefusal?
+  func beginPart() throws
+}
+
+// A staged segment the engine refuses locally, as its commit would.
+public struct StagedRefusal: Sendable, Hashable {
+  public let code: RefusalCode
+  public let detail: JSON?
+
+  public init(code: RefusalCode, detail: JSON?) {
+    self.code = code
+    self.detail = detail
+  }
 }
 
 // §7.1 a commit that throws, before its transaction commits, throws this, of one of three kinds told apart by where it

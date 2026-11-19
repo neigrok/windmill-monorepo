@@ -1,3 +1,4 @@
+import GRDB
 import SyncAPI
 import SyncCore
 import SyncReplica
@@ -6,6 +7,34 @@ struct ActRefusal: Error {
   let segment: Int
   let code: RefusalCode
   let detail: JSON?
+}
+
+// §7.1 a composed act's staging: each part's segment commits into the act's own transaction, inside a savepoint the act
+// rolls back once it has prepared, so a later part reads through every segment staged before it and nothing staged outlives
+// prepare. The request's segments then commit afresh.
+public final class ActStaging {
+  let commit: (Gesture, ScopeRef, Int) throws -> (outcome: CommitOutcome, written: Bool)
+  var offset = 0
+  var hasStaged = false
+
+  init(commit: @escaping (Gesture, ScopeRef, Int) throws -> (outcome: CommitOutcome, written: Bool)) {
+    self.commit = commit
+  }
+
+  // The gesture as one more segment of the staged act: nil, or the refusal its commit meets, which writes nothing.
+  public func stage(_ gesture: Gesture, in scope: ScopeRef) throws -> StagedRefusal? {
+    var staged = gesture
+    staged.gestureId = "staged"
+    let (outcome, written) = try commit(staged, scope, offset)
+    switch outcome {
+    case .refused(let code, let detail, _):
+      return StagedRefusal(code: code, detail: detail)
+    case .committed(let receipt):
+      offset += receipt.localIds.count
+      hasStaged = hasStaged || written
+      return nil
+    }
+  }
 }
 
 // The design's §3.5 table: one Action per transaction, each an ordered load → plan → batch inside one `write`; a commit
@@ -60,7 +89,7 @@ extension Store {
   }
 
   public func commitAct<T>(instance: Instance, identities: IdentitySource,
-                           prepare: (StoreTransaction) throws -> (ActRequest?, T),
+                           prepare: (StoreTransaction, ActStaging) throws -> (ActRequest?, T),
                            segment: (T, Int, ScopeRef, StoreTransaction) throws -> Gesture) throws -> Written<(outcome: ActCommitOutcome?, value: T)> {
     var value: T?
     do {
@@ -69,16 +98,28 @@ extension Store {
         let active = try tx.activeReplica()
         guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
         try planners.commits.checkWritable(meta)
-        let (request, prepared) = try prepare(tx)
+        let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
+        let firstOrder = try loaded(active, in: tx).nextCommitOrder
+        var preparation: (request: ActRequest?, value: T)?
+        try db.inSavepoint {
+          let staging = ActStaging { (gesture: Gesture, scope: ScopeRef, offset: Int) throws -> (outcome: CommitOutcome, written: Bool) in
+            let (outcome, batch) = try self.commitSegment(gesture, in: scope, of: active, tx: tx, instance: instance, identities: identities,
+                                                          offset: offset, firstOrder: firstOrder, capture: nil)
+            guard case .committed = outcome, !batch.writes.isEmpty else { return (outcome, false) }
+            try BatchWriter(db: db, registry: self.registry).apply(batch)
+            return (outcome, true)
+          }
+          preparation = try prepare(tx, staging)
+          return staging.hasStaged ? .rollback : .commit
+        }
+        guard case let (request, prepared)? = preparation else { preconditionFailure("an act prepares before it commits") }
         value = prepared
         guard let request, !request.scopes.isEmpty else { return Written(value: (nil, prepared), events: [], change: StoreChange()) }
         if let id = request.gestureId, try tx.carries(gestureId: id) { throw CommitFailure.malformed("the act gesture id is taken") }
-        let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
         let undoReads = UndoPlan.reads(of: request.undo, scopes: request.scopes)
         let undoPlan = try planners.commits.undoPlan(request.undo, scopes: request.scopes,
                                                      in: try loaded(active, in: tx, reads: undoReads, entries: EntrySelection()))
         let gestureId = try request.gestureId ?? identities.gestureID()
-        let firstOrder = try loaded(active, in: tx).nextCommitOrder
         var receipts: [ActSegmentReceipt] = []
         var retired: [String] = [], superseded: [String] = []
         var localCount = 0
@@ -93,33 +134,22 @@ extension Store {
           gesture.gestureId = gestureId
           gesture.hold = request.hold
           let capture = undoPlan?.opts(index) == true ? try planners.commits.capture(for: gesture, in: scope) : nil
-          var reads = planners.commits.reads(of: gesture, in: scope)
-          var draws: [Draw] = []
-          while true {
-            var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
-            do {
-              let outcome = try planners.commits.commit(gesture, in: scope, to: &replica, as: instance,
-                identities: identities, gestureIdTaken: false, draws: draws, actOffset: localCount, actFirstOrder: firstOrder, capture: capture)
-              switch outcome {
-              case .refused(let code, let detail, _): throw ActRefusal(segment: index, code: code, detail: detail)
-              case .committed(let receipt):
-                let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
-                receipts.append(ActSegmentReceipt(scope: scope, stamp: changed ? receipt.stamp : nil, localIds: receipt.localIds, ids: receipt.ids))
-                if changed {
-                  try BatchWriter(db: db, registry: registry).apply(replica.batch)
-                  events += replica.batch.events
-                  change.merge(replica.batch.change)
-                  wrote = true
-                }
-                localCount += receipt.localIds.count
-                for id in receipt.retired where !retired.contains(id) { retired.append(id) }
-                for id in receipt.superseded where !superseded.contains(id) { superseded.append(id) }
-              }
-              break
-            } catch let unread as UnreadDraws {
-              reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
-              draws = unread.draws
+          let (outcome, batch) = try commitSegment(gesture, in: scope, of: active, tx: tx, instance: instance, identities: identities,
+                                                   offset: localCount, firstOrder: firstOrder, capture: capture)
+          switch outcome {
+          case .refused(let code, let detail, _): throw ActRefusal(segment: index, code: code, detail: detail)
+          case .committed(let receipt):
+            let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
+            receipts.append(ActSegmentReceipt(scope: scope, stamp: changed ? receipt.stamp : nil, localIds: receipt.localIds, ids: receipt.ids))
+            if changed {
+              try BatchWriter(db: db, registry: registry).apply(batch)
+              events += batch.events
+              change.merge(batch.change)
+              wrote = true
             }
+            localCount += receipt.localIds.count
+            for id in receipt.retired where !retired.contains(id) { retired.append(id) }
+            for id in receipt.superseded where !superseded.contains(id) { superseded.append(id) }
           }
         }
         if wrote, undoPlan != nil {
@@ -134,6 +164,26 @@ extension Store {
       }
     } catch let refusal as ActRefusal {
       return Written(value: (.refused(segment: refusal.segment, code: refusal.code, detail: refusal.detail), value!), events: [], change: StoreChange())
+    }
+  }
+
+  // One gesture as the act's segment at `offset`, over the rows it reads and the entries that touch them; a plan that drew
+  // ids its load did not read is planned again over the same draws with those records read. Its outcome, and the batch it
+  // would write.
+  func commitSegment(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction, instance: Instance,
+                     identities: IdentitySource, offset: Int, firstOrder: Int64, capture: String?) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
+    var reads = planners.commits.reads(of: gesture, in: scope)
+    var draws: [Draw] = []
+    while true {
+      var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
+      do {
+        let outcome = try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities,
+                                                  gestureIdTaken: false, draws: draws, actOffset: offset, actFirstOrder: firstOrder, capture: capture)
+        return (outcome, replica.batch)
+      } catch let unread as UnreadDraws {
+        reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
+        draws = unread.draws
+      }
     }
   }
 

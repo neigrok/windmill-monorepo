@@ -724,7 +724,7 @@ struct StoredDevice: ClientDevice {
   }
 
   mutating func commitAct(_ segments: [ScopedGesture]?, undo: ActUndo?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
-    let written = try store.commitAct(instance: instance, identities: identities, prepare: { _ in
+    let written = try store.commitAct(instance: instance, identities: identities, prepare: { _, _ in
       (segments.map { ActRequest(scopes: $0.map(\.scope), hold: $0.contains { $0.gesture.hold }, undo: undo) }, segments)
     }, segment: { values, index, _, _ in values![index].gesture })
     events += written.events
