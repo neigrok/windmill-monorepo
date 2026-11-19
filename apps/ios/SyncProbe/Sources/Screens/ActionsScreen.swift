@@ -19,7 +19,7 @@ struct ActionsScreen: View {
               HStack {
                 Text(verbatim: "\(offer.id)\nreleases in \(secondsUntil(offer.releaseAt))").font(.footnote)
                 Spacer()
-                Button("Undo") { perform("Undo \(offer.id)") { try probe.engine.undo(offer.id) ? "undone" : "an entry was already released" } }
+                Button("Undo") { perform("Undo \(offer.id)") { try probe.engine.cancelHeld(offer.id) ? "undone" : "an entry was already released" } }
                   .buttonStyle(.borderless)
               }
             }
