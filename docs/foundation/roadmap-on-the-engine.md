@@ -256,8 +256,13 @@ What a device tells a person when a change of theirs met one made elsewhere.
   new link turns out to follow through an absent step, the person is told once, where the step is
   listed and on its page. The device notes its own new steps and links in a device row when it
   makes them, with the name of each step it links from, since it keeps nothing of a step once
-  another device's delete has reached it, and clears the note once it has said so. A line whose
-  removed step the note holds no name of is not said.
+  another device's delete has reached it, and clears from the note what it has said. Each write of
+  the note also lets go of every entry whose write has landed and that says nothing, with the name
+  its link kept: once a write has landed the device holds all the server held before it, so what
+  the entry meets from then on was made after it. A roadmap's note goes when the roadmap is
+  deleted, an Undo within the hold leaving it gone, and when the device finds the roadmap gone from
+  the person's list; signing out, Keep or Discard, takes every note. A line whose removed step the
+  note holds no name of is not said.
 - **A step that came back.** When a device's own change found the step absent on the device and
   so revived it, the person is told once; the device notes it as it notes a new step. A revival
   the device never saw, of a step it still held present when the change was made, is not told.

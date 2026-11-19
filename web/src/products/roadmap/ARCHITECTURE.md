@@ -22,7 +22,7 @@ point for the component showcase.
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
 | `layout/` | Deterministic layout engines behind `index.js` |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools |
-| `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB |
+| `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB, and what signing out takes from the device |
 | `persistence/` | HTTP repository, account tree registry and device preferences and ledgers |
 | `shortcuts/`, `input/` | The room's keys and the pure hold recognizer |
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
@@ -188,7 +188,10 @@ on, every room but the demo reads through `ReplicaReading`:
   composer covers, or the page open on its step, the reading's `tell` writes the domain's `ClearLanding` out of the Undo
   stack and the room emits `roadmap_landing`; a later opening is quiet. A line no approved words say, a step that
   follows nothing past the deleted one or past one whose name the visit never read, stays in the note untold. A read
-  that throws reports `roadmap-replica-landing` once and tells nothing that visit; the room reads on.
+  that throws reports `roadmap-replica-landing` once and tells nothing that visit; the room reads on. Every write of the
+  note lets go of what has landed and says nothing (`readNote`), `DeleteRoadmap` takes the notes of the roadmap and its
+  subtrees, and a room that finds its roadmap gone as it opens, or sees the person's own roadmap leave their list,
+  writes `ClearLanding`, which lets the whole note go where the domain reads the roadmap gone from the list.
 - **Status.** The Saving, Saved and Offline line is the room's own (`sync/useRoomSyncNotices.js`), read from the engine:
   `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the engine's
   `connection` and its auth and upgrade stops (Offline while the browser reports no network, and after the grace while
@@ -206,8 +209,14 @@ on, every room but the demo reads through `ReplicaReading`:
   holds nothing. The boards do not draw, so the list does not build: a layout for 744–1023px (the pages show there),
   Discard and a copy's outcome from 1024px, the empty list, a change with no words of its own (a mark, a pointer, a link
   between steps) and a workspace item the carry-over kept (`pastBound`, §8.2); the last two are neither listed nor
-  counted. Each change that cannot land is told once on this browser (`roadmap_write_cannot_land`), and a notice no rule
-  lists reports `roadmap-kept-unexpected`.
+  counted. Each change that cannot land is told once (`roadmap_write_cannot_land`), and a notice no rule lists reports
+  `roadmap-kept-unexpected` once, `kept/toldNotices.js` keeping the told ids for the page load and, where the browser
+  keeps storage, the ids of the told notices the engine still holds. A Discard the engine answers `false`, the notice no
+  longer held, closes the change quietly.
+- **Sign-out.** Roadmap's `forgetDevice` runs `sync/signOut.js` after the engine's sign-out, Keep or Discard: it takes
+  every `landing:*` device row from each replica the device holds (Keep leaves the account's dormant replica with its
+  device rows) and the told notice ids. What Keep holds for the next sign-in, unsent work and kept notices, the
+  engine keeps.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
@@ -240,7 +249,9 @@ on, every room but the demo reads through `ReplicaReading`:
   - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
     ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A
     step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
-    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks.
+    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. What each Undo and
+    Redo came to (`applied`, `skipped`, `unavailable`) is emitted as `roadmap_undo` once the engine knows: the reading's
+    every change asks the session to follow the ones the server still settles (`followInverses`).
   - *Refusals and failures:* a write the domain refuses is said in today's words where there are some (a roadmap at its
     cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and

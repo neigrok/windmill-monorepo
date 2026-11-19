@@ -19,7 +19,7 @@ import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/produ
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
 import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
-import { Contract, savedForm } from '../../../platform/domain-kit/vectors.js';
+import { Contract, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
@@ -31,7 +31,20 @@ import { diagnose, pointerDiagnostics } from '../../../../src/products/roadmap/d
 
 export const roadmapRegistry = new Registry(Contract.json('sync/roadmap.registry.json'));
 export const roadmapBook = new RoadmapRules(roadmapRegistry).book;
-const corpus = new ProductCorpus(roadmapBook, RoadmapRules.spec);
+
+// A scope's records as the corpus README states them: `confirmed`, the server's copy as the device pulled it, defaults
+// to `stored`, so a record the device writes that the server has not yet taken is one `confirmed` leaves out or holds
+// otherwise.
+class RoadmapCorpus extends ProductCorpus {
+  /** @param {Vector} vector @param {string} scope @param {(type: string) => import('../../../../src/platform/domain-kit/entities.js').RecordID} mintId */
+  views(vector, scope, mintId) {
+    const { device = {}, firstPullComplete = true } = vector.input;
+    const records = this.records(vector, scope);
+    return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored: viewRecords(records.stored ?? records.drawn),
+      confirmed: viewRecords(records.confirmed ?? records.stored ?? records.drawn), spent: records.spent ?? [], devices: device, firstPullComplete, mintId });
+  }
+}
+const corpus = new RoadmapCorpus(roadmapBook, RoadmapRules.spec);
 
 /** @param {any} input */
 function actOf(input) {

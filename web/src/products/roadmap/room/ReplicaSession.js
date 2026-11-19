@@ -24,6 +24,9 @@ import { HeldDeletion } from '../identity/HeldDeletion.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../domain/steps.js';
 import { AddStepLink, AddSubtask, ChangeSubtask, DeleteStepLink, DeleteSubtask, StepNote, StepNoteValue, Subtask } from '../domain/workspace.js';
 
+// An Undo or a Redo of a gesture that wrote nothing, or whose Undo had nothing to take back.
+const NOTHING_TO_TAKE_BACK = Object.freeze({ kind: 'unavailable' });
+
 // What the room says of a write the domain refused where it was made, in the words it says them today: a roadmap at its
 // cap and a link that would close a loop. Any other refusal says nothing, as a write that found nothing to change.
 function limitWords(refusal) {
@@ -51,6 +54,8 @@ export class ReplicaSession {
     this.undoStack = [];
     // Each gesture taken back, `{ inverse }`: its act's Undo, once asked (null where there was none).
     this.redoStack = [];
+    // Each Undo or Redo the engine is still settling, by its request: `undo` or `redo`.
+    this.settling = new Map();
     this.heldAct = null;
     this.workspace = new ReplicaWorkspace(this);
   }
@@ -300,7 +305,10 @@ export class ReplicaSession {
   // engine's journal once its Undo is asked.
   async inverse(done) {
     const act = await done.act;
-    if (act === null) return null;
+    if (act === null) {
+      this.trackInverse('undo', NOTHING_TO_TAKE_BACK);
+      return null;
+    }
     let result = null;
     try {
       result = await this.runner.undo(act);
@@ -308,13 +316,17 @@ export class ReplicaSession {
       this.report('roadmap-replica-write', error, { write: 'undo' });
     }
     await this.release(act);
+    if (result) this.trackInverse('undo', result);
     return result?.kind === 'unavailable' ? null : result;
   }
 
   // A gesture taken back, written again: answers the act its Redo wrote.
   async reapply(undone) {
     const inverse = await undone.inverse;
-    if (inverse === null) return null;
+    if (inverse === null) {
+      this.trackInverse('redo', NOTHING_TO_TAKE_BACK);
+      return null;
+    }
     let result = null;
     try {
       result = await this.runner.redo(inverse.requestId);
@@ -322,7 +334,31 @@ export class ReplicaSession {
       this.report('roadmap-replica-write', error, { write: 'redo' });
     }
     await this.release(inverse.inverseActId);
+    if (result) this.trackInverse('redo', result);
     return result && result.kind !== 'unavailable' ? result.inverseActId : null;
+  }
+
+  // §5 Undo: what an Undo or a Redo came to, told to the intake once the engine knows: `applied` where it changed what
+  // the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, and
+  // `unavailable` where there was nothing to take back. One the engine still settles is told once it has. The person is
+  // shown nothing of a skip yet.
+  trackInverse(action, result) {
+    if (result.kind === 'pending') {
+      this.settling.set(result.requestId, action);
+      return;
+    }
+    const applied = result.kind === 'settled' ? result.appliedCount > 0 : result.changed;
+    this.track('roadmap_undo', { action, outcome: result.kind === 'unavailable' ? 'unavailable' : applied ? 'applied' : 'skipped' });
+  }
+
+  // The replica changed: each Undo or Redo that has settled since it was asked is told.
+  followInverses() {
+    for (const [requestId, action] of this.settling) {
+      const result = this.runner.inverseResult(requestId);
+      if (result.kind === 'pending') continue;
+      this.settling.delete(requestId);
+      this.trackInverse(action, result);
+    }
   }
 
   dropRedo() {

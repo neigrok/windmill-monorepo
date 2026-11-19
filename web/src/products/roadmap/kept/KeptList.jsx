@@ -119,11 +119,12 @@ export function KeptList({ engine, notices, onClose }) {
     words.current.focus({ preventScroll: true });
     track('roadmap_kept', { step: 'select', reason: change.reason });
   };
+  // The engine answers `false` for a notice it no longer holds, discarded in another tab: the change closes quietly.
   const discard = async () => {
     const shown = change;
     try {
-      await engine.dismissNotice(shown.id);
-      track('roadmap_kept', { step: 'discard', reason: shown.reason });
+      const dismissed = await engine.dismissNotice(shown.id);
+      if (dismissed !== false) track('roadmap_kept', { step: 'discard', reason: shown.reason });
       setAsking(false);
       choose(null);
     } catch (error) {

@@ -1,5 +1,5 @@
 // Kept here beside every room: roadmap's notices in every scope offered as the account menu's row while the list shows a
-// change, the row's count the list's count, withdrawn once the last change is discarded, and each change told once.
+// change, the row's count the list's count, withdrawn once the last change is discarded, and each notice told once.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,8 +24,8 @@ test('the account menu is offered Kept here with the count of changes the list s
   const kept = renderHook(t, () => KeptHere(), { live: true });
   await settle();
   assert.deepEqual(menu.tree.map(({ label, count }) => ({ label, count })), [{ label: 'Kept here', count: 1 }]);
-  assert.deepEqual(JSON.parse(globalThis.window.localStorage.getItem('windmill:roadmap:kept-told')), ['notice:g1/0', 'notice:g2/0'],
-    'every change that cannot land is told once, whether or not the list shows it');
+  assert.deepEqual(JSON.parse(globalThis.window.localStorage.getItem('windmill:roadmap:kept-told')), ['notice:g1/0', 'notice:g2/0', 'notice:g3/0'],
+    'every notice of roadmap\'s is told or reported once, a change that cannot land whether or not the list shows it');
   assert.equal(kept.tree, null);
 
   menu.tree[0].onSelect();

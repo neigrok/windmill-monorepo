@@ -3,10 +3,13 @@
 // context with its own store: Undo and Redo, edits made offline syncing once the connection returns, a change made
 // without knowing of another device's delete (INV-1), a change made on a device that already holds that delete (INV-1,
 // the server keeping the step's other fields), the line that tells the person once of a link of theirs another device's
-// delete changed, named from the device's note when the room opens again (§6), a roadmap's deletion from the switcher,
-// and a change to a roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49) only with the
-// switch on. Each run has its own database, server and built app on the given ports, and stops and drops them. It
-// prints no id and no roadmap text.
+// delete changed, named from the device's note when the room opens again (§6), a roadmap's deletion and a sign-out that
+// leave no step's name in the device's store (§6), a roadmap's deletion from the switcher, and a change to a roadmap
+// another device deleted, kept in the one list of what cannot land (§6, flow 49) only with the switch on. Each run has
+// its own database, server and built app on the given ports, and stops and drops them. It prints no id and no roadmap
+// text: a check that passes prints its name, and a failure prints the failing check's name, the words of the assertion
+// that failed (none of which names a roadmap, a step or an id) or else only the kind of error, and the path of the stack
+// log, which holds the full error and the stack's output and stays on this machine.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -85,9 +88,10 @@ async function seed(mode, secret, account) {
       { key: 'course', label: 'Choose a course' }, { key: 'wind', label: 'Read the wind' }, { key: 'dock', label: 'Leave the dock' },
     ], links: [['course', 'wind'], ['wind', 'dock']] }));
     const knot = await device.plant(new device.domain.CreateRoadmap(planted.knot, { steps: [{ key: 'bowline', label: 'Tie a bowline' }], links: [] }));
+    const row = await device.plant(new device.domain.CreateRoadmap('Learn to row', { steps: [{ key: 'grip', label: 'Grip the oars' }], links: [] }));
     await device.engine.start();
     await device.sent();
-    return { sail, knot };
+    return { sail, knot, row };
   } finally {
     device.engine.close();
   }
@@ -210,6 +214,38 @@ class Device {
     await this.card(label).waitFor();
   }
 
+  // Every record and row of the device's sync store, read from IndexedDB itself, not through the room: `records` the
+  // control records by key (replicas, device rows, notices, the outbox), `rows` the cached rows by their generation.
+  store() {
+    return this.page.evaluate(async () => {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('wm-sync');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const all = (name) => new Promise((resolve, reject) => {
+          const request = database.transaction(name).objectStore(name).getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        return { records: (await all('records')).map(({ key, value }) => ({ key, value })), rows: (await all('rows')).map(({ generation, value }) => ({ generation, value })) };
+      } finally {
+        database.close();
+      }
+    });
+  }
+
+  // The store read again until `seen` holds of it or the bound passes.
+  async storeUntil(seen, bound = 45_000) {
+    const end = Date.now() + bound;
+    for (;;) {
+      if (seen(await this.store())) return true;
+      if (Date.now() > end) return false;
+      await settle(500);
+    }
+  }
+
   // The landing lines under the Board's cards, each with the card it stands under.
   landed() {
     return this.page.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
@@ -300,6 +336,23 @@ class Device {
   }
 }
 
+// The rows of one of the store's caches, `confirmed` or `spentIds`, of one scope: its control record names the
+// generation its rows are kept under.
+const rowsOf = (store, kind, scope) => {
+  const generations = new Set(store.records.filter(({ key }) => {
+    const [what, , cache, of] = JSON.parse(key);
+    return what === 'cache' && cache === kind && of === scope;
+  }).map(({ value }) => value.generation));
+  return store.rows.filter((row) => generations.has(row.generation)).map((row) => row.value);
+};
+// What a device's store holds of a roadmap: the id of its step under `label` as the server confirmed it, and whether the
+// device keeps a step's spent id, all a delete leaves of it (engine.md §7.5).
+const stepIn = (store, tree, label) => rowsOf(store, 'confirmed', `tree/${tree}`).find((row) => row.t === 'node' && row.f?.label?.[0] === label)?.id ?? null;
+const spentIn = (store, tree, id) => rowsOf(store, 'spentIds', `tree/${tree}`).some((row) => row.id === id);
+// The landing notes the store holds, by key, and whether any record or row of it holds `words`.
+const notesIn = (store) => Object.fromEntries(store.records.filter(({ key }) => key.includes('"landing:')).map(({ key, value }) => [JSON.parse(key).at(-1), value]));
+const holds = (store, words) => JSON.stringify(store).includes(words);
+
 // A screenshot of what a device shows, for comparing with the boards, where WM_E2E_SHOTS names a folder; never printed.
 async function shoot(device, name) {
   if (!process.env.WM_E2E_SHOTS) return;
@@ -307,8 +360,8 @@ async function shoot(device, name) {
   await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
 }
 
-async function scenarios(mode, browser, secret, account, check) {
-  const { sail, knot } = await seed(mode, secret, account);
+async function scenarios(mode, browser, { secret, second }, account, check) {
+  const { sail, knot, row } = await seed(mode, secret, account);
   const address = `#/app/${sail}`;
   const a = await Device.open(browser, secret);
   const devices = [a];
@@ -364,7 +417,7 @@ async function scenarios(mode, browser, secret, account, check) {
         assert.deepEqual(await a.landed(), [['Trim the sail', 'Read the wind was removed. This now follows Choose a course.']],
           'the step linked offline says it once; the step renamed without knowing of its delete says nothing');
         const step = await a.openStep('Trim the sail');
-        assert.equal(await step.locator('.st-step-landed').innerText(), 'Read the wind was removed. This now follows Choose a course.');
+        assert.equal(await step.locator('.st-step-landed').innerText(), 'Read the wind was removed. This now follows Choose a course.', 'the step\'s page says the same line');
         await a.closeStep();
         await a.board(address);
         assert.deepEqual(await a.landed(), [], 'a later opening is quiet');
@@ -393,17 +446,61 @@ async function scenarios(mode, browser, secret, account, check) {
       await a.board(address);
       await check('§6: a line about a step linked to one another device deleted names it from the device’s note when the room opens again', async () => {
         await a.create('Ease the sheet', /Trim the sail/);
+        let trim = null;
+        assert.ok(await a.storeUntil((store) => (trim = stepIn(store, sail, 'Trim the sail')) !== null), 'the device holds the step it linked from');
         await a.page.goto(`${origin}/#/app/roadmaps`);
         await a.page.locator('.st-roadmaps-row').first().waitFor();
         await b.board(address);
         await b.deleteStep('Trim the sail');
         assert.ok(await c.until(address, async () => await c.card('Trim the sail').count() === 0), 'the delete reached the server');
-        await settle(5000);
+        assert.ok(await a.storeUntil((store) => spentIn(store, sail, trim) && stepIn(store, sail, 'Trim the sail') === null),
+          'the device holds the delete, the step\'s spent id alone, before its room opens');
         await a.board(address);
         await a.page.locator('.st-board-landed').waitFor({ timeout: 45_000 });
-        assert.deepEqual(await a.landed(), [['Ease the sheet', 'Trim the sail was removed. This now follows Choose a course.']]);
+        assert.deepEqual(await a.landed(), [['Ease the sheet', 'Trim the sail was removed. This now follows Choose a course.']],
+          'the room names the deleted step from the device\'s note');
         await a.board(address);
         assert.deepEqual(await a.landed(), [], 'a later opening is quiet');
+      });
+      await check('§6: a roadmap’s deletion takes the device’s note of it, and a sign-out with Keep takes every note: the device’s store keeps no name of a step', async () => {
+        const d = await Device.open(browser, second);
+        devices.push(d);
+        await d.board(address);
+        await d.create('Coil the line', /Choose a course/);
+        await d.board(`#/app/${row}`);
+        await d.create('Feather the oars', /Grip the oars/);
+        assert.ok(await c.until(`#/app/${row}`, async () => await c.card('Feather the oars').count() === 1), 'the new step reached the server');
+        const made = notesIn(await d.store());
+        assert.deepEqual({ notes: Object.keys(made).sort(), named: [holds(made, 'Choose a course'), holds(made, 'Grip the oars')] },
+          { notes: [`landing:${row}`, `landing:${sail}`].sort(), named: [true, true] }, 'the device notes its new steps in each roadmap, with the name of the step each link comes from');
+        await d.board(`#/app/${row}`);
+        await d.deleteFromSwitcher('Learn to row');
+        await d.page.locator('.st-board-toast').waitFor();
+        await d.page.locator('.st-board-toast').waitFor({ state: 'detached', timeout: 15_000 });
+        const deleted = notesIn(await d.store());
+        assert.deepEqual({ notes: Object.keys(deleted), named: [holds(deleted, 'Choose a course'), holds(deleted, 'Grip the oars')] },
+          { notes: [`landing:${sail}`], named: [true, false] }, 'the deleted roadmap\'s note left with it; the note of a roadmap that stands stays until sign-out');
+        await d.page.goto(`${origin}/app`);
+        await d.page.locator('.wm-head-seat button[aria-expanded]').click();
+        await d.page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
+        const ask = d.page.getByRole('dialog', { name: 'Sign out?', exact: true });
+        await ask.getByRole('button', { name: 'Sign out', exact: true }).click();
+        await ask.waitFor({ state: 'detached' });
+        const head = (store) => store.records.find(({ key }) => key === '["head"]')?.value.meta ?? {};
+        assert.ok(await d.storeUntil((store) => store.records.some(({ key, value }) => key.startsWith('["replica"') && value.state === 'dormant')
+          && !head(store).signOut && !head(store).deviceCleanup), 'the sign-out finished with Keep and the products\' cleanup ran');
+        const out = await d.store();
+        assert.deepEqual({ notes: notesIn(out), named: ['Choose a course', 'Grip the oars'].filter((words) => holds(out, words)) },
+          { notes: {}, named: [] }, 'after a sign-out with Keep the device\'s store holds no landing note, and no record or row names a step a link came from');
+        const end = Date.now() + 45_000;
+        let listed = 0;
+        while (listed !== 2 && Date.now() < end) {
+          await a.page.goto(`${origin}/#/app/roadmaps`);
+          await a.page.locator('.st-roadmaps-row').first().waitFor();
+          await settle(1500);
+          listed = await a.page.locator('.st-roadmaps-row').count();
+        }
+        assert.equal(listed, 2, 'the deleted roadmap left the other devices\' lists');
       });
       await a.board(address);
       await check('a roadmap’s deletion lands on the person’s roadmaps with Undo, and Undo within the hold returns to it', async () => {
@@ -492,7 +589,7 @@ async function scenarios(mode, browser, secret, account, check) {
       await a.page.getByRole('menuitem', { name: 'Kept here · 1', exact: true }).click();
       const page = a.page.getByRole('dialog', { name: 'Kept here', exact: true });
       await page.locator('.st-kept-count').waitFor();
-      assert.equal(await page.locator('.st-kept-count').innerText(), '1 change');
+      assert.equal(await page.locator('.st-kept-count').innerText(), '1 change', 'the list\'s page counts one change');
       await shoot(a, 'kept-390-list');
       await page.locator('.st-kept-row').click();
       await page.getByRole('button', { name: 'Copy', exact: true }).click();
@@ -509,7 +606,7 @@ async function scenarios(mode, browser, secret, account, check) {
       await settle(6000);
     });
     await check('no device logged an error', async () => {
-      assert.deepEqual(devices.flatMap((device) => device.errors), []);
+      assert.deepEqual(devices.flatMap((device) => device.errors), [], 'no page threw and no console logged an error');
     });
   } finally {
     for (const device of devices) await device.context.close();
@@ -523,9 +620,14 @@ async function run(mode, browser) {
   const url = `postgresql:///${database}?host=${encodeURIComponent(host)}`;
   const account = randomUUID();
   const secret = randomBytes(24).toString('hex');
+  const second = randomBytes(24).toString('hex');
   const sql = (statement) => execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-c', statement], { stdio: ['ignore', 'pipe', 'pipe'] });
   let server, web, created = false, passed = 0;
-  const check = async (name, body) => { await body(); passed++; console.log(`PASS ${mode} · ${name}`); };
+  const check = async (name, body) => {
+    try { await body(); } catch (error) { console.error(`FAIL ${mode} · ${name}`); throw error; }
+    passed++;
+    console.log(`PASS ${mode} · ${name}`);
+  };
   try {
     for (const port of [backendPort, webPort]) {
       try { execFileSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN']); throw new Error(`port ${port} is occupied`); }
@@ -533,7 +635,7 @@ async function run(mode, browser) {
     }
     execFileSync('createdb', ['-h', host, database]); created = true;
     execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
-    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999);`);
+    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
     const dist = resolve(scratch, `dist-${mode}`);
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'],
       { cwd: process.cwd(), env: { ...process.env, VITE_ROADMAP_REPLICA_ROOM: mode === 'on' ? 'on' : '' }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 });
@@ -543,11 +645,14 @@ async function run(mode, browser) {
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
     web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
-    await scenarios(mode, browser, secret, account, check);
+    await scenarios(mode, browser, { secret, second }, account, check);
     const events = Number(sql("select count(*) from events where name like 'roadmap_%'").toString().match(/\d+/)?.[0] ?? 0);
     assert.ok(events > 0, 'the room’s events reached the local intake');
     const kept = Number(sql("select count(distinct name) from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')").toString().match(/\d+/)?.[0] ?? 0);
     assert.equal(kept, mode === 'on' ? 2 : 0, 'the kept list’s events reached the local intake only with the switch on');
+    const undone = sql("select coalesce(string_agg(distinct (props->>'action') || ':' || (props->>'outcome'), ',' order by (props->>'action') || ':' || (props->>'outcome')), '') from events where name = 'roadmap_undo'")
+      .toString().match(/(?:undo|redo):[a-z]+(?:,(?:undo|redo):[a-z]+)*/)?.[0] ?? '';
+    assert.equal(undone, mode === 'on' ? 'redo:applied,undo:applied' : '', 'what the room’s Undo and Redo came to reached the local intake only with the switch on');
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
@@ -563,10 +668,11 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 10, off: 6 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 11, off: 6 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
-  console.error(error instanceof assert.AssertionError ? error.message : error);
+  log.write(`\n${error?.stack ?? error}\n`);
+  console.error(error instanceof assert.AssertionError && !error.generatedMessage ? error.message : `${error?.name ?? 'Error'}, its message in the stack log`);
   console.error(`Stack diagnostics: ${logPath}`);
   process.exitCode = 1;
 } finally {

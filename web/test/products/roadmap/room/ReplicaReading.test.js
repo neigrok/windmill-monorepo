@@ -253,3 +253,44 @@ test('the owner’s workspace comes from their overlay, each step’s items in t
     a.close();
   }
 });
+
+test('a roadmap another device deleted takes the device’s note of it along: one the room finds gone as it opens, and one deleted while its room is open', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const plant = async (title) => {
+      const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap(title, { steps: [{ key: 'course', label: 'Choose a course' }], links: [] })));
+      committed(await a.runner.runAct(new CreateStep(tree, { label: 'Read the wind' }, [steps.course])));
+      for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+      return tree;
+    };
+    const closed = await plant('Learn to sail');
+    const open = await plant('Learn to row');
+    await a.sync();
+    const b = await a.device();
+    await a.sync();
+    const note = (tree) => a.runner.read(RoadmapScopes.account, (read) => read.device(RoadmapScopes.landing(tree)));
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const reading = (tree) => new ReplicaReading({ treeId: tree, timers: a.env.timers,
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
+
+    const room = reading(open);
+    await room.read({ signal: new AbortController().signal });
+    room.follow({ onTree: () => {}, onProgress: () => {}, onWorkspace: () => {}, onGuides: () => {}, onLanding: () => {}, onActivity: () => {} });
+    const { DeleteRoadmap } = await import('../../../../src/products/roadmap/domain/roadmaps.js');
+    committed(await b.runner.runAct(new DeleteRoadmap(closed)));
+    committed(await b.runner.runAct(new DeleteRoadmap(open)));
+    await a.advance(CONSTANTS.HOLD_MS);
+    await a.sync();
+    assert.notEqual(note(closed), null, 'a roadmap deleted elsewhere whose room is not open keeps its note until a reading finds it gone');
+    await until(() => note(open) === null);
+    room.close();
+
+    const late = reading(closed);
+    assert.equal(await late.read({ signal: new AbortController().signal }), null);
+    await until(() => note(closed) === null);
+    late.close();
+  } finally {
+    a.close();
+  }
+});

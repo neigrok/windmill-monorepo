@@ -1,6 +1,7 @@
 // §6 Kept here beside every room (flow 49.06): roadmap's notices read through the engine in every scope, offered as the
 // account menu's row while the list holds a change, and the list itself while the person has it open. Each change that
-// cannot land is told to the intake once on this browser; a notice no rule of §6 lists is a failure, reported by its code.
+// cannot land is told to the intake once (`toldNotices.js`); a notice no rule of §6 lists is a failure, reported once by
+// its code, `other` where the code is not one a refusal names.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ErrorBoundary } from '../../../design-system';
@@ -8,15 +9,15 @@ import { useAccountRowOffer } from '../../../shell/ProductSessions.jsx';
 import { useSyncEngine, useSyncNotices } from '../../../platform/sync/react.js';
 import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
-import { localStorageOrNothing } from '../persistence/browserStorage.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { t } from '../i18n/index.js';
 import { keptChanges } from './KeptChanges.js';
 import { KeptList, listed } from './KeptList.jsx';
+import { untoldNotices } from './toldNotices.js';
 
 const NOTHING_KEPT = Object.freeze({ kept: [], unexpected: [] });
-// The notices this browser has told the intake of, the newest 200; a storage error risks telling one twice, never a failure.
-const TOLD = 'windmill:roadmap:kept-told';
+// A refusal code as the registry spells one; any other is reported as `other`.
+const REFUSAL_CODE = /^[a-z][a-z0-9-]{0,63}$/;
 const reportedCodes = new Set();
 
 export function KeptHere() {
@@ -30,24 +31,16 @@ export function KeptHere() {
   counted.current = shown;
 
   useEffect(() => {
-    if (read.kept.length === 0) return;
-    const storage = localStorageOrNothing();
-    let told = [];
-    try { told = JSON.parse(storage.getItem(TOLD) ?? '[]'); } catch { told = []; }
-    if (!Array.isArray(told)) told = [];
-    const fresh = read.kept.filter((change) => !told.includes(change.id));
-    if (fresh.length === 0) return;
-    for (const change of fresh) track('roadmap_write_cannot_land', { reason: change.reason });
-    try { storage.setItem(TOLD, JSON.stringify([...told, ...fresh.map((change) => change.id)].slice(-200))); } catch { /* told again next time */ }
-  }, [read]);
-
-  useEffect(() => {
-    for (const { code } of read.unexpected) {
-      if (reportedCodes.has(code)) continue;
-      reportedCodes.add(code);
-      reportRoadmapFailure('roadmap-kept-unexpected', new Error('A notice no rule of the list lists'), { code });
+    if (!engine) return;
+    const untold = new Set(untoldNotices(notices.map((notice) => notice.id)));
+    for (const change of read.kept) if (untold.has(change.id)) track('roadmap_write_cannot_land', { reason: change.reason });
+    for (const { id, code } of read.unexpected) {
+      const tag = REFUSAL_CODE.test(code) ? code : 'other';
+      if (!untold.has(id) || reportedCodes.has(tag)) continue;
+      reportedCodes.add(tag);
+      reportRoadmapFailure('roadmap-kept-unexpected', new Error('A notice no rule of the list lists'), { code: tag });
     }
-  }, [read]);
+  }, [engine, notices, read]);
 
   const openList = useCallback(() => {
     track('roadmap_kept', { step: 'open', count: countBucket(counted.current) });

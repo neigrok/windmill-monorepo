@@ -170,8 +170,12 @@ test('the keyboard walks a stack of gestures: a held delete cancelled in place, 
     session.holdAct(() => { held += 1; });
     session.undo();
     session.endHeldAct();
-    assert.deepEqual({ shown: shown(), held, receipts: session.receiptVersion, told },
-      { shown: { 'Watch the wind': [], 'Leave the dock': ['Watch the wind'], 'Sail solo': [] }, held: 1, receipts: 4, told: { said: [], events: [], statuses: 4 } });
+    await a.sync();
+    session.followInverses();
+    assert.deepEqual({ shown: shown(), held, receipts: session.receiptVersion, told }, {
+      shown: { 'Watch the wind': [], 'Leave the dock': ['Watch the wind'], 'Sail solo': [] }, held: 1, receipts: 4,
+      told: { said: [], statuses: 4, events: ['undo', 'undo', 'redo', 'undo'].map((action) => ['roadmap_undo', { action, outcome: 'applied' }]) },
+    });
     session.close();
     await until(() => journaled(a) === before, 1000);
   } finally {
@@ -373,6 +377,44 @@ test('a gesture of several acts is one composed act: a part refused partway writ
       painted: ['plum', 'plum'],
       told: { said: [], events: [['roadmap_write_refused', { write: 'ImportSubgraph', refusal: 'invalid' }]], statuses: 1 },
     });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('each Undo and Redo is told to the intake by what it came to: applied, skipped where another device changed the step since, and unavailable where the gesture wrote nothing', async () => {
+  const { a, tree, steps, reading, session, told } = await gestures();
+  try {
+    const b = await a.device();
+    await a.sync();
+    // Each Undo and Redo asked, then settled on the server and followed.
+    const undo = async () => { session.undo(); await session.redoStack.at(-1).inverse; };
+    const redo = async () => { session.redo(); await session.undoStack.at(-1).act; };
+    const settle = async () => { await a.sync(); session.followInverses(); };
+    await session.dispatch({ kind: 'RenameNode', id: steps.wind, label: 'Watch the wind' }).landed;
+    await a.sync();
+    const { ChangeStep } = await import('../../../../src/products/roadmap/domain/steps.js');
+    committed(await b.runner.runAct(new ChangeStep(tree, steps.wind, { label: 'Feel the wind' })));
+    await a.sync();
+    await undo();
+    await settle();
+    await redo();
+    await settle();
+    a.failNextCommit();
+    await session.dispatch({ kind: 'RenameNode', id: steps.dock, label: 'Cast off' }).landed;
+    await undo();
+    await redo();
+    await session.dispatch({ kind: 'RenameNode', id: steps.solo, label: 'Sail alone' }).landed;
+    await undo();
+    await settle();
+    assert.deepEqual(told.events, [
+      ['roadmap_undo', { action: 'undo', outcome: 'skipped' }],
+      ['roadmap_undo', { action: 'redo', outcome: 'skipped' }],
+      ['roadmap_undo', { action: 'undo', outcome: 'unavailable' }],
+      ['roadmap_undo', { action: 'redo', outcome: 'unavailable' }],
+      ['roadmap_undo', { action: 'undo', outcome: 'applied' }],
+    ]);
   } finally {
     reading.close();
     a.close();

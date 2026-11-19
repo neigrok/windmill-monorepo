@@ -5,7 +5,7 @@
 // waiting on the network, follows each change, and drops every scope it subscribed when the room leaves. On the
 // person's own roadmap it is the room's write door too: the domain's actions on the kit's runner, through the room's
 // session (`ReplicaSession`); and it reads, and clears once said, what the device tells of the person's own changes
-// that met another device's (§6).
+// that met another device's (§6), and lets that note go whole when it finds the roadmap gone.
 
 import { Fields } from '../../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
@@ -46,7 +46,7 @@ export class ReplicaReading {
     this.engine = null;
     this.subscribed = new Set();
     this.holds = new Map();
-    this.listeners = new Set([() => this.emitStatus()]);
+    this.listeners = new Set([() => this.emitStatus(), () => this.writes?.followInverses()]);
     this.statusHandlers = new Set();
     this.told = null;
     this.landingFailed = false;
@@ -67,9 +67,13 @@ export class ReplicaReading {
     this.engine = await this.engineWithin(signal);
     if (!this.engine || signal.aborted) return null;
     this.unwatch = this.engine.observeEngine(this.changed);
-    if (await this.engine.subscribe(this.scope) === 'gone') return null;
+    if (await this.engine.subscribe(this.scope) === 'gone') {
+      this.forgetLanding();
+      return null;
+    }
     this.subscribed.add(this.scope);
     const roadmap = await this.firstCopy(signal);
+    if (roadmap?.state === 'missing') this.forgetLanding();
     if (roadmap?.state !== 'open' || signal.aborted) return null;
     this.opened = roadmap;
     this.openWrites(roadmap.mine);
@@ -83,9 +87,12 @@ export class ReplicaReading {
   follow({ onTree, onProgress, onWorkspace, onGuides, onLanding, onActivity }) {
     if (this.ready && this.room) this.room.sessionRef.current = this.writes;
     let shown = this.opened;
+    let own = this.ready;
     onLanding(this.landing());
     this.listeners.add(() => {
       const roadmap = this.roadmap();
+      if (own && (roadmap.state === 'missing' || !roadmap.mine)) this.forgetLanding();
+      own = own && roadmap.state !== 'missing' && roadmap.mine;
       if (roadmap === shown || roadmap.state !== 'open') return;
       shown = roadmap;
       onTree(roadmap.seed);
@@ -128,6 +135,13 @@ export class ReplicaReading {
   tell(lines) {
     const told = (part) => lines.flatMap((line) => line.told[part] ?? []);
     return this.writes.settle([new ClearLanding(this.treeId, { nodes: told('nodes'), edges: told('edges'), revived: told('revived') })], 'landing');
+  }
+
+  // The reading found its roadmap gone, or the person's own roadmap left their list: where the domain reads it gone from
+  // the list, the device's note of it goes whole, so a roadmap that never opens again keeps no name of its steps here.
+  forgetLanding() {
+    if (!this.writes) this.openWrites(false);
+    this.writes.settle([new ClearLanding(this.treeId, {})], 'landing');
   }
 
   // The person's roadmaps alone, for a page that lists them (a reading of no roadmap, `treeId` null): once the engine

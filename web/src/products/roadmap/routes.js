@@ -84,10 +84,12 @@ function render({ hash, pathname, search }) {
   return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo, replica: ROOM_READS_REPLICA }, inRoom: true };
 }
 
-// Explicit sign-out and account replacement wipe stamped work; a session lapse never calls this hook.
+// Explicit sign-out and account replacement wipe stamped work, and the room's landing notes and told notices on the
+// device's copy, Keep or Discard; a session lapse never calls this hook.
 async function forgetDevice({ next, navigation }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.
-  const { forgetDeviceTrees } = await import('./sync/localTrees.js');
+  const [{ forgetDeviceTrees }, { forgetReplicaRoom }] = await Promise.all([import('./sync/localTrees.js'), import('./sync/signOut.js')]);
+  await forgetReplicaRoom();
   await forgetDeviceTrees();
   confirmDeviceOwner(next ?? null);
   if (typeof window === 'undefined' || !readNavigation().hash.startsWith('#/app/')) return;

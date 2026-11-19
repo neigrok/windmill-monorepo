@@ -10,9 +10,9 @@ import { recordKey } from '../../../../../packages/api-contract/sync/reference/c
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
 import { GENESIS_KINDS, HeldRecord, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
-import { RoadmapStep, StepsImport, readTree } from './steps.js';
+import { RoadmapStep, StepsImport, readNote, readTree } from './steps.js';
 import { StepMark, StepPointer } from './progress.js';
-import { LandingNote, RoadmapTree } from './records.js';
+import { RoadmapTree } from './records.js';
 
 /** @typedef {{ tree: string, step: string }} RoadmapParent */
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -201,7 +201,8 @@ export class CreateRoadmap {
 }
 
 // §5 Delete a roadmap: held nine seconds, and permanent once the hold ends (R-7). A subtree goes with the step
-// that owns it, so only a root's record is deleted here.
+// that owns it, so only a root's record is deleted here. The device's notes (§6) of the roadmap and of every subtree
+// under it go at once, and an Undo within the hold does not bring them back.
 export class DeleteRoadmap {
   /** @param {string} tree */
   constructor(tree) {
@@ -212,15 +213,29 @@ export class DeleteRoadmap {
 
   /** @param {import('../../../platform/domain-kit/acts.js').ActReader} read */
   load(read) {
-    return read.inScope(RoadmapScopes.account, (account) => account.repository(Roadmap).find(this.id, 'drawn'));
+    return read.inScope(RoadmapScopes.account, (account) => {
+      const roadmaps = account.repository(Roadmap).all('drawn');
+      const under = [String(this.id.record)];
+      for (const id of under) {
+        for (const each of roadmaps) {
+          const subtree = String(each.id.record);
+          if (each.parent?.tree === id && !under.includes(subtree)) under.push(subtree);
+        }
+      }
+      return {
+        roadmap: account.repository(Roadmap).find(this.id, 'drawn'),
+        notes: under.map(RoadmapScopes.landing).filter((key) => account.device(key) !== null),
+      };
+    });
   }
 
-  /** @param {RoadmapValue | null} roadmap */
-  decide(roadmap) {
+  /** @param {{ roadmap: RoadmapValue | null, notes: string[] }} loaded */
+  decide({ roadmap, notes }) {
     if (roadmap === null) return ActDecision.unchanged(null);
     if (roadmap.parent !== null) return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('not-a-root', this.id.ref, null, 'predicted')));
     const plan = new Plan();
     plan.remove(this.id);
+    for (const key of notes) plan.device(key, null);
     return writeIn(RoadmapScopes.account, plan, null);
   }
 }
@@ -364,12 +379,11 @@ export class CreateSubtree {
   /** @param {import('../../../platform/domain-kit/acts.js').ActReader} read */
   load(read) {
     const roadmap = read.inScope(RoadmapScopes.account, (account) => account.repository(Roadmap).find(new Id(this.tree, Roadmap), 'drawn'));
-    const tree = read.inScope(RoadmapScopes.tree(this.tree), (scope) => ({
-      meta: scope.repository(RoadmapMeta).find(META, 'drawn') ?? RoadmapMetaValue.blank(),
-      held: HeldRecord.read(scope.repository(RoadmapStep), new Id(this.step, RoadmapStep)),
-      note: LandingNote.of(scope.device(RoadmapScopes.landing(this.tree))),
-      moment: scope.moment,
-    }));
+    const tree = read.inScope(RoadmapScopes.tree(this.tree), (scope) => {
+      const held = HeldRecord.read(scope.repository(RoadmapStep), new Id(this.step, RoadmapStep));
+      return { meta: scope.repository(RoadmapMeta).find(META, 'drawn') ?? RoadmapMetaValue.blank(), held,
+        note: held.absent ? readNote(this.tree, scope) : null, moment: scope.moment };
+    });
     const pointer = read.inScope(RoadmapScopes.overlay(this.tree), (overlay) => overlay.repository(StepPointer).find(new Id(this.step, StepPointer), 'drawn'));
     return { roadmap, pointer, ...tree };
   }
@@ -405,7 +419,7 @@ export class CreateSubtree {
     }));
     const connected = new ScopedPlan(RoadmapScopes.account, command);
     const created = { subtree, root: meta.root ?? this.tree, revived: held.absent };
-    if (!held.absent) return ActDecision.write(new ActPlan([connected]), created);
+    if (note === null) return ActDecision.write(new ActPlan([connected]), created);
     const revival = held.reviving(new Valid(step, moment, []), []);
     revival.device(RoadmapScopes.landing(this.tree), note.adding({ revived: [this.step] }).json);
     return ActDecision.write(new ActPlan([new ScopedPlan(RoadmapScopes.tree(this.tree), revival), connected]), created);

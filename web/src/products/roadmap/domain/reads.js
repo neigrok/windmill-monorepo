@@ -118,8 +118,7 @@ export function landingFacts(graph, own) {
   }
   return graph.ids.flatMap((node) => {
     if (!nodes.has(node) && !edges.has(node)) return [];
-    const sources = new Set((graph.parents[graph.rawSlot.get(node) ?? 0] ?? []).map((slot) => graph.rawIds[slot] ?? '')
-      .filter((from) => !graph.slot.has(from) && (nodes.has(node) || edges.get(node)?.has(from))));
+    const sources = new Set(graph.tree.index.absentParents(node).filter((from) => nodes.has(node) || edges.get(node)?.has(from)));
     if (!sources.size) return [];
     const incoming = [...sources].sort(compareText).map((from) => [from, node]);
     const followed = graph.followed(node).flatMap((entry) => {

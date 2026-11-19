@@ -8,7 +8,8 @@ import { FollowGraph } from './graph.js';
 import { LandingNote } from './records.js';
 import { landingFacts } from './reads.js';
 import { RoadmapRefusals, RoadmapScopes, writeIn } from './roadmapRules.js';
-import { readTree } from './steps.js';
+import { Roadmap } from './roadmaps.js';
+import { readNote, readTree } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -41,7 +42,10 @@ export function landingOf(tree, read) {
   };
 }
 
-// Once told, the device clears what it told from its note; an empty note leaves the device row.
+// Once told, the device clears what it told from its note, and with it each entry that has landed and can say
+// nothing more (`readNote`). The note of a roadmap gone from the person's list, deleted there or no longer in it once
+// the device has read the list, goes whole: nothing of it is told again. The note is the device's, not the roadmap's,
+// so the act writes it through the account's scope, which a roadmap's end leaves writable.
 export class ClearLanding {
   /**
    * @param {string} tree
@@ -56,16 +60,20 @@ export class ClearLanding {
 
   /** @param {import('../../../platform/domain-kit/acts.js').ActReader} read */
   load(read) {
-    return read.inScope(RoadmapScopes.tree(this.tree), (tree) => LandingNote.of(tree.device(RoadmapScopes.landing(this.tree))));
+    const { held, gone } = read.inScope(RoadmapScopes.account, (account) => ({
+      held: LandingNote.of(account.device(RoadmapScopes.landing(this.tree))),
+      gone: account.firstPullComplete() && account.repository(Roadmap).record(this.tree, 'drawn')?.life?.[0] !== 'alive',
+    }));
+    return { held, settled: gone ? null : read.inScope(RoadmapScopes.tree(this.tree), (tree) => readNote(this.tree, tree)) };
   }
 
-  /** @param {LandingNote} note */
-  decide(note) {
-    const left = note.clearing(this.told);
-    if (jcs(left.json) === jcs(note.json)) return ActDecision.unchanged(null);
+  /** @param {{ held: LandingNote, settled: LandingNote | null }} loaded */
+  decide({ held, settled }) {
+    const left = settled === null ? new LandingNote() : settled.clearing(this.told);
+    if (jcs(left.json) === jcs(held.json)) return ActDecision.unchanged(null);
     const plan = new Plan();
     plan.device(RoadmapScopes.landing(this.tree), left.isEmpty ? null : left.json);
-    return writeIn(RoadmapScopes.tree(this.tree), plan, null);
+    return writeIn(RoadmapScopes.account, plan, null);
   }
 }
 

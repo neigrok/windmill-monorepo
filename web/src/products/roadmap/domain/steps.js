@@ -9,6 +9,7 @@ import { Path, Violation, precondition } from '../../../platform/domain-kit/valu
 import { utf8 } from '../../../platform/sync/core/encoding.js';
 import { between, dropKey, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { latticeOf } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { components, FollowGraph } from './graph.js';
 import { LandingNote, RoadmapTree } from './records.js';
 import { HeldRecord, Restore, RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
@@ -127,6 +128,29 @@ export function readTree(tree, read) {
     }
   }
   return new RoadmapTree({ id: tree, nodes, edges });
+}
+
+// §6 The device's note of one roadmap as a write of it takes it: less each entry whose write has landed and that says
+// nothing of the roadmap as it now stands (`LandingNote.settled`). A step or a link the device wrote has landed once the
+// server's copy of it holds every write of the device's own, as the device has pulled it; one it holds no record of
+// at all was deleted after, its own write long settled. Before the roadmap's first pull completes nothing has landed.
+/**
+ * @param {string} tree
+ * @param {Reader} read
+ * @param {RoadmapTree} roadmap
+ */
+export function readNote(tree, read, roadmap = readTree(tree, read)) {
+  const note = LandingNote.of(read.device(RoadmapScopes.landing(tree)));
+  if (!read.firstPullComplete()) return note;
+  const landed = (/** @type {Id<any>} */ id) => {
+    const drawn = read.repository(id.entity).record(id.record, 'drawn');
+    const confirmed = read.confirmed(id.entity, id);
+    return drawn === undefined || (confirmed !== null && jcs(latticeOf(drawn)) === jcs(latticeOf(confirmed)));
+  };
+  return note.settled(roadmap, {
+    step: (id) => landed(new Id(id, RoadmapStep)),
+    link: (from, to) => landed(new RoadmapLinkValue(from, to).id),
+  });
 }
 
 // The order key after every given key, by bytes; a missing or malformed key is no bound.
@@ -342,7 +366,7 @@ function loadTree(read, tree, named) {
       known: new Set(named.filter((id) => roadmap.nodesById.has(id) || steps.spentBorn(new Id(id, RoadmapStep)) !== null)),
       steps: steps.capacity(),
       links: scope.repository(RoadmapLink).capacity(),
-      note: LandingNote.of(scope.device(RoadmapScopes.landing(tree))),
+      note: readNote(tree, scope, roadmap),
       moment: scope.moment,
     };
   });
@@ -416,31 +440,28 @@ export class CreateStep {
 
 // §5 Any change to a step carries its life as alive under the gesture's stamp, so a step deleted elsewhere
 // comes back with the change (P-4, INV-1), whether this device still holds it or knows it only by its spent id. A step
-// the device found absent is noted as revived (§6).
+// the device found absent is noted as revived (§6): the note is read for that step alone, null for any other.
 /**
  * @param {string} tree
  * @param {Reader} read
  * @param {string} id
  */
 function readStep(tree, read, id) {
-  return {
-    held: HeldRecord.read(read.repository(RoadmapStep), new Id(id, RoadmapStep)),
-    note: LandingNote.of(read.device(RoadmapScopes.landing(tree))),
-    moment: read.moment,
-  };
+  const held = HeldRecord.read(read.repository(RoadmapStep), new Id(id, RoadmapStep));
+  return { held, note: held.absent ? readNote(tree, read) : null, moment: read.moment };
 }
 
 /**
  * @param {string} tree
  * @param {HeldRecord<RoadmapStepValue>} held
  * @param {Valid<RoadmapStepValue>} valid
- * @param {LandingNote} note
+ * @param {LandingNote | null} note
  */
 function revived(tree, held, valid, note) {
   const changed = held.changed(valid);
   if (changed.length === 0) return ActDecision.unchanged(null);
   const plan = held.reviving(valid, changed);
-  if (held.absent) plan.device(RoadmapScopes.landing(tree), note.adding({ revived: [String(held.id.record)] }).json);
+  if (note !== null) plan.device(RoadmapScopes.landing(tree), note.adding({ revived: [String(held.id.record)] }).json);
   return writeIn(RoadmapScopes.tree(tree), plan, null);
 }
 

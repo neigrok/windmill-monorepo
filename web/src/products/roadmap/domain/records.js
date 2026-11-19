@@ -90,6 +90,15 @@ export class TreeIndex {
       if (mark.status === 'complete' && !this.nodes[slot]?.branch && !pointers.get(mark.node)?.present) this.markedDone[slot] = 1;
     }
   }
+
+  // The steps a present step is linked from over live links that the tree holds no present step of: the absent steps
+  // it follows through (D-5). None for a step that is not present.
+  /** @param {string} id */
+  absentParents(id) {
+    const slot = this.slot.get(id);
+    if (slot === undefined) return [];
+    return (this.parents[slot] ?? []).map((vertex) => this.rawIds[vertex] ?? '').filter((from) => !this.slot.has(from));
+  }
 }
 
 // A roadmap's normalized records. `own` says it is in the person's own list; `updatedAt` is when the server last received
@@ -132,16 +141,18 @@ export function edgeOrder(a, b) {
 const NAMES_KEPT = 10_000;
 
 // The device's own note of what it made and revived in one roadmap (§6), held in its `landing:<tree>` row
-// until the person has been told: its new steps, its new links, the steps its changes brought back, and the name of
-// each step it linked from, as it was when the device made the link. The device keeps nothing of a step deleted
-// elsewhere (engine.md §7.5), so a line that names one reads it here. The row never leaves the device.
+// until the person has been told, or until it can tell nothing: its new steps, its new links, the steps its changes
+// brought back, and the name of each step a link it still notes comes from, as it was when the device made the link.
+// The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a line that names one reads it here. The
+// row never leaves the device.
 export class LandingNote {
   /** @param {{nodes?:string[],edges?:string[][],revived?:string[],names?:{id:string,name:string}[]}} note */
   constructor({ nodes = [], edges = [], revived = [], names = [] } = {}) {
     this.nodes = Object.freeze([...nodes]);
     this.edges = Object.freeze(edges.map(([from = '', to = '']) => Object.freeze([from, to])));
     this.revived = Object.freeze([...revived]);
-    this.names = Object.freeze(names.map(({ id, name }) => Object.freeze({ id, name })));
+    const linkedFrom = new Set(this.edges.map(([from]) => from));
+    this.names = Object.freeze(names.filter(({ id }) => linkedFrom.has(id)).map(({ id, name }) => Object.freeze({ id, name })));
     Object.freeze(this);
   }
 
@@ -170,17 +181,34 @@ export class LandingNote {
     });
   }
 
-  // The note less what was told; a name stays while a link still noted comes from its step.
+  // The note less what was told.
   /** @param {{nodes?:string[],edges?:string[][],revived?:string[]}} told */
   clearing({ nodes = [], edges = [], revived = [] }) {
     const key = (/** @type {readonly string[]} */ edge) => jcs([...edge]);
     const toldEdges = new Set(edges.map(key));
-    const left = this.edges.filter((edge) => !toldEdges.has(key(edge))).map((edge) => [...edge]);
     return new LandingNote({
       nodes: this.nodes.filter((id) => !nodes.includes(id)),
-      edges: left,
+      edges: this.edges.filter((edge) => !toldEdges.has(key(edge))).map((edge) => [...edge]),
       revived: this.revived.filter((id) => !revived.includes(id)),
-      names: this.names.filter(({ id }) => left.some(([from]) => from === id)),
+      names: [...this.names],
+    });
+  }
+
+  // The note less each entry whose write has landed (`landed`) and that says nothing of `tree` as it now stands: a step
+  // or a link of the device's that follows through no absent step, and a step its change brought back that is absent
+  // again. Once a write has landed the device holds all the server held before it, so what the entry meets from then on
+  // was made after it, and it can say nothing more.
+  /**
+   * @param {RoadmapTree} tree
+   * @param {{ step(id: string): boolean, link(from: string, to: string): boolean }} landed
+   */
+  settled(tree, landed) {
+    const { index } = tree;
+    return new LandingNote({
+      nodes: this.nodes.filter((id) => !landed.step(id) || index.absentParents(id).length > 0),
+      edges: this.edges.filter(([from = '', to = '']) => !landed.link(from, to) || index.absentParents(to).includes(from)).map((edge) => [...edge]),
+      revived: this.revived.filter((id) => !landed.step(id) || tree.nodesById.get(id)?.present === true),
+      names: [...this.names],
     });
   }
 

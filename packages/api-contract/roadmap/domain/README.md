@@ -155,8 +155,10 @@ the registry its caller composes). Files:
 | `landing-actions.json` | The landing read and its clearing; the one list of what cannot land |
 | `undo.json` | Each gesture's Undo and Redo on the kit's harness over the reference server with roadmap's binding (K-3) |
 
-**Scenes.** An action case is, as the kit's act form reads it (`ProductCorpus.act`), `{action, input, scopes: {<scope>: {drawn, stored?, spent?}}, device?, ids?, now,
-offsetSeconds}`: each scope's records are engine rows (`stored` defaults to `drawn`), its `spent` ids (`{t, id, born}`,
+**Scenes.** An action case is, as the kit's act form reads it (`ProductCorpus.act`), `{action, input, scopes: {<scope>: {drawn, stored?, confirmed?, spent?}}, device?, ids?, now,
+offsetSeconds}`: each scope's records are engine rows (`stored` defaults to `drawn`), `confirmed` the server's copy as
+the device pulled it (by default `stored`: a record of the device's own the server has not yet taken is one `confirmed`
+leaves out), its `spent` ids (`{t, id, born}`,
 none by default) are what the device keeps of a step or kind another device deleted, `device` holds
 device rows by key, and `ids` are minted in order across scopes. A device keeps no record of a step or kind deleted
 elsewhere (engine.md §7.5), so a case draws one as a spent id; a dead record in `drawn` is the device's own delete that
@@ -165,12 +167,15 @@ has not yet settled. Its `expect` is `{decision}`:
 `{unchanged: {result}}` or `{refuse: <refusal>}`. A read case replaces `action` with `read`.
 Scopes are `self/roadmap`, `tree/<T>` and `self/overlay/<T>`; the device row is `landing:<T>`, the note
 `{nodes, edges, revived, names}` (`names`: `[{id, name}]`, the name of each step a noted link comes from, as it was when
-the device made the link).
+the device made the link, kept only while that link is noted). Every act that writes the note first lets go of each
+entry whose write has landed and that says nothing (§6): a step or link of the device's whose `drawn` record equals its
+`confirmed` one, or that the device holds no record of, and that follows through no absent step, and a step brought
+back that is absent again. Before the tree scope's first pull completes nothing has landed.
 
 | Action | Input | Result |
 |---|---|---|
 | `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2`, and the steps, chunked |
-| `DeleteRoadmap` | `{tree}` | `null`; held; a subtree's record refuses `notARoot` |
+| `DeleteRoadmap` | `{tree}` | `null`; held; the device's notes of the root and of every subtree under it (`landing:<T>`) removed in the same segment, unheld; a subtree's record refuses `notARoot` |
 | `SetVisibility` | `{tree, visibility}` | `null`; a write of the root's `meta.visibility` under `roadmap.captureTree`, predicting the root's `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); the visibility the root holds writes nothing; a subtree refuses `notARoot` |
 | `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step the device knows as deleted (dead in `drawn`, or a spent id) is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |
 | `WriteRoadmap` | `{tree, title?, guide?}` | `null`; the changed fields of `meta` |
@@ -187,7 +192,7 @@ the device made the link).
 | `AddSubtask`, `ChangeSubtask`, `MoveSubtask`, `DeleteSubtask` | `{tree, step, label}`, `{tree, subtask, changes}`, `{tree, subtask, below}`, `{tree, subtask}` | the subtask's id, or `null`; a move lands below another of its step's subtasks; a delete is held |
 | `AddStepLink`, `ChangeStepLink`, `MoveStepLink`, `DeleteStepLink` | `{tree, step, link: {url, title?}}`, `{tree, link, changes}`, `{tree, link, below}`, `{tree, link}` | as subtasks; a delete is held |
 | `SaveStepNote` | `{tree, step, text}` | the draft save's `{values, exists}`, decided as `{write: {gesture, result}}`; the note opened from `drawn` or new |
-| `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; the note less what was told, and less each name no link left in it comes from, or no row |
+| `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; written in `self/roadmap`: the note less what was told and less what has landed and says nothing, or no row; no row at all where the roadmap is gone from the person's list (its `tree` record dead or absent in `drawn` once `self/roadmap`'s first pull completes) |
 | read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the note's steps and links, each with `removed` (`[{id, name}]`, the absent steps it is linked from) and each `followed` entry with its `name`; a step the device holds is named by its label, one deleted elsewhere by the note's name, and by `null` where the note holds none; and its revived steps now present |
 | read `cannotLand` | `{notices}` | `{listed: [{id, gestureId, reason, subject, values}], unexpected: [{id, code}]}`; `reason` ∈ `roadmapDeleted` (`scope-dead`), `capFilled` (`cap`), `accessEnded` (`forbidden`, `not-found`), `noteTooLong` (`too-large` on a note) |
 
