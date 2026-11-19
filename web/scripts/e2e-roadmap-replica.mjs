@@ -2,14 +2,14 @@
 // (the room on the device's copy) and once with both off (today's room). One owner on several devices, each a browser
 // context with its own store: Undo and Redo, edits made offline syncing once the connection returns, a change made
 // without knowing of another device's delete (INV-1), a change made on a device that already holds that delete (INV-1,
-// the server keeping the step's other fields), the line that tells the person once of a link of theirs another device's
-// delete changed, named from the device's note when the room opens again (§6), a roadmap's deletion and a sign-out that
-// leave no step's name in the device's store (§6), a roadmap's deletion from the switcher, and a change to a roadmap
-// another device deleted, kept in the one list of what cannot land (§6, flow 49) only with the switch on. Each run has
-// its own database, server and built app on the given ports, and stops and drops them. It prints no id and no roadmap
-// text: a check that passes prints its name, and a failure prints the failing check's name, the words of the assertion
-// that failed (none of which names a roadmap, a step or an id) or else only the kind of error, and the path of the stack
-// log, which holds the full error and the stack's output and stays on this machine.
+// the server keeping the step's other fields), the line that tells the person once of a link of theirs that reached the
+// server after another device's delete of its step, named from the device's note in a room opened after a reload (§6), a
+// roadmap's deletion and a sign-out that leave no step's name in the device's store (§6), a roadmap's deletion from the
+// switcher, and a change to a roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49) only
+// with the switch on. Each run has its own database, server and built app on the given ports, and stops and drops them.
+// It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
+// name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
+// error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -445,20 +445,28 @@ async function scenarios(mode, browser, { secret, second }, account, check) {
       });
       await a.board(address);
       await check('§6: a line about a step linked to one another device deleted names it from the device’s note when the room opens again', async () => {
-        await a.create('Ease the sheet', /Trim the sail/);
         let trim = null;
-        assert.ok(await a.storeUntil((store) => (trim = stepIn(store, sail, 'Trim the sail')) !== null), 'the device holds the step it linked from');
-        await a.page.goto(`${origin}/#/app/roadmaps`);
-        await a.page.locator('.st-roadmaps-row').first().waitFor();
+        assert.ok(await a.storeUntil((store) => (trim = stepIn(store, sail, 'Trim the sail')) !== null), 'the device holds the step it links from');
+        await a.offline();
         await b.board(address);
         await b.deleteStep('Trim the sail');
         assert.ok(await c.until(address, async () => await c.card('Trim the sail').count() === 0), 'the delete reached the server');
-        assert.ok(await a.storeUntil((store) => spentIn(store, sail, trim) && stepIn(store, sail, 'Trim the sail') === null),
-          'the device holds the delete, the step\'s spent id alone, before its room opens');
+        await a.create('Ease the sheet', /Trim the sail/);
+        await a.page.goto(`${origin}/#/app/roadmaps`);
+        await a.page.locator('.st-roadmaps-row').first().waitFor();
+        await a.context.setOffline(false);
+        let ease = null;
+        assert.ok(await a.storeUntil((store) => (ease = stepIn(store, sail, 'Ease the sheet')) !== null
+          && spentIn(store, sail, trim) && stepIn(store, sail, 'Trim the sail') === null),
+          'the new step reached the server after the delete, and the device holds the delete, the step\'s spent id alone');
+        assert.deepEqual(notesIn(await a.store())[`landing:${sail}`], { nodes: [ease], edges: [[trim, ease]], revived: [], names: [{ id: trim, name: 'Trim the sail' }] },
+          'the device\'s note holds the new step, its link, and the name of the step the link comes from');
+        await a.page.reload();
         await a.board(address);
         await a.page.locator('.st-board-landed').waitFor({ timeout: 45_000 });
         assert.deepEqual(await a.landed(), [['Ease the sheet', 'Trim the sail was removed. This now follows Choose a course.']],
-          'the room names the deleted step from the device\'s note');
+          'a room that never read the deleted step names it from the device\'s note');
+        assert.ok(await a.storeUntil((store) => !(`landing:${sail}` in notesIn(store))), 'saying the line takes the note');
         await a.board(address);
         assert.deepEqual(await a.landed(), [], 'a later opening is quiet');
       });
