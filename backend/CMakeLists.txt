@@ -9,14 +9,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=reorder-init-list>)
 endif()
 
-# An unset build type means -O0, and -O0's fat un-inlined frames overflow drogon's ~512 KB
-# worker-thread stack once a request handler calls a few layers deep (Caller -> Api -> Service ->
-# Pg -> pqxx) — corrupting by-value return slots (a page read back as an empty/garbage struct) with
-# no crash. Prod builds Release (backend/Dockerfile), so this only ever bit a plain local
-# `cmake -S . -B build`. Default local builds to RelWithDebInfo — optimized like prod, with symbols.
+# An unset build type compiles unoptimized, unlike the Release image (backend/Dockerfile): a plain local
+# `cmake -S . -B build` is RelWithDebInfo, optimized like production, with symbols.
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type (Release-like default; see note above)" FORCE)
-  message(STATUS "No CMAKE_BUILD_TYPE set — defaulting to RelWithDebInfo (an -O0 build overflows drogon's worker stack)")
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type (optimized like production, with symbols)" FORCE)
+  message(STATUS "No CMAKE_BUILD_TYPE set — defaulting to RelWithDebInfo, optimized like production")
 endif()
 
 # The sync contract (packages/api-contract/sync): the registries the sync engine embeds and the golden
