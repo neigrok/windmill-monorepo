@@ -117,7 +117,7 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
         }
         if (op is Change.Operation.Revive) {
             if (!type.hasBorn) malformed("not-revivable")
-            val born = before?.born ?: replica.spent[scope.text]?.arr()?.firstOrNull { it.recordKey == key }?.get("born")?.str()?.let(::Stamp) ?: malformed("revive-without-born")
+            val born = before?.born ?: replica.spentBorn(scope, key) ?: malformed("revive-without-born")
             return Delta(key, Lattice(Life("alive", stamp), born, fields(type, change.values, before)))
         }
         var life: Life? = null

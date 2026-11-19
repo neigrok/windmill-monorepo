@@ -14,6 +14,9 @@ public protocol ScopeReader {
   // The visible records of a type whose top-level ref `field` names `id`, in id-byte order; any other field throws.
   func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record]
   func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record]
+  // §2.5, §7.5: the born of the scope's spent id of a record, all the device keeps of a derived record deleted elsewhere
+  // once its row is gone; nil where the scope keeps none.
+  func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp?
   // A row of `device/<product>` of the scope's product.
   func device(_ key: String) throws -> JSON?
   // §7.9: the scope's first pull is complete, or the replica does not pull it.

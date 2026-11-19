@@ -136,7 +136,7 @@ struct TransactionsTests {
     let deviceRows = "SELECT product, key, value FROM device_row WHERE replica = 1"
     let confirmed = #"SELECT id FROM row_set WHERE replica = 1 AND scope = 'self/probe' AND role = 'confirmed'"#
     let anyRow = "SELECT EXISTS (SELECT 1 FROM set_row WHERE row_set = 1)"
-    let spent = #"SELECT type, id, born FROM spent WHERE replica = 1 AND scope = 'self/probe'"#
+    let spent = #"SELECT type, id, born, seq FROM spent WHERE replica = 1 AND scope = 'self/probe'"#
     let row = { (type: String, id: String) in
       #"SELECT row FROM set_row WHERE row_set = 1 AND type = '"# + type + #"' AND id = '""# + id + #""'"#
     }

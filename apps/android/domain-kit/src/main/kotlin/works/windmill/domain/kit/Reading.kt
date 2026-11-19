@@ -5,6 +5,7 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.Registry
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.Stamp
 import works.windmill.sync.core.RefusalCode
 import works.windmill.sync.core.compareBytes
 import works.windmill.sync.core.lives
@@ -36,6 +37,9 @@ class Repository<E : Entity<E>>(val type: EntityType<E>, val source: ScopeReader
     fun capacity(): Capacity = Capacity(type, source.stored(type.type), registry)
     fun record(id: Id<E>, view: ViewMode): Record? = record(id.record, view)
     fun record(id: RecordID, view: ViewMode): Record? = if (view == ViewMode.drawn) source.drawn(type.type, id) else source.stored(type.type, id)
+    // Engine §2.5, §7.5: what the device keeps of a derived record deleted elsewhere once its row is gone, a record in neither view; null for
+    // any other id. A revival (§8.1) takes this born.
+    fun spentBorn(id: Id<E>): Stamp? = source.spentBorn(type.type, id.record)
     fun anchor(placement: Placement, orderField: String = (type as? OrderedType<*>)?.orderField ?: error("${type.type} is unordered")): RecordID? = when (placement) {
         Placement.Top -> null
         is Placement.Below -> placement.id

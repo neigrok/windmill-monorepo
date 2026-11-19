@@ -76,11 +76,13 @@ data class AbilityCase(val file: String, val name: String, val seat: Seat, val n
     }
 }
 
-// Confirmed records listed by each view, and the device keys the scene lists with their values; the engine ER-17
-// factory performs visibility and text decoding.
+// Confirmed records listed by each view, the device keys the scene lists with their values, and the scope's spent ids with
+// their born; the engine ER-17 factory performs visibility and text decoding.
 data class VectorRecords(val drawn: List<works.windmill.sync.api.Record>, val stored: List<works.windmill.sync.api.Record>,
-    val device: Map<String, Json> = emptyMap()) {
-    constructor(drawn: Json?, stored: Json?, registry: Registry, device: Json? = null) : this(records(drawn, registry), records(stored, registry), device?.obj() ?: emptyMap())
+    val device: Map<String, Json> = emptyMap(), val spent: Map<RecordKey, Stamp> = emptyMap()) {
+    constructor(drawn: Json?, stored: Json?, registry: Registry, device: Json? = null, spent: Json? = null) : this(
+        records(drawn, registry), records(stored, registry), device?.obj() ?: emptyMap(),
+        (spent?.arr() ?: emptyList()).associate { RecordKey(it.member("t").str(), RecordID(it.member("id"))) to Stamp(it.member("born").str()) })
     companion object {
         fun records(rows: Json?, registry: Registry): List<works.windmill.sync.api.Record> =
             (rows?.arr() ?: emptyList()).map { Record(confirmed = Row(it), registry = registry) }
@@ -113,6 +115,7 @@ class VectorReader(val records: VectorRecords, override val now: Long, ids: List
     override fun stored(type: String) = visible(records.stored, type)
     override fun drawn(type: String, field: String, id: RecordID) = drawn(type).filter { it.values[field] == id.json }
     override fun stored(type: String, field: String, id: RecordID) = stored(type).filter { it.values[field] == id.json }
+    override fun spentBorn(type: String, id: RecordID): Stamp? = records.spent[RecordKey(lives(type), id)]
     override fun confirmed(type: String, id: RecordID) = stored(type, id)
     override fun device(key: String): Json? = records.device[key]
     override fun firstPullComplete() = pulled

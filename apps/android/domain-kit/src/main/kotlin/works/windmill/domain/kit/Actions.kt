@@ -242,11 +242,16 @@ private sealed interface Step<out T, out R> {
     data class Writing<T>(val plan: Plan, val result: T) : Step<T, Nothing>
 }
 
+// §9.2 step 5: an update, removal or move of a type with life needs its record alive in `drawn`; a revival, a known born, the drawn record's or,
+// where `drawn` holds none, its spent id's; an insert or move, its anchor listed in `drawn` or `stored` (engine D-25).
 fun Plan.firstGone(context: CommitContext, scope: ScopeRef, registry: Registry): Refused? {
     for (operation in operations.filter { registry.lives(it.entity.type, scope) }) {
         val definition = registry.type(operation.entity.type)
-        if (operation.kind is Operation.Kind.Revive && definition?.hasBorn == true && definition.json["revivable"]?.bool() == true &&
-            context.drawn(operation.entity.type, operation.id)?.born == null) return Refused(RefusalCode.unknownRecord, operation.ref, path = Refused.Path.predicted)
+        if (operation.kind is Operation.Kind.Revive && definition?.hasBorn == true && definition.json["revivable"]?.bool() == true) {
+            val drawn = context.drawn(operation.entity.type, operation.id)
+            val born = if (drawn == null) context.spentBorn(operation.entity.type, operation.id) else drawn.born
+            if (born == null) return Refused(RefusalCode.unknownRecord, operation.ref, path = Refused.Path.predicted)
+        }
         val needsLife = operation.kind is Operation.Kind.Update || operation.kind == Operation.Kind.Remove || operation.kind is Operation.Kind.Move
         if (needsLife && definition?.life == true && context.drawn(operation.entity.type, operation.id)?.life?.isAlive != true) {
             return Refused(RefusalCode.unknownRecord, operation.ref, path = Refused.Path.predicted)

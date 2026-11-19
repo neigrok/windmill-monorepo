@@ -72,6 +72,11 @@ enum Schema {
         CREATE INDEX cancellation_replica ON cancellation(replica, inverse_act_id);
         """)
     }
+    // §2.5, §7.5: a spent id keeps the seq of the dead row it came from. One stored without it keeps none, so a preimage
+    // read over it has no row to walk from, and its Undo skips (§7.3).
+    migrator.registerMigration("v5") { db in
+      try db.execute(sql: "ALTER TABLE spent ADD COLUMN seq INTEGER NULL")
+    }
     return migrator
   }
 

@@ -252,8 +252,9 @@ enum Step<Result, Refusal: ProductRefusal> {
 }
 
 extension Plan {
-  // §9.2 step 5: an update, removal or move of a type with life needs its record alive in `drawn`; an insert or move, its
-  // anchor listed in `drawn` or `stored` (engine D-25). Another scope's type is §8.3 rule 1's to refuse.
+  // §9.2 step 5: an update, removal or move of a type with life needs its record alive in `drawn`; a revival, a known born,
+  // the drawn record's or, where `drawn` holds none, its spent id's; an insert or move, its anchor listed in `drawn` or
+  // `stored` (engine D-25). Another scope's type is §8.3 rule 1's to refuse.
   func firstGone(in context: any CommitContext, of scope: ScopeRef, registry: Registry) throws -> Refused? {
     for operation in operations where registry.lives(operation.entity.type, in: scope) {
       if try isGone(operation, in: context, registry: registry) { return Refused(.unknownRecord, subject: operation.ref, path: .predicted) }
@@ -269,7 +270,10 @@ extension Plan {
     switch operation.kind {
     case .revive:
       guard let definition = registry.type(operation.entity.type), definition.hasBorn, definition.revivable == true else { return false }
-      return try context.drawn(operation.entity.type, operation.id)?.born == nil
+      guard let drawn = try context.drawn(operation.entity.type, operation.id) else {
+        return try context.spentBorn(operation.entity.type, operation.id) == nil
+      }
+      return drawn.born == nil
     case .update, .remove, .move: break
     default: return false
     }

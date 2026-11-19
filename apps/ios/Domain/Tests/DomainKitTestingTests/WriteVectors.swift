@@ -42,8 +42,8 @@ enum Plans {
   static func pipeline(_ vector: Vector) throws -> JSON {
     let registry = try vector.registry
     let drawn = vector.input["drawn"]
-    let replica = VectorReplica(try VectorRecords(drawn: drawn, stored: vector.input["stored"] ?? drawn, registry: registry),
-                                now: vector.moment.now.ms, registry: registry, answer: try answer(vector))
+    let records = try VectorRecords(drawn: drawn, stored: vector.input["stored"] ?? drawn, spent: vector.input["spent"], registry: registry)
+    let replica = VectorReplica(records, now: vector.moment.now.ms, registry: registry, answer: try answer(vector))
     let runner = ActionRunner(replica: replica, registry: registry, zone: vector.moment.zone)
     do {
       let outcome = try runner.run(VectorAction(vector: vector, scope: try vector.scope))

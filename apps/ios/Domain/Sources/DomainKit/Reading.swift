@@ -79,6 +79,13 @@ public struct Repository<E: Entity> {
 
   public func record(_ id: ID<E>, in view: ViewMode) throws -> Record? { try record(id.record, in: view) }
 
+  // Engine §2.5, §7.5: what the device keeps of a derived record deleted elsewhere once its row is gone, a record in
+  // neither view; nil for any other id. A revival (§8.1) takes this born.
+  public func spentBorn(_ id: ID<E>) throws -> Stamp? {
+    try checkScope()
+    return try source.spentBorn(E.type, id.record)
+  }
+
   // The visible records, decoded in `all`'s order: an `Ordered` type by its key then its id, any other by its id. A record
   // that does not decode is a schema fault, surfaced, never skipped.
   public static func decode(_ records: some Sequence<Record>) throws(DecodeError) -> [E] {

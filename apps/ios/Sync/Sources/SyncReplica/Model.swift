@@ -434,21 +434,29 @@ public struct Staging: Sendable, Hashable {
   }
 }
 
-// §2.5 a spent id of a derived type, with the born its dead row carried.
+// §2.5 a spent id of a derived type, with the born and the seq of the dead row it came from (§7.5). A spent id stored
+// without a seq keeps none, and gives a preimage read over it none (§7.3).
 public struct SpentID: Sendable, Hashable {
   public let key: RecordKey
   public let born: Stamp
+  public let seq: Int64?
 
-  public init(key: RecordKey, born: Stamp) {
+  public init(key: RecordKey, born: Stamp, seq: Int64?) {
     self.key = key
     self.born = born
+    self.seq = seq
   }
 
   public init(json: JSON) throws {
-    self.init(key: RecordKey(try json.member("t").asString(), try RecordID(json: json.member("id"))), born: try Stamp(json: json.member("born")))
+    self.init(key: RecordKey(try json.member("t").asString(), try RecordID(json: json.member("id"))), born: try Stamp(json: json.member("born")),
+              seq: try json["seq"].map { (seq: JSON) throws -> Int64 in try seq.asInteger() })
   }
 
-  public var json: JSON { ["t": .string(key.type), "id": key.id.json, "born": born.json] }
+  public var json: JSON {
+    var object: JSON.Object = ["t": .string(key.type), "id": key.id.json, "born": born.json]
+    if let seq { object["seq"] = JSON(seq) }
+    return .object(object)
+  }
 }
 
 // A tree or overlay scope the replica learned is gone or not found (§7.5), which §7.1 step 2 refuses.

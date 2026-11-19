@@ -7,8 +7,8 @@ import SyncTesting
 import Testing
 
 // The readers a `read` and a commit's body get (§7.6, design §5.2): drawn and stored apart, the indexed read by a ref
-// field (ER-12), device rows, the first pull, ids minted inside a commit, and every misuse of a reader, which is
-// malformed (§7.1) wherever it surfaces.
+// field (ER-12), spent ids, device rows, the first pull, ids minted inside a commit, and every misuse of a reader, which
+// is malformed (§7.1) wherever it surfaces.
 
 struct ReadersTests {
   static let scope = ScopeRef.product("shelf")
@@ -156,6 +156,7 @@ struct ReadersTests {
     }
     #expect(throws: ended) { try kept!.drawn("item") }
     #expect(throws: ended) { try kept!.device("anything") }
+    #expect(throws: ended) { try kept!.spentBorn("item", "i_aaaa") }
     var context: (any CommitContext)?
     _ = try rig.engine.commit(Self.scope) { body -> (Gesture?, Void) in
       context = body
@@ -178,6 +179,7 @@ struct ReadersTests {
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag") }),
       (Rig.scope, CommitFailure(.malformed, "card.title is not a top-level ref field"), { _ = try $0.stored("card", where: "title", is: "card0001") }),
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag", where: "label", is: "tag0001") }),
+      (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.spentBorn("tag", "tag0001") }),
       (.device("probe"), CommitFailure(.malformed, "device/probe is no product, tree or overlay scope of the registry"), { _ = try $0.drawn("card") }),
     ]
     for (scope, failure, use) in misuses {
@@ -209,6 +211,25 @@ struct ReadersTests {
       type: "item", id: "i_aaaa", life: alive, born: Self.seeded, values: values, texts: [:], serials: [:], rc: 5, ru: 6,
       isVisible: true, isPending: false, isHeld: true))
     #expect(try rig.engine.read(Self.scope) { [try Self.ids($0.drawn("item")), try Self.ids($0.stored("item"))] } == [[], ["i_aaaa"]])
+  }
+
+  // §2.5, §7.5: a spent id is all the device keeps of a derived record deleted elsewhere. Both readers answer its born, nil
+  // for an id the scope keeps no spent id of, and a revive of the record takes that born (§7.1 step 4).
+  @Test func bothReadersAnswerTheBornOfASpentIdAndARevivalTakesIt() throws {
+    let rig = try Rig()
+    let tree = ScopeRef.tree("b_00000001")
+    let born = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    _ = try rig.store.write(.pullPage) { tx in
+      var replica = try tx.replica(tx.activeReplica(), reads: [tree: RowSelection()])!
+      replica.apply(.putSpent(tree, SpentID(key: RecordKey("tag", "oak"), born: born, seq: 3)))
+      return Planned((), replica.batch)
+    }
+    #expect(try rig.engine.read(tree) { reader -> [Stamp?] in [try reader.spentBorn("tag", "oak"), try reader.spentBorn("tag", "elm")] } == [born, nil])
+    let read = try rig.engine.commit(tree) { context -> (Gesture?, Stamp?) in
+      (Gesture(changes: [.revive("tag", "oak", ["label": "Next"])]), try context.spentBorn("tag", "oak"))
+    }.value
+    #expect(read == born)
+    #expect(try rig.engine.read(tree) { try $0.drawn("tag", "oak")?.born } == born)
   }
 
   // ER-12: the index names the confirmed side; a pending write that moves a reference is seen leaving and arriving.

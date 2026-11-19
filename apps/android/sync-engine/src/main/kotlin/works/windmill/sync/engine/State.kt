@@ -112,6 +112,9 @@ internal class ReplicaState(input: Json) {
     val inverses = input.items("inverses").map(::InverseRequest).toMutableList()
     val cancellations = input.items("cancellations").map(::CancellationReceipt).toMutableList()
     fun entries() = outbox.sortedBy { it.order }
+    // §2.5 the scope's spent id of a record, `{t, id, born, seq?}`, or null where the scope keeps none.
+    fun spentId(scope: ScopeRef, key: RecordKey): Json? = spent[scope.text]?.arr()?.firstOrNull { it.recordKey == key }
+    fun spentBorn(scope: ScopeRef, key: RecordKey): Stamp? = spentId(scope, key)?.get("born")?.str()?.let(::Stamp)
     fun nextCommitOrder() = (outbox.maxOfOrNull { it.order } ?: 0) + 1
     fun entry(localId: String): Entry? = outbox.firstOrNull { it.id == localId }
     // A gesture id an outbox entry, a notice (`notice:<gestureId>/<k>`), a reversible act, an inverse request or a cancellation carries.

@@ -1077,10 +1077,11 @@ extension ViewRecord {
 
 extension CommitPlanner {
   // §7.3 capture: the act's undo request checked against its scopes, each segment's first local preimages read from
-  // `drawn` before any segment changes it, each with the sequence of the confirmed row it was read over and the epoch
-  // that sequence counts in, a life's with the record it read. An unset slot takes its target's default; with none, and
-  // for any malformed recipe, the act throws before anything changes. A segment named with no recipes is journaled for
-  // its receipts alone, as evidence, and an act names at least one recipe.
+  // `drawn` before any segment changes it, each with the sequence of the row it was read over, the confirmed row or else
+  // the dead row the record's spent id keeps, and the epoch that sequence counts in, a life's with the record it read.
+  // An unset slot takes its target's default; with none, and for any malformed recipe, the act throws before anything
+  // changes. A segment named with no recipes is journaled for its receipts alone, as evidence, and an act names at least
+  // one recipe.
   public func undoPlan(_ undo: ActUndo?, scopes: [ScopeRef], in replica: LoadedReplica) throws -> UndoPlan? {
     guard let undo else { return nil }
     var segments: [Int: UndoPlan.Segment] = [:]
@@ -1102,7 +1103,7 @@ extension CommitPlanner {
           guard let value = read?.value(of: item.target.slot) ?? item.defaultValue else {
             throw CommitFailure.malformed("an unset undo target needs its default")
           }
-          let rowSeq: Int64? = replica.rows(scope).row(item.target.key)?.seq
+          let rowSeq: Int64? = replica.rows(scope).row(item.target.key)?.seq ?? replica.spentIDs(scope)[item.target.key]?.seq
           let record: RecordValues? = item.target.slot == .life ? read.map(RecordValues.init) : nil
           preimages.append(Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch, record: record))
         }

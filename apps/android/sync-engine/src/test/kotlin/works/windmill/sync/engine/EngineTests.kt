@@ -413,6 +413,23 @@ class EngineTests {
             assertEquals(before, engine.snapshot())
         }
     }
+    // §2.5, §7.5: a spent id is all the device keeps of a derived record deleted elsewhere. Both readers answer its born, null for an id the
+    // scope keeps no spent id of, and a revive of the record takes that born (§7.1 step 4).
+    @Test fun bothReadersAnswerTheBornOfASpentIdAndARevivalTakesIt() {
+        val tree = ScopeRef.tree("b_00000001")
+        val born = Stamp("1000:0:r_aaaaaaaaaaaa")
+        val spent = Json.objectOf(tree.text to Json.array(Json.objectOf("t" to Json.of("tag"), "id" to Json.of("oak"), "born" to born.json)))
+        val snapshot = Json.objectOf("active" to Json.of("rp_00000000000000000000000000000001"), "replicas" to Json.array(freshReplica("rp_00000000000000000000000000000001").json().with("spentIds" to spent)))
+        Engine.memory(registry, snapshot, clock = object : EngineClock { override fun now() = 5_000L }, identities = identities, actor = "actor").use { engine ->
+            assertEquals(listOf(born, null), engine.read(tree) { listOf(it.spentBorn("tag", RecordID("oak")), it.spentBorn("tag", RecordID("elm"))) })
+            val read = engine.commit(tree) { context ->
+                Gesture(listOf(Change.revive("tag", RecordID("oak"), mapOf("label" to Json.of("Next"))))) to context.spentBorn("tag", RecordID("oak"))
+            }.second
+            assertEquals(born, read)
+            assertEquals(born, engine.read(tree) { it.drawn("tag", RecordID("oak"))?.born })
+            assertEquals(CommitFailure.Kind.malformed, assertThrows(CommitFailure::class.java) { engine.read(scope) { it.spentBorn("tag", RecordID("oak")) } }.kind)
+        }
+    }
     @Test fun nestedCommitRollsBackAndReadBodiesCanReadTheSameTransaction() {
         engine().use { engine ->
             val before = engine.snapshot()
