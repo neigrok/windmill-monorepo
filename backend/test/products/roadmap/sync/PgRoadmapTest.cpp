@@ -165,7 +165,7 @@ TEST(a_roadmaps_activity_keeps_one_row_a_gesture_that_leaves_a_deed_with_who_mad
     const pqxx::result kept = sql.exec("select seq, actor_id, op_id, kind, payload::text, hlc from tree_ops where tree_id = $1 order by seq", pqxx::params{tree});
     for (std::size_t i = 0; i < kept.size(); ++i) {
       Json::Value row(Json::arrayValue);
-      row.append(kept[i][0].as<long long>());
+      row.append(static_cast<Json::Int64>(kept[i][0].as<long long>()));
       row.append(kept[i][1].as<std::string>() == world.account("A").str() ? "A" : "someone else");
       row.append(kept[i][2].as<std::string>());
       row.append(kept[i][3].as<std::string>());
