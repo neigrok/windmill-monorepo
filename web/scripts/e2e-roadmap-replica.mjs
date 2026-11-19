@@ -1,8 +1,10 @@
 // The roadmap room's writes end to end on a local stack, once with the server's roadmap engine and the web's switch on
 // (the room on the device's copy) and once with both off (today's room). One owner on several devices, each a browser
 // context with its own store: Undo and Redo, edits made offline syncing once the connection returns, a change made
-// without knowing of another device's delete (INV-1), the line that tells the person once of a link of theirs another
-// device's delete changed (§6), and a roadmap's deletion from the switcher. Each run has its own
+// without knowing of another device's delete (INV-1), a change made on a device that already holds that delete (INV-1,
+// the server keeping the step's other fields), the line that tells the person once of a link of theirs another device's
+// delete changed, named from the device's note when the room opens again (§6), and a roadmap's deletion from the
+// switcher. Each run has its own
 // database, server and built app on the given ports, and stops and drops them. It prints no id and no roadmap text.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -76,44 +78,82 @@ async function seed(mode, secret, account) {
     await plant({ title: planted.knot, nodes: [{ id: 'bowline', label: 'Tie a bowline', color: 'terracotta', prerequisites: [] }] });
     return sail;
   }
-  const source = (path) => import(pathToFileURL(resolve(path)).href);
-  const { IDBFactory, IDBKeyRange } = await import('fake-indexeddb');
-  const { BrowserSyncEngine } = await source('src/platform/sync/engine.js');
-  const { registry } = await source('src/platform/sync/schema.js');
-  const { HttpTransport } = await source('src/platform/sync/transport.js');
-  const { FakeLocks } = await source('test/platform/sync/fakes.js');
-  const { ActionRunner, EngineReplica } = await source('src/platform/domain-kit/runner.js');
-  const { FixedZone } = await source('src/platform/domain-kit/time.js');
-  const { CreateRoadmap } = await source('src/products/roadmap/domain/roadmaps.js');
-  const transport = new HttpTransport({ schema: registry.version, base: backend, reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: 'seed' }),
-    scopedCommands: [...registry.commands.values()].filter((command) => command.scopedEffects).map((command) => command.name),
-    socket: () => ({ readyState: 0, close() { this.readyState = 3; } }),
-    fetch: (url, options) => fetch(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(10_000) }) });
-  const engine = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), keyRange: IDBKeyRange, name: 'seed', registry, transport,
-    navigator: { onLine: true, locks: new FakeLocks() }, document: null, window: null,
-    telemetry: { event() {}, failure(operation) { throw new Error(`the seed's engine failed: ${operation}`); } } });
+  const device = await OwnerDevice.open('seed', secret, account);
   try {
-    await engine.signIn(account);
-    const runner = new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0));
-    const plant = async (act) => {
-      const outcome = await runner.runAct(act);
-      assert.equal(outcome.kind, 'committed', 'the roadmap was planted');
-      return outcome.result.tree;
-    };
-    const sail = await plant(new CreateRoadmap(planted.sail, { steps: [
+    const sail = await device.plant(new device.domain.CreateRoadmap(planted.sail, { steps: [
       { key: 'course', label: 'Choose a course' }, { key: 'wind', label: 'Read the wind' }, { key: 'dock', label: 'Leave the dock' },
     ], links: [['course', 'wind'], ['wind', 'dock']] }));
-    await plant(new CreateRoadmap(planted.knot, { steps: [{ key: 'bowline', label: 'Tie a bowline' }], links: [] }));
-    await engine.start();
-    for (let turn = 0; turn < 60 && engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'); turn++) {
-      await settle(200);
-      engine.kick();
-      await engine.send();
-    }
-    assert.ok(!engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'), 'the seed reached the server');
+    await device.plant(new device.domain.CreateRoadmap(planted.knot, { steps: [{ key: 'bowline', label: 'Tie a bowline' }], links: [] }));
+    await device.engine.start();
+    await device.sent();
     return sail;
   } finally {
-    engine.close();
+    device.engine.close();
+  }
+}
+
+// A device of the owner's with no screen: the browser engine on an in-memory store over the local server, and roadmap's
+// domain actions on it, as the room runs them.
+class OwnerDevice {
+  static async open(name, secret, account) {
+    const source = (path) => import(pathToFileURL(resolve(path)).href);
+    const { IDBFactory, IDBKeyRange } = await import('fake-indexeddb');
+    const { BrowserSyncEngine } = await source('src/platform/sync/engine.js');
+    const { registry } = await source('src/platform/sync/schema.js');
+    const { HttpTransport } = await source('src/platform/sync/transport.js');
+    const { FakeLocks } = await source('test/platform/sync/fakes.js');
+    const { ActionRunner, EngineReplica } = await source('src/platform/domain-kit/runner.js');
+    const { FixedZone } = await source('src/platform/domain-kit/time.js');
+    const { CreateRoadmap } = await source('src/products/roadmap/domain/roadmaps.js');
+    const { ChangeStep, RoadmapStep } = await source('src/products/roadmap/domain/steps.js');
+    const transport = new HttpTransport({ schema: registry.version, base: backend, reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: name }),
+      scopedCommands: [...registry.commands.values()].filter((command) => command.scopedEffects).map((command) => command.name),
+      socket: () => ({ readyState: 0, close() { this.readyState = 3; } }),
+      fetch: (url, options) => fetch(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(10_000) }) });
+    const engine = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), keyRange: IDBKeyRange, name, registry, transport,
+      navigator: { onLine: true, locks: new FakeLocks() }, document: null, window: null,
+      telemetry: { event() {}, failure(operation) { throw new Error(`the ${name} device's engine failed: ${operation}`); } } });
+    await engine.signIn(account);
+    return new OwnerDevice(engine, new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0)), { CreateRoadmap, ChangeStep, RoadmapStep });
+  }
+
+  constructor(engine, runner, domain) {
+    this.engine = engine;
+    this.runner = runner;
+    this.domain = domain;
+  }
+
+  async plant(act) {
+    const outcome = await this.runner.runAct(act);
+    assert.equal(outcome.kind, 'committed', 'the roadmap was planted');
+    return outcome.result.tree;
+  }
+
+  // Every write of the device's reached the server, within the bound.
+  async sent() {
+    for (let turn = 0; turn < 60 && this.engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'); turn++) {
+      await settle(200);
+      this.engine.kick();
+      await this.engine.send();
+    }
+    assert.ok(!this.engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'), 'the device\'s writes reached the server');
+  }
+
+  // The device pulls until `seen` holds of its replica, within the bound.
+  async pulled(seen) {
+    for (let turn = 0; turn < 60; turn++) {
+      this.engine.kickPull();
+      await this.engine.pull();
+      if (seen()) return true;
+      await settle(250);
+    }
+    return false;
+  }
+
+  // The id of the step of the roadmap this device draws under `label`, or null.
+  step(tree, label) {
+    const { RoadmapStep } = this.domain;
+    return this.runner.read(`tree/${tree}`, (read) => read.repository(RoadmapStep).all('drawn').find((step) => step.label === label)?.id.record ?? null);
   }
 }
 
@@ -286,6 +326,42 @@ async function scenarios(mode, browser, secret, account, check) {
         await a.board(address);
         assert.deepEqual(await a.landed(), [], 'a later opening is quiet');
       });
+      await check('INV-1: a change made on a device that holds only the spent id of a step another device deleted brings it back on every device with the change and its other fields', async () => {
+        const n = await OwnerDevice.open('owner-device', secret, account);
+        try {
+          await n.engine.start();
+          assert.ok(await n.pulled(() => n.step(sail, 'Tie a reef knot') !== null), 'the device holds the roadmap');
+          const knot = n.step(sail, 'Tie a reef knot');
+          await b.board(address);
+          await b.deleteStep('Tie a reef knot');
+          assert.ok(await c.until(address, async () => await c.card('Tie a reef knot').count() === 0), 'the delete reached the server');
+          assert.ok(await n.pulled(() => n.engine.readMetadata(`tree/${sail}`).spent.some((row) => row.id === knot)), 'the device keeps only the spent id');
+          const changed = await n.runner.runAct(new n.domain.ChangeStep(sail, knot, { description: 'Hold it under load' }));
+          assert.equal(changed.kind, 'committed', 'the change is admitted');
+          await n.sent();
+        } finally {
+          n.engine.close();
+        }
+        assert.ok(await c.until(address, async () => await c.card('Tie a reef knot').count() === 1), 'the step came back with its name');
+        const step = await c.openStep('Tie a reef knot');
+        assert.ok((await step.innerText()).includes('Hold it under load'), 'the step came back with the change');
+        await c.closeStep();
+      });
+      await a.board(address);
+      await check('§6: a line about a step linked to one another device deleted names it from the device’s note when the room opens again', async () => {
+        await a.create('Ease the sheet', /Trim the sail/);
+        await a.page.goto(`${origin}/#/app/roadmaps`);
+        await a.page.locator('.st-roadmaps-row').first().waitFor();
+        await b.board(address);
+        await b.deleteStep('Trim the sail');
+        assert.ok(await c.until(address, async () => await c.card('Trim the sail').count() === 0), 'the delete reached the server');
+        await settle(5000);
+        await a.board(address);
+        await a.page.locator('.st-board-landed').waitFor({ timeout: 45_000 });
+        assert.deepEqual(await a.landed(), [['Ease the sheet', 'Trim the sail was removed. This now follows Choose a course.']]);
+        await a.board(address);
+        assert.deepEqual(await a.landed(), [], 'a later opening is quiet');
+      });
       await a.board(address);
       await check('a roadmap’s deletion lands on the person’s roadmaps with Undo, and Undo within the hold returns to it', async () => {
         await a.deleteFromSwitcher('Learn to sail');
@@ -375,7 +451,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 7, off: 5 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 9, off: 5 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   console.error(error instanceof assert.AssertionError ? error.message : error);
