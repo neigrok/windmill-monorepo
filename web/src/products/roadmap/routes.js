@@ -12,9 +12,11 @@ import { YOUR_ROADMAPS } from './identity/HeldDeletion.js';
 
 const StepDraftProvider = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftProvider })));
 const StepDraftNotice = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftNotice })));
+const RoadmapSession = lazy(() => import('./RoadmapSession.jsx').then((m) => ({ default: m.RoadmapSession })));
 
-// The room reads a roadmap from the device's copy through the sync engine (roadmap-on-the-engine.md §8.4) only in a build
-// that sets VITE_ROADMAP_REPLICA_ROOM to `on`; production's build sets nothing, so its room reads as it does today.
+// The room reads a roadmap from the device's copy through the sync engine (roadmap-on-the-engine.md §8.4), and the session
+// keeps the one list of what cannot land, only in a build that sets VITE_ROADMAP_REPLICA_ROOM to `on`; production's build
+// sets nothing, so its room reads as it does today and its session is the step draft's alone.
 const ROOM_READS_REPLICA = import.meta.env?.VITE_ROADMAP_REPLICA_ROOM === 'on';
 
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
@@ -95,7 +97,7 @@ async function forgetDevice({ next, navigation }) {
 
 export const roadmapRoutes = {
   id: 'roadmap',
-  session: { Provider: StepDraftProvider, Notice: StepDraftNotice, invalidateAccount: invalidateStepDraftSession },
+  session: { Provider: ROOM_READS_REPLICA ? RoadmapSession : StepDraftProvider, Notice: StepDraftNotice, invalidateAccount: invalidateStepDraftSession },
   label: t('roadmap.product.name'),
   switchHash: '#/app',
   home,

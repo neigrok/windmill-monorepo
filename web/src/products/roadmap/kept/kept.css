@@ -1,0 +1,49 @@
+/* Kept here (flow 49): a dialog from 1024px (49.01), a page of its own below (49.02–49.08). */
+.st-kept { position: fixed; inset: 0; z-index: 180; font-family: var(--font-body); color: var(--text-primary); animation: st-kept-appear var(--duration-base) var(--ease-soft); }
+.st-kept h2 { margin: 0; font: 700 28px/36px var(--font-display); }
+.st-kept h2:focus { outline: none; }
+.st-kept-reason { margin: 0; font: 400 14px/24px var(--font-body); color: var(--text-secondary); }
+.st-kept-discard { display: block; --text-primary: var(--color-danger); }
+
+.st-kept-rows { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.st-kept-row { display: grid; grid-template-columns: minmax(0, 1fr) 18px; grid-template-areas: "title mark" "reason mark"; row-gap: 8px; column-gap: 9px; align-items: center; width: 100%; padding: 24px; box-sizing: border-box; border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--surface-card); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.st-kept-row:hover, .st-kept-row[aria-current="true"] { background: var(--surface-hover); }
+.st-kept-row:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.st-kept-row-title { grid-area: title; font: 400 16px/24px var(--font-body); overflow-wrap: anywhere; }
+.st-kept-row .st-kept-reason { grid-area: reason; }
+.st-kept-row-mark { grid-area: mark; color: var(--text-secondary); }
+
+.st-kept-change { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.st-kept-change-title { margin: 0; font: 700 24px/32px var(--font-display); overflow-wrap: anywhere; }
+.st-kept-words { padding: 24px; border-radius: var(--radius-lg); font: 400 16px/24px var(--font-body); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.st-kept-words:focus { outline: none; }
+
+.st-kept--wide { display: flex; align-items: center; justify-content: center; }
+.st-kept-scrim { position: absolute; inset: 0; background: var(--surface-overlay); }
+.st-kept-dialog { position: relative; display: flex; flex-direction: column; gap: 24px; width: min(840px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 32px; box-sizing: border-box; overflow: auto; border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: var(--shadow-lg); }
+.st-kept-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.st-kept-lede { margin: 0; font: 400 16px/24px var(--font-body); color: var(--text-secondary); }
+.st-kept-split { display: grid; grid-template-columns: 300px minmax(0, 400px); gap: 32px; align-items: start; }
+.st-kept-dialog .st-kept-words { background: var(--surface-hover); }
+.st-kept-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.st-kept--narrow { background: var(--surface-canvas); }
+.st-kept-page { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 28px 24px max(30px, env(safe-area-inset-bottom)); box-sizing: border-box; }
+.st-kept-page-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.st-kept-page-actions { flex: none; display: flex; flex-direction: column; gap: 8px; padding-top: 16px; }
+.st-kept-page-actions--close { flex-direction: row; margin-bottom: -7px; }
+.st-kept-count { margin: 12px 0 26px; font: 400 14px/24px var(--font-body); color: var(--text-secondary); }
+.st-kept-page-head { display: flex; align-items: center; gap: 8px; margin: -4px 0 0 -8px; }
+.st-kept-back { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: none; border-radius: var(--radius-full); background: transparent; color: var(--text-primary); cursor: pointer; }
+.st-kept-back:hover { background: var(--surface-hover); }
+.st-kept-back:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.st-kept-page .st-kept-change { gap: 0; padding-top: 78px; }
+.st-kept-page .st-kept-change > .st-kept-reason { margin-top: 16px; }
+.st-kept-page .st-kept-words { margin-top: 32px; background: var(--surface-card); }
+.st-kept-copied { min-height: 20px; margin: 68px 0 0; font: 400 14px/20px var(--font-body); color: var(--text-secondary); }
+.st-kept-page--ask .st-kept-page-body { padding-top: 262px; }
+.st-kept-ask { margin: 24px 0 0; font: 400 16px/24px var(--font-body); }
+
+@keyframes st-kept-appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .st-kept { animation: st-kept-fade var(--duration-base) var(--ease-soft); } }
+@keyframes st-kept-fade { from { opacity: 0; } to { opacity: 1; } }

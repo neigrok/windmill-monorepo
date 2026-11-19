@@ -190,10 +190,12 @@ browser tests and include it in the final verification gates:
 
 `npm run test:roadmap:server -- /absolute/backend/build` drives the roadmap room's writes end to end on a local stack
 (`scripts/e2e-roadmap-replica.mjs`), once with the server's roadmap engine and the room's replica switch on and once with
-both off: Undo and Redo, edits made offline syncing on reconnect, a change against another device's delete, and a
-roadmap's deletion. Build `windmill_server` first (`backend/RUNNING.md`). It builds the app into a temporary folder,
+both off: Undo and Redo, edits made offline syncing on reconnect, a change against another device's delete, a
+roadmap's deletion, and a change to a roadmap another device deleted, which only the switch keeps in the account menu's
+Kept here, to copy and discard. Build `windmill_server` first (`backend/RUNNING.md`). It builds the app into a temporary folder,
 serves it on 5183 against the server on 8095 (`WM_E2E_WEB_PORT`, `WM_E2E_PORT`), uses its own databases
-(`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops and drops what it started. The journal's twin,
+(`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops and drops what it started. `WM_E2E_SHOTS` names a folder
+for screenshots of the kept list at 1440 and 390. The journal's twin,
 `test:journal:server`, is described in `src/products/journal/README.md`.
 
 The test runner caps ordinary file concurrency at four, using one fewer than the available CPUs
@@ -284,8 +286,8 @@ Product preparations run before networking; occupied rooms pin Add/Discard, and 
 Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
 of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
-`platform/sync/react.js` exports `useSyncEngine()` and
-`useSyncRecords(scope)`. The anonymous journal uses record observations; Gym retains its account gate.
+`platform/sync/react.js` exports `useSyncEngine()`,
+`useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; Gym retains its account gate.
 Gym and journal records change only through the engine; their REST clients carry server features.
 The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
 cache generation before promoting it; a failed update retains the previous complete shell. The build
@@ -300,4 +302,6 @@ Replacement and committed cleanup advance the epoch before invalidating product 
 changes; each invalidator is isolated. Lapse and same-owner recovery retain the epoch. Completion requires the
 current transition ticket and matching usable holder. `PageFrame` places actual header, session notices and
 contained content in normal flow; landing headers keep their responsive height. Headerless routes and fallbacks
-use the same top notice slot. Product session data never enters shell layout or navigation state.
+use the same top notice slot. Product session data never enters shell layout or navigation state. A session may offer
+the `/app` account menu one row, `{ label, count, onSelect }`, through `useAccountRowOffer` while it has something to
+say; the Shell reads the rows with `useOfferedAccountRows` and the seat shows a member each as its label and count.

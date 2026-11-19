@@ -15,8 +15,10 @@ const SEAT_CSS = `
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// `mine` — { label, count, onSelect } — is the row back to a visitor's own work; omit it for no row.
-export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, appearance = true, display = 'avatar' }) {
+// `mine` — { label, count, onSelect } — is the row back to a visitor's own work; omit it for no row. `offered` are the rows
+// product sessions offer a member, each `{ label, count, onSelect }` and read as the label and its count; choosing one
+// hands focus to the seat first, so what it opens returns focus there.
+export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, offered = [], footer, appearance = true, display = 'avatar' }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [woke, setWoke] = useState(false);
@@ -59,6 +61,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
   }, [open]);
 
   const choose = (handler) => { setOpen(false); handler?.(); };
+  const hand = (handler) => { setOpen(false); seatRef.current?.focus(); handler(); };
 
   const crossfade = `opacity ${reduced ? 'var(--duration-fast)' : 'var(--duration-slow)'} var(--ease-soft)`;
 
@@ -176,6 +179,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
               {appearance && <AppearanceRow />}
               <div role="menu" aria-label={t('shell.account.label')}>
                 {mine && <MenuRow label={mine.label} detail={mine.count != null ? String(mine.count) : null} onSelect={() => choose(mine.onSelect)} />}
+                {offered.map((row, index) => <OfferedRow key={index} row={row} onSelect={() => hand(row.onSelect)} />)}
                 {onConnect && <MenuRow label={t('shell.connect.title')} onSelect={() => choose(onConnect)} />}
                 <MenuRow label={t('shell.settings.title')} onSelect={() => choose(onSettings)} />
                 <MenuRow label={t('shell.auth.signOut')} onSelect={() => choose(onSignOut)} />
@@ -216,6 +220,11 @@ function AppearanceRow() {
       <SegmentedControl labelledBy={labelId} options={APPEARANCE_OPTIONS} value={choice} onChange={set} />
     </div>
   );
+}
+
+// A row a product session offers, in its one visual form: a menu row reading the label and its count.
+function OfferedRow({ row, onSelect }) {
+  return <MenuRow label={t('shell.account.offered', { label: row.label, count: String(row.count) })} onSelect={onSelect} />;
 }
 
 function MenuRow({ label, detail = null, onSelect }) {

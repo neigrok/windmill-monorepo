@@ -1,5 +1,6 @@
 {
   "shell.account.label": "Account",
+  "shell.account.offered": "{label} · {count}",
   "shell.account.seatNamed": "Account — {name}",
   "shell.account.settings": "Settings",
   "shell.appearance.dark": "Dark",

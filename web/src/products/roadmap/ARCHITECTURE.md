@@ -28,7 +28,7 @@ point for the component showcase.
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, authored starter roadmaps and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
-| `kept/` | The one list of what cannot land (§6, flow 49): the engine's notices for roadmap's scopes read by the domain, each a kept change in the list's words. Nothing mounts the list yet: its entry is a row of the shell's account menu |
+| `kept/` | The one list of what cannot land (§6, flow 49), where the room reads the device's copy: roadmap's notices in every scope read by the domain, each a kept change in the list's words, offered from the shell's account menu and shown as a dialog or as pages; `RoadmapSession.jsx` mounts it beside every room |
 | `tending/`, `reminders/`, `settings/` | Ask AI, reminder preferences and account data export |
 | `marketing/` | Product landing, metadata and self-playing scenes |
 
@@ -193,7 +193,21 @@ on, every room but the demo reads through `ReplicaReading`:
   `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the engine's
   `connection` and its auth and upgrade stops (Offline while the browser reports no network, and after the grace while
   the server goes unanswered), and the `outbox` counts of `tree/T` and its overlay the server has not taken, ready or
-  sent, those a command predicts into them included. It never says refused: §6's one list is not built.
+  sent, those a command predicts into them included. It never says refused: what cannot land waits in Kept here.
+- **Kept here.** Roadmap's session (`RoadmapSession.jsx`, the route table's `session` where the switch is on) mounts
+  `kept/KeptHere.jsx` beside the step draft's provider, above every room. It reads roadmap's notices in every scope through
+  the engine (`useSyncNotices`), a forgotten roadmap's `scope-dead` among them, and `kept/KeptChanges.js` reads each through
+  the domain's `cannotLand` into a kept change: its reason, its title (its own words, else the name the device last read
+  of it in its roadmap) and every word it holds. While the list shows a change, the session offers the shell's account
+  menu `Kept here · N` (flow 49.06, `useAccountRowOffer`), N the list's count. Choosing it opens `kept/KeptList.jsx`: from
+  1024px a dialog, the list beside the change it selected with Copy (49.01); below, a page of the list with its count
+  and Close (49.02), a page of a change with Copy, Copied, or Copy failed and Select text, and Discard (49.03, 49.05,
+  49.08), and Discard's one question on a page of its own (49.04). Discard dismisses the notice; the list closes when it
+  holds nothing. The boards do not draw, so the list does not build: a layout for 744–1023px (the pages show there),
+  Discard and a copy's outcome from 1024px, the empty list, a change with no words of its own (a mark, a pointer, a link
+  between steps) and a workspace item the carry-over kept (`pastBound`, §8.2); the last two are neither listed nor
+  counted. Each change that cannot land is told once on this browser (`roadmap_write_cannot_land`), and a notice no rule
+  lists reports `roadmap-kept-unexpected`.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.

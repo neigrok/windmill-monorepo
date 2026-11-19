@@ -196,6 +196,12 @@ export function dismiss(replica, noticeId) {
   notice.dismissed = true;
 }
 
+// §7.6: one product's notices in every scope, each the durable notice whole, but those dismissed (D-17). It reads no
+// scope's rows, so a notice of a scope the device no longer holds or observes, one known gone among them, is still read.
+export function noticesOfProduct(replica, registry, product) {
+  return replica.notices.filter((notice) => !notice.dismissed && registry.productOfRef(notice.scope) === product);
+}
+
 // Observed-scope copy only; the durable notice retains its origin and complete content for discard/copy.
 export function noticesInScope(replica, scope) {
   const project = (content, origin) => {

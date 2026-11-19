@@ -4,7 +4,7 @@ import { jcsBytes } from '../../../../packages/api-contract/sync/reference/core/
 import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { effectsOf } from '../../../../packages/api-contract/sync/reference/client/projections.js';
-import { noticesInScope } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
+import { noticesInScope, noticesOfProduct } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
 import { foldDelta, viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
 const QUEUED = ['held', 'ready', 'sent', 'acked'];
@@ -29,7 +29,7 @@ class FoldedEntry {
   }
 }
 
-// One holder's use of a scope's observation: its snapshot and the listeners it registered, until it releases them.
+// One holder's use of an observation: its snapshot and the listeners it registered, until it releases them.
 class ObservationHold {
   constructor(observation) {
     this.observation = observation;
@@ -91,14 +91,13 @@ class RecordOrder {
   }
 }
 
-// One scope's drawn and stored records, kept between publications: a publication folds again only the records
-// whose confirmed row changed identity or whose queued entries changed. It lives while a hold is unreleased.
-export class ScopeObservation {
-  constructor(scope, registry, { firstPullComplete, notify, idle }) {
-    Object.assign(this, { scope, registry, firstPullComplete, notify, idle });
+// What the engine publishes to its holders: a snapshot each replica publication refreshes, which lives while a hold
+// is unreleased.
+class Observation {
+  constructor({ notify, idle }) {
+    Object.assign(this, { notify, idle });
     this.holders = 0;
     this.listeners = new Set();
-    this.replicaId = null;
   }
 
   hold() {
@@ -109,6 +108,21 @@ export class ScopeObservation {
   letGo() {
     this.holders -= 1;
     if (this.holders === 0) this.idle();
+  }
+
+  publish(snapshot) {
+    this.snapshot = frozen(snapshot);
+    this.notify(this.listeners);
+  }
+}
+
+// One scope's drawn and stored records, kept between publications: a publication folds again only the records
+// whose confirmed row changed identity or whose queued entries changed.
+export class ScopeObservation extends Observation {
+  constructor(scope, registry, { firstPullComplete, notify, idle }) {
+    super({ notify, idle });
+    Object.assign(this, { scope, registry, firstPullComplete });
+    this.replicaId = null;
   }
 
   refresh(replica) {
@@ -129,13 +143,12 @@ export class ScopeObservation {
     const records = (view) => this.order.keys.filter((key) => view.has(key)).map((key) => view.get(key));
     const outbox = Object.fromEntries(QUEUED.map((state) => [state, 0]));
     for (const entry of this.entries.values()) if (entry.counted) outbox[entry.state] += 1;
-    this.snapshot = frozen({ replica: replica.id, drawn: records(this.drawn), stored: records(this.stored),
+    this.publish({ replica: replica.id, drawn: records(this.drawn), stored: records(this.stored),
       pending: this.order.keys.filter((key) => this.pending.has(key)).map((key) => this.drawn.get(key)), outbox,
       loaded: !replica.confirmed[this.scope] || replica.loadedCaches?.has(`confirmed:${this.scope}`) === true,
       notices: structuredClone(noticesInScope(replica, this.scope)),
       undoOffers: undoOffers(replica, this.scope),
       firstPullComplete: this.firstPullComplete(replica) });
-    this.notify(this.listeners);
   }
 
   readConfirmed(replica, changed) {
@@ -208,5 +221,23 @@ export class ScopeObservation {
       if (!record && present) removed.add(key);
     }
     this.order.update(added, removed);
+  }
+}
+
+// One product's notices in every scope (engine.md §7.6), each the durable notice whole: a publication keeps the snapshot
+// while the replica is the same and holds the same notices, which a store read shares unchanged from one to the next.
+export class ProductNotices extends Observation {
+  constructor(product, registry, { notify, idle }) {
+    super({ notify, idle });
+    Object.assign(this, { product, registry });
+    this.read = null;
+  }
+
+  refresh(replica) {
+    const notices = noticesOfProduct(replica, this.registry, this.product);
+    const read = this.read;
+    if (read?.replica === replica.id && read.notices.length === notices.length && read.notices.every((notice, index) => notice === notices[index])) return;
+    this.read = { replica: replica.id, notices };
+    this.publish({ replica: replica.id, notices: structuredClone(notices) });
   }
 }

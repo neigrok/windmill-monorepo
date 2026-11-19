@@ -713,5 +713,22 @@
   "roadmap.draft.returnFailed": "Couldn’t return to this step. Your draft is still here. Try again.",
   "roadmap.draft.discardTitle": "Discard this draft?",
   "roadmap.draft.discardBody": "Your changes haven’t been saved.",
-  "roadmap.yourRoadmaps.title": "Your roadmaps"
+  "roadmap.yourRoadmaps.title": "Your roadmaps",
+  "roadmap.kept.name": "Kept here",
+  "roadmap.kept.title": "Changes kept here",
+  "roadmap.kept.lede": "These changes couldn’t join your account.",
+  "roadmap.kept.count": "{count, plural, one {{shown} change} other {{shown} changes}}",
+  "roadmap.kept.back": "Back to kept changes",
+  "roadmap.kept.reason.roadmapDeleted": "Roadmap deleted elsewhere.",
+  "roadmap.kept.reason.capFilled": "Roadmap reached its limit.",
+  "roadmap.kept.reason.accessEnded": "Editing access ended.",
+  "roadmap.kept.reason.noteTooLong": "Combined note is too long.",
+  "roadmap.kept.copy": "Copy",
+  "roadmap.kept.copied": "Copied",
+  "roadmap.kept.copyFailed": "Copy failed. Select the text to copy it.",
+  "roadmap.kept.selectText": "Select text",
+  "roadmap.kept.discard": "Discard",
+  "roadmap.kept.discardTitle": "Discard this change?",
+  "roadmap.kept.discardBody": "This removes the copy kept on this browser.",
+  "roadmap.kept.keep": "Keep"
 }
