@@ -45,6 +45,53 @@ export class Kind {
   }
 }
 
+// A tree's records by slot: its present steps first, each at its slot in authored order, then every other id a live
+// link names, in link order, with each vertex's parents and children over the live links; and which present steps
+// the tree's own marks complete, and when, a step that owns a subtree or opens a roadmap taking none. A tree derives
+// it once and every read over the tree shares it.
+export class TreeIndex {
+  /** @param {Step[]} nodes @param {Edge[]} edges @param {Map<string,Mark>} marks @param {Map<string,Pointer>} pointers */
+  constructor(nodes, edges, marks, pointers) {
+    this.nodes = nodes.filter((node) => node.present);
+    this.ids = this.nodes.map((node) => node.id);
+    this.slot = new Map(this.ids.map((id, index) => [id, index]));
+    this.edges = edges.filter((edge) => edge.present);
+    /** @type {string[]} */
+    this.rawIds = [...this.ids];
+    /** @type {Map<string,number>} */
+    this.rawSlot = new Map(this.slot);
+    /** @type {number[][]} */
+    this.parents = this.ids.map(() => []);
+    /** @type {number[][]} */
+    this.children = this.ids.map(() => []);
+    /** @type {(id: string) => number} */
+    const vertexOf = (id) => {
+      const known = this.rawSlot.get(id);
+      if (known !== undefined) return known;
+      this.rawSlot.set(id, this.rawIds.length);
+      this.rawIds.push(id);
+      this.parents.push([]);
+      this.children.push([]);
+      return this.rawIds.length - 1;
+    };
+    for (const edge of this.edges) {
+      const from = vertexOf(edge.from);
+      const to = vertexOf(edge.to);
+      this.parents[to]?.push(from);
+      this.children[from]?.push(to);
+    }
+    this.markedDone = new Uint8Array(this.ids.length);
+    /** @type {(number|null)[]} */
+    this.markedAt = this.ids.map(() => null);
+    for (const mark of marks.values()) {
+      const slot = this.slot.get(mark.node);
+      if (slot === undefined) continue;
+      this.markedAt[slot] = mark.recordedAt ?? mark.deviceAt;
+      if (mark.status === 'complete' && !this.nodes[slot]?.branch && !pointers.get(mark.node)?.present) this.markedDone[slot] = 1;
+    }
+  }
+}
+
 // A roadmap's normalized records. `own` says it is in the person's own list; `updatedAt` is when the server last received
 // any record of it, null where it has received none; `meta` is null while its tree scope holds no meta.
 export class RoadmapTree {
@@ -64,6 +111,7 @@ export class RoadmapTree {
     this.kinds = (input.kinds ?? []).map((kind) => new Kind(kind)).sort(authoredOrder);
     this.marks = new Map((input.marks ?? []).map((mark) => [mark.node, { ...mark }]));
     this.pointers = new Map((input.pointers ?? []).map((pointer) => [pointer.node, { ...pointer }]));
+    this.index = new TreeIndex(this.nodes, this.edges, this.marks, this.pointers);
     if (this.nodesById.size !== this.nodes.length || new Set(this.kinds.map((kind) => kind.id)).size !== this.kinds.length) {
       throw new TypeError('Duplicate normalized roadmap identity');
     }

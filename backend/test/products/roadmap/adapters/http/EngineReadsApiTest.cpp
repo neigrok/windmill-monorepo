@@ -5,6 +5,7 @@
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgRoadmapRecords.h"
 #include "products/roadmap/application/EngineReadModels.h"
+#include "products/roadmap/application/ForkService.h"
 
 #include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/postgres/PgSyncStore.h"

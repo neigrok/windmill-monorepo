@@ -22,10 +22,10 @@ bool blank(const std::string& text) {
 }
 }
 
-TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, RoomRegistry& rooms,
+TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, AccessOf accessOf,
                                Clock& clock, TokenGenerator& tokens, Entitlements& entitlements,
                                bool enabled)
-    : runs_(runs), agent_(agent), tools_(tools), rooms_(rooms), clock_(clock), tokens_(tokens),
+    : runs_(runs), agent_(agent), tools_(tools), accessOf_(std::move(accessOf)), clock_(clock), tokens_(tokens),
       entitlements_(entitlements), enabled_(enabled), workers_(kTendWorkers, "tend-workers") {
   workers_.start();
 }
@@ -49,7 +49,7 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
   if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
   // The run writes as its caller, so it takes the gate every structure write takes, off the stored
   // access row: an absent tree and a private one answer alike.
-  const std::optional<TreeAccess> access = rooms_.accessOf(tree);
+  const std::optional<TreeAccess> access = accessOf_(tree);
   if (!access || !canRead(caller, access->owner, access->visibility))
     return refuse(tree, caller, prompt, TendRefusal::noSuchTree);
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))

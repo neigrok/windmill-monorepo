@@ -1,6 +1,7 @@
 #include "products/roadmap/adapters/http/TreeApi.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/application/ForkService.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/platform/Fakes.h"
@@ -200,6 +201,23 @@ TEST(fork_rejects_a_malformed_requested_id_before_touching_the_source) {
              std::string(R"({"code":"bad-id","error":"id must be t_ followed by 16 lowercase hex characters"})"));
   }
   CHECK_EQ(h.trees->byId.size(), 1u);
+  CHECK(h.trees->forkedFrom.empty());
+}
+
+// A fork's request key names one fork: one that could name a part of a call, or runs past its bound, is refused before
+// the source is read.
+TEST(fork_refuses_a_request_key_that_could_name_a_part_and_copies_nothing) {
+  Harness h;
+  h.signIn("s-live");
+  h.seedSource("t_src", "Learn to sail");
+  for (const std::string& key : {std::string("fork#1"), std::string(129, 'k')}) {
+    Json::Value keyed(Json::objectValue);
+    keyed["requestId"] = key;
+    drogon::HttpResponsePtr response = sendFork(h.api, forkRequest(keyed, "s-live"), "t_src");
+    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(response)),
+             std::string(R"({"code":"bad-request-id","error":"requestId must be at most 128 characters, holding no \"#\""})"));
+  }
   CHECK(h.trees->forkedFrom.empty());
 }
 

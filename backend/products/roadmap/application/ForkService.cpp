@@ -19,7 +19,8 @@ ForkService::ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGen
     : registry_(registry), trees_(trees), tokens_(tokens), clock_(clock) {}
 
 ForkService::Result ForkService::fork(const TreeId& source, const std::string& requestedId,
-                                      const std::string& requestedTitle, const UserId& owner) {
+                                      const std::string& requestedTitle, const UserId& owner,
+                                      const std::optional<std::string>&) {
   const std::uint64_t startedMs = clock_.nowMs();
   const auto mint = [this] { return TreeId{"t_" + tokens_.mint().digest.substr(0, 16)}; };
   TreeId newId{requestedId};  // minted once the source is admitted, when none is asked for

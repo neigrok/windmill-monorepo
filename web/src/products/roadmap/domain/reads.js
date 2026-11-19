@@ -58,31 +58,42 @@ export class BoardRead {
     const hues = new Set(query.kinds ?? []);
     this.recovery = needle ? hues.size ? 'both' : 'search' : hues.size ? 'kinds' : null;
     this.expanded = query.doneExpanded ?? false;
-    this.overall = { done: graph.ids.filter((id) => graph.states.get(id) === 'complete').length, total: graph.ids.length };
-    const owed = graph.owedIndex().counts;
-    this.cards = graph.nodes.filter((node) => (branch === null || branch.has(node.id)) && (!hues.size || hues.has(node.color))
-      && (!needle || node.label.toLowerCase().includes(needle) || node.description.toLowerCase().includes(needle))).map((node) => {
-      const state = graph.states.get(node.id);
-      const unlocked = state === 'complete' ? [] : graph.unlocks(node.id);
-      const unmet = graph.needs.get(node.id);
-      return { id: node.id, column: state === 'complete' ? 'done' : state === 'locked' ? 'locked' : 'upNext',
-        needs: state === 'locked' ? { first: unmet?.first ?? null, extra: (unmet?.count ?? 0) - 1, toGo: owed.get(node.id) ?? 0 } : null,
+    this.overall = { done: graph.stateAt.reduce((done, state) => done + (state === 2 ? 1 : 0), 0), total: graph.ids.length };
+    const { toGo } = graph.owedIndex();
+    /** @type {{id:string,column:string,needs:{first:string|null,extra:number,toGo:number}|null,unlocks:{first:string,extra:number}|null,unlockCount:number}[]} */
+    this.cards = [];
+    // Each card's slot in the graph, so a sort reads its keys by index.
+    /** @type {number[]} */
+    this.slots = [];
+    for (let slot = 0; slot < graph.nodes.length; slot++) {
+      const node = /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
+      if ((branch !== null && !branch.has(node.id)) || (hues.size && !hues.has(node.color))
+        || (needle && !node.label.toLowerCase().includes(needle) && !node.description.toLowerCase().includes(needle))) continue;
+      const state = graph.states.valueAt(slot);
+      const unlocked = state === 'complete' ? [] : graph.unlocksAt(slot);
+      this.slots.push(slot);
+      this.cards.push({ id: node.id, column: state === 'complete' ? 'done' : state === 'locked' ? 'locked' : 'upNext',
+        needs: state === 'locked' ? { first: graph.ids[graph.firstUnmet[slot] ?? -1] ?? null, extra: (graph.unmetCount[slot] ?? 0) - 1, toGo: toGo[slot] ?? 0 } : null,
         unlocks: state === 'available' && unlocked.length ? { first: unlocked[0] ?? '', extra: unlocked.length - 1 } : null, unlockCount: unlocked.length,
-      };
-    });
+      });
+    }
   }
 
   result() {
     const graph = this.graph;
+    /** @type {Record<string, number[]>} */
+    const byColumn = { locked: [], upNext: [], done: [] };
+    for (let index = 0; index < this.cards.length; index++) byColumn[this.cards[index]?.column ?? '']?.push(index);
     const columns = ['locked', 'upNext', 'done'].map((name) => {
-      const cards = this.cards.filter((card) => card.column === name);
-      cards.sort((a, b) => {
-        if (name === 'done') {
-          return dateOrder(graph.dates.get(a.id) ?? null, graph.dates.get(b.id) ?? null, true);
-        }
-        if (this.sort === 'roadmap') return (a.needs?.toGo ?? 0) - (b.needs?.toGo ?? 0) || b.unlockCount - a.unlockCount;
-        return dateOrder(graph.tree.nodesById.get(a.id)?.rc ?? null, graph.tree.nodesById.get(b.id)?.rc ?? null, this.sort === 'newest');
+      const members = byColumn[name] ?? [];
+      const slotOf = (/** @type {number} */ index) => this.slots[index] ?? 0;
+      const cardOf = (/** @type {number} */ index) => /** @type {(typeof this.cards)[number]} */ (this.cards[index]);
+      members.sort((a, b) => {
+        if (name === 'done') return dateOrder(graph.dateAt[slotOf(a)] ?? null, graph.dateAt[slotOf(b)] ?? null, true);
+        if (this.sort === 'roadmap') return (cardOf(a).needs?.toGo ?? 0) - (cardOf(b).needs?.toGo ?? 0) || cardOf(b).unlockCount - cardOf(a).unlockCount;
+        return dateOrder(graph.nodes[slotOf(a)]?.rc ?? null, graph.nodes[slotOf(b)]?.rc ?? null, this.sort === 'newest');
       });
+      const cards = members.map(cardOf);
       const ids = cards.map((card) => card.id);
       const folded = name === 'done' && !this.expanded && ids.length > 12;
       return { name, count: ids.length, ids, shown: folded ? ids.slice(0, 12) : ids, folded };

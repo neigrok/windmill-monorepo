@@ -4,6 +4,7 @@
 #include "platform/ports/Clock.h"
 #include "platform/ports/TokenGenerator.h"
 #include "products/roadmap/domain/Subtree.h"
+#include "products/roadmap/ports/TreeForks.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <cstddef>
@@ -20,29 +21,17 @@ namespace wm {
 // own; the caller's own stays theirs. A fork of the caller's own tree keeps the tree each step opens; a fork of anyone
 // else's opens none. The fork starts unlit, and each copy's steps, title and guide are planted at one server stamp of
 // its own tree's clock, minted as it is read. A subtree is never forked alone.
-class ForkService {
+class ForkService final : public TreeForks {
 public:
   ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens, Clock& clock);
 
-  enum class Outcome { forked, noSource, conflict, notARoot };
-  struct Result {
-    Outcome outcome;
-    TreeData data;  // the root copy's document (copied kinds verbatim), id and title rewritten
-    std::optional<NotARoot> notARoot;  // where the subtree that was asked to be forked hangs
-  };
-  // requestedId and requestedTitle may be empty: the id is then server-minted, the title inherited.
-  // noSource is only an absent, hidden or unreadable source; an infrastructure failure throws, so the
-  // door reports it. One `roadmap_tree_fork` line counts the trees a fork copied.
+  // noSource is only an absent, hidden or unreadable source; an infrastructure failure throws, so the door reports it.
+  // One `roadmap_tree_fork` line counts the trees a fork copied. The rooms' fork stores its copies in one transaction
+  // and takes no request key: a resend forks again.
   Result fork(const TreeId& source, const std::string& requestedId, const std::string& requestedTitle,
-              const UserId& owner);
-
-  // The source's live face — title and step count — for mail that must name the tree it will plant.
-  // Read under the room's strand; a source that can't be opened yields nullopt.
-  struct Description {
-    std::string title;
-    std::size_t steps = 0;
-  };
-  std::optional<Description> describe(const TreeId& source);
+              const UserId& owner, const std::optional<std::string>& requestKey) override;
+  // The source's live face, read under the room's strand; a source that can't be opened yields nullopt.
+  std::optional<Description> describe(const TreeId& source) override;
 
 private:
   RoomRegistry& registry_;

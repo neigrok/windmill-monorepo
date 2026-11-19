@@ -24,6 +24,7 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
   const [busy, setBusy] = useState(false); // the signed-in fork in flight — navigation is coming
   const [forkError, setForkError] = useState(null); // 'unauthenticated' | 'failed'
   const inflight = useRef(false);
+  const forkKey = useRef(null); // one fork per opening of the door: a retry after a failure resends the same fork
   const sheetRef = useRef(null);
   const titleId = useId();
   const dialog = presentation === 'dialog';
@@ -41,6 +42,7 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
     setBusy(false);
     setForkError(null);
     inflight.current = false;
+    forkKey.current = null;
     const raf = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(raf);
   }, [open]);
@@ -94,7 +96,8 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
     setBusy(true);
     setForkError(null);
     track('fork_attempt', { mode: 'instant' });
-    forkTree(treeId)
+    forkKey.current ??= crypto.randomUUID();
+    forkTree(treeId, forkKey.current)
       .then(({ treeId: forkedId }) => {
         track('fork_claim', { mode: 'instant' });
         // A caller that takes the copy keeps the person where they are: the copy opens nowhere and no room says it was forked.
