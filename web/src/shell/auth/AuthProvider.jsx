@@ -401,19 +401,21 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     let alive = true;
     const hooks = PRODUCTS.map((product) => product.sync ?? {});
+    // Answers whether the browser holds no credential after it: another account's cookie, or a session it must keep, stays.
     syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const revision = roomOwnership.current.revision;
       const current = await fetchMe();
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
-      if (current?.id !== account) { confirmRoom(current); return; }
+      if (current?.id !== account) { confirmRoom(current); return current === null; }
       const closure = syncSession.engine.device.meta.closingAccount;
       if (closure?.account === account) {
         const session = (await listSessions()).find((session) => session.current);
         if (!session?.id) throw new Error('cookie-cleanup-session-unavailable');
-        if (session.id !== closure.sessionId) return;
+        if (session.id !== closure.sessionId) return false;
       }
       await logout();
+      return true;
     } },
       prepare: async (engine) => {
         try { await cleanupDevice(engine); }

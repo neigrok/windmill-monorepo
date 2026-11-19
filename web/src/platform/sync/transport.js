@@ -53,10 +53,12 @@ export class HttpTransport {
   }
 }
 
+// One live socket at a time, following the scopes it is given. `binding()` names what the socket is opened for, and each
+// frame reaches `onFrame` with the binding its socket opened under, so its owner can tell a frame of a socket it outlived.
 export class LiveChannel {
-  constructor({ transport, onFrame, onReconnect, onFailure, onFollowing = () => {}, timers = globalThis, now = () => performance.now(),
-    draw = (bound) => Math.random() * bound, limits = CONSTANTS }) {
-    Object.assign(this, { transport, onFrame, onReconnect, onFailure, onFollowing, timers, now, draw, limits });
+  constructor({ transport, onFrame, onReconnect, onFailure, onFollowing = () => {}, binding = () => null, timers = globalThis,
+    now = () => performance.now(), draw = (bound) => Math.random() * bound, limits = CONSTANTS }) {
+    Object.assign(this, { transport, onFrame, onReconnect, onFailure, onFollowing, binding, timers, now, draw, limits });
     this.running = false;
     this.k = 0;
     this.following = new Set();
@@ -76,6 +78,7 @@ export class LiveChannel {
   connect() {
     if (!this.running) return;
     let socket;
+    const opened = this.binding();
     try { socket = this.transport.openLive(); }
     catch { this.ended(); return; }
     this.socket = socket;
@@ -102,7 +105,7 @@ export class LiveChannel {
       this.lastReceived = this.now();
       this.timers.clearTimeout(this.pongTimer);
       this.pingLater();
-      this.frames.push({ socket, data, bytes });
+      this.frames.push({ socket, opened, data, bytes });
       this.queuedBytes += bytes;
       this.drain();
     };
@@ -115,7 +118,7 @@ export class LiveChannel {
     this.draining = true;
     try {
       while (this.frames.length) {
-        const { socket, data, bytes } = this.frames.shift();
+        const { socket, opened, data, bytes } = this.frames.shift();
         this.queuedBytes -= bytes;
         this.activeBytes = bytes;
         try {
@@ -127,7 +130,7 @@ export class LiveChannel {
             this.following.delete(frame.scope);
             this.onFollowing(this.following, previous);
           }
-          await this.onFrame(frame);
+          await this.onFrame(frame, opened);
         } catch { this.breakSocket(socket); }
         finally { this.activeBytes = 0; }
       }

@@ -33,8 +33,8 @@ function secureDraw(bound) {
 const replicaId = () => `rp_${crypto.randomUUID().replace(/-/g, '')}`;
 const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[secureDraw(62)]).join('')}`;
 
-// What a commit lands in: the replica's storage, which a re-identify keeps, and the account it is bound to. A sign-in or
-// a sign-out changes it, the sign-in that binds the anon replica in place included (engine.md §7.12).
+// What a commit, a pull or a frame lands in: the replica's storage, which a re-identify keeps, and the account it is bound
+// to. A sign-in or a sign-out changes it, the sign-in that binds the anon replica in place included (engine.md §7.12).
 const bindingOf = (replica) => JSON.stringify([replica.storageHandle, replica.meta.account ?? null]);
 
 // An act planned under one binding, committed after a sign-in or a sign-out changed it (engine.md §7.1 Ordered local
@@ -82,7 +82,7 @@ export class BrowserSyncEngine {
     this.pullChunk = new WriterSlice(64, this.limits.WRITER_SLICE_MS);
     this.inFlight = new Set();
     this.live = new LiveChannel({ transport: this.transport, timers, now: monotonic, draw,
-      limits: this.limits, onFrame: (frame) => this.receiveFrame(frame),
+      limits: this.limits, binding: () => this.activeBinding(), onFrame: (frame, opened) => this.receiveFrame(frame, opened),
       onFollowing: (current, previous) => {
         for (const scope of previous) if (!current.has(scope)) this.doubts.unfollowed(scope, this.monotonic());
         for (const scope of current) this.doubts.followed(scope, this.monotonic());
@@ -187,6 +187,12 @@ export class BrowserSyncEngine {
       pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), connection: this.connection() });
     for (const observation of [...this.views.values(), ...this.noticeViews.values()]) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
+    // A sign-in or a sign-out, another tab's in-place rebind included, ends every doubt and the socket opened for the binding
+    // before it, which opens again for the new one (engine.md §7.9, §7.12).
+    if (previous && bindingOf(previous) !== bindingOf(replica)) {
+      this.doubts.clear();
+      this.live.stop({ reset: true });
+    }
     this.notify(this.listeners);
     if (this.upgradeRequired || this.signingOut) this.stopNetwork();
     if (replica.meta.authPaused) {
@@ -826,13 +832,11 @@ export class BrowserSyncEngine {
     if (!this.canSync() || this.pulling) return;
     this.pulling = true;
     let request;
-    let handle;
-    let replicaId;
+    let seat;
     try {
       request = await this.write(null, (device, ctx) => {
         const replica = device.activeReplica;
-        handle = replica.storageHandle;
-        replicaId = replica.id;
+        seat = { handle: replica.storageHandle, replica: replica.id, binding: bindingOf(replica) };
         const scopes = this.scopes(replica);
         reconcile(replica, ctx, scopes);
         for (const scope of [...this.doubts.scopes.keys()]) if (!scopes.includes(scope)) this.doubts.left(scope);
@@ -851,27 +855,30 @@ export class BrowserSyncEngine {
       const { response, timing } = await this.request('pull', request);
       if (response.status === 426) return;
       this.validateResponse('pull', response, request);
-      const accepted = await this.write(null, (device, ctx) => {
-        if (device.activeReplica.storageHandle !== handle || device.activeReplica.id !== replicaId) return false;
+      // An answer that lands after a sign-in, a sign-out or a re-identify changed the replica it was asked for applies
+      // nothing, pauses nothing and backs nothing off; its scopes are pulled again for the replica now active (engine.md §7.12).
+      const answer = await this.write(null, (device, ctx) => {
         const replica = device.activeReplica;
+        if (replica.id !== seat.replica || bindingOf(replica) !== seat.binding) return 'overtaken';
         if (replica.meta.state === 'anon' && response.status === 200 && response.body?.as !== null) {
           replica.meta.authPaused = true;
-          return false;
+          return 'refused';
         }
         onPullResponse(replica, ctx, request, { ...response, body: { ...response.body, pages: [] } }, timing);
-        return response.status === 200 && !replica.meta.authPaused;
+        return response.status === 200 && !replica.meta.authPaused ? 'accepted' : 'refused';
       });
-      if (!accepted) {
+      if (answer !== 'accepted') {
         for (const { scope } of request.scopes) this.pullDirty.add(scope);
+        if (answer === 'overtaken') return;
         if (response.status === 503) this.pullWait.unavailable(this.monotonic(), Math.max(0, response.body?.retryAfterMs ?? 0), this.draw);
         else if (response.status !== 401) this.pullWait.backoff(this.monotonic(), this.draw);
         return;
       }
-      const outcomes = await this.storePages(handle, response.body.pages.map((page) => {
+      const outcomes = await this.storePages(seat.handle, response.body.pages.map((page) => {
         const cursor = request.scopes.find(({ scope }) => scope === page.scope)?.cursor;
         if (cursor === undefined) throw new Error('unexpected pull scope');
         return { cursor, page };
-      }));
+      }), seat.binding);
       for (const [index, page] of response.body.pages.entries()) {
         const outcome = outcomes[index];
         if (page.more || ['reset', 'stale'].includes(outcome)) this.pullDirty.add(page.scope);
@@ -894,9 +901,9 @@ export class BrowserSyncEngine {
       this.pulling = false;
       for (const { scope } of request?.scopes ?? []) this.pullInFlight.delete(scope);
       for (const { scope } of request?.scopes ?? []) {
-        const frame = this.deferredFrames.get(scope);
+        const deferred = this.deferredFrames.get(scope);
         this.deferredFrames.delete(scope);
-        if (frame) await this.receiveFrame(frame);
+        if (deferred) await this.receiveFrame(deferred.frame, deferred.binding);
       }
       if (request && this.pullDirty.size) this.schedulePull();
       this.armFallback();
@@ -904,9 +911,9 @@ export class BrowserSyncEngine {
   }
 
   // A response's pages apply in chunks the writer slice sizes: a chunk takes the rows of one page or of
-  // several, and checks each page in the transaction that applies it. Only a product page or an end can
-  // move the subscription set, so the set is read again after one of those.
-  async storePages(handle, pages) {
+  // several, and checks each page in the transaction that applies it, under the binding it was pulled for.
+  // Only a product page or an end can move the subscription set, so the set is read again after one of those.
+  async storePages(handle, pages, binding = this.activeBinding()) {
     let outcomes = pages.map(() => 'applied');
     const settling = [];
     for (let index = 0, offset = 0; index < pages.length;) {
@@ -927,7 +934,7 @@ export class BrowserSyncEngine {
         for (const { index, rows, first, last } of steps) {
           const { cursor, page } = pages[index];
           if (decided[index] !== 'applied') continue;
-          if (replica.storageHandle !== handle) decided[index] = 'outside';
+          if (bindingOf(replica) !== binding) decided[index] = 'outside';
           else if (page.kind !== 'rows') decided[index] = applyPage(replica, ctx, cursor, page, undefined, (scope) => subscribed.has(scope));
           else if (!subscribed.has(page.scope)) decided[index] = 'outside';
           else if ((replica.meta.serverEpoch !== null && Cursor.decode(page.cursor)?.e !== replica.meta.serverEpoch)
@@ -946,7 +953,7 @@ export class BrowserSyncEngine {
     }
     for (const index of settling) {
       for (let remaining = true; remaining;) remaining = await this.write(null, (device, ctx) =>
-        device.activeReplica.storageHandle === handle && settle(device.activeReplica, ctx, pages[index].page.scope, 64));
+        bindingOf(device.activeReplica) === binding && settle(device.activeReplica, ctx, pages[index].page.scope, 64));
     }
     return outcomes;
   }
@@ -962,17 +969,18 @@ export class BrowserSyncEngine {
     for (const scope of this.live.following) this.doubts.followed(scope, this.monotonic());
   }
 
-  async receiveFrame(frame) {
-    const handle = this.device.activeReplica.storageHandle;
+  // A frame lands only under the binding its socket opened under, a frame deferred behind a pull included (engine.md §7.12).
+  async receiveFrame(frame, binding = this.activeBinding()) {
     const replica = this.device.activeReplica;
+    const handle = replica.storageHandle;
     if (['change', 'gone', 'not-found'].includes(frame.op) && !replica.servedAsOther(frame.as) && this.pullInFlight.has(frame.scope)) {
-      this.deferredFrames.set(frame.scope, frame);
+      this.deferredFrames.set(frame.scope, { frame, binding });
       this.pullDirty.add(frame.scope);
       return;
     }
     if (['gone', 'not-found'].includes(frame.op)) this.doubts.unfollowed(frame.scope, this.monotonic());
     const outcome = await this.write(null, (device, ctx) => {
-      if (device.activeReplica.storageHandle !== handle) return 'outside';
+      if (bindingOf(device.activeReplica) !== binding) return 'outside';
       if (device.activeReplica.meta.state === 'anon' && ['change', 'gone', 'not-found'].includes(frame.op) && frame.as !== null) {
         device.activeReplica.meta.authPaused = true;
         return 'paused';
@@ -1138,10 +1146,17 @@ export class BrowserSyncEngine {
     const account = this.device.meta.clearCredential;
     if (!account || !this.online || !this.credentials?.clear) return;
     try {
-      await this.credentials.clear(account);
-      await this.write(null, (device) => {
+      const none = await this.credentials.clear(account);
+      // Once the browser holds no credential, nothing serves the anon replica as an account, so its pause ends; one another
+      // account's cookie still rides the socket keeps it (engine.md §9.1).
+      const resumed = await this.write(null, (device) => {
         if (device.meta.clearCredential === account) delete device.meta.clearCredential;
+        const replica = device.activeReplica;
+        if (none !== true || replica.meta.state !== 'anon' || !replica.meta.authPaused) return false;
+        replica.meta.authPaused = false;
+        return true;
       });
+      if (resumed) this.kick();
     } catch { this.telemetry.failure('auth'); }
   }
 

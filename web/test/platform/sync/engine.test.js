@@ -556,6 +556,81 @@ for (const [name, { before, change, keepsReplica }] of Object.entries(bindingCha
   engine.close();
 });
 
+for (const [name, { before, change, keepsReplica }] of Object.entries(bindingChanges)) for (const ending of keepsReplica ? ['answered'] : ['answered', 'aborted'])
+  test(`a pull ${ending} after ${name}, and the frame deferred behind it, apply nothing, pause nothing and count as no failure`, async () => {
+    const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+    env.transport.account = 'A';
+    await before(engine);
+    await engine.subscribe(tree);
+    const transport = env.transport.request.bind(env.transport);
+    let answer;
+    env.transport.request = async (endpoint, body, options) => {
+      const reply = await transport(endpoint, body, options);
+      if (endpoint !== 'pull') return reply;
+      return new Promise((resolve, reject) => {
+        answer = () => resolve(reply);
+        if (ending === 'aborted') options.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+      });
+    };
+    const pulling = engine.pull();
+    await until(() => answer);
+    env.transport.request = transport;
+    await engine.receiveFrame({ op: 'not-found', scope: tree, as: engine.device.activeReplica.meta.account ?? null });
+    assert.equal(engine.deferredFrames.has(tree), true);
+    const told = env.failures.length;
+    assert.equal((await change(engine)).complete, true);
+    const stored = (await engine.store.read()).device.toJSON();
+    answer(); await pulling;
+    assert.deepEqual({ device: (await engine.store.read()).device.toJSON(), failures: env.failures.slice(told), backoff: engine.pullWait.k, due: engine.pullWait.due(env.timers.time) },
+      { device: stored, failures: [], backoff: 0, due: true });
+    engine.close();
+  });
+
+for (const [name, { before, change }] of Object.entries(bindingChanges)) test(`a frame that lands after ${name} applies nothing and pauses nothing`, async () => {
+  const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+  env.transport.account = 'A';
+  await before(engine);
+  await engine.subscribe(tree);
+  const write = engine.write.bind(engine);
+  let landing;
+  engine.write = (operation, ...rest) => {
+    const written = write(operation, ...rest);
+    if (['sync-signin', 'sync-signout'].includes(operation))
+      landing ??= engine.receiveFrame({ op: 'not-found', scope: tree, as: engine.device.activeReplica.meta.account ?? null });
+    return written;
+  };
+  assert.equal((await change(engine)).complete, true);
+  await landing;
+  assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, known: engine.device.activeReplica.known, failures: env.failures },
+    { authPaused: false, known: {}, failures: [] });
+  engine.close();
+});
+
+test('a sign-in another tab completes in place stops the leader\'s socket, so a frame that socket carried lands nowhere', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const leader = await open(env), tab = await peer(env);
+  await leader.subscribe(tree);
+  await leader.pull();
+  const socket = env.sockets.at(-1);
+  socket.readyState = 1; socket.onopen();
+  const deliver = socket.onmessage;
+  await tab.commit('self/probe', card('card0009'));
+  env.transport.account = 'B';
+  assert.equal((await tab.signIn('B')).complete, true);
+  await until(() => leader.device.activeReplica.meta.state === 'bound');
+  deliver({ data: JSON.stringify({ op: 'not-found', scope: tree, as: null }) });
+  await until(() => !leader.live.draining);
+  assert.deepEqual({ sameReplica: leader.activeReplica() === tab.activeReplica(), followedBy: leader.live.socket === socket ? 'the old socket' : 'another',
+    oldSocket: socket.readyState, authPaused: leader.device.activeReplica.meta.authPaused, known: leader.device.activeReplica.known },
+  { sameReplica: true, followedBy: 'another', oldSocket: 3, authPaused: false, known: {} });
+  tab.close(); leader.close();
+});
+
 test('an act planned before a re-identify of the active replica commits: the binding outlives the replica\'s id', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A';
@@ -926,6 +1001,59 @@ test('anonymous replicas reject authenticated scope answers without caching exis
   assert.deepEqual(engine.device.activeReplica.confirmedRows('tree/b_00000001'), []);
   engine.close();
 });
+
+test('an anon replica answered as an account stays paused through the sign-in, and the sign-out that ends it pulls its open tree, after a reload too', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 }),
+        row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 2 })] },
+  }));
+  const reading = (engine) => ({ state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+    firstPullComplete: engine.readMetadata(tree).firstPullComplete, rows: engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id) });
+  let engine = await open(env);
+  await engine.subscribe(tree);
+  env.transport.account = 'A';
+  await engine.pull();
+  assert.deepEqual(reading(engine), { state: 'anon', authPaused: true, firstPullComplete: false, rows: [] });
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  env.transport.account = null;
+  engine.close();
+  engine = await open(env);
+  await engine.subscribe(tree);
+  await engine.pull();
+  assert.deepEqual(reading(engine), { state: 'anon', authPaused: false, firstPullComplete: true, rows: ['meta', 'oak'] });
+  engine.close();
+});
+
+for (const [left, gone] of [['no credential', true], ['another account\'s credential', false]])
+  test(`an anon replica a live frame served as an account paused, whose cancelled sign-in's cleanup leaves ${left}, ${gone ? 'resumes' : 'stays paused'}`, async () => {
+    const env = environment(), tree = 'tree/b_00000001';
+    env.state = new ServerState(serverState({
+      scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+      rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+        'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+    }));
+    const cleared = [];
+    env.options.credentials = { clear: async (account) => { cleared.push(account); return gone; } };
+    const engine = await open(env);
+    await engine.commit('self/probe', card());
+    await engine.subscribe(tree);
+    await engine.pull();
+    env.transport.account = 'A';
+    assert.equal((await engine.signIn('A')).complete, false);
+    await engine.receiveFrame({ op: 'change', scope: tree, as: 'A' });
+    assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync() }, { authPaused: true, canSync: false });
+    await engine.write(null, (device) => { delete device.meta.pendingSignIn; device.meta.clearCredential = 'A'; });
+    env.transport.account = gone ? null : 'B';
+    await engine.cleanupCredentials();
+    assert.deepEqual({ cleared, state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+      canSync: engine.canSync(), owed: engine.device.meta.clearCredential },
+    { cleared: ['A'], state: 'anon', authPaused: !gone, canSync: gone, owed: undefined });
+    engine.close();
+  });
 
 test('finished offline sign-out durably owes cookie cleanup; restart retries a failed cleanup', async () => {
   const env = environment();

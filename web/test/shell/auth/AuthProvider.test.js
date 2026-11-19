@@ -680,6 +680,8 @@ test('online sign-out completes its anonymous scope and accepts a new draft afte
 
 test('a different cookie owner during committed sign-out fences its own scope before cleanup continues', async (t) => {
   const state = await account(t);
+  const clear = state.engine.credentials.clear, answers = [];
+  state.engine.credentials.clear = async (account) => { const gone = await clear(account); answers.push(gone); return gone; };
   const scope = state.auth().dataScope;
   const before = scope.getSnapshot();
   const transitions = [];
@@ -718,6 +720,20 @@ test('a different cookie owner during committed sign-out fences its own scope be
     { epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } },
     { epoch: before.epoch + 2, phase: 'ready', owner: { kind: 'account', id: 'B' } },
   ]);
+  assert.deepEqual(answers, [false]);
+});
+
+test('the credentials port answers that the browser holds no credential once it logged its own account out, or found none', async (t) => {
+  const state = await account(t);
+  let me = { id: 'A', name: 'Ada' };
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/auth/logout')) { me = null; return { ok: true, status: 200, json: async () => ({}) }; }
+    return { ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) };
+  });
+  const own = await state.engine.credentials.clear('A');
+  const none = await state.engine.credentials.clear('A');
+  assert.deepEqual({ own, none, loggedOut: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/auth/logout')).length },
+    { own: true, none: true, loggedOut: 1 });
 });
 
 test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {

@@ -197,7 +197,8 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
 // the counted local ids of the ready and sent entries and the byte-pinned durable device work
 // (Discard cannot recall a sent entry that may have
 // landed). Keep covers every entry; a Discard whose pinned `counted` differs from the entries now is
-// asked again. The finish resolves acked entries, which the server holds.
+// asked again. The finish resolves acked entries, which the server holds, and makes the anon replica active,
+// unpaused: the credential that paused it goes with the account (§9.1).
 export function signOut(device, ctx, { choice, counted } = {}) {
   const bound = device.activeReplica;
   const previous = bound.id;
@@ -232,6 +233,7 @@ export function signOut(device, ctx, { choice, counted } = {}) {
     device.remove(bound);
   }
   device.activeReplica = device.anonReplica() ?? device.add(Replica.fresh({ replica: ctx.newReplicaId(), state: 'anon' }));
+  device.activeReplica.meta.authPaused = false;
   announce(ctx, previous, device.activeReplica.id);
   return { complete: true, ...question };
 }

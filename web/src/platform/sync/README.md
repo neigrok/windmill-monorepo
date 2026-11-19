@@ -63,6 +63,10 @@ suspension, restoration and restore failure.
 replica in place included, and a re-identify does not (engine.md §7.12). `commitAct(prepare, segment, {binding})` commits
 an act only while the binding its caller planned it under stands: otherwise it throws `ReplicaChanged` in the write
 transaction, before its prepare callback runs, writes nothing and reports nothing (engine.md §7.1 Ordered local acts).
+A pull's answer and its pages land the same way, only under the binding the pull was sent under, and a live frame only
+under the binding its socket opened under: a change of binding, another tab's included, closes the socket. One that a
+sign-in, a sign-out or a re-identify overtook applies nothing, pauses nothing and leaves the puller's backoff as it was
+(engine.md §7.12).
 `commitAct(segments, {undo})` journals an act opted into Undo after its hold (engine.md §7.3 Undo of an act);
 `requestInverse(actId, slots?)` asks for its inverse in one transaction and answers an `InverseResult`,
 `readInverseResult(requestId)` reads it from the published replica, and `releaseReversibleAct(actId)` drops a
@@ -75,7 +79,10 @@ the shell refreshes account state after restoration. Views and transport are inj
 
 HTTP goes to the `base` origin the engine's owner passes (same-origin when none) and uses the session
 cookie; anonymous pulls explicitly omit credentials. The `credentials` port
-belongs to the session owner: `clear(account)` removes the credential after a completed sign-out.
+belongs to the session owner: `clear(account)` removes the credential after a completed sign-out or a cancelled
+sign-in, and answers `true` when the browser then holds none. The anon replica, which a live socket carrying a cookie
+can have paused, comes out of a finished sign-out unpaused, and a `clear` that answers `true` unpauses it again
+(engine.md §9.1).
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably records cookie cleanup until the credentials port succeeds. Sign-in uses a fresh
 hello and pins Add/Discard decisions. Same-account refreshes preserve held work until its deadline
 or a lifecycle transition. `beginSignOut`, `finishSignOut` and `cancelSignOut` expose the
