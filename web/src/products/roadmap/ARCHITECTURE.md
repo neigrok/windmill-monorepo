@@ -118,7 +118,8 @@ the marks it keeps and announces none of them as new.
 A failed Board load at 744–1023px offers `RecoveryTreeSwitcher` to authenticated account-root navigation,
 independently of the failed tree's ownership. Shared routes never offer this door. A signed-out device route
 must first establish its unclaimed index row through `LocalTreeRegistry.readList`; a failed read grants no
-capability. Recovery has no current tree, counts, checkmark or edit actions. Account lists use
+capability. Where the room reads the device's copy, that row is the anon replica's list holding the roadmap, and the
+switcher lists the person's roadmaps as the replica keeps them, the account's and the browser's alike (`listHeld`). Recovery has no current tree, counts, checkmark or edit actions. Account lists use
 `listServerTrees` and preserve authoritative empty versus failed responses, without adding device rows.
 Device lists strictly read the anonymous index and readable local records. Index, storage and corrupt-record
 failures retain Retry list. The existing array-only registry reads retain their contracts.
@@ -242,7 +243,24 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   engine keeps; Discard takes the ledger with its replica.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
-  steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
+  steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it. A link to a readable
+  roadmap opens it this way signed in or not (the anon replica pulls the readable trees it opens), its tree scope and
+  each roadmap's above it subscribed as the room opens and dropped as it leaves; a subtree's door is a new room, so the
+  subtree is subscribed as the person goes in. A signed-in reader's own overlay of the roadmap comes with its tree scope
+  (E-3), where their own marks live; the room shows the owner's, and offers a reader no mark. A roadmap the person may not
+  read, a private one a stranger opens among them, is in no address: the load error.
+- **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`): the copy could
+  not open (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here
+  (`missing`), or no answer came (`unanswered`). A browser that keeps nothing (no IndexedDB) has no copy to open: until
+  the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
+  reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
+- **Births.** A roadmap is born through the domain on the replica the engine holds active (`room/ReplicaBirth.js`): the
+  blank birth and a pasted plan (`paste/NewTreeBirth.jsx`) and a quest (`quests/QuestShelf.jsx`) are `CreateRoadmap`, with
+  a plan's legend of its own in place of the genesis kinds and the steps it brings done then marked, signed out in the
+  browser's anon replica (§5 Signed out) and signed in in the account's, which the engine sends; nothing goes to
+  `POST /v1/trees` or the old stores. A browser whose copy could not open is told before anyone types, signed in or not,
+  as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to the newest of the person's list
+  as the replica keeps it (`ReplicaReading.readList`), or to the quests.
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
   `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
   stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's
@@ -381,10 +399,15 @@ holder (`useRoomHolder` in `room/useRoomAuthority.js`, the one answer to who hol
 that lives only on this device, whoever is at the device, signed in or not (`place: 'device'`), until a claim takes the
 tree to the account and the hook asks again; on any other, the account that holds the room as its owner, once the server
 has answered for it in this document (`confirmed` in the shell's auth context; a page that starts with no connection
-stands on the cached account, which is not one) (`place: 'account'`). The way back shows where this device's index keeps
-the roadmap it leads to for that holder, under the title the index keeps: as that account's (`LocalTreeRegistry.owned`),
-or as a tree that lives only here (`onDevice`); `open` writes that row for the roadmap it leaves before it navigates, as
-its session may not have stored anything yet. Without a holder there is no way back, no carried view or step, no door
+stands on the cached account, which is not one) (`place: 'account'`). Where the room reads the device's copy, the
+engine's binding answers instead (`useSyncEngine`): the owner's roadmap in the browser's anon replica is whoever's at the
+device (`place: 'device'`) until a sign-in's lineage rule takes it to an account, and one in a replica bound to the
+account is the account's, with no connection and through a lapse too, as its copy is; no index is read. The way back
+shows where this device's index keeps the roadmap it leads to for that holder, under the title the index keeps: as that
+account's (`LocalTreeRegistry.owned`), or as a tree that lives only here (`onDevice`); `open` writes that row for the
+roadmap it leaves before it navigates, as its session may not have stored anything yet. Where the room reads the
+device's copy the title is the holder's list there (`heldCard`, the reading's `card`) and `open` writes nothing, as the
+old index is the carry-over's alone (§8.2). Without a holder there is no way back, no carried view or step, no door
 into a tree by a pointer and no event; a subtree's are anyone's who reads it (A subtree, below). So on a tree the server
 keeps, a lapsed session, its copy on a device with nobody signed in and a start with no connection, and anywhere a reader,
 keep a pointer's tree mark and go nowhere; on a tree that lives only on

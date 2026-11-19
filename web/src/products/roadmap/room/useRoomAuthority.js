@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LocalTreeRegistry, confirmDeviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { claimLocalTrees, onTreeClaimed } from '../sync/claimLocalTrees.js';
 import { isOwnershipRefusal, isSessionRefusal } from '../sync/refusals.js';
+import { useSyncEngine } from '../../../platform/sync/react.js';
 
 // Who holds this room: the session's lapse, the claim of device trees at sign-in, the demotion an ownership refusal forces,
 // and the holder the room acts for. Signing in on a roadmap that loaded as someone else's loads it again, as a demotion
@@ -115,17 +116,23 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
 
 const deviceTrees = new LocalTreeRegistry();
 
-// Who holds the room as its owner, and where (`place`): on a tree that lives only on this device, whoever is at the device,
-// signed in or not, until a claim takes the tree to the account (asked again whenever any tab's claim lands, `claims`, and
-// whenever the account changes in this document); on any other,
-// the account once the server has answered for it in this document (`confirmed` in the shell's auth context; a page that
-// starts with no connection stands on the cached account, which is not one) and while its session has not lapsed. Null for
-// anyone else. The room goes into trees, attaches them and says where it acts for its holder alone.
-export function useRoomHolder({ owner, treeId, account, confirmed, lapsed, claims, registry = deviceTrees }) {
-  const onDevice = useMemo(() => owner && registry.onDevice(treeId) !== null, [owner, treeId, claims, account?.id]);
-  const accountId = owner && !onDevice && confirmed && !lapsed ? account?.id ?? null : null;
+// Who holds the room as its owner, and where (`place`); null for anyone else. The room goes into trees, attaches them and
+// says where it acts for its holder alone. Where the room reads the device's copy (`replica`), the engine's binding says:
+// the owner's roadmap in the browser's anon replica is held by whoever is at the device until a sign-in's lineage rule
+// takes it to an account, and one in a replica bound to the account is the account's, offline too, as its copy is.
+// Elsewhere a tree that lives only on this device is held by whoever is at the device, signed in or not, until a claim
+// takes it to the account (asked again whenever any tab's claim lands, `claims`, and whenever the account changes in this
+// document); any other by the account once the server has answered for it in this document (`confirmed` in the shell's
+// auth context; a page that starts with no connection stands on the cached account, which is not one) and while its
+// session has not lapsed.
+export function useRoomHolder({ owner, treeId, account, confirmed, lapsed, claims, replica = false, registry = deviceTrees }) {
+  const bound = useSyncEngine() !== null;
+  const onDevice = useMemo(() => !replica && owner && registry.onDevice(treeId) !== null, [replica, owner, treeId, claims, account?.id]);
+  const accountId = owner && !onDevice && (replica || (confirmed && !lapsed)) ? account?.id ?? null : null;
   return useMemo(() => {
+    if (replica && owner) return bound ? { place: 'account', account: accountId } : { place: 'device' };
+    if (replica) return null;
     if (onDevice) return { place: 'device' };
     return accountId ? { place: 'account', account: accountId } : null;
-  }, [onDevice, accountId]);
+  }, [replica, owner, bound, onDevice, accountId]);
 }

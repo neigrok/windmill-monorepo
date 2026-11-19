@@ -5,8 +5,9 @@
 // step owns the tree. So a chain pops one tree per press, and the browser's Back reads what the chip reads. A pointer's
 // way back is that history alone, so a direct link has none; a subtree's is where it sits, so even a link to it leads up
 // to its owning step. An entry outlives a sign-out, so it holds ids alone: a pointer's way back is shown only to whoever
-// holds the tree it leads to, under the title this device's index keeps for them: the account's own row, or the row of a
-// tree that lives only here. A subtree's is named by the tree read itself.
+// holds the tree it leads to, under the title the device keeps for them: where the room reads the device's copy, the
+// holder's list in the replica; elsewhere this device's index, the account's own row or the row of a tree that lives only
+// here. A subtree's is named by the tree read itself.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { readNavigation, requestNavigation, updateNavigationState } from '../../../shell/navigation.js';
@@ -74,14 +75,15 @@ export function settleTreeVisit() {
 const deviceTrees = new LocalTreeRegistry();
 
 // The room's side of it. `arrival` is what the entry said as the room opened; `holder` who holds this room as its owner
-// (`useRoomHolder`), or null; `visitor` whether the room reads a tree that is not its own, demo aside, which lets it go
+// (`useRoomHolder`), or null; `heldCard` the holder's roadmap of an id as the device's copy keeps it, where the room reads
+// it (null elsewhere: this device's index names them); `visitor` whether the room reads a tree that is not its own, demo aside, which lets it go
 // into subtrees as a holder does; `place` where the tree sits, null until the server has said; `route` the address
 // family it stands on and `role` whose room it is (`owner` or `reader`), null until the room has loaded and knows. A
 // room that may go nowhere acts on nothing the entry says: no way back, no carried view or step, no door into a tree and
 // nothing said; one that may go into subtrees alone acts only on an entry a subtree's door left. `open` goes into a tree
 // from the door that offered it, off the tree and the view the room stands on at that moment, and `back` is the chip's
 // press.
-export function useTreeVisit({ room, arrival, holder, visitor = false, place = null, route = '#/app/', role = 'owner', band, registry = deviceTrees, track = beacon }) {
+export function useTreeVisit({ room, arrival, holder, heldCard = null, visitor = false, place = null, route = '#/app/', role = 'owner', band, registry = deviceTrees, track = beacon }) {
   useEffect(settleTreeVisit, []);
   const roams = holder !== null || visitor;
   // The arrival this entry tells of came by a subtree's door: down into this tree from its parent, or back up from one.
@@ -118,11 +120,11 @@ export function useTreeVisit({ room, arrival, holder, visitor = false, place = n
     if (typeof treeId !== 'string' || treeId === tree.treeId) return false;
     requestNavigation({ key: `tree:enter:${treeId}`, run: (tx) => {
       track('roadmap_tree_open', { door, view: shown, band, place: holder.place });
-      if (!place?.subtree) registry.touch(tree.treeId, tree.title, holder.account);
+      if (!place?.subtree && !heldCard) registry.touch(tree.treeId, tree.title, holder.account);
       enterTree(treeId, { from: tree.treeId, stepId, view }, tx);
     } });
     return true;
-  }, [room, band, holder, role, route, place]);
+  }, [room, band, holder, heldCard, role, route, place]);
 
   // A subtree's way back leads up to its owning step: back through the history where the person came down that step,
   // else to its parent with that step open.
@@ -140,10 +142,11 @@ export function useTreeVisit({ room, arrival, holder, visitor = false, place = n
   const from = useMemo(() => {
     if (up) return { id: up.treeId, title: up.title };
     if (!holder || !arrival.from || arrival.downFromParent) return null;
-    if (holder.place === 'account') return registry.owned(arrival.from, holder.account);
-    const row = registry.onDevice(arrival.from);
+    const row = heldCard ? heldCard(arrival.from)
+      : holder.place === 'account' ? registry.owned(arrival.from, holder.account)
+        : registry.onDevice(arrival.from);
     return row?.title ? { id: row.id, title: row.title } : null;
-  }, [holder, arrival.from, arrival.downFromParent, up]);
+  }, [holder, heldCard, arrival.from, arrival.downFromParent, up]);
   if (!roams) return { from: null, through: null, view: null, door: null, open: null, back };
   if (!ours) return { from, through: null, view: null, door: null, open, back };
   return { from, through: arrival.through, view: arrival.view, door: arrival.door, open, back };
