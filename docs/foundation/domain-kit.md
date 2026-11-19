@@ -1279,6 +1279,13 @@ failure leaves no segment, device write, clock tick, reservation or notice from 
 Remote admission remains separate for each intent. Existing `Action`, `Plan`, `run`, `Outcome` and
 `CommitReceipt` retain their single-scope contracts.
 
+On the web, `runAct(act, {binding})` takes the engine's `activeBinding()` (engine §7.12) a product read when it
+planned the act, before the awaits of a multi-step write, and hands it to `commitAct`. The engine commits the act
+only while that binding stands, and otherwise rejects the run with its `ReplicaChanged` before the act loads, so
+nothing of it is written: a sign-in or a sign-out in between cannot carry the act into another replica or
+account (engine §7.1 Ordered local acts). The runner passes the rejection through; the product decides what the
+act becomes. Without `binding` nothing is checked. Swift's and Kotlin's runners take no binding.
+
 ### §9.6 Undo of an act (K-3)
 
 ```swift
@@ -1363,6 +1370,7 @@ extension ActionRunner {
 - **One act.** The parts' segments commit as one act's ordered segments (§9.5): one gesture id, one hold, held
   when any part's plan holds, and one Undo carrying every part's recipes by their segment index (§9.6). An
   engine refusal at commit names its segment, and so its part. `cancelHeld` and `undo` take back every part.
+- **One binding.** On the web, `runComposed(parts, {binding})` guards the whole act as `runAct` does (§9.5).
 - The kit corpus's `run/composed.json` holds these over the real engine and the reference server.
 
 ## §10 Drafts

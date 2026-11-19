@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { releaseDue } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
@@ -528,6 +528,46 @@ test('sign-in pins Add/Discard decisions and sign-out Keep isolates dormant acco
 });
 
 const deviceDraftWork = (product, rows) => product === 'probe' ? Object.keys(rows).filter((key) => key === 'rack' || key.startsWith('picture:')) : [];
+
+const bindingChanges = {
+  'a sign-in to a new replica': { before: async () => {}, change: (engine) => engine.signIn('A'), keepsReplica: false },
+  'a sign-in that binds the anon replica in place': { before: (engine) => engine.commit('self/probe', card('card0009')),
+    change: (engine) => engine.signIn('A'), keepsReplica: true },
+  'a sign-out': { before: (engine) => engine.signIn('A'), change: (engine) => engine.finishSignOut({ choice: 'keep' }), keepsReplica: false },
+};
+for (const [name, { before, change, keepsReplica }] of Object.entries(bindingChanges)) test(`an act planned before ${name} throws ReplicaChanged, writes and reports nothing, and one planned after it commits`, async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A';
+  await before(engine);
+  const planned = { replica: engine.activeReplica(), binding: engine.activeBinding() };
+  assert.equal((await change(engine)).complete, true);
+  assert.deepEqual({ sameReplica: engine.activeReplica() === planned.replica, sameBinding: engine.activeBinding() === planned.binding },
+    { sameReplica: keepsReplica, sameBinding: false });
+  const stored = (await engine.store.read()).device.toJSON();
+  const told = { events: env.events.length, failures: env.failures.length };
+  let prepared = 0;
+  await assert.rejects(engine.commitAct(() => { prepared++; return { request: { scopes: ['self/probe'], hold: false }, value: card() }; },
+    (changes) => ({ changes }), { binding: planned.binding }), ReplicaChanged);
+  assert.deepEqual({ prepared, device: (await engine.store.read()).device.toJSON(), events: env.events.slice(told.events), failures: env.failures.slice(told.failures) },
+    { prepared: 0, device: stored, events: [], failures: [] });
+  const queued = engine.device.activeReplica.entries().map((entry) => entry.localId);
+  const { outcome } = await engine.commitAct([{ scope: 'self/probe', changes: card() }], {}, { binding: engine.activeBinding() });
+  assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.localId), [...queued, ...outcome.segments[0].localIds]);
+  engine.close();
+});
+
+test('an act planned before a re-identify of the active replica commits: the binding outlives the replica\'s id', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  const planned = { replica: engine.activeReplica(), binding: engine.activeBinding() };
+  await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+  assert.deepEqual({ sameReplica: engine.activeReplica() === planned.replica, sameBinding: engine.activeBinding() === planned.binding },
+    { sameReplica: false, sameBinding: true });
+  const { outcome } = await engine.commitAct([{ scope: 'self/probe', changes: card() }], {}, { binding: planned.binding });
+  assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.localId), outcome.segments[0].localIds);
+  engine.close();
+});
 
 test('sign-in carries a device-only draft into an empty account and reopening retains it once', async () => {
   const env = environment();

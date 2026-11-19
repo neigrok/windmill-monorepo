@@ -11,7 +11,8 @@ import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wi
 import { epochChange } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
-import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
+import { ActDecision, ActPlan, ScopedPlan } from '../../../src/platform/domain-kit/acts.js';
 import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';
 import { Id } from '../../../src/platform/domain-kit/entities.js';
@@ -20,6 +21,7 @@ import { Placement, Reader, Views } from '../../../src/platform/domain-kit/readi
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
+import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { Fault } from '../../../src/platform/domain-kit/values.js';
 import { environment, tick, until } from '../sync/fakes.js';
 import { OTHER, product, productScope, row, serverState, st, treeScope } from '../sync/oracle-adapters/fixtures.js';
@@ -518,3 +520,43 @@ test('dynamic drafts persist independently by scope and a scoped held removal un
     assert.throws(() => runner.mint(Probe.card, 'tree/b_00000001'), Fault);
   } finally { engine.close(); }
 });
+
+// Engine §7.1 Ordered local acts: an act planned under one binding commits only while it stands. A sign-in or a sign-out
+// in between, the sign-in that binds the anon replica in place included, rejects the run before the act loads.
+/** @type {Record<string, { before: (engine: any) => Promise<unknown>, change: (engine: any) => Promise<{ complete: boolean }> }>} */
+const bindingChanges = {
+  'a sign-in to a new replica': { before: async () => {}, change: (engine) => engine.signIn('A') },
+  'a sign-in that binds the anon replica in place': {
+    before: (engine) => engine.commit(PROBE_SCOPE, [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'made signed out' } }]),
+    change: (engine) => engine.signIn('A') },
+  'a sign-out': { before: (engine) => engine.signIn('A'), change: (engine) => engine.finishSignOut({ choice: 'keep' }) },
+};
+for (const [name, { before, change }] of Object.entries(bindingChanges)) for (const run of ['runAct', 'runComposed']) {
+  test(`${run} planned before ${name} throws ReplicaChanged before it loads and writes nothing, and runs under the new binding`, async () => {
+    const { env, engine, runner } = await open();
+    /** @type {any} */ (env.transport).account = 'A';
+    await before(engine);
+    const planned = engine.activeBinding();
+    assert.equal((await change(engine)).complete, true);
+    let loads = 0;
+    /** @type {import('../../../src/platform/domain-kit/acts.js').ActAction<import('../../../src/platform/domain-kit/time.js').Moment, null, ProbeRefusal>} */
+    const board = { refusals: ProbeRefusals,
+      load: (read) => {
+        loads++;
+        read.inScope(PROBE_SCOPE, () => null);
+        return read.moment;
+      },
+      decide: (moment) => {
+        const plan = new Plan();
+        plan.create(new Valid(probeValue(Probe.board, 'b_00000002', {}), moment));
+        return ActDecision.write(new ActPlan([new ScopedPlan(PROBE_SCOPE, plan)]), null);
+      } };
+    const commit = (/** @type {string | null} */ binding) => run === 'runAct' ? runner.runAct(board, { binding }) : runner.runComposed([board], { binding });
+    const stored = (await engine.store.read()).device.toJSON();
+    await assert.rejects(commit(planned), ReplicaChanged);
+    assert.deepEqual({ loads, device: (await engine.store.read()).device.toJSON(), failures: env.failures }, { loads: 0, device: stored, failures: [] });
+    assert.equal((await commit(engine.activeBinding())).kind, 'committed');
+    assert.deepEqual(runner.read(PROBE_SCOPE, (read) => read.repository(Probe.board).all('drawn').map((each) => each.id.record)), ['b_00000002']);
+    engine.close();
+  });
+}

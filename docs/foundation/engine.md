@@ -1579,7 +1579,8 @@ entries and predictions never enter it.
 `opts = {atomic, hold, guard, retire, supersede, cmd, predict, scopedPredict, local, gestureId}`. `commit` is a synchronous
 call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
 network. It throws only before its local transaction commits, and every client API declares exactly
-three failures, told apart by where they arise:
+three failures, told apart by where they arise (the browser engine's `commitAct` adds `ReplicaChanged` to
+an act its caller guards, Ordered local acts below):
 - *not writable*: step 1, the replica's state forbids writes;
 - *malformed*, a programming error: every throw of steps 2 to 10, the checks before step 2 included
   (a type outside the commit's scope, an `opts.gestureId` that an outbox entry or a notice of any
@@ -1776,6 +1777,15 @@ segment receipts `(scope, stamp, localIds, ids)`, flat `retired` and `superseded
 An act is local atomicity, not server atomicity. Its intents remain separately numbered and admitted
 in order, with the existing dependent-scope rejection rules. A later remote refusal does not reverse
 an earlier admitted intent.
+
+The browser engine's `commitAct(prepare, segment, {binding})` takes the `activeBinding()` (§7.12) its
+caller planned the act under, outside the transaction and across awaits, as a product's multi-step write
+does. In the write transaction, before the prepare callback runs, a binding that no longer stands
+throws `ReplicaChanged`, exported beside the engine, and the act writes nothing: a sign-in or a sign-out
+in between, in this tab or another, the sign-in that binds the anon replica in place included. The
+caller handles it, and the engine reports it as no failure.
+Without `binding` nothing is checked. The guard is the browser engine's; the Swift and Kotlin engines
+have none.
 
 ### §7.2 Send order
 
@@ -2717,6 +2727,12 @@ It is not durable: a change whose process dies before delivering it is announced
 so whoever holds an id reads `activeReplica()` again at engine start, or keeps a durable mark of
 its own, such as the gym Coach's `runningTurn` device row (gym Coach §4.5). On web every tab delivers
 it (§7.8).
+
+The browser engine adds `activeBinding()`: an opaque string that changes whenever the active replica or
+the account it is bound to changes, so a switch to another replica, a sign-in (the one that binds the
+anon replica in place, whose id stands, included) and a sign-out each change it, and a re-identify does
+not; null before the engine's first publication. An act planned under it commits only while it stands
+(§7.1 Ordered local acts).
 
 The Kotlin engine adds two reads of this state. `activeReplicaRebinds()` announces each completed sign-in
 that rebinds the active `anon` replica, whose id stands and whose seat does not (gym Coach D-10), with the
