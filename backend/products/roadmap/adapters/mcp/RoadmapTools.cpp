@@ -471,7 +471,7 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress& 
     return ToolResult::failure(*bad);
 
   const TreeData& data = read->data;
-  std::optional<Page> page = pageOf(data.nodes, args, error);
+  std::optional<NodePage> page = pageOf(data.nodes, args, error);
   if (!page) return ToolResult::failure(error);
 
   const NodeReadContext context = readContextFor(trees, owners, progress, origin, caller, *read, *nodeFields, false);
@@ -680,7 +680,7 @@ ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress&
     const bool owns = args["owns"].asBool();
     std::erase_if(matches, [&](const NodeSpec& node) { return (read->subtrees.count(node.id) > 0) != owns; });
   }
-  std::optional<Page> page = pageOf(matches, args, error);
+  std::optional<NodePage> page = pageOf(matches, args, error);
   if (!page) return ToolResult::failure(error);
 
   ProjectedPage projected = projectPage(matches, *page, *fields, context);

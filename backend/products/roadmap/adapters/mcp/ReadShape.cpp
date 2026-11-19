@@ -161,7 +161,7 @@ Json::Value projectProgress(const Progress& progress, const ProgressFields& fiel
   return root;
 }
 
-std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Value& args, std::string& error) {
+std::optional<NodePage> pageOf(const std::vector<NodeSpec>& matches, const Json::Value& args, std::string& error) {
   const Json::Value& requestedLimit = args["limit"];
   int limit = kDefaultLimit;
   if (!requestedLimit.isNull()) {
@@ -175,7 +175,7 @@ std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Val
   }
 
   const std::string cursor = args["cursor"].isString() ? args["cursor"].asString() : "";
-  Page page;
+  NodePage page;
   if (!cursor.empty()) {
     const auto found = std::find_if(matches.begin(), matches.end(),
                                     [&](const NodeSpec& node) { return node.id.str() == cursor; });
@@ -192,7 +192,7 @@ std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Val
   return page;
 }
 
-ProjectedPage projectPage(const std::vector<NodeSpec>& matches, const Page& page, const NodeFields& fields,
+ProjectedPage projectPage(const std::vector<NodeSpec>& matches, const NodePage& page, const NodeFields& fields,
                           const NodeReadContext& context) {
   ProjectedPage out;
   out.nextCursor = page.nextCursor;
