@@ -10,6 +10,7 @@
 import { Fields } from '../../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
 import { syncSession } from '../../../platform/sync/session.js';
+import { track as beacon } from '../../../telemetry/beacon.js';
 import { ClearLanding, landingOf } from '../domain/landing.js';
 import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
@@ -25,12 +26,36 @@ export const FIRST_COPY_MS = 10_000;
 const same = (a, b) => a.length === b.length && a.every((item, index) => item === b[index]);
 
 // The person's own zone, as the device keeps it, for the moments the domain's actions read.
-const DEVICE_ZONE = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
+export const DEVICE_ZONE = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
+
+// The engine the shell opens for this document, once it stands: `{ engine }`, or `{ unshown }` saying why there is none to
+// read or write through: `unkept` where it could not open, as in a browser that keeps nothing (no replica held in memory
+// stands in for one yet, E-5), and `unopened` where it did not stand within the bound or the caller stopped waiting.
+export function standingEngine(session, signal, timers = globalThis) {
+  return new Promise((resolve) => {
+    const check = () => {
+      const { engine, ready, error } = session.getSnapshot();
+      if (ready && engine) finish({ engine });
+      else if (error) finish({ unshown: 'unkept' });
+    };
+    const finish = (answer) => {
+      stop();
+      timers.clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      resolve(answer);
+    };
+    const abort = () => finish({ unshown: 'unopened' });
+    const timer = timers.setTimeout(abort, FIRST_COPY_MS);
+    const stop = session.subscribe(check);
+    signal.addEventListener('abort', abort, { once: true });
+    check();
+  });
+}
 
 export class ReplicaReading {
   // `room` holds the handles the room's writes reach for; `say` shows the room's toast. A reading of no roadmap
   // (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
-  constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure,
+  constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure, track = beacon,
     repository = treeId === null ? null : new HttpTreeRepository({ treeId }) }) {
     this.treeId = treeId;
     this.scope = treeId === null ? null : RoadmapScopes.tree(treeId);
@@ -39,6 +64,7 @@ export class ReplicaReading {
     this.session = session;
     this.timers = timers;
     this.report = report;
+    this.track = track;
     this.repository = repository;
     // The room's status line reads this reading as it reads roadmap's own session; `ready` says a write can be taken.
     this.ready = false;
@@ -61,25 +87,37 @@ export class ReplicaReading {
   // The engine's replica says whose copies these are: nothing is asked of the network first.
   async settleHolder() {}
 
-  // The roadmap as the device holds it once it can be shown: null where the person may read no such roadmap, or
-  // where none came within the bound. A roadmap someone else owns shows its owner's marks, as the server reads them.
+  // The roadmap as the device holds it once it can be shown, and null where it cannot be, which the room says with its
+  // load error and the reading tells (`roadmap_load`): the engine could not open or did not stand within the bound, the
+  // person may read no such roadmap here, or no answer came within the bound. A roadmap someone else owns shows its
+  // owner's marks, as the server reads them.
   async read({ signal }) {
-    this.engine = await this.engineWithin(signal);
-    if (!this.engine || signal.aborted) return null;
+    const opened = await standingEngine(this.session, signal, this.timers);
+    if (signal.aborted) return null;
+    if (!opened.engine) return this.unshown(opened.unshown);
+    this.engine = opened.engine;
     this.unwatch = this.engine.observeEngine(this.changed);
     if (await this.engine.subscribe(this.scope) === 'gone') {
       this.forgetLanding();
-      return null;
+      return this.unshown('missing');
     }
     this.subscribed.add(this.scope);
     const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting');
-    if (roadmap?.state === 'missing') this.forgetLanding();
-    if (roadmap?.state !== 'open' || signal.aborted) return null;
+    if (signal.aborted) return null;
+    if (roadmap.state === 'missing') this.forgetLanding();
+    if (roadmap.state !== 'open') return this.unshown(roadmap.state === 'missing' ? 'missing' : 'unanswered');
     this.opened = roadmap;
     this.openWrites(roadmap.mine);
     const seed = roadmap.seed;
     const overlay = roadmap.mine ? roadmap.marks : await this.repository.loadProgress(seed, { signal: AbortSignal.timeout(FIRST_COPY_MS) });
     return { seed, overlay, workspace: roadmap.mine ? roadmap.workspace : null, guides: roadmap.guides };
+  }
+
+  // Why the room's roadmap cannot be shown, told once as the reading gives up on it: `unkept`, `unopened`, `missing` or
+  // `unanswered` (`read`).
+  unshown(outcome) {
+    this.track('roadmap_load', { outcome });
+    return null;
   }
 
   // Each change the replica draws after the room opened, handed on in the room's shapes; what the device tells of the
@@ -148,7 +186,7 @@ export class ReplicaReading {
   // stands, the list as the replica holds it now and after each change, and the write door. False where the engine did
   // not stand within the bound.
   async readRoadmaps({ signal, onList }) {
-    this.engine = await this.engineWithin(signal);
+    this.engine = (await standingEngine(this.session, signal, this.timers)).engine ?? null;
     if (!this.engine || signal.aborted) return false;
     this.unwatch = this.engine.observeEngine(this.changed);
     this.openWrites(false);
@@ -157,18 +195,29 @@ export class ReplicaReading {
     return true;
   }
 
+  // The person's roadmaps as the switcher lists them, once the device has read their list, for a door that goes to one of
+  // them (`#/app`, to the newest); none where the engine did not stand within the bound.
+  async readList({ signal }) {
+    this.engine = (await standingEngine(this.session, signal, this.timers)).engine ?? null;
+    if (!this.engine || signal.aborted) return [];
+    this.unwatch = this.engine.observeEngine(this.changed);
+    await this.whenRead(signal, (roadmaps) => roadmaps.listRead);
+    return this.list();
+  }
+
   // The person's roadmaps whole, for a reading that takes every one of them (Settings' export; a reading of no roadmap):
   // once the device can say what each is, from the copy it holds or the server's first answer. Null where the engine did
   // not stand within the bound.
   async readEveryRoadmap({ signal }) {
-    this.engine = await this.engineWithin(signal);
+    this.engine = (await standingEngine(this.session, signal, this.timers)).engine ?? null;
     if (!this.engine || signal.aborted) return null;
     this.unwatch = this.engine.observeEngine(this.changed);
     return this.whenRead(signal, (roadmaps) => roadmaps.everyRoadmapRead);
   }
 
-  // The account's roadmaps as the switcher lists them, where the replica keeps them.
+  // The account's roadmaps as the switcher lists them, where the replica keeps them; none before the engine stands.
   list() {
+    if (!this.engine) return [];
     return this.roadmap().list(this.engine.getSnapshot().state === 'bound' ? 'account' : 'device');
   }
 
@@ -188,6 +237,7 @@ export class ReplicaReading {
   }
 
   close() {
+    if (this.closed) return;
     this.closed = true;
     this.ready = false;
     this.writes?.close();
@@ -200,28 +250,6 @@ export class ReplicaReading {
     this.listeners.clear();
     this.statusHandlers.clear();
     for (const scope of this.subscribed) this.engine?.unsubscribe(scope).catch(() => {});
-  }
-
-  // The engine the shell opens for this document, once it stands; null where it failed or did not within the bound.
-  engineWithin(signal) {
-    return new Promise((resolve) => {
-      const check = () => {
-        const { engine, ready, error } = this.session.getSnapshot();
-        if (ready && engine) finish(engine);
-        else if (error) finish(null);
-      };
-      const finish = (engine) => {
-        stop();
-        this.timers.clearTimeout(timer);
-        signal.removeEventListener('abort', abort);
-        resolve(engine);
-      };
-      const abort = () => finish(null);
-      const timer = this.timers.setTimeout(abort, FIRST_COPY_MS);
-      const stop = this.session.subscribe(check);
-      signal.addEventListener('abort', abort, { once: true });
-      check();
-    });
   }
 
   // The roadmaps once `read` says the device can say what they are: from the copy it holds, or the server's first answer.
