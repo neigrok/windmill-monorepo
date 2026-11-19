@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DeviceSeat, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
+import { DeviceSeat, ProductQuestions, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
 
 const A = { id: 'u_A', email: 'a@example.com' };
 const B = { id: 'u_B', email: 'b@example.com' };
@@ -192,3 +192,40 @@ for (const guard of ['none', 'anon', 'dormant', 'closed', 'signingOut', 'signOut
       { previous: null, account: null, confirmed: false, lapsed: false });
   });
 }
+
+test('a product hook that throws is asked of as one that says nothing, and each throw reports the question it was asked', async () => {
+  const thrown = new Error('the product chunk did not load');
+  const broken = { id: 'broken', sync: {
+    adoptionAnswer: async () => { throw thrown; },
+    adoptionCount: () => { throw thrown; },
+    signInWords: async () => { throw thrown; },
+    signOutWords: () => { throw thrown; },
+  } };
+  const wording = { id: 'wording', sync: { signOutWords: async () => ({ title: 'Sign out?' }) } };
+  const reported = [];
+  const questions = new ProductQuestions([broken, wording], (question, error) => reported.push([question, error]));
+  const due = { kind: 'signed-out', product: 'broken', count: { page: 1 }, counted: ['p1'] };
+  const question = { complete: false, unsent: 0, ready: 0, sent: 0, counted: [] };
+  assert.deepEqual({
+    answer: await questions.adoptionAnswer({}, due),
+    count: await questions.adoptionCount({}, due),
+    words: await questions.signInWords({}, due),
+    signOut: await questions.signOutWords({}, question),
+    alone: await new ProductQuestions([broken], (asked, error) => reported.push([asked, error])).signOutWords({}, question),
+  }, { answer: undefined, count: undefined, words: undefined, signOut: { ...question, words: { title: 'Sign out?' } }, alone: question });
+  assert.deepEqual(reported, [['adoption', thrown], ['signin', thrown], ['signin', thrown], ['signout', thrown], ['signout', thrown]]);
+});
+
+test('what products say passes through unchanged, and a product with no hook leaves the question to the engine and the shell', async () => {
+  const words = { title: 'Add your pages?' };
+  const journal = { id: 'journal', sync: { adoptionAnswer: () => 'add', adoptionCount: () => 0, signInWords: async () => words } };
+  const reported = [];
+  const questions = new ProductQuestions([journal, { id: 'gym' }], (question) => reported.push(question));
+  const due = (product) => ({ kind: 'signed-out', product, count: {}, counted: [] });
+  assert.deepEqual({
+    journal: [await questions.adoptionAnswer({}, due('journal')), await questions.adoptionCount({}, due('journal')), await questions.signInWords({}, due('journal'))],
+    gym: [await questions.adoptionAnswer({}, due('gym')), await questions.adoptionCount({}, due('gym')), await questions.signInWords({}, due('gym'))],
+    signOut: await questions.signOutWords({}, { unsent: 0 }),
+    reported,
+  }, { journal: ['add', 0, words], gym: [undefined, undefined, undefined], signOut: { unsent: 0 }, reported: [] });
+});

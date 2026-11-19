@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { API_BASE } from '../apiBase.js';
 import { fetchMe, logout } from './AuthClient.js';
 import { closeAccount as requestAccountClosure, listSessions } from './AccountClient.js';
-import { DeviceSeat, DocumentDataScope } from './accountChange.js';
+import { DeviceSeat, DocumentDataScope, ProductQuestions } from './accountChange.js';
 import { requestNavigation } from '../navigation.js';
 import { PRODUCTS } from '../products.js';
 import { syncSession } from '../../platform/sync/session.js';
@@ -36,14 +36,6 @@ function unanswered(result, answers) {
     return !answers.decisions?.[question.product] || (pinned !== undefined && JSON.stringify(pinned) !== JSON.stringify(question.counted));
   });
 }
-// The sign-out question in the words of the product whose work it all is, where that product words its own.
-async function wordedSignOut(engine, question) {
-  for (const product of PRODUCTS) {
-    const words = await product.sync?.signOutWords?.(engine, question);
-    if (words) return { ...question, words };
-  }
-  return question;
-}
 
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(hint);
@@ -65,6 +57,8 @@ export default function AuthProvider({ children }) {
     () => false,
   );
   const [seat] = useState(() => new DeviceSeat(PRODUCTS));
+  const [productQuestions] = useState(() => new ProductQuestions(PRODUCTS,
+    (question, error) => captureError('auth', 'auth-product-words', error?.stack ?? '', '/auth', { question })));
   const [dataScope] = useState(() => new DocumentDataScope({
     invalidate: () => {
       for (const product of PRODUCTS) {
@@ -220,7 +214,7 @@ export default function AuthProvider({ children }) {
     let result = await engine.signIn(me.id, answers);
     if (!result.complete) {
       const automatic = (await Promise.all(unanswered(result, answers).map(async (question) => {
-        const answer = await syncOf(question.product)?.adoptionAnswer?.(engine, question);
+        const answer = await productQuestions.adoptionAnswer(engine, question);
         return answer ? [[question.product, answer, question.counted]] : [];
       }))).flat();
       if (automatic.length) {
@@ -233,15 +227,14 @@ export default function AuthProvider({ children }) {
     pending.current = { user: me, ...answers, revision };
     if (!result.complete) {
       const due = unanswered(result, answers)[0];
-      const product = syncOf(due?.product);
-      const count = product?.adoptionCount?.(engine);
-      const words = due ? await product?.signInWords?.(engine, due) ?? null : null;
-      setQuestion(due ? { ...due, ...(count === undefined ? {} : { count: { ...due.count, [product.signedOutWork.type]: count } }), words } : null);
+      const count = due ? await productQuestions.adoptionCount(engine, due) : undefined;
+      const words = due ? await productQuestions.signInWords(engine, due) ?? null : null;
+      setQuestion(due ? { ...due, ...(count === undefined ? {} : { count: { ...due.count, [syncOf(due.product).signedOutWork.type]: count } }), words } : null);
       setError(!result.upgradeRequired && !result.due?.length);
       return;
     }
     pending.current = null; setQuestion(null); setError(false); settle(me, undefined, revision);
-  }, [settle, finishSignOut]);
+  }, [settle, finishSignOut, productQuestions]);
   const refresh = useCallback(({ signedOut = false } = {}) => enqueue(async () => {
     const engine = await syncSession.opening;
     if (engine?.restoring) await engine.restoring;
@@ -309,7 +302,7 @@ export default function AuthProvider({ children }) {
       enqueue(async () => {
         setBusy(true); setError(false);
         try {
-          setQuestion(await wordedSignOut(syncSession.engine, await syncSession.engine.beginSignOut()));
+          setQuestion(await productQuestions.signOutWords(syncSession.engine, await syncSession.engine.beginSignOut()));
           track('sync_signout', { outcome: 'pending' });
         } finally { setBusy(false); }
       }).catch(() => { signOutResult.current = null; resolve(false); });
@@ -319,7 +312,7 @@ export default function AuthProvider({ children }) {
     signOutRequest.current = result;
     result.finally(() => { if (signOutRequest.current === result) signOutRequest.current = null; });
     return result;
-  }, [enqueue]);
+  }, [enqueue, productQuestions]);
   const closeAccount = useCallback((account) => enqueue(async () => {
     setBusy(true); setError(false);
     const engine = syncSession.engine;
@@ -364,7 +357,7 @@ export default function AuthProvider({ children }) {
             return;
           }
           const result = await finishSignOut({ choice, counted: question.counted }, null, signOutResult.current?.navigation);
-          if (!result.complete) { setQuestion(await wordedSignOut(engine, result)); return; }
+          if (!result.complete) { setQuestion(await productQuestions.signOutWords(engine, result)); return; }
           signedOut();
         }
       });

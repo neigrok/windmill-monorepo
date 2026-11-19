@@ -797,3 +797,18 @@ test('cancelling a sign-in its product words keeps the work from before on the d
     loggedOut: 1,
   });
 });
+
+test('a product whose sign-out words throw cannot keep a person from signing out: the shell asks in its own words', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const probe = { id: 'probe', sync: { signOutWords: async () => { throw new Error('the product chunk did not load'); } } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => decision()?.props.question);
+  assert.deepEqual(decision().props.question, { complete: false, unsent: 1, ready: 1, sent: 0, counted: [state.entries[0].localId] });
+  await decision().props.onDecision('keep');
+  assert.deepEqual({ departed: await departure, status: state.auth().status, replica: state.engine.device.activeReplica.meta.state },
+    { departed: true, status: 'ghost', replica: 'anon' });
+});

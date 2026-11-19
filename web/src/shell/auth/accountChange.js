@@ -63,6 +63,53 @@ function complain(product, error) {
   console.error(`forgetDevice failed for product "${product?.id}" — its device residue may survive this account change`, error);
 }
 
+// What products say into the account-change questions (engine.md §7.10): a sign-in question one answers by itself, its
+// count in the product's own records, and a question one words itself. Each product's hook is isolated: one that throws
+// reports the question it was asked (`adoption`, `signin` or `signout`), and the shell asks as it would of a product
+// that says nothing, in its own words and the engine's count.
+export class ProductQuestions {
+  constructor(products, report = () => {}) {
+    this.products = products;
+    this.report = report;
+  }
+
+  // The answer the due product gives by itself, or nothing for the person to give.
+  adoptionAnswer(engine, due) {
+    return this.ask('adoption', () => this.syncOf(due.product)?.adoptionAnswer?.(engine, due));
+  }
+
+  // How many of its records the due product counts, or nothing for the engine's count.
+  adoptionCount(engine, due) {
+    return this.ask('signin', () => this.syncOf(due.product)?.adoptionCount?.(engine));
+  }
+
+  signInWords(engine, due) {
+    return this.ask('signin', () => this.syncOf(due.product)?.signInWords?.(engine, due));
+  }
+
+  // The sign-out question in the words of the product whose work it all is, where that product words its own.
+  async signOutWords(engine, question) {
+    for (const product of this.products) {
+      const words = await this.ask('signout', () => product.sync?.signOutWords?.(engine, question));
+      if (words) return { ...question, words };
+    }
+    return question;
+  }
+
+  async ask(question, hook) {
+    try {
+      return await hook();
+    } catch (error) {
+      this.report(question, error);
+      return undefined;
+    }
+  }
+
+  syncOf(id) {
+    return this.products.find((product) => product.id === id)?.sync;
+  }
+}
+
 export class DocumentDataScope {
   constructor({ invalidate = () => {}, report = () => {} } = {}) {
     this.snapshot = Object.freeze({ epoch: 0, phase: 'pending', owner: null });
