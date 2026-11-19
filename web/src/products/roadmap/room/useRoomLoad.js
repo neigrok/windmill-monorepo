@@ -211,6 +211,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   // The switcher's list where the room reads the replica: the account's roadmaps as the replica keeps them; and the tree
   // picker's, with an address of one of them read there and any other from the server, which keeps other people's.
   const listTrees = useCallback(async () => readingRef.current?.list() ?? [], []);
+  const card = useCallback((id) => readingRef.current?.card(id) ?? null, []);
   const pickerTrees = useMemo(() => ({
     list: async () => ({ rows: readingRef.current?.list() ?? [], authoritative: true }),
     read: async (id) => readingRef.current?.card(id) ?? readTreeCard(id),
@@ -218,7 +219,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
 
   return {
     loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree, guides,
-    readsReplica, listTrees: readsReplica ? listTrees : null, pickerTrees: readsReplica ? pickerTrees : null,
+    readsReplica, listTrees: readsReplica ? listTrees : null, card: readsReplica ? card : null, pickerTrees: readsReplica ? pickerTrees : null,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }

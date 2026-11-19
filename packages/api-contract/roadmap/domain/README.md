@@ -147,7 +147,7 @@ the registry its caller composes). Files:
 |---|---|
 | `rules.json` | Entity facts and the rule book, compared by `RuleBookParity` |
 | `values.json` | Every LOCAL spec, and each writable entity's check order |
-| `roadmaps-actions.json` | Create a roadmap (genesis kinds, first steps, chunks), delete a root held, title and guide, a root's visibility, a subtree made with no connection |
+| `roadmaps-actions.json` | Create a roadmap (genesis kinds or a legend of its own, first steps, chunks), delete a root held, title and guide, a root's visibility, a subtree made with no connection |
 | `steps-actions.json` | Create a step with its links, change and reorder with the step's life, delete held, prerequisites added and retired through absent steps, loops, import in chunks |
 | `kinds-actions.json` | Create, change, reorder, delete; a worn hue; the cap; `roadmap.recolourKind` and its predictions |
 | `progress-actions.json` | Complete and Reset; a step that opens or owns a roadmap takes no mark; pointers |
@@ -178,7 +178,7 @@ Before the tree scope's first pull completes nothing has landed.
 
 | Action | Input | Result |
 |---|---|---|
-| `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2`, and the steps, chunked |
+| `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}, kinds?: [{hue, label?, description?}]}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2` or the legend `kinds` under minted ids at `a0`, `a1`, … in its order (a kind refused as one made is, or wearing a hue a kind before it wears, at `kinds.<n>`), and the steps, chunked |
 | `DeleteRoadmap` | `{tree}` | `null`; held; the device's notes of the root and of every subtree under it (`landing:<T>`) removed in the same segment, unheld; a subtree's record refuses `notARoot` |
 | `SetVisibility` | `{tree, visibility}` | `null`; a write of the root's `meta.visibility` under `roadmap.captureTree`, predicting the root's `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); the visibility the root holds writes nothing; a subtree refuses `notARoot` |
 | `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step the device knows as deleted (dead in `drawn`, or a spent id) is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |

@@ -13,7 +13,7 @@ point for the component showcase.
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
-| `room/` | What the room holds: the load and its two readings of a roadmap (today's, and the device's copy behind its switch) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
+| `room/` | What the room holds: the load and its two readings of a roadmap (today's, and the device's copy behind its switch, with a roadmap's birth there) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
@@ -118,7 +118,8 @@ the marks it keeps and announces none of them as new.
 A failed Board load at 744–1023px offers `RecoveryTreeSwitcher` to authenticated account-root navigation,
 independently of the failed tree's ownership. Shared routes never offer this door. A signed-out device route
 must first establish its unclaimed index row through `LocalTreeRegistry.readList`; a failed read grants no
-capability. Recovery has no current tree, counts, checkmark or edit actions. Account lists use
+capability. Where the room reads the device's copy, that row is the anon replica's list holding the roadmap, and the
+switcher lists the person's roadmaps as the replica keeps them, the account's and the browser's alike (`listHeld`). Recovery has no current tree, counts, checkmark or edit actions. Account lists use
 `listServerTrees` and preserve authoritative empty versus failed responses, without adding device rows.
 Device lists strictly read the anonymous index and readable local records. Index, storage and corrupt-record
 failures retain Retry list. The existing array-only registry reads retain their contracts.
@@ -157,7 +158,8 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
 - **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
   it, E-3), observes the account's list `self/roadmap` and every scope the domain reads the roadmap through: every roadmap
   of the account where the open one is in the list, else the open one and each roadmap above it (by its `meta.parent`),
-  each subscribed as it comes to be read. It keeps one hold on each scope it observes. The room drops every scope it
+  each subscribed as it comes to be read, and read only once the engine has taken that subscription (it reads a scope it
+  does not pull as pulled and empty, which would hide a subtree whose roadmap above it is not subscribed yet). It keeps one hold on each scope it observes. The room drops every scope it
   subscribed, and releases every hold, when it leaves. It reads the engine only through its public API
   (`test/products/roadmap/room/engineBoundary.test.js` holds every `room/` file to that).
 - **Opening.** It opens from what the device holds, asking nothing of the network first: the copy, once the engine
@@ -242,7 +244,24 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   engine keeps; Discard takes the ledger with its replica.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
-  steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
+  steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it. A link to a readable
+  roadmap opens it this way signed in or not (the anon replica pulls the readable trees it opens), its tree scope and
+  each roadmap's above it subscribed as the room opens and dropped as it leaves; a subtree's door is a new room, so the
+  subtree is subscribed as the person goes in. A signed-in reader's own overlay of the roadmap comes with its tree scope
+  (E-3), where their own marks live; the room shows the owner's, and offers a reader no mark. A roadmap the person may not
+  read, a private one a stranger opens among them, is in no address: the load error.
+- **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`): the copy could
+  not open (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here
+  (`missing`), or no answer came (`unanswered`). A browser that keeps nothing (no IndexedDB) has no copy to open: until
+  the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
+  reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
+- **Births.** A roadmap is born through the domain on the replica the engine holds active (`room/ReplicaBirth.js`): the
+  blank birth and a pasted plan (`paste/NewTreeBirth.jsx`) and a quest (`quests/QuestShelf.jsx`) are `CreateRoadmap`, with
+  a plan's legend of its own in place of the genesis kinds and the steps it brings done then marked, signed out in the
+  browser's anon replica (§5 Signed out) and signed in in the account's, which the engine sends; nothing goes to
+  `POST /v1/trees` or the old stores. A browser whose copy could not open is told before anyone types, signed in or not,
+  as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to the newest of the person's list
+  as the replica keeps it (`ReplicaReading.readList`), or to the quests.
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
   `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
   stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's
@@ -381,10 +400,15 @@ holder (`useRoomHolder` in `room/useRoomAuthority.js`, the one answer to who hol
 that lives only on this device, whoever is at the device, signed in or not (`place: 'device'`), until a claim takes the
 tree to the account and the hook asks again; on any other, the account that holds the room as its owner, once the server
 has answered for it in this document (`confirmed` in the shell's auth context; a page that starts with no connection
-stands on the cached account, which is not one) (`place: 'account'`). The way back shows where this device's index keeps
-the roadmap it leads to for that holder, under the title the index keeps: as that account's (`LocalTreeRegistry.owned`),
-or as a tree that lives only here (`onDevice`); `open` writes that row for the roadmap it leaves before it navigates, as
-its session may not have stored anything yet. Without a holder there is no way back, no carried view or step, no door
+stands on the cached account, which is not one) (`place: 'account'`). Where the room reads the device's copy, the
+engine's binding answers instead (whether the active replica is bound): the owner's roadmap in the browser's anon replica is whoever's at the
+device (`place: 'device'`) until a sign-in's lineage rule takes it to an account, and one in a replica bound to the
+account is the account's, with no connection and through a lapse too, as its copy is; no index is read. The way back
+shows where this device's index keeps the roadmap it leads to for that holder, under the title the index keeps: as that
+account's (`LocalTreeRegistry.owned`), or as a tree that lives only here (`onDevice`); `open` writes that row for the
+roadmap it leaves before it navigates, as its session may not have stored anything yet. Where the room reads the
+device's copy the title is the holder's list there (`heldCard`, the reading's `card`) and `open` writes nothing, as the
+old index is the carry-over's alone (§8.2). Without a holder there is no way back, no carried view or step, no door
 into a tree by a pointer and no event; a subtree's are anyone's who reads it (A subtree, below). So on a tree the server
 keeps, a lapsed session, its copy on a device with nobody signed in and a start with no connection, and anywhere a reader,
 keep a pointer's tree mark and go nowhere; on a tree that lives only on

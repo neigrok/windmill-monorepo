@@ -250,6 +250,23 @@ test('links, a reorder and a paste: a link moved to another step, a link that wo
   }
 });
 
+test('a pasted plan names a web link by its bare address, as the paste grammar reads one: it lands as that address with no label, and one with no address carries nothing', async () => {
+  const { a, reading, session, told } = await gestures();
+  try {
+    const pasted = session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'gold', links: ['https://example.com/knots', ' '] },
+      { id: 'bowline', label: 'Bowline', color: 'gold', links: [{ url: 'https://example.com/bowline', label: 'How to' }] }], edges: [{ from: 'knots', to: 'bowline' }], kinds: [] });
+    await pasted.act;
+    const links = Object.fromEntries(reading.roadmap().seed.nodes.filter((step) => ['Knots', 'Bowline'].includes(step.label)).map((step) => [step.label, step.links]));
+    assert.deepEqual({ links, told }, {
+      links: { Knots: [{ url: 'https://example.com/knots', label: '' }], Bowline: [{ url: 'https://example.com/bowline', label: 'How to' }] },
+      told: { said: [], events: [], statuses: 0 },
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
 test('the legend’s gestures and a step’s pointer: a kind made, named, described and recoloured with the steps that wear it, removed, and a roadmap opened and closed', async () => {
   const { a, tree, steps, reading, session, told } = await gestures();
   try {
@@ -309,6 +326,20 @@ test('a roadmap’s deletion is held nine seconds: hidden from the person’s li
     assert.deepEqual({ undone: await page.writes.undeleteRoadmap(again), listed: page.list().map((row) => row.title), first: lists[0].sort() },
       { undone: false, listed: ['Learn to knot'], first: ['Learn to knot', 'Learn to sail'] });
     page.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('a room whose roadmap stops standing while it is open keeps its last picture in its session, as the room does', async () => {
+  const { a, tree } = await sailing();
+  try {
+    const { reading, session } = await openRoom(a, tree);
+    const before = session.treeData();
+    await session.deleteRoadmap(tree);
+    assert.deepEqual({ standing: reading.roadmap().seed, shown: session.treeData(), steps: session.treeData()?.nodes.map((step) => step.label) },
+      { standing: null, shown: before, steps: ['Read the wind', 'Leave the dock', 'Sail solo'] });
+    reading.close();
   } finally {
     a.close();
   }

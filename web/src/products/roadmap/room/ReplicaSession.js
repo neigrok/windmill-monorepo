@@ -35,6 +35,15 @@ function limitWords(refusal) {
   return null;
 }
 
+// A step in the room's shape (a paste's, a quest's or a birth's) as the domain imports one: a web link a pasted plan or a
+// quest names by its bare address is that address with no label, and one with no address carries nothing.
+export function importedStep(step) {
+  const links = (step.links ?? []).map((link) => (typeof link === 'string' ? { url: link, label: '' } : { url: link?.url ?? '', label: link?.label ?? '' }))
+    .filter((link) => link.url.trim() !== '');
+  return { key: step.id, label: step.label ?? '', icon: step.icon ?? '', color: step.color ?? 'terracotta',
+    ...(step.description ? { description: step.description } : {}), ...(links.length > 0 ? { links } : {}) };
+}
+
 export class ReplicaSession {
   // `roadmap` reads the room's roadmap as the replica holds it now (`ReplicaRoadmap`); `say` shows the room's toast;
   // `onStatus` tells the room's status line that its receipts changed.
@@ -57,6 +66,8 @@ export class ReplicaSession {
     // Each Undo or Redo the engine is still settling, by its request: `undo` or `redo`.
     this.settling = new Map();
     this.heldAct = null;
+    // The last picture of the roadmap the room was shown (`treeData`).
+    this.shown = null;
     this.workspace = new ReplicaWorkspace(this);
   }
 
@@ -182,8 +193,7 @@ export class ReplicaSession {
       case 'ImportSubgraph': {
         const keys = new Set(gesture.nodes.map((step) => step.id));
         const imported = {
-          steps: gesture.nodes.map((step) => ({ key: step.id, label: step.label ?? '', icon: step.icon ?? '', color: step.color ?? 'terracotta',
-            ...(step.description ? { description: step.description } : {}), ...(step.links?.length ? { links: step.links } : {}) })),
+          steps: gesture.nodes.map(importedStep),
           links: gesture.edges.filter((link) => keys.has(link.from)).map((link) => [link.from, link.to]),
         };
         return [new ImportSteps(tree, imported, gesture.edges.find((link) => !keys.has(link.from))?.from ?? null),
@@ -376,9 +386,11 @@ export class ReplicaSession {
     return this.roadmap().account.trees.get(this.treeId)?.nodes.map((step) => step.id) ?? [];
   }
 
-  // The roadmap as the room's tree data, as the replica holds it now.
+  // The roadmap as the room's tree data, as the replica holds it now; one that stopped standing while the room is open
+  // keeps its last picture, as the room does.
   treeData() {
-    return this.roadmap().seed;
+    this.shown = this.roadmap().seed ?? this.shown;
+    return this.shown;
   }
 
   // The engine keeps what was written in the device's store; nothing waits on the page to flush.

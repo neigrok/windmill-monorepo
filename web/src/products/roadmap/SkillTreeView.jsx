@@ -190,8 +190,8 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims });
-  const treeVisit = useTreeVisit({ room, arrival, holder, visitor: !demo && !owner, place: treePlace, route: shared ? '#/t/' : '#/app/', role: loading ? null : who.role, band: breakpoint });
+  const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims, replica: load.readsReplica });
+  const treeVisit = useTreeVisit({ room, arrival, holder, heldCard: load.card, visitor: !demo && !owner, place: treePlace, route: shared ? '#/t/' : '#/app/', role: loading ? null : who.role, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
   room.viewRef.current = shownView;
@@ -249,7 +249,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     const currentSession = !loading && session?.treeId === treeId && !session.closed ? session : null;
     const ready = Boolean(currentSession?.ready);
     const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.treeData()).tree) : null;
-    const onDevice = holder?.place === 'device' && new LocalTreeRegistry().onDevice(treeId) !== null;
+    const onDevice = holder?.place === 'device' && (load.readsReplica || new LocalTreeRegistry().onDevice(treeId) !== null);
     const editable = owner && sharedWritesAllowed() && (onDevice || session?.reach !== 'reader') && !session?.closed;
     return { tree: currentTree, ready, editable, session, savingBlocked: !ready || Boolean(session?.rebaselining || session?.discardPending) };
   };
@@ -459,6 +459,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     if (breakpoint !== 'tablet' || !boardActive || !loadError || shared || demo) return null;
     if (status === 'signed-in' && account?.id) return { place: 'account' };
     if (status !== 'ghost') return null;
+    if (load.readsReplica) return load.card(treeId) ? { place: 'device' } : null;
     try {
       return new LocalTreeRegistry().readList(null).some((row) => row.id === treeId && !row.claimed) ? { place: 'device' } : null;
     } catch (error) {
@@ -504,7 +505,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
             loading={boardAwaitsRoadmap && !loadError}
             back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap && !inSubtree ? <TreeSwitcher {...verbs.switcher} /> : null}
-            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place}
+            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place} listHeld={load.listTrees}
               onPickTree={verbs.identitySheet.onPickTree} onNew={verbs.identitySheet.onNewRoadmap} onBrowse={verbs.identitySheet.onBrowse} />}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}

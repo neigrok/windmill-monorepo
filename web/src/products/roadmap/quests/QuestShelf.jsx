@@ -3,6 +3,7 @@ import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
 import { notePlantedQuest, stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
+import { ReplicaBirth } from '../room/ReplicaBirth.js';
 import { useViewMode } from '../room/useViewMode.js';
 import { countBucket } from '../board/acts.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
@@ -17,7 +18,9 @@ const CROSSFADE_MS = 280;   // the reduced-motion beat
 const MINT_TIMEOUT_MS = 10000;  // past this the server isn't answering
 
 
-export function QuestShelf() {
+// `replica` plants a quest through the domain on the device's copy (room/ReplicaBirth.js), where the route table turns the
+// room's replica on.
+export function QuestShelf({ replica = false } = {}) {
   const { status } = useAuth();
   const { breakpoint } = useViewMode();
   const [pickedId, setPickedId] = useState(null);
@@ -33,6 +36,12 @@ export function QuestShelf() {
       nodes: [{ ...quest.nodes[0], icon: 'sparkles' }, ...quest.nodes.slice(1)],
       kinds: quest.kinds,
     };
+    if (replica) {
+      const { treeId, local } = await new ReplicaBirth().plant(plan);
+      if (local) track('birth', { quest: quest.id, steps: countBucket(plan.nodes.length), local: true });
+      else track('birth', { quest: quest.id, steps: countBucket(plan.nodes.length) });
+      return treeId;
+    }
     if (status === 'signed-in') {
       try {
         const { treeId } = await createTree({ title: plan.title, nodes: plan.nodes, kinds: plan.kinds });

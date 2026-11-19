@@ -5,11 +5,11 @@ import { EntityType, Fields, Id, compareText } from '../../../platform/domain-ki
 import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
-import { Path } from '../../../platform/domain-kit/values.js';
+import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
-import { GENESIS_KINDS, HeldRecord, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
+import { GENESIS_KINDS, HeldRecord, Restore, RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep, StepsImport, readNote, readTree } from './steps.js';
 import { StepMark, StepPointer } from './progress.js';
 import { RoadmapTree } from './records.js';
@@ -147,18 +147,22 @@ export function readRoadmap(id, { listed = null, tree, overlay = null, queued = 
   });
 }
 
-// §5 Create a roadmap: the `tree` record, then its tree scope with the title, the genesis kinds and the first
-// steps, in chunks when the steps are many. The engine drops the tree's intents when the record is refused. Its
-// Undo is `roadmap.undoCreateRoadmap`, while the record, the tree and the owner's overlay of it are as it left them;
-// each tree segment is journaled as that Undo's evidence, so its receipts prove the tree unchanged.
+// §5 Create a roadmap: the `tree` record, then its tree scope with the title, its kinds and the first steps, in chunks
+// when the steps are many. Its kinds are the genesis kinds, or a legend of its own in its order (a pasted plan's or a
+// quest's), each checked as a kind made is and none wearing a hue a kind before it wears. The engine drops the tree's
+// intents when the record is refused. Its Undo is `roadmap.undoCreateRoadmap`, while the record, the tree and the
+// owner's overlay of it are as it left them; each tree segment is journaled as that Undo's evidence, so its receipts
+// prove the tree unchanged.
 export class CreateRoadmap {
   /**
    * @param {string} title
    * @param {import('./steps.js').ImportedSteps} steps
+   * @param {(import('./kinds.js').KindWords & { hue: string })[] | null} kinds its own legend, null for the genesis kinds
    */
-  constructor(title, steps = { steps: [], links: [] }) {
+  constructor(title, steps = { steps: [], links: [] }, kinds = null) {
     this.title = title;
     this.steps = steps;
+    this.kinds = kinds;
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
@@ -177,8 +181,10 @@ export class CreateRoadmap {
     const meta = new Valid(RoadmapMetaValue.blank().with({ title: this.title }), moment, ['title']);
     const id = ids.mint(Roadmap, RoadmapScopes.account);
     const scope = RoadmapScopes.tree(String(id.record));
-    const genesis = GENESIS_KINDS.map((kind, index) => new Valid(new RoadmapKindValue(new Id(kind.id, RoadmapKind),
-      { hue: kind.hue, label: kind.label, description: kind.description, ord: `a${index}` }), moment));
+    const kinds = this.kinds === null
+      ? GENESIS_KINDS.map((kind, index) => new Valid(new RoadmapKindValue(new Id(kind.id, RoadmapKind),
+        { hue: kind.hue, label: kind.label, description: kind.description, ord: `a${index}` }), moment))
+      : this.kinds.map((_, index) => this.legendKind(index, ids.mint(RoadmapKind, scope), moment));
     const imported = new StepsImport(this.steps, new RoadmapTree({ id: String(id.record) }), null).planned(moment, ids, scope);
     const account = new Plan();
     account.create(new Valid(new RoadmapValue(id), moment));
@@ -186,8 +192,8 @@ export class CreateRoadmap {
       { unchangedCreatedRecords: [{ id, scope: null }], unchangedCreatedScopes: [scope] }));
     const opening = new Plan();
     opening.create(meta, { fields: ['title'] });
-    for (const kind of genesis) opening.create(kind);
-    const chunks = imported.chunks(1 + genesis.length);
+    for (const kind of kinds) opening.create(kind);
+    const chunks = imported.chunks(1 + kinds.length);
     for (const unit of chunks[0] ?? []) unit.writeTo(opening, false);
     const later = chunks.slice(1).map((chunk) => {
       const plan = new Plan();
@@ -197,6 +203,27 @@ export class CreateRoadmap {
     for (const plan of [opening, ...later.map((segment) => segment.plan)]) plan.evidenceForUndo();
     return ActDecision.write(new ActPlan([new ScopedPlan(RoadmapScopes.account, account), new ScopedPlan(scope, opening), ...later]),
       { tree: id.record, steps: imported.ids });
+  }
+
+  // The legend's kind at `index` under the id minted for it, refused where a kind before it wears its hue or as a kind
+  // made is refused, named by its place in the legend.
+  /**
+   * @param {number} index
+   * @param {Id<RoadmapKindValue>} id
+   * @param {import('../../../platform/domain-kit/time.js').Moment} moment
+   */
+  legendKind(index, id, moment) {
+    const legend = this.kinds ?? [];
+    const kind = legend[index] ?? { hue: '' };
+    if (legend.slice(0, index).some((before) => before.hue === kind.hue)) {
+      throw new Violation(RoadmapChecks.wornHue, new Path(`kinds.${index}.hue`), { kind: 'custom', custom: 'worn' });
+    }
+    try {
+      return new Valid(new RoadmapKindValue(id, { hue: kind.hue, label: kind.label ?? '', description: kind.description ?? '', ord: `a${index}` }), moment);
+    } catch (error) {
+      if (error instanceof Violation) throw new Violation(error.rule, new Path(`kinds.${index}.${error.path.text}`), error.reason);
+      throw error;
+    }
   }
 }
 

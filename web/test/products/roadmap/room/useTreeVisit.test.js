@@ -167,6 +167,21 @@ test('the way back is shown to whoever holds the roadmap it leads to, under the 
   assert.deepEqual(events, []);
 });
 
+test('where the room reads the device’s copy the way back is named from the holder’s list there, and going in writes nothing in the old index', (t) => {
+  browser(t);
+  const disk = new Map();
+  const registry = new LocalTreeRegistry({ getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) });
+  const listed = { t_year: { id: 't_year', title: 'My year', author: null, steps: 3, mine: true }, t_untitled: { id: 't_untitled', title: '', author: null, steps: 0, mine: true } };
+  const heldCard = (id) => listed[id] ?? null;
+  const leaving = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: { place: 'device' }, heldCard, band: 'desktop', registry, track: () => {} }));
+  assert.equal(leaving.tree.open('sail', 'pill'), true);
+  assert.equal(disk.size, 0, 'the old index is the carry-over’s alone');
+
+  const at = (holder, from) => renderHook(t, () => useTreeVisit({ room: room('board'), arrival: { from, through: null, view: null, door: null }, holder, heldCard, band: 'desktop', registry, track: () => {} })).tree.from;
+  assert.deepEqual([at({ place: 'device' }, 't_year'), at({ place: 'account', account: 'u_olya' }, 't_year'), at({ place: 'device' }, 't_untitled'), at({ place: 'device' }, 't_other'), at(null, 't_year')],
+    [{ id: 't_year', title: 'My year' }, { id: 't_year', title: 'My year' }, null, null, null]);
+});
+
 test('opening a tree from a step says which door and where, and nothing of the tree, the step or their names', (t) => {
   const { entries } = browser(t);
   const events = [];
