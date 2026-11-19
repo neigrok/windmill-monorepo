@@ -752,7 +752,7 @@ ToolResult RoadmapDoorTools::dispatch(const std::string& name, const Json::Value
       Json::Value kinds(Json::arrayValue);
       for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
-      const bool inherited = reading->rows.meta && reading->mine.meta.guideInherited;
+      const bool inherited = reading->mine.meta && reading->mine.meta->guideInherited;
       Json::Value guide(Json::objectValue);
       guide["text"] = data.guide;
       guide["yours"] = reading->writer && !inherited;

@@ -12,8 +12,11 @@ time, randomness or localization.
 ## Pure reads
 
 `RoadmapTree` constructs the supplied normalized tree, nodes and kinds. Trees retain `present`,
-`read`, immutable `parent`, metadata, every node record including absent ones, every edge's presence,
-marks and pointers. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
+`read`, immutable `parent`, metadata (`meta: null` where its tree scope holds no meta), every node record
+including absent ones, every edge's presence, marks and pointers. D-3: a root stands once its tree scope
+holds its meta; a loaded root without it (a creation or a fork under way) is hidden, with every subtree
+under it, so it has no title, count, list row or address and a pointer at it dangles. An unread root
+keeps standing, as nothing is known of it. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
 millisecond instants or null. Optional `mark.stamp`, `pointer.setAt` and `node.branchStamp` are
 full engine stamps, not instants. A mark is personal progress; authored node `status` never supplies it.
 

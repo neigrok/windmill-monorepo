@@ -101,7 +101,7 @@ struct TreeRecords {
   bool present = true;
   Read read = Read::loaded;
   std::optional<Parent> parent;
-  Meta meta;
+  std::optional<Meta> meta;  // none while the roadmap's tree scope holds no meta
   std::vector<Step> nodes;
   std::vector<Edge> edges;
   std::vector<Kind> kinds;
@@ -110,7 +110,8 @@ struct TreeRecords {
 };
 
 // One roadmap's records, normalized: steps and kinds in authored order `(ord, born, id)`, links by `(from, to)`, marks
-// and pointers by step. Two records of one id are a malformed input and refused.
+// and pointers by step. Two records of one id are a malformed input and refused. A root whose meta is none, loaded, does
+// not stand (D-3): it is a creation or a fork under way.
 class RoadmapTree {
 public:
   explicit RoadmapTree(TreeRecords records);
@@ -119,7 +120,7 @@ public:
   bool present = true;
   Read read = Read::loaded;
   std::optional<Parent> parent;
-  Meta meta;
+  std::optional<Meta> meta;
   std::vector<Step> nodes;
   std::vector<Edge> edges;
   std::vector<Kind> kinds;

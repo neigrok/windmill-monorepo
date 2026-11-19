@@ -78,7 +78,7 @@ std::optional<TreeAccess> RoadmapDoor::accessOf(const TreeId& tree) const {
     const TreeRows rows = rows_.tree(txn, tree.str(), std::nullopt);
     if (!rows.exists()) return std::nullopt;
     const AccountRows trees = rows_.account(txn, rows.owner());
-    if (!trees.isAlive(tree.str()) || (!trees.placeOf(tree.str()) && !rows.meta)) return std::nullopt;
+    if (rows_.standingOf(txn, trees, tree.str()).standing != read::Standing::standing) return std::nullopt;
     return TreeAccess{rows.owner(), rows.reach(), TreeId{trees.rootOf(tree.str())}, trees.pathOf(tree.str())};
   });
 }

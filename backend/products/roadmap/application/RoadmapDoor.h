@@ -58,7 +58,7 @@ public:
                   const Json::Value& args, const std::function<Json::Value(Call&)>& body);
 
   // Who may write a roadmap, as the engine's tables hold it — its owner, its reach and where it sits — for a gate that
-  // asks before any call, as a tend's does. Nothing for a roadmap that is not there.
+  // asks before any call, as a tend's does. Nothing for a roadmap that does not stand (D-3).
   std::optional<TreeAccess> accessOf(const TreeId& tree) const;
 
   // A read of one consistent snapshot, on the caller's thread.

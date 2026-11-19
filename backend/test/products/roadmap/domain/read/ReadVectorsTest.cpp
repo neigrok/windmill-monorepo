@@ -55,13 +55,11 @@ RoadmapTree treeOf(const Json::Value& input) {
   records.read = text(input, "read", "loaded") == "unread" ? Read::unread : Read::loaded;
   if (input["parent"].isObject()) records.parent = Parent{input["parent"]["tree"].asString(), input["parent"]["step"].asString()};
   const Json::Value& meta = input["meta"];
-  records.meta.title = text(meta, "title");
-  records.meta.guide = text(meta, "guide");
-  records.meta.guideInherited = flag(meta, "guideInherited", false);
-  records.meta.root = text(meta, "root", records.id.c_str());
-  if (meta.isMember("depth")) records.meta.depth = meta["depth"].asInt64();
-  records.meta.visibility = text(meta, "visibility", "private");
-  records.meta.reach = text(meta, "reach", "private");
+  if (!input.isMember("meta") || meta.isObject()) {
+    records.meta = Meta{.title = text(meta, "title"), .guide = text(meta, "guide"), .guideInherited = flag(meta, "guideInherited", false),
+                        .root = text(meta, "root", records.id.c_str()), .depth = meta.isMember("depth") ? meta["depth"].asInt64() : 0,
+                        .visibility = text(meta, "visibility", "private"), .reach = text(meta, "reach", "private")};
+  }
   for (const Json::Value& node : input["nodes"]) {
     Step step{.id = node["id"].asString(), .present = flag(node, "present", true), .born = stampOf(node["born"]),
               .rc = instantOf(node["rc"]), .ru = instantOf(node["ru"]), .label = text(node, "label"),
@@ -358,11 +356,12 @@ void runRead(const std::string& file, Json::ArrayIndex index) {
   CHECK_EQ(sync::jcs(answer(vector["input"])), sync::jcs(vector["expect"]));
 }
 
-// The files a device claims alone: its Board and landing reads, its gestures, and the pinned rule book and values.
+// The files a device claims alone: its Board and landing reads, its gestures and their Undo, and the pinned rule book
+// and values.
 const std::set<std::string> kDevices{"board.json",           "landing.json",           "roadmaps-actions.json",
                                      "steps-actions.json",   "kinds-actions.json",     "progress-actions.json",
-                                     "workspace-actions.json", "landing-actions.json", "rules.json",
-                                     "values.json"};
+                                     "workspace-actions.json", "landing-actions.json", "undo.json",
+                                     "rules.json",           "values.json"};
 
 }
 
