@@ -52,6 +52,13 @@ private:
   std::optional<std::filesystem::path> directory_;
 };
 
+// What the old server's read models answered, and how many of their reads failed: their routes count each failure rather
+// than report it, since a roadmap the old server cannot read today fails every read of it.
+struct OldAnswers {
+  std::vector<Json::Value> answers;
+  std::uint64_t failedReads = 0;
+};
+
 // The old server's read models, built as windmill_server builds them without ROADMAP_ENGINE_ENABLED, and the new ones,
 // built as it builds them with it (ReadModels.h asks both the same questions).
 class ReadModelServers {
@@ -61,7 +68,7 @@ public:
   // stored only as a whole document unfolded into rows, a head behind its activity taken past it. Counts what it opened
   // and what it could not.
   virtual Tally settleOld(const Survey& survey) = 0;
-  virtual std::vector<Json::Value> askOld(const Survey& survey) = 0;
+  virtual OldAnswers askOld(const Survey& survey) = 0;
   virtual std::vector<Json::Value> askNew(const Survey& survey) = 0;
 };
 

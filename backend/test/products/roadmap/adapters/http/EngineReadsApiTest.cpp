@@ -104,8 +104,8 @@ struct Engine {
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens, clock);
   std::shared_ptr<OwnerProgress> ownerProgress = std::make_shared<OwnerProgress>(*progress, *trees, clock);
   std::shared_ptr<FakeOgVideoRepository> videos = std::make_shared<FakeOgVideoRepository>();
-  TreeApi treeApi{rooms, trees, ownerProgress, ops, auth, fork, reads};
-  SharePageApi sharePage{rooms, trees, auth, videos, webRootHolding(kShell), "https://share.example", reads};
+  TreeApi treeApi{rooms, trees, ownerProgress, ops, auth, fork, reads, nullptr};
+  SharePageApi sharePage{rooms, trees, auth, videos, webRootHolding(kShell), "https://share.example", reads, nullptr};
   GalleryApi gallery{trees, ownerProgress, auth, "", reads};
   std::shared_ptr<Cards> images = std::make_shared<Cards>();
   OgImageApi cards{images, rooms, auth, reads};

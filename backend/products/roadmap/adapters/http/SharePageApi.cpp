@@ -16,9 +16,11 @@ namespace wm {
 
 SharePageApi::SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                            std::shared_ptr<AuthService> auth, std::shared_ptr<OgVideoRepository> videos,
-                           std::string webRoot, std::string appOrigin, std::shared_ptr<EngineReadModels> engine)
+                           std::string webRoot, std::string appOrigin, std::shared_ptr<EngineReadModels> engine,
+                           std::shared_ptr<FailureReporter> failures)
     : registry_(std::move(registry)), trees_(std::move(trees)), auth_(std::move(auth)),
-      videos_(std::move(videos)), webRoot_(std::move(webRoot)), appOrigin_(std::move(appOrigin)), engine_(std::move(engine)) {}
+      videos_(std::move(videos)), webRoot_(std::move(webRoot)), appOrigin_(std::move(appOrigin)), engine_(std::move(engine)),
+      failures_(std::move(failures)) {}
 
 std::string SharePageApi::renderShell(const std::string& shell, const std::string& origin, const std::string& title,
                                       std::size_t steps, Visibility visibility, const std::string& id,
@@ -73,7 +75,7 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
 
 std::optional<SharedRoadmap> SharePageApi::sharedOf(const std::string& id, const std::optional<UserId>& caller) {
   if (engine_) {
-    WriteObservation observation{"roadmap.share.read", "roadmap", "share"};
+    WriteObservation observation{"roadmap.share.read", "roadmap", "share", "", failures_.get()};
     WriteContext context{observation};
     try {
       std::optional<SharedRoadmap> shared;
@@ -94,7 +96,7 @@ std::optional<SharedRoadmap> SharePageApi::sharedOf(const std::string& id, const
     Visibility visibility = Visibility::private_;
     {
       std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{id}));
-      WriteObservation observation{"roadmap.share.read", "roadmap", "share"};
+      WriteObservation observation{"roadmap.share.read", "roadmap", "share", "", failures_.get()};
       // The reads made for it are of its request: a failure one of them reports is the request's one Issue.
       WriteContext context{observation};
       try {
@@ -122,7 +124,7 @@ std::optional<SharedRoadmap> SharePageApi::sharedOf(const std::string& id, const
     // through its parent; a tree that went away meanwhile, or a read that failed, leaves the shell verbatim, the failure
     // reported as the place read's.
     if (readable && subtree) {
-      WriteObservation observation{"roadmap.tree.place", "roadmap", "share"};
+      WriteObservation observation{"roadmap.tree.place", "roadmap", "share", "", failures_.get()};
       try {
         const std::optional<Place> place = trees_->placeOf(TreeId{id});
         readable = place.has_value();

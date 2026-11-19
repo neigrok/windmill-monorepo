@@ -254,10 +254,11 @@ StageReport Cutover::unfold() {
 StageReport Cutover::readModelsBefore() {
   if (!record_.kept()) return StageReport{.verdict = "noPrivateRecord"};
   const Survey survey(adoption_.oldTables(), expectation_);
-  const std::vector<Json::Value> answers = servers_.askOld(survey);
-  record_.write("read-models-before.jsonl", answers);
+  const OldAnswers old = servers_.askOld(survey);
+  record_.write("read-models-before.jsonl", old.answers);
   StageReport report{.verdict = "asked", .passed = true};
-  report.counts.add("answers", answers.size());
+  report.counts.add("answers", old.answers.size());
+  report.counts.add("oldServer.failedReads", old.failedReads);
   return report;
 }
 

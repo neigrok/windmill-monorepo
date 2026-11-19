@@ -58,7 +58,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
 
-  SharePageApi make(const std::string& webRoot) { return SharePageApi{rooms, trees, auth, videos, webRoot, "https://share.example", nullptr}; }
+  SharePageApi make(const std::string& webRoot) { return SharePageApi{rooms, trees, auth, videos, webRoot, "https://share.example", nullptr, nullptr}; }
 
   void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
 
@@ -366,4 +366,36 @@ TEST(page_whose_reads_fail_serves_the_shell_and_reports_each_failure_under_its_o
   CHECK_EQ(unnamed->getStatusCode(), drogon::k200OK);
   CHECK_EQ(std::string(unnamed->getBody()), SHELL);
   CHECK_EQ(failures->reports, (std::vector<std::string>{"roadmap.share.read share failed", "roadmap.tree.place share failed"}));
+}
+
+// The adoption's audit asks the old server about roadmaps it cannot read today: its routes take a reporter that counts
+// each failure, and the one installed for the process hears none.
+TEST(page_whose_reads_fail_reports_each_failure_to_the_reporter_it_was_given_and_none_to_the_installed_one) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string&, const std::string& door, const std::string& outcome,
+                     const std::string&, const std::string&) override {
+      reports.push_back(operation + " " + door + " " + outcome);
+    }
+  };
+  std::shared_ptr<Failures> installed = std::make_shared<Failures>();
+  std::shared_ptr<Failures> given = std::make_shared<Failures>();
+  installWriteReporter(installed);
+  Harness h;
+  h.seed("t_root", "My year", UserId{"owner"}, Visibility::public_, 2);
+  h.seed("t_sail", "Its own register", UserId{"owner"}, Visibility::private_, 3);
+  h.trees->subtrees["t_sail"] =
+      Subtree{TreeId{"t_sail"}, TreeId{"t_root"}, OwningStep{TreeId{"t_root"}, NodeId{"n1"}}, 1, 0};
+  SharePageApi api{h.rooms, h.trees, h.auth, h.videos, makeWebRoot(SHELL), "https://share.example", nullptr, given};
+
+  h.trees->accessReadsFail = true;
+  sendPage(api, "", "t_root");
+  h.trees->accessReadsFail = false;
+  h.trees->placeReadsFail = true;
+  sendPage(api, "", "t_sail");
+  installWriteReporter(nullptr);
+
+  CHECK(installed->reports.empty());
+  CHECK_EQ(given->reports, (std::vector<std::string>{"roadmap.share.read share failed", "roadmap.tree.place share failed"}));
 }

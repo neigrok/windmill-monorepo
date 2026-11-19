@@ -31,6 +31,7 @@
 #include "products/roadmap/application/TreeRegistry.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -68,18 +69,28 @@ std::set<std::string> expectedOwnerless() {
 
 constexpr const char* kOrigin = "https://windmill.works";
 
+// The failures of the old server's reads, counted: a roadmap it cannot read today fails every read of it, which the
+// stage counts rather than files as an Issue.
+class CountedFailures final : public FailureReporter {
+public:
+  void report(const std::string&, const std::string&, const std::string&) override { ++count; }
+
+  std::atomic<std::uint64_t> count = 0;
+};
+
 // The old server's read models over roadmap's rooms and tables, as windmill_server builds them without
 // ROADMAP_ENGINE_ENABLED.
 struct OldServer {
   explicit OldServer(const std::shared_ptr<PgPool>& pool)
-      : trees(std::make_shared<PgTreeRepository>(pool)), progress(std::make_shared<PgProgressRepository>(pool)),
+      : failures(std::make_shared<CountedFailures>()), trees(std::make_shared<PgTreeRepository>(pool)), progress(std::make_shared<PgProgressRepository>(pool)),
         progressService(*progress, *trees), oplog(std::make_shared<PgOpLog>(pool)),
         rooms(std::make_shared<RoomRegistry>(*trees, *oplog, bus)),
         ownerProgress(std::make_shared<OwnerProgress>(*progress, *trees, clock)), edits(*rooms, progressService, bus, clock),
         treeRegistry(*trees, *progress, tokens, Hlc{1, 0, "genesis"}, *rooms, edits, clock),
         videos(std::make_shared<PgOgVideoRepository>(pool)),
         tools(*rooms, progressService, *ownerProgress, clock, treeRegistry, edits, kOrigin),
-        treeApi(rooms, trees, ownerProgress, oplog, nullptr, nullptr, nullptr), share(rooms, trees, nullptr, videos, "", kOrigin, nullptr),
+        treeApi(rooms, trees, ownerProgress, oplog, nullptr, nullptr, nullptr, failures),
+        share(rooms, trees, nullptr, videos, "", kOrigin, nullptr, failures),
         gallery(trees, ownerProgress, nullptr, "", nullptr), reminders(pool, RoadmapEdits::trees) {}
 
   ReadModelSide side() {
@@ -89,6 +100,7 @@ struct OldServer {
   SystemClock clock;
   OpenSslTokenGenerator tokens;
   WsPresenceBus bus;
+  std::shared_ptr<CountedFailures> failures;
   std::shared_ptr<PgTreeRepository> trees;
   std::shared_ptr<PgProgressRepository> progress;
   ProgressService progressService;
@@ -113,8 +125,8 @@ struct NewServer {
         live(catalog, store, sync::Limits{}), failures(configured("SENTRY_DSN") ? configured("SENTRY_DSN") : "",
                                                        configured("SENTRY_ENVIRONMENT") ? configured("SENTRY_ENVIRONMENT") : "production"),
         door(catalog, store, live, stamps, old.clock, failures), tools(door, old.tokens, old.clock, kOrigin),
-        treeApi(old.rooms, old.trees, old.ownerProgress, old.oplog, nullptr, nullptr, engine),
-        share(old.rooms, old.trees, nullptr, old.videos, "", kOrigin, engine), gallery(old.trees, old.ownerProgress, nullptr, "", engine) {}
+        treeApi(old.rooms, old.trees, old.ownerProgress, old.oplog, nullptr, nullptr, engine, nullptr),
+        share(old.rooms, old.trees, nullptr, old.videos, "", kOrigin, engine, nullptr), gallery(old.trees, old.ownerProgress, nullptr, "", engine) {}
 
   ~NewServer() {
     door.stop();
@@ -159,12 +171,13 @@ public:
     return counts;
   }
 
-  std::vector<Json::Value> askOld(const Survey& survey) override {
+  OldAnswers askOld(const Survey& survey) override {
     OldServer old(pool_);
     ReadModelSide side = old.side();
-    std::vector<Json::Value> answers = answersOf(side, survey);
+    OldAnswers asked{answersOf(side, survey)};
     old.rooms->stop();
-    return answers;
+    asked.failedReads = old.failures->count;
+    return asked;
   }
 
   std::vector<Json::Value> askNew(const Survey& survey) override {

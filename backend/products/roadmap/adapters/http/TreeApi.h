@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "platform/ports/FailureReporter.h"
 #include "products/roadmap/application/EngineReadModels.h"
 #include "products/roadmap/ports/TreeForks.h"
 #include "products/roadmap/application/OwnerProgress.h"
@@ -26,9 +27,11 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // activity and the progress read its records instead (roadmap-on-the-engine.md §7).
 class TreeApi {
 public:
+  // `failures` takes the failure of every read this route observes; none reports it as the request's Issue, as the
+  // server does.
   TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
           std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, std::shared_ptr<AuthService> auth,
-          std::shared_ptr<TreeForks> fork, std::shared_ptr<EngineReadModels> engine);
+          std::shared_ptr<TreeForks> fork, std::shared_ptr<EngineReadModels> engine, std::shared_ptr<FailureReporter> failures);
 
   void getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
@@ -65,6 +68,7 @@ private:
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<TreeForks> fork_;
   std::shared_ptr<EngineReadModels> engine_;
+  std::shared_ptr<FailureReporter> failures_;
 };
 
 }

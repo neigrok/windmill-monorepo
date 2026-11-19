@@ -49,7 +49,7 @@ struct Harness {
       std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens, *clock);
   std::shared_ptr<OwnerProgress> ownerProgress = std::make_shared<OwnerProgress>(*progress, *trees, *clock);
-  TreeApi api{rooms, trees, ownerProgress, ops, auth, fork, nullptr};
+  TreeApi api{rooms, trees, ownerProgress, ops, auth, fork, nullptr, nullptr};
 
   UserId signIn(const std::string& sessionSecret, const std::string& email = "sam@example.com") {
     User user = authRepo.createUser(Email{email}, "sam");

@@ -18,9 +18,10 @@ namespace wm {
 
 TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                  std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, std::shared_ptr<AuthService> auth,
-                 std::shared_ptr<TreeForks> fork, std::shared_ptr<EngineReadModels> engine)
+                 std::shared_ptr<TreeForks> fork, std::shared_ptr<EngineReadModels> engine,
+                 std::shared_ptr<FailureReporter> failures)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
-      ops_(std::move(ops)), auth_(std::move(auth)), fork_(std::move(fork)), engine_(std::move(engine)) {}
+      ops_(std::move(ops)), auth_(std::move(auth)), fork_(std::move(fork)), engine_(std::move(engine)), failures_(std::move(failures)) {}
 
 std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const {
   return wm::callerOf(req, *auth_);
@@ -31,7 +32,7 @@ std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const
 // alone files an Issue, under one static operation. `read` runs under the strand.
 bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                        const std::function<void(TreeRoom&)>& read) {
-  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest", "", failures_.get()};
   // The reads made for it are of its request: a failure one of them reports is the request's one Issue.
   WriteContext context{observation};
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
@@ -52,7 +53,7 @@ bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& c
 
 bool TreeApi::readRecords(const std::string& treeId, const std::optional<UserId>& caller,
                           const std::function<void(const ReadableRoadmap&)>& read) {
-  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest", "", failures_.get()};
   WriteContext context{observation};
   try {
     const std::optional<ReadableRoadmap> roadmap = engine_->open(TreeId{treeId}, caller);
@@ -66,7 +67,7 @@ bool TreeApi::readRecords(const std::string& treeId, const std::optional<UserId>
 }
 
 std::optional<Place> TreeApi::placeOf(const TreeId& tree) {
-  WriteObservation observation{"roadmap.tree.place", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.place", "roadmap", "rest", "", failures_.get()};
   try {
     std::optional<Place> place = trees_->placeOf(tree);
     observation.skip();
@@ -133,7 +134,7 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(jsonResponse(body));
     return;
   }
-  WriteObservation observation{"roadmap.tree.follow", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.follow", "roadmap", "rest", "", failures_.get()};
   try {
     const std::optional<OpenedTrees> opened(std::in_place, trees_->openedFrom(*caller, treesOpenedBy(data)));
     body["data"] = toJson(data, ownedSubtrees(subtrees, opened));
@@ -179,7 +180,7 @@ void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callba
     return;
   }
   // The trees above are read for the tree's writer alone and OUTSIDE the room strand, as getProgress loads.
-  WriteObservation observation{"roadmap.tree.guides", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.guides", "roadmap", "rest", "", failures_.get()};
   try {
     body["guides"] = toJson(guidesFor(trees_->guidedTreesAbove(*caller, TreeId{treeId}), own));
     observation.skip();
@@ -211,7 +212,7 @@ void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& c
   // The pointers are followed for the tree's writer alone and OUTSIDE the room strand, as getProgress loads. A follow
   // that fails leaves the graph's diagnostics and a flag: the graph is still told.
   Json::Value body;
-  WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "rest", "", failures_.get()};
   try {
     const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(*pointers)));
     body = toJson(graph, opened.diagnose(TreeId{treeId}, *pointers));

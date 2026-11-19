@@ -143,7 +143,7 @@ class AdoptionTest(ToolTest):
         counts = {report["stage"]: report["counts"] for report in reports}
         self.assertEqual(counts["unfold"], {"oldServer": {"couldNotOpen": 2, "opened": 9}, "roadmaps": {"lastChangeKept": 1},
                                             "wholeDocuments": {"leftAsTheyWere": 1, "unfoldedIntoRows": 1}})
-        self.assertEqual(counts["read-models-before"], {"answers": 72})
+        self.assertEqual(counts["read-models-before"], {"answers": 72, "oldServer": {"failedReads": 8}})
         self.assertEqual(counts["before"], BEFORE)
         self.assertEqual(counts["adopt"], {**ADOPTED, "adopted": {"owners": 4, "roadmaps": 13}})
         self.assertEqual(counts["demo"], {})
