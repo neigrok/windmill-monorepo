@@ -80,15 +80,12 @@ data class AbilityCase(val file: String, val name: String, val seat: Seat, val n
 // their born; the engine ER-17 factory performs visibility and text decoding.
 data class VectorRecords(val drawn: List<works.windmill.sync.api.Record>, val stored: List<works.windmill.sync.api.Record>,
     val device: Map<String, Json> = emptyMap(), val spent: Map<RecordKey, Stamp> = emptyMap()) {
-    constructor(drawn: Json?, stored: Json?, registry: Registry, device: Json? = null, spent: Json? = null) :
-        this(records(drawn, registry), records(stored, registry), device?.obj() ?: emptyMap(), spentIds(spent))
+    constructor(drawn: Json?, stored: Json?, registry: Registry, device: Json? = null, spent: Json? = null) : this(
+        records(drawn, registry), records(stored, registry), device?.obj() ?: emptyMap(),
+        (spent?.arr() ?: emptyList()).associate { RecordKey(it.member("t").str(), RecordID(it.member("id"))) to Stamp(it.member("born").str()) })
     companion object {
         fun records(rows: Json?, registry: Registry): List<works.windmill.sync.api.Record> =
             (rows?.arr() ?: emptyList()).map { Record(confirmed = Row(it), registry = registry) }
-        // The scope's spent ids a vector lists, `{t, id, born}`, each id's born.
-        fun spentIds(ids: Json?): Map<RecordKey, Stamp> = (ids?.arr() ?: emptyList()).associate { spentId ->
-            RecordKey(spentId.member("t").str(), RecordID(spentId.member("id"))) to Stamp(spentId.member("born").str())
-        }
     }
 }
 
