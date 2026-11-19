@@ -57,8 +57,9 @@ kind `store`; an error a caller's read-and-commit function throws passes through
 asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its
 20-second poll among them), and that read is what releases a paused anon replica.
 
-The shell reports cookie cleanup, session transition and auth-hint storage failures under static
-`auth` operations, and a read of `/v1/me` the engine could not take as `auth-credential-held`. Opening and warming the offline shell reports `offline-shell` to Sentry.
+The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as
+`auth-hint-storage` and a read of `/v1/me` the engine could not take as `auth-credential-held`, each with
+kind `auth`; a cookie cleanup that fails is the engine's `sync-auth`. Opening and warming the offline shell reports `offline-shell` to Sentry.
 The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`; a failed
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.

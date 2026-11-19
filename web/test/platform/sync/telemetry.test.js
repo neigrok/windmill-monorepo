@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { syncTelemetry } from '../../../src/platform/sync/telemetry.js';
+import { readFileSync, readdirSync } from 'node:fs';
+import { EVENTS, OPERATIONS, syncTelemetry } from '../../../src/platform/sync/telemetry.js';
 
 function recorded(options) {
   const events = [], failures = [];
@@ -58,4 +59,23 @@ test('inverse settlement and waiting counts are bounded numeric labels with no i
     { name: 'sync-inverse', props: { outcome: 'settled', applied: 2, skipped: 1000 } },
     { name: 'sync-inverse', props: { outcome: 'pending', waiting: 1, ageMs: 2_592_000_000 } },
     { name: 'sync-inverse', props: { outcome: 'settled' } }]);
+});
+
+test('every event and failure the engine may send has its row in OBSERVABILITY.md, every row names one it may send, and each has a sender', () => {
+  const doc = readFileSync(new URL('../../../OBSERVABILITY.md', import.meta.url), 'utf8');
+  const named = (header) => {
+    const table = doc.slice(doc.indexOf(header));
+    const cells = table.slice(0, table.indexOf('\n\n')).split('\n').slice(2).map((line) => line.split(' | ')[0]);
+    return [...new Set(cells.flatMap((cell) => [...cell.matchAll(/`(sync-[a-z-]+)`/g)].map((match) => match[1])))].sort();
+  };
+  const code = [new URL('../../../src/platform/sync/', import.meta.url), new URL('../../../../packages/api-contract/sync/reference/client/', import.meta.url)]
+    .flatMap((folder) => readdirSync(folder).filter((name) => name.endsWith('.js')).map((name) => readFileSync(new URL(name, folder), 'utf8'))).join('\n');
+  const sent = [...new Set([...code.matchAll(/(?:event\(|event: |write\()'(sync-[a-z-]+)'/g)].map((match) => match[1]))].sort();
+  const failed = [...new Set([...code.matchAll(/[fF]ailure\('([a-z]+)'\)/g)].map((match) => match[1]))].sort();
+  assert.deepEqual({ events: named('| Events | Meaning |'), failures: named('| Failure | When |'), sent, failed }, {
+    events: [...EVENTS].sort(),
+    failures: [...OPERATIONS].map((operation) => `sync-${operation}`).sort(),
+    sent: [...EVENTS].sort(),
+    failed: [...OPERATIONS].sort(),
+  });
 });

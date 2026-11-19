@@ -1,10 +1,11 @@
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
 
-const EVENTS = new Set(['sync-start', 'sync-commit', 'sync-release', 'sync-undo', 'sync-inverse', 'sync-signin',
+// The engine's step events and failure operations, each with its row in web/OBSERVABILITY.md.
+export const EVENTS = new Set(['sync-start', 'sync-commit', 'sync-release', 'sync-undo', 'sync-inverse', 'sync-signin',
   'sync-signout', 'sync-auth-paused', 'sync-upgrade', 'sync-persist', 'sync-leader',
   'sync-digest-mismatch', 'sync-push-malformed', 'sync-refused', 'sync-writer']);
-const OPERATIONS = new Set(['storage', 'transport', 'live', 'leadership', 'observer', 'auth']);
+export const OPERATIONS = new Set(['storage', 'transport', 'live', 'leadership', 'observer', 'auth']);
 const OUTCOMES = new Set(['ok', 'denied', 'unavailable', 'pending', 'settled', 'paused', 'failed', 'acquired', 'released']);
 
 // The first `limit` reports of one kind in each minute, at most 100.
