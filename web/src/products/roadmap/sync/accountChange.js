@@ -1,11 +1,8 @@
-// Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, flow 50). The engine's
-// lineage rule adds signed-out roadmaps to an account that holds none without asking; where the account holds some, the
-// shell asks Add or Discard, and at sign-out with changes unsent, Keep or Discard. Roadmap words both questions, naming
-// the roadmaps the work changes, and tells each step to the intake. Signing out also takes what the engine's own sign-out
-// lets go of: every roadmap's landing note, in each replica the device holds (Keep leaves the account's dormant replica
-// with its device rows, Discard deletes it), and the ids of the notices this browser told the intake of; no engine API
-// reaches a dormant replica, so the sweep writes the device's store itself. The route table hands these to the shell only
-// where the room reads the device's copy; the shell names no product.
+// Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, flow 50): the words of the
+// shell's sign-in question, Add or Discard, where the account already holds roadmaps, and of its sign-out question, Keep or
+// Discard, where every unsent change is roadmap's, each naming the roadmaps the work changes and telling its steps; and the
+// sweep at sign-out of every replica's landing notes (no engine API reaches a dormant replica, so it writes the device's
+// store itself) and the told notice ids. The route table hands these to the shell only where the room reads the copy.
 
 import { effectsOf } from '../../../../../packages/api-contract/sync/reference/client/projections.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
@@ -92,9 +89,9 @@ export function signInWords(engine, due, track = beacon) {
 // roadmap they change with how many change it. A question that counts no change, or another product's, keeps the
 // shell's words.
 export function signOutWords(engine, question, track = beacon) {
-  const roadmaps = new Set(engine.device.activeReplica.entries()
+  const ours = new Set(engine.device.activeReplica.entries()
     .filter((entry) => engine.registry.productOfRef(entry.scope) === 'roadmap').map((entry) => entry.localId));
-  if (question.unsent === 0 || !question.counted.every((localId) => roadmaps.has(localId))) return null;
+  if (question.unsent === 0 || !question.counted.every((localId) => ours.has(localId))) return null;
   const count = question.unsent;
   const asked = countBucket(count);
   return {

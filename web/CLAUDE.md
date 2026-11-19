@@ -285,10 +285,10 @@ The auth provider opens the browser sync engine once for this document and owns 
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
 Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
 of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. A product may
-word its own question (`sync.signInWords`, `sync.signOutWords`, the latter only for a sign-out whose work is all its own):
-the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where Escape cancels,
-and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due product is asked in
-turn. Account closure records a durable intent and discards that
+word its own question (`sync.signInWords`; `sync.signOutWords` for a sign-out whose work is all its own and that no
+notice joins): the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where
+Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due
+product is asked in turn. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
 `platform/sync/react.js` exports `useSyncEngine()`,
 `useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; Gym retains its account gate.

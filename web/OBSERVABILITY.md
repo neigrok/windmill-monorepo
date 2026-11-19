@@ -52,8 +52,8 @@ reports storage failures and keeps its local records available for a retry.
 Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
 completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
 through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. Escape
-on such a sign-in question cancels the sign-in: the pending sign-in and the credential's cleanup are recorded in one
-write, and a failure of the cancel or the cleanup reports `auth-session` and the cookie cleanup's failure as any other. Revoking this session uses the sign-out question before clearing its cookie.
+on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
+cancel that fails reports `auth-session` and keeps the question, and the cookie is let go as a finished sign-out's is. Revoking this session uses the sign-out question before clearing its cookie.
 Account closure persists its account and current session before the server request and discards local
 account data after it succeeds. The request names the confirmed account; `account-mismatch` retains
 its local data and reports the auth-session failure. A failed local discard reports the same failure; reload and

@@ -15,8 +15,7 @@ const StepDraftProvider = lazy(() => import('./step/StepDraftProvider.jsx').then
 const StepDraftNotice = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftNotice })));
 const RoadmapSession = lazy(() => import('./RoadmapSession.jsx').then((m) => ({ default: m.RoadmapSession })));
 
-// Where the room reads a roadmap from the device's copy (replicaRoom.js), the session keeps the one list of what cannot
-// land, and roadmap words the shell's sign-in and sign-out questions; elsewhere the session is the step draft's alone.
+// Roadmap's part in a sign-in, a sign-out and an account change, loaded when one comes.
 const accountChange = () => import('./sync/accountChange.js');
 
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
@@ -84,10 +83,9 @@ function render({ hash, pathname, search }) {
   return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo, replica: ROOM_READS_REPLICA }, inRoom: true };
 }
 
-// Explicit sign-out and account replacement take the room's landing notes and told notices on the device's copy, Keep or
-// Discard, and where the room reads today's sync, wipe stamped work; where it reads the device's copy, the stores it read
-// before are the carry-over's to empty once carried (INV-4), and the engine's Keep or Discard decides what is unsent. A
-// session lapse never calls this hook.
+// Explicit sign-out and account replacement take the room's landing notes and told notices, Keep or Discard. Today's sync
+// also wipes stamped work; on the device's copy the engine's Keep or Discard decides what is unsent, and today's stores are
+// the carry-over's to empty once carried (INV-4). A session lapse never calls this hook.
 async function forgetDevice({ next, navigation }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.
   const [{ forgetDeviceTrees }, { forgetReplicaRoom }] = await Promise.all([import('./sync/localTrees.js'), accountChange()]);
@@ -101,8 +99,9 @@ async function forgetDevice({ next, navigation }) {
 
 export const roadmapRoutes = {
   id: 'roadmap',
+  // Where the room reads the device's copy (replicaRoom.js), the session keeps the one list of what cannot land beside the
+  // step draft, and roadmap words the shell's sign-in and sign-out questions; elsewhere the session is the step draft's alone.
   session: { Provider: ROOM_READS_REPLICA ? RoadmapSession : StepDraftProvider, Notice: StepDraftNotice, invalidateAccount: invalidateStepDraftSession },
-  // How roadmap rides the browser engine where its room reads the device's copy: the words of the shell's questions.
   sync: ROOM_READS_REPLICA ? {
     adoptionAnswer: async (engine, due) => (await accountChange()).adoptionAnswer(engine, due),
     signInWords: async (engine, due) => (await accountChange()).signInWords(engine, due),
