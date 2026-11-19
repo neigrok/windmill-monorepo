@@ -6,24 +6,10 @@ strict layering. A2 composes that engine into the shipping gym, imports signed-o
 sign-in and uses engine account decisions. See
 [the app verification loop](README.md#local-verification).
 
-## A1 module baseline
+## Modules
 
-There are 13 Gradle projects: nine JVM modules, Android `:sync-engine`, and `:app`, `:platform`,
-`:gym`; `:agent` holds no sync code and the table leaves it out. Kotlin source lines below include comments and blanks, exclude build output, and include
-generated schema. The schema generator and its tests contain 356 Python lines.
-
-| Module | Main lines | Test lines |
-|---|---:|---:|
-| `:sync-core` | 1491 | 0 |
-| `:sync-api` | 121 | 239 |
-| `:sync-schema` | 1669 | 0 |
-| `:sync-engine` | 3252 | 2496 |
-| `:sync-testing` | 1758 | 1469 |
-| `:sync-model-server` | 1298 | 82 |
-| `:domain-kit` | 1075 | 470 |
-| `:domain-kit-testing` | 752 | 651 |
-| `:gym:domain` | 1014 | 1226 |
-| Total | 12430 | 6633 |
+There are 13 Gradle projects: nine JVM modules, Android `:sync-engine`, and `:app`, `:platform`, `:gym`; `:agent`
+holds no sync code.
 
 `ScopeReader.serverSchema()` reads the account's last successful hello version, or null before it
 is known. The engine persists it with account metadata, replaces it on downgrade and clears it

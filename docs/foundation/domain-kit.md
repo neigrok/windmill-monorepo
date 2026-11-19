@@ -1338,12 +1338,12 @@ link moved to another step, a paste that also creates kinds), runs as one act th
 
 ```swift
 public enum ComposedOutcome<R> {
-  case committed(results: [Any], receipt: ActReceipt)   // each part's result, in order
-  case unchanged(results: [Any])
+  case committed(results: [any Sendable], receipt: ActReceipt)   // each part's result, in order
+  case unchanged(results: [any Sendable])
   case refused(part: Int, refusal: R)
 }
 extension ActionRunner {
-  public func runComposed<R>(_ parts: [AnyActAction<R>]) async throws -> ComposedOutcome<R>
+  public func runComposed<R>(_ parts: [AnyActAction<R>]) throws -> ComposedOutcome<R>
 }
 ```
 
