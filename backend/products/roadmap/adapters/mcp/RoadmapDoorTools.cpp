@@ -327,6 +327,8 @@ TreeEdit editTree(Call& call, const TreeId& tree, const UserId& caller, const Ro
       edited.answer = edit(*room, rows, account, txn);
       if (edited.answer.isError) refuse(edited.answer);
       const Json::Value writes = roadmap::writesOf(rows, *room);
+      // The binding records the intent's deed as it admits it (RoadmapDeeds): the room's own op rows go nowhere.
+      room->dropLandedOps(room->pendingOps().size());
       if (writes.empty()) return std::nullopt;
       return roadmap::intentIn("tree/" + tree.str(), writes);
     });

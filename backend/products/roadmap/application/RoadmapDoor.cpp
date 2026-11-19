@@ -9,9 +9,6 @@ namespace wm::roadmap {
 
 namespace {
 
-// The reply a call stores, told apart from a refusal the engine answers a call with.
-constexpr const char* kAnswered = "answered";
-
 Json::Value placeholderOf(const std::string& scope, Json::Value delta) {
   Json::Value deltas(Json::arrayValue);
   deltas.append(std::move(delta));
@@ -45,8 +42,9 @@ Json::Value RoadmapDoor::run(const UserId& account, const std::optional<std::str
       Call call(*this, server, now_.nowMs());
       try {
         const Json::Value reply = body(call);
+        // An engine result that landed, as the engine reads a stored call, carrying the reply a refusal never does.
         Json::Value stored(Json::objectValue);
-        stored["s"] = kAnswered;
+        stored["s"] = "ok";
         stored["reply"] = reply;
         server.finish(stored, now_.nowMs());
         observation->finish();
@@ -92,7 +90,7 @@ Json::Value RoadmapDoor::Call::admitBuilt(Json::Value placeholder, const Build& 
 Json::Value RoadmapDoor::Call::settle(const sync::AdmitOutcome& outcome) {
   if (const sync::Admitted* admitted = std::get_if<sync::Admitted>(&outcome)) return admitted->result;
   if (const sync::CallAnswered* stored = std::get_if<sync::CallAnswered>(&outcome)) {
-    if (stored->result["s"] == kAnswered) throw Answered{stored->result["reply"]};
+    if (stored->result.isMember("reply")) throw Answered{stored->result["reply"]};
     const std::string code = refusalOf(stored->result);
     if (code == sync::code::requestRunning) throw DoorBusy("this call is still running under its requestId");
     return stored->result;

@@ -1,5 +1,6 @@
 #include "test/products/roadmap/adapters/mcp/DoorHarness.h"
 
+#include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "products/roadmap/application/DoorForks.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
@@ -67,9 +68,15 @@ TEST(door_a_retried_write_under_its_request_id_writes_once_and_answers_as_the_fi
   const ToolResult first = h.call("create_node", args);
   REQUIRE(!first.isError);
   const Seq after = h.seqOf(h.tree);
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
   const ToolResult again = h.call("create_node", args);
+  installWriteSink({});
   CHECK_EQ(sync::jcs(body(again)), sync::jcs(body(first)));
   CHECK_EQ(h.seqOf(h.tree), after);
+  Json::Value told(Json::arrayValue);
+  for (const WriteCompletion& line : lines) told.append(line.operation + " " + line.outcome);
+  CHECK_EQ(sync::jcs(told), sync::jcs(list({"sync.admit ok", "roadmap.server_call unchanged"})));
 
   Json::Value other = step("b", "B");
   other["requestId"] = "req-create-a";
