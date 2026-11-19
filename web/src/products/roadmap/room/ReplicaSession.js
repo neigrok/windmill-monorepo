@@ -2,15 +2,14 @@
 // room's write paths call, each write one of the domain's acts on the kit's runner, so every control, toast and event
 // stays the room's own. A gesture is decided before anything is written: one the domain refuses applies nothing, as a
 // gesture nothing applies to today, and is said in today's words; one it takes is written, and its receipt says once it
-// has landed, so the room shows a success only for what was written. A gesture made of several of the domain's acts
-// runs them one after another, each loading what the one before it wrote, and its one receipt holds them all: its Undo
-// takes back every one. The keyboard's Undo and Redo walk the room's own stack of those receipts (§5 Undo). It decides
-// nothing itself: what a write is and what it refuses are the domain's.
+// has landed, so the room shows a success only for what was written. A gesture made of several of the domain's acts is
+// one composed act (domain-kit.md §9.7): each part reads what the parts before it plan, a refusal of any part writes
+// nothing, and its one Undo takes back every part. The keyboard's Undo and Redo walk the room's own stack of those
+// receipts (§5 Undo). It decides nothing itself: what a write is and what it refuses are the domain's.
 
-import { ActDecision, ActIDSource, ActReader } from '../../../platform/domain-kit/acts.js';
+import { ActDecision } from '../../../platform/domain-kit/acts.js';
 import { firstGone } from '../../../platform/domain-kit/actions.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
-import { Violation } from '../../../platform/domain-kit/values.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { REFUSED_CAPACITY } from '../copy.js';
 import { t } from '../i18n/index.js';
@@ -47,43 +46,37 @@ export class ReplicaSession {
     this.ready = true;
     this.closed = false;
     this.receiptVersion = 0;
-    // Each gesture's receipt, `{ acts, landed }`: the ids of the acts it wrote, once they have, and their results once
-    // every act was taken (null where one was not).
+    // Each gesture's receipt, `{ act, landed }`: the id of the act it wrote, once it has (null where it wrote nothing),
+    // and its parts' results once it was taken (null where it was not).
     this.undoStack = [];
-    // Each gesture taken back, `{ inverses }`: each act's Undo, in the order the acts were written.
+    // Each gesture taken back, `{ inverse }`: its act's Undo, once asked (null where there was none).
     this.redoStack = [];
     this.heldAct = null;
     this.workspace = new ReplicaWorkspace(this);
   }
 
-  // Runs one write's acts in order and answers the receipts of those that wrote (`ids`, their act ids), each act's
-  // result, and whether every act was taken. A refusal ends it and is said, in the words the room says it today; a
-  // failure is reported under the write's name, the one report it gets, and ends it.
+  // Runs one write's acts as one composed act and answers the act it wrote (null where it wrote nothing), its receipt,
+  // each part's result, and whether it was taken. A refusal of any part writes nothing and is said, in the words the
+  // room says it today; a failure is reported under the write's name, the one report it gets.
   async write(acts, what) {
-    const written = [];
-    const results = [];
-    const answer = (complete) => ({ receipts: written, ids: written.map((receipt) => receipt.gestureId), results, complete });
-    for (const act of acts) {
-      let outcome;
-      try {
-        outcome = await this.runner.runAct(act);
-      } catch (error) {
-        this.report('roadmap-replica-write', error, { write: what });
-        return answer(false);
-      }
-      if (outcome.kind === 'refused') {
-        this.refused(outcome.refusal, what);
-        return answer(false);
-      }
-      if (outcome.kind === 'committed') written.push(outcome.receipt);
-      results.push(outcome.result);
+    let outcome;
+    try {
+      outcome = await this.runner.runComposed(acts);
+    } catch (error) {
+      this.report('roadmap-replica-write', error, { write: what });
+      return { act: null, receipt: null, results: [], complete: false };
     }
-    return answer(true);
+    if (outcome.kind === 'refused') {
+      this.refused(outcome.refusal, what);
+      return { act: null, receipt: null, results: [], complete: false };
+    }
+    const receipt = outcome.kind === 'committed' ? outcome.receipt : null;
+    return { act: receipt?.gestureId ?? null, receipt, results: outcome.results, complete: true };
   }
 
-  // An act's decision over what the replica holds now, before anything is written (plan time), in the steps the kit's
-  // runner takes: its load, its decision with a violation as its refusal, and a record a segment names that the replica
-  // no longer draws. The commit decides again over what it reads; a mint here is spent on nothing.
+  // An act's decision over what the replica holds now, before anything is written (plan time), as the kit's runner
+  // decides it (`decideAct`), with a record a segment names that the replica no longer draws as its refusal. Each part of
+  // a gesture is decided on its own here; the composed commit decides them again in order. A mint here is spent on nothing.
   decide(act) {
     const { replica, registry } = this.runner;
     const moment = this.runner.moment();
@@ -94,20 +87,7 @@ export class ReplicaSession {
       mintID: (type) => replica.mintId(type, new Set()),
       opaqueID: () => replica.opaqueID(),
     };
-    const reader = new ActReader(context, registry, moment);
-    let loaded;
-    try {
-      loaded = act.load(reader);
-    } finally {
-      reader.end();
-    }
-    let decided;
-    try {
-      decided = act.decide(loaded, new ActIDSource(context));
-    } catch (error) {
-      if (!(error instanceof Violation)) throw error;
-      return ActDecision.refuse(act.refusals.ofViolation(error));
-    }
+    const decided = this.runner.decideAct(act, context, moment);
     if (decided.kind !== 'write') return decided;
     for (const { scope, plan } of decided.plan.segments) {
       const missing = firstGone(plan, this.runner.viewsOf(scope, replica.read(scope)), scope, registry);
@@ -130,39 +110,38 @@ export class ReplicaSession {
     if (words) this.say(words, { act: 'notice' });
   }
 
-  // A write no stack holds: its acts' Undo is never asked, so the engine keeps nothing of them.
+  // A write no stack holds: its act's Undo is never asked, so the engine keeps nothing of it.
   async settle(acts, what) {
     const written = await this.write(acts, what);
-    await this.release(written.ids);
+    await this.release(written.act);
     return written;
   }
 
-  async release(actIds) {
-    for (const id of actIds) {
-      try {
-        await this.runner.release(id);
-      } catch (error) {
-        this.report('roadmap-replica-write', error, { write: 'release' });
-      }
+  async release(act) {
+    if (act === null) return;
+    try {
+      await this.runner.release(act);
+    } catch (error) {
+      this.report('roadmap-replica-write', error, { write: 'release' });
     }
   }
 
-  // One of the room's gestures as the domain's acts, decided first and then written one after another; its receipt is on
-  // the Undo stack at once, and its Undo waits for them to be written. A gesture none of the acts applies to, or one the
-  // domain refuses, is null, as a gesture nothing applies to is today.
+  // One of the room's gestures as the domain's acts, decided first and then written as one composed act; its receipt is
+  // on the Undo stack at once, and its Undo waits for the act to be written. A gesture none of the acts applies to, or
+  // one the domain refuses, is null, as a gesture nothing applies to is today.
   dispatch(gesture) {
     const acts = this.actsOf(gesture);
     if (acts.length === 0 || this.refusedOf(acts, gesture.kind)) return null;
     const written = this.write(acts, gesture.kind);
-    const receipt = Object.freeze({ acts: written.then(({ ids }) => ids), landed: written.then(({ complete, results }) => (complete ? results : null)) });
+    const receipt = Object.freeze({ act: written.then(({ act }) => act), landed: written.then(({ complete, results }) => (complete ? results : null)) });
     this.undoStack.push(receipt);
     this.dropRedo();
     return receipt;
   }
 
-  // The domain's acts that make one of the room's gestures, in the order they run. A gesture on several steps is the act
-  // on each in turn; links to remove are each step's prerequisites, one act a step; a paste's new kinds follow its steps,
-  // whose colours name their hues.
+  // The domain's acts that make one of the room's gestures, the parts of its one act in order. A gesture on several
+  // steps is the act on each in turn; links to remove are each step's prerequisites, one act a step; a paste's new kinds
+  // follow its steps, whose colours name their hues.
   actsOf(gesture) {
     const tree = this.treeId;
     const fields = (names) => Object.fromEntries(names.filter((name) => name in gesture).map((name) => [name, gesture[name]]));
@@ -249,10 +228,9 @@ export class ReplicaSession {
   // `undeleteRoadmap` within the hold. Answers the deletion while it is held, null where the roadmap was gone already;
   // where it was not written, throws what this door has already reported or said.
   async deleteRoadmap(id) {
-    const { receipts, complete } = await this.write([new DeleteRoadmap(id)], 'deleteRoadmap');
+    const { receipt, complete } = await this.write([new DeleteRoadmap(id)], 'deleteRoadmap');
     if (!complete) throw new BoundaryFailure('The roadmap was not deleted');
-    const [held] = receipts;
-    return held ? new HeldDeletion({ treeId: id, actId: held.gestureId, releaseAt: held.releaseAt }) : null;
+    return receipt ? new HeldDeletion({ treeId: id, actId: receipt.gestureId, releaseAt: receipt.releaseAt }) : null;
   }
 
   // Answers whether the deletion was taken back: only while every entry of it is still held.
@@ -288,7 +266,7 @@ export class ReplicaSession {
     this.heldAct = null;
   }
 
-  // The last gesture on the stack, taken back act by act, last act first; it waits on the Redo stack.
+  // The last gesture on the stack, taken back by its act's Undo; it waits on the Redo stack.
   undo() {
     if (this.heldAct) {
       this.heldAct();
@@ -297,14 +275,14 @@ export class ReplicaSession {
     const done = this.undoStack.pop();
     if (!done) return;
     this.bump();
-    this.redoStack.push(Object.freeze({ inverses: this.inverse(done) }));
+    this.redoStack.push(Object.freeze({ inverse: this.inverse(done) }));
   }
 
   redo() {
     const undone = this.redoStack.pop();
     if (!undone) return;
     this.bump();
-    this.undoStack.push(Object.freeze({ acts: this.reapply(undone) }));
+    this.undoStack.push(Object.freeze({ act: this.reapply(undone) }));
   }
 
   // Takes back what the receipt wrote, leaving alone anything written since, and drops it from the stack; Redo cannot
@@ -314,43 +292,42 @@ export class ReplicaSession {
     if (index === -1) return false;
     this.undoStack.splice(index, 1);
     this.dropRedo();
-    this.inverse(receipt).then((inverses) => this.release(inverses.map((inverse) => inverse.inverseActId)));
+    this.inverse(receipt).then((inverse) => this.release(inverse?.inverseActId ?? null));
     return true;
   }
 
+  // A gesture's act taken back, answering its Undo (null where it wrote nothing or has none); the act itself leaves the
+  // engine's journal once its Undo is asked.
   async inverse(done) {
-    const acts = await done.acts;
-    const inverses = [];
-    for (const id of [...acts].reverse()) {
-      try {
-        const result = await this.runner.undo(id);
-        if (result.kind !== 'unavailable') inverses.unshift(result);
-      } catch (error) {
-        this.report('roadmap-replica-write', error, { write: 'undo' });
-      }
+    const act = await done.act;
+    if (act === null) return null;
+    let result = null;
+    try {
+      result = await this.runner.undo(act);
+    } catch (error) {
+      this.report('roadmap-replica-write', error, { write: 'undo' });
     }
-    await this.release(acts);
-    return inverses;
+    await this.release(act);
+    return result?.kind === 'unavailable' ? null : result;
   }
 
+  // A gesture taken back, written again: answers the act its Redo wrote.
   async reapply(undone) {
-    const inverses = await undone.inverses;
-    const acts = [];
-    for (const inverse of inverses) {
-      try {
-        const result = await this.runner.redo(inverse.requestId);
-        if (result.kind !== 'unavailable') acts.push(result.inverseActId);
-      } catch (error) {
-        this.report('roadmap-replica-write', error, { write: 'redo' });
-      }
+    const inverse = await undone.inverse;
+    if (inverse === null) return null;
+    let result = null;
+    try {
+      result = await this.runner.redo(inverse.requestId);
+    } catch (error) {
+      this.report('roadmap-replica-write', error, { write: 'redo' });
     }
-    await this.release(inverses.map((inverse) => inverse.inverseActId));
-    return acts;
+    await this.release(inverse.inverseActId);
+    return result && result.kind !== 'unavailable' ? result.inverseActId : null;
   }
 
   dropRedo() {
     const dropped = this.redoStack.splice(0);
-    for (const undone of dropped) undone.inverses.then((inverses) => this.release(inverses.map((inverse) => inverse.inverseActId)));
+    for (const undone of dropped) undone.inverse.then((inverse) => this.release(inverse?.inverseActId ?? null));
   }
 
   bump() {
@@ -375,7 +352,7 @@ export class ReplicaSession {
     this.closed = true;
     this.ready = false;
     this.heldAct = null;
-    for (const done of this.undoStack.splice(0)) done.acts.then((acts) => this.release(acts));
+    for (const done of this.undoStack.splice(0)) done.act.then((act) => this.release(act));
     this.dropRedo();
   }
 }
@@ -433,6 +410,6 @@ export class ReplicaWorkspace {
     if (this.notes.get(step) === draft) this.notes.set(step, after);
     if (result.kind === 'failed') this.session.report('roadmap-replica-write', result.error, { write: 'note' });
     if (result.kind === 'refused') this.session.refused(result.refusal, 'note');
-    if (result.kind === 'saved' && result.receipt) await this.session.release([result.receipt.gestureId]);
+    if (result.kind === 'saved' && result.receipt) await this.session.release(result.receipt.gestureId);
   }
 }

@@ -129,10 +129,10 @@ test('a gesture is the domain’s acts under one receipt: a step made under the 
   const { a, steps, reading, session, told, shown } = await gestures();
   try {
     const made = session.dispatch({ kind: 'CreateNode', id: 'f0c1e9d0-1111-4c5e-8000-000000000001', label: 'Tie a bowline', color: 'sky', prerequisites: [steps.wind] });
-    assert.equal((await made.acts).length, 1);
+    assert.equal(typeof await made.act, 'string');
     assert.deepEqual(reading.roadmap().seed.nodes.find((step) => step.label === 'Tie a bowline').id, 'f0c1e9d0-1111-4c5e-8000-000000000001');
     const edited = session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] });
-    assert.equal((await edited.acts).length, 2);
+    assert.equal(typeof await edited.act, 'string');
     assert.deepEqual(shown(), { 'Tie a bowline': ['Read the wind'], 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail alone': ['Leave the dock'] });
     assert.equal(session.revert(made), true);
     assert.equal(session.revert(made), false);
@@ -151,8 +151,8 @@ test('the keyboard walks a stack of gestures: a held delete cancelled in place, 
   const { a, steps, reading, session, told, shown } = await gestures();
   try {
     const before = journaled(a);
-    await session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] }).acts;
-    await session.dispatch({ kind: 'BulkDelete', nodeIds: [steps.dock], edges: [] }).acts;
+    await session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] }).act;
+    await session.dispatch({ kind: 'BulkDelete', nodeIds: [steps.dock], edges: [] }).act;
     assert.deepEqual(shown(), { 'Read the wind': [], 'Sail alone': ['Read the wind'] });
     session.undo();
     await until(() => 'Leave the dock' in shown(), 1000);
@@ -163,7 +163,7 @@ test('the keyboard walks a stack of gestures: a held delete cancelled in place, 
     await until(() => 'Sail alone' in shown() && shown()['Sail alone'].length === 1, 1000);
     session.undo();
     await until(() => 'Sail solo' in shown(), 1000);
-    await session.dispatch({ kind: 'RenameNode', id: steps.wind, label: 'Watch the wind' }).acts;
+    await session.dispatch({ kind: 'RenameNode', id: steps.wind, label: 'Watch the wind' }).act;
     session.redo();
     let held = 0;
     session.holdAct(() => { held += 1; });
@@ -182,15 +182,15 @@ test('the keyboard walks a stack of gestures: a held delete cancelled in place, 
 test('links, a reorder and a paste: a link moved to another step, a link that would close a loop refused in today’s words, a paste under a step', async () => {
   const { a, steps, reading, session, told, shown } = await gestures();
   try {
-    await session.dispatch({ kind: 'ReconnectEdge', oldFrom: steps.wind, oldTo: steps.dock, newFrom: steps.wind, newTo: steps.solo }).acts;
+    await session.dispatch({ kind: 'ReconnectEdge', oldFrom: steps.wind, oldTo: steps.dock, newFrom: steps.wind, newTo: steps.solo }).act;
     assert.deepEqual(shown(), { 'Read the wind': [], 'Leave the dock': [], 'Sail solo': ['Read the wind'] });
     assert.equal(session.dispatch({ kind: 'AddEdge', from: steps.solo, to: steps.wind }), null);
     const roots = reading.roadmap().seed.nodes.filter((step) => step.prerequisites.length === 0).map((step) => step.id);
     assert.deepEqual(roots, [steps.wind, steps.dock]);
-    await session.dispatch({ kind: 'SetNodeOrder', id: steps.dock, order: 'Zz', below: null, siblings: [steps.wind] }).acts;
+    await session.dispatch({ kind: 'SetNodeOrder', id: steps.dock, order: 'Zz', below: null, siblings: [steps.wind] }).act;
     await session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'gold' }, { id: 'bowline', label: 'Bowline', color: 'gold' }],
-      edges: [{ from: steps.dock, to: 'knots' }, { from: 'knots', to: 'bowline' }], kinds: [] }).acts;
-    await session.dispatch({ kind: 'BulkDelete', nodeIds: [], edges: [{ from: steps.wind, to: steps.solo }] }).acts;
+      edges: [{ from: steps.dock, to: 'knots' }, { from: 'knots', to: 'bowline' }], kinds: [] }).act;
+    await session.dispatch({ kind: 'BulkDelete', nodeIds: [], edges: [{ from: steps.wind, to: steps.solo }] }).act;
     const reordered = reading.roadmap().seed.nodes.filter((step) => ['Leave the dock', 'Read the wind'].includes(step.label));
     assert.deepEqual({ order: reordered.map((step) => step.label), shown: shown(), told }, {
       order: ['Leave the dock', 'Read the wind'],
@@ -212,11 +212,11 @@ test('the legend’s gestures and a step’s pointer: a kind made, named, descri
     const legend = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present)
       .map(({ hue, label, description }) => ({ hue, label, description }));
     const colours = () => reading.roadmap().seed.nodes.map((step) => step.color);
-    await session.dispatch({ kind: 'AddKind', id: 'legend-made', hue: 'sky' }).acts;
+    await session.dispatch({ kind: 'AddKind', id: 'legend-made', hue: 'sky' }).act;
     const made = reading.roadmap().account.trees.get(tree).kinds.find((kind) => kind.hue === 'sky').id;
-    await session.dispatch({ kind: 'RenameKind', id: made, label: 'Sea' }).acts;
-    await session.dispatch({ kind: 'DescribeKind', id: made, description: 'Time on the water' }).acts;
-    await session.dispatch({ kind: 'RecolorKind', id: 'build', hue: 'plum' }).acts;
+    await session.dispatch({ kind: 'RenameKind', id: made, label: 'Sea' }).act;
+    await session.dispatch({ kind: 'DescribeKind', id: made, description: 'Time on the water' }).act;
+    await session.dispatch({ kind: 'RecolorKind', id: 'build', hue: 'plum' }).act;
     assert.deepEqual({ legend: legend(), colours: colours() }, {
       legend: [
         { hue: 'plum', label: 'Build', description: 'Things you make' }, { hue: 'olive', label: 'Learn', description: 'Things you figure out' },
@@ -224,16 +224,16 @@ test('the legend’s gestures and a step’s pointer: a kind made, named, descri
       ],
       colours: ['plum', 'plum', 'plum'],
     });
-    await session.dispatch({ kind: 'RemoveKind', id: made }).acts;
+    await session.dispatch({ kind: 'RemoveKind', id: made }).act;
     const attached = session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: other.tree });
-    await attached.acts;
+    await attached.act;
     const opening = () => reading.roadmap().seed.nodes.find((step) => step.id === steps.dock).opening;
     assert.deepEqual({ kinds: legend().length, opens: opening()?.treeId, title: opening()?.title, card: reading.card(other.tree) },
       { kinds: 3, opens: other.tree, title: 'Learn to knot', card: { id: other.tree, title: 'Learn to knot', author: null, steps: 1, mine: true } });
     session.revert(attached);
     await until(() => opening() === undefined, 1000);
-    await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: other.tree }).acts;
-    await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: '' }).acts;
+    await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: other.tree }).act;
+    await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: '' }).act;
     assert.deepEqual({ opening: opening(), told }, { opening: undefined, told: { said: [], events: [], statuses: 0 } });
   } finally {
     reading.close();
@@ -303,6 +303,32 @@ test('a write the store does not take is reported once, by the write door; the d
       renamed: false, shared: true, deleted: true, landed: null,
       reports: [['roadmap-replica-write', { write: 'title' }], ['roadmap-replica-write', { write: 'visibility' }],
         ['roadmap-replica-write', { write: 'deleteRoadmap' }], ['roadmap-replica-write', { write: 'RenameNode' }]],
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('a gesture of several acts is one composed act: a part refused partway writes nothing, and one Undo takes back every part', async () => {
+  const { a, tree, steps, reading, session, told, shown } = await gestures();
+  try {
+    const kinds = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present).map((kind) => kind.hue);
+    const before = { shown: shown(), kinds: kinds() };
+    const pasted = session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'sky' }], edges: [],
+      kinds: [{ id: 'sea', hue: 'sky', label: 'Sea' }, { id: 'swell', hue: 'sky', label: 'Swell' }] });
+    assert.notEqual(pasted, null);
+    const refused = { landed: await pasted.landed, act: await pasted.act, shown: shown(), kinds: kinds() };
+    const recoloured = session.dispatch({ kind: 'BulkRecolor', nodeIds: [steps.wind, steps.dock], color: 'plum' });
+    await recoloured.landed;
+    const colours = () => reading.roadmap().seed.nodes.filter((step) => [steps.wind, steps.dock].includes(step.id)).map((step) => step.color);
+    const painted = colours();
+    session.undo();
+    await until(() => colours().every((colour) => colour === 'terracotta'), 1000);
+    assert.deepEqual({ refused, painted, told }, {
+      refused: { landed: null, act: null, shown: before.shown, kinds: before.kinds },
+      painted: ['plum', 'plum'],
+      told: { said: [], events: [['roadmap_write_refused', { write: 'ImportSubgraph', refusal: 'invalid' }]], statuses: 1 },
     });
   } finally {
     reading.close();
