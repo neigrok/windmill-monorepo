@@ -1,7 +1,8 @@
 // The roadmap room's writes end to end on a local stack, once with the server's roadmap engine and the web's switch on
 // (the room on the device's copy) and once with both off (today's room). One owner on several devices, each a browser
 // context with its own store: Undo and Redo, edits made offline syncing once the connection returns, a change made
-// without knowing of another device's delete (INV-1), and a roadmap's deletion from the switcher. Each run has its own
+// without knowing of another device's delete (INV-1), the line that tells the person once of a link of theirs another
+// device's delete changed (§6), and a roadmap's deletion from the switcher. Each run has its own
 // database, server and built app on the given ports, and stops and drops them. It prints no id and no roadmap text.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -155,12 +156,23 @@ class Device {
     await this.page.keyboard.press(combination);
   }
 
-  async create(label) {
+  async create(label, after = null) {
     await this.page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
     const composer = this.page.getByRole('dialog', { name: 'New step', exact: true });
     await composer.locator('input').first().fill(label);
+    if (after) {
+      await composer.locator('.st-board-draft-needs').click();
+      await this.page.getByRole('checkbox', { name: after }).click();
+      await this.page.getByRole('button', { name: 'Apply', exact: true }).click();
+    }
     await composer.getByRole('button', { name: 'Create step', exact: true }).click();
     await this.card(label).waitFor();
+  }
+
+  // The landing lines under the Board's cards, each with the card it stands under.
+  landed() {
+    return this.page.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
+      .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent]));
   }
 
   async openStep(label) {
@@ -174,6 +186,14 @@ class Device {
     await this.page.locator('.st-board-step-layer article').focus();
     await this.page.keyboard.press('Escape');
     await this.page.locator('.st-board-step-layer article').waitFor({ state: 'detached' });
+  }
+
+  async deleteStep(label) {
+    const step = await this.openStep(label);
+    await step.getByRole('button', { name: 'More', exact: true }).click();
+    await this.page.getByRole('menuitem', { name: 'Delete step' }).click();
+    await this.page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await this.page.locator('.st-board-toast').waitFor({ state: 'detached', timeout: 15_000 });
   }
 
   async deleteFromSwitcher(title) {
@@ -233,11 +253,7 @@ async function scenarios(mode, browser, secret, account, check) {
       await a.context.setOffline(true);
       await settle(500);
       await b.board(address);
-      const dock = await b.openStep('Leave the dock');
-      await dock.getByRole('button', { name: 'More', exact: true }).click();
-      await b.page.getByRole('menuitem', { name: 'Delete step' }).click();
-      await b.page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
-      await b.page.locator('.st-board-toast').waitFor({ state: 'detached', timeout: 15_000 });
+      await b.deleteStep('Leave the dock');
       assert.ok(await c.until(address, async () => await c.card('Leave the dock').count() === 0), 'the delete reached the server');
       const held = await a.openStep('Leave the dock');
       await held.getByRole('button', { name: 'Edit name', exact: true }).click();
@@ -252,6 +268,25 @@ async function scenarios(mode, browser, secret, account, check) {
 
     await a.board(address);
     if (mode === 'on') {
+      await check('§6: a step linked offline to a step another device deleted is told once what it follows now, and a revival the device never saw is not', async () => {
+        await a.context.setOffline(true);
+        await settle(500);
+        await a.create('Trim the sail', /Read the wind/);
+        await b.board(address);
+        await b.deleteStep('Read the wind');
+        assert.ok(await c.until(address, async () => await c.card('Read the wind').count() === 0), 'the delete reached the server');
+        await a.context.setOffline(false);
+        await a.page.locator('.st-board-landed').waitFor({ timeout: 45_000 });
+        await a.card('Read the wind').waitFor({ state: 'detached' });
+        assert.deepEqual(await a.landed(), [['Trim the sail', 'Read the wind was removed. This now follows Choose a course.']],
+          'the step linked offline says it once; the step renamed without knowing of its delete says nothing');
+        const step = await a.openStep('Trim the sail');
+        assert.equal(await step.locator('.st-step-landed').innerText(), 'Read the wind was removed. This now follows Choose a course.');
+        await a.closeStep();
+        await a.board(address);
+        assert.deepEqual(await a.landed(), [], 'a later opening is quiet');
+      });
+      await a.board(address);
       await check('a roadmap’s deletion lands on the person’s roadmaps with Undo, and Undo within the hold returns to it', async () => {
         await a.deleteFromSwitcher('Learn to sail');
         await a.page.locator('.st-roadmaps').waitFor();
@@ -261,7 +296,7 @@ async function scenarios(mode, browser, secret, account, check) {
         await toast.getByRole('button', { name: 'Undo', exact: true }).click();
         await a.page.locator('.st-board-toast', { hasText: 'Deletion undone' }).waitFor();
         assert.ok(a.page.url().endsWith(address), 'Undo returns to the roadmap');
-        assert.ok(await c.until(address, async () => await c.card('Read the wind').count() === 1), 'another device still opens it');
+        assert.ok(await c.until(address, async () => await c.card('Choose a course').count() === 1), 'another device still opens it');
       });
       await check('after nine seconds the deletion is permanent: another device lists only the roadmap left', async () => {
         await a.deleteFromSwitcher('Learn to sail');
@@ -340,7 +375,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 6, off: 5 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 7, off: 5 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   console.error(error instanceof assert.AssertionError ? error.message : error);
