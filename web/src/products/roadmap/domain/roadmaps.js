@@ -6,13 +6,26 @@ import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/doma
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
+import { recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
+import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
 import { GENESIS_KINDS, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
-import { RoadmapStep, StepsImport } from './steps.js';
-import { StepPointer } from './progress.js';
+import { RoadmapStep, StepsImport, readTree } from './steps.js';
+import { StepMark, StepPointer } from './progress.js';
 import { LandingNote, RoadmapTree } from './records.js';
 
 /** @typedef {{ tree: string, step: string }} RoadmapParent */
+/** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
+/** @typedef {import('../../../platform/domain-kit/entities.js').ViewRecord & { ru?: number }} ReceivedRecord */
+
+// The step of another roadmap that owns a subtree, as its record and its meta both name it: null for a root.
+/** @param {Fields} f */
+function placeIn(f) {
+  const parent = f.json('parent');
+  const placed = parent !== null && typeof parent === 'object' && !Array.isArray(parent)
+    && typeof parent.tree === 'string' && typeof parent.step === 'string';
+  return placed ? { tree: String(parent.tree), step: String(parent.step) } : null;
+}
 
 // A roadmap in the person's list: the `tree` record that governs its scope. The client writes its birth
 // and its death; its place under a step is the server's.
@@ -33,25 +46,24 @@ export class RoadmapValue {
 /** @type {EntityType<RoadmapValue, string>} */
 export const Roadmap = new EntityType({
   type: 'tree', scope: RoadmapScopes.account, heldRemoval: true, checks: [],
-  decode: (f) => {
-    const parent = f.json('parent');
-    const placed = parent !== null && typeof parent === 'object' && !Array.isArray(parent)
-      && typeof parent.tree === 'string' && typeof parent.step === 'string';
-    return new RoadmapValue(new Id(f.id, Roadmap), placed ? { tree: String(parent.tree), step: String(parent.step) } : null);
-  },
+  decode: (f) => new RoadmapValue(new Id(f.id, Roadmap), placeIn(f)),
 });
 
-// A roadmap's own words and a root's visibility, the singleton of its tree scope. Its place and reach are the server's.
+// A roadmap's own words and a root's visibility, the singleton of its tree scope. Its place, its reach and whether its
+// guide is inherited are the server's.
 export class RoadmapMetaValue {
   /**
    * @param {Id<RoadmapMetaValue>} id
-   * @param {{ title?: string, guide?: string, root?: string | null, depth?: number, visibility?: string, reach?: string }} values
+   * @param {{ title?: string, guide?: string, guideInherited?: boolean, root?: string | null, parent?: RoadmapParent | null, depth?: number,
+   *   visibility?: string, reach?: string }} values
    */
-  constructor(id, { title = '', guide = '', root = null, depth = 0, visibility = 'private', reach = 'private' } = {}) {
+  constructor(id, { title = '', guide = '', guideInherited = false, root = null, parent = null, depth = 0, visibility = 'private', reach = 'private' } = {}) {
     this.id = id;
     this.title = title;
     this.guide = guide;
+    this.guideInherited = guideInherited;
     this.root = root;
+    this.parent = parent;
     this.depth = depth;
     this.visibility = visibility;
     this.reach = reach;
@@ -60,8 +72,8 @@ export class RoadmapMetaValue {
 
   /** @param {{ title?: string, guide?: string, visibility?: string }} changes */
   with(changes) {
-    return new RoadmapMetaValue(this.id, { title: this.title, guide: this.guide, root: this.root, depth: this.depth,
-      visibility: this.visibility, reach: this.reach, ...changes });
+    return new RoadmapMetaValue(this.id, { title: this.title, guide: this.guide, guideInherited: this.guideInherited, root: this.root,
+      parent: this.parent, depth: this.depth, visibility: this.visibility, reach: this.reach, ...changes });
   }
 
   fields() { return { title: this.title, guide: this.guide, visibility: this.visibility }; }
@@ -73,8 +85,8 @@ export class RoadmapMetaValue {
 export const RoadmapMeta = new EntityType({
   type: 'meta', scope: null,
   decode: (f) => new RoadmapMetaValue(new Id(f.id, RoadmapMeta), {
-    title: f.string('title', ''), guide: f.string('guide', ''), root: f.optionalString('root'), depth: f.optionalInt('depth') ?? 0,
-    visibility: f.string('visibility', 'private'), reach: f.string('reach', 'private'),
+    title: f.string('title', ''), guide: f.string('guide', ''), guideInherited: f.bool('guideInherited', false), root: f.optionalString('root'),
+    parent: placeIn(f), depth: f.optionalInt('depth') ?? 0, visibility: f.string('visibility', 'private'), reach: f.string('reach', 'private'),
   }),
   checks: [
     new Check('title', (value) => value.with({ title: RoadmapSpecs.title.apply(value.title, new Path('title')) })),
@@ -82,6 +94,58 @@ export const RoadmapMeta = new EntityType({
     new Check('visibility', (value) => value.with({ visibility: RoadmapSpecs.visibility.apply(value.visibility, new Path('visibility')) })),
   ],
 });
+
+// One roadmap as a device's replica holds it, as the domain's normalized tree. `tree` reads its tree scope: the steps and
+// links as `readTree` reads them, absent ones included, its meta and its kinds. `overlay` reads its owner's overlay for
+// the marks and pointers, null where the reader takes none (a roadmap someone else owns); `queued` are the overlay's
+// records an entry the device still queues changes. `listed` is its record in the person's own list, null where it is
+// not theirs, and says whether it is present and where it sits; without it the meta says where. `read` says the server
+// has answered for its tree scope; a scope the device holds records of is read.
+// §5 Dates: the server has received a mark once no entry the device queues still changes it, and its time is its
+// record's `ru`, the server's; a mark an entry still changes is the device's, timed by its stamp. A roadmap was last
+// changed when the server last received a record of it: the newest `ru` among its record, its tree scope's and its
+// overlay's.
+/**
+ * @param {string} id
+ * @param {{ listed?: ReceivedRecord | null, tree: Reader, overlay?: Reader | null, queued?: { t: string, id: import('../../../platform/domain-kit/entities.js').RecordID }[], read?: boolean }} held
+ */
+export function readRoadmap(id, { listed = null, tree, overlay = null, queued = [], read = true }) {
+  const steps = readTree(id, tree);
+  const records = /** @type {ReceivedRecord[]} */ ([...tree.views.drawn.values()]);
+  const overlaid = /** @type {ReceivedRecord[]} */ (overlay ? [...overlay.views.drawn.values()] : []);
+  const metaRecord = tree.repository(RoadmapMeta).record('meta', 'drawn');
+  const meta = metaRecord ? RoadmapMeta.decode(Fields.record(metaRecord)) : RoadmapMetaValue.blank();
+  const alive = (/** @type {ReceivedRecord} */ record) => record.life?.[0] === 'alive';
+  const changing = new Set(queued.map((record) => recordKey(record.t, record.id)));
+  const updatedAt = [listed, ...records, ...overlaid].reduce((latest, record) => (typeof record?.ru === 'number' && (latest === null || record.ru > latest)
+    ? record.ru : latest), /** @type {number | null} */ (null));
+  return new RoadmapTree({
+    id,
+    present: listed === null || alive(listed),
+    read: read || records.length > 0 ? 'loaded' : 'unread',
+    own: listed !== null,
+    updatedAt,
+    parent: listed ? placeIn(Fields.record(listed)) : meta.parent,
+    meta: metaRecord ? { title: meta.title, guide: meta.guide, guideInherited: meta.guideInherited, root: meta.root ?? id, depth: meta.depth,
+      visibility: meta.visibility, reach: meta.reach } : null,
+    nodes: steps.nodes,
+    edges: steps.edges,
+    kinds: records.filter((record) => record.t === RoadmapKind.type).map((record) => {
+      const kind = RoadmapKind.decode(Fields.record(record));
+      return { id: String(record.id), present: alive(record), born: record.born ?? null, hue: kind.hue, label: kind.label,
+        description: kind.description, ord: kind.ord ?? '' };
+    }),
+    marks: overlaid.filter((record) => record.t === StepMark.type).map((record) => {
+      const mark = StepMark.decode(Fields.record(record));
+      const stamp = record.f?.mark?.[1] ?? null;
+      return { node: String(record.id), status: mark.status, outOfOrder: mark.outOfOrder, stamp,
+        recordedAt: changing.has(recordKey(record.t, record.id)) ? null : record.ru ?? null, deviceAt: stamp === null ? null : Stamp.parse(stamp).ms };
+    }),
+    pointers: overlaid.filter((record) => record.t === StepPointer.type).map((record) => ({
+      node: String(record.id), present: alive(record), opens: StepPointer.decode(Fields.record(record)).opens, setAt: record.f?.opens?.[1] ?? null,
+    })),
+  });
+}
 
 // §5 Create a roadmap: the `tree` record, then its tree scope with the title, the genesis kinds and the first
 // steps, in chunks when the steps are many. The engine drops the tree's intents when the record is refused. Its

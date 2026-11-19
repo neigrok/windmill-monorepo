@@ -1,89 +1,45 @@
 // The room's edge on the device's copy (roadmap-on-the-engine.md §8.4): what the replica holds of the account's roadmaps,
 // read through the domain, in the shapes the Graph, the Board, the step page, the layout and the scene read today.
-// Nothing here is a rule. What a step follows, where a roadmap sits and whether it stands, what a step opens, what
-// stands complete and when, the guides above a roadmap and which kind wears a hue are the domain's reads.
+// Nothing here is a rule. How a record reads and a mark is dated, what a step follows, where a roadmap sits and whether
+// it stands, what a step opens, what stands complete and when, the guides above a roadmap, which kind wears a hue and
+// the order of the person's list are the domain's reads.
 
-import { Fields } from '../../../platform/domain-kit/entities.js';
 import { Reader, Views } from '../../../platform/domain-kit/reading.js';
 import { FixedZone, Instant, Moment } from '../../../platform/domain-kit/time.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { RoadmapAccount } from '../domain/account.js';
-import { RoadmapKind } from '../domain/kinds.js';
-import { StepMark, StepPointer } from '../domain/progress.js';
 import { LegendRead } from '../domain/reads.js';
-import { RoadmapTree } from '../domain/records.js';
-import { Roadmap, RoadmapMeta, RoadmapMetaValue } from '../domain/roadmaps.js';
+import { readRoadmap } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
-import { readTree } from '../domain/steps.js';
 import { StepLink, StepNote, Subtask } from '../domain/workspace.js';
 import { Opening, TreePlace } from '../model/Opening.js';
 
 // The domain's reads of a roadmap read no time.
 const TIMELESS = new Moment(new Instant(0), new FixedZone(0));
 
-const alive = (record) => record.life?.[0] === 'alive';
-
-// The `{tree, step}` a subtree's record or meta names as its place, null for a root, as the domain's `Roadmap` reads it.
-export const placeOf = (record) => (record ? Roadmap.decode(Fields.record({ ...record, t: Roadmap.type })).parent : null);
-
-// What the replica holds of one roadmap: its record in the account's list (null for one someone else owns), its tree
-// scope's records, its owner's overlay of it and the stamp of each mark there the server has received, and whether the
-// device has read its tree scope (`read`): it holds records of it, or the server has answered for it.
+// What the replica holds of one roadmap: its record in the person's list (null for one someone else owns), its tree
+// scope's records, and its owner's overlay with the records of it a queued entry still changes (`queued`); `read` says
+// the server has answered for its tree scope.
 export class HeldRoadmap {
-  constructor({ id, record = null, tree = [], overlay = [], received = new Map(), read = true }) {
+  constructor({ id, record = null, tree = [], overlay = [], queued = [], read = true }) {
     this.id = id;
     this.record = record;
     this.records = tree;
     this.overlay = overlay;
-    this.received = received;
-    this.read = read || tree.length > 0;
+    this.queued = queued;
+    this.read = read;
     Object.freeze(this);
   }
 
-  // Whether its tree scope holds anything at all: a roadmap the device has read and holds nothing of is no roadmap.
+  // Whether its tree scope holds anything at all: a roadmap the device has read and holds nothing of is in no address.
   get holds() { return this.records.length > 0; }
 
-  // When the server last received any record of it: its record, its tree or its owner's overlay.
-  get updatedAt() {
-    const times = [this.record, ...this.records, ...this.overlay].flatMap((record) => (Number.isFinite(record?.ru) ? [record.ru] : []));
-    return times.length ? Math.max(...times) : null;
-  }
-
-  // The domain's normalized roadmap: the steps and links as the domain reads its tree scope, absent ones included,
-  // with its meta, its kinds, the owner's marks and pointers. A mark's date is the server's receipt where the server
-  // holds that very mark, else the device's stamp.
+  // The domain's roadmap (`readRoadmap`), the overlay read only for the person's own: the room shows a reader its owner's
+  // marks, which the server reads.
   tree(registry) {
-    const scope = RoadmapScopes.tree(this.id);
-    const read = new Reader(Views.ofRecords(registry, { drawn: this.records, stored: this.records }), scope, TIMELESS);
-    const steps = readTree(this.id, read);
-    const nodeRecords = new Map(this.records.filter((record) => record.t === 'node').map((record) => [record.id, record]));
-    const metaRecord = read.repository(RoadmapMeta).record('meta', 'drawn');
-    const meta = metaRecord ? RoadmapMeta.decode(Fields.record(metaRecord)) : RoadmapMetaValue.blank();
-    return new RoadmapTree({
-      id: this.id,
-      present: this.record === null || alive(this.record),
-      read: this.read ? 'loaded' : 'unread',
-      parent: placeOf(this.record ?? metaRecord),
-      meta: { title: meta.title, guide: meta.guide, guideInherited: metaRecord ? Fields.record(metaRecord).bool('guideInherited', false) : false,
-        root: meta.root ?? this.id, depth: meta.depth, visibility: meta.visibility, reach: meta.reach },
-      nodes: steps.nodes.map((step) => ({ ...step, branchStamp: nodeRecords.get(step.id)?.f?.branch?.[1] ?? null })),
-      edges: steps.edges,
-      kinds: this.records.filter((record) => record.t === RoadmapKind.type).map((record) => {
-        const kind = RoadmapKind.decode(Fields.record(record));
-        return { id: String(record.id), present: alive(record), born: record.born ?? null, hue: kind.hue, label: kind.label,
-          description: kind.description, ord: kind.ord ?? '' };
-      }),
-      marks: this.overlay.filter((record) => record.t === StepMark.type).map((record) => {
-        const mark = StepMark.decode(Fields.record(record));
-        const stamp = record.f?.mark?.[1] ?? null;
-        const received = stamp !== null && this.received.get(record.id) === stamp;
-        return { node: String(record.id), status: mark.status, outOfOrder: mark.outOfOrder, stamp,
-          recordedAt: received ? record.ru ?? null : null, deviceAt: stamp === null ? null : Stamp.parse(stamp).ms };
-      }),
-      pointers: this.overlay.filter((record) => record.t === StepPointer.type).map((record) => ({
-        node: String(record.id), present: alive(record), opens: StepPointer.decode(Fields.record(record)).opens, setAt: record.f?.opens?.[1] ?? null,
-      })),
-    });
+    const reader = (scope, drawn) => new Reader(Views.ofRecords(registry, { drawn, stored: drawn }), scope, TIMELESS);
+    return readRoadmap(this.id, { listed: this.record, tree: reader(RoadmapScopes.tree(this.id), this.records), read: this.read,
+      overlay: this.record ? reader(RoadmapScopes.overlay(this.id), this.overlay) : null, queued: this.queued });
   }
 
   // The owner's workspace of each step, as the step page reads it: subtasks and links in their own order, and the note.
@@ -134,11 +90,11 @@ export class ReplicaRoadmap {
   // `waiting` while the device has not read the roadmap, a roadmap above it or, for one not in it, the account's list;
   // `missing` where it holds no such roadmap, or the roadmap is hidden, so it is in no address (§5); else `open`.
   get state() {
-    const open = this.open;
-    if (!open?.read || (!this.mine && !this.listRead)) return 'waiting';
-    if (!open.holds) return 'missing';
+    if (this.account.trees.get(this.treeId)?.read !== 'loaded' || (!this.mine && !this.listRead)) return 'waiting';
+    if (!this.open.holds) return 'missing';
+    // A roadmap the server is still answering for may yet stand: its meta can arrive after its steps.
     const { standing } = this.account.locate(this.treeId);
-    if (standing === 'hidden') return 'missing';
+    if (standing === 'hidden') return this.open.read ? 'missing' : 'waiting';
     return standing === 'standing' ? 'open' : 'waiting';
   }
 
@@ -152,16 +108,15 @@ export class ReplicaRoadmap {
     const tree = this.account.trees.get(this.treeId);
     const location = this.account.locate(this.treeId);
     const graph = this.account.graph(this.treeId);
-    const entry = this.account.result().trees.find((candidate) => candidate.id === this.treeId);
-    const openings = new Map(entry.openings.map((opening) => {
+    const openings = new Map(this.account.openingsOf(this.treeId).map((opening) => {
       const shown = openingOf(opening, this.account.locate(opening.tree).title);
       return [opening.node, opening.tree === this.treeId ? shown.inItsOwnTree() : shown];
     }));
     const owners = new Set(new LegendRead(tree).result().owners.map((owner) => owner.id));
     const place = new TreePlace(location.place);
     return {
-      id: this.treeId, title: location.title ?? '', guide: tree.meta.guide, author: null,
-      visibility: place.subtree ? tree.meta.reach : tree.meta.visibility, mine: this.mine, place,
+      id: this.treeId, title: location.title ?? '', guide: tree.meta?.guide ?? '', author: null,
+      visibility: (place.subtree ? tree.meta?.reach : tree.meta?.visibility) ?? 'private', mine: this.mine, place,
       kinds: tree.kinds.filter((kind) => kind.present && owners.has(kind.id))
         .map((kind) => ({ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description })),
       nodes: graph.nodes.map((step) => {
@@ -199,13 +154,10 @@ export class ReplicaRoadmap {
     return { guides: this.account.guides(this.treeId).map((guide) => ({ treeId: guide.tree, title: guide.title, text: guide.text })) };
   }
 
-  // The account's roadmaps as the switcher lists them: each root that stands, newest first, with how far it is. `place`
-  // says where they live: `account` for a replica bound to an account, else this device.
+  // The person's roadmaps as the switcher lists them, in the domain's order. `place` says where they live: `account` for
+  // a replica bound to an account, else this device.
   list(place) {
-    return this.account.result().trees
-      .filter((tree) => this.held.get(tree.id)?.record && tree.standing === 'standing' && tree.place.parent === null)
-      .map((tree) => ({ id: tree.id, title: tree.title ?? '', done: tree.counts?.done, total: tree.counts?.total,
-        updatedAt: this.held.get(tree.id).updatedAt, ...(place === 'account' ? { origin: 'server' } : { origin: 'device', claimed: false }) }))
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    return this.account.list().map(({ id, title, counts, updatedAt }) => ({ id, title: title ?? '', done: counts?.done, total: counts?.total,
+      updatedAt, ...(place === 'account' ? { origin: 'server' } : { origin: 'device', claimed: false }) }));
   }
 }

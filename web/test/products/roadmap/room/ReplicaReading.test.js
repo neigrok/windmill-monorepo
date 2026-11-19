@@ -150,6 +150,7 @@ test('the room subscribes the roadmap it opens and drops it on leaving; with no 
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
     await a.sync();
+    a.engine.setOnline(false);
     const snapshot = { engine: a.engine, ready: true, online: false, error: false };
     const offline = new ReplicaReading({ treeId: 't_00000000000000aa', timers: a.env.timers,
       session: { getSnapshot: () => snapshot, subscribe: () => () => {} }, repository: { loadActivity: async () => [] } });
@@ -158,6 +159,7 @@ test('the room subscribes the roadmap it opens and drops it on leaving; with no 
     offline.close();
     await until(() => !a.engine.openScopes.has('tree/t_00000000000000aa'));
 
+    a.engine.setOnline(true);
     snapshot.online = true;
     const waiting = new ReplicaReading({ treeId: 't_00000000000000ab', timers: a.env.timers,
       session: { getSnapshot: () => snapshot, subscribe: () => () => {} }, repository: { loadActivity: async () => [] } });

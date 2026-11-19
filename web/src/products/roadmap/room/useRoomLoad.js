@@ -71,9 +71,9 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
       if (cancelled) return;
       accountAtLoad.current = deviceOwner();
       const layoutName = layoutNameFrom(window.location);
-      const engine = await loadLayoutEngine(layoutName);
+      const layout = await loadLayoutEngine(layoutName);
       if (cancelled) return;
-      layoutRef.current = { requestedName: layoutName, name: engine.constructor.layoutName, engine };
+      layoutRef.current = { requestedName: layoutName, name: layout.constructor.layoutName, engine: layout };
       const read = await reading.read({ signal });
       if (cancelled) return;
       if (!read) {

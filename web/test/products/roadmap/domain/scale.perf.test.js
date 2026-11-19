@@ -32,11 +32,12 @@ test('An absent hub represents sixteen million followed pairs without per-pair o
   assert.equal(graph.inDegree.get(children[0].id), 4000);
   assert.equal(graph.edges.length, 8000);
   assert.equal(graph.parents.reduce((sum, entries) => sum + entries.length, 0), 8000);
-  assert.equal(graph.direct.byteLength, 8000 * Math.ceil(8000 / 32) * 4);
-  assert.ok(graph.frontier.bits instanceof Uint32Array);
+  const rowBytes = [...graph.rows.values()].reduce((sum, row) => sum + row.byteLength, 0);
+  assert.equal(rowBytes, 4000 * Math.ceil(8000 / 32) * 4);
+  assert.ok(graph.reach.bits instanceof Uint32Array);
   assert.ok(graph.owedIndex().closure.bits instanceof Uint32Array);
   assert.equal(graph.followed(children[0].id).length, 4000);
-  t.diagnostic(`16m implied pairs, Board plus one provenance read: ${(performance.now() - start).toFixed(1)} ms; ${graph.direct.byteLength} direct-bitset bytes`);
+  t.diagnostic(`16m implied pairs, Board plus one provenance read: ${(performance.now() - start).toFixed(1)} ms; ${rowBytes} bytes of rows behind the hub`);
 });
 
 test('500 trees at subtree depth eight retain standing and complete bottom-up', (t) => {
@@ -82,6 +83,6 @@ test('Disconnected retained tombstones do not allocate reachability rows', () =>
   const history = new FollowGraph(new RoadmapTree({ id: 'T', nodes: [...nodes, ...Array.from({ length: 50000 }, (_, index) => ({ id: `gone${index}`, present: false }))], edges }));
   assert.deepEqual(history.result(['a', 'z']), small.result(['a', 'z']));
   assert.equal(history.tree.nodesById.size, 50002);
-  assert.deepEqual({ raw: history.rawIds.length, frontier: history.frontier.bits.byteLength, debt: history.owedIndex().closure.bits.byteLength },
-    { raw: small.rawIds.length, frontier: small.frontier.bits.byteLength, debt: small.owedIndex().closure.bits.byteLength });
+  assert.deepEqual({ raw: history.rawIds.length, reach: history.reach.bits.byteLength, rows: history.rows.size, debt: history.owedIndex().closure.bits.byteLength },
+    { raw: small.rawIds.length, reach: small.reach.bits.byteLength, rows: small.rows.size, debt: small.owedIndex().closure.bits.byteLength });
 });

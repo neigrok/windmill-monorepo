@@ -3,9 +3,11 @@
 // through the kit's ProductCorpus over the roadmap registry.
 
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
+import { Reader, Views } from '../../../../src/platform/domain-kit/reading.js';
+import { FixedZone, Instant, Moment } from '../../../../src/platform/domain-kit/time.js';
 import { translateUndo } from '../../../../src/platform/domain-kit/translation.js';
 import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
-import { CreateRoadmap, CreateSubtree, DeleteRoadmap, Roadmap, SetVisibility, WriteRoadmap, redoCreateSubtree } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { CreateRoadmap, CreateSubtree, DeleteRoadmap, Roadmap, SetVisibility, WriteRoadmap, readRoadmap, redoCreateSubtree } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
@@ -232,10 +234,21 @@ export async function runScene(vector) {
 
 /** @param {any} input */
 export function runRead(input) {
-  if (input.operation === 'account' || input.operation === 'guides' || input.operation === 'pointers' || input.operation === 'progress') {
+  if (input.operation === 'roadmap') {
+    const reader = (/** @type {string} */ scope, /** @type {any[]} */ drawn) => new Reader(
+      Views.ofRecords(roadmapRegistry, { drawn, stored: drawn }), scope, new Moment(new Instant(0), new FixedZone(0)));
+    const tree = readRoadmap(input.id, { listed: input.listed, tree: reader(RoadmapScopes.tree(input.id), input.tree), read: input.read,
+      overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] });
+    return { id: tree.id, present: tree.present, read: tree.read, own: tree.own, updatedAt: tree.updatedAt, parent: tree.parent, meta: tree.meta,
+      nodes: tree.nodes.map((step) => ({ ...step })), edges: tree.edges, kinds: tree.kinds.map((kind) => ({ ...kind })),
+      marks: [...tree.marks.values()], pointers: [...tree.pointers.values()] };
+  }
+  if (['account', 'guides', 'pointers', 'progress', 'openings', 'list'].includes(input.operation)) {
     const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)));
     if (input.operation === 'account') return account.result();
     if (input.operation === 'progress') return account.progress(input.tree);
+    if (input.operation === 'openings') return account.openingsOf(input.tree);
+    if (input.operation === 'list') return account.list();
     return input.operation === 'guides' ? account.guides(input.tree) : pointerDiagnostics(account, input.tree);
   }
   const tree = new RoadmapTree(input.tree);

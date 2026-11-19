@@ -101,7 +101,8 @@ export const RoadmapLink = new EntityType({
 });
 
 // The steps and links of one tree scope, every record a reader holds, absent ones included, as the read
-// domain's tree: what a step follows, and its cycles, are read through absent steps (D-5).
+// domain's tree: what a step follows, and its cycles, are read through absent steps (D-5). A step keeps when the server
+// created and last changed it, and the stamp of the subtree it owns.
 /**
  * @param {string} tree
  * @param {Reader} read
@@ -114,9 +115,10 @@ export function readTree(tree, read) {
     const present = record.life?.[0] === 'alive';
     if (record.t === RoadmapStep.type) {
       const step = RoadmapStep.decode(Fields.record(record));
-      nodes.push({ id: String(record.id), present, born: record.born ?? null, rc: record.rc ?? null, label: step.label, icon: step.icon,
+      nodes.push({ id: String(record.id), present, born: record.born ?? null, rc: record.rc ?? null,
+        ru: /** @type {{ ru?: number }} */ (record).ru ?? null, label: step.label, icon: step.icon,
         color: step.color, ...(step.ord === null ? {} : { ord: step.ord }), ...(step.status === null ? {} : { status: step.status }),
-        description: step.description, links: [...step.links], branch: step.branch });
+        description: step.description, links: [...step.links], branch: step.branch, branchStamp: record.f?.branch?.[1] ?? null });
     }
     if (record.t === RoadmapLink.type) {
       const link = RoadmapLink.decode(Fields.record(record));

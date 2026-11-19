@@ -12,11 +12,12 @@ time, randomness or localization.
 ## Pure reads
 
 `RoadmapTree` constructs the supplied normalized tree, nodes and kinds. Trees retain `present`,
-`read`, immutable `parent`, metadata (`meta: null` where its tree scope holds no meta), every node record
-including absent ones, every edge's presence, marks and pointers. D-3: a root stands once its tree scope
-holds its meta; a loaded root without it (a creation or a fork under way) is hidden, with every subtree
-under it, so it has no title, count, list row or address and a pointer at it dangles. An unread root
-keeps standing, as nothing is known of it. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
+`read`, `own` (the tree is in the person's own list), `updatedAt` (when the server last received any
+record of it, or null), immutable `parent`, metadata (`meta: null` where its tree scope holds no meta),
+every node record including absent ones, every edge's presence, marks and pointers. D-3: a root stands
+once its tree scope holds its meta; a loaded root without it (a creation or a fork under way) is hidden,
+with every subtree under it, so it has no title, count, list row or address and a pointer at it dangles.
+An unread root keeps standing, as nothing is known of it. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
 millisecond instants or null. Optional `mark.stamp`, `pointer.setAt` and `node.branchStamp` are
 full engine stamps, not instants. A mark is personal progress; authored node `status` never supplies it.
 
@@ -37,6 +38,20 @@ ID byte order.
 | `diagnostics` | Bounded graph errors and warnings | yes |
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
 | `landing` | Own newly created steps/links whose current followed prerequisites bridge absence | no |
+| `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
+| `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree | no |
+| `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
+
+`readRoadmap` (`roadmaps.js`) reads one roadmap from a device's replica: its tree scope's steps and links as
+`readTree` reads them, absent ones kept, each step with its `rc`, `ru` and the stamp of the subtree it owns;
+its meta with the server's `parent`, `depth`, `reach` and `guideInherited`, null where the scope holds none; its kinds; and, from its owner's
+overlay, the marks and pointers (a roadmap someone else owns takes no overlay). Its record in the person's
+list, where there is one, makes it `own`, says whether it is present and where it sits; without one the meta
+says where. A tree scope the device holds records of is read; an empty one is read once the server has
+answered for it. §5 Dates: the server has received a mark once no entry the device queues (held, ready, sent or
+acked) still changes its record, and its `recordedAt` is that record's `ru`; a mark an entry still changes is the
+device's, with no `recordedAt`. Every mark's `deviceAt` is its stamp's milliseconds. `updatedAt` is the newest `ru` among the
+roadmap's record, its tree scope's records and its overlay's.
 
 `FollowGraph` reads every live incoming edge. A present predecessor is a boundary. Any other endpoint
 is traversed, including an ID with no node record. Missing records remain diagnosed separately from
@@ -90,28 +105,34 @@ adapter's responsibility.
 
 Run from `web`: `node --test test/products/roadmap/domain/corpus.test.js`.
 
-The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, trees}` for `account`,
-`{operation, trees, tree: id}` for `guides`, `progress` and `pointers`, `{operation, tree, query}` for
+The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, trees}` for `account` and `list`,
+`{operation, trees, tree: id}` for `guides`, `progress`, `pointers` and `openings`, `{operation, id, listed, tree,
+overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and `queued` the
+overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for
 `board` and `search`, `{operation, tree}` for `legend` and `diagnostics`, and
 `{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed
 graph reads only; it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}`
 or MCP's `{query,color,kind}`. Optional query fields have the defaults in `reads.js`.
 
-The read modules are `records.js` (normalized values, authored ordering and the device's landing note), `graph.js`
-(raw adjacency, iterative strongly connected components and compact prerequisite/debt closure),
-`account.js` (standing, least-fixed-point completion, effective dates and guides), `reads.js`
-(Board, legend, search and landing facts), and `diagnostics.js` (bounded findings). Detailed followed
-provenance is enumerated on demand. Bulk state, debt and Board reads use bitsets and never allocate
-an object for each implied edge through an absent hub. Disconnected absent records remain in
-RoadmapTree but do not allocate graph reachability rows; only present IDs and live-edge endpoints do.
+The read modules are `records.js` (normalized values, authored ordering, the device's landing note, and each
+tree's `TreeIndex`: its raw adjacency by slot and its own marks, derived once per tree), `graph.js` (iterative
+strongly connected components and compact prerequisite/debt closure over a tree's index), `account.js`
+(standing, least-fixed-point completion, effective dates, guides, one tree's openings and the person's list),
+`reads.js` (Board, legend, search and landing facts), `diagnostics.js` (bounded findings), and `readRoadmap` in
+`roadmaps.js` (a replica's records as the normalized tree). Detailed followed provenance is enumerated on demand.
+A step's state, unmet count and first, followed count and owed count are kept by slot. A step whose parents
+are all present follows them directly; only an absent step, and a step behind one, takes a bitset row, so no
+read allocates an object for each implied edge through an absent hub. The debt closure takes rows for the
+unfinished and absent vertices alone. Disconnected absent records remain in RoadmapTree but do not allocate
+graph reachability rows; only present IDs and live-edge endpoints do.
 
-The independent traversal test covers cycles and bitset word boundaries. Size tests cover 10,000
-nodes/20,000 edges, sixteen million implied pairs through one absent hub, 500 trees at depth eight,
-and the existing Board median construction/search budget of 50 ms at 5,000 nodes/1,800 unfinished.
-The timed Board path includes a fresh FollowGraph, state/debt derivation, cards, sort and search;
-only normalized record construction stays outside it. Other size timings are reported, not assigned
-new budgets. Run all with `node --test --test-concurrency=1 test/products/roadmap/domain/*.test.js`,
-then `npm run check:domain`.
+The independent traversal test covers 1,000 random graphs with cycles, missing steps and bitset word
+boundaries. Size tests cover 10,000 nodes/20,000 edges, sixteen million implied pairs through one absent
+hub, 500 trees at depth eight, and the existing Board median construction/search budget of 50 ms at 5,000
+nodes/1,800 unfinished. The timed Board path includes a fresh FollowGraph, state/debt derivation, cards,
+sort and search; only normalized record construction, its `TreeIndex` included, stays outside it, as the
+legacy Board's `SkillTree` does. Other size timings are reported, not assigned new budgets. Run all with
+`node --test --test-concurrency=1 test/products/roadmap/domain/*.test.js`, then `npm run check:domain`.
 
 ## Actions
 

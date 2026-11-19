@@ -2,7 +2,6 @@
 // §3 entities and records: the declaration an entity's records belong to, its typed id, and the lenient
 // reader of one record or one object inside it.
 
-import { compareBytes, utf8 } from '../sync/core/encoding.js';
 import { compareJcs, jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Instant, LocalDay } from './time.js';
 import { Fault, precondition } from './values.js';
@@ -42,12 +41,30 @@ export class DecodeError extends Error {
   }
 }
 
+// Text in the order of its UTF-8 bytes, read without encoding: UTF-8 orders as code points do, so the texts compare
+// code point by code point, a lone surrogate reading as U+FFFD as the encoder writes it. As the encoder takes them, an
+// absent text reads as empty and any other value as its string.
 /**
- * @param {string} a
- * @param {string} b
+ * @param {string} left
+ * @param {string} right
  */
-export function compareText(a, b) {
-  return compareBytes(utf8(a), utf8(b));
+export function compareText(left, right) {
+  const a = left === undefined ? '' : `${left}`;
+  const b = right === undefined ? '' : `${right}`;
+  const scalarAt = (/** @type {string} */ text, /** @type {number} */ index) => {
+    const point = text.codePointAt(index) ?? 0;
+    return point >= 0xd800 && point <= 0xdfff ? 0xfffd : point;
+  };
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const x = scalarAt(a, i);
+    const y = scalarAt(b, j);
+    if (x !== y) return x < y ? -1 : 1;
+    i += x > 0xffff ? 2 : 1;
+    j += y > 0xffff ? 2 : 1;
+  }
+  return Number(i < a.length) - Number(j < b.length);
 }
 
 /** @param {Iterable<string>} names */
