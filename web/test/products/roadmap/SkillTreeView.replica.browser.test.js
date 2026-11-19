@@ -193,6 +193,14 @@ const http = createServer(async (request, response) => {
 await new Promise((listening) => http.listen(0, '127.0.0.1', listening));
 const origin = `http://127.0.0.1:${http.address().port}`;
 const browser = await chromium.launch({ headless: true });
+// A context of the test's, each page's CPU slowed by WM_TEST_CPU_THROTTLE (as 6) where it is set, to stand as a slow CI
+// runner does.
+async function newContext(options) {
+  const context = await browser.newContext(options);
+  const rate = Number(process.env.WM_TEST_CPU_THROTTLE ?? 0);
+  if (rate > 1) context.on('page', (page) => context.newCDPSession(page).then((cdp) => cdp.send('Emulation.setCPUThrottlingRate', { rate })));
+  return context;
+}
 after(async () => {
   await browser.close();
   http.close();
@@ -228,8 +236,8 @@ async function readRoom(context, { account, replica, address, seed = false, offl
 
 test('an owner’s roadmap opens from the replica, and again from the device’s copy offline, with the screens and events of today’s room', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const replica = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     const online = await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const fromCopy = await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, offline: true });
@@ -247,9 +255,9 @@ test('an owner’s roadmap opens from the replica, and again from the device’s
 
 test('a signed-in reader opens a shared roadmap from the replica as they do today: its owner’s marks, the reader’s verbs', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const owner = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const owner = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const replica = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await readRoom(owner, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const shared = await readRoom(replica, { account: 'u_reader', replica: true, address: `#/t/${TREE}` });
@@ -267,15 +275,16 @@ test('a signed-in reader opens a shared roadmap from the replica as they do toda
 const serverRows = (part) => Object.entries(state.rows).filter(([key]) => key.includes(part)).flatMap(([, rows]) => Object.values(rows));
 
 async function reachesServer(check) {
-  for (let turn = 0; turn < 200; turn++) {
+  for (let turn = 0; turn < 600; turn++) {
     if (check()) return;
     await new Promise((settle) => setTimeout(settle, 50));
   }
   throw new Error('the write never reached the server');
 }
 
-// One owner's script on a room: open a step, complete it and add it a subtask, then what the room shows and told.
-async function markAndNote(context, { replica }) {
+// One owner's script on a room: open a step, complete it and add it a subtask, then what the room shows and told. A room
+// whose writes are to reach the server (`landed`) stays open until they have: its device sends them.
+async function markAndNote(context, { replica, landed = null }) {
   await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -296,22 +305,22 @@ async function markAndNote(context, { replica }) {
   await page.locator('.st-board-step-preview').waitFor({ state: 'detached' });
   const read = { columns: await boardColumns(page), step: await step.innerText(),
     ...await page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues })), failures };
+  if (landed) await reachesServer(landed);
   await page.close();
   return read;
 }
 
 test('with the switch on the owner’s marks and workspace land on the device’s copy, with the screens and events of today’s room', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const replica = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
-    const onCopy = await markAndNote(replica, { replica: true });
+    const onCopy = await markAndNote(replica, { replica: true, landed: () => serverRows(`overlay/${TREE}`).some((row) => row.t === 'progress' && row.id === 'wind')
+      && serverRows(`overlay/${TREE}`).some((row) => row.t === 'subtask') });
     const lattice = await markAndNote(today, { replica: false });
     assert.deepEqual(onCopy.columns, ['locked: ', 'upNext: Leave the dock', 'done: Read the wind, Choose a course']);
     assert.deepEqual(onCopy, lattice);
-    await reachesServer(() => serverRows(`overlay/${TREE}`).some((row) => row.t === 'progress' && row.id === 'wind')
-      && serverRows(`overlay/${TREE}`).some((row) => row.t === 'subtask'));
   } finally {
     await replica.close();
     await today.close();
@@ -319,8 +328,9 @@ test('with the switch on the owner’s marks and workspace land on the device’
 });
 
 // One owner's script of step gestures on a room: a new step and its toast's Undo, a new step undone and redone by the
-// keyboard, a held delete undone in its hold, and one released after its nine seconds and undone by the keyboard.
-async function makeAndTakeBack(context, { replica }) {
+// keyboard, a held delete undone in its hold, and one released after its nine seconds and undone by the keyboard. A room
+// whose writes are to reach the server (`landed`) stays open until they have.
+async function makeAndTakeBack(context, { replica, landed = null }) {
   await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -367,25 +377,26 @@ async function makeAndTakeBack(context, { replica }) {
   await card('Leave the dock').waitFor();
   const read = { released, columns: await boardColumns(page),
     ...await page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues })), failures };
+  if (landed) await reachesServer(landed);
   await page.close();
   return read;
 }
 
 test('with the switch on the owner’s step gestures, their toasts’ Undo and the keyboard’s Undo and Redo land on the device’s copy as they do today', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const replica = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
-    const onCopy = await makeAndTakeBack(replica, { replica: true });
+    const onCopy = await makeAndTakeBack(replica, { replica: true, landed: () => serverRows(`tree:${TREE}`)
+      .some((row) => row.t === 'node' && row.f?.label?.[0] === 'Reef the sail')
+      && serverRows(`tree:${TREE}`).some((row) => row.t === 'node' && row.id === 'dock' && row.life?.[0] === 'alive') });
     const lattice = await makeAndTakeBack(today, { replica: false });
     assert.deepEqual({ released: onCopy.released, columns: onCopy.columns }, {
       released: ['locked: ', 'upNext: Read the wind, Reef the sail', 'done: Choose a course'],
       columns: ['locked: Leave the dock', 'upNext: Read the wind, Reef the sail', 'done: Choose a course'],
     });
     assert.deepEqual(onCopy, lattice);
-    await reachesServer(() => serverRows(`tree:${TREE}`).some((row) => row.t === 'node' && row.f?.label?.[0] === 'Reef the sail')
-      && serverRows(`tree:${TREE}`).some((row) => row.t === 'node' && row.id === 'dock' && row.life?.[0] === 'alive'));
   } finally {
     await replica.close();
     await today.close();
@@ -454,7 +465,7 @@ test('with the switch on the owner is told once, under the card and on the step�
 
 test('with the switch on the step document’s Tree section lists the person’s roadmaps from the device’s copy and attaches one, with its Undo', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const context = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const page = await context.newPage();
@@ -493,8 +504,8 @@ test('with the switch on the step document’s Tree section lists the person’s
 
 test('with the switch on a roadmap’s deletion lands on the person’s roadmaps with its Undo for nine seconds, and is permanent after', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  const context = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const phone = await newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   try {
     await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const page = await context.newPage();
@@ -605,8 +616,8 @@ async function onTheGraph(context, { replica }) {
 
 test('with the switch on the Graph’s gestures land on the device’s copy as they do today', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const replica = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const onCopy = await onTheGraph(replica, { replica: true });
@@ -634,7 +645,7 @@ async function replicaPage(context) {
 
 test('with the switch on a gesture the domain refuses shows no success: a loop is said in today’s words, and a name past its bound keeps its draft as today’s failure does', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const context = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const { page, failures, told } = await replicaPage(context);
@@ -643,6 +654,8 @@ test('with the switch on a gesture the domain refuses shows no success: a loop i
     await page.evaluate(() => window.scene.options.onConnectNodes('dock', 'course'));
     await page.locator('.st-board-toast', { hasText: 'This would create a loop' }).waitFor();
     const loop = { toasts: await page.locator('.st-board-toast').allInnerTexts(), events: await told(['roadmap_board_edit', 'roadmap_write_refused']) };
+    // The loop's words leave after their hold, so what stands after the name is the name's own.
+    await page.locator('.st-board-toast', { hasText: 'This would create a loop' }).waitFor({ state: 'detached', timeout: 15000 });
 
     await page.getByRole('button', { name: 'Board', exact: true }).click();
     await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
@@ -673,7 +686,7 @@ test('with the switch on a gesture the domain refuses shows no success: a loop i
 
 test('with the switch on a pasted plan’s steps are pulsed and told under the ids the domain gave them, once they have landed', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const context = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const { page, failures, told } = await replicaPage(context);
