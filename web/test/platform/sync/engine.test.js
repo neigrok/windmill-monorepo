@@ -556,6 +556,56 @@ for (const [name, { before, change, keepsReplica }] of Object.entries(bindingCha
   engine.close();
 });
 
+for (const [name, { before, change, keepsReplica }] of Object.entries(bindingChanges)) for (const ending of keepsReplica ? ['answered'] : ['answered', 'aborted'])
+  test(`a pull ${ending} after ${name}, and the frame deferred behind it, apply nothing, pause nothing and count as no failure`, async () => {
+    const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+    env.transport.account = 'A';
+    await before(engine);
+    await engine.subscribe(tree);
+    const transport = env.transport.request.bind(env.transport);
+    let answer;
+    env.transport.request = async (endpoint, body, options) => {
+      const reply = await transport(endpoint, body, options);
+      if (endpoint !== 'pull') return reply;
+      return new Promise((resolve, reject) => {
+        answer = () => resolve(reply);
+        if (ending === 'aborted') options.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+      });
+    };
+    const pulling = engine.pull();
+    await until(() => answer);
+    env.transport.request = transport;
+    await engine.receiveFrame({ op: 'not-found', scope: tree, as: engine.device.activeReplica.meta.account ?? null });
+    assert.equal(engine.deferredFrames.has(tree), true);
+    const told = env.failures.length;
+    assert.equal((await change(engine)).complete, true);
+    const stored = (await engine.store.read()).device.toJSON();
+    answer(); await pulling;
+    assert.deepEqual({ device: (await engine.store.read()).device.toJSON(), failures: env.failures.slice(told), backoff: engine.pullWait.k, due: engine.pullWait.due(env.timers.time) },
+      { device: stored, failures: [], backoff: 0, due: true });
+    engine.close();
+  });
+
+for (const [name, { before, change }] of Object.entries(bindingChanges)) test(`a frame that lands after ${name} applies nothing and pauses nothing`, async () => {
+  const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+  env.transport.account = 'A';
+  await before(engine);
+  await engine.subscribe(tree);
+  const write = engine.write.bind(engine);
+  let landing;
+  engine.write = (operation, ...rest) => {
+    const written = write(operation, ...rest);
+    if (['sync-signin', 'sync-signout'].includes(operation))
+      landing ??= engine.receiveFrame({ op: 'not-found', scope: tree, as: engine.device.activeReplica.meta.account ?? null });
+    return written;
+  };
+  assert.equal((await change(engine)).complete, true);
+  await landing;
+  assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, known: engine.device.activeReplica.known, failures: env.failures },
+    { authPaused: false, known: {}, failures: [] });
+  engine.close();
+});
+
 test('an act planned before a re-identify of the active replica commits: the binding outlives the replica\'s id', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A';
