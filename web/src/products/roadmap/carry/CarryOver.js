@@ -27,7 +27,7 @@ import { HeldRecord, RoadmapScopes } from '../domain/roadmapRules.js';
 import { Roadmap } from '../domain/roadmaps.js';
 import { RoadmapStep } from '../domain/steps.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
-import { failureTags } from '../sync/localTrees.js';
+import { failureTags } from '../sync/SyncStore.js';
 import { OldStores } from './OldStores.js';
 
 const CARRY_LOCK = 'windmill-roadmap-carry';

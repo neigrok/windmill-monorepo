@@ -3,7 +3,7 @@
 // the synced path uses.
 
 import { SyncSession } from './SyncSession.js';
-import { SyncStore } from './SyncStore.js';
+import { CorruptDeviceRecord, SyncStore, failureTags } from './SyncStore.js';
 import { pendingGestures } from './pendingWrites.js';
 import { materialize } from './materialize.js';
 import { HlcClock, TreeLattice, hlcText } from './lattice.js';
@@ -149,23 +149,6 @@ function marksShown(saved, nodes) {
   marks.join(saved?.progress);
   if (marks.marks.size > 0) return marks.overlay();
   return { completed: new Set(nodes.filter((step) => step.status === 'complete').map((step) => step.id)), completedAt: {} };
-}
-
-// A device record that does not join as a lattice: its steps cannot be known.
-export class CorruptDeviceRecord extends Error {
-  constructor(cause) {
-    super('Device record does not join', { cause });
-    this.name = 'CorruptDeviceRecord';
-  }
-}
-
-// The one bounded tag a device failure reports under: the browser's own name for what failed, `corrupt` for a record that
-// does not join, `other` for anything else. Never a message.
-const DEVICE_FAILURES = new Set(['QuotaExceededError', 'AbortError', 'UnknownError', 'ConstraintError', 'DataError', 'DataCloneError',
-  'InvalidStateError', 'NotFoundError', 'ReadOnlyError', 'TransactionInactiveError', 'VersionError', 'SecurityError', 'TimeoutError']);
-export function failureTags(error) {
-  if (error instanceof CorruptDeviceRecord) return { name: 'corrupt' };
-  return { name: error instanceof DOMException && DEVICE_FAILURES.has(error.name) ? error.name : 'other' };
 }
 
 // The steps of a stored record as a lattice, or why they cannot be known.

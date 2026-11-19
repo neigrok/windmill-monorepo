@@ -7,6 +7,23 @@ import { TreeLattice } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { frameWrites, pendingGestures, retainedGestures, unconfirmedStamps, writeStamps } from './pendingWrites.js';
 
+// A device record that does not join as a lattice: its steps cannot be known.
+export class CorruptDeviceRecord extends Error {
+  constructor(cause) {
+    super('Device record does not join', { cause });
+    this.name = 'CorruptDeviceRecord';
+  }
+}
+
+// The one bounded tag a device failure reports under: the browser's own name for what failed, `corrupt` for a record that
+// does not join, `other` for anything else. Never a message.
+const DEVICE_FAILURES = new Set(['QuotaExceededError', 'AbortError', 'UnknownError', 'ConstraintError', 'DataError', 'DataCloneError',
+  'InvalidStateError', 'NotFoundError', 'ReadOnlyError', 'TransactionInactiveError', 'VersionError', 'SecurityError', 'TimeoutError']);
+export function failureTags(error) {
+  if (error instanceof CorruptDeviceRecord) return { name: 'corrupt' };
+  return { name: error instanceof DOMException && DEVICE_FAILURES.has(error.name) ? error.name : 'other' };
+}
+
 const DB_NAME = 'windmill-sync';
 const STORE = 'trees';
 const LANES = ['structure', 'progress'];

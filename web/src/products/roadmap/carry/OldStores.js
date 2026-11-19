@@ -18,10 +18,9 @@ import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { WorkspaceStore } from '../persistence/WorkspaceStore.js';
 import { TreeLattice } from '../sync/lattice.js';
-import { CorruptDeviceRecord } from '../sync/localTrees.js';
 import { frameWrites, unconfirmedStamps, writeStamps } from '../sync/pendingWrites.js';
 import { ProgressLattice } from '../sync/progressLattice.js';
-import { SyncStore } from '../sync/SyncStore.js';
+import { CorruptDeviceRecord, SyncStore } from '../sync/SyncStore.js';
 
 const STEP_FIELDS = ['label', 'icon', 'color', 'description', 'links'];
 
