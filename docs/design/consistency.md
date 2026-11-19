@@ -1769,6 +1769,12 @@ Android. It and the product differ in these places.
   already separate concerns (`guidelines/system-architecture.md` §3, the window rule).
 - **3s · iOS bottom band.** Coordinate the routine Start refusal, room status and Undo transient
   so concurrent messages cannot hide a reachable action.
+- **An Undo that could not apply.** A held delete's Undo pressed after its window says *The window
+  closed — that delete already went.* on the web (`gym.held.windowClosed`) and *The Undo window
+  closed.* on Android (`gym_room_undo_closed`). An Undo the engine did not answer says *That delete
+  could not be taken back — {reason}.* on the web (`gym.held.undoFailed`); Android words it *the log
+  didn’t answer — Undo could not restore that weigh-in* (`gym_store_weigh_in_undo_no_answer`). Choose
+  one wording for each and use it on both.
 - **4v · Browser failure.** Android `ConnectedLogScreen.kt` swallows `openUri` errors. Show a
   recovery when a browser cannot open.
 - **Native acceptance.** Keep API 26, notification promotion-disabled fallback, full TalkBack
