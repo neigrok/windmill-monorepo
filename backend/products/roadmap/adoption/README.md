@@ -107,4 +107,5 @@ counted apart, as `unreadableToday`.
 own built from `db/schema.sql` and `roadmap_adopt_fixture.sql`, one §8.1 case a row: every stage's counts, a second run,
 a run killed between stages and in the middle of `adopt`, the rows that stop the move, and that nothing printed names a
 record. `test/products/roadmap/adoption/AdoptionTest.cpp` holds the rules (`windmill_domain_tests`), and reads a plan's
-rows back through `recordsOf` and the read domain over fakes.
+rows back through `recordsOf` and the read domain over fakes. `test/e2e/roadmap_adoption.mjs` serves an adopted fixture
+with `ROADMAP_ENGINE_ENABLED=1` and reads it back through the browser engine (`test/e2e/README.md`).
