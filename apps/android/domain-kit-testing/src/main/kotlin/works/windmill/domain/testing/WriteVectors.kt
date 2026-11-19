@@ -114,7 +114,8 @@ internal object WriteVectors {
     private fun pipeline(input: Json, context: ActionContext): Json {
         val registry = probeRegistry()
         val moment = moment(input)
-        val replica = VectorReplica(VectorRecords(input["drawn"], input["stored"] ?: input["drawn"], registry), moment.now.ms, registry, answer(input))
+        val records = VectorRecords(input["drawn"], input["stored"] ?: input["drawn"], registry, spent = input["spent"])
+        val replica = VectorReplica(records, moment.now.ms, registry, answer(input))
         val action = object : Action<Moment, Unit, ProbeRefusal> {
             override val scope = input["scope"]?.str()?.let(::ScopeRef) ?: Probe.scope
             override val refusals = ProbeRefusals

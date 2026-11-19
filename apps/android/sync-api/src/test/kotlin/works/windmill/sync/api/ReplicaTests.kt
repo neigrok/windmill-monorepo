@@ -22,6 +22,7 @@ class ReplicaTests {
         override fun stored(type: String): List<Record> = emptyList()
         override fun drawn(type: String, field: String, id: RecordID): List<Record> = emptyList()
         override fun stored(type: String, field: String, id: RecordID): List<Record> = emptyList()
+        override fun spentBorn(type: String, id: RecordID): Stamp? = null
         override fun device(key: String): Json? = null
         override fun firstPullComplete() = true
         override fun confirmed(type: String, id: RecordID): Record? = null

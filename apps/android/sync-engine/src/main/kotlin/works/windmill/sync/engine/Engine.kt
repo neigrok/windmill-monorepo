@@ -389,6 +389,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         override fun stored(type: String) = list(type, ViewMode.stored)
         override fun drawn(type: String, field: String, id: RecordID) = list(type, ViewMode.drawn, field, id)
         override fun stored(type: String, field: String, id: RecordID) = list(type, ViewMode.stored, field, id)
+        override fun spentBorn(type: String, id: RecordID): Stamp? = checked { lives(type); replicaState.spentBorn(scope, RecordKey(type, id)) }
         fun list(type: String, mode: ViewMode, field: String? = null, id: RecordID? = null): List<Record> = checked {
             lives(type)
             if (field != null && registry.type(type)?.fields?.get(field)?.ref == null) throw CommitFailure.malformed("reference-field")

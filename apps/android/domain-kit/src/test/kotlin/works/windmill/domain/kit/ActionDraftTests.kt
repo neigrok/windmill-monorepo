@@ -70,6 +70,7 @@ class ActionDraftTests {
         override fun stored(type: String) = storedRows.filter { it.type == type }
         override fun drawn(type: String, field: String, id: RecordID) = drawn(type).filter { it.values[field] == id.json }
         override fun stored(type: String, field: String, id: RecordID) = stored(type).filter { it.values[field] == id.json }
+        override fun spentBorn(type: String, id: RecordID): Stamp? = null
         override fun device(key: String): Json? = null
         override fun devices(prefix: String): Map<String, Json> = emptyMap()
         override fun firstPullComplete() = true

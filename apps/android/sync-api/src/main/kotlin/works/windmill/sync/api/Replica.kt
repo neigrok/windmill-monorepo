@@ -2,6 +2,7 @@ package works.windmill.sync.api
 
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.Stamp
 
 interface ScopeReader {
     val isAnonymous: Boolean
@@ -11,6 +12,9 @@ interface ScopeReader {
     fun stored(type: String): List<Record>
     fun drawn(type: String, field: String, id: RecordID): List<Record>
     fun stored(type: String, field: String, id: RecordID): List<Record>
+    // §2.5, §7.5: the born of the scope's spent id of a record, all the device keeps of a derived record deleted elsewhere once its row is
+    // gone; null where the scope keeps none.
+    fun spentBorn(type: String, id: RecordID): Stamp?
     fun device(key: String): Json?
     fun firstPullComplete(): Boolean
     fun confirmed(type: String, id: RecordID): Record?
