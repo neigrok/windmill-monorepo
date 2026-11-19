@@ -42,6 +42,10 @@ jobs:
 
       - run: npm ci
 
+      # The runner's regional Ubuntu mirror can serve package files slowly enough to spend the job's time limit.
+      - name: Fetch the browsers' system libraries from the main Ubuntu archive
+        run: echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+
       - name: Install Chromium
         run: node scripts/install-sync-browser.mjs
 
