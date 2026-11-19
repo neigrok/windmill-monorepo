@@ -90,7 +90,8 @@ internal fun Engine.receiveRows(replica: ReplicaState, scope: ScopeRef, rows: Li
         if (row.lattice.life?.isAlive == false) {
             if (type?.identity == "derived") {
                 val spent = replica.spent[scope.text]?.arr().orEmpty().filter { it.recordKey != row.key }
-                replica.spent[scope.text] = Json.Arr((spent + Json.objectOf("t" to Json.of(row.key.type), "id" to row.key.id.json, "born" to row.lattice.born!!.json)).sortedWith { a, b -> a.recordKey.compareTo(b.recordKey) })
+                val spentId = Json.objectOf("t" to Json.of(row.key.type), "id" to row.key.id.json, "born" to row.lattice.born!!.json, "seq" to Json.of(row.seq))
+                replica.spent[scope.text] = Json.Arr((spent + spentId).sortedWith { a, b -> a.recordKey.compareTo(b.recordKey) })
             }
             governed.forEach { replica.known[it.text] = Json.of("gone"); replica.forgetJournalScope(it, ended); endScopeProjections(replica, it) }
             if (staging) { store.removeStaging(replica.id, scope, row.key) } else store.remove(replica.id, scope, row.key)

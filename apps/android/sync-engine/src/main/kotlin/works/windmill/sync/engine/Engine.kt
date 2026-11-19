@@ -250,7 +250,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             content.items("dependents").any(::carries)
         reader.drawn(key.type, key.id) != null || device.current().notices.any {
             ScopeRef(it.member("scope")) == scope && carries(it.member("content"))
-        } || device.current().spent[scope.text]?.arr()?.any { it.recordKey == key } == true
+        } || device.current().spentId(scope, key) != null
     }
     override fun mintID(type: String): RecordID = lock.withLock {
         ensureOpen(); RecordID((registry.type(type)?.mint ?: throw CommitFailure.malformed("not-minted")).id(::draw))
@@ -422,7 +422,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             lives(type)
             val mint = registry.type(type)?.mint ?: throw CommitFailure.malformed("not-minted")
             var id: RecordID
-            do { id = RecordID(mint.id(::draw)) } while (id in minted || view(replicaState, scope, RecordKey(type, id), ViewMode.drawn) != null || replicaState.spent[scope.text]?.arr()?.any { it.recordKey == RecordKey(type, id) } == true)
+            do { id = RecordID(mint.id(::draw)) } while (id in minted || view(replicaState, scope, RecordKey(type, id), ViewMode.drawn) != null || replicaState.spentId(scope, RecordKey(type, id)) != null)
             minted.add(id)
             id
         }

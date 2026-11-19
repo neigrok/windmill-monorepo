@@ -181,7 +181,8 @@ class StorageLayoutTests {
             "replicas" to Json.array(freshReplica("replica").json().with(
                 "outbox" to Json.array(entry("z", 0), entry("a", 1)), "notices" to Json.array(notice("notice:z/0"), notice("notice:a/0")),
                 "known" to Json.objectOf("tree/b_00000000" to Json.of("not-found")),
-                "spentIds" to Json.objectOf(scope.text to Json.array(Json.objectOf("t" to Json.of("tag"), "id" to Json.of("spent"), "born" to Json.of("1:0:a")))),
+                "spentIds" to Json.objectOf(scope.text to Json.array(Json.objectOf("t" to Json.of("tag"), "id" to Json.of("spent"), "born" to Json.of("1:0:a")),
+                    Json.objectOf("t" to Json.of("tag"), "id" to Json.of("spent-seq"), "born" to Json.of("1:0:a"), "seq" to Json.of(3)))),
                 "cursors" to Json.objectOf(scope.text to Json.objectOf("cursor" to Json.Null, "digest" to Json.of(ScopeDigest.ZERO.hex), "booted" to Json.of(false))),
                 "device" to Json.objectOf("probe" to Json.objectOf("rack" to Json.array(Json.of(1), Json.of(2)))),
                 "journal" to Json.array(act("a", retained = true), act("z", retained = true)), "inverses" to Json.array(request("r1")), "cancellations" to Json.array(cancellation("c1")))))

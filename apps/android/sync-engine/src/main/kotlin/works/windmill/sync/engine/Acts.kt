@@ -76,8 +76,8 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
 private class UndoPlan(val scope: ScopeRef, val recipes: List<UndoRecipe>, val preimages: List<Preimage>)
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's initial snapshot (§7.3 Undo of
-// an act), each with the confirmed row it was read over (null where none is) and the epoch that row counts in; a life's also keeps the record
-// as read, which a revival draws. A slot unset there takes the target's explicit default; with none, the act fails before anything changes.
+// an act), each with the seq of the row it was read over, the confirmed row or else the dead row the record's spent id keeps (null where
+// neither holds one), and the epoch that seq counts in; a life's also keeps the record as read, which a revival draws. A slot unset there takes the target's explicit default; with none, the act fails before anything changes.
 // A segment named with no recipes is journaled for its receipts alone, as evidence, and an act names at least one recipe. By segment index.
 private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int, UndoPlan>? {
     val segments = request.undo ?: return null
@@ -93,7 +93,8 @@ private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int
         val preimages = segment.recipes.filterIsInstance<UndoRecipe.Fields>().flatMap { it.targets }.map { (target, defaultValue) ->
             val read = view[target.key]
             Preimage(target, read?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"),
-                store.row(replica.id, target.scope, target.key)?.seq, replica.meta["serverEpoch"]?.orNull()?.str(),
+                store.row(replica.id, target.scope, target.key)?.seq ?: replica.spentId(target.scope, target.key)?.get("seq")?.long(),
+                replica.meta["serverEpoch"]?.orNull()?.str(),
                 read?.takeIf { target.slot.kind == Slot.Kind.life }?.drawnRecord())
         }
         plan[segment.index] = UndoPlan(scope, segment.recipes, preimages)
