@@ -1,6 +1,7 @@
 // The roadmap room's writes end to end on a local stack, once with the server's roadmap engine and the web's switch on
 // (the room on the device's copy) and once with both off (today's room). One owner on several devices, each a browser
-// context with its own store: Undo and Redo, edits made offline syncing once the connection returns, a change made
+// context with its own store: Undo and Redo, edits made offline syncing once the connection returns, Settings' export of
+// every roadmap read from the device's copy with no connection (with the switch on), a change made
 // without knowing of another device's delete (INV-1), a change made on a device that already holds that delete (INV-1,
 // the server keeping the step's other fields), the line that tells the person once of a link of theirs that reached the
 // server after another device's delete of its step, named from the device's note in a room opened after a reload (§6), a
@@ -13,7 +14,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { createWriteStream, mkdtempSync, rmSync } from 'node:fs';
+import { createWriteStream, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -353,6 +354,18 @@ const spentIn = (store, tree, id) => rowsOf(store, 'spentIds', `tree/${tree}`).s
 const notesIn = (store) => Object.fromEntries(store.records.filter(({ key }) => key.includes('"landing:')).map(({ key, value }) => [JSON.parse(key).at(-1), value]));
 const holds = (store, words) => JSON.stringify(store).includes(words);
 
+// The files of a stored zip, as the export writes one, in its order.
+function filesIn(bytes) {
+  const files = [];
+  for (let at = 0; bytes.readUInt32LE(at) === 0x04034b50;) {
+    const size = bytes.readUInt32LE(at + 18);
+    const nameLength = bytes.readUInt16LE(at + 26);
+    files.push({ name: bytes.toString('utf8', at + 30, at + 30 + nameLength), text: bytes.toString('utf8', at + 30 + nameLength, at + 30 + nameLength + size) });
+    at += 30 + nameLength + size;
+  }
+  return files;
+}
+
 // A screenshot of what a device shows, for comparing with the boards, where WM_E2E_SHOTS names a folder; never printed.
 async function shoot(device, name) {
   if (!process.env.WM_E2E_SHOTS) return;
@@ -388,6 +401,25 @@ async function scenarios(mode, browser, { secret, second }, account, check) {
       assert.ok(await b.until(address, async () => await b.card('Reef the sail').count() === 1 && await b.columnOf('Choose a course') === 'done'
         && await b.card('Tie a reef knot').count() === 1), 'another device shows the new steps and the mark');
     });
+
+    if (mode === 'on') {
+      await check('Settings’ export reads every roadmap from the device’s copy with no connection: a file each, with every step and mark', async () => {
+        assert.ok(await a.storeUntil((store) => [sail, knot, row].every((tree) => rowsOf(store, 'confirmed', `tree/${tree}`).some((each) => each.t === 'node'))),
+          'the device holds every roadmap of the account');
+        await a.page.goto(`${origin}/app/settings`);
+        const exportAll = a.page.getByRole('button', { name: 'Export my trees', exact: true });
+        await exportAll.waitFor();
+        await a.offline();
+        const [download] = await Promise.all([a.page.waitForEvent('download'), exportAll.click()]);
+        const files = filesIn(readFileSync(await download.path()));
+        const lines = files.flatMap((file) => file.text.split('\n'));
+        assert.deepEqual({ files: files.length, steps: lines.filter((line) => /^\s*- /.test(line)).length, marks: lines.filter((line) => /^\s*- \[x\] /.test(line)).length },
+          { files: 3, steps: 7, marks: 1 }, 'the archive holds a file for each roadmap, every step and the one mark');
+        await a.page.getByText('Exported 3 roadmaps.', { exact: true }).waitFor();
+        await a.context.setOffline(false);
+      });
+      await a.board(address);
+    }
 
     const c = await Device.open(browser, secret);
     devices.push(c);
@@ -661,6 +693,8 @@ async function run(mode, browser) {
     const undone = sql("select coalesce(string_agg(distinct (props->>'action') || ':' || (props->>'outcome'), ',' order by (props->>'action') || ':' || (props->>'outcome')), '') from events where name = 'roadmap_undo'")
       .toString().match(/(?:undo|redo):[a-z]+(?:,(?:undo|redo):[a-z]+)*/)?.[0] ?? '';
     assert.equal(undone, mode === 'on' ? 'redo:applied,undo:applied' : '', 'what the room’s Undo and Redo came to reached the local intake only with the switch on');
+    const exported = Number(sql("select count(*) from events where name = 'roadmap_export' and props->>'door' = 'settings' and props->>'outcome' = 'done'").toString().match(/\d+/)?.[0] ?? 0);
+    assert.equal(exported, mode === 'on' ? 1 : 0, 'Settings’ export reached the local intake once it had a connection again');
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
@@ -676,7 +710,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 11, off: 6 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 12, off: 6 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   log.write(`\n${error?.stack ?? error}\n`);

@@ -30,16 +30,16 @@ const END_RECORD = 22;
 // One roadmap's file: its title and guide, every step with its own mark, in the paste format.
 export function buildRoadmapExport(treeData, progress) {
   return {
-    name: fileNameFor(treeData, treeData.id),
+    name: fileNameFor(treeData),
     text: serializePlan(treeData, treeData.kinds, progress),
   };
 }
 
 // One .md per tree: a slug of the title, disambiguated by a short slice of the tree id.
-function fileNameFor(treeData, treeId) {
-  const slug = String(treeData.title ?? '')
+function fileNameFor({ id, title }) {
+  const slug = String(title ?? '')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'roadmap';
-  const short = treeId.replace(/^t_/, '').slice(0, 8);
+  const short = id.replace(/^t_/, '').slice(0, 8);
   return `${slug}-${short}.md`;
 }
 
