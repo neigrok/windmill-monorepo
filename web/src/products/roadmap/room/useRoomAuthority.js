@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { LocalTreeRegistry, confirmDeviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { claimLocalTrees, onTreeClaimed } from '../sync/claimLocalTrees.js';
 import { isOwnershipRefusal, isSessionRefusal } from '../sync/refusals.js';
-import { useSyncEngine } from '../../../platform/sync/react.js';
+import { syncSession } from '../../../platform/sync/session.js';
 
 // Who holds this room: the session's lapse, the claim of device trees at sign-in, the demotion an ownership refusal forces,
 // and the holder the room acts for. Signing in on a roadmap that loaded as someone else's loads it again, as a demotion
@@ -115,6 +115,7 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
 }
 
 const deviceTrees = new LocalTreeRegistry();
+const quiet = () => () => {};
 
 // Who holds the room as its owner, and where (`place`); null for anyone else. The room goes into trees, attaches them and
 // says where it acts for its holder alone. Where the room reads the device's copy (`replica`), the engine's binding says:
@@ -126,7 +127,11 @@ const deviceTrees = new LocalTreeRegistry();
 // auth context; a page that starts with no connection stands on the cached account, which is not one) and while its
 // session has not lapsed.
 export function useRoomHolder({ owner, treeId, account, confirmed, lapsed, claims, replica = false, registry = deviceTrees }) {
-  const bound = useSyncEngine() !== null;
+  // Whether the replica the engine holds active is bound to an account, read again only as that answer changes, so the
+  // room does not draw again at every publication of the engine.
+  const { engine, ready } = useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot);
+  const active = ready ? engine : null;
+  const bound = useSyncExternalStore(active?.observeEngine ?? quiet, () => active?.getSnapshot().state === 'bound');
   const onDevice = useMemo(() => !replica && owner && registry.onDevice(treeId) !== null, [replica, owner, treeId, claims, account?.id]);
   const accountId = owner && !onDevice && (replica || (confirmed && !lapsed)) ? account?.id ?? null : null;
   return useMemo(() => {

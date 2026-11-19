@@ -400,7 +400,7 @@ that lives only on this device, whoever is at the device, signed in or not (`pla
 tree to the account and the hook asks again; on any other, the account that holds the room as its owner, once the server
 has answered for it in this document (`confirmed` in the shell's auth context; a page that starts with no connection
 stands on the cached account, which is not one) (`place: 'account'`). Where the room reads the device's copy, the
-engine's binding answers instead (`useSyncEngine`): the owner's roadmap in the browser's anon replica is whoever's at the
+engine's binding answers instead (whether the active replica is bound): the owner's roadmap in the browser's anon replica is whoever's at the
 device (`place: 'device'`) until a sign-in's lineage rule takes it to an account, and one in a replica bound to the
 account is the account's, with no connection and through a lapse too, as its copy is; no index is read. The way back
 shows where this device's index keeps the roadmap it leads to for that holder, under the title the index keeps: as that

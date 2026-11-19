@@ -66,6 +66,8 @@ export class ReplicaSession {
     // Each Undo or Redo the engine is still settling, by its request: `undo` or `redo`.
     this.settling = new Map();
     this.heldAct = null;
+    // The last picture of the roadmap the room was shown (`treeData`).
+    this.shown = null;
     this.workspace = new ReplicaWorkspace(this);
   }
 
@@ -384,9 +386,11 @@ export class ReplicaSession {
     return this.roadmap().account.trees.get(this.treeId)?.nodes.map((step) => step.id) ?? [];
   }
 
-  // The roadmap as the room's tree data, as the replica holds it now.
+  // The roadmap as the room's tree data, as the replica holds it now; one that stopped standing while the room is open
+  // keeps its last picture, as the room does.
   treeData() {
-    return this.roadmap().seed;
+    this.shown = this.roadmap().seed ?? this.shown;
+    return this.shown;
   }
 
   // The engine keeps what was written in the device's store; nothing waits on the page to flush.

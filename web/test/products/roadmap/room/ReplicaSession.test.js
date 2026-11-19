@@ -331,6 +331,20 @@ test('a roadmap’s deletion is held nine seconds: hidden from the person’s li
   }
 });
 
+test('a room whose roadmap stops standing while it is open keeps its last picture in its session, as the room does', async () => {
+  const { a, tree } = await sailing();
+  try {
+    const { reading, session } = await openRoom(a, tree);
+    const before = session.treeData();
+    await session.deleteRoadmap(tree);
+    assert.deepEqual({ standing: reading.roadmap().seed, shown: session.treeData(), steps: session.treeData()?.nodes.map((step) => step.label) },
+      { standing: null, shown: before, steps: ['Read the wind', 'Leave the dock', 'Sail solo'] });
+    reading.close();
+  } finally {
+    a.close();
+  }
+});
+
 test('a gesture the domain refuses is decided before anything is written; one it takes says it landed, with its acts’ results', async () => {
   const { a, steps, reading, session, told, reports, shown } = await gestures();
   try {
