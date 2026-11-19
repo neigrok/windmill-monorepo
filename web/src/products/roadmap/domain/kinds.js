@@ -1,12 +1,12 @@
 // @ts-check
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
-import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
+import { EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { between, dropKey, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
-import { Restore, RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, UNSET, full, gone, restoring, writeIn } from './roadmapRules.js';
+import { HeldRecord, Restore, RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, UNSET, full, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -50,17 +50,15 @@ export const RoadmapKind = new EntityType({
   ],
 });
 
-// The roadmap's kinds as one reader holds them: the record of each, present or not, and the present ones.
+// The roadmap's kinds as one reader holds them: what the device holds of the named kind (§5), and the present ones.
 /**
  * @param {Reader} read
- * @param {string | null} id
+ * @param {string} id
  */
 function readKinds(read, id) {
   const kinds = read.repository(RoadmapKind);
-  const record = id === null ? undefined : kinds.record(id, 'drawn');
   return {
-    kind: record === undefined ? null : RoadmapKind.decode(Fields.record(record)),
-    absent: record?.life?.[0] !== 'alive',
+    held: HeldRecord.read(kinds, new Id(id, RoadmapKind)),
     present: kinds.all('drawn'),
     capacity: kinds.capacity(),
     moment: read.moment,
@@ -94,10 +92,15 @@ export class CreateKind {
   }
 
   /** @param {ActReader} read */
-  load(read) { return read.inScope(RoadmapScopes.tree(this.tree), (tree) => readKinds(tree, null)); }
+  load(read) {
+    return read.inScope(RoadmapScopes.tree(this.tree), (tree) => {
+      const kinds = tree.repository(RoadmapKind);
+      return { present: kinds.all('drawn'), capacity: kinds.capacity(), moment: tree.moment };
+    });
+  }
 
   /**
-   * @param {LoadedKinds} loaded
+   * @param {{ present: RoadmapKindValue[], capacity: import('../../../platform/domain-kit/reading.js').Capacity, moment: import('../../../platform/domain-kit/time.js').Moment }} loaded
    * @param {ActIDSource} ids
    */
   decide({ present, capacity, moment }, ids) {
@@ -115,22 +118,17 @@ export class CreateKind {
   }
 }
 
-// §5 A change to a kind carries its life as alive, as a step's does.
+// §5 A change to a kind carries its life as alive, as a step's does, whether the device still holds the kind or knows
+// it only by its spent id.
 /**
  * @param {string} tree
- * @param {RoadmapKindValue} kind
+ * @param {HeldRecord<RoadmapKindValue>} held
  * @param {Valid<RoadmapKindValue>} valid
- * @param {boolean} absent
  */
-function revived(tree, kind, valid, absent) {
-  const before = kind.fields();
-  const changed = valid.checked.filter((name) => !sameJson(before[/** @type {keyof typeof before} */ (name)], valid.written[name]));
+function revived(tree, held, valid) {
+  const changed = held.changed(valid);
   if (changed.length === 0) return ActDecision.unchanged(null);
-  const plan = new Plan();
-  plan.revive(valid, { fields: changed });
-  const restorable = changed.filter((name) => name !== 'ord' || kind.ord !== null);
-  if (restorable.length || absent) plan.undoBy(restoring(Restore.tree, kind.id, restorable, { life: absent }));
-  return writeIn(RoadmapScopes.tree(tree), plan, null);
+  return writeIn(RoadmapScopes.tree(tree), held.reviving(valid, changed), null);
 }
 
 export class ChangeKind {
@@ -151,9 +149,9 @@ export class ChangeKind {
   load(read) { return read.inScope(RoadmapScopes.tree(this.tree), (tree) => readKinds(tree, this.kind)); }
 
   /** @param {LoadedKinds} loaded */
-  decide({ kind, absent, moment }) {
-    if (kind === null) return gone(RoadmapKind.type, this.kind);
-    return revived(this.tree, kind, new Valid(kind.with(this.changes), moment, Object.keys(this.changes)), absent);
+  decide({ held, moment }) {
+    if (!held.known) return gone(RoadmapKind.type, this.kind);
+    return revived(this.tree, held, new Valid(held.value.with(this.changes), moment, Object.keys(this.changes)));
   }
 }
 
@@ -175,8 +173,9 @@ export class MoveKind {
   load(read) { return read.inScope(RoadmapScopes.tree(this.tree), (tree) => readKinds(tree, this.kind)); }
 
   /** @param {LoadedKinds} loaded */
-  decide({ kind, absent, present, moment }) {
-    if (kind === null) return gone(RoadmapKind.type, this.kind);
+  decide({ held, present, moment }) {
+    if (!held.known) return gone(RoadmapKind.type, this.kind);
+    const kind = held.value;
     const members = present.filter((other) => String(other.id.record) !== this.kind && other.ord !== null && isOrderKey(other.ord))
       .map((other) => ({ id: String(other.id.record), key: /** @type {string} */ (other.ord) }))
       .sort((a, b) => compareText(a.key, b.key) || compareText(a.id, b.id));
@@ -185,13 +184,15 @@ export class MoveKind {
     const above = own === null ? undefined : members.filter((member) => member.key < own || (member.key === own && compareText(member.id, this.kind) < 0)).at(-1)?.id ?? null;
     if (above === this.below) return ActDecision.unchanged(null);
     const ord = dropKey({ stored: members, drawn: members, moved: this.kind, above: this.below });
-    return revived(this.tree, kind, new Valid(kind.with({ ord }), moment, ['ord']), absent);
+    return revived(this.tree, held, new Valid(kind.with({ ord }), moment, ['ord']));
   }
 }
 
 // §4 `roadmap.recolourKind`: the kind's hue and the colour of every step that wears it, present or not,
-// predicted so the legend and the steps change at once. A kind this device holds as deleted is revived first, as
-// every change to a kind carries its life; the command revives no step.
+// predicted so the legend and the steps change at once. A kind this device holds as deleted, or knows only by its
+// spent id, is revived first, as every change to a kind carries its life; the command revives no step. Of a kind known
+// only by its spent id the device knows no hue, so it predicts the kind's new hue alone, the server recolours the
+// steps that wore the old one, and an Undo deletes the kind again.
 export class RecolourKind {
   /**
    * @param {string} tree
@@ -216,24 +217,26 @@ export class RecolourKind {
   }
 
   /** @param {LoadedKinds & { steps: import('./steps.js').RoadmapStepValue[] }} loaded */
-  decide({ kind, absent, present, steps, moment }) {
-    if (kind === null) return gone(RoadmapKind.type, this.kind);
-    const hue = new Valid(kind.with({ hue: this.hue }), moment, ['hue']).value.hue;
+  decide({ held, present, steps, moment }) {
+    if (!held.known) return gone(RoadmapKind.type, this.kind);
+    const kind = held.value;
+    const recoloured = new Valid(kind.with({ hue: this.hue }), moment, ['hue']);
+    const hue = recoloured.value.hue;
     wearing(present, hue, this.kind);
-    if (hue === kind.hue) return ActDecision.unchanged(null);
-    const worn = steps.filter((step) => step.color === kind.hue).sort((a, b) => Id.compare(a.id, b.id));
+    if (held.changed(recoloured).length === 0) return ActDecision.unchanged(null);
+    const worn = held.holdsValues ? steps.filter((step) => step.color === kind.hue).sort((a, b) => Id.compare(a.id, b.id)) : [];
     const wearers = worn.map((step) => Prediction.update(step.id, { color: hue }));
     const scope = RoadmapScopes.tree(this.tree);
     const recolour = Plan.running({ name: 'roadmap.recolourKind', specs: [RoadmapSpecs.recolourHue], args: { kind: kind.id.record, hue } },
       [Prediction.update(kind.id, { hue }), ...wearers]);
-    recolour.undoBy(UndoRecipe.fields(Restore.tree, [
-      { target: UndoTarget.field(kind.id, 'hue'), defaultValue: UNSET.kind.hue },
-      ...worn.map((step) => ({ target: UndoTarget.field(step.id, 'color'), defaultValue: UNSET.node.color }))]));
+    if (held.holdsValues) {
+      recolour.undoBy(UndoRecipe.fields(Restore.tree, [
+        { target: UndoTarget.field(kind.id, 'hue'), defaultValue: UNSET.kind.hue },
+        ...worn.map((step) => ({ target: UndoTarget.field(step.id, 'color'), defaultValue: UNSET.node.color }))]));
+    }
     const command = new ScopedPlan(scope, recolour);
-    if (!absent) return ActDecision.write(new ActPlan([command]), null);
-    const revival = new Plan();
-    revival.revive(new Valid(kind, moment, []), { fields: [] });
-    revival.undoBy(restoring(Restore.tree, kind.id, [], { life: true }));
+    if (!held.absent) return ActDecision.write(new ActPlan([command]), null);
+    const revival = held.reviving(new Valid(kind, moment, []), []);
     return ActDecision.write(new ActPlan([new ScopedPlan(scope, revival), command]), null);
   }
 }

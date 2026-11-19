@@ -5,7 +5,7 @@ import { EntityType, Id } from '../../../platform/domain-kit/entities.js';
 import { Plan, UndoRecipe } from '../../../platform/domain-kit/plans.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
-import { Restore, RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
+import { HeldRecord, Restore, RoadmapChecks, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
@@ -73,8 +73,8 @@ class StepOverlay {
    */
   constructor(read, tree, step) {
     const known = read.inScope(RoadmapScopes.tree(tree), (scope) => {
-      const record = scope.repository(RoadmapStep).record(step, 'drawn');
-      return { known: record !== undefined, branch: typeof record?.f?.branch?.[0] === 'string' };
+      const held = HeldRecord.read(scope.repository(RoadmapStep), new Id(step, RoadmapStep));
+      return { known: held.known, branch: held.value.branch !== null };
     });
     const overlay = read.inScope(RoadmapScopes.overlay(tree), (scope) => ({
       mark: scope.repository(StepMark).find(new Id(step, StepMark), 'drawn'),

@@ -6,7 +6,7 @@ import { Harness } from '../../../platform/domain-kit/harness.js';
 import { until } from '../../../platform/sync/fakes.js';
 import { roadmapRegistry } from '../domain/vectors.js';
 import { CreateRoadmap, CreateSubtree, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
-import { CreateStep, DeleteStep } from '../../../../src/products/roadmap/domain/steps.js';
+import { ChangeStep, CreateStep, DeleteStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { Complete, SetPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { AddStepLink, AddSubtask } from '../../../../src/products/roadmap/domain/workspace.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
@@ -97,7 +97,8 @@ test('the room follows each change the replica draws: a step deleted elsewhere i
   }
 });
 
-// The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a line names one the visit read before.
+// The device keeps nothing of a step deleted elsewhere but its spent id (engine.md §7.5): a line names it as the device's
+// note took it when the device linked from it, and an edit made after the delete arrived brings the step back.
 test('the device tells its own changes once: a new step that follows past a step another device deleted, and a step its edit brought back; a read that fails tells nothing and reports once', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
@@ -118,17 +119,17 @@ test('the device tells its own changes once: a new step that follows past a step
 
     const reef = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Reef the sail' }, [steps.wind])));
     committed(await b.runner.runAct(new DeleteStep(tree, steps.wind)));
+    committed(await b.runner.runAct(new DeleteStep(tree, steps.dock)));
     await a.advance(CONSTANTS.HOLD_MS);
-    await b.senderStep();
     await a.sync();
-    await a.engine.commit(RoadmapScopes.tree(tree), [], { local: { [RoadmapScopes.landing(tree)]: { ...reading.writes.runner.read(RoadmapScopes.tree(tree),
-      (read) => read.device(RoadmapScopes.landing(tree))), revived: [steps.dock] } } });
+    committed(await a.runner.runAct(new ChangeStep(tree, steps.dock, { description: 'Cast off the lines' })));
+    await a.sync();
     assert.deepEqual(reading.landing(), [
       { key: `follows:${reef}:${steps.wind}`, step: reef, rule: 'follows', removed: ['Read the wind'], followed: ['Choose a course'],
         told: { nodes: [reef], edges: [[steps.wind, reef]] } },
       { key: `cameBack:${steps.dock}`, step: steps.dock, rule: 'cameBack', told: { revived: [steps.dock] } },
     ]);
-    assert.deepEqual(landed.at(-1).map((line) => line.key), [`follows:${reef}:${steps.wind}`]);
+    assert.deepEqual(landed.at(-1).map((line) => line.key), [`follows:${reef}:${steps.wind}`, `cameBack:${steps.dock}`]);
 
     await reading.tell(reading.landing());
     assert.deepEqual({ landing: reading.landing(), note: a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))) },

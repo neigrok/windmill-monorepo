@@ -189,13 +189,19 @@ Every gesture is an action on the domain kit, the same in each language.
 
 - **Create a roadmap** commits the `tree` record, then one intent in its tree scope with the title,
   the genesis kinds and the first steps. The second is dropped if the first is refused.
-- **Create a step** writes the step and one link from each prerequisite, in one intent.
+- **Create a step** writes the step and one link from each prerequisite, in one intent. A
+  prerequisite deleted elsewhere is linked all the same.
 - **Any change to a step or a kind** carries the record's life as alive, under the gesture's stamp,
   so it is admitted whether or not the record was deleted elsewhere. Where the record is still dead
   once it has joined, the server revives it. So a step a person changed is present, whichever of
-  the change and the delete was made first. (P-4) Making a subtree on a step and recolouring a
-  kind the device holds as deleted revive it by an ordinary revive in the same act, ahead of the
-  command; the command itself revives one deleted where the device did not know.
+  the change and the delete was made first. (P-4) A device knows a step or kind as deleted by its
+  record, dead while its own delete has not settled, or, once a delete has reached it, by the
+  record's spent id alone: the engine keeps nothing else of it (engine §7.5). A change to a record
+  the device knows only so revives it with the fields the change names, and the server's revival
+  keeps the others. Making a subtree on a step and recolouring a kind the device knows as deleted
+  revive it by an ordinary revive in the same act, ahead of the command; the command itself
+  revives one deleted where the device did not know. A step or kind the device never knew is
+  refused as gone.
 - **Delete a step** is held, and writes the step's death and nothing else. Its links stay, unread
   while it is absent, and return with it. Undo, before release or after, is the step's revival.
 - **What a step follows is read through absent steps** (D-5). So a step that followed a deleted
@@ -249,7 +255,9 @@ What a device tells a person when a change of theirs met one made elsewhere.
 - **A step that follows something else than the person linked.** When a device's own new step or
   new link turns out to follow through an absent step, the person is told once, where the step is
   listed and on its page. The device notes its own new steps and links in a device row when it
-  makes them and clears the note once it has said so.
+  makes them, with the name of each step it links from, since it keeps nothing of a step once
+  another device's delete has reached it, and clears the note once it has said so. A line whose
+  removed step the note holds no name of is not said.
 - **A step that came back.** When a device's own change found the step absent on the device and
   so revived it, the person is told once; the device notes it as it notes a new step. A revival
   the device never saw, of a step it still held present when the change was made, is not told.

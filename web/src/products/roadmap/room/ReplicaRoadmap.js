@@ -154,24 +154,6 @@ export class ReplicaRoadmap {
     return { guides: this.account.guides(this.treeId).map((guide) => ({ treeId: guide.tree, title: guide.title, text: guide.text })) };
   }
 
-  // §6 What the device tells of its own changes on the open roadmap, from the domain's `landingOf`: a line a step, in the
-  // room's names. `cameBack` where the person's change brought the step back; `follows` with the deleted steps it was
-  // linked from and the steps it follows through them. A deleted step's name is the one `named` remembers: the device
-  // keeps nothing of a step deleted elsewhere (engine.md §7.5), so a name the visit never read is ''. `told` is what
-  // saying the line clears from the device's note.
-  landed({ follows, cameBack, note }, named) {
-    const steps = this.account.trees.get(this.treeId).nodesById;
-    const name = (id) => steps.get(id)?.label ?? named.get(id) ?? '';
-    return [
-      ...follows.map(({ node, incoming, followed }) => ({
-        key: `follows:${node}:${incoming.map(([from]) => from).join('\n')}`, step: node, rule: 'follows',
-        removed: incoming.map(([from]) => name(from)), followed: followed.map(({ id }) => name(id)),
-        told: { nodes: note.nodes.includes(node) ? [node] : [], edges: incoming },
-      })),
-      ...cameBack.map((step) => ({ key: `cameBack:${step}`, step, rule: 'cameBack', told: { revived: [step] } })),
-    ];
-  }
-
   // The person's roadmaps as the switcher lists them, in the domain's order. `place` says where they live: `account` for
   // a replica bound to an account, else this device.
   list(place) {

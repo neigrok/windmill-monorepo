@@ -9,7 +9,7 @@ import { Path } from '../../../platform/domain-kit/values.js';
 import { recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
-import { GENESIS_KINDS, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
+import { GENESIS_KINDS, HeldRecord, Restore, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep, StepsImport, readTree } from './steps.js';
 import { StepMark, StepPointer } from './progress.js';
 import { LandingNote, RoadmapTree } from './records.js';
@@ -347,7 +347,8 @@ export class SetVisibility {
 }
 
 // §4 `roadmap.createSubtree`, predicted so a subtree is made with no connection: the subtree's record, its meta
-// and genesis kinds, and the step's `branch`. A step this device holds as deleted is revived first, and noted (§6).
+// and genesis kinds, and the step's `branch`. A step this device holds as deleted, or knows only by its spent id, is
+// revived first, and noted (§6); of the latter the device knows no subtree, so the server answers any it owns.
 export class CreateSubtree {
   /**
    * @param {string} tree
@@ -363,16 +364,12 @@ export class CreateSubtree {
   /** @param {import('../../../platform/domain-kit/acts.js').ActReader} read */
   load(read) {
     const roadmap = read.inScope(RoadmapScopes.account, (account) => account.repository(Roadmap).find(new Id(this.tree, Roadmap), 'drawn'));
-    const tree = read.inScope(RoadmapScopes.tree(this.tree), (scope) => {
-      const record = scope.repository(RoadmapStep).record(this.step, 'drawn');
-      return {
-        meta: scope.repository(RoadmapMeta).find(META, 'drawn') ?? RoadmapMetaValue.blank(),
-        step: record === undefined ? null : RoadmapStep.decode(Fields.record(record)),
-        absent: record?.life?.[0] !== 'alive',
-        note: LandingNote.of(scope.device(RoadmapScopes.landing(this.tree))),
-        moment: scope.moment,
-      };
-    });
+    const tree = read.inScope(RoadmapScopes.tree(this.tree), (scope) => ({
+      meta: scope.repository(RoadmapMeta).find(META, 'drawn') ?? RoadmapMetaValue.blank(),
+      held: HeldRecord.read(scope.repository(RoadmapStep), new Id(this.step, RoadmapStep)),
+      note: LandingNote.of(scope.device(RoadmapScopes.landing(this.tree))),
+      moment: scope.moment,
+    }));
     const pointer = read.inScope(RoadmapScopes.overlay(this.tree), (overlay) => overlay.repository(StepPointer).find(new Id(this.step, StepPointer), 'drawn'));
     return { roadmap, pointer, ...tree };
   }
@@ -381,9 +378,10 @@ export class CreateSubtree {
    * @param {ReturnType<CreateSubtree['load']>} loaded
    * @param {import('../../../platform/domain-kit/acts.js').ActIDSource} ids
    */
-  decide({ roadmap, pointer, meta, step, absent, note, moment }, ids) {
+  decide({ roadmap, pointer, meta, held, note, moment }, ids) {
     if (roadmap === null) return gone(Roadmap.type, this.tree);
-    if (step === null) return gone(RoadmapStep.type, this.step);
+    if (!held.known) return gone(RoadmapStep.type, this.step);
+    const step = held.value;
     if (step.branch !== null) return ActDecision.unchanged({ subtree: step.branch });
     const refused = (/** @type {string} */ code, /** @type {import('../../../platform/domain-kit/entities.js').RecordRef} */ subject) =>
       ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused(code, subject, null, 'predicted')));
@@ -406,11 +404,9 @@ export class CreateSubtree {
       unchangedCreatedScopes: [scope],
     }));
     const connected = new ScopedPlan(RoadmapScopes.account, command);
-    const created = { subtree, root: meta.root ?? this.tree, revived: absent };
-    if (!absent) return ActDecision.write(new ActPlan([connected]), created);
-    const revival = new Plan();
-    revival.revive(new Valid(step, moment, []), { fields: [] });
-    revival.undoBy(restoring(Restore.tree, step.id, [], { life: true }));
+    const created = { subtree, root: meta.root ?? this.tree, revived: held.absent };
+    if (!held.absent) return ActDecision.write(new ActPlan([connected]), created);
+    const revival = held.reviving(new Valid(step, moment, []), []);
     revival.device(RoadmapScopes.landing(this.tree), note.adding({ revived: [this.step] }).json);
     return ActDecision.write(new ActPlan([new ScopedPlan(RoadmapScopes.tree(this.tree), revival), connected]), created);
   }

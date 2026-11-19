@@ -1,7 +1,7 @@
 // @ts-check
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
-import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
+import { EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan, UndoRecipe } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
@@ -11,7 +11,7 @@ import { between, dropKey, isOrderKey } from '../../../../../packages/api-contra
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { components, FollowGraph } from './graph.js';
 import { LandingNote, RoadmapTree } from './records.js';
-import { Restore, RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
+import { HeldRecord, Restore, RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
 
 /** @typedef {import('../../../platform/domain-kit/time.js').Moment} Moment */
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -325,18 +325,41 @@ export class StepsImport {
   }
 }
 
+// The steps and links of one tree scope as an act reads them, and which of the steps it names the roadmap knows: a
+// step the device holds, present or deleted, or one another device deleted that it knows only by its spent id
+// (engine §7.5). A step it never knew is gone.
 /**
  * @param {ActReader} read
  * @param {string} tree
+ * @param {string[]} named
  */
-function loadTree(read, tree) {
-  return read.inScope(RoadmapScopes.tree(tree), (scope) => ({
-    tree: readTree(tree, scope),
-    steps: scope.repository(RoadmapStep).capacity(),
-    links: scope.repository(RoadmapLink).capacity(),
-    note: LandingNote.of(scope.device(RoadmapScopes.landing(tree))),
-    moment: scope.moment,
-  }));
+function loadTree(read, tree, named) {
+  return read.inScope(RoadmapScopes.tree(tree), (scope) => {
+    const steps = scope.repository(RoadmapStep);
+    const roadmap = readTree(tree, scope);
+    return {
+      tree: roadmap,
+      known: new Set(named.filter((id) => roadmap.nodesById.has(id) || steps.spentBorn(new Id(id, RoadmapStep)) !== null)),
+      steps: steps.capacity(),
+      links: scope.repository(RoadmapLink).capacity(),
+      note: LandingNote.of(scope.device(RoadmapScopes.landing(tree))),
+      moment: scope.moment,
+    };
+  });
+}
+
+// The name of each step a device links from, as it holds it now, for a landing line that may come to name it once
+// another device deletes it (§6): the roadmap's own, or one the act makes (`made`). A step it holds no name of has none.
+/**
+ * @param {RoadmapTree} tree
+ * @param {string[]} froms
+ * @param {Map<string, string>} [made]
+ */
+function linkedNames(tree, froms, made = new Map()) {
+  return [...new Set(froms)].flatMap((id) => {
+    const name = tree.nodesById.get(id)?.label ?? made.get(id);
+    return name === undefined ? [] : [{ id, name }];
+  });
 }
 
 /** @typedef {ReturnType<typeof loadTree>} LoadedTree */
@@ -362,17 +385,17 @@ export class CreateStep {
   }
 
   /** @param {ActReader} read */
-  load(read) { return loadTree(read, this.tree); }
+  load(read) { return loadTree(read, this.tree, this.id === null ? this.prerequisites : [...this.prerequisites, this.id]); }
 
   /**
    * @param {LoadedTree} loaded
    * @param {ActIDSource} ids
    */
-  decide({ tree, steps, links, note, moment }, ids) {
+  decide({ tree, known, steps, links, note, moment }, ids) {
     const scope = RoadmapScopes.tree(this.tree);
-    const unknown = this.prerequisites.find((id) => !tree.nodesById.has(id));
+    const unknown = this.prerequisites.find((id) => !known.has(id));
     if (unknown !== undefined) return gone(RoadmapStep.type, unknown);
-    if (this.id !== null && tree.nodesById.has(this.id)) {
+    if (this.id !== null && known.has(this.id)) {
       return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('id-taken', { t: RoadmapStep.type, id: this.id }, null, 'predicted')));
     }
     const id = this.id ?? String(ids.mint(RoadmapStep, scope).record);
@@ -385,23 +408,23 @@ export class CreateStep {
     plan.create(step);
     for (const link of made) plan.create(link);
     plan.undoBy(...[step, ...made].map((valid) => UndoRecipe.createdRecord(Restore.tree, valid.id)));
-    plan.device(RoadmapScopes.landing(this.tree), note.adding({ nodes: [id], edges: this.prerequisites.map((from) => [from, id]) }).json);
+    plan.device(RoadmapScopes.landing(this.tree), note.adding({ nodes: [id], edges: this.prerequisites.map((from) => [from, id]),
+      names: linkedNames(tree, this.prerequisites) }).json);
     return writeIn(scope, plan, id);
   }
 }
 
 // §5 Any change to a step carries its life as alive under the gesture's stamp, so a step deleted elsewhere
-// comes back with the change (P-4). A step this device already holds as deleted is noted as revived (§6).
+// comes back with the change (P-4, INV-1), whether this device still holds it or knows it only by its spent id. A step
+// the device found absent is noted as revived (§6).
 /**
  * @param {string} tree
  * @param {Reader} read
  * @param {string} id
  */
 function readStep(tree, read, id) {
-  const record = read.repository(RoadmapStep).record(id, 'drawn');
   return {
-    step: record === undefined ? null : RoadmapStep.decode(Fields.record(record)),
-    absent: record?.life?.[0] !== 'alive',
+    held: HeldRecord.read(read.repository(RoadmapStep), new Id(id, RoadmapStep)),
     note: LandingNote.of(read.device(RoadmapScopes.landing(tree))),
     moment: read.moment,
   };
@@ -409,20 +432,15 @@ function readStep(tree, read, id) {
 
 /**
  * @param {string} tree
- * @param {RoadmapStepValue} step
+ * @param {HeldRecord<RoadmapStepValue>} held
  * @param {Valid<RoadmapStepValue>} valid
- * @param {boolean} absent
  * @param {LandingNote} note
  */
-function revived(tree, step, valid, absent, note) {
-  const before = step.fields();
-  const changed = valid.checked.filter((name) => !sameJson(before[/** @type {keyof typeof before} */ (name)], valid.written[name]));
+function revived(tree, held, valid, note) {
+  const changed = held.changed(valid);
   if (changed.length === 0) return ActDecision.unchanged(null);
-  const plan = new Plan();
-  plan.revive(valid, { fields: changed });
-  const restorable = changed.filter((name) => name !== 'ord' || step.ord !== null);
-  if (restorable.length || absent) plan.undoBy(restoring(Restore.tree, step.id, restorable, { life: absent }));
-  if (absent) plan.device(RoadmapScopes.landing(tree), note.adding({ revived: [String(step.id.record)] }).json);
+  const plan = held.reviving(valid, changed);
+  if (held.absent) plan.device(RoadmapScopes.landing(tree), note.adding({ revived: [String(held.id.record)] }).json);
   return writeIn(RoadmapScopes.tree(tree), plan, null);
 }
 
@@ -444,9 +462,9 @@ export class ChangeStep {
   load(read) { return read.inScope(RoadmapScopes.tree(this.tree), (tree) => readStep(this.tree, tree, this.step)); }
 
   /** @param {ReturnType<typeof readStep>} loaded */
-  decide({ step, absent, note, moment }) {
-    if (step === null) return gone(RoadmapStep.type, this.step);
-    return revived(this.tree, step, new Valid(step.with(this.changes), moment, Object.keys(this.changes)), absent, note);
+  decide({ held, note, moment }) {
+    if (!held.known) return gone(RoadmapStep.type, this.step);
+    return revived(this.tree, held, new Valid(held.value.with(this.changes), moment, Object.keys(this.changes)), note);
   }
 }
 
@@ -481,15 +499,16 @@ export class MoveStep {
   }
 
   /** @param {ReturnType<typeof readStep> & { members: { id: string, key: string }[] }} loaded */
-  decide({ step, absent, note, moment, members }) {
-    if (step === null) return gone(RoadmapStep.type, this.step);
+  decide({ held, note, moment, members }) {
+    if (!held.known) return gone(RoadmapStep.type, this.step);
     if (this.below !== null && !members.some((member) => member.id === this.below)) return gone(RoadmapStep.type, this.below);
+    const step = held.value;
     const own = step.ord !== null && isOrderKey(step.ord) ? step.ord : null;
     const above = own === null ? null : [...members].filter((member) => member.key < own || (member.key === own && compareText(member.id, this.step) < 0))
       .sort((a, b) => compareText(a.key, b.key) || compareText(a.id, b.id)).at(-1)?.id ?? null;
     if (own !== null && above === this.below) return ActDecision.unchanged(null);
     const ord = dropKey({ stored: members, drawn: members, moved: this.step, above: this.below });
-    return revived(this.tree, step, new Valid(step.with({ ord }), moment, ['ord']), absent, note);
+    return revived(this.tree, held, new Valid(step.with({ ord }), moment, ['ord']), note);
   }
 }
 
@@ -538,11 +557,11 @@ export class ChangePrerequisites {
   }
 
   /** @param {ActReader} read */
-  load(read) { return loadTree(read, this.tree); }
+  load(read) { return loadTree(read, this.tree, [this.step, ...this.add]); }
 
   /** @param {LoadedTree} loaded */
-  decide({ tree, links, note, moment }) {
-    const unknown = [this.step, ...this.add].find((id) => !tree.nodesById.has(id));
+  decide({ tree, known, links, note, moment }) {
+    const unknown = [this.step, ...this.add].find((id) => !known.has(id));
     if (unknown !== undefined) return gone(RoadmapStep.type, unknown);
     const live = new Set(tree.edges.filter((edge) => edge.present).map((edge) => jcs([edge.from, edge.to])));
     const adding = this.add.filter((from) => !live.has(jcs([from, this.step]))).map((from) => [from, this.step]);
@@ -569,7 +588,7 @@ export class ChangePrerequisites {
     plan.undoBy(...made.map((link) => (held.has(jcs([link.value.from, link.value.to]))
       ? restoring(Restore.tree, link.id, [], { life: true }) : UndoRecipe.createdRecord(Restore.tree, link.id))),
     ...removing.map(([from = '', to = '']) => restoring(Restore.tree, new RoadmapLinkValue(from, to).id, [], { life: true })));
-    if (adding.length) plan.device(RoadmapScopes.landing(this.tree), note.adding({ edges: adding }).json);
+    if (adding.length) plan.device(RoadmapScopes.landing(this.tree), note.adding({ edges: adding, names: linkedNames(tree, adding.map(([from = '']) => from)) }).json);
     return writeIn(RoadmapScopes.tree(this.tree), plan, null);
   }
 }
@@ -591,14 +610,14 @@ export class ImportSteps {
   }
 
   /** @param {ActReader} read */
-  load(read) { return loadTree(read, this.tree); }
+  load(read) { return loadTree(read, this.tree, this.under === null ? [] : [this.under]); }
 
   /**
    * @param {LoadedTree} loaded
    * @param {ActIDSource} ids
    */
-  decide({ tree, steps, links, note, moment }, ids) {
-    if (this.under !== null && !tree.nodesById.has(this.under)) return gone(RoadmapStep.type, this.under);
+  decide({ tree, known, steps, links, note, moment }, ids) {
+    if (this.under !== null && !known.has(this.under)) return gone(RoadmapStep.type, this.under);
     if (this.imported.steps.length === 0) return ActDecision.unchanged({});
     const scope = RoadmapScopes.tree(this.tree);
     const planned = new StepsImport(this.imported, tree, this.under).planned(moment, ids, scope);
@@ -610,9 +629,11 @@ export class ImportSteps {
       for (const unit of chunk) unit.writeTo(plan);
       return new ScopedPlan(scope, plan);
     });
+    const labels = new Map(planned.units.map((unit) => [String(unit.step.id.record), unit.step.value.label]));
     segments[0]?.plan.device(RoadmapScopes.landing(this.tree), note.adding({
       nodes: planned.units.map((unit) => String(unit.step.id.record)),
       edges: made.map((link) => [link.value.from, link.value.to]),
+      names: linkedNames(tree, made.map((link) => link.value.from), labels),
     }).json);
     return ActDecision.write(new ActPlan(segments), planned.ids);
   }
