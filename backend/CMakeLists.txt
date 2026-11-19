@@ -137,6 +137,8 @@ add_library(windmill_roadmap
   products/roadmap/domain/read/FollowGraph.cpp
   products/roadmap/domain/read/RoadmapAccount.cpp
   products/roadmap/domain/read/Reads.cpp
+  products/roadmap/adoption/Adoption.cpp
+  products/roadmap/adoption/Audit.cpp
   products/roadmap/application/TreeRoom.cpp
   products/roadmap/application/RoomRegistry.cpp
   products/roadmap/application/OwnerProgress.cpp
@@ -321,6 +323,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/SubtreeInventoryTest.cpp
   test/products/roadmap/domain/SubtreeTest.cpp
   test/products/roadmap/domain/TreeSummaryTest.cpp
+  test/products/roadmap/adoption/AdoptionTest.cpp
   test/products/roadmap/domain/GalleryTest.cpp
   test/products/roadmap/domain/TendingTest.cpp
   test/products/roadmap/domain/TreeTest.cpp
@@ -471,6 +474,9 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/postgres/PgOgImageRepository.cpp
   products/roadmap/adapters/postgres/PgOgVideoRepository.cpp
   products/roadmap/adapters/postgres/PgReminderRepository.cpp
+  products/roadmap/adoption/PgAdoption.cpp
+  products/roadmap/adoption/Cutover.cpp
+  products/roadmap/adoption/ReadModels.cpp
   products/roadmap/adapters/postgres/PgTendRunRepository.cpp
   products/roadmap/adapters/http/TreeApi.cpp
   products/roadmap/adapters/http/SharePageApi.cpp
@@ -571,6 +577,10 @@ target_link_libraries(windmill_resum_sync_digests PRIVATE windmill_product_sync)
 add_executable(windmill_subtree_inventory platform/infra/subtree_inventory.cpp)
 target_link_libraries(windmill_subtree_inventory PRIVATE windmill_roadmap)
 
+# Roadmap's cutover onto the sync engine, stage by stage (products/roadmap/adoption/README.md).
+add_executable(windmill_roadmap_adopt platform/infra/roadmap_adopt.cpp)
+target_link_libraries(windmill_roadmap_adopt PRIVATE windmill_product_sync)
+
 # The real composition with a harness-controlled clock; never copied to the runtime image.
 add_executable(windmill_server_test_clock platform/infra/main.cpp)
 target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
@@ -586,6 +596,12 @@ add_test(NAME subtree_inventory COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/subtree_inventory_test.py $<TARGET_FILE:windmill_subtree_inventory>
   ${CMAKE_SOURCE_DIR}/db/schema.sql)
 set_tests_properties(subtree_inventory PROPERTIES TIMEOUT 120)
+# Roadmap's adoption onto the sync engine, stage by stage (products/roadmap/adoption/README.md); its Postgres cases build
+# databases of their own beside DATABASE_URL's, under WM_PG_TEST.
+add_test(NAME roadmap_adopt COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/platform/infra/roadmap_adopt_test.py $<TARGET_FILE:windmill_roadmap_adopt>
+  ${CMAKE_SOURCE_DIR}/db/schema.sql ${CMAKE_SOURCE_DIR}/test/platform/infra/roadmap_adopt_fixture.sql)
+set_tests_properties(roadmap_adopt PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)
 # The real server told to stop, under WM_PG_TEST: its exit code, the deadline it exits by, and what it took after the
 # signal (SPEC.md, "The server stops in one order").
 add_test(NAME server_stop COMMAND ${Python3_EXECUTABLE}

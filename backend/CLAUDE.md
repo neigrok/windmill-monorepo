@@ -43,9 +43,10 @@ process; it builds `windmill_server`, the harness-clocked `windmill_server_test_
 `windmill_server_probe`), `mcp_main.cpp` (stdio transport) and `mcp_http_main.cpp` (standalone HTTP
 transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
 pair makes a repeated rotation idempotent, `resum_sync_digests.cpp` is the offline tool that rewrites
-every alive scope's digest from its feed after a registry change (`deploy/README.md`), and
+every alive scope's digest from its feed after a registry change (`deploy/README.md`),
 `subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step,
-reading only (`SPEC.md`, Subtree inventory).
+reading only (`SPEC.md`, Subtree inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
+stage, printing counts and verdicts alone (`products/roadmap/adoption/README.md`).
 
 ## How a product plugs in
 
@@ -71,7 +72,7 @@ receipts and retained journal revisions stay in place.
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:15)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and eleven script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and twelve script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
