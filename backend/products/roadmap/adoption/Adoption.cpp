@@ -3,6 +3,8 @@
 #include "platform/domain/sync/FractionalIndex.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tree.h"
+#include "products/roadmap/sync/RoadmapProduct.h"
+#include "products/roadmap/sync/RoadmapRules.h"
 
 #include <algorithm>
 #include <cmath>
@@ -122,7 +124,6 @@ std::map<std::string, std::string> kindKeys(const std::vector<OldKind>& kinds) {
 
 namespace {
 
-constexpr std::int64_t kMaxDepth = 8;
 constexpr std::size_t kMaxIdChars = 128;
 const std::set<std::string> kVisibilities{"private", "unlisted", "public"};
 const std::set<std::string> kStatuses{"none", "complete", "active", "inProgress"};
@@ -194,21 +195,28 @@ private:
   Tally& tally_;
 };
 
-// The registry's order of the types of one scope: the order the move numbers their rows in, after which each by id.
-int typeRank(const std::string& type) {
-  static const std::map<std::string, int> ranks{{"tree", 0}, {"meta", 1}, {"node", 2}, {"edge", 3}, {"kind", 4}, {"progress", 5}, {"pointer", 6}};
-  return ranks.at(type);
+// Roadmap's registry, whose type order the move numbers rows in, after which each by id, and whose caps it counts.
+const sync::TypeDef& typeOf(const std::string& name) {
+  const sync::TypeDef* type = engine::registry().type(name);
+  if (!type) throw std::logic_error("roadmap's registry declares no type the move writes");
+  return *type;
 }
 
-// The rows numbered after `base` in the registry's order, then by id, and the scope's seq, counters and digest.
-void number(ScopePlan& scope, Seq base, const std::set<std::string>& capped) {
+std::ptrdiff_t rankOf(const std::string& type) {
+  const std::vector<sync::TypeDef>& types = engine::registry().types();
+  return std::find_if(types.begin(), types.end(), [&](const sync::TypeDef& each) { return each.name == type; }) - types.begin();
+}
+
+// The rows numbered after `base` in the registry's order, then by id, and the scope's seq, the alive count of each capped
+// type, and its digest.
+void number(ScopePlan& scope, Seq base) {
   std::sort(scope.rows.begin(), scope.rows.end(),
-            [](const Row& a, const Row& b) { return std::pair(typeRank(a.t), a.id) < std::pair(typeRank(b.t), b.id); });
+            [](const Row& a, const Row& b) { return std::pair(rankOf(a.t), a.id) < std::pair(rankOf(b.t), b.id); });
   std::vector<Json::Value> hashed;
   scope.seq = base;
   for (Row& row : scope.rows) {
     row.seq = ++scope.seq;
-    if (capped.contains(row.t) && row.alive()) ++scope.counters[row.t];
+    if (typeOf(row.t).cap && row.alive()) ++scope.counters[row.t];
     hashed.push_back(row.toJson());
   }
   scope.digest = sync::scopeDigest(hashed);
@@ -319,7 +327,7 @@ void Survey::place(const std::string& id) {
     }
   }
   if (root.root != root.id || root.depth != 0) stop(id, "stop.rootDisagreesWithItself");
-  if (roadmap.depth > kMaxDepth) stop(id, "stop.deeperThanTheLimit");
+  if (roadmap.depth > engine::kMaxDepth) stop(id, "stop.deeperThanTheLimit");
 
   for (const OldRoadmap* each : up) {
     if (!each->deletedAt) continue;
@@ -380,7 +388,7 @@ public:
     adoptSteps(planned.tree.rows);
     adoptLinks(planned.tree.rows);
     adoptKinds(planned.tree.rows);
-    number(planned.tree, roadmap_.head, {"node", "edge", "kind"});
+    number(planned.tree, roadmap_.head);
     planned.tree.open = surveyed_.reach != "private";
     if (roadmap_.head > 0) tally_.add("seq.continuedAboveAHead");
     countCaps(planned.tree);
@@ -576,7 +584,7 @@ private:
       const UserId reader{account};
       ScopePlan overlay{.key = ScopeKey::overlay(reader, roadmap_.id), .owner = reader, .governedBy = ScopeKey::tree(roadmap_.id).text(),
                         .rows = std::move(rows)};
-      number(overlay, 0, {});
+      number(overlay, 0);
       tally_.add(reader == surveyed_.owner ? "overlays.owners" : "overlays.readers");
       overlays.push_back(std::move(overlay));
     }
@@ -584,16 +592,8 @@ private:
 
   // A roadmap holding more than a type's cap stands as it is: the cap binds the next create (engine.md §6.5).
   void countCaps(const ScopePlan& scope) {
-    struct Cap {
-      const char* type;
-      std::int64_t cap;
-      const char* counted;
-    };
-    static constexpr Cap caps[]{{"node", 10'000, "roadmaps.pastTheStepCap"}, {"edge", 20'000, "roadmaps.pastTheLinkCap"},
-                                {"kind", 6, "roadmaps.pastTheKindCap"}};
-    for (const Cap& cap : caps) {
-      const auto count = scope.counters.find(cap.type);
-      if (count != scope.counters.end() && count->second > cap.cap) tally_.add(cap.counted);
+    for (const auto& [type, count] : scope.counters) {
+      if (count > *typeOf(type).cap) tally_.add("roadmaps.pastTheCapOf." + type);
     }
   }
 
