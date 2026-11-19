@@ -20,6 +20,9 @@ A runner written from this README alone needs no other file than `../sync/probe.
   alive; otherwise a `visibleWhen` field holding neither null nor `""`, or any field set). A reader's
   `drawn(t)` and `stored(t)` list the visible records of that view; `drawn(t, id)` and `stored(t, id)`
   return the row of that view, visible or not, or nothing.
+- **Spent ids** are engine §2.5 `SpentId`s of the vector's scope, `{t, id, born}`: what the device keeps of a derived
+  record deleted elsewhere once its row is gone (engine §7.5). An input that names none (`spent` absent) holds none. A
+  reader's `spentBorn(t, id)` returns the born of the scope's spent id of that record, or nothing.
 - **Defaults.** `scope` is `self/probe`, `now` is `1800000000000` (2027-01-15T08:00:00Z) and
   `offsetSeconds` is `0` unless a vector gives them. The moment is `Moment(now, FixedZone(offsetSeconds))`.
 - **Order.** Ids compare by the UTF-8 bytes of their JCS. An order key absent or null sorts as `""`.
@@ -159,12 +162,13 @@ the plan's scope first, then by bytes) and an empty `predict`.
 
 ### `run/pipeline.json`
 
-`{scope?, cmd?, predict?, plan, drawn, stored?, receipt?, refused?}` → `{outcome}`. The action loads nothing and
+`{scope?, cmd?, predict?, plan, drawn, stored?, spent?, receipt?, refused?}` → `{outcome}`. The action loads nothing and
 decides `write(plan, null)` over the plan built as in `plan/translate.json`, inside `ActionRunner.run` over a
-replica whose commit reads `drawn` and `stored` (by default the same records as `drawn`) and answers `receipt`
-(`{gestureId, localIds, retired, releaseAt?}`) or `refused` (`{code, detail?}`). The gone check (§9.2 step 5) also
-refuses an insert or a move whose anchor neither view lists with an order key, naming the anchor: the engine looks the
-anchor up in both.
+replica whose commit reads `drawn`, `stored` (by default the same records as `drawn`) and `spent` (by default none)
+and answers `receipt` (`{gestureId, localIds, retired, releaseAt?}`) or `refused` (`{code, detail?}`). The gone check
+(§9.2 step 5) also refuses an insert or a move whose anchor neither view lists with an order key, naming the anchor: the
+engine looks the anchor up in both. A revival takes its born from the `drawn` row, or from the spent id of the record
+where `drawn` holds no row; with neither it is refused.
 
 ### `draft/save.json`
 

@@ -887,6 +887,7 @@ public struct Repository<E: Entity> {
   public func all(in view: ViewMode) throws -> [E]
   public func children<P: Entity>(of parent: ID<P>, via field: String, in view: ViewMode) throws -> [E]
   public func capacity() throws -> Capacity
+  public func spentBorn(_ id: ID<E>) throws -> Stamp?
   public static func decode(_ records: some Sequence<Record>) throws(DecodeError) -> [E]
 }
 extension Repository where E: Ordered {
@@ -903,6 +904,9 @@ extension Repository where E: Ordered {
   `RecordsView`.
 - `children` reads through the engine's indexed read (ER-12), so its cost follows the children, not
   the type.
+- `spentBorn` is the born of the scope's spent id of the record (engine §2.5 `SpentId`): what the device
+  keeps of a derived record deleted elsewhere once its row is gone (engine §7.5), nil for any other id. Such a
+  record is in neither view, and a revival (§8.1) takes this born; an id the device never knew has neither.
 - A record that fails to decode throws `DecodeError`: a schema fault, surfaced, never skipped.
 - A product declares an aggregate's repository as a function composing these.
 
@@ -1179,8 +1183,8 @@ public final class ActionRunner: Sendable {
 4. **Decide** by `decision` (§9.1). `refuse` and `unchanged` return no gesture: the engine writes
    nothing and ticks no clock (engine §7.1).
 5. **Gone.** For every update, remove or move of a type with life, `ctx.drawn(t, id)` must hold the
-   record alive. A revival instead needs a known born in that drawn record; missing born refuses
-   the same way. Every insert or move that names an anchor needs that anchor visible, with its
+   record alive. A revival instead needs a known born: the drawn record's, or, where `drawn` holds no
+   record, the born of the scope's spent id of it (engine §7.1 step 4); with neither it refuses the same way. Every insert or move that names an anchor needs that anchor visible, with its
    order key, in `drawn` or in `stored` (engine D-25). Otherwise the body returns no gesture and the
    outcome is `refused(R(Refused(unknown-record, subject, path: .predicted)))`, whose subject is the
    first gone record or absent anchor in the plan's order. The engine throws on either write (engine
@@ -1996,7 +2000,7 @@ stated here; ER-10 is the Kotlin engine owner's.
 |---|---|---|
 | ER-1 | `SyncAPI` (Kotlin `:sync-api`, plain JVM) holds the values of D-2, the `Replica` port and the readers, and depends only on `SyncCore`. Every value type has a public memberwise initialiser. | Swift engine §5.2 |
 | ER-2 | `Replica.commit<T>(scope, body) -> (outcome: CommitOutcome?, value: T)`: the body may return no gesture, which writes nothing and ticks no clock. It throws only before its transaction commits. | engine §7.1, the read-and-commit form |
-| ER-3 | `ScopeReader` and `CommitContext` offer `stored(type)` and `drawn(type)` (visible records), lookups by id (the folded record, visible or not), `device(key)` and `firstPullComplete()`. | engine §7.6, §7.9, §2.5 `DeviceRow` |
+| ER-3 | `ScopeReader` and `CommitContext` offer `stored(type)` and `drawn(type)` (visible records), lookups by id (the folded record, visible or not), the born of the scope's spent id of a record (nil where it keeps none), `device(key)` and `firstPullComplete()`. | engine §7.6, §7.9, §7.5, §2.5 `DeviceRow` and `SpentId` |
 | ER-4 | `Change.create(…, anchor: OrderAnchor?)` and `Change.move(t, id, to: OrderAnchor)`; the anchor may be a member only `stored` holds. | engine D-25, §7.1 step 4 |
 | ER-5 | `Gesture.guards: [RegisterRef]` guards exactly the lattice registers named; a text field is never guarded. | engine §7.1 step 6, D-19 |
 | ER-6 | `Gesture.retire: [RecordRef]` undoes held, command-free gestures whose every delta removes a named record, in the commit's transaction; `CommitReceipt.retired` lists them. | engine §7.1 step 4, §8.1, INV-10 |
