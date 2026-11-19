@@ -1,0 +1,25 @@
+/* The account decision (flow 50): a dialog over the page from 744px (50.01, 50.02), a page of its own below (50.03, 50.04). */
+.wm-decision { position: fixed; inset: 0; z-index: 100; font-family: var(--font-body); color: var(--text-primary); animation: wm-decision-fade var(--duration-base) var(--ease-soft); }
+.wm-decision-card { outline: none; animation: wm-decision-rise var(--duration-base) var(--ease-soft); }
+.wm-decision h2 { margin: 0; font: 700 28px/36px var(--font-display); color: var(--text-primary); overflow-wrap: anywhere; }
+.wm-decision h2:focus { outline: none; }
+.wm-decision-words { display: flex; flex-direction: column; gap: 24px; }
+.wm-decision-lead, .wm-decision-items { margin: 0; font: 400 16px/24px var(--font-body); }
+.wm-decision-items { padding: 0; list-style: none; overflow-wrap: anywhere; }
+.wm-decision-note { margin: 0; font: 400 14px/24px var(--font-body); color: var(--text-secondary); }
+.wm-decision-discard { display: contents; --text-primary: var(--color-danger); }
+.wm-decision-answers { display: flex; gap: 8px; }
+
+.wm-decision--dialog { display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; background: var(--surface-overlay); }
+.wm-decision--dialog .wm-decision-card { display: flex; flex-direction: column; gap: 24px; width: min(540px, 100%); max-height: 100%; padding: 32px; box-sizing: border-box; overflow: auto; border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: var(--shadow-lg); }
+.wm-decision--dialog .wm-decision-answers { justify-content: flex-end; }
+.wm-decision--dialog .wm-decision-answers button { min-width: 127px; }
+
+.wm-decision--page { background: var(--surface-canvas); }
+.wm-decision--page .wm-decision-card { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 0 24px max(30px, env(safe-area-inset-bottom)); box-sizing: border-box; }
+.wm-decision--page .wm-decision-words { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: min(270px, 32vh); }
+.wm-decision--page .wm-decision-answers { flex: none; flex-direction: column; padding-top: 16px; }
+
+@keyframes wm-decision-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wm-decision-rise { from { transform: translateY(8px); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .wm-decision-card { animation: none; } }

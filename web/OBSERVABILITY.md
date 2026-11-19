@@ -50,7 +50,10 @@ The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.
 Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
-completed transitions. Revoking this session uses the sign-out question before clearing its cookie.
+completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
+through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. Escape
+on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
+cancel that fails reports `auth-session` and keeps the question, and the cookie is let go as a finished sign-out's is. Revoking this session uses the sign-out question before clearing its cookie.
 Account closure persists its account and current session before the server request and discards local
 account data after it succeeds. The request names the confirmed account; `account-mismatch` retains
 its local data and reports the auth-session failure. A failed local discard reports the same failure; reload and
@@ -315,7 +318,9 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | The roadmaps that carry-over left for a later load: waiting on the account's list or a roadmap's first pull, on the server's answer to whether an id exists, on the replica they belong to (the anon replica's while an account is signed in, an account's while another is active or nobody is), or after a write that failed | `roadmap_carry` | `stage: waiting`, `roadmaps: 0/1/2-5/6-20/21+` |
 | The roadmaps of an account whose sign-out's Discard that carry-over saw take the account's replica: their old stores' entries go uncarried, as the Discard took what the account had not sent | `roadmap_carry` | `stage: discarded`, `roadmaps: 0/1/2-5/6-20/21+` |
 | The old stores' entries that carry-over deleted once the ledger showed them carried (INV-4), or with a Discard | `roadmap_carry` | `stage: cleared`, `stores: 0/1/2-5/6-20/21+` |
-| Device roadmaps claimed at sign-in | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
+| Device roadmaps claimed at sign-in, where the room reads today's sync | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
+| A build whose room reads the device's copy: the sign-in question for the browser's signed-out roadmaps where the account already holds roadmaps (flow 50.01, 50.03), shown, then answered Add or Discard, or cancelled by Escape, which signs the account out and leaves the roadmaps on the browser unsent. `roadmaps` counts the roadmaps it names. An account that holds none takes them without a question, and so does one whose signed-out work changes no roadmap the list holds: nothing is emitted here, and the engine's `sync-signin` says the sign-in completed | `roadmap_signin` | `step: shown/add/discard/cancel`, `roadmaps: 0/1/2-5/6-20/21+` |
+| A build whose room reads the device's copy: the sign-out question where every unsent change is roadmap's (flow 50.02, 50.04), shown, then answered Keep or Discard, or cancelled by Escape, which stays signed in. `changes` counts the unsent changes, one an act of the person's (a gesture), however many entries it commits. A sign-out with nothing unsent, or with another product's work or notice, asks in the shell's words and emits nothing here | `roadmap_signout` | `step: shown/keep/discard/cancel`, `changes: 0/1/2-5/6-20/21+` |
 | Roadmap landing opened | `land` | `signedIn: true/false` |
 
 A guide's `saved` and `cleared` mean the session or this device's store took the write: durability on this device, not the

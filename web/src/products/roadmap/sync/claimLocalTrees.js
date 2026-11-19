@@ -12,6 +12,7 @@ import { mintTreeId, moveLocalTree, deleteLocalTree, readDeviceTrees, repointDev
 import { countBucket } from '../board/acts.js';
 import { readNavigation, replaceLocation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
+import { ROOM_READS_REPLICA } from '../replicaRoom.js';
 
 const DRAIN_TIMEOUT_MS = 30_000;
 const CLAIMS = 'windmill-roadmap-claims';
@@ -58,8 +59,11 @@ class RetiredTree extends Error {
 }
 
 // One pass over the device index. `openSession` is an accessor for the live session of the
-// currently-open tree; every other tree drains through a headless session. Never rejects.
+// currently-open tree; every other tree drains through a headless session. Never rejects. Where the room reads the
+// device's copy it claims nothing: the engine's lineage rule takes signed-out roadmaps to an account, asking where the
+// account holds some (§5 Signed out).
 export async function claimLocalTrees({ openTreeId = null, openSession = null } = {}) {
+  if (ROOM_READS_REPLICA) return { claimed: 0 };
   // The server or restored replica identifies the device holder; claiming still requires a server session.
   const owner = await resolveDeviceOwner();
   if (!owner) return { claimed: 0 }; // no known device holder to claim for

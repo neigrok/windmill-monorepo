@@ -215,10 +215,21 @@ on, every room but the demo reads through `ReplicaReading`:
   `roadmap-kept-unexpected` once, `kept/toldNotices.js` keeping the told ids for the page load and, where the browser
   keeps storage, the ids of the told notices and carried records the engine still holds. A Discard the engine answers `false`, the notice no
   longer held, closes the change quietly.
-- **Sign-out.** Roadmap's `forgetDevice` runs `sync/signOut.js` after the engine's sign-out, Keep or Discard: it takes
-  every `landing:*` device row from each replica the device holds (Keep leaves the account's dormant replica with its
-  device rows) and the told notice ids. What Keep holds for the next sign-in, unsent work, kept notices and the
-  carry-over's ledger, the engine keeps; Discard takes the ledger with its replica.
+- **Sign-in and sign-out (flow 50).** The engine's lineage rule adds the roadmaps made signed out to an account that
+  holds none without asking. Where it holds some, the shell asks *Add your roadmaps?* in roadmap's words
+  (`sync/accountChange.js`, through the route table's `sync` group): the roadmaps of the person's list the signed-out
+  work changes, by name, in the order the browser first changed them, a subtree's work its root's; work that changes no
+  roadmap the list holds is added without asking. At sign-out, where every unsent change is roadmap's, the shell asks
+  *Keep unsent changes?* with each roadmap they change and how many; any other sign-out keeps the shell's words. A change
+  is one act of the person's, the engine's entries of one gesture: making a roadmap, which writes its record and its first
+  words, is one change, and so is a gesture composed over several scopes. Escape
+  cancels either: a cancelled sign-in signs the account out and leaves the work on the browser, unsent. Each step is
+  told (`roadmap_signin`, `roadmap_signout`). `claimLocalTrees` claims nothing here.
+- **Sign-out.** Roadmap's `forgetDevice` runs the same module's sweep after the engine's sign-out, Keep or Discard: it
+  takes every `landing:*` device row from each replica the device holds (Keep leaves the account's dormant replica with
+  its device rows) and the told notice ids, and leaves the stores today's sync wrote to the carry-over (INV-4). What Keep
+  holds for the next sign-in, unsent work, kept notices and the carry-over's ledger, the engine keeps; Discard takes the
+  ledger with its replica.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.

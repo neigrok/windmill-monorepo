@@ -5,18 +5,21 @@
 // the server keeping the step's other fields), the line that tells the person once of a link of theirs that reached the
 // server after another device's delete of its step, named from the device's note in a room opened after a reload (§6), a
 // roadmap's deletion and a sign-out that leave no step's name in the device's store (§6), a roadmap's deletion from the
-// switcher, and a change to a roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49) only
-// with the switch on; and the carry-over of what the last old bundle kept in a browser (§8.2), its stores written by the old
-// bundle's own code: with the switch on, a roadmap made signed out, its marks and workspace carried and kept through a
-// sign-in, and a signed-in browser's unsent changes carried to the server, the old stores gone each time; with it off,
-// the old stores untouched. Each run has its own database, server and built app on the given ports, and stops and drops them.
+// switcher, a change to a roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49), and the
+// sign-in and sign-out questions of flow 50 (§5 Signed out): a browser's signed-out roadmaps added without asking to an
+// account that holds none, Add, Discard and Escape where it holds some, and Keep and Discard at a sign-out with a change
+// unsent, only with the switch on; with it off, today's silent claim and plain sign-out; and the carry-over of what the
+// last old bundle kept in a browser (§8.2), its stores written by the old bundle's own code: with the switch on, a roadmap
+// made signed out, its marks and workspace carried and kept through a sign-in, and a signed-in browser's unsent changes
+// carried to the server, the old stores gone each time; with it off, the old stores untouched. Each run has its own
+// database, server and built app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
 // name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
 // error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { createWriteStream, mkdtempSync, rmSync } from 'node:fs';
+import { createWriteStream, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -30,6 +33,8 @@ const prefix = process.env.WM_E2E_DB_PREFIX ?? 'wm_web_';
 const host = process.env.PGHOST ?? (process.platform === 'darwin' ? '/tmp' : '127.0.0.1');
 const origin = `http://127.0.0.1:${webPort}`;
 const backend = `http://127.0.0.1:${backendPort}`;
+// A page of the app's origin that runs no app: a browser's stores are written from it while nothing else writes them.
+const outsideApp = `${origin}/privacy.html`;
 const scratch = mkdtempSync(resolve(tmpdir(), 'wm-web-roadmap-replica-'));
 const logPath = resolve(scratch, 'stack.log');
 const log = createWriteStream(logPath);
@@ -102,6 +107,40 @@ async function seed(mode, secret, account) {
   }
 }
 
+// The browser engine and roadmap's domain built for a page, once a run: a browser makes its signed-out roadmaps through it
+// (`Device.plantSignedOut`).
+let planter = null;
+function signedOutPlanter() {
+  planter ??= (async () => {
+    const entry = resolve(scratch, 'plant-signed-out.mjs');
+    const specifier = (path) => JSON.stringify(resolve(path));
+    writeFileSync(entry, `
+      import { BrowserSyncEngine } from ${specifier('src/platform/sync/engine.js')};
+      import { registry } from ${specifier('src/platform/sync/schema.js')};
+      import { ActionRunner, EngineReplica } from ${specifier('src/platform/domain-kit/runner.js')};
+      import { FixedZone } from ${specifier('src/platform/domain-kit/time.js')};
+      import { CreateRoadmap } from ${specifier('src/products/roadmap/domain/roadmaps.js')};
+      window.plantSignedOut = async (plans) => {
+        const engine = await BrowserSyncEngine.open({ telemetry: { event() {}, failure() {} } });
+        try {
+          const runner = new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0));
+          for (const { title, steps } of plans) {
+            const outcome = await runner.runAct(new CreateRoadmap(title, { steps: steps.map((label) => ({ key: label, label })), links: [] }));
+            if (outcome.kind !== 'committed') throw new Error('a signed-out roadmap was not made');
+          }
+          return engine.device.activeReplica.meta.state;
+        } finally {
+          engine.close();
+        }
+      };`);
+    const { build } = await import('vite');
+    const result = await build({ configFile: false, logLevel: 'error', build: { write: false, target: 'es2022',
+      lib: { entry, formats: ['es'], fileName: 'plant-signed-out' }, rollupOptions: { output: { inlineDynamicImports: true } } } });
+    return (Array.isArray(result) ? result : [result]).flatMap((bundle) => bundle.output).find((item) => item.type === 'chunk').code;
+  })();
+  return planter;
+}
+
 // A device of the owner's with no screen: the browser engine on an in-memory store over the local server, and roadmap's
 // domain actions on it, as the room runs them.
 class OwnerDevice {
@@ -113,8 +152,11 @@ class OwnerDevice {
     const { FakeLocks } = await source('test/platform/sync/fakes.js');
     const { ActionRunner, EngineReplica } = await source('src/platform/domain-kit/runner.js');
     const { FixedZone } = await source('src/platform/domain-kit/time.js');
-    const { CreateRoadmap } = await source('src/products/roadmap/domain/roadmaps.js');
+    const { CreateRoadmap, Roadmap, RoadmapMeta } = await source('src/products/roadmap/domain/roadmaps.js');
     const { ChangeStep, RoadmapStep } = await source('src/products/roadmap/domain/steps.js');
+    const { StepMark } = await source('src/products/roadmap/domain/progress.js');
+    const { StepNote, Subtask } = await source('src/products/roadmap/domain/workspace.js');
+    const { Id } = await source('src/platform/domain-kit/entities.js');
     const transport = new HttpTransport({ schema: registry.version, base: backend, reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: name }),
       scopedCommands: [...registry.commands.values()].filter((command) => command.scopedEffects).map((command) => command.name),
       socket: () => ({ readyState: 0, close() { this.readyState = 3; } }),
@@ -123,7 +165,8 @@ class OwnerDevice {
       navigator: { onLine: true, locks: new FakeLocks() }, document: null, window: null,
       telemetry: { event() {}, failure(operation) { throw new Error(`the ${name} device's engine failed: ${operation}`); } } });
     await engine.signIn(account);
-    return new OwnerDevice(engine, new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0)), { CreateRoadmap, ChangeStep, RoadmapStep });
+    return new OwnerDevice(engine, new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0)),
+      { CreateRoadmap, ChangeStep, RoadmapStep, Roadmap, RoadmapMeta, StepMark, StepNote, Subtask, Id });
   }
 
   constructor(engine, runner, domain) {
@@ -166,24 +209,102 @@ class OwnerDevice {
     return false;
   }
 
+  // The titles of the roadmaps of the account's list this device holds.
+  titles() {
+    const { Roadmap, RoadmapMeta, Id } = this.domain;
+    const roadmaps = this.runner.read('self/roadmap', (read) => read.repository(Roadmap).all('drawn'));
+    return roadmaps.map((roadmap) => this.runner.read(`tree/${roadmap.id.record}`, (read) => read.repository(RoadmapMeta).find(new Id('meta', RoadmapMeta), 'drawn')?.title ?? ''));
+  }
+
   // The id of the step of the roadmap this device draws under `label`, or null.
   step(tree, label) {
     const { RoadmapStep } = this.domain;
     return this.runner.read(`tree/${tree}`, (read) => read.repository(RoadmapStep).all('drawn').find((step) => step.label === label)?.id.record ?? null);
   }
+
+  // What `body` reads of the person's own layer over a roadmap, its marks and workspace, or null while the device holds none.
+  overlay(tree, body) {
+    try { return this.runner.read(`self/overlay/${tree}`, body); } catch { return null; }
+  }
 }
 
 // The owner's room as one device shows it.
 class Device {
-  static async open(browser, secret) {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-    await context.addCookies([{ name: 'wm_session', value: secret, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+  static async open(browser, secret, viewport = { width: 1440, height: 1000 }) {
+    const device = await Device.signedOut(browser, viewport);
+    await device.context.addCookies([{ name: 'wm_session', value: secret, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+    return device;
+  }
+
+  // A browser no account has signed in to. Each page counts the account decisions it showed (`decisionsShown`).
+  static async signedOut(browser, viewport = { width: 1440, height: 1000 }) {
+    const context = await browser.newContext({ viewport, reducedMotion: 'reduce' });
+    await context.addInitScript(() => {
+      window.decisionsShown = 0;
+      new MutationObserver((records) => {
+        for (const record of records) for (const node of record.addedNodes) if (node.classList?.contains('wm-decision')) window.decisionsShown += 1;
+      }).observe(document, { childList: true, subtree: true });
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const device = new Device(context, page);
     page.on('pageerror', () => device.errors.push('pageerror'));
     page.on('console', (message) => { if (message.type() === 'error' && !/Failed to load resource|net::ERR/.test(message.text())) device.errors.push('console'); });
     return device;
+  }
+
+  // Roadmaps made on this browser signed out, in its engine's anonymous replica through roadmap's domain, as the room
+  // makes them, before the app loads.
+  async plantSignedOut(plans) {
+    await this.page.goto(outsideApp);
+    await this.page.addScriptTag({ content: await signedOutPlanter(), type: 'module' });
+    await this.page.waitForFunction(() => typeof window.plantSignedOut === 'function');
+    assert.equal(await this.page.evaluate((plans) => window.plantSignedOut(plans), plans), 'anon', 'the roadmaps were made signed out');
+  }
+
+  // The old bundle's stores (`oldBundle`) written into this browser before the app loads.
+  async holdOld({ records, storage }) {
+    await this.page.goto(outsideApp);
+    await this.page.evaluate(async ({ records, storage }) => {
+      for (const [key, value] of Object.entries(storage)) localStorage.setItem(key, value);
+      const database = await new Promise((done, fail) => {
+        const request = indexedDB.open('windmill-sync', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('trees');
+        request.onsuccess = () => done(request.result);
+        request.onerror = () => fail(request.error);
+      });
+      await new Promise((done, fail) => {
+        const write = database.transaction('trees', 'readwrite');
+        for (const [key, value] of records) write.objectStore('trees').put(value, key);
+        write.oncomplete = done;
+        write.onerror = () => fail(write.error);
+      });
+      database.close();
+    }, { records, storage });
+  }
+
+  async signIn(secret, address = 'app') {
+    await this.context.addCookies([{ name: 'wm_session', value: secret, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+    await this.page.goto(`${origin}/${address}`);
+  }
+
+  async signOut() {
+    await this.page.goto(`${origin}/app`);
+    await this.page.locator('.wm-head-seat button[aria-expanded]').click();
+    await this.page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
+  }
+
+  // The account decision under `title` once it shows, and what it says: its sentence, the names it lists, its notes and
+  // its answers in order.
+  async decision(title) {
+    const dialog = this.page.getByRole('dialog', { name: title, exact: true });
+    await dialog.locator('.wm-decision-lead').waitFor();
+    return { dialog, said: {
+      lead: await dialog.locator('.wm-decision-lead').innerText(),
+      items: await dialog.locator('.wm-decision-items li').allInnerTexts(),
+      notes: await dialog.locator('.wm-decision-note').allInnerTexts(),
+      answers: await dialog.getByRole('button').allInnerTexts(),
+    } };
   }
 
   constructor(context, page) {
@@ -252,6 +373,34 @@ class Device {
     const end = Date.now() + bound;
     for (;;) {
       if (seen(await this.store())) return true;
+      if (Date.now() > end) return false;
+      await settle(500);
+    }
+  }
+
+  // What the old bundle's stores hold in this browser, as counts: the sync database's records, the device index's rows,
+  // and the workspaces' and undrained marks' keys.
+  old() {
+    return this.page.evaluate(async () => {
+      const records = await new Promise((done) => {
+        const request = indexedDB.open('windmill-sync');
+        request.onupgradeneeded = () => request.result.createObjectStore('trees');
+        request.onsuccess = () => {
+          const count = request.result.transaction('trees').objectStore('trees').count();
+          count.onsuccess = () => { request.result.close(); done(count.result); };
+        };
+      });
+      let rows = 0;
+      try { rows = Object.keys(JSON.parse(localStorage.getItem('windmill:device-trees') ?? '{}')).length; } catch { rows = -1; }
+      return { records, rows, keys: Object.keys(localStorage).filter((key) => /^windmill:(workspace|progress):/.test(key)).length };
+    });
+  }
+
+  // The old stores read again until `seen` holds of them or the bound passes.
+  async oldUntil(seen, bound = 45_000) {
+    const end = Date.now() + bound;
+    for (;;) {
+      if (seen(await this.old())) return true;
       if (Date.now() > end) return false;
       await settle(500);
     }
@@ -363,15 +512,29 @@ const spentIn = (store, tree, id) => rowsOf(store, 'spentIds', `tree/${tree}`).s
 // The landing notes the store holds, by key, and whether any record or row of it holds `words`.
 const notesIn = (store) => Object.fromEntries(store.records.filter(({ key }) => key.includes('"landing:')).map(({ key, value }) => [JSON.parse(key).at(-1), value]));
 const holds = (store, words) => JSON.stringify(store).includes(words);
+const headOf = (store) => store.records.find(({ key }) => key === '["head"]')?.value.meta ?? {};
+// The replicas a device's store holds, each by its state with how many entries of its outbox are not yet acked.
+const replicasIn = (store) => store.records.filter(({ key }) => key.startsWith('["replica"')).map(({ key, value }) => {
+  const handle = JSON.parse(key)[1];
+  const unsent = store.records.filter(({ key: other, value: entry }) => other.startsWith('["outbox"') && JSON.parse(other)[1] === handle && entry.state !== 'acked');
+  return [value.state, unsent.length];
+}).sort();
+// The titles of an account's roadmaps as the server lists them today (GET /v1/trees).
+async function listedTitles(secret) {
+  const response = await fetch(`${backend}/v1/trees`, { headers: { Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(10_000) });
+  assert.ok(response.ok, 'the server listed the account\'s roadmaps');
+  return (await response.json()).trees.map((tree) => tree.title ?? '');
+}
 
 // A screenshot of what a device shows, for comparing with the boards, where WM_E2E_SHOTS names a folder; never printed.
 async function shoot(device, name) {
   if (!process.env.WM_E2E_SHOTS) return;
-  await device.page.evaluate(() => Promise.all((document.querySelector('.st-kept')?.getAnimations() ?? []).map((animation) => animation.finished)));
+  await device.page.evaluate(() => Promise.all([...document.querySelectorAll('.st-kept, .wm-decision')]
+    .flatMap((layer) => layer.getAnimations({ subtree: true })).map((animation) => animation.finished)));
   await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
 }
 
-async function scenarios(mode, browser, { secret, second }, account, check) {
+async function scenarios(mode, browser, { secret, second, session, empty, carrier }, account, check) {
   const { sail, knot, row } = await seed(mode, secret, account);
   const address = `#/app/${sail}`;
   const a = await Device.open(browser, secret);
@@ -499,15 +662,12 @@ async function scenarios(mode, browser, { secret, second }, account, check) {
         const deleted = notesIn(await d.store());
         assert.deepEqual({ notes: Object.keys(deleted), named: [holds(deleted, 'Choose a course'), holds(deleted, 'Grip the oars')] },
           { notes: [`landing:${sail}`], named: [true, false] }, 'the deleted roadmap\'s note left with it; the note of a roadmap that stands stays until sign-out');
-        await d.page.goto(`${origin}/app`);
-        await d.page.locator('.wm-head-seat button[aria-expanded]').click();
-        await d.page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
+        await d.signOut();
         const ask = d.page.getByRole('dialog', { name: 'Sign out?', exact: true });
         await ask.getByRole('button', { name: 'Sign out', exact: true }).click();
         await ask.waitFor({ state: 'detached' });
-        const head = (store) => store.records.find(({ key }) => key === '["head"]')?.value.meta ?? {};
         assert.ok(await d.storeUntil((store) => store.records.some(({ key, value }) => key.startsWith('["replica"') && value.state === 'dormant')
-          && !head(store).signOut && !head(store).deviceCleanup), 'the sign-out finished with Keep and the products\' cleanup ran');
+          && !headOf(store).signOut && !headOf(store).deviceCleanup), 'the sign-out finished with Keep and the products\' cleanup ran');
         const out = await d.store();
         assert.deepEqual({ notes: notesIn(out), named: ['Choose a course', 'Grip the oars'].filter((words) => holds(out, words)) },
           { notes: {}, named: [] }, 'after a sign-out with Keep the device\'s store holds no landing note, and no record or row names a step a link came from');
@@ -624,12 +784,188 @@ async function scenarios(mode, browser, { secret, second }, account, check) {
       assert.equal((await a.accountMenu()).some((row) => row.startsWith('Kept here')), false, 'the entry left with the last change');
       await settle(6000);
     });
+    if (mode === 'on') await accountChoices(browser, { session, empty }, account, check, devices);
+    else await todaysAccountChoices(browser, { secret, session }, check, devices);
+    await carryScenario(mode, browser, { session, carrier }, account, check, devices);
     await check('no device logged an error', async () => {
       assert.deepEqual(devices.flatMap((device) => device.errors), [], 'no page threw and no console logged an error');
     });
   } finally {
     for (const device of devices) await device.context.close();
   }
+}
+
+// What an owner's device that signs in as `account` with a fresh session pulls of the account, once `seen` holds of it or
+// the bound passes: `read` of the device.
+async function pulledFrom(session, account, seen, read) {
+  const device = await OwnerDevice.open('account-reader', session(account), account);
+  try {
+    await device.engine.start();
+    await device.pulled(() => seen(device));
+    return read(device);
+  } finally {
+    device.engine.close();
+  }
+}
+
+// §5 Signed out and flow 50, with the switch on: the sign-in and sign-out questions on a browser's own copy. Each browser
+// signs in with a session of its own, as a sign-out or Escape ends the one it signed in with.
+async function accountChoices(browser, { session, empty }, account, check, devices) {
+  const owner = await OwnerDevice.open('flow-50-seed', session(account), account);
+  let swim;
+  try {
+    swim = await owner.plant(new owner.domain.CreateRoadmap('Learn to swim', { steps: [{ key: 'float', label: 'Float on your back' }], links: [] }));
+    await owner.engine.start();
+    await owner.sent();
+  } finally {
+    owner.engine.close();
+  }
+  const titlesOf = (user, seen) => pulledFrom(session, user, (device) => seen(device.titles()), (device) => device.titles().sort());
+  const steps = (seen) => pulledFrom(session, account, (device) => seen(device), (device) => ['Float on your back', 'Float face up', 'Float with a kick']
+    .filter((label) => device.step(swim, label) !== null));
+
+  await check('§5: a browser’s signed-out roadmap joins an account that holds none, and no question is asked', async () => {
+    const d = await Device.signedOut(browser);
+    devices.push(d);
+    await d.plantSignedOut([{ title: 'Learn to dive', steps: ['Hold your breath'] }]);
+    await d.signIn(session(empty));
+    const titles = await titlesOf(empty, (held) => held.includes('Learn to dive'));
+    assert.deepEqual({ titles, shown: await d.page.evaluate(() => window.decisionsShown) }, { titles: ['Learn to dive'], shown: 0 },
+      'the account holds the browser\'s roadmap, and no question was shown');
+  });
+
+  await check('§5, flow 50: a browser’s signed-out roadmaps meet an account that holds roadmaps; Add your roadmaps? names them, and Add takes both to the account', async () => {
+    const d = await Device.signedOut(browser, { width: 1440, height: 960 });
+    devices.push(d);
+    await d.plantSignedOut([{ title: 'A quieter home', steps: [] }, { title: 'Learn to cook', steps: ['Boil an egg'] }]);
+    await d.signIn(session(account));
+    const { dialog, said } = await d.decision('Add your roadmaps?');
+    assert.deepEqual(said, { lead: '2 roadmaps on this browser can join your account.', items: ['A quieter home', 'Learn to cook'],
+      notes: ['Choosing Discard removes these browser roadmaps.'], answers: ['Discard', 'Add'] }, 'the question names both roadmaps, Discard before Add');
+    await shoot(d, 'decision-1440-add');
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    const titles = await titlesOf(account, (held) => held.includes('A quieter home') && held.includes('Learn to cook'));
+    assert.deepEqual(titles.filter((title) => ['A quieter home', 'Learn to cook'].includes(title)), ['A quieter home', 'Learn to cook'], 'Add took both roadmaps to the account');
+  });
+
+  await check('flow 50: on a phone the question is a page of its own, and Discard takes the roadmap from the browser without it reaching the account', async () => {
+    const d = await Device.signedOut(browser, { width: 390, height: 844 });
+    devices.push(d);
+    await d.plantSignedOut([{ title: 'A slower morning', steps: [] }]);
+    await d.signIn(session(account));
+    const { dialog, said } = await d.decision('Add your roadmaps?');
+    assert.deepEqual(said, { lead: '1 roadmap on this browser can join your account.', items: ['A slower morning'],
+      notes: ['Choosing Discard removes this browser roadmap.'], answers: ['Add', 'Discard'] }, 'the page names the roadmap, Add over Discard');
+    await shoot(d, 'decision-390-add');
+    await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    assert.ok(await d.storeUntil((store) => JSON.stringify(replicasIn(store)) === JSON.stringify([['anon', 0], ['bound', 0]])),
+      'the browser holds nothing of the discarded roadmap');
+    const titles = await titlesOf(account, (held) => held.includes('Learn to swim'));
+    assert.equal(titles.includes('A slower morning'), false, 'the discarded roadmap never reached the account');
+  });
+
+  await check('flow 50: Escape cancels the question: the account is signed out of the browser, and its signed-out roadmap stays there, unsent', async () => {
+    const d = await Device.signedOut(browser);
+    devices.push(d);
+    await d.plantSignedOut([{ title: 'Learn to knit', steps: [] }]);
+    const token = session(account);
+    await d.signIn(token);
+    const { dialog } = await d.decision('Add your roadmaps?');
+    await d.page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    assert.ok(await d.storeUntil((store) => JSON.stringify(replicasIn(store)) === JSON.stringify([['anon', 2]])
+      && !headOf(store).pendingSignIn && !headOf(store).clearCredential), 'the browser keeps its roadmap unsent, with no sign-in pending and no cookie owed');
+    const me = await fetch(`${backend}/v1/me`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+    assert.equal(me.status, 401, 'the account\'s session on the browser ended');
+  });
+
+  // A sign-out with the connection cut after a change, its question read and screenshot, then `answer` chosen. The
+  // browser comes back online and lets its cookie go before it signs in again with a new session, so the cleanup it owes
+  // the old one cannot end the new one.
+  const signOutWith = async (d, viewport, answer, shot) => {
+    await d.signOut();
+    if (viewport) await d.page.setViewportSize(viewport);
+    const asked = await d.decision('Keep unsent changes?');
+    await shoot(d, shot);
+    await asked.dialog.getByRole('button', { name: answer, exact: true }).click();
+    await asked.dialog.waitFor({ state: 'detached' });
+    const left = await d.store();
+    await d.context.setOffline(false);
+    assert.ok(await d.storeUntil((store) => !headOf(store).clearCredential && !headOf(store).deviceCleanup), 'the sign-out let its cookie go once online');
+    await d.signIn(session(account));
+    return { said: asked.said, left: replicasIn(left) };
+  };
+
+  await check('§5, flow 50: a sign-out with a change unsent asks Keep unsent changes?, naming its roadmap; Keep holds it on the browser, and the next sign-in sends it', async () => {
+    const d = await Device.open(browser, session(account), { width: 1440, height: 960 });
+    devices.push(d);
+    await d.board(`#/app/${swim}`);
+    await d.offline();
+    await d.rename('Float on your back', 'Float face up');
+    const { said, left } = await signOutWith(d, null, 'Keep', 'decision-1440-keep');
+    assert.deepEqual({ said, left }, {
+      said: { lead: '1 change hasn’t reached your account.', items: ['Learn to swim · 1 change'],
+        notes: ['Keep it for your next sign-in. Discard removes it from this browser.'], answers: ['Discard', 'Keep'] },
+      left: [['anon', 0], ['dormant', 1]],
+    }, 'the question names the roadmap and its change, and Keep left the account\'s replica on the browser with it');
+    assert.deepEqual(await steps((device) => device.step(swim, 'Float face up') !== null), ['Float face up'], 'the next sign-in sent the change Keep held');
+  });
+
+  await check('flow 50: on a phone the sign-out question is a page of its own, and Discard takes the unsent change from the browser so it never reaches the account', async () => {
+    const d = await Device.open(browser, session(account), { width: 1440, height: 960 });
+    devices.push(d);
+    await d.board(`#/app/${swim}`);
+    await d.offline();
+    await d.rename('Float face up', 'Float with a kick');
+    const { said, left } = await signOutWith(d, { width: 390, height: 844 }, 'Discard', 'decision-390-keep');
+    assert.deepEqual({ said, left }, {
+      said: { lead: '1 change hasn’t reached your account.', items: ['Learn to swim · 1 change'],
+        notes: ['Keep it for your next sign-in. Discard removes it from this browser.'], answers: ['Keep', 'Discard'] },
+      left: [['anon', 0]],
+    }, 'the page names the roadmap and its change, Keep over Discard, and Discard left no replica of the account\'s');
+    assert.ok(await d.storeUntil((store) => JSON.stringify(replicasIn(store)) === JSON.stringify([['anon', 0], ['bound', 0]])),
+      'the next sign-in found nothing of the discarded change to send');
+    assert.deepEqual(await steps((device) => device.step(swim, 'Float face up') !== null), ['Float face up'], 'the discarded change never reached the account');
+  });
+}
+
+// Flow 50's questions with the switch off: today's room claims a roadmap planted signed out at sign-in without a question,
+// and asks the shell's plain question at a sign-out after a change made offline.
+async function todaysAccountChoices(browser, { secret, session }, check, devices) {
+  await check('today: a roadmap planted signed out is claimed at sign-in, and no question is asked', async () => {
+    const d = await Device.signedOut(browser);
+    devices.push(d);
+    await d.page.goto(`${origin}/#/app/new`);
+    const name = d.page.getByRole('textbox', { name: 'Name your roadmap', exact: true });
+    await name.fill('Learn to dive');
+    await name.press('Enter');
+    await d.page.waitForURL((url) => /^#\/app\/t_/.test(url.hash));
+    await d.signIn(secret, new URL(d.page.url()).hash);
+    const end = Date.now() + 45_000;
+    while (!(await listedTitles(secret)).includes('Learn to dive') && Date.now() < end) await settle(1000);
+    assert.deepEqual({ claimed: (await listedTitles(secret)).includes('Learn to dive'), shown: await d.page.evaluate(() => window.decisionsShown) },
+      { claimed: true, shown: 0 }, 'the account holds the roadmap, and no question was shown');
+  });
+
+  await check('today: a sign-out after a change made offline asks the shell’s plain question', async () => {
+    const response = await fetch(`${backend}/v1/trees`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({ title: 'Learn to swim', nodes: [{ id: 'float', label: 'Float on your back', color: 'terracotta', prerequisites: [] }] }),
+      signal: AbortSignal.timeout(10_000) });
+    assert.ok(response.ok, 'the roadmap was planted');
+    const { treeId } = await response.json();
+    const d = await Device.open(browser, session());
+    devices.push(d);
+    await d.board(`#/app/${treeId}`);
+    await d.offline();
+    await d.create('Kick your legs');
+    await d.signOut();
+    const ask = d.page.getByRole('dialog', { name: 'Sign out?', exact: true });
+    await ask.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await ask.waitFor({ state: 'detached' });
+    assert.equal(await d.page.evaluate(() => window.decisionsShown), 0, 'no account decision was shown');
+  });
 }
 
 // What the last old bundle wrote in a browser (roadmap-on-the-engine.md §8.2): its own code, run here over a stand-in
@@ -694,159 +1030,95 @@ const plantedSignedOut = () => oldBundle(async ({ bearImportedTree, SyncSession,
   return id;
 });
 
-// The old bundle's stores, written into a browser context before the app loads, from a page of the origin that runs none.
-async function holdOld(page, fixture) {
-  await page.goto(`${origin}/robots.txt`);
-  await page.evaluate(async ({ records, storage }) => {
-    for (const [key, value] of Object.entries(storage)) localStorage.setItem(key, value);
-    const database = await new Promise((done, fail) => {
-      const request = indexedDB.open('windmill-sync', 1);
-      request.onupgradeneeded = () => request.result.createObjectStore('trees');
-      request.onsuccess = () => done(request.result);
-      request.onerror = () => fail(request.error);
-    });
-    await new Promise((done, fail) => {
-      const write = database.transaction('trees', 'readwrite');
-      for (const [key, value] of records) write.objectStore('trees').put(value, key);
-      write.oncomplete = done;
-      write.onerror = () => fail(write.error);
-    });
-    database.close();
-  }, fixture);
-}
-
-// What the old bundle's stores hold in a page, as counts and its storage's keys: the sync database's records, the device
-// index's rows, and the workspaces' and undrained marks' keys.
-const oldIn = (page) => page.evaluate(async () => {
-  const records = await new Promise((done) => {
-    const request = indexedDB.open('windmill-sync');
-    request.onupgradeneeded = () => request.result.createObjectStore('trees');
-    request.onsuccess = () => {
-      const count = request.result.transaction('trees').objectStore('trees').count();
-      count.onsuccess = () => { request.result.close(); done(count.result); };
-    };
-  });
-  let rows = 0;
-  try { rows = Object.keys(JSON.parse(localStorage.getItem('windmill:device-trees') ?? '{}')).length; } catch { rows = -1; }
-  return { records, rows, keys: Object.keys(localStorage).filter((key) => /^windmill:(workspace|progress):/.test(key)).length };
-});
 const NOTHING_OLD = { records: 0, rows: 0, keys: 0 };
-
-async function oldUntil(page, seen, bound = 45_000) {
-  const end = Date.now() + bound;
-  for (;;) {
-    if (seen(await oldIn(page))) return true;
-    if (Date.now() > end) return false;
-    await settle(500);
-  }
-}
 
 // §8.2 on a browser holding old stores: with the switch on, one signed out and then signed in as an account that holds no
 // roadmaps (so its anonymous work joins without a question), and one signed in whose roadmap kept changes it never sent;
 // with the switch off, a browser whose old stores nothing changes.
-async function carryScenario(mode, browser, { secret, carrier }, account, check) {
+async function carryScenario(mode, browser, { session, carrier }, account, check, devices) {
   const signedOut = await plantedSignedOut();
-  const contexts = [];
-  const open = async (cookie) => {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-    contexts.push(context);
-    if (cookie) await context.addCookies([{ name: 'wm_session', value: cookie, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
-    const page = await context.newPage();
-    page.setDefaultTimeout(30_000);
-    return { context, page };
-  };
-  try {
-    if (mode === 'off') {
-      await check('§8.2 with the switch off: a browser holding the old bundle’s stores keeps them as they are', async () => {
-        const { page } = await open(null);
-        await holdOld(page, signedOut);
-        const before = await oldIn(page);
-        await page.goto(`${origin}/app`);
-        await settle(6000);
-        const device = new Device(null, page);
-        assert.deepEqual({ before, after: await oldIn(page), ledger: holds(await device.store(), '"carry:') },
-          { before: { records: 1, rows: 1, keys: 2 }, after: { records: 1, rows: 1, keys: 2 }, ledger: false }, 'the old stores stand untouched and no ledger is written');
-      });
-      return;
-    }
-    await check('§8.2 signed out, then signed in: a roadmap made signed out, its marks and its workspace are carried and the old stores go', async () => {
-      const { context, page } = await open(null);
-      await holdOld(page, signedOut);
-      await page.goto(`${origin}/app`);
-      assert.ok(await oldUntil(page, (held) => JSON.stringify(held) === JSON.stringify(NOTHING_OLD)), 'signed out, the old stores went once carried');
-      const device = new Device(context, page);
-      assert.ok(holds(await device.store(), 'Float on your back') && holds(await device.store(), 'Relax the neck'), 'the anon replica holds the roadmap and its workspace');
-      await context.addCookies([{ name: 'wm_session', value: carrier.secret, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
-      await page.goto(`${origin}/app`);
-      const phone = await OwnerDevice.open('carrier', carrier.secret, carrier.account);
-      try {
-        await phone.engine.start();
-        const { Id } = await source('src/platform/domain-kit/entities.js');
-        const { StepMark } = await source('src/products/roadmap/domain/progress.js');
-        const { StepNote, Subtask } = await source('src/products/roadmap/domain/workspace.js');
-        const overlay = `self/overlay/${signedOut.id}`;
-        const read = (body) => { try { return phone.runner.read(overlay, body); } catch { return null; } };
-        const carried = await phone.pulledWithin(45_000, () => phone.step(signedOut.id, 'Float on your back') !== null && phone.step(signedOut.id, 'Kick from the hips') !== null
-          && read((each) => ['float', 'kick'].every((step) => each.repository(StepMark).find(new Id(step, StepMark), 'drawn')?.status === 'complete'))
-          && read((each) => each.repository(Subtask).all('drawn').some((subtask) => subtask.label === 'Relax the neck')
-            && each.repository(StepNote).find(new Id('float', StepNote), 'drawn')?.text === 'Breathe out through the nose.'));
-        assert.ok(carried, 'once signed in, the account’s other device holds the roadmap under its id, both marks, the subtask and the note');
-      } finally {
-        phone.engine.close();
-      }
-      assert.deepEqual(await oldIn(page), NOTHING_OLD, 'the old stores stay gone');
+  if (mode === 'off') {
+    await check('§8.2 with the switch off: a browser holding the old bundle’s stores keeps them as they are', async () => {
+      const d = await Device.signedOut(browser);
+      devices.push(d);
+      await d.holdOld(signedOut);
+      const before = await d.old();
+      await d.page.goto(`${origin}/app`);
+      await settle(6000);
+      assert.deepEqual({ before, after: await d.old(), ledger: holds(await d.store(), '"carry:') },
+        { before: { records: 1, rows: 1, keys: 2 }, after: { records: 1, rows: 1, keys: 2 }, ledger: false }, 'the old stores stand untouched and no ledger is written');
     });
-
-    await check('§8.2 signed in: changes the browser had not sent are carried after the roadmap’s first pull and reach the server, and the old stores go', async () => {
-      const owner = await OwnerDevice.open('diver', secret, account);
-      try {
-        const { CreateRoadmap } = owner.domain;
-        const planted = await owner.runner.runAct(new CreateRoadmap('Learn to dive', { steps: [{ key: 'breathe', label: 'Breathe in' }, { key: 'sink', label: 'Sink down' }],
-          links: [['breathe', 'sink']] }));
-        assert.equal(planted.kind, 'committed', 'the roadmap was planted');
-        await owner.engine.start();
-        await owner.sent();
-        const { tree, steps } = planted.result;
-        const unsent = await oldBundle(async ({ SyncSession, WorkspaceStore, DEFAULT_KINDS, addSubtask, emptyWorkspace }) => {
-          globalThis.window.wmDeviceConfirmation = { owner: account };
-          const at = '1700000000000:0:server';
-          const room = new SyncSession({ treeId: tree, title: 'Learn to dive' });
-          await room.start();
-          room.receiveState({ t: 'subgraph', intent: 'graft', seq: 3, reach: 'writer', title: { v: 'Learn to dive', at },
-            nodes: [{ id: steps.breathe, createdAt: at, label: 'Breathe in', labelAt: at, order: 'a0', orderAt: at },
-              { id: steps.sink, createdAt: at, label: 'Sink down', labelAt: at, order: 'a0', orderAt: at }],
-            edges: [{ from: steps.breathe, to: steps.sink, addedAt: at }],
-            kinds: DEFAULT_KINDS.map((kind, rank) => ({ id: kind.id, createdAt: at, hue: kind.hue, hueAt: at, label: kind.label, labelAt: at,
-              description: kind.description, descriptionAt: at, rank, rankAt: at })) });
-          room.receiveProgressGraft({ marks: [] });
-          room.dispatch({ kind: 'RenameNode', id: steps.breathe, label: 'Breathe in slowly' });
-          room.dispatch({ kind: 'CreateNode', id: 'hold', label: 'Hold your breath', prerequisites: [steps.breathe] });
-          room.markProgress([steps.breathe], 'complete');
-          await room.persistNow();
-          room.close();
-          new WorkspaceStore().save(tree, { [steps.breathe]: addSubtask(emptyWorkspace(), 'Count to four') });
-          return tree;
-        });
-        const { page } = await open(secret);
-        await holdOld(page, unsent);
-        await page.goto(`${origin}/app`);
-        assert.ok(await oldUntil(page, (held) => held.records === 0 && held.keys === 0), 'the old stores went once carried');
-        const { Id } = await source('src/platform/domain-kit/entities.js');
-        const { StepMark } = await source('src/products/roadmap/domain/progress.js');
-        const { Subtask } = await source('src/products/roadmap/domain/workspace.js');
-        const overlay = `self/overlay/${tree}`;
-        const read = (body) => { try { return owner.runner.read(overlay, body); } catch { return null; } };
-        const carried = await owner.pulledWithin(45_000, () => owner.step(tree, 'Breathe in slowly') === steps.breathe && owner.step(tree, 'Hold your breath') !== null
-          && read((each) => each.repository(StepMark).find(new Id(steps.breathe, StepMark), 'drawn')?.status === 'complete')
-          && read((each) => each.repository(Subtask).all('drawn').some((subtask) => subtask.label === 'Count to four')));
-        assert.ok(carried, 'another device of the account holds the rename, the new step, the mark and the subtask');
-      } finally {
-        owner.engine.close();
-      }
-    });
-  } finally {
-    for (const context of contexts) await context.close();
+    return;
   }
+
+  await check('§8.2 signed out, then signed in: a roadmap made signed out, its marks and its workspace are carried and the old stores go', async () => {
+    const d = await Device.signedOut(browser);
+    devices.push(d);
+    await d.holdOld(signedOut);
+    await d.page.goto(`${origin}/app`);
+    assert.ok(await d.oldUntil((held) => JSON.stringify(held) === JSON.stringify(NOTHING_OLD)), 'signed out, the old stores went once carried');
+    const anon = await d.store();
+    assert.ok(holds(anon, 'Float on your back') && holds(anon, 'Relax the neck'), 'the anon replica holds the roadmap and its workspace');
+    await d.signIn(session(carrier));
+    const phone = await OwnerDevice.open('carrier', session(carrier), carrier);
+    try {
+      await phone.engine.start();
+      const { Id, StepMark, StepNote, Subtask } = phone.domain;
+      const tree = signedOut.id;
+      const carried = await phone.pulledWithin(45_000, () => phone.step(tree, 'Float on your back') !== null && phone.step(tree, 'Kick from the hips') !== null
+        && phone.overlay(tree, (read) => ['float', 'kick'].every((step) => read.repository(StepMark).find(new Id(step, StepMark), 'drawn')?.status === 'complete'))
+        && phone.overlay(tree, (read) => read.repository(Subtask).all('drawn').some((subtask) => subtask.label === 'Relax the neck')
+          && read.repository(StepNote).find(new Id('float', StepNote), 'drawn')?.text === 'Breathe out through the nose.'));
+      assert.ok(carried, 'once signed in, the account’s other device holds the roadmap under its id, both marks, the subtask and the note');
+    } finally {
+      phone.engine.close();
+    }
+    assert.deepEqual(await d.old(), NOTHING_OLD, 'the old stores stay gone');
+  });
+
+  await check('§8.2 signed in: changes the browser had not sent are carried after the roadmap’s first pull and reach the server, and the old stores go', async () => {
+    const owner = await OwnerDevice.open('diver', session(account), account);
+    try {
+      const { CreateRoadmap, Id, StepMark, Subtask } = owner.domain;
+      const planted = await owner.runner.runAct(new CreateRoadmap('Learn to dive', { steps: [{ key: 'breathe', label: 'Breathe in' }, { key: 'sink', label: 'Sink down' }],
+        links: [['breathe', 'sink']] }));
+      assert.equal(planted.kind, 'committed', 'the roadmap was planted');
+      await owner.engine.start();
+      await owner.sent();
+      const { tree, steps } = planted.result;
+      const unsent = await oldBundle(async ({ SyncSession, WorkspaceStore, DEFAULT_KINDS, addSubtask, emptyWorkspace }) => {
+        globalThis.window.wmDeviceConfirmation = { owner: account };
+        const at = '1700000000000:0:server';
+        const room = new SyncSession({ treeId: tree, title: 'Learn to dive' });
+        await room.start();
+        room.receiveState({ t: 'subgraph', intent: 'graft', seq: 3, reach: 'writer', title: { v: 'Learn to dive', at },
+          nodes: [{ id: steps.breathe, createdAt: at, label: 'Breathe in', labelAt: at, order: 'a0', orderAt: at },
+            { id: steps.sink, createdAt: at, label: 'Sink down', labelAt: at, order: 'a0', orderAt: at }],
+          edges: [{ from: steps.breathe, to: steps.sink, addedAt: at }],
+          kinds: DEFAULT_KINDS.map((kind, rank) => ({ id: kind.id, createdAt: at, hue: kind.hue, hueAt: at, label: kind.label, labelAt: at,
+            description: kind.description, descriptionAt: at, rank, rankAt: at })) });
+        room.receiveProgressGraft({ marks: [] });
+        room.dispatch({ kind: 'RenameNode', id: steps.breathe, label: 'Breathe in slowly' });
+        room.dispatch({ kind: 'CreateNode', id: 'hold', label: 'Hold your breath', prerequisites: [steps.breathe] });
+        room.markProgress([steps.breathe], 'complete');
+        await room.persistNow();
+        room.close();
+        new WorkspaceStore().save(tree, { [steps.breathe]: addSubtask(emptyWorkspace(), 'Count to four') });
+        return tree;
+      });
+      const d = await Device.open(browser, session(account));
+      devices.push(d);
+      await d.holdOld(unsent);
+      await d.page.goto(`${origin}/app`);
+      assert.ok(await d.oldUntil((held) => held.records === 0 && held.keys === 0), 'the old stores went once carried');
+      const carried = await owner.pulledWithin(45_000, () => owner.step(tree, 'Breathe in slowly') === steps.breathe && owner.step(tree, 'Hold your breath') !== null
+        && owner.overlay(tree, (read) => read.repository(StepMark).find(new Id(steps.breathe, StepMark), 'drawn')?.status === 'complete')
+        && owner.overlay(tree, (read) => read.repository(Subtask).all('drawn').some((subtask) => subtask.label === 'Count to four')));
+      assert.ok(carried, 'another device of the account holds the rename, the new step, the mark and the subtask');
+    } finally {
+      owner.engine.close();
+    }
+  });
 }
 
 // One run: its database and owner, the server with the engine as the mode says, the app built with the switch as it
@@ -855,10 +1127,17 @@ async function run(mode, browser) {
   const database = `${prefix}roadmap_replica_${mode}_${process.pid}`;
   const url = `postgresql:///${database}?host=${encodeURIComponent(host)}`;
   const account = randomUUID();
+  const empty = randomUUID();
+  const carrier = randomUUID();
   const secret = randomBytes(24).toString('hex');
   const second = randomBytes(24).toString('hex');
-  const carrier = { account: randomUUID(), secret: randomBytes(24).toString('hex') };
   const sql = (statement) => execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-c', statement], { stdio: ['ignore', 'pipe', 'pipe'] });
+  // A new session of `user`, the owner by default, whose secret a browser or a device signs in with.
+  const session = (user = account) => {
+    const token = randomBytes(24).toString('hex');
+    sql(`insert into sessions(token_hash,user_id,expires_ms) values('${hash(token)}','${user}',99999999999999);`);
+    return token;
+  };
   let server, web, created = false, passed = 0;
   const check = async (name, body) => {
     try { await body(); } catch (error) { console.error(`FAIL ${mode} · ${name}`); throw error; }
@@ -872,8 +1151,7 @@ async function run(mode, browser) {
     }
     execFileSync('createdb', ['-h', host, database]); created = true;
     execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
-    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
-    sql(`insert into users(id,email,name) values('${carrier.account}','web-roadmap-carry@example.com','Web Roadmap Carry'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(carrier.secret)}','${carrier.account}',99999999999999);`);
+    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'),('${empty}','web-roadmap-empty@example.com','Web Roadmap Empty'),('${carrier}','web-roadmap-carry@example.com','Web Roadmap Carry'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
     const dist = resolve(scratch, `dist-${mode}`);
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'],
       { cwd: process.cwd(), env: { ...process.env, VITE_ROADMAP_REPLICA_ROOM: mode === 'on' ? 'on' : '' }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 });
@@ -883,8 +1161,7 @@ async function run(mode, browser) {
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
     web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
-    await scenarios(mode, browser, { secret, second }, account, check);
-    await carryScenario(mode, browser, { secret, carrier }, account, check);
+    await scenarios(mode, browser, { secret, second, session, empty, carrier }, account, check);
     const events = Number(sql("select count(*) from events where name like 'roadmap_%'").toString().match(/\d+/)?.[0] ?? 0);
     assert.ok(events > 0, 'the room’s events reached the local intake');
     const kept = Number(sql("select count(distinct name) from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')").toString().match(/\d+/)?.[0] ?? 0);
@@ -896,6 +1173,10 @@ async function run(mode, browser) {
     const undone = sql("select coalesce(string_agg(distinct (props->>'action') || ':' || (props->>'outcome'), ',' order by (props->>'action') || ':' || (props->>'outcome')), '') from events where name = 'roadmap_undo'")
       .toString().match(/(?:undo|redo):[a-z]+(?:,(?:undo|redo):[a-z]+)*/)?.[0] ?? '';
     assert.equal(undone, mode === 'on' ? 'redo:applied,undo:applied' : '', 'what the room’s Undo and Redo came to reached the local intake only with the switch on');
+    const asked = sql("select coalesce(string_agg(distinct name || ':' || (props->>'step'), ',' order by name || ':' || (props->>'step')), '') from events where name in ('roadmap_signin', 'roadmap_signout')")
+      .toString().match(/roadmap_sign[a-z_]*:[a-z]+(?:,roadmap_sign[a-z_]*:[a-z]+)*/)?.[0] ?? '';
+    assert.equal(asked, mode === 'on' ? 'roadmap_signin:add,roadmap_signin:cancel,roadmap_signin:discard,roadmap_signin:shown,roadmap_signout:discard,roadmap_signout:keep,roadmap_signout:shown' : '',
+      'each step of the sign-in and sign-out questions reached the local intake only with the switch on');
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
@@ -911,7 +1192,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 13, off: 7 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 19, off: 9 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   log.write(`\n${error?.stack ?? error}\n`);

@@ -192,10 +192,12 @@ browser tests and include it in the final verification gates:
 (`scripts/e2e-roadmap-replica.mjs`), once with the server's roadmap engine and the room's replica switch on and once with
 both off: Undo and Redo, edits made offline syncing on reconnect, a change against another device's delete, a
 roadmap's deletion, a change to a roadmap another device deleted, which only the switch keeps in the account menu's
-Kept here, to copy and discard, and the carry-over of a browser holding the old bundle's stores, which only the switch runs. Build `windmill_server` first (`backend/RUNNING.md`). It builds the app into a temporary folder,
+Kept here, to copy and discard, flow 50's sign-in and sign-out questions, which only the switch asks, and the carry-over
+of a browser holding the old bundle's stores, which only the switch runs. Build `windmill_server` first
+(`backend/RUNNING.md`). It builds the app into a temporary folder,
 serves it on 5183 against the server on 8095 (`WM_E2E_WEB_PORT`, `WM_E2E_PORT`), uses its own databases
 (`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops and drops what it started. `WM_E2E_SHOTS` names a folder
-for screenshots of the kept list at 1440 and 390. The journal's twin,
+for screenshots of the kept list and flow 50's questions at 1440 and 390. The journal's twin,
 `test:journal:server`, is described in `src/products/journal/README.md`.
 
 The test runner caps ordinary file concurrency at four, using one fewer than the available CPUs
@@ -284,7 +286,11 @@ measuring tool, not a gate.
 The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
 Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
-of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. Account closure records a durable intent and discards that
+of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. A product may
+word its own question (`sync.signInWords`; `sync.signOutWords` for a sign-out whose work is all its own and that no
+notice joins): the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where
+Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due
+product is asked in turn. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
 `platform/sync/react.js` exports `useSyncEngine()`,
 `useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; Gym retains its account gate.
