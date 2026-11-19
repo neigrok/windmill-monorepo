@@ -2,6 +2,9 @@ package works.windmill.domain.testing
 
 import works.windmill.domain.kit.*
 import works.windmill.sync.api.ActContext
+import works.windmill.sync.api.CommitContext
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.ScopeReader
 import works.windmill.sync.core.*
 import works.windmill.sync.testing.Vector
@@ -77,6 +80,8 @@ class ProductCorpus(val book: RuleBook) {
                 body(VectorReader(records(vector, scope), now, pulled = vector.input["firstPullComplete"]?.bool() ?: true, scope = scope, registry = book.registry))
             override fun mintID(type: String, scope: ScopeRef): RecordID = if (ids.isEmpty()) throw ContractError("no vector id left for $type") else ids.removeAt(0)
             override fun opaqueID(): String = throw ContractError("an act case mints no opaque id")
+            override fun stage(scope: ScopeRef, segment: (CommitContext) -> Gesture): CommitOutcome.Refused? = throw ContractError("an act case decides one act, and stages nothing")
+            override fun beginPart() = throw ContractError("an act case decides one act, and has no second part")
         }
         return Json.objectOf("decision" to when (val decided = action.decision(context, book.registry, moment)) {
             is ActDecision.Write -> Json.objectOf("write" to Json.objectOf("segments" to Json.Arr(decided.plan.segments.map {

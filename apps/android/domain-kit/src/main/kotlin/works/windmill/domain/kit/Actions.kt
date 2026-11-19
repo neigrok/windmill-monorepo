@@ -1,8 +1,6 @@
 package works.windmill.domain.kit
 
-import works.windmill.sync.api.ActRequest
 import works.windmill.sync.api.ActCommitOutcome
-
 import works.windmill.sync.api.CommitContext
 import works.windmill.sync.api.CommitFailure
 import works.windmill.sync.api.CommitOutcome
@@ -97,26 +95,72 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
                 when (val decision = action.decision(source, registry, Moment(Instant(source.now), zone))) {
                     is ActDecision.Refuse -> null to ActStep.Done(ActOutcome.Refused(decision.refusal))
                     is ActDecision.Unchanged -> null to ActStep.Done(ActOutcome.Unchanged(decision.result))
-                    is ActDecision.Write -> ActRequest(decision.plan.segments.map { it.scope }, decision.plan.segments.any { it.plan.isHeld },
-                        undo = decision.plan.segments.mapIndexedNotNull { index, segment -> segment.plan.undoSegment(index, segment.scope) }.takeIf { it.isNotEmpty() }) to
-                        ActStep.Writing(decision.plan, decision.result)
+                    is ActDecision.Write -> decision.plan.request() to ActStep.Writing(decision.plan, decision.result)
                 }
             }, { step, index, source ->
                 check(step is ActStep.Writing)
-                val scoped = step.plan.segments[index]
-                scoped.plan.firstGone(source, scoped.scope, registry)?.let { throw ActPrediction(it) }
-                scoped.plan.gesture(scoped.scope, registry)
+                step.plan.segments[index].gesture(source, registry)
             })
             return when (val step = committed.second) {
                 is ActStep.Done -> step.outcome
                 is ActStep.Writing -> when (val outcome = committed.first) {
                     is ActCommitOutcome.Committed -> ActOutcome.Committed(step.result, outcome.receipt)
-                    is ActCommitOutcome.Refused -> ActOutcome.Refused(action.refusals.of(Refused(outcome.code,
-                        step.plan.segments[outcome.segment].plan.subjectOfRefusal(outcome.code, outcome.detail, registry), outcome.detail, Refused.Path.predicted)))
+                    is ActCommitOutcome.Refused -> ActOutcome.Refused(action.refusals.of(step.plan.segments[outcome.segment].plan.refused(outcome.code, outcome.detail, registry)))
                     null -> ActOutcome.Unchanged(step.result)
                 }
             }
         } catch (prediction: ActPrediction) { return ActOutcome.Refused(action.refusals.of(prediction.refusal)) }
+        catch (failure: CommitFailure) {
+            if (failure.kind == CommitFailure.Kind.malformed) throw ProgrammingFault("a malformed act is a programming fault", failure)
+            throw failure
+        } finally { context.insideRun = false }
+    }
+    // §9.7: several acts as one. Each part loads through the segments of the parts before it, which the engine stages on the act's tentative
+    // copy, and then decides. A part's refusal, a failed check, a gone record or a segment the engine would refuse refuses the whole act, in
+    // that part's words, before anything is written. The parts' segments commit as one act: one gesture id, one hold, held when any part's
+    // plan holds, and one Undo carrying every part's recipes.
+    fun <R> runComposed(parts: List<ActAction<*, *, R>>): ComposedOutcome<R> {
+        require(parts.isNotEmpty()) { "a composed act has parts" }
+        check(!context.insideRun) { "a run cannot enter inside a run" }
+        context.insideRun = true
+        fun refused(part: Int, refusal: Refused) = ComposedOutcome.Refused(part, parts[part].refusals.of(refusal))
+        try {
+            val committed = replica.commitAct<ComposedStep<R>>({ source ->
+                val moment = Moment(Instant(source.now), zone)
+                val results = mutableListOf<Any?>()
+                val segments = mutableListOf<PartSegment>()
+                for ((part, action) in parts.withIndex()) {
+                    if (part > 0) source.beginPart()
+                    val plan = when (val decision = action.decision(source, registry, moment)) {
+                        is ActDecision.Refuse -> return@commitAct null to ComposedStep.Done(ComposedOutcome.Refused(part, decision.refusal))
+                        is ActDecision.Unchanged -> { results.add(decision.result); continue }
+                        is ActDecision.Write -> { results.add(decision.result); decision.plan }
+                    }
+                    for (scoped in plan.segments) {
+                        val staged = try { source.stage(scoped.scope) { scoped.gesture(it, registry) } }
+                            catch (prediction: ActPrediction) { return@commitAct null to ComposedStep.Done(refused(part, prediction.refusal)) }
+                        if (staged != null) return@commitAct null to ComposedStep.Done(refused(part, scoped.plan.refused(staged.code, staged.detail, registry)))
+                        segments.add(PartSegment(part, scoped))
+                    }
+                }
+                if (segments.isEmpty()) null to ComposedStep.Done(ComposedOutcome.Unchanged(results))
+                else ActPlan(segments.map { it.scoped }).request() to ComposedStep.Writing(segments, results)
+            }, { step, index, source ->
+                check(step is ComposedStep.Writing)
+                val segment = step.segments[index]
+                try { segment.scoped.gesture(source, registry) }
+                catch (prediction: ActPrediction) { throw ActPrediction(prediction.refusal, segment.part) }
+            })
+            return when (val step = committed.second) {
+                is ComposedStep.Done -> step.outcome
+                is ComposedStep.Writing -> when (val outcome = committed.first) {
+                    is ActCommitOutcome.Committed -> ComposedOutcome.Committed(step.results, outcome.receipt)
+                    is ActCommitOutcome.Refused -> step.segments[outcome.segment].let { (part, scoped) ->
+                        refused(part, scoped.plan.refused(outcome.code, outcome.detail, registry)) }
+                    null -> ComposedOutcome.Unchanged(step.results)
+                }
+            }
+        } catch (prediction: ActPrediction) { return refused(prediction.part, prediction.refusal) }
         catch (failure: CommitFailure) {
             if (failure.kind == CommitFailure.Kind.malformed) throw ProgrammingFault("a malformed act is a programming fault", failure)
             throw failure
@@ -185,8 +229,7 @@ class ActionRunner(private val replica: Replica, val registry: Registry, private
                             receipt.superseded.isEmpty() && step.plan.deviceWrites.isEmpty()
                         if (wroteNothing) Outcome.Unchanged(step.result) else Outcome.Committed(step.result, receipt)
                     }
-                    is CommitOutcome.Refused -> Outcome.Refused(decider.refusals.of(Refused(outcome.code,
-                        step.plan.subjectOfRefusal(outcome.code, outcome.detail, registry), outcome.detail, Refused.Path.predicted)))
+                    is CommitOutcome.Refused -> Outcome.Refused(decider.refusals.of(step.plan.refused(outcome.code, outcome.detail, registry)))
                     null -> error("the engine answered a gesture without an outcome")
                 }
             }
@@ -218,6 +261,9 @@ fun Plan.firstGone(context: CommitContext, scope: ScopeRef, registry: Registry):
 }
 
 private fun isListed(record: Record?, orderField: String): Boolean = record?.isVisible == true && record.values[orderField] is Json.Str
+
+// An engine refusal of a plan's segment, as the kit names it.
+internal fun Plan.refused(code: RefusalCode, detail: Json?, registry: Registry) = Refused(code, subjectOfRefusal(code, detail, registry), detail, Refused.Path.predicted)
 
 fun Plan.subjectOfRefusal(code: RefusalCode, detail: Json?, registry: Registry): RecordRef? {
     val writing = operations.filter { it.writes }

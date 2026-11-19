@@ -112,6 +112,7 @@ internal class ReplicaState(input: Json) {
     val inverses = input.items("inverses").map(::InverseRequest).toMutableList()
     val cancellations = input.items("cancellations").map(::CancellationReceipt).toMutableList()
     fun entries() = outbox.sortedBy { it.order }
+    fun nextCommitOrder() = (outbox.maxOfOrNull { it.order } ?: 0) + 1
     fun entry(localId: String): Entry? = outbox.firstOrNull { it.id == localId }
     // A gesture id an outbox entry, a notice (`notice:<gestureId>/<k>`), a reversible act, an inverse request or a cancellation carries.
     fun carriesGesture(gestureId: String) = outbox.any { it.gestureId == gestureId } ||

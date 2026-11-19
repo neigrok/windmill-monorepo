@@ -15,7 +15,7 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
             if (replica.state !in setOf("anon", "bound")) throw CommitFailure(CommitFailure.Kind.notWritable, replica.state)
             val at = now(replica)
             val context = ActReadContext(this, replica, at)
-            prepared = try { prepare(context).also { context.finish() } }
+            prepared = try { prepare(context).also { context.finishLoad() } }
                 catch (failure: Throwable) { if (failure is StoreFailure) throw failure; throw ActBodyError(failure) } finally { context.end() }
             val (request, value) = prepared!!
             if (request == null || request.scopes.isEmpty()) return@write null to value
@@ -23,7 +23,7 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
             if (request.gestureId?.let { device.carriesGesture(it) } == true) throw CommitFailure.malformed("gesture-id-taken")
             val undo = planUndo(replica, request)
             val gestureId = request.gestureId ?: freshGestureId()
-            val firstOrder = (replica.outbox.maxOfOrNull { it.order } ?: 0) + 1
+            val firstOrder = replica.nextCommitOrder()
             val receipts = mutableListOf<ActSegmentReceipt>()
             val retired = mutableSetOf<String>()
             val superseded = mutableSetOf<String>()
@@ -115,10 +115,15 @@ private fun Engine.recordAct(replica: ReplicaState, actId: String, plan: Map<Int
     if (sources.isNotEmpty()) replica.journal.add(ReversibleAct(actId, true, sources))
 }
 
+// An act's prepare context (§7.1). A composed act stages its parts' segments on a tentative copy of the replica, which each later load reads
+// through and each later identity avoids; the copy is thrown away with the queue endings its commits traced. A staged refusal reports as the
+// act's refusal would.
 internal class ActReadContext(private val engine: Engine, private val state: ReplicaState, override val now: Long) : ActContext {
     private var open = true
     private var loading = true
-    private val minted = mutableMapOf<ScopeRef, Engine.Reader>()
+    private var staged: ReplicaState? = null
+    private var stagedIntents = 0
+    private val reserved = mutableMapOf<ScopeRef, MutableSet<RecordID>>()
     private val borrowed = mutableSetOf<ScopeRef>()
     private val loans = mutableListOf<Engine.Reader>()
     val newMints = mutableSetOf<ScopeRef>()
@@ -138,7 +143,7 @@ internal class ActReadContext(private val engine: Engine, private val state: Rep
             failure = failure ?: error
             throw error
         }
-        val reader = try { engine.Reader(state, scope, now) }
+        val reader = try { engine.Reader(staged ?: state, scope, now) }
             catch (error: Throwable) { failure = failure ?: error; throw error }
         borrowed.add(scope)
         loans.add(reader)
@@ -161,13 +166,33 @@ internal class ActReadContext(private val engine: Engine, private val state: Rep
                 }
                 newMints.add(scope)
             }
-            return minted.getOrPut(scope) { engine.Reader(state, scope, now) }.mintID(type)
+            return engine.Reader(staged ?: state, scope, now, reserved.getOrPut(scope) { mutableSetOf() }).mintID(type)
         } catch (error: Throwable) { failure = failure ?: error; throw error }
     }
     override fun opaqueID(): String {
         finishLoad()
         return engine.opaqueID()
     }
-    fun finish() { finishLoad(); minted.values.forEach { it.finish() } }
-    fun end() { open = false; minted.values.forEach { it.end() } }
+    override fun stage(scope: ScopeRef, segment: (CommitContext) -> Gesture): CommitOutcome.Refused? {
+        finishLoad()
+        val tentative = staged ?: state.copy().also { staged = it }
+        val reader = engine.Reader(tentative, scope, now)
+        val gesture = try { segment(reader).also { reader.finish() } } finally { reader.end() }
+        val traced = engine.ended.size
+        val outcome = try { engine.commitGesture(tentative, scope, gesture.copy(gestureId = STAGED), now, stagedIntents, state.nextCommitOrder()) }
+            catch (_: IllegalArgumentException) { throw CommitFailure.malformed("invalid-value") }
+            finally { engine.ended.subList(traced, engine.ended.size).clear() }
+        return when (outcome) {
+            is CommitOutcome.Refused -> outcome.copy(notice = null).also { engine.report(EngineOperation.commit, EngineOutcome.refused, it.code.text) }
+            is CommitOutcome.Committed -> { stagedIntents += outcome.receipt.localIds.size; null }
+        }
+    }
+    override fun beginPart() {
+        finishLoad()
+        loading = true
+    }
+    fun end() { open = false }
 }
+
+// The gesture id a staged segment's entries carry in the tentative copy.
+private const val STAGED = "staged"
