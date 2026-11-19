@@ -138,7 +138,11 @@ export class Harness {
   /** @template E @param {import('../../../src/platform/domain-kit/entities.js').EntityType<E>} type @param {string} [scope] */
   stored(type, scope = type.boundScope()) { return this.runner.read(type.boundScope(scope), (read) => read.repository(type).all('stored')); }
   /** @template R @param {import('../../../src/platform/domain-kit/refusals.js').Refusals<R>} refusals @param {string} [scope] */
-  notices(refusals, scope = this.world.scope) { return this.engine.observe(scope).getSnapshot().notices.map((/** @type {any} */ notice) => new DomainNotice(notice, this.world.registry, refusals)); }
+  notices(refusals, scope = this.world.scope) {
+    const hold = this.engine.observe(scope);
+    try { return hold.getSnapshot().notices.map((/** @type {any} */ notice) => new DomainNotice(notice, this.world.registry, refusals)); }
+    finally { hold.release(); }
+  }
   undoOffers() { return undoOffers(this.engine.device.activeReplica, this.world.scope); }
   close() { for (const phone of this.world.phones) phone.engine.close(); }
 }

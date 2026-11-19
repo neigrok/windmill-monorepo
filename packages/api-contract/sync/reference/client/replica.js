@@ -164,6 +164,11 @@ export class Replica {
     return this.spentIds[scope]?.[recordKey(t, id)]?.born;
   }
 
+  // The scope's spent ids as a read-and-commit function reads them (§7.1): `{t, id, born}` each.
+  spentRows(scope) {
+    return Object.values(this.spentIds[scope] ?? {});
+  }
+
   addSpent(scope, t, id, born) {
     this.spentIds[scope] ??= {};
     this.spentIds[scope][recordKey(t, id)] = { t, id, born };

@@ -124,6 +124,17 @@ test('a new card saves through the engine, its removal is held with its releaseA
   engine.close();
 });
 
+test('a read leaves no hold on the scope it reads: one the app observes keeps its holders, and any other is let go', async () => {
+  const { engine, runner } = await open();
+  const observed = engine.observe(PROBE_SCOPE);
+  for (const scope of [PROBE_SCOPE, PROBE_SCOPE, PROBE_TREE]) runner.read(scope, (read) => read.firstPullComplete());
+  assert.equal(engine.views.get(PROBE_SCOPE)?.holders, 1);
+  assert.equal(engine.views.has(PROBE_TREE), false);
+  observed.release();
+  assert.equal(engine.views.has(PROBE_SCOPE), false);
+  engine.close();
+});
+
 test('a device write commits with no record and is read back inside the next run, with the first-pull state', async () => {
   const { engine, runner } = await open();
   const written = await runner.run(action(PROBE_SCOPE, () => null, () => {

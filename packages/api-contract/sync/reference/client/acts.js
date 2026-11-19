@@ -125,7 +125,7 @@ export class ActCommit {
     this.deviceNow ??= ctx.deviceNow;
     this.actor ??= ctx.actor;
     const views = (source, scope) => ({ drawn: drawn(source, ctx.registry, scope), stored: stored(source, ctx.registry, scope),
-      now: this.now, replica: source.id, actor: this.actor, isAnonymous: source.meta.state === 'anon',
+      spent: source.spentRows(scope), now: this.now, replica: source.id, actor: this.actor, isAnonymous: source.meta.state === 'anon',
       ...ctx.metadata?.(source, scope) });
     if (!this.prepared) {
       let open = true, loading = true, failure, staged = null, stagedOffset = 0;

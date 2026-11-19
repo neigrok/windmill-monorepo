@@ -549,18 +549,25 @@ export class EngineReplica {
     return { outcome: { receipt: outcome }, value };
   }
 
+  // The scope's views as its observation folds them now, through a hold let go at once: a read keeps no scope
+  // observed that the app does not.
   /**
    * @param {string} scope
    * @returns {ReadViews}
    */
   read(scope) {
-    const snapshot = this.engine.observe(scope).getSnapshot();
-    const keyed = (/** @type {ViewRecord[]} */ records) => new Map(records.map((record) => [recordKey(record.t, record.id), record]));
-    return {
-      drawn: keyed(snapshot.drawn),
-      stored: keyed(snapshot.stored),
-      ...this.engine.readMetadata(scope),
-    };
+    const hold = this.engine.observe(scope);
+    try {
+      const snapshot = hold.getSnapshot();
+      const keyed = (/** @type {ViewRecord[]} */ records) => new Map(records.map((record) => [recordKey(record.t, record.id), record]));
+      return {
+        drawn: keyed(snapshot.drawn),
+        stored: keyed(snapshot.stored),
+        ...this.engine.readMetadata(scope),
+      };
+    } finally {
+      hold.release();
+    }
   }
 
   /** @param {string} gestureId */

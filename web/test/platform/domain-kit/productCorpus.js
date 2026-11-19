@@ -47,14 +47,22 @@ export class ProductCorpus {
     }
   }
 
-  // A case's records in one scope: its `records`, or, in a scene of several scopes, `scopes[scope]`, with the
-  // scene's device rows; `stored` defaults to `drawn`, and `ids` are minted in order.
+  // A case's records in one scope: its `records`, or, in a scene of several scopes, `scopes[scope]`: `drawn`, `stored`
+  // (by default `drawn`) and `spent` (by default none).
+  /** @param {Vector} vector @param {string} scope */
+  records(vector, scope) {
+    const { records: single, scopes } = vector.input;
+    return scopes === undefined ? single : scopes[scope] ?? { drawn: [] };
+  }
+
+  // A case's records in one scope as the kit's views, with the scene's device rows; `ids` are minted in order.
   /** @param {Vector} vector @param {string} scope @param {(type: string) => import('../../../src/platform/domain-kit/entities.js').RecordID} mintId */
   views(vector, scope, mintId) {
-    const { records: single, scopes, device = {}, firstPullComplete = true } = vector.input;
-    const records = scopes === undefined ? single : scopes[scope] ?? { drawn: [] };
+    const { device = {}, firstPullComplete = true } = vector.input;
+    const records = this.records(vector, scope);
     const stored = viewRecords(records.stored ?? records.drawn);
-    return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored, confirmed: stored, devices: device, firstPullComplete, mintId });
+    return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored, confirmed: stored, spent: records.spent ?? [],
+      devices: device, firstPullComplete, mintId });
   }
 
   /** @param {Vector} vector */
@@ -90,7 +98,8 @@ export class ProductCorpus {
       finishLoad() {},
       inScope: (scope, body) => {
         const views = this.views(vector, scope, mint);
-        return body({ drawn: views.drawn, stored: views.stored, confirmed: views.confirmed, devices: views.devices, firstPullComplete: views.firstPullComplete, now: moment.now.ms });
+        return body({ drawn: views.drawn, stored: views.stored, confirmed: views.confirmed, spent: this.records(vector, scope).spent ?? [],
+          devices: views.devices, firstPullComplete: views.firstPullComplete, now: moment.now.ms });
       },
       mintID: (type) => mint(type),
       stage: () => { throw new Fault('an act case decides one act, and stages nothing'); },

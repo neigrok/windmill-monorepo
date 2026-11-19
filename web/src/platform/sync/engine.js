@@ -400,6 +400,7 @@ export class BrowserSyncEngine {
       confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id),
         structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }), ...(row.ru === undefined ? {} : { ru: row.ru }) })])),
       freshness: this.freshness(scope, replica),
+      spent: replica.spentRows(scope),
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
       firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
       actor,

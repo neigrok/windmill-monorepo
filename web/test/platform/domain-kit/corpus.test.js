@@ -190,7 +190,7 @@ function answerOf(input) {
 /** @param {any} input */
 async function pipelineVector(input) {
   const moment = momentOf(input);
-  const replica = new VectorReplica({ drawn: input.drawn, stored: input.stored ?? input.drawn }, moment.now.ms, answerOf(input));
+  const replica = new VectorReplica({ drawn: input.drawn, stored: input.stored ?? input.drawn, spent: input.spent ?? [] }, moment.now.ms, answerOf(input));
   const runner = new ActionRunner(replica, probeRegistry, moment.zone);
   /** @type {import('../../../src/platform/domain-kit/actions.js').Decider<import('../../../src/platform/domain-kit/time.js').Moment, null, ProbeRefusal>} */
   const action = {
