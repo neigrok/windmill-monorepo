@@ -39,6 +39,8 @@ export const Placement = Object.freeze({
 export class Views {
   /** @type {Record<ViewMode, Map<string, ViewTypeIndex>>} */
   #indexes = { drawn: new Map(), stored: new Map() };
+  /** @type {Map<string, string>} */
+  #spentBorns;
 
   /**
    * @param {Registry} registry
@@ -51,7 +53,8 @@ export class Views {
     this.drawn = drawn;
     this.stored = stored;
     this.confirmed = confirmed;
-    this.spent = new Map(spent.map((row) => [recordKey(row.t, row.id), row.born]));
+    this.spent = spent;
+    this.#spentBorns = new Map(spent.map((row) => [recordKey(row.t, row.id), row.born]));
     this.devices = devices;
     this.firstPullComplete = firstPullComplete;
     this.actor = actor;
@@ -140,7 +143,7 @@ export class Views {
    */
   spentBorn(type, id) {
     this.assertOpen();
-    return this.spent.get(recordKey(type, id)) ?? null;
+    return this.#spentBorns.get(recordKey(type, id)) ?? null;
   }
 
   /** @param {string} key */

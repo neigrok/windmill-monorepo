@@ -19,7 +19,7 @@ import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/ru
 import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { Fault } from '../../../src/platform/domain-kit/values.js';
-import { environment } from '../sync/fakes.js';
+import { environment, until } from '../sync/fakes.js';
 import { PROBE_SCOPE, PROBE_TREE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
 import { Contract, momentOf, probeRegistry, viewRecords } from './vectors.js';
 
@@ -77,6 +77,12 @@ test('view reference indexes preserve stored holds, drawn changes, visibility an
   assert.deepEqual(ids(laps.children(first, 'runId', 'stored')), ['lap00001', 'lap00002']);
 });
 
+test('a view built again from another view\'s own values keeps its spent ids, as a product that narrows a view builds one', () => {
+  const views = Views.ofRecords(probeRegistry, { drawn: [], stored: [], spent: [{ t: 'tag', id: 'oak', born: '1000:0:r_aaaaaaaaaaaa' }] });
+  const again = new Views(probeRegistry, /** @type {any} */ ({ ...views, drawn: new Map() }));
+  assert.deepEqual([again.spentBorn('tag', 'oak'), again.spentBorn('tag', 'elm')], ['1000:0:r_aaaaaaaaaaaa', null]);
+});
+
 test('view reference indexes compare tuple references by JCS and exclude absent fields', () => {
   const schema = /** @type {any} */ (Contract.json('sync/probe.registry.json'));
   schema.types.find((/** @type {{ type: string }} */ type) => type.type === 'tag').fields.linkId = { kind: 'const', writer: 'client', ref: 'link' };
@@ -132,6 +138,26 @@ test('a read leaves no hold on the scope it reads: one the app observes keeps it
   assert.equal(engine.views.has(PROBE_TREE), false);
   observed.release();
   assert.equal(engine.views.has(PROBE_SCOPE), false);
+  engine.close();
+});
+
+// An observation's first hold folds the scope and, where its cache is not loaded, reads the device's store once; its
+// last release only drops the fold. Subscriptions and pulls follow the replica's scopes, never an observation.
+test('reads of a scope nobody holds, on a started and signed-in engine, ask the network nothing and schedule nothing', async () => {
+  const env = environment();
+  const engine = await BrowserSyncEngine.open(env.options);
+  engine.observe(PROBE_SCOPE);
+  await engine.start();
+  await until(() => engine.leader);
+  /** @type {any} */ (env.transport).account = 'A';
+  await engine.signIn('A');
+  const runner = new ActionRunner(new EngineReplica(engine), env.options.registry, new FixedZone(0));
+  for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+  const before = { requests: env.requests.length, timers: [...env.timers.tasks.keys()], scopes: engine.scopes() };
+  for (let read = 0; read < 5; read++) runner.read(PROBE_TREE, (reader) => reader.repository(Probe.tag).all('drawn'));
+  for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+  assert.deepEqual({ requests: env.requests.length, timers: [...env.timers.tasks.keys()], scopes: engine.scopes(), observed: engine.views.has(PROBE_TREE) },
+    { ...before, observed: false });
   engine.close();
 });
 
