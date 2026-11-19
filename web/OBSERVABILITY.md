@@ -366,6 +366,8 @@ A step is a thing a reader did or was told. These emit nothing:
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
 - The camera, the minimap, the legend's highlight and folding, selecting one step, hovering and focus moves.
 - Closing the guide, reading it, its counter appearing and a guide set elsewhere arriving.
+- What the browser kept beside the roadmaps a sign-in's Discard took, swept once the sign-in completes: `roadmap_signin`'s
+  `discard` is the step, and a storage that refuses holds nothing to sweep.
 - The read of the guides above a tree: asked, answered, aborted as the room leaves the tree, or refused with a 4xx. A
   reader, a shared or demo route, a signed-out device, a tree that lives only on this device and a lapsed session make
   no such read.

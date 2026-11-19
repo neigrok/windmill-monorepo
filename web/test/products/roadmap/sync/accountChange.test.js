@@ -234,8 +234,8 @@ class NoSocket {
   close() { this.readyState = 3; }
 }
 
-// One browser that ran the old bundle, its storage the new bundle's engine shares.
-function oldBrowser(t) {
+// A browser's localStorage, which lists its keys as a browser's does.
+function keyedStorage() {
   const storage = {};
   Object.defineProperties(storage, {
     getItem: { value: (key) => (Object.hasOwn(storage, key) ? storage[key] : null) },
@@ -244,6 +244,12 @@ function oldBrowser(t) {
     key: { value: (index) => Object.keys(storage)[index] ?? null },
     length: { get: () => Object.keys(storage).length },
   });
+  return storage;
+}
+
+// One browser that ran the old bundle, its storage the new bundle's engine shares.
+function oldBrowser(t) {
+  const storage = keyedStorage();
   const listening = { addEventListener() {}, removeEventListener() {} };
   const page = { indexedDB: new IDBFactory(), window: { localStorage: storage, ...listening }, localStorage: storage, document: { visibilityState: 'visible', ...listening },
     WebSocket: NoSocket, fetch: async () => { throw new TypeError('no network in the old bundle'); } };
@@ -342,6 +348,30 @@ function residue(names) {
   return Object.keys(globalThis.window.localStorage)
     .filter((key) => /^windmill:(legend|return|milestones|last-place|shared|card)/.test(key))
     .map((key) => Object.entries(names).reduce((text, [id, name]) => text.replace(id, name), key)).sort();
+}
+
+for (const answer of ['discard', 'add', 'cancel']) {
+  test(`a sign-in answered ${answer === 'cancel' ? 'with Escape' : answer === 'add' ? 'Add' : 'Discard'} ${answer === 'discard' ? 'takes what the browser kept beside the roadmaps its Discard took, once the sign-in completes' : 'keeps what the browser kept beside its roadmaps'}, and leaves every other roadmap’s`, async (t) => {
+    const accountChange = await import('../../../../src/products/roadmap/sync/accountChange.js');
+    const { engine, plant } = await device(t, { holdsRoadmaps: true });
+    globalThis.window.localStorage = keyedStorage();
+    const sail = await plant('Learn to sail', ['Read the wind']);
+    const other = 't_00000000000000dd';
+    plantResidue([sail.tree, other]);
+    plantPlace(sail.tree);
+    const due = roadmapDue(await engine.signIn('A'));
+    const words = accountChange.signInWords(engine, due, () => {});
+    words.onStep(answer);
+    await pause(0);
+    const asked = residue({ [sail.tree]: 'sail', [other]: 'other' });
+    if (answer === 'cancel') await engine.cancelSignIn('A');
+    else assert.equal((await engine.signIn('A', { decisions: { roadmap: answer }, counted: { roadmap: due.counted } })).complete, true);
+    await pause(0);
+    const kept = ['windmill:card:unit', 'windmill:legend:other', 'windmill:milestones:other', 'windmill:return:other', 'windmill:shared:t_00000000000000cc'];
+    const all = [...kept, 'windmill:last-place', 'windmill:legend:sail', 'windmill:milestones:sail', 'windmill:return:sail'].sort();
+    assert.deepEqual({ asked, answered: residue({ [sail.tree]: 'sail', [other]: 'other' }), state: engine.getSnapshot().state },
+      { asked: all, answered: answer === 'discard' ? kept : all, state: answer === 'cancel' ? 'anon' : 'bound' });
+  });
 }
 
 test('at sign-out the question names the account’s roadmaps waiting in the old stores beside its unsent work, and its Discard takes exactly those it counted: what an old tab wrote since, another account’s and the anonymous ones stay', async (t) => {

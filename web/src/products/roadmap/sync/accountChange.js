@@ -1,10 +1,11 @@
 // Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, §8.2, flow 50): the words
 // of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and of its sign-out question,
 // Keep or Discard, where every unsent change is roadmap's, each naming every roadmap its Discard takes, so a Discard
-// covers exactly the work it named (engine.md §7.10); and what an explicit sign-out, an account replacement and an
-// account closure take from the browser: every replica's landing notes, a dormant one's included, the told notice ids,
-// what the browser kept of every roadmap but the anonymous ones, and, where the account's replica went with a Discard,
-// the old stores its question named. The route table hands these to the shell only where the room reads the copy.
+// covers exactly the work it named (engine.md §7.10); what the browser kept beside the roadmaps a sign-in's Discard takes;
+// and what an explicit sign-out, an account replacement and an account closure take from the browser: every replica's
+// landing notes, a dormant one's included, the told notice ids, what the browser kept of every roadmap but the anonymous
+// ones, and, where the account's replica went with a Discard, the old stores its question named. The route table hands
+// these to the shell only where the room reads the copy.
 
 import { effectsOf } from '../../../../../packages/api-contract/sync/reference/client/projections.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
@@ -20,7 +21,7 @@ import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
 import { RoadmapNames } from '../kept/KeptChanges.js';
 import { forgetToldNotices } from '../kept/toldNotices.js';
-import { forgetTreeResidue } from '../persistence/deviceResidue.js';
+import { forgetShareResidue, forgetTreeResidue } from '../persistence/deviceResidue.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { failureTags } from './SyncStore.js';
 import { t } from '../i18n/index.js';
@@ -35,6 +36,14 @@ const runnerOf = (engine) => new ActionRunner(new EngineReplica(engine), engine.
 function entriesOf(engine, counted) {
   const pinned = new Set(counted);
   return engine.device.activeReplica.entries().filter((entry) => pinned.has(entry.localId));
+}
+
+// The roadmaps an entry writes: those whose tree scope or overlay it writes, and those whose record in the person's list it
+// writes.
+function roadmapsWrittenBy(entry) {
+  return effectsOf(entry).flatMap(({ scope, d }) => (scope === RoadmapScopes.account
+    ? d.filter((delta) => delta.t === Roadmap.type).map((delta) => String(delta.id))
+    : [RoadmapNames.roadmapOf(scope)].filter(Boolean)));
 }
 
 // A change is one act of the person's: every entry the act commits carries its gesture's id, so making a roadmap, which
@@ -68,10 +77,7 @@ export class ChangedRoadmap {
     };
     const changes = new Map();
     for (const entry of entriesOf(engine, counted)) {
-      const written = effectsOf(entry).flatMap(({ scope, d }) => (scope === RoadmapScopes.account
-        ? d.filter((delta) => delta.t === Roadmap.type).map((delta) => String(delta.id))
-        : [RoadmapNames.roadmapOf(scope)].filter(Boolean)));
-      for (const root of written.map(rootOf)) changes.set(root, (changes.get(root) ?? new Set()).add(entry.gestureId));
+      for (const root of roadmapsWrittenBy(entry).map(rootOf)) changes.set(root, (changes.get(root) ?? new Set()).add(entry.gestureId));
     }
     return [...changes].map(([root, gestures]) => new ChangedRoadmap({
       root,
@@ -122,7 +128,8 @@ export function adoptionAnswer(engine, due) {
 
 // Add your roadmaps? (50.01, 50.03): every roadmap the signed-out work changes, as its Discard takes all of it: the
 // browser's own roadmaps by name, and another's roadmap by its changes, each named as this browser showed it. One the
-// person made and deleted here is not named: added or discarded, it stays deleted.
+// person made and deleted here is not named: added or discarded, it stays deleted. Its Discard takes, with that work, what
+// the browser kept beside the roadmaps it made (`forgetDiscarded`).
 export function signInWords(engine, due, track = beacon) {
   const roadmaps = ChangedRoadmap.of(engine, due.counted).filter((roadmap) => !roadmap.deleted);
   const count = roadmaps.filter((roadmap) => roadmap.listed).length;
@@ -132,8 +139,32 @@ export function signInWords(engine, due, track = beacon) {
     lead: t('roadmap.accountChoice.addLead', { count, shown: formatted(count) }),
     items: roadmaps.map((roadmap) => (roadmap.listed ? roadmap.name : changedRow(roadmap.name, roadmap.changes))),
     note: t('roadmap.accountChoice.addNote', { count }),
-    onStep: (step) => { if (SIGN_IN_STEPS.has(step)) track('roadmap_signin', { step, roadmaps: asked }); },
+    onStep: (step) => {
+      if (step === 'discard') forgetDiscarded(engine, due.counted);
+      if (SIGN_IN_STEPS.has(step)) track('roadmap_signin', { step, roadmaps: asked });
+    },
   };
+}
+
+// Once the sign-in the person answered with Discard completes and the work it counted (`counted`, its entries' local ids)
+// is gone from the browser, what the browser kept beside each roadmap that work wrote and the anon replica no longer holds
+// goes too: its legend, its ledgers, the last place on it. A sign-in cancelled, or completed with Add after all, takes
+// none of it.
+export async function forgetDiscarded(engine, counted, forget = forgetTreeResidue) {
+  const written = new Set(entriesOf(engine, counted).flatMap(roadmapsWrittenBy));
+  await new Promise((settled) => {
+    const answered = () => {
+      const { state, pendingSignIn } = engine.getSnapshot();
+      if (state !== 'bound' && pendingSignIn) return;
+      stop();
+      settled();
+    };
+    const stop = engine.observeEngine(answered);
+    answered();
+  });
+  if (engine.getSnapshot().state !== 'bound' || entriesOf(engine, counted).length > 0) return;
+  const held = anonReplicaTrees(engine);
+  forget((tree) => written.has(tree) && !held.has(tree));
 }
 
 // Keep unsent changes? (50.02, 50.04), where every entry the sign-out question counts is roadmap's: how many changes, and
@@ -168,14 +199,19 @@ export async function signOutWords(engine, question, track = beacon, { stores = 
   };
 }
 
-// The roadmaps that stay with whoever is at the browser next: the anon replica's own and those it reads, and the old
-// stores' roadmaps made signed out that name nobody.
-async function anonymousTrees(engine, stores) {
+// The roadmaps the anon replica holds: its own and those it reads.
+function anonReplicaTrees(engine) {
   const { scopes, records } = engine?.anonymousRecords() ?? { scopes: [], records: [] };
-  const trees = new Set([
+  return new Set([
     ...records.filter((record) => record.scope === RoadmapScopes.account && record.t === Roadmap.type).map((record) => String(record.id)),
     ...scopes.map((scope) => RoadmapNames.roadmapOf(scope)).filter(Boolean),
   ]);
+}
+
+// The roadmaps that stay with whoever is at the browser next: the anon replica's, and the old stores' roadmaps made signed
+// out that name nobody.
+async function anonymousTrees(engine, stores) {
+  const trees = anonReplicaTrees(engine);
   const { roadmaps } = await stores.read();
   for (const roadmap of roadmaps) if (roadmap.madeSignedOut && roadmap.owner === null) trees.add(roadmap.id);
   return trees;
@@ -189,7 +225,9 @@ async function anonymousTrees(engine, stores) {
 export async function forgetReplicaRoom({ engine = syncSession.engine, previous = null, stores = new OldStores(), notes = new CarryNotes(),
   track = beacon, report = reportRoadmapFailure } = {}) {
   forgetToldNotices();
-  forgetTreeResidue(await anonymousTrees(engine, stores));
+  forgetShareResidue();
+  const anonymous = await anonymousTrees(engine, stores);
+  forgetTreeResidue((tree) => !anonymous.has(tree));
   if (!engine) return;
   await engine.dropDeviceRows('roadmap', 'landing');
   const counted = notes.counted;

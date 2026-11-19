@@ -362,7 +362,8 @@ function stepsOpening(lattice, treeId) {
 export async function forgetDeviceTrees() {
   const registry = new LocalTreeRegistry();
   const anonymous = new Set(registry.list(null).map((tree) => tree.id));
-  forgetTreeResidue(anonymous);
+  forgetShareResidue();
+  forgetTreeResidue((treeId) => !anonymous.has(treeId));
   if (!registry.keeps()) throw new Error('device-index-unavailable');
   const store = new SyncStore();
   const blobs = await store.treeIds({ durable: true });
