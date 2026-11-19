@@ -11,7 +11,9 @@
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
+#include <json/json.h>
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -34,6 +36,11 @@ public:
   void getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
+
+  // What GET /v1/trees/{id}/progress and GET /v1/trees/{id}/activity answer `caller` with, nothing where they answer 404.
+  std::optional<Json::Value> progressAnswer(const std::string& treeId, const std::optional<UserId>& caller);
+  std::optional<Json::Value> activityAnswer(const std::string& treeId, const std::optional<UserId>& caller, Seq since,
+                                            std::size_t limit);
 
 private:
   std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req) const;

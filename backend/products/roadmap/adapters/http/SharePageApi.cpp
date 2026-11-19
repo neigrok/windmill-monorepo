@@ -71,29 +71,22 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   return spliceBetween(shell, "<!-- meta:unfurl:start -->", "<!-- meta:unfurl:end -->", meta);
 }
 
-void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  const std::string shell = readWebFile(webRoot_, "index.html");
-  if (shell.empty()) {
-    // No shell to serve: bounce the human to the hash route so the tree still opens.
-    callback(htmlPage("<!doctype html><meta http-equiv=\"refresh\" content=\"0;url=/#/t/"
-                      + htmlEscape(id) + "\">"));
-    return;
-  }
-
-  const std::optional<UserId> caller = callerOf(req, *auth_);
-  std::optional<SharedRoadmap> shared;
+std::optional<SharedRoadmap> SharePageApi::sharedOf(const std::string& id, const std::optional<UserId>& caller) {
   if (engine_) {
     WriteObservation observation{"roadmap.share.read", "roadmap", "share"};
     WriteContext context{observation};
     try {
+      std::optional<SharedRoadmap> shared;
       if (const std::optional<ReadableRoadmap> roadmap = engine_->open(TreeId{id}, caller)) shared = engine_->shared(*roadmap);
       observation.skip();
+      return shared;
     } catch (const std::exception& failure) {
       // An infrastructure failure leaves it unreadable, so the shell is served verbatim, and is reported.
       observation.fail(failure);
-      shared.reset();
+      return std::nullopt;
     }
-  } else {
+  }
+  {
     bool readable = false;
     bool subtree = false;
     std::string title;
@@ -140,8 +133,21 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
         readable = false;
       }
     }
-    if (readable) shared = SharedRoadmap{title, steps, visibility, trees_->loadForkLineage(TreeId{id})};
+    if (!readable) return std::nullopt;
+    return SharedRoadmap{title, steps, visibility, trees_->loadForkLineage(TreeId{id})};
   }
+}
+
+void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
+  const std::string shell = readWebFile(webRoot_, "index.html");
+  if (shell.empty()) {
+    // No shell to serve: bounce the human to the hash route so the tree still opens.
+    callback(htmlPage("<!doctype html><meta http-equiv=\"refresh\" content=\"0;url=/#/t/"
+                      + htmlEscape(id) + "\">"));
+    return;
+  }
+
+  const std::optional<SharedRoadmap> shared = sharedOf(id, callerOf(req, *auth_));
   const bool hasVideo = shared && videos_->has(id);
   callback(htmlPage(shared ? renderShell(shell, appOrigin_, shared->title, shared->steps, shared->visibility, id, shared->lineage, hasVideo)
                            : shell));

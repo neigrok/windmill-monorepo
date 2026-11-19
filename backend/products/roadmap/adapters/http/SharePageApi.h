@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace wm {
@@ -31,6 +32,9 @@ public:
                std::string webRoot, std::string appOrigin, std::shared_ptr<EngineReadModels> engine);
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
+
+  // What the page names of the tree for `caller`: nothing where it serves the shell verbatim.
+  std::optional<SharedRoadmap> sharedOf(const std::string& id, const std::optional<UserId>& caller);
 
   // Splice this tree's unfurl meta between the index.html sentinels, keeping the sentinels;
   // returns the shell unchanged if the fence is absent. `title` is escaped here. The page's own

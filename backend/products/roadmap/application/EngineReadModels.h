@@ -84,10 +84,10 @@ public:
 
   SharedRoadmap shared(const ReadableRoadmap& roadmap);
 
-  // Every alive public root, read alone, as today's gallery lists every public tree. Its owner's other roadmaps, which
-  // its steps may open, are followed as today's follows are (OwnerFollows): only for an owner whose roots on the wall
-  // open one, in the order the wall shows their cards before their marks are known, within `cap` in all; an owner left
-  // unread is shown with the steps that open a roadmap set aside.
+  // Every alive public root a person owns, read alone, as the rooms' gallery lists every owned public tree. Its owner's
+  // other roadmaps, which its steps may open, are followed as the rooms' follows are (OwnerFollows): only for an owner
+  // whose roots on the wall open one, in the order the wall shows their cards before their marks are known, within `cap`
+  // in all; an owner left unread is shown with the steps that open a roadmap set aside.
   EngineWall wall(std::chrono::milliseconds cap);
   std::set<TreeId> forkedSources(const UserId& viewer);
 

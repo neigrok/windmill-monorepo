@@ -74,6 +74,8 @@ std::vector<WallCandidate> GalleryApi::candidates() {
   return candidates;
 }
 
+std::vector<GalleryEntry> GalleryApi::wall(const Viewer& viewer) { return publicWall(candidates(), viewer); }
+
 std::string GalleryApi::renderWall(const std::string& shell, const std::vector<GalleryEntry>& wall) {
   if (wall.empty()) return shell;
 
@@ -108,7 +110,7 @@ std::string GalleryApi::renderWall(const std::string& shell, const std::vector<G
 }
 
 void GalleryApi::page(const drogon::HttpRequestPtr&, HttpCallback&& callback) {
-  const std::vector<GalleryEntry> wall = publicWall(candidates(), Viewer{});
+  const std::vector<GalleryEntry> wall = this->wall(Viewer{});
   const std::vector<GalleryEntry> firstPage = wallPage(wall, "", kWallLimit)->entries;
 
   std::string shell = readWebFile(webRoot_, "gallery.html");
@@ -144,7 +146,7 @@ void GalleryApi::index(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     viewer.forked = engine_ ? engine_->forkedSources(*caller) : trees_->listForkedSources(*caller);
   }
 
-  const std::vector<GalleryEntry> wall = publicWall(candidates(), viewer);
+  const std::vector<GalleryEntry> wall = this->wall(viewer);
   const std::string cursor = req->getParameter("cursor");
   const std::optional<WallPage> page = wallPage(wall, cursor, limit);
   if (!page) {
