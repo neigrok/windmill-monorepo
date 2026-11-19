@@ -248,6 +248,8 @@
   "roadmap.label.recolor": "Recolor",
   "roadmap.label.show": "Show",
   "roadmap.label.sort": "Sort",
+  "roadmap.landing.cameBack": "Your edit brought this step back.",
+  "roadmap.landing.follows": "{count, plural, one {{removed} was removed.} other {{removed} were removed.}} This now follows {followed}.",
   "roadmap.common.undo": "Undo",
   "roadmap.sync.lapsedSession": "Signed out — saved on this device",
   "roadmap.legend.add": "Add a kind",

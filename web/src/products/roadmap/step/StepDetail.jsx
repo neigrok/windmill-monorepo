@@ -46,6 +46,8 @@ export function StepDetail({
   roadmapTitle,
   editable = false,
   refusal = null,
+  landed = null,
+  onLandedShown,
   progressBlocked = false,
   deletable = false,
   stepLink = null,
@@ -209,6 +211,13 @@ export function StepDetail({
       document.removeEventListener('pointerdown', followFocus, true);
     };
   }, [refusalShown, id]);
+
+  // A landing line (§6) is shown as the page opens on its step; the room clears it from the device's note once.
+  const landedShown = useRef(onLandedShown);
+  landedShown.current = onLandedShown;
+  useEffect(() => {
+    if (landed) landedShown.current?.();
+  }, [id, landed]);
 
   useLayoutEffect(() => {
     if (refusalShown || !refusalFocus.current) return;
@@ -536,6 +545,7 @@ export function StepDetail({
           {refusalShown && <div ref={refusalRef} className="st-step-refusal" onClickCapture={() => { refusalFocus.current = document.activeElement; }}>
             <RefusedSync band={compactNotice ? 'phone' : breakpoint} {...notice} onDiscard={discard} disabled={Boolean(discardNotice)} />
           </div>}
+          {landed && <p className="st-step-landed">{landed}</p>}
           <div ref={scrollRef} className="st-step-document-scroll" onWheel={() => cancelAnimationFrame(sectionScroll.current)} onTouchStart={() => cancelAnimationFrame(sectionScroll.current)}>
             <div className="st-step-read-heading">
               <div className="st-step-read-tags">

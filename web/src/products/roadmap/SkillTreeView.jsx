@@ -26,7 +26,7 @@ import { makeRenderable } from './model/renderableGraph.js';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
 import { deletable, takesEveryRoot } from './board/acts.js';
-import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast } from './copy.js';
+import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast, landingNote } from './copy.js';
 import { t } from './i18n/index.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
 import { useBoardActs } from './board/useBoardActs.js';
@@ -45,6 +45,7 @@ import { listDeviceTrees, readDeviceTreeCard } from './sync/localTrees.js';
 import { reportRoadmapFailure } from './reportFailure.js';
 import { toastSeat, useRoadmapToast } from './room/useRoadmapToast.js';
 import { useRoomAuthority, useRoomHolder } from './room/useRoomAuthority.js';
+import { Landed, useRoomLanding } from './room/useRoomLanding.js';
 import { useRoomLoad } from './room/useRoomLoad.js';
 import { useRoomProgress } from './room/useRoomProgress.js';
 import { useRoomScene } from './room/useRoomScene.js';
@@ -139,6 +140,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   // The canvas, then the tree it draws.
   const { scene, graphAvailability, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, onNodeActivate: activateGraphNode, showToast });
   const graphUnavailable = graphAvailability === 'unavailable';
+  const landing = useRoomLanding({ room, treeId });
   const load = useRoomLoad({
     treeId, accountId: account?.id ?? null, demo, shared, demotion, replica, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
     legend: legendKit, workspace: { hydrateWorkspaces, adoptWorkspaces, pushArcs }, selection, showToast, dismissToast, desktopEditorRef,
@@ -148,6 +150,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
       if (view.boardActive) showToast(said);
       else sceneRef.current?.announceCeremony(said);
     },
+    onLanding: landing.adopt,
   });
   const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace } = load;
   placeRef.current = treePlace;
@@ -332,6 +335,13 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const shownComposer = owner && boardComposer?.view === (canvasView ? 'tree' : 'board') ? boardComposer : null;
   if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
   const stepCovering = detailId !== null || boardComposer !== null;
+  // The owner's landing lines (only their own roadmap's reading has any) on the Board, which says one is shown only while
+  // it stands uncovered, and on the open step's page.
+  const boardLanded = useMemo(() => ({
+    lines: landing.lines,
+    shown: boardActive && !stepCovering ? (step) => landing.shown(step, 'board') : null,
+  }), [landing, boardActive, stepCovering]);
+  const detailLanded = landing.lines.has(shownDetailId) ? landingNote(landing.lines.get(shownDetailId)) : null;
   activationRef.current = (id) => {
     if (!canvasView || stepCovering || selection.multiMode || tablet.aim || !boardTree?.nodesById.has(id)) return;
     sceneRef.current?.claimActivationClick?.();
@@ -523,6 +533,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
       {view.boardMounted && (
         <div ref={boardLayerRef} className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
           <ErrorBoundary fallback={graphUnavailable ? undefined : null} onCrash={crashBoard}>
+            <Landed.Provider value={boardLanded}>
             <BoardView
               tree={boardTree}
               completed={completed}
@@ -561,6 +572,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
               onQuery={setBoardQuery}
               legend={legend}
             />
+            </Landed.Provider>
           </ErrorBoundary>
           {boardActive && activityPanel}
         </div>
@@ -801,6 +813,8 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
             roadmapTitle={tree.title}
             editable={owner}
             refusal={refusal}
+            landed={detailLanded}
+            onLandedShown={() => landing.shown(shownDetailId, 'step')}
             progressBlocked={Boolean(syncSnapshot?.progressBlocked)}
             deletable={deletable(boardTree, [detailId])}
             inlineEditor={owner ? inlineEditor : null}

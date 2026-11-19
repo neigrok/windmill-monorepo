@@ -75,7 +75,8 @@ test('the room follows each change the replica draws: a step deleted elsewhere i
     await reading.read({ signal: new AbortController().signal });
     const followed = [];
     reading.follow({ onTree: (seed) => followed.push(['tree', seed.nodes.map((step) => [step.id, step.prerequisites])]),
-      onProgress: (marks) => followed.push(['marks', [...marks.completed], marks.completedAt]), onWorkspace: () => {}, onGuides: () => {}, onActivity: () => {} });
+      onProgress: (marks) => followed.push(['marks', [...marks.completed], marks.completedAt]), onWorkspace: () => {}, onGuides: () => {},
+      onLanding: () => {}, onActivity: () => {} });
 
     committed(await a.runner.runAct(new DeleteStep(tree, steps.dock)));
     await a.advance(CONSTANTS.HOLD_MS);
@@ -90,6 +91,48 @@ test('the room follows each change the replica draws: a step deleted elsewhere i
     assert.deepEqual(followed.at(-1), ['marks', [steps.wind], { [steps.wind]: a.world.now }]);
     assert.deepEqual(reading.statusSnapshot(), { phase: 'live', online: true, structurePending: 0, progressPending: 1, structureInFlight: 0,
       progressInFlight: 0, structureGestures: 0, progressGestures: 0, rebaselining: false, progressBlocked: false, refused: null, receiptVersion: 0 });
+    reading.close();
+  } finally {
+    a.close();
+  }
+});
+
+// The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a line names one the visit read before.
+test('the device tells its own changes once: a new step that follows past a step another device deleted, and a step its edit brought back', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [
+      { key: 'course', label: 'Choose a course' }, { key: 'wind', label: 'Read the wind' }, { key: 'dock', label: 'Leave the dock' },
+    ], links: [['course', 'wind'], ['wind', 'dock']] })));
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+    await a.sync();
+    const b = await a.device();
+    await a.sync();
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const reading = new ReplicaReading({ treeId: tree, timers: a.env.timers,
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
+    await reading.read({ signal: new AbortController().signal });
+    const landed = [];
+    reading.follow({ onTree: () => {}, onProgress: () => {}, onWorkspace: () => {}, onGuides: () => {}, onLanding: (lines) => landed.push(lines), onActivity: () => {} });
+
+    const reef = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Reef the sail' }, [steps.wind])));
+    committed(await b.runner.runAct(new DeleteStep(tree, steps.wind)));
+    await a.advance(CONSTANTS.HOLD_MS);
+    await b.senderStep();
+    await a.sync();
+    await a.engine.commit(RoadmapScopes.tree(tree), [], { local: { [RoadmapScopes.landing(tree)]: { ...reading.writes.runner.read(RoadmapScopes.tree(tree),
+      (read) => read.device(RoadmapScopes.landing(tree))), revived: [steps.dock] } } });
+    assert.deepEqual(reading.landing(), [
+      { key: `follows:${reef}:${steps.wind}`, step: reef, rule: 'follows', removed: ['Read the wind'], followed: ['Choose a course'],
+        told: { nodes: [reef], edges: [[steps.wind, reef]] } },
+      { key: `cameBack:${steps.dock}`, step: steps.dock, rule: 'cameBack', told: { revived: [steps.dock] } },
+    ]);
+    assert.deepEqual(landed.at(-1).map((line) => line.key), [`follows:${reef}:${steps.wind}`]);
+
+    await reading.tell(reading.landing());
+    assert.deepEqual({ landing: reading.landing(), note: a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))) },
+      { landing: [], note: null });
     reading.close();
   } finally {
     a.close();

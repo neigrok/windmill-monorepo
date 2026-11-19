@@ -4,11 +4,13 @@
 // list (`self/roadmap`) and every scope the domain reads the roadmap through, opens from what the device holds without
 // waiting on the network, follows each change, and drops every scope it subscribed when the room leaves. On the
 // person's own roadmap it is the room's write door too: the domain's actions on the kit's runner, through the room's
-// session (`ReplicaSession`).
+// session (`ReplicaSession`); and it reads, and clears once said, what the device tells of the person's own changes
+// that met another device's (§6).
 
 import { Fields } from '../../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
 import { syncSession } from '../../../platform/sync/session.js';
+import { ClearLanding, landingOf } from '../domain/landing.js';
 import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
@@ -45,6 +47,8 @@ export class ReplicaReading {
     this.listeners = new Set([() => this.emitStatus()]);
     this.statusHandlers = new Set();
     this.told = null;
+    // The name of each step of the open roadmap the visit has read, so a line can name one deleted since.
+    this.named = new Map();
     this.holdings = new Map();
     this.last = null;
     this.stopped = new AbortController();
@@ -73,11 +77,12 @@ export class ReplicaReading {
     return { seed, overlay, workspace: roadmap.mine ? roadmap.workspace : null, guides: roadmap.guides };
   }
 
-  // Each change the replica draws after the room opened, handed on in the room's shapes; the server's tail of the
-  // roadmap's activity once it answers.
-  follow({ onTree, onProgress, onWorkspace, onGuides, onActivity }) {
+  // Each change the replica draws after the room opened, handed on in the room's shapes; what the device tells of the
+  // person's own changes as it opens and after each change; the server's tail of the roadmap's activity once it answers.
+  follow({ onTree, onProgress, onWorkspace, onGuides, onLanding, onActivity }) {
     if (this.ready && this.room) this.room.sessionRef.current = this.writes;
     let shown = this.opened;
+    onLanding(this.landing());
     this.listeners.add(() => {
       const roadmap = this.roadmap();
       if (roadmap === shown || roadmap.state !== 'open') return;
@@ -86,11 +91,27 @@ export class ReplicaReading {
       if (roadmap.mine) {
         onProgress(roadmap.marks);
         onWorkspace(roadmap.workspace);
+        onLanding(this.landing());
       }
       onGuides(roadmap.guides);
     });
     this.repository.loadActivity({ limit: 200, signal: this.stopped.signal })
       .then((events) => { if (!this.closed && events.length) onActivity(events); });
+  }
+
+  // §6 What the device tells its owner once of their own changes on this roadmap, a line a step (`ReplicaRoadmap.landed`);
+  // nothing on a roadmap someone else owns.
+  landing() {
+    if (!this.ready) return [];
+    const roadmap = this.roadmap();
+    for (const step of roadmap.account.trees.get(this.treeId).nodes) this.named.set(step.id, step.label);
+    return roadmap.landed(this.writes.runner.read(this.scope, (read) => landingOf(this.treeId, read)), this.named);
+  }
+
+  // The person was shown these lines: the device clears what they said from its note, out of the Undo stack.
+  tell(lines) {
+    const told = (part) => lines.flatMap((line) => line.told[part] ?? []);
+    return this.writes.settle([new ClearLanding(this.treeId, { nodes: told('nodes'), edges: told('edges'), revived: told('revived') })], 'landing');
   }
 
   // The person's roadmaps alone, for a page that lists them (a reading of no roadmap, `treeId` null): once the engine

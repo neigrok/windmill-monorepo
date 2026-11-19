@@ -26,7 +26,7 @@ async function openRoom(a, treeId) {
     session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
     repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
   assert.notEqual(await reading.read({ signal: new AbortController().signal }), null);
-  reading.follow({ onTree() {}, onProgress() {}, onWorkspace() {}, onGuides() {}, onActivity() {} });
+  reading.follow({ onTree() {}, onProgress() {}, onWorkspace() {}, onGuides() {}, onLanding() {}, onActivity() {} });
   return { reading, session: room.sessionRef.current, said };
 }
 

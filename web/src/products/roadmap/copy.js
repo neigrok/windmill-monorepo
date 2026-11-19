@@ -1,5 +1,6 @@
 // The room's shared words and the sentences it builds from counts, read from the roadmap catalog. Step titles arrive as plain strings.
 
+import { APP_LOCALE } from '../../platform/i18n/index.js';
 import { COACHED_CHILDREN } from './demo/demoStage.js';
 import { t } from './i18n/index.js';
 
@@ -188,6 +189,21 @@ export function reasonLine({ needs, unlocks }) {
   if (unlocks && unlocks.extra > 0) return t('roadmap.card.unlocksMore', { step: unlocks.first.label, extra: formatCount(unlocks.extra) });
   if (unlocks) return t('roadmap.card.unlocks', { step: unlocks.first.label });
   return null;
+}
+
+// §6's quiet line under a step, where it is listed and on its page (flow 48): what the person's edit brought back, and
+// the deleted steps it was linked from with what it follows past them. Null for a step that follows nothing past them,
+// which no approved line says.
+export function landingLine(line) {
+  if (line.rule === 'cameBack') return t('roadmap.landing.cameBack');
+  if (line.followed.length === 0 || !line.removed.every(Boolean)) return null;
+  const names = new Intl.ListFormat(APP_LOCALE, { type: 'conjunction' });
+  return t('roadmap.landing.follows', { count: line.removed.length, removed: names.format(line.removed), followed: names.format(line.followed) });
+}
+
+// A step's landing lines as the one quiet note under it, sentence after sentence.
+export function landingNote(lines) {
+  return lines.map(landingLine).join(' ');
 }
 
 export function lockedStatus({ toGo }) {

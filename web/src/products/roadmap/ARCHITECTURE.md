@@ -13,7 +13,7 @@ point for the component showcase.
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
-| `room/` | What the room holds: the load and its two readings of a roadmap (today's, and the device's copy behind its switch) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
+| `room/` | What the room holds: the load and its two readings of a roadmap (today's, and the device's copy behind its switch) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
@@ -177,6 +177,16 @@ on, every room but the demo reads through `ReplicaReading`:
   records did not change answers the reading it answered before. A changed one stands through the room's `onTreeChanged`;
   the owner's marks go to `RoomProgress.adoptRemote`, as another device's do, and the workspace and guides are seated
   again. A roadmap that stops standing while the room is open keeps its last picture; the next load says it is not there.
+- **Landing.** On the person's own roadmap the reading reads what the device tells of their changes that met another
+  device's (§6), the domain's `landingOf`, as the room opens and after each change; `ReplicaRoadmap.landed` puts each in
+  the room's names, a line a step: the step their edit brought back, or the step they made or linked that now follows
+  past a step deleted elsewhere. The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a deleted step
+  is named as the visit last read it. `room/useRoomLanding.js` holds each line for the rest of the visit and shows it
+  (flow 48, `copy.js` `landingNote`) under the step's card on the Board (`ColumnCards`, counted in the card's slot of the
+  run) and under the step page's toolbar. The first time either shows it, half of it in view on a Board no step page or
+  composer covers, or the page open on its step, the reading's `tell` writes the domain's `ClearLanding` out of the Undo
+  stack and the room emits `roadmap_landing`; a later opening is quiet. A line no approved words say, a step that
+  follows nothing past the deleted one or past one whose name the visit never read, stays in the note untold.
 - **Status.** The Saving, Saved and Offline line is the room's own (`sync/useRoomSyncNotices.js`), read from the engine:
   `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the engine's
   `connection` and its auth and upgrade stops (Offline while the browser reports no network, and after the grace while

@@ -27,7 +27,7 @@ function savedPlace(place, seed) {
 // From the door to a live room: the reading, then domain, layout and the first view, then the reading follows each
 // change; a retry runs it again. With `replica` the room reads the device's copy through the sync engine
 // (`ReplicaReading`); without it, and for the demo, it reads as it does today (`LatticeReading`).
-export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica = false, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, showToast, dismissToast, desktopEditorRef, onRemoteProgress }) {
+export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica = false, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, showToast, dismissToast, desktopEditorRef, onRemoteProgress, onLanding }) {
   const { sceneRef, sessionRef, replicaRef, projectionRef, treeRef, seedRef } = room;
   const [placeStore] = useState(() => new PlaceStore());
   const [returnLedger] = useState(() => new ReturnLedger());
@@ -44,7 +44,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   const knownRef = useRef(new Map()); // `<step>><tree>` → what the picker knew of a tree chosen here, until the server's read
   const readingRef = useRef(null);
   const latest = useRef(null);
-  latest.current = { structure, onRemoteProgress };
+  latest.current = { structure, onRemoteProgress, onLanding };
   const { layoutRef } = structure;
   const { selectedId, selectedIdRef, setSelectedId } = selection;
   const readsReplica = replica && !demo;
@@ -144,6 +144,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
           workspace.pushArcs();
         },
         onGuides: setGuides,
+        onLanding: (lines) => latest.current.onLanding(lines),
         onActivity: activity.addServerActivity,
       });
       setSyncSession(reading.status);

@@ -76,6 +76,7 @@ const transport = new HttpTransport({ schema: 13, base: '', reading: () => ({ wa
     : fetch(url, { ...options, headers: { ...options.headers, 'x-fixture-account': account ?? '' } })) });
 const engine = await syncSession.open({ registry: new Registry(${registryJson}), transport, appVersion: '1',
   credentials: { clear: async () => {} }, telemetry: { event() {}, failure(operation) { window.syncFailures.push(operation); } } });
+window.engine = engine;
 if (account && engine.device.activeReplica.meta.state !== 'bound') await engine.signIn(account);
 syncSession.publish({ signedIn: Boolean(account) });
 if (params.has('seed')) {
@@ -388,6 +389,63 @@ test('with the switch on the owner’s step gestures, their toasts’ Undo and t
   } finally {
     await replica.close();
     await today.close();
+  }
+});
+
+// §6, flow 48: the device tells its owner once, under the step on the Board and on its page, of their own changes that met
+// another device's. The engine keeps nothing of a step deleted elsewhere (engine.md §7.5), so no edit made here finds one
+// absent: the revival the domain notes is written to the device's note as the domain writes it.
+test('with the switch on the owner is told once, under the card and on the step’s page, of their changes that met a delete', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    const failures = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+    await page.goto(`${origin}/room?account=u_owner&replica=on#/app/${TREE}`);
+    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
+    const composer = page.getByRole('dialog', { name: 'New step', exact: true });
+    await composer.locator('input').first().fill('Reef the sail');
+    await composer.locator('.st-board-draft-needs').click();
+    await page.getByRole('checkbox', { name: /Read the wind/ }).click();
+    await page.getByRole('button', { name: 'Apply', exact: true }).click();
+    await composer.getByRole('button', { name: 'Create step', exact: true }).click();
+    await page.locator('.st-board-card-title', { hasText: 'Reef the sail' }).waitFor();
+    await page.evaluate(async (tree) => {
+      const scope = `tree/${tree}`;
+      await window.engine.commit(scope, [{ op: 'delete', t: 'node', id: 'wind' }]);
+      const note = window.engine.readMetadata(scope).devices[`landing:${tree}`];
+      await window.engine.commit(scope, [], { local: { [`landing:${tree}`]: { ...note, revived: ['dock'] } } });
+    }, TREE);
+    await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor({ state: 'detached' });
+    await page.locator('.st-board-landed').nth(1).waitFor();
+    const board = { columns: await boardColumns(page), lines: await page.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
+      .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent])) };
+    await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
+    const step = page.getByRole('article', { name: 'Leave the dock', exact: true });
+    const onPage = await step.locator('.st-step-landed').innerText();
+    const told = await page.evaluate((tree) => ({ note: window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`] ?? null,
+      events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)), issues: window.issues }), TREE);
+    await page.reload();
+    await page.locator('.st-board-card-title', { hasText: 'Reef the sail' }).waitFor();
+    const later = await page.locator('.st-board-landed').count();
+    assert.deepEqual({ board, onPage, ...told, later, failures }, {
+      board: {
+        columns: ['locked: ', 'upNext: Leave the dock, Reef the sail', 'done: Choose a course'],
+        lines: [['Leave the dock', 'Your edit brought this step back.'], ['Reef the sail', 'Read the wind was removed. This now follows Choose a course.']],
+      },
+      onPage: 'Your edit brought this step back.',
+      note: null,
+      events: ['{"rule":"follows","place":"board"}', '{"rule":"cameBack","place":"board"}'],
+      issues: [],
+      later: 0,
+      failures: [],
+    });
+  } finally {
+    await context.close();
   }
 });
 
