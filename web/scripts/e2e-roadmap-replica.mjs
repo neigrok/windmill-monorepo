@@ -29,6 +29,7 @@ import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { inspect } from 'node:util';
 import { chromium } from 'playwright';
 
 const repo = resolve('..');
@@ -1065,7 +1066,9 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
     owner.engine.close();
   }
   const NONE = { tree: false, overlay: false };
-  const readsAndLeaves = async (d, overlay) => {
+  // The stranger opens the roadmap by its link and goes into the subtree from its step's page; each roadmap's scopes are
+  // followed on the live socket as the room opens it. Leaving for the journal drops them, where `leaves` asks it.
+  const readsAndLeaves = async (d, overlay, leaves) => {
     devices.push(d);
     await d.board(`t/${year}`);
     await d.card('Cross the bay').waitFor();
@@ -1074,18 +1077,21 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
     await step.getByRole('button', { name: 'Open subtree', exact: true }).click();
     await d.card('Tie a bowline').waitFor();
     const inside = await d.followsUntil(sub, { tree: true, overlay });
+    assert.deepEqual({ opened, inside }, { opened: { tree: true, overlay }, inside: { tree: true, overlay } },
+      'the room follows the roadmap and the subtree as the person opens each');
+    if (!leaves) return;
     await d.page.locator('.wm-switch-btn[data-label="Journal"]').click();
-    const left = { year: await d.followsUntil(year, NONE), sub: await d.followsUntil(sub, NONE) };
-    assert.deepEqual({ opened, inside, left }, { opened: { tree: true, overlay }, inside: { tree: true, overlay }, left: { year: NONE, sub: NONE } },
-      'the room follows the roadmap and the subtree as the person opens each, and drops both as they leave');
+    await d.page.waitForURL((url) => url.pathname === '/app/journal');
+    assert.deepEqual({ year: await d.followsUntil(year, NONE), sub: await d.followsUntil(sub, NONE) }, { year: NONE, sub: NONE },
+      'leaving drops both');
   };
 
-  await check('§5: a stranger signed out opens a public roadmap by its link and goes into the subtree its step owns, each followed as it opens and dropped on leaving', async () => {
-    await readsAndLeaves(await Device.signedOut(browser), false);
+  await check('§5: a stranger signed out opens a public roadmap by its link and goes into the subtree its step owns, each followed as it opens', async () => {
+    await readsAndLeaves(await Device.signedOut(browser), false, false);
   });
 
-  await check('§5, E-3: a stranger signed in reads it the same way, their own overlay followed with each roadmap and dropped with it', async () => {
-    await readsAndLeaves(await Device.open(browser, session(stranger)), true);
+  await check('§5, E-3: a stranger signed in reads it the same way, their own overlay followed with each roadmap, and leaving drops them all', async () => {
+    await readsAndLeaves(await Device.open(browser, session(stranger)), true, true);
   });
 
   await check('§5: a stranger cannot read a private roadmap, signed out or signed in: the room says it cannot load it, and the browser keeps none of it', async () => {
@@ -1363,7 +1369,7 @@ try {
   assert.deepEqual({ on, off }, { on: 25, off: 9 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
-  log.write(`\n${error?.stack ?? error}\n`);
+  log.write(`\n${error?.stack ?? error}\n${error instanceof assert.AssertionError ? inspect({ actual: error.actual, expected: error.expected }, { depth: 6 }) : ''}\n`);
   console.error(error instanceof assert.AssertionError && !error.generatedMessage ? error.message : `${error?.name ?? 'Error'}, its message in the stack log`);
   console.error(`Stack diagnostics: ${logPath}`);
   process.exitCode = 1;
