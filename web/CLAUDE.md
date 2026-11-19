@@ -55,7 +55,9 @@ System reconciliation uses `replaceLocation`, `replaceEntry` or `updateNavigatio
 raw state resets remain resets apart from the history index. A system rewrite requested during a
 transient native traversal is bound to the accepted entry and consumed only when that entry is
 restored. Unknown acceptance, failed restoration or an approved departure discards that stale
-rewrite; the data or security cleanup itself remains immediate.
+rewrite; the data or security cleanup itself remains immediate. A legacy door (`#/app`, `#/settings`, …
+on another path) upgrades during `App`'s render and catches the URL bar up in a layout effect; the
+Shell keys its room on the accepted pathname, so a room mounted before the upgrade lands mounts again.
 
 A product can register one identity-bound guard with `blocked`, `onBlocked` and synchronous
 `onUnrestorableNavigation`. Releasing that registration cancels its unanswered decision; an admitted
@@ -83,6 +85,7 @@ node --test --test-concurrency=1 --test-timeout=120000 \
   test/shell/navigation.test.js \
   test/shell/navigation.browser.test.js \
   test/shell/navigationRaces.browser.test.js \
+  test/shell/App.browser.test.js \
   test/shell/auth/AuthProvider.test.js \
   test/products/journal/echoes/useEchoes.test.js \
   test/products/roadmap/paste/NewTreeBirth.test.js \

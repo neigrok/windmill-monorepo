@@ -173,6 +173,7 @@ function AppRoutes() {
       <Suspense fallback={<RouteFallback mark={false} />}>
         <Shell
           location={{ pathname, hash: route, search: accepted.search }}
+          acceptedPathname={accepted.pathname}
           neutral={neutral}
         />
       </Suspense>

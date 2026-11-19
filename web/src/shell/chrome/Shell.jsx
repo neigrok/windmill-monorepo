@@ -121,7 +121,7 @@ function RoomContent({ room, location }) {
   return <Suspense fallback={<RoomFallback Ghost={product.shell.Ghost} />}><Component {...props} /></Suspense>;
 }
 
-export function Shell({ location, neutral = null, roomProduct = null }) {
+export function Shell({ location, acceptedPathname = location.pathname, neutral = null, roomProduct = null }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
@@ -188,7 +188,9 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
         </div>
       </header></>}>
       <main className="wm-room-content">
-        <RoomContent room={room} location={location} />
+        {/* A room mounted before a legacy door's upgrade lands mounts again on the path the navigation accepts, so
+            nothing it read from the navigation as it mounted predates the path the Shell renders. */}
+        <RoomContent key={acceptedPathname} room={room} location={location} />
       </main>
     </PageFrame>
   );
