@@ -209,8 +209,14 @@ on, every room but the demo reads through `ReplicaReading`:
   holds nothing. The boards do not draw, so the list does not build: a layout for 744–1023px (the pages show there),
   Discard and a copy's outcome from 1024px, the empty list, a change with no words of its own (a mark, a pointer, a link
   between steps) and a workspace item the carry-over kept (`pastBound`, §8.2); the last two are neither listed nor
-  counted. Each change that cannot land is told once on this browser (`roadmap_write_cannot_land`), and a notice no rule
-  lists reports `roadmap-kept-unexpected`.
+  counted. Each change that cannot land is told once (`roadmap_write_cannot_land`), and a notice no rule lists reports
+  `roadmap-kept-unexpected` once, `kept/toldNotices.js` keeping the told ids for the page load and, where the browser
+  keeps storage, the ids of the told notices the engine still holds. A Discard the engine answers `false`, the notice no
+  longer held, closes the change quietly.
+- **Sign-out.** Roadmap's `forgetDevice` runs `room/signOut.js` after the engine's sign-out, Keep or Discard: it takes
+  every `landing:*` device row from each replica the device holds (Keep leaves the account's dormant replica with its
+  device rows) and the told notice ids. What Keep holds for the next sign-in, unsent work and kept notices, the
+  engine keeps.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.
