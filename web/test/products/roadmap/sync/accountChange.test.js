@@ -13,6 +13,7 @@ import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { CreateRoadmap, CreateSubtree, DeleteRoadmap, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { ChangeStep } from '../../../../src/products/roadmap/domain/steps.js';
+import { MarkStep } from '../../../../src/products/roadmap/domain/progress.js';
 import { environment } from '../../../platform/sync/fakes.js';
 import { browserWith } from '../../gym/harness.mjs';
 
@@ -99,7 +100,7 @@ test('an account that holds no roadmaps takes the browser’s without a question
   { complete: true, due: [], state: 'bound', lineage: ['A'] });
 });
 
-test('at sign-out the question counts every unsent change of roadmap’s, a new roadmap’s record and its first words two, and names each roadmap they change with how many', async (t) => {
+test('at sign-out the question counts the person’s unsent changes of roadmap’s, one an act, and names each roadmap they change with how many', async (t) => {
   const accountChange = await import('../../../../src/products/roadmap/sync/accountChange.js');
   const { engine, runner, plant } = await device(t, { holdsRoadmaps: false });
   assert.equal((await engine.signIn('A')).complete, true);
@@ -118,12 +119,35 @@ test('at sign-out the question counts every unsent change of roadmap’s, a new 
     unsent: 6,
     words: {
       title: 'Keep unsent changes?',
-      lead: '6 changes haven’t reached your account.',
-      items: ['Learn to sail · 3 changes', 'Learn to row · 3 changes'],
+      lead: '4 changes haven’t reached your account.',
+      items: ['Learn to sail · 2 changes', 'Learn to row · 2 changes'],
       note: 'Keep them for your next sign-in. Discard removes them from this browser.',
       onStep: 'function',
     },
-    told: [['roadmap_signout', { step: 'shown', changes: '6-20' }], ['roadmap_signout', { step: 'keep', changes: '6-20' }]],
+    told: [['roadmap_signout', { step: 'shown', changes: '2-5' }], ['roadmap_signout', { step: 'keep', changes: '2-5' }]],
+  });
+});
+
+test('a new roadmap is one change, its record and its first words one act, and so is a gesture composed over a roadmap’s steps and its marks', async (t) => {
+  const accountChange = await import('../../../../src/products/roadmap/sync/accountChange.js');
+  const { engine, runner, plant } = await device(t, { holdsRoadmaps: false });
+  assert.equal((await engine.signIn('A')).complete, true);
+  const sail = await plant('Learn to sail', ['Read the wind']);
+  const step = sail.steps['Read the wind'];
+  engine.online = false;
+  const made = await engine.beginSignOut();
+  const madeWords = accountChange.signOutWords(engine, made);
+  await engine.cancelSignOut();
+  const composed = await runner.runComposed([new ChangeStep(sail.tree, step, { description: 'Watch the water' }), new MarkStep(sail.tree, step, 'complete')]);
+  const scopes = new Set(engine.device.activeReplica.entries().slice(2).map((entry) => entry.scope));
+  const both = await engine.beginSignOut();
+  const bothWords = accountChange.signOutWords(engine, both);
+  assert.deepEqual({ made: [made.unsent, madeWords.lead, madeWords.items], composed: composed.kind, scopes: scopes.size,
+    both: [both.unsent, bothWords.lead, bothWords.items] }, {
+    made: [2, '1 change hasn’t reached your account.', ['Learn to sail · 1 change']],
+    composed: 'committed',
+    scopes: 2,
+    both: [4, '2 changes haven’t reached your account.', ['Learn to sail · 2 changes']],
   });
 });
 

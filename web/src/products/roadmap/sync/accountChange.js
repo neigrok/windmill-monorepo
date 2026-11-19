@@ -22,8 +22,17 @@ const META = new Id('meta', RoadmapMeta);
 const SIGN_IN_STEPS = new Set(['shown', 'add', 'discard', 'cancel']);
 const SIGN_OUT_STEPS = new Set(['shown', 'keep', 'discard', 'cancel']);
 
+// The active replica's entries a question pins (`counted`), in the order the device committed them.
+function entriesOf(engine, counted) {
+  const pinned = new Set(counted);
+  return engine.device.activeReplica.entries().filter((entry) => pinned.has(entry.localId));
+}
+
+// A change is one act of the person's: every entry the act commits carries its gesture's id, so making a roadmap, which
+// writes its record and its first words, is one change, and so is a gesture composed over several scopes.
+
 // One roadmap some of the device's queued entries change: the root of its branch, its name as the device holds it,
-// whether it stands in the person's list, and how many of the entries change it.
+// whether it stands in the person's list, and how many of the person's changes change it.
 export class ChangedRoadmap {
   constructor({ root, name, listed, changes }) {
     this.root = root;
@@ -45,20 +54,18 @@ export class ChangedRoadmap {
       for (let parent = parents.get(tree); parent && !path.includes(parent); parent = parents.get(parent)) path.push(parent);
       return path.at(-1);
     };
-    const pinned = new Set(counted);
     const changes = new Map();
-    for (const entry of engine.device.activeReplica.entries()) {
-      if (!pinned.has(entry.localId)) continue;
+    for (const entry of entriesOf(engine, counted)) {
       const written = effectsOf(entry).flatMap(({ scope, d }) => (scope === RoadmapScopes.account
         ? d.filter((delta) => delta.t === Roadmap.type).map((delta) => String(delta.id))
         : [RoadmapNames.roadmapOf(scope)].filter(Boolean)));
-      for (const root of new Set(written.map(rootOf))) changes.set(root, (changes.get(root) ?? 0) + 1);
+      for (const root of written.map(rootOf)) changes.set(root, (changes.get(root) ?? new Set()).add(entry.gestureId));
     }
-    return [...changes].map(([root, count]) => new ChangedRoadmap({
+    return [...changes].map(([root, gestures]) => new ChangedRoadmap({
       root,
       name: runner.read(RoadmapScopes.tree(root), (read) => read.repository(RoadmapMeta).find(META, 'drawn')?.title.trim()) || t('roadmap.common.untitled'),
       listed: parents.has(root),
-      changes: count,
+      changes: gestures.size,
     }));
   }
 }
@@ -85,14 +92,14 @@ export function signInWords(engine, due, track = beacon) {
   };
 }
 
-// Keep unsent changes? (50.02, 50.04), where every change the sign-out question counts is roadmap's: how many, and each
-// roadmap they change with how many change it. A question that counts no change, or another product's, keeps the
+// Keep unsent changes? (50.02, 50.04), where every entry the sign-out question counts is roadmap's: how many changes, and
+// each roadmap they change with how many change it. A question that counts nothing, or another product's work, keeps the
 // shell's words.
 export function signOutWords(engine, question, track = beacon) {
-  const ours = new Set(engine.device.activeReplica.entries()
-    .filter((entry) => engine.registry.productOfRef(entry.scope) === 'roadmap').map((entry) => entry.localId));
-  if (question.unsent === 0 || !question.counted.every((localId) => ours.has(localId))) return null;
-  const count = question.unsent;
+  const entries = entriesOf(engine, question.counted);
+  if (entries.length === 0 || entries.length !== question.counted.length
+    || entries.some((entry) => engine.registry.productOfRef(entry.scope) !== 'roadmap')) return null;
+  const count = new Set(entries.map((entry) => entry.gestureId)).size;
   const asked = countBucket(count);
   return {
     title: t('roadmap.accountChoice.keepTitle'),
