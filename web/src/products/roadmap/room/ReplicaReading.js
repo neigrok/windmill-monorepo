@@ -14,6 +14,7 @@ import { ClearLanding, landingOf } from '../domain/landing.js';
 import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
 import { HeldRoadmap, ReplicaRoadmap } from './ReplicaRoadmap.js';
 import { ReplicaSession } from './ReplicaSession.js';
 
@@ -29,7 +30,7 @@ const DEVICE_ZONE = { offsetSeconds: (instant) => -new Date(instant.ms).getTimez
 export class ReplicaReading {
   // `room` holds the handles the room's writes reach for; `say` shows the room's toast. A reading of no roadmap
   // (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
-  constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis,
+  constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure,
     repository = treeId === null ? null : new HttpTreeRepository({ treeId }) }) {
     this.treeId = treeId;
     this.scope = treeId === null ? null : RoadmapScopes.tree(treeId);
@@ -37,6 +38,7 @@ export class ReplicaReading {
     this.say = say;
     this.session = session;
     this.timers = timers;
+    this.report = report;
     this.repository = repository;
     // The room's status line reads this reading as it reads roadmap's own session; `ready` says a write can be taken.
     this.ready = false;
@@ -49,6 +51,7 @@ export class ReplicaReading {
     this.told = null;
     // The name of each step of the open roadmap the visit has read, so a line can name one deleted since.
     this.named = new Map();
+    this.landingFailed = false;
     this.holdings = new Map();
     this.last = null;
     this.stopped = new AbortController();
@@ -100,12 +103,18 @@ export class ReplicaReading {
   }
 
   // §6 What the device tells its owner once of their own changes on this roadmap, a line a step (`ReplicaRoadmap.landed`);
-  // nothing on a roadmap someone else owns.
+  // nothing on a roadmap someone else owns. A read that fails tells nothing and reports once, and the room reads on.
   landing() {
     if (!this.ready) return [];
-    const roadmap = this.roadmap();
-    for (const step of roadmap.account.trees.get(this.treeId).nodes) this.named.set(step.id, step.label);
-    return roadmap.landed(this.writes.runner.read(this.scope, (read) => landingOf(this.treeId, read)), this.named);
+    try {
+      const roadmap = this.roadmap();
+      for (const step of roadmap.account.trees.get(this.treeId).nodes) this.named.set(step.id, step.label);
+      return roadmap.landed(this.writes.runner.read(this.scope, (read) => landingOf(this.treeId, read)), this.named);
+    } catch (error) {
+      if (!this.landingFailed) this.report('roadmap-replica-landing', error);
+      this.landingFailed = true;
+      return [];
+    }
   }
 
   // The person was shown these lines: the device clears what they said from its note, out of the Undo stack.

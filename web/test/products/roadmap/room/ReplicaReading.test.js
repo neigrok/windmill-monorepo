@@ -98,7 +98,7 @@ test('the room follows each change the replica draws: a step deleted elsewhere i
 });
 
 // The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a line names one the visit read before.
-test('the device tells its own changes once: a new step that follows past a step another device deleted, and a step its edit brought back', async () => {
+test('the device tells its own changes once: a new step that follows past a step another device deleted, and a step its edit brought back; a read that fails tells nothing and reports once', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
     const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [
@@ -134,6 +134,15 @@ test('the device tells its own changes once: a new step that follows past a step
     assert.deepEqual({ landing: reading.landing(), note: a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))) },
       { landing: [], note: null });
     reading.close();
+
+    const reports = [];
+    const failing = new ReplicaReading({ treeId: tree, timers: a.env.timers, report: (operation) => reports.push(operation),
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
+    await failing.read({ signal: new AbortController().signal });
+    failing.writes.runner.read = () => { throw new Error('the note could not be read'); };
+    assert.deepEqual({ lines: [failing.landing(), failing.landing()], reports }, { lines: [[], []], reports: ['roadmap-replica-landing'] });
+    failing.close();
   } finally {
     a.close();
   }

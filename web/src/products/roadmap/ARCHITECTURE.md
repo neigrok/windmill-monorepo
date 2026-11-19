@@ -187,7 +187,8 @@ on, every room but the demo reads through `ReplicaReading`:
   run) and under the step page's toolbar. The first time either shows it, half of it in view on a Board no step page or
   composer covers, or the page open on its step, the reading's `tell` writes the domain's `ClearLanding` out of the Undo
   stack and the room emits `roadmap_landing`; a later opening is quiet. A line no approved words say, a step that
-  follows nothing past the deleted one or past one whose name the visit never read, stays in the note untold.
+  follows nothing past the deleted one or past one whose name the visit never read, stays in the note untold. A read
+  that throws reports `roadmap-replica-landing` once and tells nothing that visit; the room reads on.
 - **Status.** The Saving, Saved and Offline line is the room's own (`sync/useRoomSyncNotices.js`), read from the engine:
   `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the engine's
   `connection` and its auth and upgrade stops (Offline while the browser reports no network, and after the grace while
