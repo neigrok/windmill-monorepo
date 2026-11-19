@@ -457,6 +457,8 @@ test('with the switch on the owner is told once, under the card and on the stepâ
     await b.evaluate(() => window.engine.kickPull());
     await b.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
     const onB = await b.getByRole('article', { name: 'Leave the dock', exact: true }).innerText();
+    // Saying a line clears it from the note in a write of its own: each read waits for that write.
+    await page.waitForFunction((tree) => window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`]?.revived.length === 0, TREE);
     const told = await page.evaluate((tree) => ({ note: window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`] ?? null,
       events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort() }), TREE);
     const reef = told.note?.nodes?.[0] ?? null;
@@ -473,6 +475,7 @@ test('with the switch on the owner is told once, under the card and on the stepâ
     await page.goto(room);
     await page.locator('.st-board-landed').waitFor();
     const follows = await landed(page);
+    await page.waitForFunction((tree) => !window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`], TREE);
     const events = await page.evaluate(() => ({ events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort(),
       issues: window.issues }));
     await page.reload();
