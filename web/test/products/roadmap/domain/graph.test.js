@@ -53,7 +53,7 @@ function oracle(tree) {
 }
 
 test('Raw-graph reads agree with an independent traversal across cycles, missing nodes and bitset word boundaries', () => {
-  for (let seed = 1; seed <= 40; seed++) {
+  for (let seed = 1; seed <= 1000; seed++) {
     let state = seed;
     const draw = (max) => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state % max; };
     const nodes = Array.from({ length: 80 }, (_, index) => ({ id: `n${index}`, present: draw(4) !== 0 }));

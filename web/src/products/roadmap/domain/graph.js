@@ -51,34 +51,84 @@ export function components(adjacency) {
   return { groups, componentOf };
 }
 
-class BitClosure {
-  /** @param {number[][]} adjacency @param {Map<number,number>} seeds @param {number} size */
-  constructor(adjacency, seeds, size) {
+// Bitset rows over `size` bits for the `members` of a raw graph, through strongly connected components: a member's row
+// holds the bit `seedOf` gives its vertex (none for -1) and, where `follows` reads the member through to its parents,
+// the rows of the members among them. A vertex outside the members has no row, so only the vertices a read passes
+// through take one.
+class Closure {
+  /**
+   * @param {number[]} members
+   * @param {number[][]} parents
+   * @param {Int32Array} seedOf
+   * @param {(vertex: number) => boolean} follows
+   * @param {number} size
+   */
+  constructor(members, parents, seedOf, follows, size) {
     this.words = Math.ceil(size / 32);
+    this.index = new Int32Array(seedOf.length).fill(-1);
+    members.forEach((vertex, index) => { this.index[vertex] = index; });
+    const adjacency = members.map((vertex) => {
+      /** @type {number[]} */
+      const inside = [];
+      for (const parent of follows(vertex) ? parents[vertex] ?? [] : []) {
+        const index = this.index[parent] ?? -1;
+        if (index >= 0) inside.push(index);
+      }
+      return inside;
+    });
     const { groups, componentOf } = components(adjacency);
     this.componentOf = componentOf;
     this.bits = new Uint32Array(groups.length * this.words);
-    for (const [component, members] of groups.entries()) {
+    const merged = new Int32Array(groups.length).fill(-1);
+    for (const [component, group] of groups.entries()) {
       const row = component * this.words;
-      const dependencies = new Set();
-      for (const vertex of members) {
-        const seed = seeds.get(vertex);
-        if (seed !== undefined) this.bits[row + (seed >>> 5)] = (this.bits[row + (seed >>> 5)] ?? 0) | (1 << (seed & 31));
-        for (const parent of adjacency[vertex] ?? []) {
+      for (const member of group) {
+        const bit = seedOf[members[member] ?? 0] ?? -1;
+        if (bit >= 0) this.bits[row + (bit >>> 5)] = (this.bits[row + (bit >>> 5)] ?? 0) | (1 << (bit & 31));
+        for (const parent of adjacency[member] ?? []) {
           const dependency = componentOf[parent] ?? 0;
-          if (dependency !== component) dependencies.add(dependency);
+          if (dependency === component || merged[dependency] === component) continue;
+          merged[dependency] = component;
+          const source = dependency * this.words;
+          for (let word = 0; word < this.words; word++) this.bits[row + word] = (this.bits[row + word] ?? 0) | (this.bits[source + word] ?? 0);
         }
-      }
-      for (const dependency of dependencies) {
-        const source = dependency * this.words;
-        for (let word = 0; word < this.words; word++) this.bits[row + word] = (this.bits[row + word] ?? 0) | (this.bits[source + word] ?? 0);
       }
     }
   }
 
+  // The offset of a vertex's row, or -1 when it has none.
   /** @param {number} vertex */
-  row(vertex) { return (this.componentOf[vertex] ?? 0) * this.words; }
+  row(vertex) {
+    const index = this.index[vertex] ?? -1;
+    return index < 0 ? -1 : (this.componentOf[index] ?? 0) * this.words;
+  }
+
 }
+
+// The present steps' values by id, read from a value kept at each step's slot: a map that costs nothing to build.
+/** @template V */
+export class BySlot {
+  /** @param {Map<string,number>} slot @param {string[]} ids @param {(slot: number) => V} valueAt */
+  constructor(slot, ids, valueAt) {
+    this.slot = slot;
+    this.ids = ids;
+    this.valueAt = valueAt;
+    Object.freeze(this);
+  }
+
+  /** @param {string} id */
+  get(id) {
+    const slot = this.slot.get(id);
+    return slot === undefined ? undefined : this.valueAt(slot);
+  }
+
+  /** @returns {IterableIterator<[string, V]>} */
+  *[Symbol.iterator]() {
+    for (const [slot, id] of this.ids.entries()) yield [id, this.valueAt(slot)];
+  }
+}
+
+const STATES = /** @type {const} */ (['available', 'locked', 'complete']);
 
 /** @param {number} bits */
 function bitCount(bits) {
@@ -92,63 +142,94 @@ export class FollowGraph {
   constructor(tree, completed = null, dates = null) {
     if (tree.read !== 'loaded') throw new TypeError('Roadmap graph is unread');
     this.tree = tree;
-    this.nodes = tree.nodes.filter((node) => node.present);
-    this.ids = this.nodes.map((node) => node.id);
-    this.slot = new Map(this.ids.map((id, index) => [id, index]));
-    this.edges = tree.edges.filter((edge) => edge.present);
-    this.rawIds = [...new Set([...this.ids, ...this.edges.flatMap((edge) => [edge.from, edge.to])])];
-    this.rawSlot = new Map(this.rawIds.map((id, index) => [id, index]));
-    /** @type {number[][]} */
-    this.parents = Array.from({ length: this.rawIds.length }, () => []);
-    /** @type {number[][]} */
-    this.children = Array.from({ length: this.rawIds.length }, () => []);
-    for (const edge of this.edges) {
-      const from = this.rawSlot.get(edge.from) ?? 0;
-      const to = this.rawSlot.get(edge.to) ?? 0;
-      this.parents[to]?.push(from);
-      this.children[from]?.push(to);
+    // The tree's link structure, shared: a graph adds what the marks decide.
+    const { nodes, ids, slot, edges, rawIds, rawSlot, parents, children, markedDone, markedAt } = tree.index;
+    this.nodes = nodes;
+    this.ids = ids;
+    this.slot = slot;
+    this.edges = edges;
+    this.rawIds = rawIds;
+    this.rawSlot = rawSlot;
+    this.parents = parents;
+    this.children = children;
+    // A present step's raw vertex is its slot, since present steps come first among the raw ids.
+    const present = (/** @type {number} */ vertex) => vertex < this.ids.length;
+    const absent = Array.from({ length: this.rawIds.length - this.ids.length }, (_, index) => this.ids.length + index);
+    // What each absent step is read through to: the present steps behind it (D-5). A present step that leads into an
+    // absent one stops the read and holds its own bit.
+    const touching = new Set(absent.flatMap((vertex) => (this.parents[vertex] ?? []).filter(present)));
+    const ownSlot = new Int32Array(this.rawIds.length).fill(-1);
+    for (const vertex of touching) ownSlot[vertex] = vertex;
+    /** @type {Closure} */
+    this.reach = new Closure([...touching, ...absent], this.parents, ownSlot, (vertex) => !present(vertex), this.ids.length);
+    // Which steps are complete, and when, by slot: the given ones, or the tree's own marks.
+    const done = completed === null ? markedDone : new Uint8Array(this.ids.length);
+    for (const id of completed ?? []) {
+      const at = this.slot.get(id);
+      if (at !== undefined) done[at] = 1;
     }
-    const seeds = new Map(this.ids.map((id, index) => [this.rawSlot.get(id) ?? 0, index]));
-    this.frontier = new BitClosure(this.parents.map((parents, vertex) => seeds.has(vertex) ? [] : parents), seeds, this.ids.length);
-    this.words = this.frontier.words;
-    this.direct = new Uint32Array(this.ids.length * this.words);
-    this.completed = new Set(completed ?? [...tree.marks.values()].filter((mark) => mark.status === 'complete' && !tree.nodesById.get(mark.node)?.branch && !tree.pointers.get(mark.node)?.present).map((mark) => mark.node));
-    this.dates = new Map(dates ?? [...tree.marks.values()].map((mark) => [mark.node, mark.recordedAt ?? mark.deviceAt]));
-    const completeBits = new Uint32Array(this.words);
-    for (const id of this.completed) {
-      const slot = this.slot.get(id);
-      if (slot !== undefined) completeBits[slot >>> 5] = (completeBits[slot >>> 5] ?? 0) | (1 << (slot & 31));
-    }
-    /** @type {Map<string,'complete'|'available'|'locked'>} */
-    this.states = new Map();
-    /** @type {Map<string,{count:number,first:string|null}>} */
-    this.needs = new Map();
-    /** @type {Map<string,number>} */
-    this.inDegree = new Map();
-    /** @type {Map<string,string[]>} */
-    this.unlocked = new Map(this.ids.map((id) => [id, []]));
-    for (const [slot, id] of this.ids.entries()) {
-      const row = slot * this.words;
-      for (const parent of this.parents[this.rawSlot.get(id) ?? 0] ?? []) {
-        const source = this.frontier.row(parent);
-        for (let word = 0; word < this.words; word++) this.direct[row + word] = (this.direct[row + word] ?? 0) | (this.frontier.bits[source + word] ?? 0);
-      }
+    /** @type {(number|null)[]} */
+    this.dateAt = dates === null ? markedAt : this.ids.map((id) => dates.get(id) ?? null);
+    this.done = done;
+    this.dates = new BySlot(this.slot, this.ids, (slot) => this.dateAt[slot] ?? null);
+    // The followed prerequisites of a step behind an absent parent, as a bitset row; any other step follows its parents.
+    /** @type {Map<number,Uint32Array>} */
+    this.rows = new Map();
+    // Each step's state (an index of STATES), its unmet prerequisites' count and first, its followed count, and the
+    // steps it alone would open, all by slot.
+    this.stateAt = new Uint8Array(this.ids.length);
+    this.unmetCount = new Int32Array(this.ids.length);
+    this.firstUnmet = new Int32Array(this.ids.length).fill(-1);
+    this.degree = new Int32Array(this.ids.length);
+    /** @type {(number[]|undefined)[]} */
+    this.opens = [];
+    // The step whose parents last counted each parent, so a parent linked twice counts once.
+    const countedFor = new Int32Array(this.ids.length).fill(-1);
+    for (let slot = 0; slot < this.ids.length; slot++) {
+      const parents = this.parents[slot] ?? [];
       let count = 0;
       let degree = 0;
       let first = -1;
-      for (let word = 0; word < this.words; word++) {
-        degree += bitCount(this.direct[row + word] ?? 0);
-        const unmet = (this.direct[row + word] ?? 0) & ~(completeBits[word] ?? 0);
-        count += bitCount(unmet);
-        if (first < 0 && unmet) first = word * 32 + 31 - Math.clz32(unmet & -unmet);
+      if (parents.every(present)) {
+        for (const parent of parents) {
+          if (countedFor[parent] === slot) continue;
+          countedFor[parent] = slot;
+          degree++;
+          if (done[parent]) continue;
+          if (first < 0 || parent < first) first = parent;
+          count++;
+        }
+      } else {
+        const row = new Uint32Array(this.reach.words);
+        for (const parent of parents) {
+          if (present(parent)) {
+            row[parent >>> 5] = (row[parent >>> 5] ?? 0) | (1 << (parent & 31));
+            continue;
+          }
+          const source = this.reach.row(parent);
+          if (source >= 0) for (let word = 0; word < row.length; word++) row[word] = (row[word] ?? 0) | (this.reach.bits[source + word] ?? 0);
+        }
+        this.rows.set(slot, row);
+        for (let word = 0; word < row.length; word++) {
+          degree += bitCount(row[word] ?? 0);
+          for (let bits = row[word] ?? 0; bits; bits &= bits - 1) {
+            const prerequisite = word * 32 + 31 - Math.clz32(bits & -bits);
+            if (done[prerequisite]) continue;
+            if (first < 0) first = prerequisite;
+            count++;
+          }
+        }
       }
-      const prerequisite = this.ids[first] ?? null;
-      this.needs.set(id, { count, first: prerequisite });
-      this.inDegree.set(id, degree);
-      this.states.set(id, this.completed.has(id) ? 'complete' : count ? 'locked' : 'available');
-      if (!this.completed.has(id) && count === 1 && prerequisite !== id && prerequisite !== null) this.unlocked.get(prerequisite)?.push(id);
+      this.unmetCount[slot] = count;
+      this.firstUnmet[slot] = first;
+      this.degree[slot] = degree;
+      this.stateAt[slot] = done[slot] ? 2 : count ? 1 : 0;
+      if (!done[slot] && count === 1 && first !== slot && first >= 0) (this.opens[first] ??= []).push(slot);
     }
-    /** @type {{closure:BitClosure,ids:string[],counts:Map<string,number>}|null} */
+    this.states = new BySlot(this.slot, this.ids, (slot) => STATES[this.stateAt[slot] ?? 0] ?? 'available');
+    this.needs = new BySlot(this.slot, this.ids, (slot) => ({ count: this.unmetCount[slot] ?? 0, first: this.ids[this.firstUnmet[slot] ?? -1] ?? null }));
+    this.inDegree = new BySlot(this.slot, this.ids, (slot) => this.degree[slot] ?? 0);
+    /** @type {{closure:Closure,ids:string[],toGo:Int32Array,counts:BySlot<number>}|null} */
     this.debt = null;
   }
 
@@ -160,20 +241,22 @@ export class FollowGraph {
     const vertex = this.rawSlot.get(id) ?? 0;
     for (const parent of new Set(this.parents[vertex])) {
       const from = this.rawIds[parent] ?? '';
-      const row = this.frontier.row(parent);
       const throughAbsent = !this.slot.has(from);
-      for (let word = 0; word < this.words; word++) {
-        let bits = this.frontier.bits[row + word] ?? 0;
-        while (bits) {
-          const bit = 31 - Math.clz32(bits & -bits);
-          const prerequisite = this.ids[word * 32 + bit];
-          bits &= bits - 1;
-          if (prerequisite === undefined) continue;
-          let entry = found.get(prerequisite);
-          if (!entry) { entry = { id: prerequisite, incoming: [], throughAbsent: false }; found.set(prerequisite, entry); }
-          entry.incoming.push([from, id]);
-          entry.throughAbsent ||= throughAbsent;
-        }
+      const reached = (/** @type {number} */ slot) => {
+        const prerequisite = this.ids[slot];
+        if (prerequisite === undefined) return;
+        let entry = found.get(prerequisite);
+        if (!entry) { entry = { id: prerequisite, incoming: [], throughAbsent: false }; found.set(prerequisite, entry); }
+        entry.incoming.push([from, id]);
+        entry.throughAbsent ||= throughAbsent;
+      };
+      if (!throughAbsent) {
+        reached(parent);
+        continue;
+      }
+      const row = this.reach.row(parent);
+      for (let word = 0; row >= 0 && word < this.reach.words; word++) {
+        for (let bits = this.reach.bits[row + word] ?? 0; bits; bits &= bits - 1) reached(word * 32 + 31 - Math.clz32(bits & -bits));
       }
     }
     return [...found.values()].sort((a, b) => (this.slot.get(a.id) ?? 0) - (this.slot.get(b.id) ?? 0)).map((entry) => ({
@@ -181,27 +264,43 @@ export class FollowGraph {
     }));
   }
 
+  // The followed prerequisites a step still owes, in authored order.
   /** @param {string} id */
   unmet(id) {
     const slot = this.slot.get(id);
     if (slot === undefined) return [];
-    return this.ids.filter((parent, index) => !this.completed.has(parent) && ((this.direct[slot * this.words + (index >>> 5)] ?? 0) & (1 << (index & 31))) !== 0);
+    const row = this.rows.get(slot);
+    const prerequisites = row ? [] : [...new Set(this.parents[slot])].sort((a, b) => a - b);
+    for (let word = 0; row && word < row.length; word++) {
+      for (let bits = row[word] ?? 0; bits; bits &= bits - 1) prerequisites.push(word * 32 + 31 - Math.clz32(bits & -bits));
+    }
+    return prerequisites.flatMap((prerequisite) => (this.done[prerequisite] ? [] : [this.ids[prerequisite] ?? '']));
   }
 
+  // What each unfinished step owes: every unfinished step behind it, read through absent steps and stopping at
+  // completed ones. Only the unfinished and absent vertices take a row.
   owedIndex() {
     if (this.debt) return this.debt;
-    const ids = this.ids.filter((id) => !this.completed.has(id));
-    const seeds = new Map(ids.map((id, index) => [this.rawSlot.get(id) ?? 0, index]));
-    const adjacency = this.parents.map((parents, vertex) => this.completed.has(this.rawIds[vertex] ?? '') && this.slot.has(this.rawIds[vertex] ?? '') ? [] : parents);
-    const closure = new BitClosure(adjacency, seeds, ids.length);
-    const counts = new Map();
-    for (const id of this.ids) {
-      const row = closure.row(this.rawSlot.get(id) ?? 0);
+    const ids = this.ids.filter((_, slot) => !this.done[slot]);
+    const seedOf = new Int32Array(this.rawIds.length).fill(-1);
+    /** @type {number[]} */
+    const members = [];
+    let seed = 0;
+    for (let vertex = 0; vertex < this.rawIds.length; vertex++) {
+      if (vertex < this.ids.length && this.done[vertex]) continue;
+      if (vertex < this.ids.length) seedOf[vertex] = seed++;
+      members.push(vertex);
+    }
+    const closure = new Closure(members, this.parents, seedOf, () => true, ids.length);
+    const toGo = new Int32Array(this.ids.length);
+    for (let slot = 0; slot < this.ids.length; slot++) {
+      const row = closure.row(slot);
+      if (row < 0) continue;
       let count = 0;
       for (let word = 0; word < closure.words; word++) count += bitCount(closure.bits[row + word] ?? 0);
-      counts.set(id, this.completed.has(id) ? 0 : count - 1);
+      toGo[slot] = count - 1;
     }
-    this.debt = { closure, ids, counts };
+    this.debt = { closure, ids, toGo, counts: new BySlot(this.slot, this.ids, (slot) => toGo[slot] ?? 0) };
     return this.debt;
   }
 
@@ -212,13 +311,21 @@ export class FollowGraph {
     const bits = new Uint32Array(closure.words);
     for (const parent of this.parents[this.rawSlot.get(id) ?? 0] ?? []) {
       const row = closure.row(parent);
+      if (row < 0) continue;
       for (let word = 0; word < closure.words; word++) bits[word] = (bits[word] ?? 0) | (closure.bits[row + word] ?? 0);
     }
     return ids.filter((parent, slot) => parent !== id && ((bits[slot >>> 5] ?? 0) & (1 << (slot & 31))) !== 0);
   }
 
   /** @param {string} id */
-  unlocks(id) { return this.unlocked.get(id) ?? []; }
+  unlocks(id) {
+    const slot = this.slot.get(id);
+    return slot === undefined ? [] : this.unlocksAt(slot);
+  }
+
+  // The steps finishing the step at `slot` alone would open, in authored order.
+  /** @param {number} slot */
+  unlocksAt(slot) { return (this.opens[slot] ?? []).map((opened) => this.ids[opened] ?? ''); }
 
   /** @param {string} id */
   branch(id) {

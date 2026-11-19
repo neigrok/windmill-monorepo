@@ -94,21 +94,24 @@ The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, t
 graph reads only; it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}`
 or MCP's `{query,color,kind}`. Optional query fields have the defaults in `reads.js`.
 
-The read modules are `records.js` (normalized values, authored ordering and the device's landing note), `graph.js`
-(raw adjacency, iterative strongly connected components and compact prerequisite/debt closure),
-`account.js` (standing, least-fixed-point completion, effective dates and guides), `reads.js`
-(Board, legend, search and landing facts), and `diagnostics.js` (bounded findings). Detailed followed
-provenance is enumerated on demand. Bulk state, debt and Board reads use bitsets and never allocate
-an object for each implied edge through an absent hub. Disconnected absent records remain in
-RoadmapTree but do not allocate graph reachability rows; only present IDs and live-edge endpoints do.
+The read modules are `records.js` (normalized values, authored ordering, the device's landing note, and each
+tree's `TreeIndex`: its raw adjacency by slot and its own marks, derived once per tree), `graph.js` (iterative
+strongly connected components and compact prerequisite/debt closure over a tree's index), `account.js`
+(standing, least-fixed-point completion, effective dates and guides), `reads.js` (Board, legend, search and
+landing facts), and `diagnostics.js` (bounded findings). Detailed followed provenance is enumerated on demand.
+A step's state, unmet count and first, followed count and owed count are kept by slot. A step whose parents
+are all present follows them directly; only an absent step, and a step behind one, takes a bitset row, so no
+read allocates an object for each implied edge through an absent hub. The debt closure takes rows for the
+unfinished and absent vertices alone. Disconnected absent records remain in RoadmapTree but do not allocate
+graph reachability rows; only present IDs and live-edge endpoints do.
 
-The independent traversal test covers cycles and bitset word boundaries. Size tests cover 10,000
-nodes/20,000 edges, sixteen million implied pairs through one absent hub, 500 trees at depth eight,
-and the existing Board median construction/search budget of 50 ms at 5,000 nodes/1,800 unfinished.
-The timed Board path includes a fresh FollowGraph, state/debt derivation, cards, sort and search;
-only normalized record construction stays outside it. Other size timings are reported, not assigned
-new budgets. Run all with `node --test --test-concurrency=1 test/products/roadmap/domain/*.test.js`,
-then `npm run check:domain`.
+The independent traversal test covers 1,000 random graphs with cycles, missing steps and bitset word
+boundaries. Size tests cover 10,000 nodes/20,000 edges, sixteen million implied pairs through one absent
+hub, 500 trees at depth eight, and the existing Board median construction/search budget of 50 ms at 5,000
+nodes/1,800 unfinished. The timed Board path includes a fresh FollowGraph, state/debt derivation, cards,
+sort and search; only normalized record construction, its `TreeIndex` included, stays outside it, as the
+legacy Board's `SkillTree` does. Other size timings are reported, not assigned new budgets. Run all with
+`node --test --test-concurrency=1 test/products/roadmap/domain/*.test.js`, then `npm run check:domain`.
 
 ## Actions
 
