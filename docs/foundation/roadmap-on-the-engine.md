@@ -364,8 +364,9 @@ tables, stopping where they differ from those it planned from.
 - **The move also stops,** writing nothing, on a roadmap id outside `tree`'s pattern, a step, kind or
   marked step id outside its domain, a subtree whose place does not follow from its parent's (no
   parent row, a loop, another root, depth or owner, past `MAX_DEPTH`, no owning step row), a root
-  that names another root or a depth, a visibility outside the three, and a whole document the old
-  server's reading refuses.
+  that names another root or a depth, a visibility outside the three, a whole document the old
+  server's reading refuses, and a scope the engine already holds for a roadmap the move would create.
+  A move that stops or fails short of its end says at which owner and roadmap, and why.
 - **The audit.** Before the move, the old server writes one document a roadmap, read through its
   own repositories and its own reading of a record's life, never the move's rules: title, guide,
   place, steps with fields and life, links, kinds, every account's marks with their times,

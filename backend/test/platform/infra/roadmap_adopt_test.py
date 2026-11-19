@@ -324,6 +324,28 @@ class AdoptionTest(ToolTest):
         self.assertEqual((self.private / "stops.jsonl").read_text(),
                          '{"reason":"stop.unknownStepStatus","roadmap":"t_a000000000000001"}\n')
 
+    def test_a_scope_already_in_the_engine_stops_the_move_and_a_failure_mid_adopt_says_where_it_was(self):
+        url = own_database(self, "inTheWay", f"insert into sync_scopes (key, kind, owner) values ('tree:t_b000000000000001', 'tree', '{READER}');")
+        for stage in ("before", "adopt"):
+            with self.subTest(stage=stage):
+                result, reports = self.run_tool(url, stage)
+                self.assertEqual(result.returncode, 3, result.stderr.decode())
+                self.assertEqual((reports[0]["verdict"], reports[0]["counts"]["stop"]), ("stops", {"scopeAlreadyThere": 1}))
+        self.assertEqual((self.private / "adopt-failure.jsonl").read_text(), '{"reason":"scopeAlreadyThere","roadmap":"t_b000000000000001"}\n')
+        self.assertEqual(query(url, "select count(*) from roadmap_trees"), "0")
+
+        query(url, "delete from sync_scopes; create function refused() returns trigger language plpgsql as $$ begin "
+                   "if new.id = 'malformed' then raise exception 'refused'; end if; return new; end $$; "
+                   "create trigger refused before insert on roadmap_nodes for each row execute function refused()")
+        result, reports = self.run_tool(url, "adopt")
+        self.assertEqual(result.returncode, 1, result.stderr.decode())
+        self.assertEqual((reports[0]["verdict"], reports[0]["counts"]["failure"], reports[0]["counts"]["adopted"]),
+                         ("failed", {"storeRefusedARow": 1}, {"owners": 3, "roadmaps": 11}))
+        self.assertEqual(self.stage_lines(result), [("roadmap.adoption.adopt", "failed")])
+        self.assertEqual((self.private / "adopt-failure.jsonl").read_text(),
+                         f'{{"owner":"{SCRIBBLER}","reason":"storeRefusedARow","roadmap":"t_e000000000000001"}}\n')
+        self.assert_names_nothing(result)
+
     def test_a_roadmap_with_no_owner_it_was_not_told_to_expect_stops_the_move(self):
         url = own_database(self, "ownerless")
         env = {key: value for key, value in self.env.items() if key != "ROADMAP_ADOPTION_EXPECTED_OWNERLESS"}

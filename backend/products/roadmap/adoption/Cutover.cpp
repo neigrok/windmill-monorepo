@@ -93,18 +93,23 @@ StageReport Cutover::before() {
   const OldReadings old = adoption_.oldReadings(survey);
   const std::map<std::string, Document> documents = documentsBefore(old.readings, expectation_, survey.accounts());
   record_.write("before.jsonl", linesOf(documents));
+  const Plan planned = plan(survey);
+  std::vector<std::pair<std::string, std::string>> stoppedBy = survey.stoppedBy();
+  for (const std::string& roadmap : adoption_.scopesInTheWay(planned)) stoppedBy.emplace_back(roadmap, "stop.scopeAlreadyThere");
   std::vector<Json::Value> stops;
-  for (const auto& [roadmap, reason] : survey.stoppedBy()) {
+  StageReport report;
+  for (const auto& [roadmap, reason] : stoppedBy) {
     Json::Value line(Json::objectValue);
     line["roadmap"] = roadmap;
     line["reason"] = reason;
     stops.push_back(line);
+    report.counts.add(reason);
   }
   record_.write("stops.jsonl", stops);
-  StageReport report{.verdict = survey.stopped() ? "stops" : "ready", .passed = !survey.stopped()};
+  report.passed = stoppedBy.empty();
+  report.verdict = report.passed ? "ready" : "stops";
   report.counts += survey.tally();
-  report.counts += survey.stops();
-  report.counts += plan(survey).tally;
+  report.counts += planned.tally;
   report.counts.add("documents.before", documents.size());
   report.counts.add("documents.unreadableToday", old.unreadable.size());
   return report;
@@ -117,6 +122,19 @@ StageReport Cutover::adopt() {
   StageReport report{.verdict = "stops"};
   report.counts += planned.stops;
   if (planned.stopped()) return report;
+  const std::vector<std::string> inTheWay = adoption_.scopesInTheWay(planned);
+  if (!inTheWay.empty()) {
+    report.counts.add("stop.scopeAlreadyThere", inTheWay.size());
+    std::vector<Json::Value> lines;
+    for (const std::string& roadmap : inTheWay) {
+      Json::Value line(Json::objectValue);
+      line["roadmap"] = roadmap;
+      line["reason"] = "scopeAlreadyThere";
+      lines.push_back(line);
+    }
+    record_.write("adopt-failure.jsonl", lines);
+    return report;
+  }
   if (!adoption_.houseStands()) {
     report.counts.add("stop.houseAddressTaken");
     return report;

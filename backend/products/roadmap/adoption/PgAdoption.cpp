@@ -274,6 +274,35 @@ OldReadings PgAdoption::oldReadings(const Survey& survey) {
   return read;
 }
 
+std::vector<std::string> PgAdoption::scopesInTheWay(const Plan& plan) {
+  std::map<std::string, std::string> roadmapOf;
+  Json::Value ids(Json::arrayValue);
+  Json::Value keys(Json::arrayValue);
+  for (const OwnerPlan& owner : plan.owners) {
+    for (const RoadmapPlan& roadmap : owner.roadmaps) {
+      ids.append(roadmap.id);
+      const auto planned = [&](const ScopePlan& scope) {
+        roadmapOf.emplace(scope.key.text(), roadmap.id);
+        keys.append(scope.key.text());
+      };
+      planned(roadmap.tree);
+      for (const ScopePlan& overlay : roadmap.overlays) planned(overlay);
+    }
+  }
+  PgLease conn{*pool_};
+  pqxx::read_transaction txn{*conn};
+  txn.exec("set local statement_timeout = 0");
+  std::set<std::string> adopted;
+  for (const auto& row : txn.exec("select id from roadmap_trees where id in (select jsonb_array_elements_text($1::jsonb))", pqxx::params{dump(ids)}))
+    adopted.insert(row[0].as<std::string>());
+  std::set<std::string> inTheWay;
+  for (const auto& row : txn.exec("select key from sync_scopes where key in (select jsonb_array_elements_text($1::jsonb))", pqxx::params{dump(keys)})) {
+    const std::string& roadmap = roadmapOf.at(row[0].as<std::string>());
+    if (!adopted.contains(roadmap)) inTheWay.insert(roadmap);
+  }
+  return {inTheWay.begin(), inTheWay.end()};
+}
+
 bool PgAdoption::houseStands() {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};

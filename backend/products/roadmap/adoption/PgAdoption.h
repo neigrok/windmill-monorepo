@@ -63,6 +63,10 @@ public:
   // The old server's reading of every roadmap the survey holds, deleted ones answering none as the old server's do.
   OldReadings oldReadings(const Survey& survey);
 
+  // The roadmaps the plan would create a scope of that the engine already holds, while their `tree` record is absent:
+  // the move cannot create them, and stops.
+  std::vector<std::string> scopesInTheWay(const Plan& plan);
+
   // The house account, inserted when absent; false when its address names another account, which stops the move.
   bool houseStands();
 
