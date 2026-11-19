@@ -6,6 +6,7 @@ import { Harness } from '../../../platform/domain-kit/harness.js';
 import { until } from '../../../platform/sync/fakes.js';
 import { roadmapRegistry } from '../domain/vectors.js';
 import { CreateRoadmap, CreateSubtree } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { DeleteStep, RoadmapStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { InadmissibleGuide } from '../../../../src/products/roadmap/guide/GuideDraft.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
@@ -173,6 +174,48 @@ test('the keyboard walks a stack of gestures: a held delete cancelled in place, 
       { shown: { 'Watch the wind': [], 'Leave the dock': ['Watch the wind'], 'Sail solo': [] }, held: 1, receipts: 4, told: { said: [], events: [], statuses: 4 } });
     session.close();
     await until(() => journaled(a) === before, 1000);
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('INV-1: the room’s edit of a step another device deleted, which the device knows only by its spent id, brings it back; its Undo deletes it again and its Redo brings it back with the edit', async () => {
+  const { a, tree, steps, reading, session, told } = await gestures();
+  try {
+    const b = await a.device();
+    await a.sync();
+    committed(await b.runner.runAct(new DeleteStep(tree, steps.dock)));
+    await a.advance(CONSTANTS.HOLD_MS);
+    await a.sync();
+    const dock = (/** @type {Harness} */ phone) => phone.drawn(RoadmapStep, RoadmapScopes.tree(tree)).filter((step) => step.id.record === steps.dock)
+      .map((step) => [step.label, step.description]);
+    assert.deepEqual(dock(a), []);
+    const described = session.dispatch({ kind: 'DescribeNode', id: steps.dock, description: 'Cast off the lines' });
+    assert.notEqual(await described.landed, null);
+    await a.sync();
+    const landed = reading.landing().map((line) => line.key);
+    const afterEdit = [dock(a), dock(b)];
+    const synced = async (/** @type {() => boolean} */ seen) => {
+      for (let turn = 0; turn < 20 && !seen(); turn++) await a.sync();
+      return seen();
+    };
+    const asked = () => until(() => a.engine.device.activeReplica.entries().some((/** @type {any} */ entry) => entry.state === 'ready'), 1000);
+    session.undo();
+    await asked();
+    const undone = await synced(() => dock(a).length === 0 && dock(b).length === 0);
+    session.redo();
+    await asked();
+    const redone = await synced(() => dock(a).length === 1 && dock(b).length === 1);
+    assert.deepEqual({ landed, afterEdit, undone, redone, afterRedo: [dock(a), dock(b)], said: told.said }, {
+      landed: [`cameBack:${steps.dock}`],
+      undone: true,
+      redone: true,
+      afterEdit: [[['Leave the dock', 'Cast off the lines']], [['Leave the dock', 'Cast off the lines']]],
+      afterRedo: [[['Leave the dock', 'Cast off the lines']], [['Leave the dock', 'Cast off the lines']]],
+      said: [],
+    });
+    session.close();
   } finally {
     reading.close();
     a.close();
