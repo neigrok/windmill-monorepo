@@ -439,7 +439,8 @@ counts the tool prints, that they name no tree, account or title, that the tool 
 it counts a chain of 200,001 trees to its end. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
 it builds databases of its own beside `DATABASE_URL`'s from `db/schema.sql` and `test/platform/infra/roadmap_adopt_fixture.sql`
 and runs every stage on them: their counts, a second run that writes nothing, a run killed between stages and in the middle
-of its adoption, the rows that stop it, and that nothing it prints names a record
+of its adoption, a stage refused beside another client, which it watches for from `DATABASE_URL`'s database, the rows
+that stop it, and that nothing it prints names a record
 (`products/roadmap/adoption/README.md`).
 
 Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z

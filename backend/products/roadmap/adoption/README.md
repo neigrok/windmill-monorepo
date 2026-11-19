@@ -24,7 +24,10 @@ the roadmaps' ids, which do not change.
 
 The server is stopped for the move, the cutover's maintenance, and nothing else writes roadmap's tables while it runs.
 The tool checks it: every session it opens carries one random application name, and a stage refuses to start while
-any other client session is connected to the database (verdict `othersConnected`, the count alone). `adopt` holds
+any other client session is connected to the database (verdict `othersConnected`, the count alone). The operator then
+reads `pg_stat_activity` from another database, as a session on this one counts too, and stops the server or client
+behind each session. A session named `windmill_roadmap_adopt …` is a killed run of the tool, alive while its statement
+runs: `pg_terminate_backend` ends it and rolls back the one owner it was adopting. Then the stage runs again. `adopt` holds
 roadmap's own tables in SHARE mode in each owner's transaction, reads that owner's rows again and stops if they differ
 from those its plan was made from.
 

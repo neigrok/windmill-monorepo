@@ -2,7 +2,6 @@ import json
 import os
 from pathlib import Path
 import re
-import signal
 import subprocess
 import sys
 import tempfile
@@ -89,6 +88,14 @@ def own_database(test, name, sql=""):
     return url
 
 
+# A case's client sessions as the maintenance database sees them: watching from there adds none to the case's database,
+# whose stages refuse to start beside any. `select` reads the sessions `where` names.
+def client_sessions(url, select, where="true"):
+    database = re.search(r"^postgres(?:ql)?://[^/?]*/([^?]*)", url).group(1)
+    return query(os.environ["DATABASE_URL"], f"select {select} from pg_stat_activity where datname = '{database}' "
+                                             f"and backend_type = 'client backend' and ({where})")
+
+
 class ToolTest(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory(prefix="roadmap-adopt-")
@@ -100,10 +107,27 @@ class ToolTest(unittest.TestCase):
                     "WINDMILL_LOG_EMERGENCY_FILE": str(Path(directory.name) / "emergency.log"),
                     "ROADMAP_ADOPTION_PRIVATE_DIR": str(self.private), "ROADMAP_ADOPTION_EXPECTED_OWNERLESS": str(expected)}
 
-    def run_tool(self, url, stage, env=None):
-        result = subprocess.run([TOOL, stage], capture_output=True, env={**(env or self.env), "DATABASE_URL": url}, timeout=120)
-        reports = [json.loads(line) for line in result.stdout.decode().splitlines()]
-        return result, reports
+    # A wait with a deadline: a session the case closed may still be leaving, and one it started may not have arrived.
+    def wait_for_sessions(self, url, count, where="true"):
+        deadline = time.monotonic() + 30
+        while client_sessions(url, "count(*)", where) != str(count) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(client_sessions(url, "count(*)", where), str(count))
+
+    # The tool starts once its database holds the `beside` client sessions the case means it to meet.
+    def start_tool(self, url, stage, env=None, beside=0):
+        self.wait_for_sessions(url, beside)
+        tool = subprocess.Popen([TOOL, stage], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env={**(env or self.env), "DATABASE_URL": url})
+        self.addCleanup(tool.wait)
+        self.addCleanup(tool.kill)
+        return tool
+
+    def run_tool(self, url, stage, env=None, beside=0):
+        tool = self.start_tool(url, stage, env, beside)
+        stdout, stderr = tool.communicate(timeout=120)
+        reports = [json.loads(line) for line in stdout.decode().splitlines()]
+        return subprocess.CompletedProcess(tool.args, tool.returncode, stdout, stderr), reports
 
     def stage_lines(self, result):
         return [(record["operation"], record["outcome"]) for record in map(json.loads, WRITE.findall(result.stderr))
@@ -245,19 +269,17 @@ class AdoptionTest(ToolTest):
         query(url, "create function held_insert() returns trigger language plpgsql as $$ begin "
                    "if new.id = 't_e000000000000001' then perform pg_sleep(60); end if; return new; end $$; "
                    "create trigger held_insert before insert on roadmap_trees for each row execute function held_insert()")
-        tool = subprocess.Popen([TOOL, "adopt"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**self.env, "DATABASE_URL": url})
-        self.addCleanup(tool.wait)
-        self.addCleanup(tool.kill)
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            if query(url, "select count(*) from pg_stat_activity where wait_event = 'PgSleep' and datname = current_database()") == "1":
-                break
-            time.sleep(0.1)
+        tool = self.start_tool(url, "adopt")
+        self.wait_for_sessions(url, 1, "wait_event = 'PgSleep'")
         self.assertEqual(query(url, "select count(*) from roadmap_trees"), "11")
-        tool.send_signal(signal.SIGKILL)
-        tool.wait(timeout=30)
-        # The killed run's session, which Postgres ends once it notices its client gone, and the trigger.
-        query(url, "select count(pg_terminate_backend(pid)) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()")
+        tool.kill()
+        tool.communicate(timeout=30)
+        # The killed run's session sleeps on until its statement ends, and no stage starts beside it. The README's remedy,
+        # ending that killed run's session, rolls the scribbler's transaction back.
+        result, reports = self.run_tool(url, "adopt", beside=1)
+        self.assertEqual((result.returncode, reports[0]["verdict"], reports[0]["counts"]),
+                         (3, "othersConnected", {"sessions": {"otherClients": 1}}))
+        self.assertEqual(client_sessions(url, "count(pg_terminate_backend(pid))", "application_name like 'windmill_roadmap_adopt %'"), "1")
         query(url, "drop trigger held_insert on roadmap_trees; drop function held_insert()")
         self.assertEqual(query(url, f"select count(*) from sync_scopes where owner = '{SCRIBBLER}'"), "0")
 
@@ -273,18 +295,15 @@ class AdoptionTest(ToolTest):
         sleeper = subprocess.Popen(["psql", url, "-XAtq", "-c", "select pg_sleep(60)"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(sleeper.wait)
         self.addCleanup(sleeper.kill)
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline and query(url, "select count(*) from pg_stat_activity where wait_event = 'PgSleep'") != "1":
-            time.sleep(0.1)
+        self.wait_for_sessions(url, 1, "wait_event = 'PgSleep'")
         for stage in STAGES:
             with self.subTest(stage=stage):
-                result, reports = self.run_tool(url, stage)
+                result, reports = self.run_tool(url, stage, beside=1)
                 self.assertEqual(result.returncode, 3, result.stderr.decode())
                 self.assertEqual((reports[0]["verdict"], reports[0]["counts"]), ("othersConnected", {"sessions": {"otherClients": 1}}))
                 self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", "othersConnected")])
-        sleeper.kill()
+        self.assertEqual(client_sessions(url, "count(pg_terminate_backend(pid))", "wait_event = 'PgSleep'"), "1")
         sleeper.wait(timeout=30)
-        query(url, "select count(pg_terminate_backend(pid)) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()")
         self.assertEqual(query(url, "select count(*) from sync_scopes"), "0")
 
         # A writer that reaches roadmap's tables once the stage began: the house's transaction is held open while it
@@ -292,11 +311,8 @@ class AdoptionTest(ToolTest):
         query(url, "create function held_house() returns trigger language plpgsql as $$ begin "
                    f"if new.id = '{DEMO}' then perform pg_sleep(2); end if; return new; end $$; "
                    "create trigger held_house before insert on roadmap_trees for each row execute function held_house()")
-        tool = subprocess.Popen([TOOL, "adopt"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env={**self.env, "DATABASE_URL": url})
-        self.addCleanup(tool.kill)
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline and query(url, "select count(*) from pg_stat_activity where wait_event = 'PgSleep'") != "1":
-            time.sleep(0.02)
+        tool = self.start_tool(url, "adopt")
+        self.wait_for_sessions(url, 1, "wait_event = 'PgSleep'")
         query(url, "insert into tree_nodes (tree_id, node_id, created_hlc, label, label_hlc, present) values "
                    "('t_e000000000000001', 'late', '1740000000000:99:r_scribbler', 'Late', '1740000000000:99:r_scribbler', true)")
         stdout, _ = tool.communicate(timeout=60)
