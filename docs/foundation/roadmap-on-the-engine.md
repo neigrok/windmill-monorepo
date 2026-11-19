@@ -262,16 +262,23 @@ Other gestures are one intent per record.
 What a device tells a person when a change of theirs met one made elsewhere.
 
 - **A step that follows something else than the person linked.** When a device's own new step or
-  new link turns out to follow through an absent step, the person is told once, where the step is
-  listed and on its page. The device notes its own new steps and links in a device row when it
-  makes them, with the name of each step it links from, since it keeps nothing of a step once
-  another device's delete has reached it, and clears from the note what it has said. Each write of
-  the note also lets go of every entry whose write has landed and that says nothing, with the name
-  its link kept: once a write has landed the device holds all the server held before it, so what
-  the entry meets from then on was made after it. A roadmap's note goes when the roadmap is
-  deleted, an Undo within the hold leaving it gone, and when the device finds the roadmap gone from
-  the person's list; signing out, Keep or Discard, takes every note. A line whose removed step the
-  note holds no name of is not said.
+  new link turns out to follow through a step deleted before the link landed, the person is told
+  once, where the step is listed and on its page. The device notes its own new steps and links in a
+  device row when it makes them, with the name of each step it links from, since it keeps nothing
+  of a step once another device's delete has reached it, and clears from the note what it has said.
+  A line is said of a link the device noted, alone or into a new step it noted, only when the
+  server took the delete of the step the link comes from before it took the link: the `seq` of
+  that step's spent id (engine §2.5) is below the `seq` of the link's row as the device pulled it.
+  A delete the server took after the link met nothing of the person's, and is never said, whether
+  the note is written before the delete reaches the device or after; nor is a delete the device
+  knows no `seq` of, its own among them until the server sends it back. A link whose write has not
+  landed, its row as pulled not yet holding every write of the device's own, says nothing until it
+  lands. Each write of the note lets go of every entry whose write has landed and that says
+  nothing, with the name its link kept: once a write has landed the device holds every delete the
+  server took before it, so such an entry could never say more. A roadmap's note goes when the
+  roadmap is deleted, an Undo within the hold leaving it gone, and when the device finds the
+  roadmap gone from the person's list; signing out, Keep or Discard, takes every note. A line whose
+  removed step the note holds no name of is not said.
 - **A step that came back.** When a device's own change found the step absent on the device and
   so revived it, the person is told once; the device notes it as it notes a new step. A revival
   the device never saw, of a step it still held present when the change was made, is not told.

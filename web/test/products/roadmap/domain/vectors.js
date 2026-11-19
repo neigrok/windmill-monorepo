@@ -34,14 +34,16 @@ export const roadmapBook = new RoadmapRules(roadmapRegistry).book;
 
 // A scope's records as the corpus README states them: `confirmed`, the server's copy as the device pulled it, defaults
 // to `stored`, so a record the device writes that the server has not yet taken is one `confirmed` leaves out or holds
-// otherwise.
+// otherwise; each keeps its row's `seq`, as the engine's confirmed records do.
 class RoadmapCorpus extends ProductCorpus {
   /** @param {Vector} vector @param {string} scope @param {(type: string) => import('../../../../src/platform/domain-kit/entities.js').RecordID} mintId */
   views(vector, scope, mintId) {
     const { device = {}, firstPullComplete = true } = vector.input;
     const records = this.records(vector, scope);
+    const confirmed = /** @type {any[]} */ (records.confirmed ?? records.stored ?? records.drawn ?? []);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored: viewRecords(records.stored ?? records.drawn),
-      confirmed: viewRecords(records.confirmed ?? records.stored ?? records.drawn), spent: records.spent ?? [], devices: device, firstPullComplete, mintId });
+      confirmed: viewRecords(confirmed).map((record, index) => ({ ...record, ...(confirmed[index]?.seq === undefined ? {} : { seq: confirmed[index].seq }) })),
+      spent: records.spent ?? [], devices: device, firstPullComplete, mintId });
   }
 }
 const corpus = new RoadmapCorpus(roadmapBook, RoadmapRules.spec);

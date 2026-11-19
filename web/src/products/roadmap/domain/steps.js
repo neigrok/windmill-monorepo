@@ -130,27 +130,45 @@ export function readTree(tree, read) {
   return new RoadmapTree({ id: tree, nodes, edges });
 }
 
+// §6 The order the device knows of a roadmap's writes, by the server's sequence numbers. A step or a link the device
+// wrote has landed once the server's copy of it holds every write of the device's own, as the device has pulled it; one it
+// holds no record of at all was deleted after, its own write long settled. A link met the delete of the step it comes
+// from when the server took the delete, at its spent id's `seq`, before it took the link, at the `seq` of the link's
+// copy. A delete taken after met nothing of the device's, and one the device knows no `seq` of, its own delete the
+// server has not yet sent back among them, meets nothing. Before the roadmap's first pull completes nothing has landed.
+/**
+ * @param {Reader} read
+ * @returns {import('./records.js').LandingOrder}
+ */
+export function landingOrder(read) {
+  const pulled = read.firstPullComplete();
+  const steps = read.repository(RoadmapStep);
+  const landed = (/** @type {Id<any>} */ id) => {
+    const drawn = read.repository(id.entity).record(id.record, 'drawn');
+    const confirmed = read.confirmed(id.entity, id);
+    return pulled && (drawn === undefined || (confirmed !== null && jcs(latticeOf(drawn)) === jcs(latticeOf(confirmed))));
+  };
+  return {
+    step: (id) => landed(new Id(id, RoadmapStep)),
+    link: (from, to) => landed(new RoadmapLinkValue(from, to).id),
+    met: (from, to) => {
+      const link = new RoadmapLinkValue(from, to).id;
+      const deleted = steps.spentSeq(new Id(from, RoadmapStep));
+      const linked = read.confirmed(RoadmapLink, link)?.seq;
+      return deleted !== null && linked !== undefined && landed(link) && deleted < linked;
+    },
+  };
+}
+
 // §6 The device's note of one roadmap as a write of it takes it: less each entry whose write has landed and that says
-// nothing of the roadmap as it now stands (`LandingNote.settled`). A step or a link the device wrote has landed once the
-// server's copy of it holds every write of the device's own, as the device has pulled it; one it holds no record of
-// at all was deleted after, its own write long settled. Before the roadmap's first pull completes nothing has landed.
+// nothing (`LandingNote.settled`), by the order the device knows.
 /**
  * @param {string} tree
  * @param {Reader} read
  * @param {RoadmapTree} roadmap
  */
 export function readNote(tree, read, roadmap = readTree(tree, read)) {
-  const note = LandingNote.of(read.device(RoadmapScopes.landing(tree)));
-  if (!read.firstPullComplete()) return note;
-  const landed = (/** @type {Id<any>} */ id) => {
-    const drawn = read.repository(id.entity).record(id.record, 'drawn');
-    const confirmed = read.confirmed(id.entity, id);
-    return drawn === undefined || (confirmed !== null && jcs(latticeOf(drawn)) === jcs(latticeOf(confirmed)));
-  };
-  return note.settled(roadmap, {
-    step: (id) => landed(new Id(id, RoadmapStep)),
-    link: (from, to) => landed(new RoadmapLinkValue(from, to).id),
-  });
+  return LandingNote.of(read.device(RoadmapScopes.landing(tree))).settled(roadmap, landingOrder(read));
 }
 
 // The order key after every given key, by bytes; a missing or malformed key is no bound.

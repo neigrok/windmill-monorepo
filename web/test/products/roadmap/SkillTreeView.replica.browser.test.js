@@ -471,8 +471,8 @@ test('with the switch on the owner is told once, under the card and on the stepâ
   const settled = (on) => on.waitForFunction(() => !window.engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'));
   const landed = (on) => on.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
     .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent]));
-  // A new step's entry in the device's note: the step, its link from 'Read the wind', and that step's name.
-  const entry = (step) => ({ nodes: [step], edges: [['wind', step]], revived: [], names: [{ id: 'wind', name: 'Read the wind' }] });
+  // A new step's entry in the device's note: the step, its link from the step it follows, and that step's name.
+  const entry = (step, [from, name]) => ({ nodes: [step], edges: [[from, step]], revived: [], names: [{ id: from, name }] });
   try {
     await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const page = await context.newPage();
@@ -501,10 +501,12 @@ test('with the switch on the owner is told once, under the card and on the stepâ
       return page.locator('.st-board-card[data-step-id]', { has: card(label) }).getAttribute('data-step-id');
     };
     await page.goto(room);
-    const reef = await create('Reef the sail', /Read the wind/);
+    const reef = await create('Reef the sail', /Leave the dock/);
     await settled(page);
     const made = await note();
 
+    // B deletes 'Leave the dock' after the link to 'Reef the sail' from it landed: the delete met nothing of the owner's,
+    // so no line says it, though the owner's note still holds the link when the delete reaches the device.
     const b = await other.newPage();
     b.setDefaultTimeout(15000);
     await b.goto(room);
@@ -513,6 +515,7 @@ test('with the switch on the owner is told once, under the card and on the stepâ
     await settled(b);
     await page.evaluate(() => window.engine.kickPull());
     await card('Leave the dock').waitFor({ state: 'detached' });
+    const afterDelete = await landed(page);
     const changed = await page.evaluate((tree) => window.changeStep(tree, 'dock', { description: 'Cast off the lines' }), TREE);
     await page.locator('.st-board-landed').waitFor();
     const cameBack = { changed, lines: await landed(page) };
@@ -550,15 +553,16 @@ test('with the switch on the owner is told once, under the card and on the stepâ
     await page.reload();
     await card('Trim the sail').waitFor();
     const later = await page.locator('.st-board-landed').count();
-    assert.deepEqual({ made, cameBack, onPage, onB: onB.includes('Cast off the lines'), toldBack, quiet, linked, met, follows, toldFollows, later, failures }, {
-      made: entry(reef),
+    assert.deepEqual({ made, afterDelete, cameBack, onPage, onB: onB.includes('Cast off the lines'), toldBack, quiet, linked, met, follows, toldFollows, later, failures }, {
+      made: entry(reef, ['dock', 'Leave the dock']),
+      afterDelete: [],
       cameBack: { changed: 'committed', lines: [['Leave the dock', 'Your edit brought this step back.']] },
       onPage: 'Your edit brought this step back.',
       onB: true,
       toldBack: { note: null, events: ['{"rule":"cameBack","place":"board"}'], issues: [] },
       quiet: 0,
-      linked: entry(trim),
-      met: entry(trim),
+      linked: entry(trim, ['wind', 'Read the wind']),
+      met: entry(trim, ['wind', 'Read the wind']),
       follows: [['Trim the sail', 'Read the wind was removed. This now follows Choose a course.']],
       toldFollows: { note: null, events: ['{"rule":"follows","place":"board"}'], issues: [] },
       later: 0,
