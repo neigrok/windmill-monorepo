@@ -50,10 +50,17 @@ import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
 const account = params.get('account');
-const offline = params.has('offline');
 const tree = ${JSON.stringify(TREE)};
 Object.assign(window, { events: [], issues: [], syncFailures: [], ceremonies: [], revealed: [], revealFrames: [], cameraCalls: [], roomStatus: getRoomStatus });
-if (offline) Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+// The device's connection, cut from the start with \`offline\` and at any moment by \`connect(false)\`, as the browser tells
+// it: the engine hears the browser go offline and stops its sync, and the transport answers nothing while it is cut. The
+// room's own files still load.
+let online = !params.has('offline');
+Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+window.connect = (state) => {
+  online = state;
+  window.dispatchEvent(new Event(state ? 'online' : 'offline'));
+};
 // Today's room: its own session stands on the roadmap the server answers, the owner's marks set as the server holds them.
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
@@ -75,8 +82,8 @@ SyncSession.prototype.start = async function () {
 const boot = crypto.randomUUID();
 const transport = new HttpTransport({ schema: 13, base: '', reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot }),
   socket: () => ({ readyState: 0, send() {}, close() { this.readyState = 3; } }),
-  fetch: (url, options) => (offline ? Promise.reject(new TypeError('Failed to fetch'))
-    : fetch(url, { ...options, headers: { ...options.headers, 'x-fixture-account': account ?? '' } })) });
+  fetch: (url, options) => (online ? fetch(url, { ...options, headers: { ...options.headers, 'x-fixture-account': account ?? '' } })
+    : Promise.reject(new TypeError('Failed to fetch'))) });
 const engine = await syncSession.open({ registry: new Registry(${registryJson}), transport, appVersion: '1',
   credentials: { clear: async () => {} }, telemetry: { event() {}, failure(operation) { window.syncFailures.push(operation); } } });
 window.engine = engine;
@@ -334,8 +341,10 @@ test('with the switch on the owner’s marks and workspace land on the device’
 });
 
 // One owner's script of step gestures on a room: a new step and its toast's Undo, a new step undone and redone by the
-// keyboard, a held delete undone in its hold, and one released after its nine seconds and undone by the keyboard. A room
-// whose writes are to reach the server (`landed`) stays open until they have.
+// keyboard, a held delete undone in its hold, and one written once its toast has stood the nine-second hold, then undone by
+// the keyboard. The room on the device's copy tells what each Undo and Redo of a written act came to once the engine knows,
+// so the script goes on from one once it is told. A room whose writes are to reach the server (`landed`) stays open until
+// they have.
 async function makeAndTakeBack(context, { replica, landed = null }) {
   await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
   const page = await context.newPage();
@@ -349,6 +358,9 @@ async function makeAndTakeBack(context, { replica, landed = null }) {
   const keys = async (combination) => {
     await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press(combination);
+  };
+  const told = async (count) => {
+    if (replica) await page.waitForFunction((count) => window.events.filter(({ name }) => name === 'roadmap_undo').length === count, count);
   };
   const create = async (label) => {
     await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
@@ -368,19 +380,25 @@ async function makeAndTakeBack(context, { replica, landed = null }) {
   await create('Tie a bowline');
   await toastUndo().click();
   await card('Tie a bowline').waitFor({ state: 'detached' });
+  await told(1);
   await create('Reef the sail');
   await keys('ControlOrMeta+z');
   await card('Reef the sail').waitFor({ state: 'detached' });
+  await told(2);
   await keys('ControlOrMeta+Shift+z');
   await card('Reef the sail').waitFor();
+  await told(3);
   await remove('Leave the dock');
   await toastUndo().click();
   await card('Leave the dock').waitFor();
   await remove('Leave the dock');
+  await page.locator('.st-board-toast').waitFor();
   await page.locator('.st-board-toast').waitFor({ state: 'detached', timeout: 15000 });
+  await page.waitForFunction(() => window.events.some(({ name, props }) => name === 'roadmap_board_delete' && props.step === 'sent'));
   const released = await boardColumns(page);
   await keys('ControlOrMeta+z');
   await card('Leave the dock').waitFor();
+  await told(4);
   const read = { released, columns: await boardColumns(page),
     ...await page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues })), failures };
   if (landed) await reachesServer(landed);
@@ -398,11 +416,40 @@ test('with the switch on the owner’s step gestures, their toasts’ Undo and t
       .some((row) => row.t === 'node' && row.f?.label?.[0] === 'Reef the sail')
       && serverRows(`tree:${TREE}`).some((row) => row.t === 'node' && row.id === 'dock' && row.life?.[0] === 'alive') });
     const lattice = await makeAndTakeBack(today, { replica: false });
-    assert.deepEqual({ released: onCopy.released, columns: onCopy.columns }, {
+    const events = [
+      'roadmap_view_open {"view":"board","band":"desktop","role":"owner","door":"default","trees":"none"}',
+      'roadmap_verb {"verb":"newStep","door":"row","view":"board","band":"desktop"}',
+      'roadmap_board_create {"step":"open","door":"verbs","view":"board"}',
+      'roadmap_board_create {"step":"saved","column":"upNext","filterCleared":false}',
+      'roadmap_board_undo {"act":"create"}',
+      'roadmap_undo {"action":"undo","outcome":"applied"}',
+      'roadmap_verb {"verb":"newStep","door":"row","view":"board","band":"desktop"}',
+      'roadmap_board_create {"step":"open","door":"verbs","view":"board"}',
+      'roadmap_board_create {"step":"saved","column":"upNext","filterCleared":false}',
+      'roadmap_board_undo {"act":"undoKey"}',
+      'roadmap_undo {"action":"undo","outcome":"applied"}',
+      'roadmap_board_undo {"act":"redoKey"}',
+      'roadmap_undo {"action":"redo","outcome":"applied"}',
+      'roadmap_board_step_open {"surface":"document","column":"locked","door":"card"}',
+      'roadmap_board_step_action {"surface":"document","action":"delete"}',
+      'roadmap_board_delete {"step":"confirm","view":"board"}',
+      'roadmap_board_delete {"step":"held","door":"menu","view":"board"}',
+      'roadmap_board_undo {"act":"delete"}',
+      'roadmap_board_step_open {"surface":"document","column":"locked","door":"card"}',
+      'roadmap_board_step_action {"surface":"document","action":"delete"}',
+      'roadmap_board_delete {"step":"confirm","view":"board"}',
+      'roadmap_board_delete {"step":"held","door":"menu","view":"board"}',
+      'roadmap_board_delete {"step":"sent","via":"timer","view":"board"}',
+      'roadmap_board_undo {"act":"undoKey"}',
+      'roadmap_undo {"action":"undo","outcome":"applied"}',
+    ];
+    assert.deepEqual(onCopy, {
       released: ['locked: ', 'upNext: Read the wind, Reef the sail', 'done: Choose a course'],
       columns: ['locked: Leave the dock', 'upNext: Read the wind, Reef the sail', 'done: Choose a course'],
+      events, issues: [], failures: [],
     });
-    assert.deepEqual(onCopy, lattice);
+    // Today's room tells the intake nothing of what an Undo or a Redo came to.
+    assert.deepEqual(lattice, { ...onCopy, events: events.filter((event) => !event.startsWith('roadmap_undo ')) });
   } finally {
     await replica.close();
     await today.close();
@@ -413,7 +460,9 @@ test('with the switch on the owner’s step gestures, their toasts’ Undo and t
 // another device's, and nothing else is shown as refused (INV-3). Device B is the owner's second browser. The engine keeps
 // nothing of a step deleted elsewhere but its spent id (engine.md §7.5), and the room's editor goes unavailable on a step it
 // no longer holds, so the change that finds the step deleted is the domain's own act on this device's engine, as a save
-// decided in the moment the delete lands runs it. A removed step a line names is named from the device's note.
+// decided in the moment the delete lands runs it. Each write of the note lets go of every entry that has landed and says
+// nothing, so a link that landed before another device's delete of its step is not told of it; a link made while the device
+// still held the step, that reaches the server after the delete, is, and its line names the removed step from the note.
 test('with the switch on the owner is told once, under the card and on the step’s page, of their changes that met another device’s delete', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
   const context = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
@@ -422,6 +471,8 @@ test('with the switch on the owner is told once, under the card and on the step�
   const settled = (on) => on.waitForFunction(() => !window.engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'));
   const landed = (on) => on.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
     .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent]));
+  // A new step's entry in the device's note: the step, its link from 'Read the wind', and that step's name.
+  const entry = (step) => ({ nodes: [step], edges: [['wind', step]], revived: [], names: [{ id: 'wind', name: 'Read the wind' }] });
   try {
     await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const page = await context.newPage();
@@ -429,16 +480,30 @@ test('with the switch on the owner is told once, under the card and on the step�
     const failures = [];
     page.on('pageerror', (error) => failures.push(error.message));
     page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+    const card = (label) => page.locator('.st-board-card-title', { hasText: label });
+    // The device's note of the roadmap, null where it holds none. Saying a line clears its entry from the note in a write of
+    // its own, which `cleared` waits for; `told` is what the page emitted of the lines it said.
+    const note = () => page.evaluate((tree) => window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`] ?? null, TREE);
+    const cleared = (part, id) => page.waitForFunction(([tree, part, id]) => !(window.engine.readMetadata(`tree/${tree}`)
+      .devices[`landing:${tree}`]?.[part] ?? []).includes(id), [TREE, part, id]);
+    const told = () => page.evaluate(() => ({ events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort(),
+      issues: window.issues }));
+    // A new step that needs `after`, made in the room's composer: answers the id the domain gave it.
+    const create = async (label, after) => {
+      await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
+      const composer = page.getByRole('dialog', { name: 'New step', exact: true });
+      await composer.locator('input').first().fill(label);
+      await composer.locator('.st-board-draft-needs').click();
+      await page.getByRole('checkbox', { name: after }).click();
+      await page.getByRole('button', { name: 'Apply', exact: true }).click();
+      await composer.getByRole('button', { name: 'Create step', exact: true }).click();
+      await card(label).waitFor();
+      return page.locator('.st-board-card[data-step-id]', { has: card(label) }).getAttribute('data-step-id');
+    };
     await page.goto(room);
-    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
-    const composer = page.getByRole('dialog', { name: 'New step', exact: true });
-    await composer.locator('input').first().fill('Reef the sail');
-    await composer.locator('.st-board-draft-needs').click();
-    await page.getByRole('checkbox', { name: /Read the wind/ }).click();
-    await page.getByRole('button', { name: 'Apply', exact: true }).click();
-    await composer.getByRole('button', { name: 'Create step', exact: true }).click();
-    await page.locator('.st-board-card-title', { hasText: 'Reef the sail' }).waitFor();
+    const reef = await create('Reef the sail', /Read the wind/);
     await settled(page);
+    const made = await note();
 
     const b = await other.newPage();
     b.setDefaultTimeout(15000);
@@ -447,51 +512,55 @@ test('with the switch on the owner is told once, under the card and on the step�
     await b.evaluate((tree) => window.engine.commit(`tree/${tree}`, [{ op: 'delete', t: 'node', id: 'dock' }]), TREE);
     await settled(b);
     await page.evaluate(() => window.engine.kickPull());
-    await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).waitFor({ state: 'detached' });
+    await card('Leave the dock').waitFor({ state: 'detached' });
     const changed = await page.evaluate((tree) => window.changeStep(tree, 'dock', { description: 'Cast off the lines' }), TREE);
     await page.locator('.st-board-landed').waitFor();
     const cameBack = { changed, lines: await landed(page) };
-    await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
+    await card('Leave the dock').click();
     const onPage = await page.getByRole('article', { name: 'Leave the dock', exact: true }).locator('.st-step-landed').innerText();
     await settled(page);
     await b.evaluate(() => window.engine.kickPull());
     await b.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
     const onB = await b.getByRole('article', { name: 'Leave the dock', exact: true }).innerText();
-    // Saying a line clears it from the note in a write of its own: each read waits for that write.
-    await page.waitForFunction((tree) => window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`]?.revived.length === 0, TREE);
-    const told = await page.evaluate((tree) => ({ note: window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`] ?? null,
-      events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort() }), TREE);
-    const reef = told.note?.nodes?.[0] ?? null;
+    await cleared('revived', 'dock');
+    const toldBack = { note: await note(), ...await told() };
     await page.reload();
-    await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).waitFor();
+    await card('Leave the dock').waitFor();
     const quiet = await page.locator('.st-board-landed').count();
 
-    await page.goto(`${origin}/room?account=u_owner&replica=on#/app/roadmaps`);
-    await page.locator('.st-roadmaps-row').first().waitFor();
+    // B deletes 'Read the wind' while this device, with no connection, still holds it and links a new step from it. The
+    // link reaches the server after the delete, and the delete reaches the device while no room of it is open.
+    await page.goto(room);
+    await page.evaluate(() => window.connect(false));
     await b.evaluate((tree) => window.engine.commit(`tree/${tree}`, [{ op: 'delete', t: 'node', id: 'wind' }]), TREE);
     await settled(b);
-    await page.evaluate(() => window.engine.kickPull());
+    const trim = await create('Trim the sail', /Read the wind/);
+    const linked = await note();
+    await page.goto(`${origin}/room?account=u_owner&replica=on#/app/roadmaps`);
+    await page.locator('.st-roadmaps-row').first().waitFor();
+    await page.evaluate(() => window.connect(true));
+    await settled(page);
     await page.waitForFunction((tree) => window.engine.readMetadata(`tree/${tree}`).spent.some((row) => row.id === 'wind'), TREE);
+    const met = await note();
     await page.goto(room);
     await page.locator('.st-board-landed').waitFor();
     const follows = await landed(page);
-    await page.waitForFunction((tree) => !window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`], TREE);
-    const events = await page.evaluate(() => ({ events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort(),
-      issues: window.issues }));
+    await cleared('nodes', trim);
+    const toldFollows = { note: await note(), ...await told() };
     await page.reload();
-    await page.locator('.st-board-card-title', { hasText: 'Reef the sail' }).waitFor();
+    await card('Trim the sail').waitFor();
     const later = await page.locator('.st-board-landed').count();
-    assert.equal(typeof reef, 'string');
-    assert.deepEqual({ cameBack, onPage, onB: onB.includes('Cast off the lines'), told, quiet, follows, ...events, later, failures }, {
+    assert.deepEqual({ made, cameBack, onPage, onB: onB.includes('Cast off the lines'), toldBack, quiet, linked, met, follows, toldFollows, later, failures }, {
+      made: entry(reef),
       cameBack: { changed: 'committed', lines: [['Leave the dock', 'Your edit brought this step back.']] },
       onPage: 'Your edit brought this step back.',
       onB: true,
-      told: { note: { nodes: [reef], edges: [['wind', reef]], revived: [], names: [{ id: 'wind', name: 'Read the wind' }] },
-        events: ['{"rule":"cameBack","place":"board"}'] },
+      toldBack: { note: null, events: ['{"rule":"cameBack","place":"board"}'], issues: [] },
       quiet: 0,
-      follows: [['Reef the sail', 'Read the wind was removed. This now follows Choose a course.']],
-      events: ['{"rule":"follows","place":"board"}'],
-      issues: [],
+      linked: entry(trim),
+      met: entry(trim),
+      follows: [['Trim the sail', 'Read the wind was removed. This now follows Choose a course.']],
+      toldFollows: { note: null, events: ['{"rule":"follows","place":"board"}'], issues: [] },
       later: 0,
       failures: [],
     });
@@ -616,7 +685,8 @@ test('with the switch on a roadmap’s deletion lands on the person’s roadmaps
 });
 
 // One owner's script on the Graph: a kind set, a link made, removed and moved, a reorder, a step made on the canvas and a
-// step deleted there with its toast's Undo; then the Board the Graph's writes leave, and what the room told.
+// step deleted there with its toast's Undo, which the room on the device's copy tells once the engine knows what it came
+// to; then the Board the Graph's writes leave, and what the room told.
 async function onTheGraph(context, { replica }) {
   await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
   const page = await context.newPage();
@@ -643,6 +713,7 @@ async function onTheGraph(context, { replica }) {
   await page.evaluate(() => window.scene.options.onDeleteNode('wind'));
   await page.locator('.st-graph-toast .st-board-toast-undo').click();
   await page.locator('.st-graph-toast').waitFor({ state: 'detached' });
+  if (replica) await page.waitForFunction(() => window.events.some(({ name }) => name === 'roadmap_undo'));
   await page.getByRole('button', { name: 'Board', exact: true }).click();
   await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor();
   await page.waitForFunction(() => document.querySelectorAll('.st-board-card').length === 4);
@@ -660,7 +731,24 @@ test('with the switch on the Graph’s gestures land on the device’s copy as t
     await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const onCopy = await onTheGraph(replica, { replica: true });
     const lattice = await onTheGraph(today, { replica: false });
-    assert.deepEqual(onCopy, lattice);
+    const events = [
+      'roadmap_view_open {"view":"board","band":"desktop","role":"owner","door":"default","trees":"none"}',
+      'roadmap_view_switch {"view":"graph"}',
+      'roadmap_board_edit {"step":"saved","view":"graph","name":false,"description":false,"kind":true,"prerequisites":false,"order":false}',
+      'roadmap_board_edit {"step":"saved","view":"graph","name":false,"description":false,"kind":false,"prerequisites":true,"order":false}',
+      'roadmap_board_edit {"step":"saved","view":"graph","name":false,"description":false,"kind":false,"prerequisites":true,"order":false}',
+      'roadmap_board_edit {"step":"saved","view":"graph","name":false,"description":false,"kind":false,"prerequisites":true,"order":false}',
+      'roadmap_board_edit {"step":"saved","view":"graph","name":false,"description":false,"kind":false,"prerequisites":false,"order":true}',
+      'roadmap_board_create {"step":"saved","door":"canvas","view":"graph"}',
+      'roadmap_graph_toast {"act":"delete","step":"shown"}',
+      'roadmap_board_delete {"step":"sent","via":"direct","view":"graph"}',
+      'roadmap_graph_toast {"act":"delete","step":"undo"}',
+      'roadmap_undo {"action":"undo","outcome":"applied"}',
+      'roadmap_view_switch {"view":"board"}',
+    ];
+    assert.deepEqual(onCopy, { columns: ['locked: Leave the dock', 'upNext: Read the wind, ', 'done: Choose a course'], events, issues: [], failures: [] });
+    // Today's room tells the intake nothing of what an Undo came to.
+    assert.deepEqual(lattice, { ...onCopy, events: events.filter((event) => !event.startsWith('roadmap_undo ')) });
   } finally {
     await replica.close();
     await today.close();
