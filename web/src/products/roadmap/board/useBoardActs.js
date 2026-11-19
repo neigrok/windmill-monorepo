@@ -7,8 +7,6 @@ import { LABELS, SAVE_FAILURE, TREE_TOAST, deleteFailedToast, openTreeLabel, tre
 import { fieldValue, sameFieldValue } from '../step/InlineStepDraft.js';
 import { BoardQuery } from './Board.js';
 
-// `readsReplica` says the room reads the device's copy and has no write door until the domain's actions are wired: a
-// gesture there finds no session, fails as one that could not save, and reports nothing.
 export class BoardActs {
   constructor(collaborators) {
     this.update(collaborators);
@@ -25,7 +23,7 @@ export class BoardActs {
     const selection = new StepSelection(ids.filter((id) => tree.nodesById.has(id)));
     if (selection.count === 0 || sharedKind(tree, selection.ids) === hue) return { ok: true, changed: false };
     if (!c.session) {
-      if (!c.readsReplica) c.report('roadmap-board-recolor', new Error('Missing Board session'));
+      c.report('roadmap-board-recolor', new Error('Missing Board session'));
       return { ok: false };
     }
     let receipt;
@@ -185,7 +183,7 @@ export class BoardActs {
     if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
     const graph = !c.active && c.graphActive;
     if (!c.session) {
-      if (!c.readsReplica) c.report('roadmap-board-create', new Error('Missing Board session'));
+      c.report('roadmap-board-create', new Error('Missing Board session'));
       return { ok: false };
     }
     let receipt;

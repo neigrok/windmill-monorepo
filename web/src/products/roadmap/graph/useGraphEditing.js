@@ -154,9 +154,13 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     return { siblings: siblingIds.map((id) => ({ id, order: tree.nodesById.get(id)?.order ?? '' })) };
   }, []);
 
+  // The step's new key, and the sibling it now sits below with the siblings it sits among, so either session can place it.
   const handleSetNodeOrder = useCallback((id, order) => {
-    if (id) writeEdit({ kind: 'SetNodeOrder', id, order }, { order: true });
-  }, []);
+    if (!id) return;
+    const siblings = (reorderContext(id)?.siblings ?? []).filter((sibling) => sibling.id !== id);
+    const below = siblings.filter((sibling) => sibling.order && sibling.order < order).at(-1)?.id ?? null;
+    writeEdit({ kind: 'SetNodeOrder', id, order, below, siblings: siblings.map((sibling) => sibling.id) }, { order: true });
+  }, [reorderContext]);
 
   const bulkRecolor = useCallback((color, { silent = false } = {}) => {
     const ids = [...selectedIdsRef.current];

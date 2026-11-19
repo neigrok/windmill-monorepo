@@ -297,3 +297,77 @@ test('with the switch on the owner’s marks and workspace land on the device’
     await today.close();
   }
 });
+
+// One owner's script of step gestures on a room: a new step and its toast's Undo, a new step undone and redone by the
+// keyboard, a held delete undone in its hold, and one released after its nine seconds and undone by the keyboard.
+async function makeAndTakeBack(context, { replica }) {
+  await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  const failures = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+  await page.goto(`${origin}/room?account=u_owner&replica=${replica ? 'on' : 'off'}#/app/${TREE}`);
+  const card = (label) => page.locator('.st-board-card-title', { hasText: label });
+  const toastUndo = () => page.locator('.st-board-toast').getByRole('button', { name: 'Undo', exact: true });
+  const keys = async (combination) => {
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press(combination);
+  };
+  const create = async (label) => {
+    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
+    const composer = page.getByRole('dialog', { name: 'New step', exact: true });
+    await composer.locator('input').first().fill(label);
+    await composer.getByRole('button', { name: 'Create step', exact: true }).click();
+    await card(label).waitFor();
+  };
+  const remove = async (label) => {
+    await card(label).click();
+    await page.locator('.st-board-step-layer').getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete step' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await card(label).waitFor({ state: 'detached' });
+  };
+  await card('Read the wind').waitFor();
+  await create('Tie a bowline');
+  await toastUndo().click();
+  await card('Tie a bowline').waitFor({ state: 'detached' });
+  await create('Reef the sail');
+  await keys('ControlOrMeta+z');
+  await card('Reef the sail').waitFor({ state: 'detached' });
+  await keys('ControlOrMeta+Shift+z');
+  await card('Reef the sail').waitFor();
+  await remove('Leave the dock');
+  await toastUndo().click();
+  await card('Leave the dock').waitFor();
+  await remove('Leave the dock');
+  await page.locator('.st-board-toast').waitFor({ state: 'detached', timeout: 15000 });
+  const released = await boardColumns(page);
+  await keys('ControlOrMeta+z');
+  await card('Leave the dock').waitFor();
+  const read = { released, columns: await boardColumns(page),
+    ...await page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues })), failures };
+  await page.close();
+  return read;
+}
+
+test('with the switch on the owner’s step gestures, their toasts’ Undo and the keyboard’s Undo and Redo land on the device’s copy as they do today', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const replica = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(replica, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const onCopy = await makeAndTakeBack(replica, { replica: true });
+    const lattice = await makeAndTakeBack(today, { replica: false });
+    assert.deepEqual({ released: onCopy.released, columns: onCopy.columns }, {
+      released: ['locked: ', 'upNext: Read the wind, Reef the sail', 'done: Choose a course'],
+      columns: ['locked: Leave the dock', 'upNext: Read the wind, Reef the sail', 'done: Choose a course'],
+    });
+    assert.deepEqual(onCopy, lattice);
+    await reachesServer(() => serverRows(`tree:${TREE}`).some((row) => row.t === 'node' && row.f?.label?.[0] === 'Reef the sail')
+      && serverRows(`tree:${TREE}`).some((row) => row.t === 'node' && row.id === 'dock' && row.life?.[0] === 'alive'));
+  } finally {
+    await replica.close();
+    await today.close();
+  }
+});

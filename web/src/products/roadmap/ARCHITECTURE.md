@@ -195,9 +195,18 @@ on, every room but the demo reads through `ReplicaReading`:
   saved in place. None of these enters the Undo stack, as none does today, so each act is released and the engine keeps
   no Undo of it. A write the domain refuses where it is made is said in today's words where there are some (a roadmap at
   its cap, a link that would close a loop) and emits `roadmap_write_refused`; one the store does not take reports
-  `roadmap-replica-write`. The room's gestures on steps and kinds take nothing yet: a new step's composer says
-  *Couldn’t save. Your draft is kept.*, as the session's `dispatch` applies none, and the step document's Tree section offers no control (`treeActs` is null), the one way the owner's screens
-  differ from today's (`SkillTreeView.replica.browser.test.js`). Such a room draws no presence and hands its session
+  `roadmap-replica-write`. The room's gestures on steps are `dispatch(gesture)` as today, each one or more of the
+  domain's acts written one after another, each loading what the one before it wrote: a new step is `CreateStep` under
+  the id the room minted for it, so the room selects and reveals it as today; a change of its words or kind
+  `ChangeStep`, a reorder `MoveStep` below the sibling the drop names, a delete `DeleteStep`, links `ChangePrerequisites`
+  on the step they lead to, a paste `ImportSteps` under the step it lands beneath; an edit of a step's words and
+  prerequisites, a link moved to another step, and a gesture on several steps are each act in turn. The receipt holds
+  them all, its Undo (`revert`) is each act's Undo, last first, and ⌘Z and ⇧⌘Z walk the session's stack of receipts over
+  `runner.undo` and `runner.redo`, bumping `receiptVersion` as today; a held delete stays the room's own hold until it
+  is released, and an act the engine still holds is cancelled in place. Each act leaves the engine's journal
+  (`runner.release`) as its receipt leaves the stacks. The gestures on kinds take nothing yet, and the step document's
+  Tree section offers no control (`treeActs` is null), the one way the owner's screens differ from today's
+  (`SkillTreeView.replica.browser.test.js`). Such a room draws no presence and hands its session
   neither to a reconnect nor to a claim of the device's trees: the engine reconnects, and its lineage rule takes what
   the device holds at sign-in.
 
@@ -905,8 +914,9 @@ switch.
 Complete restores that step's progress and a held delete cancels. Every other write holds its session receipt:
 `SyncSession.dispatch(gesture)` returns an opaque receipt or null when nothing applies, and `receiptUndo` calls
 `revert(receipt)`, which restamps that captured inverse once, leaving alone any field written since the receipt by this
-person or a peer, and removes it from the stack. A write the session refused says nothing happened. Ask AI wrote on the
-server, so its Undo deletes exactly what the run says it planted.
+person or a peer, and removes it from the stack. A write the session refused says nothing happened. A room on the
+device's copy holds `ReplicaSession`'s receipts instead, each act's Undo the kit's (Reading the device's copy, above). Ask
+AI wrote on the server, so its Undo deletes exactly what the run says it planted.
 
 ⌘Z and ⇧⌘Z walk the session's global structural stack across both views, refused under a covering layer and in a text
 field. A held delete is the last act though it is not on the stack: ⌘Z during a hold cancels it as the toast's Undo does,

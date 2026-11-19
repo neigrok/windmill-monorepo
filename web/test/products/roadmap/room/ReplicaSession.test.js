@@ -8,6 +8,7 @@ import { CreateRoadmap, CreateSubtree } from '../../../../src/products/roadmap/d
 import { InadmissibleGuide } from '../../../../src/products/roadmap/guide/GuideDraft.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
+import { ReplicaSession } from '../../../../src/products/roadmap/room/ReplicaSession.js';
 
 const committed = (outcome) => {
   assert.equal(outcome.kind, 'committed', JSON.stringify(outcome));
@@ -105,6 +106,95 @@ test('a step’s workspace is written through its door: subtasks and links by th
     assert.equal(journaled(a) - before, 0);
     reading.close();
   } finally {
+    a.close();
+  }
+});
+
+// The room's session over the harness's runner, telling what it says and emits; the reading answers what the replica holds.
+async function gestures() {
+  const { a, tree, steps } = await sailing();
+  const { reading } = await openRoom(a, tree);
+  const told = { said: [], events: [], statuses: 0 };
+  const session = new ReplicaSession({ treeId: tree, runner: a.runner, roadmap: () => reading.roadmap(),
+    say: (words) => told.said.push(words), onStatus: () => { told.statuses += 1; }, track: (name, props) => told.events.push([name, props]) });
+  const shown = () => Object.fromEntries(reading.roadmap().seed.nodes.map((step) => [step.label, step.prerequisites.map((id) => reading.roadmap().seed.nodes.find((each) => each.id === id)?.label ?? id)]));
+  return { a, tree, steps, reading, session, told, shown };
+}
+
+test('a gesture is the domain’s acts under one receipt: a step made under the room’s id, an edit of its words and prerequisites, and each toast’s Undo', async () => {
+  const { a, steps, reading, session, told, shown } = await gestures();
+  try {
+    const made = session.dispatch({ kind: 'CreateNode', id: 'f0c1e9d0-1111-4c5e-8000-000000000001', label: 'Tie a bowline', color: 'sky', prerequisites: [steps.wind] });
+    assert.equal((await made.acts).length, 1);
+    assert.deepEqual(reading.roadmap().seed.nodes.find((step) => step.label === 'Tie a bowline').id, 'f0c1e9d0-1111-4c5e-8000-000000000001');
+    const edited = session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] });
+    assert.equal((await edited.acts).length, 2);
+    assert.deepEqual(shown(), { 'Tie a bowline': ['Read the wind'], 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail alone': ['Leave the dock'] });
+    assert.equal(session.revert(made), true);
+    assert.equal(session.revert(made), false);
+    await until(() => !('Tie a bowline' in shown()), 1000);
+    assert.equal(session.revert(edited), true);
+    await until(() => 'Sail solo' in shown() && shown()['Sail solo'].length === 0, 1000);
+    assert.deepEqual({ shown: shown(), told, nothing: session.dispatch({ kind: 'BulkRecolor', nodeIds: [], color: 'sky' }) },
+      { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [] }, told: { said: [], events: [], statuses: 0 }, nothing: null });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('the keyboard walks a stack of gestures: a held delete cancelled in place, an edit undone and redone, and a new gesture drops what Redo held', async () => {
+  const { a, steps, reading, session, told, shown } = await gestures();
+  try {
+    const before = journaled(a);
+    await session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] }).acts;
+    await session.dispatch({ kind: 'BulkDelete', nodeIds: [steps.dock], edges: [] }).acts;
+    assert.deepEqual(shown(), { 'Read the wind': [], 'Sail alone': ['Read the wind'] });
+    session.undo();
+    await until(() => 'Leave the dock' in shown(), 1000);
+    session.undo();
+    await until(() => 'Sail solo' in shown(), 1000);
+    assert.deepEqual(shown(), { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [] });
+    session.redo();
+    await until(() => 'Sail alone' in shown() && shown()['Sail alone'].length === 1, 1000);
+    session.undo();
+    await until(() => 'Sail solo' in shown(), 1000);
+    await session.dispatch({ kind: 'RenameNode', id: steps.wind, label: 'Watch the wind' }).acts;
+    session.redo();
+    let held = 0;
+    session.holdAct(() => { held += 1; });
+    session.undo();
+    session.endHeldAct();
+    assert.deepEqual({ shown: shown(), held, receipts: session.receiptVersion, told },
+      { shown: { 'Watch the wind': [], 'Leave the dock': ['Watch the wind'], 'Sail solo': [] }, held: 1, receipts: 4, told: { said: [], events: [], statuses: 4 } });
+    session.close();
+    await until(() => journaled(a) === before, 1000);
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('links, a reorder and a paste: a link moved to another step, a link that would close a loop refused in today’s words, a paste under a step', async () => {
+  const { a, steps, reading, session, told, shown } = await gestures();
+  try {
+    await session.dispatch({ kind: 'ReconnectEdge', oldFrom: steps.wind, oldTo: steps.dock, newFrom: steps.wind, newTo: steps.solo }).acts;
+    assert.deepEqual(shown(), { 'Read the wind': [], 'Leave the dock': [], 'Sail solo': ['Read the wind'] });
+    const loop = session.dispatch({ kind: 'AddEdge', from: steps.solo, to: steps.wind });
+    assert.deepEqual(await loop.acts, []);
+    const roots = reading.roadmap().seed.nodes.filter((step) => step.prerequisites.length === 0).map((step) => step.id);
+    assert.deepEqual(roots, [steps.wind, steps.dock]);
+    await session.dispatch({ kind: 'SetNodeOrder', id: steps.dock, order: 'Zz', below: null, siblings: [steps.wind] }).acts;
+    await session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'gold' }, { id: 'bowline', label: 'Bowline', color: 'gold' }],
+      edges: [{ from: steps.dock, to: 'knots' }, { from: 'knots', to: 'bowline' }], kinds: [] }).acts;
+    await session.dispatch({ kind: 'BulkDelete', nodeIds: [], edges: [{ from: steps.wind, to: steps.solo }] }).acts;
+    assert.deepEqual({ order: reading.roadmap().seed.nodes.map((step) => step.label), shown: shown(), told }, {
+      order: ['Leave the dock', 'Read the wind', 'Knots', 'Bowline', 'Sail solo'],
+      shown: { 'Leave the dock': [], 'Read the wind': [], 'Sail solo': [], Knots: ['Leave the dock'], Bowline: ['Knots'] },
+      told: { said: ['This would create a loop'], events: [['roadmap_write_refused', { write: 'AddEdge', refusal: 'invalid' }]], statuses: 0 },
+    });
+  } finally {
+    reading.close();
     a.close();
   }
 });

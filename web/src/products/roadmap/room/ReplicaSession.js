@@ -6,7 +6,7 @@
 // are the domain's.
 
 import { Id } from '../../../platform/domain-kit/entities.js';
-import { track } from '../../../telemetry/beacon.js';
+import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { REFUSED_CAPACITY } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
@@ -15,7 +15,7 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { Complete, Reset } from '../domain/progress.js';
 import { RoadmapChecks, RoadmapRefusals, RoadmapScopes } from '../domain/roadmapRules.js';
 import { SetVisibility, WriteRoadmap } from '../domain/roadmaps.js';
-import { ChangeStep } from '../domain/steps.js';
+import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../domain/steps.js';
 import { AddStepLink, AddSubtask, ChangeSubtask, DeleteStepLink, DeleteSubtask, StepNote, StepNoteValue, Subtask } from '../domain/workspace.js';
 
 // What the room says of a write the domain refused where it was made, in the words it says them today: a roadmap at its
@@ -45,13 +45,14 @@ class Undone {
 export class ReplicaSession {
   // `roadmap` reads the room's roadmap as the replica holds it now (`ReplicaRoadmap`); `say` shows the room's toast;
   // `onStatus` tells the room's status line that its receipts changed.
-  constructor({ treeId, runner, roadmap, say, onStatus = () => {}, report = reportRoadmapFailure }) {
+  constructor({ treeId, runner, roadmap, say, onStatus = () => {}, report = reportRoadmapFailure, track = trackEvent }) {
     this.treeId = treeId;
     this.runner = runner;
     this.roadmap = roadmap;
     this.say = say;
     this.onStatus = onStatus;
     this.report = report;
+    this.track = track;
     this.ready = true;
     this.closed = false;
     this.receiptVersion = 0;
@@ -83,7 +84,7 @@ export class ReplicaSession {
   }
 
   refused(refusal, what) {
-    track('roadmap_write_refused', { write: what, refusal: refusal.kind });
+    this.track('roadmap_write_refused', { write: what, refusal: refusal.kind });
     const words = limitWords(refusal);
     if (words) this.say(words, { act: 'notice' });
   }
@@ -105,9 +106,62 @@ export class ReplicaSession {
     }
   }
 
-  // The room's gestures on steps and kinds take nothing yet: none of them applies.
-  dispatch() {
-    return null;
+  // One of the room's gestures as the domain's acts, written one after another; its receipt is on the Undo stack at once,
+  // and its Undo waits for them to be written. A gesture none of the acts applies to is null, as today.
+  dispatch(gesture) {
+    const acts = this.actsOf(gesture);
+    if (acts.length === 0) return null;
+    const receipt = new Written(this.write(acts, gesture.kind).then((written) => written.acts));
+    this.undoStack.push(receipt);
+    this.dropRedo();
+    return receipt;
+  }
+
+  // The domain's acts that make one of the room's gestures, in the order they run. A gesture on several steps is the act
+  // on each in turn; links to remove are each step's prerequisites, one act a step.
+  actsOf(gesture) {
+    const tree = this.treeId;
+    const fields = (names) => Object.fromEntries(names.filter((name) => name in gesture).map((name) => [name, gesture[name]]));
+    const unlinking = (links) => [...new Set(links.map((link) => link.to))]
+      .map((to) => new ChangePrerequisites(tree, to, { remove: links.filter((link) => link.to === to).map((link) => link.from) }));
+    switch (gesture.kind) {
+      case 'CreateNode': return [new CreateStep(tree, { label: gesture.label ?? '', icon: gesture.icon ?? '', color: gesture.color ?? 'terracotta',
+        ...(gesture.description ? { description: gesture.description } : {}) }, gesture.prerequisites ?? (gesture.parentId ? [gesture.parentId] : []), gesture.id)];
+      case 'RenameNode':
+      case 'DescribeNode':
+      case 'SetNodeColor': return [new ChangeStep(tree, gesture.id, fields(['label', 'description', 'color']))];
+      case 'EditNode': {
+        const changes = fields(['label', 'description', 'color']);
+        const prerequisites = { add: gesture.addPrerequisites ?? [], remove: gesture.removePrerequisites ?? [] };
+        return [
+          ...(Object.keys(changes).length ? [new ChangeStep(tree, gesture.id, changes)] : []),
+          ...(prerequisites.add.length || prerequisites.remove.length ? [new ChangePrerequisites(tree, gesture.id, prerequisites)] : []),
+        ];
+      }
+      case 'SetNodeOrder': return [new MoveStep(tree, gesture.id, gesture.below, gesture.siblings)];
+      case 'AddEdge': return [new ChangePrerequisites(tree, gesture.to, { add: [gesture.from] })];
+      case 'RemoveEdge': return unlinking([gesture]);
+      case 'ReconnectEdge': return gesture.oldTo === gesture.newTo
+        ? [new ChangePrerequisites(tree, gesture.newTo, { add: [gesture.newFrom], remove: [gesture.oldFrom] })]
+        : [...unlinking([{ from: gesture.oldFrom, to: gesture.oldTo }]), new ChangePrerequisites(tree, gesture.newTo, { add: [gesture.newFrom] })];
+      case 'DeleteNode': return [new DeleteStep(tree, gesture.id)];
+      case 'BulkDelete': {
+        const doomed = new Set(gesture.nodeIds);
+        return [...gesture.nodeIds.map((id) => new DeleteStep(tree, id)),
+          ...unlinking((gesture.edges ?? []).filter((link) => !doomed.has(link.from) && !doomed.has(link.to)))];
+      }
+      case 'BulkRecolor': return gesture.nodeIds.map((id) => new ChangeStep(tree, id, { color: gesture.color }));
+      case 'ImportSubgraph': {
+        const keys = new Set(gesture.nodes.map((step) => step.id));
+        const imported = {
+          steps: gesture.nodes.map((step) => ({ key: step.id, label: step.label ?? '', icon: step.icon ?? '', color: step.color ?? 'terracotta',
+            ...(step.description ? { description: step.description } : {}), ...(step.links?.length ? { links: step.links } : {}) })),
+          links: gesture.edges.filter((link) => keys.has(link.from)).map((link) => [link.from, link.to]),
+        };
+        return [new ImportSteps(tree, imported, gesture.edges.find((link) => !keys.has(link.from))?.from ?? null)];
+      }
+      default: return [];
+    }
   }
 
   // The owner's marks: each step's Complete or Reset. A step whose pointer opens a standing roadmap is read so from the
