@@ -42,7 +42,7 @@ function actOf(input) {
     case 'SetVisibility': return new SetVisibility(given.tree, given.visibility);
     case 'CreateSubtree': return new CreateSubtree(given.tree, given.step);
     case 'WriteRoadmap': return new WriteRoadmap(given.tree, Object.fromEntries(['title', 'guide'].filter((name) => name in given).map((name) => [name, given[name]])));
-    case 'CreateStep': return new CreateStep(given.tree, given.step, given.prerequisites);
+    case 'CreateStep': return new CreateStep(given.tree, given.step, given.prerequisites, given.id ?? null);
     case 'ChangeStep': return new ChangeStep(given.tree, given.step, given.changes);
     case 'MoveStep': return new MoveStep(given.tree, given.step, given.below, given.siblings);
     case 'DeleteStep': return new DeleteStep(given.tree, given.step);

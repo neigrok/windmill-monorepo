@@ -3,6 +3,7 @@
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
 import { EntityType, Fields, Id, compareText, sameJson } from '../../../platform/domain-kit/entities.js';
 import { Plan, UndoRecipe } from '../../../platform/domain-kit/plans.js';
+import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation, precondition } from '../../../platform/domain-kit/values.js';
 import { utf8 } from '../../../platform/sync/core/encoding.js';
@@ -341,17 +342,21 @@ function loadTree(read, tree) {
 /** @typedef {ReturnType<typeof loadTree>} LoadedTree */
 
 // §5 Create a step: the step and one link from each prerequisite, in one intent. The device notes both, so
-// it can tell the person once if the step turns out to follow through a step deleted elsewhere (§6).
+// it can tell the person once if the step turns out to follow through a step deleted elsewhere (§6). A surface that
+// shows the step before its write lands mints its id at random and gives it here; an id the roadmap holds, a deleted
+// step's included, is refused, so no step is made over another.
 export class CreateStep {
   /**
    * @param {string} tree
    * @param {StepChanges} step
    * @param {string[]} prerequisites
+   * @param {string | null} id
    */
-  constructor(tree, step, prerequisites = []) {
+  constructor(tree, step, prerequisites = [], id = null) {
     this.tree = tree;
     this.step = step;
     this.prerequisites = [...new Set(prerequisites)];
+    this.id = id;
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
@@ -367,7 +372,10 @@ export class CreateStep {
     const scope = RoadmapScopes.tree(this.tree);
     const unknown = this.prerequisites.find((id) => !tree.nodesById.has(id));
     if (unknown !== undefined) return gone(RoadmapStep.type, unknown);
-    const id = String(ids.mint(RoadmapStep, scope).record);
+    if (this.id !== null && tree.nodesById.has(this.id)) {
+      return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('id-taken', { t: RoadmapStep.type, id: this.id }, null, 'predicted')));
+    }
+    const id = this.id ?? String(ids.mint(RoadmapStep, scope).record);
     const ord = keyAfter(siblingOrds(tree, this.prerequisites[0] ?? null));
     const step = new Valid(new RoadmapStepValue(new Id(id, RoadmapStep), { ...this.step, ord }), moment);
     const made = this.prerequisites.map((from) => new Valid(new RoadmapLinkValue(from, id), moment));
