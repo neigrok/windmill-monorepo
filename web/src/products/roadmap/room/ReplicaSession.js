@@ -28,22 +28,6 @@ function limitWords(refusal) {
   return null;
 }
 
-// A gesture as the room's stacks hold it: the ids of the acts it wrote, once they have.
-class Written {
-  constructor(acts) {
-    this.acts = acts;
-    Object.freeze(this);
-  }
-}
-
-// A gesture taken back, as the Redo stack holds it: each act's Undo, in the order the acts were written.
-class Undone {
-  constructor(inverses) {
-    this.inverses = inverses;
-    Object.freeze(this);
-  }
-}
-
 export class ReplicaSession {
   // `roadmap` reads the room's roadmap as the replica holds it now (`ReplicaRoadmap`); `say` shows the room's toast;
   // `onStatus` tells the room's status line that its receipts changed.
@@ -58,7 +42,9 @@ export class ReplicaSession {
     this.ready = true;
     this.closed = false;
     this.receiptVersion = 0;
+    // Each gesture's receipt, `{ acts }`: the ids of the acts it wrote, once they have.
     this.undoStack = [];
+    // Each gesture taken back, `{ inverses }`: each act's Undo, in the order the acts were written.
     this.redoStack = [];
     this.heldAct = null;
     this.workspace = new ReplicaWorkspace(this);
@@ -69,21 +55,22 @@ export class ReplicaSession {
   // the write's name and ends it.
   async write(acts, what) {
     const written = [];
+    const answer = (complete) => ({ receipts: written, ids: written.map((receipt) => receipt.gestureId), complete });
     for (const act of acts) {
       let outcome;
       try {
         outcome = await this.runner.runAct(act);
       } catch (error) {
         this.report('roadmap-replica-write', error, { write: what });
-        return { receipts: written, ids: written.map((receipt) => receipt.gestureId), complete: false };
+        return answer(false);
       }
       if (outcome.kind === 'refused') {
         this.refused(outcome.refusal, what);
-        return { receipts: written, ids: written.map((receipt) => receipt.gestureId), complete: false };
+        return answer(false);
       }
       if (outcome.kind === 'committed') written.push(outcome.receipt);
     }
-    return { receipts: written, ids: written.map((receipt) => receipt.gestureId), complete: true };
+    return answer(true);
   }
 
   refused(refusal, what) {
@@ -114,7 +101,7 @@ export class ReplicaSession {
   dispatch(gesture) {
     const acts = this.actsOf(gesture);
     if (acts.length === 0) return null;
-    const receipt = new Written(this.write(acts, gesture.kind).then((written) => written.ids));
+    const receipt = Object.freeze({ acts: this.write(acts, gesture.kind).then((written) => written.ids) });
     this.undoStack.push(receipt);
     this.dropRedo();
     return receipt;
@@ -253,14 +240,14 @@ export class ReplicaSession {
     const done = this.undoStack.pop();
     if (!done) return;
     this.bump();
-    this.redoStack.push(new Undone(this.inverse(done)));
+    this.redoStack.push(Object.freeze({ inverses: this.inverse(done) }));
   }
 
   redo() {
     const undone = this.redoStack.pop();
     if (!undone) return;
     this.bump();
-    this.undoStack.push(new Written(this.reapply(undone)));
+    this.undoStack.push(Object.freeze({ acts: this.reapply(undone) }));
   }
 
   // Takes back what the receipt wrote, leaving alone anything written since, and drops it from the stack; Redo cannot
