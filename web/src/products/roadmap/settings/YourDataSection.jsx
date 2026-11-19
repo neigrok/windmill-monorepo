@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button } from '../../../design-system';
-import { buildExportArchive, readAccountRoadmaps, readReplicaRoadmaps, reportExportFailure } from './exportArchive.js';
+import { buildExportArchive, exportOutcome, readAccountRoadmaps, readReplicaRoadmaps, reportExportFailure } from './exportArchive.js';
 import { ROOM_READS_REPLICA } from '../replicaRoom.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { track } from '../../../telemetry/beacon.js';
@@ -12,11 +12,6 @@ const EXPORT_FAILED = t('roadmap.export.failed');
 
 // The export reads the device's copy where the room does (replicaRoom.js).
 const READ_ROADMAPS = ROOM_READS_REPLICA ? readReplicaRoadmaps : readAccountRoadmaps;
-
-function exportOutcome(count, total) {
-  if (count === total) return 'done';
-  return count === 0 ? 'failed' : 'partial';
-}
 
 function exportedLine(count, total) {
   if (total === 0) return t('roadmap.export.nothing');
@@ -33,10 +28,10 @@ export function YourDataSection() {
     setExportNote('');
     try {
       const archive = await buildExportArchive(READ_ROADMAPS);
-      const outcome = archive ? exportOutcome(archive.count, archive.total) : 'failed';
+      const outcome = exportOutcome(archive);
       track('roadmap_export', { outcome, door: 'settings' });
       setExportPhase(outcome === 'done' ? 'done' : 'error');
-      setExportNote(outcome === 'failed' ? EXPORT_FAILED : exportedLine(archive.count, archive.total));
+      setExportNote(outcome === 'failed' || outcome === 'unopened' ? EXPORT_FAILED : exportedLine(archive.count, archive.total));
     } catch (error) {
       reportExportFailure('roadmap-export', error);
       track('roadmap_export', { outcome: 'failed', door: 'settings' });

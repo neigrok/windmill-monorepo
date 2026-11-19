@@ -71,6 +71,15 @@ export async function buildExportArchive(readRoadmaps, download = downloadExport
   return { count: files.length, total: roadmaps.length };
 }
 
+// What Settings' Export all came to, as `roadmap_export` tells it: `unopened` where the device's copy did not open in time
+// (`archive` null), `done` where it holds every roadmap of the list, none among them, `failed` where it holds none of
+// several, and `partial` otherwise.
+export function exportOutcome(archive) {
+  if (archive === null) return 'unopened';
+  if (archive.count === archive.total) return 'done';
+  return archive.count === 0 ? 'failed' : 'partial';
+}
+
 // The person's roadmaps as the device's copy holds them (roadmap-on-the-engine.md §8.4), each read through the domain as
 // the room reads it, and with no connection what the device holds: null for one the device has not read, or whose read
 // threw. Null where the copy did not open. `collaborators` are what the reading is given (the engine's holder, timers).

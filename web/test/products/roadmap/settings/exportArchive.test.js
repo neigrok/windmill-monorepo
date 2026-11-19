@@ -389,3 +389,9 @@ test('where the device’s copy reads a roadmap otherwise than today’s server,
     a.close();
   }
 });
+
+test('Settings’ export tells a copy that did not open in time apart from one that read nothing, and from one that read part of the list', async () => {
+  const { exportOutcome } = await import('../../../../src/products/roadmap/settings/exportArchive.js');
+  assert.deepEqual([null, { count: 0, total: 0 }, { count: 0, total: 2 }, { count: 1, total: 2 }, { count: 2, total: 2 }].map(exportOutcome),
+    ['unopened', 'done', 'failed', 'partial', 'done']);
+});
