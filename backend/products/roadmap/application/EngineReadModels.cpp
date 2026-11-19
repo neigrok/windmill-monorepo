@@ -113,7 +113,7 @@ std::optional<ReadableRoadmap> EngineReadModels::open(const TreeId& tree, const 
 std::optional<TreeAccess> EngineReadModels::access(const TreeId& tree, const std::optional<UserId>& caller) {
   const std::optional<ReadableRoadmap> roadmap = open(tree, caller);
   if (!roadmap) return std::nullopt;
-  const read::Place& place = *roadmap->account.locationOf(tree.str()).place;
+  const read::Place place = *roadmap->account.locationOf(tree.str()).place;
   TreeAccess access{roadmap->owner, parseVisibility(roadmap->account.tree(tree.str())->meta.value_or(read::Meta{}).reach), TreeId{place.root}, {}};
   for (const read::PlaceStep& step : place.path) access.path.push_back(OwningStep{TreeId{step.tree}, NodeId{step.step}});
   return access;
