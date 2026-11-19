@@ -78,8 +78,9 @@ the shell refreshes account state after restoration. Views and transport are inj
 HTTP goes to the `base` origin the engine's owner passes (same-origin when none) and uses the session
 cookie; anonymous pulls explicitly omit credentials. The `credentials` port
 belongs to the session owner: `clear(account)` removes the credential after a completed sign-out or a cancelled
-sign-in. The anon replica, which a live socket carrying that cookie can have paused, comes out of a finished sign-out
-unpaused, and each removal unpauses it again (engine.md §9.1).
+sign-in, and answers `true` when the browser then holds none. The anon replica, which a live socket carrying a cookie
+can have paused, comes out of a finished sign-out unpaused, and a `clear` that answers `true` unpauses it again
+(engine.md §9.1).
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably records cookie cleanup until the credentials port succeeds. Sign-in uses a fresh
 hello and pins Add/Discard decisions. Same-account refreshes preserve held work until its deadline
 or a lifecycle transition. `beginSignOut`, `finishSignOut` and `cancelSignOut` expose the
