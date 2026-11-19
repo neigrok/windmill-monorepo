@@ -751,8 +751,10 @@ test('the credentials port answers whose credential the browser holds: its accou
 
 test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {
   const state = await account(t);
-  const words = { title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],
-    note: 'Choosing Discard removes this browser roadmap.', onStep() {} };
+  const steps = [];
+  const said = { title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],
+    note: 'Choosing Discard removes this browser roadmap.' };
+  const words = { ...said, onStep: (step) => steps.push(step) };
   t.mock.method(journalRoutes.sync, 'adoptionAnswer', () => null);
   t.mock.method(journalRoutes.sync, 'adoptionCount', () => 2);
   const sync = roadmapRoutes.sync;
@@ -768,7 +770,10 @@ test('each sign-in decision due is asked once, in turn, in its product’s own w
   const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
   const asked = () => {
     const { product, count, words: worded } = decision().props.question;
-    return { product, count, words: worded };
+    if (!worded) return { product, count, words: worded };
+    const { onStep, ...shown } = worded;
+    onStep('shown');
+    return { product, count, words: shown };
   };
 
   await state.auth().signIn({ id: 'A', name: 'Ada' });
@@ -776,9 +781,10 @@ test('each sign-in decision due is asked once, in turn, in its product’s own w
   await decision().props.onDecision('add');
   const second = asked();
   await decision().props.onDecision('discard');
-  assert.deepEqual({ first, second, last: decision().props.question, answered, status: state.auth().status }, {
+  assert.deepEqual({ first, second, last: decision().props.question, answered, status: state.auth().status, steps }, {
     first: { product: 'journal', count: { page: 2 }, words: null },
-    second: { product: 'roadmap', count: { tree: 1, meta: 1 }, words },
+    second: { product: 'roadmap', count: { tree: 1, meta: 1 }, words: said },
+    steps: ['shown'],
     last: null,
     answered: [{}, { decisions: { journal: 'add' }, counted: { journal: ['j1'] } },
       { decisions: { journal: 'add', roadmap: 'discard' }, counted: { journal: ['j1'], roadmap: ['r1', 'r2'] } }],
@@ -799,9 +805,8 @@ test('cancelling a sign-in its product words keeps the work from before on the d
     return answer;
   };
   const steps = [];
-  const words = { title: 'Add your cards?', lead: '1 card on this browser can join your account.', items: ['made signed out'], note: 'Discard removes it.',
-    onStep: (step) => steps.push(step) };
-  const probe = { id: 'probe', sync: { signInWords: async () => words } };
+  const said = { title: 'Add your cards?', lead: '1 card on this browser can join your account.', items: ['made signed out'], note: 'Discard removes it.' };
+  const probe = { id: 'probe', sync: { signInWords: async () => ({ ...said, onStep: (step) => steps.push(step) }) } };
   PRODUCTS.push(probe);
   t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
 
@@ -813,18 +818,56 @@ test('cancelling a sign-in its product words keeps the work from before on the d
     if (String(url).endsWith('/auth/logout')) { state.setMe(null); return { ok: true, status: 200, json: async () => ({}) }; }
     return { ok: true, status: 200, json: async () => ({ user: { id: 'A', name: 'Ada' } }) };
   });
+  const { onStep, ...shown } = decision.props.question.words;
+  onStep('cancel');
   await decision.props.onCancel();
   const replicas = state.engine.device.replicas.map((replica) => [replica.meta.state, replica.entries().map((entry) => [entry.lineage, entry.scope])]);
-  assert.deepEqual({ asked: [decision.props.question.product, decision.props.question.words], pendingSignIn,
+  assert.deepEqual({ asked: [decision.props.question.product, shown], steps, pendingSignIn,
     after: { question: elementsOf(state.view.tree).find((node) => node.props.onDecision).props.question, status: state.auth().status,
       pendingSignIn: state.engine.device.meta.pendingSignIn, clearCredential: state.engine.device.meta.clearCredential, replicas },
     loggedOut: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/auth/logout')).length }, {
-    asked: ['probe', words],
+    asked: ['probe', said],
+    steps: ['cancel'],
     pendingSignIn: { account: 'A' },
     after: { question: null, status: 'ghost', pendingSignIn: undefined, clearCredential: undefined,
       replicas: [['anon', [['anon', 'self/probe']]], ['dormant', [['A', 'self/probe']]]] },
     loggedOut: 1,
   });
+});
+
+test('a product whose sign-out notice or whose words\' steps throw cannot keep a person from signing out and in: the shell asks without them', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const thrown = () => { throw new Error('the product chunk did not load'); };
+  const words = (title) => ({ title, lead: '1 card on this browser.', items: ['made signed out'], note: 'Discard removes it.', onStep: thrown });
+  const probe = { id: 'probe', signOutNotice: thrown,
+    sync: { signInWords: async () => words('Add your cards?'), signOutWords: async () => words('Keep your cards?') } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+
+  const departure = state.auth().signOut();
+  await until(() => decision()?.props.question);
+  const signOut = decision().props;
+  for (const step of ['shown', 'keep']) signOut.question.words.onStep(step);
+  await signOut.onDecision('keep');
+  const departed = await departure;
+
+  state.engine.online = true;
+  await state.engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'made signed out' } }]);
+  const request = state.env.transport.request.bind(state.env.transport);
+  state.env.transport.request = async (endpoint, body) => {
+    const answer = await request(endpoint, body);
+    if (endpoint === 'hello' && answer.response.body.holdsRecords) answer.response.body.holdsRecords.probe = true;
+    return answer;
+  };
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const signIn = decision().props;
+  for (const step of ['shown', 'add']) signIn.question.words.onStep(step);
+  await signIn.onDecision('add');
+  assert.deepEqual({ departed, notices: signOut.notices, asked: [signOut.question.words.title, signIn.question.words.title],
+    status: state.auth().status, replica: state.engine.device.activeReplica.meta.state, question: decision().props.question },
+  { departed: true, notices: [], asked: ['Keep your cards?', 'Add your cards?'], status: 'signed-in', replica: 'bound', question: null });
 });
 
 test('a product whose sign-out words throw cannot keep a person from signing out: the shell asks in its own words', async (t) => {

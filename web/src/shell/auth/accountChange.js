@@ -64,9 +64,10 @@ function complain(product, error) {
 }
 
 // What products say into the account-change questions (engine.md §7.10): a sign-in question one answers by itself, its
-// count in the product's own records, and a question one words itself. Each product's hook is isolated: one that throws
-// reports the question it was asked (`adoption`, `signin` or `signout`), and the shell asks as it would of a product
-// that says nothing, in its own words and the engine's count.
+// count in the product's own records, a question one words itself, the steps of that question told back to it, and the
+// line on what signing out discards from this tab. Each product's hook is isolated: one that throws reports the question
+// it was asked (`adoption`, `signin`, `signout`, `step` or `notice`), and the shell asks as it would of a product that
+// says nothing, in its own words and the engine's count.
 export class ProductQuestions {
   constructor(products, report = () => {}) {
     this.products = products;
@@ -83,22 +84,41 @@ export class ProductQuestions {
     return this.ask('signin', () => this.syncOf(due.product)?.adoptionCount?.(engine));
   }
 
-  signInWords(engine, due) {
-    return this.ask('signin', () => this.syncOf(due.product)?.signInWords?.(engine, due));
+  async signInWords(engine, due) {
+    return this.heard(await this.ask('signin', () => this.syncOf(due.product)?.signInWords?.(engine, due)));
   }
 
   // The sign-out question in the words of the product whose work it all is, where that product words its own.
   async signOutWords(engine, question) {
     for (const product of this.products) {
       const words = await this.ask('signout', () => product.sync?.signOutWords?.(engine, question));
-      if (words) return { ...question, words };
+      if (words) return { ...question, words: this.heard(words) };
     }
     return question;
+  }
+
+  // Every product's line on what signing out discards from this tab (`signOutNotice()`), asked as the question renders.
+  signOutNotices() {
+    return this.products.flatMap((product) => this.askNow('notice', () => product.signOutNotice?.()) ?? []);
+  }
+
+  // A product's words with each step the person takes told to it (`onStep`), a step it cannot hear dropped.
+  heard(words) {
+    return words && { ...words, onStep: (step) => this.askNow('step', () => words.onStep?.(step)) };
   }
 
   async ask(question, hook) {
     try {
       return await hook();
+    } catch (error) {
+      this.report(question, error);
+      return undefined;
+    }
+  }
+
+  askNow(question, hook) {
+    try {
+      return hook();
     } catch (error) {
       this.report(question, error);
       return undefined;
