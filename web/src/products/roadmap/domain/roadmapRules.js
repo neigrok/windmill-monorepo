@@ -1,7 +1,8 @@
 // @ts-check
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
-import { UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
+import { Fields, sameJson } from '../../../platform/domain-kit/entities.js';
+import { Plan, UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { ChoiceSpec, CountSpec, TextSpec } from '../../../platform/domain-kit/values.js';
 import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
@@ -171,3 +172,67 @@ export function restoring(command, id, names, { life = false, scope = null } = {
   return UndoRecipe.fields(command, [...fields, ...(life ? [UndoTarget.life(id, scope)] : [])]);
 }
 
+// What this device holds of one step or kind (§5): the record it draws, present or deleted; where another device's
+// delete left it no row, only the record's spent id (engine §7.5), so that it knows the record was and nothing of its
+// values; or nothing, for a record it never knew. A change carries the record's life, so a record the device knows
+// comes back with it, and one it never knew is gone. `value` is the record's values, or a blank where it holds none.
+/** @template {{ id: import('../../../platform/domain-kit/entities.js').Id<any>, fields(): Record<string, Json> }} E */
+export class HeldRecord {
+  /**
+   * @template {{ id: import('../../../platform/domain-kit/entities.js').Id<any>, fields(): Record<string, Json> }} T
+   * @param {import('../../../platform/domain-kit/reading.js').Repository<T>} repository
+   * @param {import('../../../platform/domain-kit/entities.js').Id<T>} id
+   * @returns {HeldRecord<T>}
+   */
+  static read(repository, id) {
+    const record = repository.record(id.record, 'drawn');
+    if (record !== undefined) return new HeldRecord(repository.type.decode(Fields.record(record)), record.life?.[0] === 'alive' ? 'present' : 'deleted');
+    const blank = repository.type.decode(Fields.values(repository.type.type, id.record, {}));
+    return new HeldRecord(blank, repository.spentBorn(id) === null ? 'unknown' : 'spent');
+  }
+
+  /**
+   * @param {E} value
+   * @param {'present' | 'deleted' | 'spent' | 'unknown'} state
+   */
+  constructor(value, state) {
+    this.value = value;
+    this.state = state;
+    Object.freeze(this);
+  }
+
+  get id() { return this.value.id; }
+  get known() { return this.state !== 'unknown'; }
+  get absent() { return this.state === 'deleted' || this.state === 'spent'; }
+  get holdsValues() { return this.state === 'present' || this.state === 'deleted'; }
+
+  // The fields a change writes: each it names whose value differs from the record's, or each it names where the
+  // device holds no values to compare.
+  /** @param {import('../../../platform/domain-kit/validation.js').Valid<E>} valid */
+  changed(valid) {
+    if (!this.holdsValues) return [...valid.checked];
+    const before = this.value.fields();
+    return valid.checked.filter((name) => !sameJson(before[name], valid.written[name]));
+  }
+
+  // The revival a change plans: the record's life under the gesture's stamp and the fields it writes, and its Undo,
+  // which writes each field back to the value it held and the life where the change brought the record back. A record
+  // known only by its spent id was dead and its values are the server's alone, so its Undo deletes it again and keeps
+  // what the change wrote. A record that held no `ord` has none to write back: every create writes it.
+  /**
+   * @param {import('../../../platform/domain-kit/validation.js').Valid<E>} valid
+   * @param {readonly string[]} fields
+   */
+  reviving(valid, fields) {
+    const plan = new Plan();
+    plan.revive(valid, { fields: [...fields] });
+    if (!this.holdsValues) {
+      plan.undoBy(UndoRecipe.fields(Restore.tree, [{ target: UndoTarget.life(this.id), defaultValue: 'dead' }]));
+      return plan;
+    }
+    const before = this.value.fields();
+    const restorable = fields.filter((name) => name !== 'ord' || before.ord !== null);
+    if (restorable.length || this.absent) plan.undoBy(restoring(Restore.tree, this.id, restorable, { life: this.absent }));
+    return plan;
+  }
+}

@@ -51,7 +51,10 @@ runner in that synchronous execution context. Independent queued runs remain all
 web runner tests cover load, decide and refusal mapping: §15.2's pipeline vectors have no nested-call operation and use a
 loader that does nothing.
 
-`Reader.confirmed(type, id)` reads the confirmed record below pending predictions. `devices(prefix)`,
+`Reader.confirmed(type, id)` reads the confirmed record below pending predictions; the port hands the confirmed rows as
+a lookup (`get(key)`), so a read copies only the rows it asks for. `Repository.spentBorn(id)` answers the born of a record
+the device keeps only by its spent id (engine §7.5), which a revival takes (§9.2 step 5). `EngineReplica.read` lets go of
+the observation hold it takes, so a read keeps no scope observed that the app does not. `devices(prefix)`,
 `commands()`, `checkpoint()`, `actor` and `isAnonymous` carry the scope's reconciliation inputs;
 `IDSource.opaqueID()` mints a durable command identity through the engine's CSPRNG edge.
 `Plan.supersede(gestureIds)` replaces whole, never-numbered anonymous gestures in the same transaction

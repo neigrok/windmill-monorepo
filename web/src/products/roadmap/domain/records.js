@@ -128,49 +128,70 @@ export function edgeOrder(a, b) {
   return compareText(a.from, b.from) || compareText(a.to, b.to);
 }
 
+// The names a note keeps at most, one for each step a roadmap holds at most (§4); the oldest goes first.
+const NAMES_KEPT = 10_000;
+
 // The device's own note of what it made and revived in one roadmap (§6), held in its `landing:<tree>` row
-// until the person has been told.
+// until the person has been told: its new steps, its new links, the steps its changes brought back, and the name of
+// each step it linked from, as it was when the device made the link. The device keeps nothing of a step deleted
+// elsewhere (engine.md §7.5), so a line that names one reads it here. The row never leaves the device.
 export class LandingNote {
-  /** @param {{nodes?:string[],edges?:string[][],revived?:string[]}} note */
-  constructor({ nodes = [], edges = [], revived = [] } = {}) {
+  /** @param {{nodes?:string[],edges?:string[][],revived?:string[],names?:{id:string,name:string}[]}} note */
+  constructor({ nodes = [], edges = [], revived = [], names = [] } = {}) {
     this.nodes = Object.freeze([...nodes]);
     this.edges = Object.freeze(edges.map(([from = '', to = '']) => Object.freeze([from, to])));
     this.revived = Object.freeze([...revived]);
+    this.names = Object.freeze(names.map(({ id, name }) => Object.freeze({ id, name })));
     Object.freeze(this);
   }
 
   /** @param {unknown} json */
   static of(json) {
     if (json === null || typeof json !== 'object' || Array.isArray(json)) return new LandingNote();
-    const note = /** @type {{nodes?:unknown,edges?:unknown,revived?:unknown}} */ (json);
+    const note = /** @type {{nodes?:unknown,edges?:unknown,revived?:unknown,names?:unknown}} */ (json);
     const strings = (/** @type {unknown} */ list) => Array.isArray(list) ? list.filter((item) => typeof item === 'string') : [];
     const pairs = Array.isArray(note.edges) ? note.edges.filter((edge) => Array.isArray(edge) && edge.length === 2).map((edge) => strings(edge)) : [];
-    return new LandingNote({ nodes: strings(note.nodes), edges: pairs.filter((edge) => edge.length === 2), revived: strings(note.revived) });
+    const names = Array.isArray(note.names) ? note.names.flatMap((entry) => (entry !== null && typeof entry === 'object'
+      && typeof entry.id === 'string' && typeof entry.name === 'string' ? [{ id: entry.id, name: entry.name }] : [])) : [];
+    return new LandingNote({ nodes: strings(note.nodes), edges: pairs.filter((edge) => edge.length === 2), revived: strings(note.revived), names });
   }
 
-  /** @param {{nodes?:string[],edges?:string[][],revived?:string[]}} made */
-  adding({ nodes = [], edges = [], revived = [] }) {
+  // The note with what the device made or revived added; a step's newer name replaces the one noted before.
+  /** @param {{nodes?:string[],edges?:string[][],revived?:string[],names?:{id:string,name:string}[]}} made */
+  adding({ nodes = [], edges = [], revived = [], names = [] }) {
     const key = (/** @type {readonly string[]} */ edge) => jcs([...edge]);
     const known = new Set(this.edges.map(key));
+    const named = new Map([...this.names, ...names].map(({ id, name }) => [id, name]));
     return new LandingNote({
       nodes: [...this.nodes, ...nodes.filter((id, index) => !this.nodes.includes(id) && nodes.indexOf(id) === index)],
       edges: [...this.edges.map((edge) => [...edge]), ...edges.filter((edge) => !known.has(key(edge)) && known.add(key(edge)))],
       revived: [...this.revived, ...revived.filter((id, index) => !this.revived.includes(id) && revived.indexOf(id) === index)],
+      names: [...named].map(([id, name]) => ({ id, name })).slice(-NAMES_KEPT),
     });
   }
 
+  // The note less what was told; a name stays while a link still noted comes from its step.
   /** @param {{nodes?:string[],edges?:string[][],revived?:string[]}} told */
   clearing({ nodes = [], edges = [], revived = [] }) {
     const key = (/** @type {readonly string[]} */ edge) => jcs([...edge]);
     const toldEdges = new Set(edges.map(key));
+    const left = this.edges.filter((edge) => !toldEdges.has(key(edge))).map((edge) => [...edge]);
     return new LandingNote({
       nodes: this.nodes.filter((id) => !nodes.includes(id)),
-      edges: this.edges.filter((edge) => !toldEdges.has(key(edge))).map((edge) => [...edge]),
+      edges: left,
       revived: this.revived.filter((id) => !revived.includes(id)),
+      names: this.names.filter(({ id }) => left.some(([from]) => from === id)),
     });
   }
 
+  // The name the note keeps of a step, or null.
+  /** @param {string} id */
+  nameOf(id) { return this.names.find((entry) => entry.id === id)?.name ?? null; }
+
   get isEmpty() { return !this.nodes.length && !this.edges.length && !this.revived.length; }
 
-  get json() { return { nodes: [...this.nodes], edges: this.edges.map((edge) => [...edge]), revived: [...this.revived] }; }
+  get json() {
+    return { nodes: [...this.nodes], edges: this.edges.map((edge) => [...edge]), revived: [...this.revived],
+      names: this.names.map(({ id, name }) => ({ id, name })) };
+  }
 }

@@ -151,7 +151,7 @@ function receiveRow(replica, ctx, scope, target, row) {
   const type = ctx.registry.type(row.t);
   const governed = type?.governs === 'tree' ? [`tree/${row.id}`, `self/overlay/${row.id}`] : [];
   if (row.life && !isAlive(row)) {
-    if (type?.identity === 'derived') replica.addSpent(scope, row.t, row.id, row.born);
+    if (type?.identity === 'derived') replica.addSpent(scope, row);
     for (const ref of governed) {
       replica.known[ref] = 'gone';
       forgetJournalScope(replica, ctx.ended, ref);

@@ -22,7 +22,7 @@ test('the corpus reads the replica for its own account, and makes no REST reques
   const engine = { registry, now: () => Date.parse('2026-08-05T12:00:00Z'), activeReplica: () => 'replica',
     readMetadata: () => ({ devices: {}, confirmed: new Map(), firstPullComplete: snapshot.firstPullComplete,
       commands: [], actor: 'writer', isAnonymous: false, checkpoint: { epoch: null, cleanSeq: null } }),
-    observe: () => ({ getSnapshot: () => snapshot }), device: { activeReplica: {
+    observe: () => ({ getSnapshot: () => snapshot, release() {} }), device: { activeReplica: {
     meta: { state: 'bound', account: 'A', serverOffsetMs: 0 }, deviceRows: () => ({}), confirmedRow: () => null,
   } } };
   holding(t, { engine, snapshot: { ...syncSession.snapshot, engine, ready: true } });

@@ -7,7 +7,7 @@ import { Plan, UndoRecipe } from '../../../platform/domain-kit/plans.js';
 import { Placement } from '../../../platform/domain-kit/reading.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
-import { Restore, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
+import { HeldRecord, Restore, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapStep } from './steps.js';
 
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
@@ -119,7 +119,7 @@ export class AddToWorkspace {
 
   /** @param {ActReader} read */
   load(read) {
-    const known = read.inScope(RoadmapScopes.tree(this.tree), (tree) => tree.repository(RoadmapStep).record(this.step, 'drawn') !== undefined);
+    const known = read.inScope(RoadmapScopes.tree(this.tree), (tree) => HeldRecord.read(tree.repository(RoadmapStep), new Id(this.step, RoadmapStep)).known);
     return read.inScope(RoadmapScopes.overlay(this.tree), (overlay) => {
       const items = overlay.repository(this.type);
       return { known, anchor: items.anchor(Placement.bottom), capacity: items.capacity(), moment: overlay.moment };

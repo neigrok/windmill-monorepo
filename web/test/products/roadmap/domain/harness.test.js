@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 import { CreateRoadmap, CreateSubtree, DeleteRoadmap, Roadmap, RoadmapMeta, SetVisibility } from '../../../../src/products/roadmap/domain/roadmaps.js';
-import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
+import { ChangeKind, DeleteKind, RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
+import { landingOf } from '../../../../src/products/roadmap/domain/landing.js';
 import { ChangeStep, CreateStep, DeleteStep, RoadmapStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
@@ -25,7 +26,7 @@ test("a step's delete is held: Undo during the hold brings it back, and after th
   try {
     const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
     const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics' }))).result;
-    assert.deepEqual(a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))), { nodes: [basics], edges: [], revived: [] });
+    assert.deepEqual(a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))), { nodes: [basics], edges: [], revived: [], names: [] });
     const held = committed(await a.runner.runAct(new DeleteStep(tree, basics))).receipt;
     assert.equal(held.releaseAt, a.world.now + CONSTANTS.HOLD_MS);
     assert.deepEqual(steps(a, tree), []);
@@ -99,7 +100,79 @@ test('INV-1: a change to a step another device deleted is admitted, and the step
     for (const phone of [a, b]) {
       assert.deepEqual(phone.drawn(RoadmapStep, RoadmapScopes.tree(tree)).map((step) => [step.id.record, step.label]), [[basics, 'The basics']]);
     }
-    assert.deepEqual(a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))), { nodes: [basics], edges: [], revived: [] });
+    assert.deepEqual(a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))), { nodes: [basics], edges: [], revived: [], names: [] });
+  } finally {
+    a.close();
+  }
+});
+
+test('INV-1: a change made after the device heard of another device\'s delete brings the step back on both devices with every field the server kept, and the device notes it', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: unbound, scope: RoadmapScopes.account });
+  try {
+    const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
+    const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics', icon: 'book' }))).result;
+    a.observe(RoadmapScopes.tree(tree));
+    await a.sync();
+    const b = await a.device();
+    await a.sync();
+    committed(await b.runner.runAct(new DeleteStep(tree, basics)));
+    await a.advance(CONSTANTS.HOLD_MS);
+    await a.sync();
+    assert.deepEqual(steps(a, tree), []);
+    committed(await a.runner.runAct(new ChangeStep(tree, basics, { label: 'The basics' })));
+    assert.deepEqual(a.runner.read(RoadmapScopes.tree(tree), (read) => read.device(RoadmapScopes.landing(tree))), { nodes: [basics], edges: [], revived: [basics], names: [] });
+    await a.sync();
+    for (const phone of [a, b]) {
+      assert.deepEqual(phone.drawn(RoadmapStep, RoadmapScopes.tree(tree)).map((step) => [step.id.record, step.label, step.icon]), [[basics, 'The basics', 'book']]);
+    }
+  } finally {
+    a.close();
+  }
+});
+
+test('INV-1: a step another device deleted is still linked from, and each line about a step that follows through it names it as the device noted it', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: unbound, scope: RoadmapScopes.account });
+  try {
+    const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
+    const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics' }))).result;
+    const lifetimes = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Lifetimes' }, [basics]))).result;
+    const traits = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Traits' }, [lifetimes]))).result;
+    a.observe(RoadmapScopes.tree(tree));
+    await a.sync();
+    const b = await a.device();
+    await a.sync();
+    committed(await b.runner.runAct(new DeleteStep(tree, lifetimes)));
+    await a.advance(CONSTANTS.HOLD_MS);
+    await a.sync();
+    const generics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Generics' }, [lifetimes]))).result;
+    const lines = a.runner.read(RoadmapScopes.tree(tree), (read) => landingOf(tree, read).follows
+      .map(({ node, removed, followed }) => [node, removed, followed.map(({ id, name }) => [id, name])]));
+    assert.deepEqual(lines, [
+      [traits, [{ id: lifetimes, name: 'Lifetimes' }], [[basics, 'Basics']]],
+      [generics, [{ id: lifetimes, name: 'Lifetimes' }], [[basics, 'Basics']]],
+    ]);
+  } finally {
+    a.close();
+  }
+});
+
+test('INV-1: a change to a kind another device deleted brings it back with the words the server kept', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: unbound, scope: RoadmapScopes.account });
+  try {
+    const tree = committed(await a.runner.runAct(new CreateRoadmap('Learn Rust'))).result.tree;
+    a.observe(RoadmapScopes.tree(tree));
+    await a.sync();
+    const b = await a.device();
+    await a.sync();
+    committed(await b.runner.runAct(new DeleteKind(tree, 'learn')));
+    await a.sync();
+    const kinds = (/** @type {Harness} */ phone) => phone.drawn(RoadmapKind, RoadmapScopes.tree(tree)).map((kind) => [kind.id.record, kind.label, kind.description]).sort();
+    assert.deepEqual(kinds(a).map(([id]) => id), ['build', 'milestone']);
+    committed(await a.runner.runAct(new ChangeKind(tree, 'learn', { description: 'What you study' })));
+    await a.sync();
+    for (const phone of [a, b]) {
+      assert.deepEqual(kinds(phone), [['build', 'Build', 'Things you make'], ['learn', 'Learn', 'What you study'], ['milestone', 'Milestone', 'Moments that matter']]);
+    }
   } finally {
     a.close();
   }

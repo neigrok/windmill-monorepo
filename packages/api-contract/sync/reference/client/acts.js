@@ -17,8 +17,9 @@ function captureCommandOf(registry, scope) {
 }
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
-// initial snapshot (§7.1 Ordered local acts), each with the sequence of the confirmed row it was read over (null
-// where none is confirmed) and the server epoch that sequence counts in; a life's preimage also keeps the record
+// initial snapshot (§7.1 Ordered local acts), each with the sequence of the row it was read over (the confirmed row,
+// else the dead row the record's spent id keeps; null where neither holds one) and the server epoch that sequence
+// counts in; a life's preimage also keeps the record
 // as read, which a revival draws. A slot unset there takes the recipe's explicit default; with none, the act
 // fails before anything changes. A segment named with no recipes is journaled for its receipts alone, as
 // evidence, and an act names at least one recipe. Answers the plan by segment index, or null.
@@ -44,8 +45,9 @@ function planUndo(replica, registry, request) {
         const read = view.get(recordKey(target.t, target.id));
         const value = valueIn(read, target.slot);
         if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
+        const readOver = replica.confirmedRow(target.scope, target.t, target.id) ?? replica.spentIds[target.scope]?.[recordKey(target.t, target.id)];
         preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue),
-          rowSeq: replica.confirmedRow(target.scope, target.t, target.id)?.seq ?? null, epoch: replica.meta.serverEpoch,
+          rowSeq: readOver?.seq ?? null, epoch: replica.meta.serverEpoch,
           ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) });
       }
     }
@@ -125,7 +127,7 @@ export class ActCommit {
     this.deviceNow ??= ctx.deviceNow;
     this.actor ??= ctx.actor;
     const views = (source, scope) => ({ drawn: drawn(source, ctx.registry, scope), stored: stored(source, ctx.registry, scope),
-      now: this.now, replica: source.id, actor: this.actor, isAnonymous: source.meta.state === 'anon',
+      spent: source.spentRows(scope), now: this.now, replica: source.id, actor: this.actor, isAnonymous: source.meta.state === 'anon',
       ...ctx.metadata?.(source, scope) });
     if (!this.prepared) {
       let open = true, loading = true, failure, staged = null, stagedOffset = 0;

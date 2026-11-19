@@ -1097,7 +1097,8 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
 - A Replica is `{meta, confirmed?, spentIds?, cursors?, staging?, known?, outbox?, notices?, device?}`:
   - `meta`: §2.5 `ReplicaMeta`; `clockReading` `{wall, mono, boot}` is present once a sample was taken.
   - `confirmed`: `{scopeRef: [Row]}`.
-  - `spentIds`: `{scopeRef: [{t, id, born}]}`.
+  - `spentIds`: `{scopeRef: [{t, id, born, seq?}]}`, `seq` being the seq of the thin dead row the spent id came
+    from (§7.5). A spent id with no `seq` gives a preimage read over it no `rowSeq` (§7.3).
   - `cursors`: `{scopeRef: {cursor, digest, booted, behind?, digestStop?, mismatchReset?}}`.
     `behind: true` when the last page applied ended short of its head (`more`) or a chunk committed
     without its page's last; a page at its head clears it, and no `change` frame applies inline while
@@ -1416,10 +1417,13 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   later work goes on; a Discard at sign-in settles a pending inverse skipped with its values withdrawn; a
   segment named with no recipes journals its receipts, which prove a tree the act created to its Undo,
   while an act whose Undo names no recipe at all throws; an Undo of a delete whose death the replica already
-  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had; an Undo
-  requested, and a held act's cancellation, in the tree of a child board the server redirects follow it into
-  the redirected tree; a mark's `opens` restored, written back or redone after the server redirects the board
-  it names takes the redirected id, and a cancelled lap's Redo takes the run the server joined.
+  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had; an Undo of
+  a revival of a tag the replica knew only by its spent id walks from the dead row the spent id keeps and applies,
+  while one whose spent id keeps no seq, or whose tag another device wrote before the revival reached the server,
+  skips; an Undo requested, and a held act's cancellation, in the tree of a child board the server redirects
+  follow it into the redirected tree; a mark's `opens` restored, written back or redone after the server
+  redirects the board it names takes the redirected id, and a cancelled lap's Redo takes the run the server
+  joined.
 
 ### refusal/*.json
 

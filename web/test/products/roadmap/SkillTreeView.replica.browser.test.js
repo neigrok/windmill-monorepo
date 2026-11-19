@@ -43,6 +43,9 @@ import { StepDraftProvider, StepDraftNotice } from '/src/products/roadmap/step/S
 import { DocumentDataScope } from '/src/shell/auth/accountChange.js';
 import { stepDraftSession } from '/src/products/roadmap/step/StepDraftSession.js';
 import { getRoomStatus } from '/src/shell/roomStatus.js';
+import { ActionRunner, EngineReplica } from '/src/platform/domain-kit/runner.js';
+import { FixedZone } from '/src/platform/domain-kit/time.js';
+import { ChangeStep } from '/src/products/roadmap/domain/steps.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
@@ -77,6 +80,9 @@ const transport = new HttpTransport({ schema: 13, base: '', reading: () => ({ wa
 const engine = await syncSession.open({ registry: new Registry(${registryJson}), transport, appVersion: '1',
   credentials: { clear: async () => {} }, telemetry: { event() {}, failure(operation) { window.syncFailures.push(operation); } } });
 window.engine = engine;
+// The domain's change of a step on this device's engine, as the room's save runs it.
+window.changeStep = async (tree, step, changes) => (await new ActionRunner(new EngineReplica(engine), engine.registry, new FixedZone(0))
+  .runAct(new ChangeStep(tree, step, changes))).kind;
 if (account && engine.device.activeReplica.meta.state !== 'bound') await engine.signIn(account);
 syncSession.publish({ signedIn: Boolean(account) });
 if (params.has('seed')) {
@@ -404,11 +410,18 @@ test('with the switch on the owner’s step gestures, their toasts’ Undo and t
 });
 
 // §6, flow 48: the device tells its owner once, under the step on the Board and on its page, of their own changes that met
-// another device's, and nothing else is shown as refused (INV-3). The engine keeps nothing of a step deleted elsewhere (engine.md §7.5), so no edit made here finds one
-// absent: the revival the domain notes is written to the device's note as the domain writes it.
-test('with the switch on the owner is told once, under the card and on the step’s page, of their changes that met a delete', async () => {
+// another device's, and nothing else is shown as refused (INV-3). Device B is the owner's second browser. The engine keeps
+// nothing of a step deleted elsewhere but its spent id (engine.md §7.5), and the room's editor goes unavailable on a step it
+// no longer holds, so the change that finds the step deleted is the domain's own act on this device's engine, as a save
+// decided in the moment the delete lands runs it. A removed step a line names is named from the device's note.
+test('with the switch on the owner is told once, under the card and on the step’s page, of their changes that met another device’s delete', async () => {
   state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const context = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const other = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const room = `${origin}/room?account=u_owner&replica=on#/app/${TREE}`;
+  const settled = (on) => on.waitForFunction(() => !window.engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'));
+  const landed = (on) => on.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
+    .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent]));
   try {
     await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
     const page = await context.newPage();
@@ -416,7 +429,7 @@ test('with the switch on the owner is told once, under the card and on the step�
     const failures = [];
     page.on('pageerror', (error) => failures.push(error.message));
     page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
-    await page.goto(`${origin}/room?account=u_owner&replica=on#/app/${TREE}`);
+    await page.goto(room);
     await page.locator('.st-roadmap-identity').getByRole('button', { name: 'New step', exact: true }).click();
     const composer = page.getByRole('dialog', { name: 'New step', exact: true });
     await composer.locator('input').first().fill('Reef the sail');
@@ -425,41 +438,66 @@ test('with the switch on the owner is told once, under the card and on the step�
     await page.getByRole('button', { name: 'Apply', exact: true }).click();
     await composer.getByRole('button', { name: 'Create step', exact: true }).click();
     await page.locator('.st-board-card-title', { hasText: 'Reef the sail' }).waitFor();
-    await page.evaluate(async (tree) => {
-      const scope = `tree/${tree}`;
-      await window.engine.commit(scope, [{ op: 'delete', t: 'node', id: 'wind' }]);
-      const note = window.engine.readMetadata(scope).devices[`landing:${tree}`];
-      await window.engine.commit(scope, [], { local: { [`landing:${tree}`]: { ...note, revived: ['dock'] } } });
-    }, TREE);
-    await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).waitFor({ state: 'detached' });
-    await page.locator('.st-board-landed').nth(1).waitFor();
-    const board = { columns: await boardColumns(page), lines: await page.evaluate(() => [...document.querySelectorAll('.st-board-landed')]
-      .map((line) => [line.previousElementSibling.querySelector('.st-board-card-title').textContent, line.textContent])),
-    // Flow 43's refused card and the Restore offer for a step whose link a delete hid retire with the old sync.
-    retired: await page.locator('.board-refused-sync').count() + await page.getByRole('button', { name: 'Restore', exact: true }).count() };
+    await settled(page);
+
+    const b = await other.newPage();
+    b.setDefaultTimeout(15000);
+    await b.goto(room);
+    await b.locator('.st-board-card-title', { hasText: 'Leave the dock' }).waitFor();
+    await b.evaluate((tree) => window.engine.commit(`tree/${tree}`, [{ op: 'delete', t: 'node', id: 'dock' }]), TREE);
+    await settled(b);
+    await page.evaluate(() => window.engine.kickPull());
+    await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).waitFor({ state: 'detached' });
+    const changed = await page.evaluate((tree) => window.changeStep(tree, 'dock', { description: 'Cast off the lines' }), TREE);
+    await page.locator('.st-board-landed').waitFor();
+    const cameBack = { changed, lines: await landed(page) };
     await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
-    const step = page.getByRole('article', { name: 'Leave the dock', exact: true });
-    const onPage = await step.locator('.st-step-landed').innerText();
+    const onPage = await page.getByRole('article', { name: 'Leave the dock', exact: true }).locator('.st-step-landed').innerText();
+    await settled(page);
+    await b.evaluate(() => window.engine.kickPull());
+    await b.locator('.st-board-card-title', { hasText: 'Leave the dock' }).click();
+    const onB = await b.getByRole('article', { name: 'Leave the dock', exact: true }).innerText();
+    // Saying a line clears it from the note in a write of its own: each read waits for that write.
+    await page.waitForFunction((tree) => window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`]?.revived.length === 0, TREE);
     const told = await page.evaluate((tree) => ({ note: window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`] ?? null,
-      events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort(), issues: window.issues }), TREE);
+      events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort() }), TREE);
+    const reef = told.note?.nodes?.[0] ?? null;
+    await page.reload();
+    await page.locator('.st-board-card-title', { hasText: 'Leave the dock' }).waitFor();
+    const quiet = await page.locator('.st-board-landed').count();
+
+    await page.goto(`${origin}/room?account=u_owner&replica=on#/app/roadmaps`);
+    await page.locator('.st-roadmaps-row').first().waitFor();
+    await b.evaluate((tree) => window.engine.commit(`tree/${tree}`, [{ op: 'delete', t: 'node', id: 'wind' }]), TREE);
+    await settled(b);
+    await page.evaluate(() => window.engine.kickPull());
+    await page.waitForFunction((tree) => window.engine.readMetadata(`tree/${tree}`).spent.some((row) => row.id === 'wind'), TREE);
+    await page.goto(room);
+    await page.locator('.st-board-landed').waitFor();
+    const follows = await landed(page);
+    await page.waitForFunction((tree) => !window.engine.readMetadata(`tree/${tree}`).devices[`landing:${tree}`], TREE);
+    const events = await page.evaluate(() => ({ events: window.events.filter(({ name }) => name === 'roadmap_landing').map(({ props }) => JSON.stringify(props)).sort(),
+      issues: window.issues }));
     await page.reload();
     await page.locator('.st-board-card-title', { hasText: 'Reef the sail' }).waitFor();
     const later = await page.locator('.st-board-landed').count();
-    assert.deepEqual({ board, onPage, ...told, later, failures }, {
-      board: {
-        columns: ['locked: ', 'upNext: Leave the dock, Reef the sail', 'done: Choose a course'],
-        lines: [['Leave the dock', 'Your edit brought this step back.'], ['Reef the sail', 'Read the wind was removed. This now follows Choose a course.']],
-        retired: 0,
-      },
+    assert.equal(typeof reef, 'string');
+    assert.deepEqual({ cameBack, onPage, onB: onB.includes('Cast off the lines'), told, quiet, follows, ...events, later, failures }, {
+      cameBack: { changed: 'committed', lines: [['Leave the dock', 'Your edit brought this step back.']] },
       onPage: 'Your edit brought this step back.',
-      note: null,
-      events: ['{"rule":"cameBack","place":"board"}', '{"rule":"follows","place":"board"}'],
+      onB: true,
+      told: { note: { nodes: [reef], edges: [['wind', reef]], revived: [], names: [{ id: 'wind', name: 'Read the wind' }] },
+        events: ['{"rule":"cameBack","place":"board"}'] },
+      quiet: 0,
+      follows: [['Reef the sail', 'Read the wind was removed. This now follows Choose a course.']],
+      events: ['{"rule":"follows","place":"board"}'],
       issues: [],
       later: 0,
       failures: [],
     });
   } finally {
     await context.close();
+    await other.close();
   }
 });
 

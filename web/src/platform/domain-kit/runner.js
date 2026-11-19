@@ -26,7 +26,7 @@ let insideRun = false;
 /**
  * What a replica hands a read or a commit body: the scope's views and reconciliation metadata,
  * all read from the same replica; a commit adds its `now`.
- * @typedef {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & import('./reading.js').ViewMetadata} ReadViews
+ * @typedef {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: import('./reading.js').ConfirmedRows } & import('./reading.js').ViewMetadata} ReadViews
  * @typedef {ReadViews & { now: number }} CommitViews
  * @typedef {{ receipt: CommitReceipt } | { refused: { code: string, detail: Json | null, notice: string | null } }} CommitOutcome
  */
@@ -549,18 +549,25 @@ export class EngineReplica {
     return { outcome: { receipt: outcome }, value };
   }
 
+  // The scope's views as its observation folds them now, through a hold let go at once: a read keeps no scope
+  // observed that the app does not.
   /**
    * @param {string} scope
    * @returns {ReadViews}
    */
   read(scope) {
-    const snapshot = this.engine.observe(scope).getSnapshot();
-    const keyed = (/** @type {ViewRecord[]} */ records) => new Map(records.map((record) => [recordKey(record.t, record.id), record]));
-    return {
-      drawn: keyed(snapshot.drawn),
-      stored: keyed(snapshot.stored),
-      ...this.engine.readMetadata(scope),
-    };
+    const hold = this.engine.observe(scope);
+    try {
+      const snapshot = hold.getSnapshot();
+      const keyed = (/** @type {ViewRecord[]} */ records) => new Map(records.map((record) => [recordKey(record.t, record.id), record]));
+      return {
+        drawn: keyed(snapshot.drawn),
+        stored: keyed(snapshot.stored),
+        ...this.engine.readMetadata(scope),
+      };
+    } finally {
+      hold.release();
+    }
   }
 
   /** @param {string} gestureId */

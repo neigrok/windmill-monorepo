@@ -91,7 +91,7 @@ export function viewRecords(rows) {
 
 // A vector's records as the kit's Views: rows become view records, ids are minted from the given list.
 /**
- * @param {{ drawn?: any[], stored?: any[] }} records
+ * @param {{ drawn?: any[], stored?: any[], spent?: import('../../../src/platform/domain-kit/reading.js').SpentId[] }} records
  * @param {{ ids?: RecordID[], firstPullComplete?: boolean }} [options]
  */
 export function vectorViews(records, { ids = [], firstPullComplete = true } = {}) {
@@ -99,6 +99,7 @@ export function vectorViews(records, { ids = [], firstPullComplete = true } = {}
   return Views.ofRecords(probeRegistry, {
     drawn: viewRecords(records.drawn),
     stored: viewRecords(records.stored ?? records.drawn),
+    spent: records.spent ?? [],
     firstPullComplete,
     mintId: (type) => {
       const id = left.shift();
@@ -116,7 +117,7 @@ export class VectorReplica {
   /** @type {string[]} */
   commitScopes = [];
   /**
-   * @param {{ drawn?: any[], stored?: any[] }} records
+   * @param {{ drawn?: any[], stored?: any[], spent?: import('../../../src/platform/domain-kit/reading.js').SpentId[] }} records
    * @param {number} now
    * @param {CommitOutcome | null} answer
    */
@@ -131,8 +132,9 @@ export class VectorReplica {
 
   /** @param {string} scope */
   read(scope) {
-    const views = vectorViews(this.scopes[scope] ?? this.records);
-    return { drawn: views.drawn, stored: views.stored, devices: {}, firstPullComplete: true };
+    const records = this.scopes[scope] ?? this.records;
+    const views = vectorViews(records);
+    return { drawn: views.drawn, stored: views.stored, spent: records.spent ?? [], devices: {}, firstPullComplete: true };
   }
 
   /**
@@ -313,7 +315,7 @@ export function withRecordsReversed(input) {
   if (Array.isArray(input)) return input.map(withRecordsReversed);
   if (input === null || typeof input !== 'object') return input;
   return Object.fromEntries(Object.entries(input).map(([key, value]) =>
-    [key, (key === 'drawn' || key === 'stored') && Array.isArray(value) ? [...value].reverse() : withRecordsReversed(value)]));
+    [key, (key === 'drawn' || key === 'stored' || key === 'spent') && Array.isArray(value) ? [...value].reverse() : withRecordsReversed(value)]));
 }
 
 /**

@@ -19,8 +19,10 @@ import { precondition } from './values.js';
 /** @typedef {{ kind: 'top' } | { kind: 'bottom' } | { kind: 'below', id: RecordID }} Placement */
 /** @typedef {{ gestureId: string, command: import('./plans.js').Command, canSupersede: boolean, isAdmitted?: boolean }} QueuedCommand */
 /** @typedef {{ epoch: string | null, cleanSeq: number | null }} ScopeCheckpoint */
+/** @typedef {{ t: string, id: RecordID, born: string }} SpentId */
+/** @typedef {{ get(key: string): ViewRecord | undefined }} ConfirmedRows the scope's confirmed records by record key */
 /**
- * @typedef {{ devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
+ * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
  *   commands?: QueuedCommand[], checkpoint?: ScopeCheckpoint, mintId?: (type: string) => RecordID,
  *   opaqueID?: () => string, assertOpen?: () => void }} ViewMetadata
  */
@@ -32,23 +34,27 @@ export const Placement = Object.freeze({
   below: (id) => Object.freeze({ kind: /** @type {const} */ ('below'), id }),
 });
 
-// What a reader reads: one scope's views, confirmed records, commands and checkpoint, with its
+// What a reader reads: one scope's views, confirmed records, spent ids, commands and checkpoint, with its
 // product's device rows and the identity mints a commit offers.
 export class Views {
   /** @type {Record<ViewMode, Map<string, ViewTypeIndex>>} */
   #indexes = { drawn: new Map(), stored: new Map() };
+  /** @type {Map<string, string>} */
+  #spentBorns;
 
   /**
    * @param {Registry} registry
-   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & ViewMetadata} source
+   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: ConfirmedRows } & ViewMetadata} source
    */
-  constructor(registry, { drawn, stored, confirmed = new Map(), devices = {}, firstPullComplete = true,
+  constructor(registry, { drawn, stored, confirmed = new Map(), spent = [], devices = {}, firstPullComplete = true,
     actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID, assertOpen = () => {} }) {
     this.assertOpen = assertOpen;
     this.registry = registry;
     this.drawn = drawn;
     this.stored = stored;
     this.confirmed = confirmed;
+    this.spent = spent;
+    this.#spentBorns = new Map(spent.map((row) => [recordKey(row.t, row.id), row.born]));
     this.devices = devices;
     this.firstPullComplete = firstPullComplete;
     this.actor = actor;
@@ -128,6 +134,16 @@ export class Views {
       const value = record.f?.[via]?.[0];
       return value !== undefined && jcs(value) === key;
     });
+  }
+
+  // The born of the scope's spent id of a record (engine §7.5), or null.
+  /**
+   * @param {string} type
+   * @param {RecordID} id
+   */
+  spentBorn(type, id) {
+    this.assertOpen();
+    return this.#spentBorns.get(recordKey(type, id)) ?? null;
   }
 
   /** @param {string} key */
@@ -253,6 +269,13 @@ export class Repository {
 
   capacity() {
     return new Capacity(this.type, this.views.visible('stored', this.type.type), this.views.registry);
+  }
+
+  // §7.2: the born the device keeps of a record deleted elsewhere once its row is gone (engine §7.5), in neither
+  // view; null for any other id, one the device never knew included.
+  /** @param {import('./entities.js').Id<E>} id */
+  spentBorn(id) {
+    return this.views.spentBorn(this.type.type, id.record);
   }
 
   // The raw record of a view, visible or not (the folded record, ER-3).

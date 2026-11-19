@@ -56,7 +56,7 @@ test('date facets ignore date selection, track other filters and carry the local
 
 test('local history reacts to sync while a token-scoped REST reader keeps its existing request', async (t) => {
   let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
-  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
   const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const calls = [];
@@ -79,7 +79,7 @@ test('local history reacts to sync while a token-scoped REST reader keeps its ex
 
 test('a sync refresh preserves every loaded row past the projection page limit', async (t) => {
   let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
-  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
   const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   let rows = Array.from({ length: 320 }, (_, index) => ({ id: `workout-${index}`, startedAt: 320 - index }));
@@ -106,7 +106,7 @@ test('a sync refresh preserves every loaded row past the projection page limit',
 
 test('a refresh whose continuation stalls fails while retaining the loaded history', async (t) => {
   let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
-  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
   const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const rows = Array.from({ length: 250 }, (_, index) => ({ id: String(index) }));

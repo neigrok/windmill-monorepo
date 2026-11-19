@@ -525,7 +525,7 @@ type ReplicaMeta = { replica: string, state: 'anon'|'bound'|'dormant', account?:
                      clockReading?: {wall: number, mono: number, boot: string},
                      serverEpoch: string | null, ackThrough: number, authPaused: boolean }
 type ConfirmedRow = Row                                  // keyed (replica, scope, type, id); replaced, never joined
-type SpentId = { replica, scope, type, id, born }        // derived types only
+type SpentId = { replica, scope, type, id, born, seq? }  // derived types only
 type CursorRec = { replica, scope, cursor: string | null, digest: string, booted: boolean,
                    behind?: true, mismatchReset?: true, digestStop?: string }
 type KnownScope = { replica, scope, kind: 'gone' | 'not-found' }
@@ -591,6 +591,8 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
 - `CursorRec.mismatchReset`: a digest mismatch reset the scope, and no check has matched since
   (§7.5).
 - `CursorRec.digestStop`: the app version at which digest checks of the scope stopped (§7.5).
+- `SpentId.seq`: the `seq` of the dead row the spent id came from (§7.5), which a preimage of the record
+  reads as its `rowSeq` (§7.3). A spent id that keeps no `seq` gives a preimage none.
 - `KnownScope`: a tree or overlay scope known gone or not-found (§7.5), which §7.1 step 2 refuses.
 - `Notice.dismissed`: the product dismissed the notice, and no content has folded into it since
   (D-17).
@@ -607,10 +609,11 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
   (Appendix A).
 - `ReversibleAct`: the journal of an act opted into Undo (§7.3 Undo of an act), in its replica's
   namespace, never shared across replicas. Its preimages and written values are local user data and its
-  ids private sync data: neither enters telemetry, logs or reports. A preimage's `rowSeq` is the confirmed
-  row it was read over (null where none was), counted in `epoch`; an inverse act's is the row its restore
-  wrote over. A life's preimage keeps the record it read (`record`), which a revival draws. `written` is the
-  value the act left in each target, which a Redo writes back. A source with no recipes was named for
+  ids private sync data: neither enters telemetry, logs or reports. A preimage's `rowSeq` is the row it was
+  read over, the confirmed row or else the dead row the record's `SpentId` keeps (null where neither holds
+  one), counted in `epoch`; an inverse act's is the row its restore wrote over. A life's preimage keeps the
+  record it read (`record`), which a revival draws. `written` is the value the act left in each target, which
+  a Redo writes back. A source with no recipes was named for
   evidence only. `unavailable`
   marks a source whose history is lost: an epoch change took it, its `ok` came without a readable receipt,
   or its scope ended, which also empties its recipes, preimages and written values. `InverseRequest`: one
@@ -1589,9 +1592,10 @@ result: a failure in the steps after the commit (below) is the engine's to log a
 reaches the caller.
 
 In the **read-and-commit** form, `changes` is a function of the views: `commit` calls it after step 1
-and before step 2, with `drawn` and `stored` read inside the same transaction, the commit's
-`physNow()` reading (step 4) and the id of the replica the commit writes to, the active one (§7.12),
-so a read and the writes it decides are one transaction. The function
+and before step 2, with `drawn` and `stored` read inside the same transaction, the scope's spent
+ids (`SpentId`, each `{t, id, born}`), the commit's `physNow()` reading (step 4) and the id of the
+replica the commit writes to, the active one (§7.12), so a read and the writes it decides are one
+transaction. The function
 returns the gesture (its changes and `opts`) or none, and MAY return a value of its own, which
 `commit` returns beside its result. With none, `commit` writes nothing, ticks no clock and returns
 none. A gesture whose diff is empty still runs steps 2–11. One local transaction:
@@ -1845,9 +1849,11 @@ type UndoRecipe =
   segment's `command` recipe names, a scope the act created and this segment wrote among them. An act names at
   least one recipe. Anything else throws malformed before the act changes anything.
 - **Capture.** Before any segment changes a projection, the act reads each field target's value in
-  `drawn`: its *first local preimage*, with the sequence of the confirmed row it was read over (null where
-  none is confirmed) and the epoch that sequence counts in. A life's preimage also keeps the record as read
-  (`record`: its birth, field registers and texts), which a revival draws. An unset slot takes the target's
+  `drawn`: its *first local preimage*, with the sequence of the row it was read over and the epoch that
+  sequence counts in: the confirmed row's, or, where no row of the record is confirmed, the dead row's its
+  `SpentId` keeps (§7.5), so the Undo of a revival from a spent id walks from the death the device pulled;
+  null where neither holds one. A life's preimage also keeps the record as read (`record`: its birth, field
+  registers and texts), which a revival draws. An unset slot takes the target's
   `defaultValue`, the product's value equivalent to unset (`null` is a value); without one the act throws
   malformed. A named segment runs as one
   scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
@@ -2160,15 +2166,15 @@ engine stops on any `426`.
    - **Boot rows** go to staging when the boot starts from a `null` cursor while confirmed rows
      exist, otherwise straight in; the first chunk of the page requested with the `null` cursor
      decides, and starts that staging afresh; a later boot page's chunks join it. A thin dead derived
-     row adds a `SpentId`. On the last chunk of the page that ends the boot's scan (its cursor turns
-     live):
+     row adds a `SpentId` with the row's `born` and `seq`. On the last chunk of the page that ends the
+     boot's scan (its cursor turns live):
      - staging replaces the scope's confirmed rows, and its digest replaces theirs;
      - `booted := true`;
      - the cursor it stores, live at `asOf`, covers the acked entries of the scope with
        `resultSeq ≤ asOf`, which settle (**Settling**, below).
    - **Live rows** replace confirmed rows by §3.4; a dead row deletes it, a dead derived row also
-     adds a `SpentId`, and a dead row of a governing type records its `tree/<id>` and
-     `self/overlay/<id>` as known `gone` (`KnownScope`).
+     adds a `SpentId` with its `born` and `seq`, and a dead row of a governing type records its
+     `tree/<id>` and `self/overlay/<id>` as known `gone` (`KnownScope`).
    - **`gone` or `not-found`**, except two the client ignores, forgetting and recording nothing:
      - Any for a product scope. The server answers one only to a request served as anonymous, which
        the client has already handled as a `401` (§9.1), so no described path reaches this ignore
@@ -3216,9 +3222,9 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 **Scopes:** `self/roadmap` (the person's roadmaps and Roadmap Coach's records), `tree/<T>` (one roadmap) and
 `self/overlay/<T>` (a person's marks; the owner's pointers and workspace). **Device scope** `device/roadmap`,
-with rows `landing:<T>` (`{nodes, edges, revived}`: the device's own new steps and links, and the steps its
-own changes revived, until the person has been told, [Roadmap on the sync engine](roadmap-on-the-engine.md)
-§6), `runningTurn:<turnId>`, `applying:<proposalId>` (`{stamp}`) and `picture:<id>` (`localOnly`), as
+with rows `landing:<T>` (`{nodes, edges, revived, names?}`: the device's own new steps and links, the steps its
+own changes revived, and the name of each step it linked from, until the person has been told,
+[Roadmap on the sync engine](roadmap-on-the-engine.md) §6), `runningTurn:<turnId>`, `applying:<proposalId>` (`{stamp}`) and `picture:<id>` (`localOnly`), as
 [Roadmap Coach](roadmap-coach.md) §7–§9 use them.
 **Surfaces:** web, iOS. Roadmap's server-origin doors (MCP, tending, the fork) are Roadmap on the sync engine
 §7's. **Subscriptions** (§7.9): a tree and its overlay for each `tree` record the replica holds; a reader's

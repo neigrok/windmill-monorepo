@@ -301,6 +301,18 @@ public enum Roadmap {
                   ],
                   "type": "array",
                 ],
+                "names": [
+                  "items": [
+                    "properties": [
+                      "id": ["max": 128, "min": 1, "type": "string", "unit": "chars"],
+                      "name": ["max": 200, "type": "string", "unit": "chars"],
+                    ],
+                    "required": ["id", "name"],
+                    "type": "object",
+                  ],
+                  "maxItems": 10000,
+                  "type": "array",
+                ],
                 "nodes": ["items": ["max": 128, "min": 1, "type": "string", "unit": "chars"], "type": "array"],
                 "revived": ["items": ["max": 128, "min": 1, "type": "string", "unit": "chars"], "type": "array"],
               ],

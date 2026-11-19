@@ -53,7 +53,7 @@ test('only unwritten journal work is adopted without a personal-data question', 
     const engine = { registry, now: () => Date.parse(`${day}T12:00:00Z`), activeReplica: () => 'replica',
       readMetadata: () => ({ devices, confirmed: new Map(), firstPullComplete: true, commands: [],
         actor: 'writer', isAnonymous: true, checkpoint: { epoch: null, cleanSeq: null } }),
-      observe: () => ({ getSnapshot: () => snapshot }), device: { activeReplica: {
+      observe: () => ({ getSnapshot: () => snapshot, release() {} }), device: { activeReplica: {
         meta: { state: 'anon', serverOffsetMs: 0 }, deviceRows: () => devices, confirmedRow: () => null,
       } } };
     assert.equal(journalRoutes.sync.adoptionAnswer(engine), answer);

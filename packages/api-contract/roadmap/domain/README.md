@@ -100,8 +100,9 @@ for state or completion. Diagnostic hue order is terracotta, olive, gold, brick,
 warning thresholds remain 256 UTF-8 label bytes and more than four effective prerequisites.
 Each landing fact retains its bridged immediate `incoming` edges and the `followed` entries they
 reach. An absent root or absent-only cycle can leave that followed list empty; it still changes the
-new link's meaning and produces a fact. Landing facts are values only; persisting and clearing acknowledgments is the later device
-adapter's responsibility.
+new link's meaning and produces a fact. An absent step may have no record at all, as a step deleted elsewhere has
+none on a device (engine.md §7.5): it is read through by its links alone. Landing facts are values only; the device's
+note, the names its lines take and its clearing are `landing-actions.json`'s.
 
 Run from `web`: `node --test test/products/roadmap/domain/corpus.test.js`.
 
@@ -154,35 +155,40 @@ the registry its caller composes). Files:
 | `landing-actions.json` | The landing read and its clearing; the one list of what cannot land |
 | `undo.json` | Each gesture's Undo and Redo on the kit's harness over the reference server with roadmap's binding (K-3) |
 
-**Scenes.** An action case is, as the kit's act form reads it (`ProductCorpus.act`), `{action, input, scopes: {<scope>: {drawn, stored?}}, device?, ids?, now,
-offsetSeconds}`: each scope's records are engine rows (`stored` defaults to `drawn`), `device` holds
-device rows by key, and `ids` are minted in order across scopes. Its `expect` is `{decision}`:
+**Scenes.** An action case is, as the kit's act form reads it (`ProductCorpus.act`), `{action, input, scopes: {<scope>: {drawn, stored?, spent?}}, device?, ids?, now,
+offsetSeconds}`: each scope's records are engine rows (`stored` defaults to `drawn`), its `spent` ids (`{t, id, born}`,
+none by default) are what the device keeps of a step or kind another device deleted, `device` holds
+device rows by key, and `ids` are minted in order across scopes. A device keeps no record of a step or kind deleted
+elsewhere (engine.md §7.5), so a case draws one as a spent id; a dead record in `drawn` is the device's own delete that
+has not yet settled. Its `expect` is `{decision}`:
 `{write: {segments: [{scope, gesture}], result}}` with each segment's gesture in the kit's form,
 `{unchanged: {result}}` or `{refuse: <refusal>}`. A read case replaces `action` with `read`.
-Scopes are `self/roadmap`, `tree/<T>` and `self/overlay/<T>`; the device row is `landing:<T>`.
+Scopes are `self/roadmap`, `tree/<T>` and `self/overlay/<T>`; the device row is `landing:<T>`, the note
+`{nodes, edges, revived, names}` (`names`: `[{id, name}]`, the name of each step a noted link comes from, as it was when
+the device made the link).
 
 | Action | Input | Result |
 |---|---|---|
 | `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2`, and the steps, chunked |
 | `DeleteRoadmap` | `{tree}` | `null`; held; a subtree's record refuses `notARoot` |
 | `SetVisibility` | `{tree, visibility}` | `null`; a write of the root's `meta.visibility` under `roadmap.captureTree`, predicting the root's `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); the visibility the root holds writes nothing; a subtree refuses `notARoot` |
-| `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step `drawn` holds dead is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |
+| `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step the device knows as deleted (dead in `drawn`, or a spent id) is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |
 | `WriteRoadmap` | `{tree, title?, guide?}` | `null`; the changed fields of `meta` |
-| `CreateStep` | `{tree, step: {label, icon?, color?, description?, links?}, prerequisites, id?}` | the step's id: `id` where its surface minted one to show the step before its write lands, else minted here; the step after the steps its first prerequisite leads to (or after the first steps), one link from each prerequisite, and the landing note; an `id` the roadmap holds, a deleted step's included, refuses `taken` |
-| `ChangeStep` | `{tree, step, changes}` | `null`; a `revive` naming the changed fields; a step `drawn` holds dead is noted `revived` |
+| `CreateStep` | `{tree, step: {label, icon?, color?, description?, links?}, prerequisites, id?}` | the step's id: `id` where its surface minted one to show the step before its write lands, else minted here; the step after the steps its first prerequisite leads to (or after the first steps), one link from each prerequisite, a prerequisite deleted elsewhere included, and the landing note with the name of each prerequisite the device holds; an `id` the roadmap holds, a deleted step's included, refuses `taken`; a prerequisite the device never knew is `gone` |
+| `ChangeStep` | `{tree, step, changes}` | `null`; a `revive` naming the changed fields; a step the device knows as deleted is noted `revived`, and one it knows only by its spent id is revived with every field the change names, its other fields the server's |
 | `MoveStep` | `{tree, step, below, siblings}` | `null`; `siblings` are the trunk parent's steps the layout names; the key between `below` and the next sibling, as a `revive`; a drop in place writes nothing |
 | `DeleteStep` | `{tree, step}` | `null`; held; the step's death alone |
-| `ChangePrerequisites` | `{tree, step, add, remove}` | `null`; a removed prerequisite followed through an absent step retires each link the step reaches it by |
-| `ImportSteps` | `{tree, imported, under?}` | `{key: id}`; under `under`, each step the import has no prerequisite for follows it |
+| `ChangePrerequisites` | `{tree, step, add, remove}` | `null`; a removed prerequisite followed through an absent step retires each link the step reaches it by; an added link is noted with the name of the step it comes from |
+| `ImportSteps` | `{tree, imported, under?}` | `{key: id}`; under `under`, each step the import has no prerequisite for follows it; the landing note takes the name of each step a link comes from |
 | `CreateKind`, `ChangeKind`, `MoveKind`, `DeleteKind` | `{tree, kind: {hue, label?, description?}}`, `{tree, kind, changes}`, `{tree, kind, below}`, `{tree, kind}` | the kind's id, or `null` |
-| `RecolourKind` | `{tree, kind, hue}` | `null`; the command, predicting the kind's hue and every step wearing the old hue, present or not, by id; a kind `drawn` holds dead is revived in a segment before it |
+| `RecolourKind` | `{tree, kind, hue}` | `null`; the command, predicting the kind's hue and every step the device holds wearing the old hue, present or not, by id; a kind the device knows as deleted is revived in a segment before it, and of one it knows only by its spent id it predicts the kind's hue alone, the server recolouring the steps |
 | `Complete`, `Reset` | `{tree, step, outOfOrder?, opensStanding?}`, `{tree, step}` | `null`; the step's `mark`; `opensStanding`, read by the caller from the account, says the step's pointer opens a standing roadmap |
 | `SetPointer`, `ClearPointer` | `{tree, step, opens}`, `{tree, step}` | `null` |
 | `AddSubtask`, `ChangeSubtask`, `MoveSubtask`, `DeleteSubtask` | `{tree, step, label}`, `{tree, subtask, changes}`, `{tree, subtask, below}`, `{tree, subtask}` | the subtask's id, or `null`; a move lands below another of its step's subtasks; a delete is held |
 | `AddStepLink`, `ChangeStepLink`, `MoveStepLink`, `DeleteStepLink` | `{tree, step, link: {url, title?}}`, `{tree, link, changes}`, `{tree, link, below}`, `{tree, link}` | as subtasks; a delete is held |
 | `SaveStepNote` | `{tree, step, text}` | the draft save's `{values, exists}`, decided as `{write: {gesture, result}}`; the note opened from `drawn` or new |
-| `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; the note less what was told, or no row |
-| read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the note's steps and links, and its revived steps now present |
+| `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; the note less what was told, and less each name no link left in it comes from, or no row |
+| read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the note's steps and links, each with `removed` (`[{id, name}]`, the absent steps it is linked from) and each `followed` entry with its `name`; a step the device holds is named by its label, one deleted elsewhere by the note's name, and by `null` where the note holds none; and its revived steps now present |
 | read `cannotLand` | `{notices}` | `{listed: [{id, gestureId, reason, subject, values}], unexpected: [{id, code}]}`; `reason` ∈ `roadmapDeleted` (`scope-dead`), `capFilled` (`cap`), `accessEnded` (`forbidden`, `not-found`), `noteTooLong` (`too-large` on a note) |
 
 Limits refuse before anything is written, in this order where a case meets several: the bounds of
@@ -198,7 +204,9 @@ depthLimit | other: {code, subject, detail, path}}`.
 
 The web runs every action case through the kit's `ProductCorpus.act`, each with its records reversed too.
 `web/test/products/roadmap/domain/harness.test.js` runs the held deletes and their Undo, a subtree and a
-visibility predicted across scopes, and a change against another device's delete (INV-1) over the real engine;
+visibility predicted across scopes, and changes against another device's delete (INV-1) over the real engine, made
+before the delete arrived and after, when the device keeps only the step's or kind's spent id, and a link from such a
+step with its landing line named from the note;
 against roadmap's reference binding it lands a subtree and a visibility as the server writes them, keeps a newer
 private over a stale public sent after it, and ends and restores a subtree's standing with its step.
 
@@ -210,11 +218,11 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 
 | Gesture | Undo | Redo |
 |---|---|---|
-| A change of a step or a kind, a move of either | `roadmap.restoreTree` of each changed field, and of the life where the device held the record as deleted | writes the change back |
+| A change of a step or a kind, a move of either | `roadmap.restoreTree` of each changed field, and of the life where the device held the record as deleted; of a record it knows only by its spent id, the life alone (`dead`), its earlier values being the server's | writes the change back |
 | Create a step, a link, a kind; an import's steps and links | `createdRecord` of each, deleted again while its own writes are all that changed it; one act, so one Undo takes every chunk | revives the step, link or kind |
 | Delete a step or a kind; remove a link | the life (`roadmap.restoreTree`); a step's delete is held, and an Undo in its hold cancels it in place | deletes it again |
 | A roadmap's title, guide or visibility | the field (`meta`, unset `""` and `private`); the server writes the branch's reach back | writes the change back |
-| Recolour a kind | the kind's `hue` and the `color` of each step that wore it; a revival before the command, its life | writes them back |
+| Recolour a kind | the kind's `hue` and the `color` of each step that wore it; a revival before the command, its life; of a kind known only by its spent id, its life alone | writes them back |
 | Complete, Reset | `roadmap.restoreOverlay` of the `mark`, unset `{status: none, outOfOrder: false}` | writes the mark back |
 | Set or clear a pointer | `opens` and the life, or `createdRecord` of a pointer the overlay never held | writes it back |
 | Add, change or move a subtask or a link | `createdRecord`, or the changed fields and `ord` | the change; a deleted subtask or link is terminal, so the Redo of an add brings nothing back |

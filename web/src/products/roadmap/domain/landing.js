@@ -17,7 +17,10 @@ import { readTree } from './steps.js';
 /** @typedef {'roadmapDeleted' | 'capFilled' | 'accessEnded' | 'noteTooLong'} CannotLandReason */
 
 // §6 What a device tells a person once, read from its note and the roadmap as it now stands: each of its own
-// new steps and links that follows through a step deleted elsewhere, and each step its change brought back.
+// new steps and links that follows through a step deleted elsewhere, with the steps removed and the steps it now
+// follows, each by name; and each step its change brought back. A step the device still holds is named as it stands;
+// one deleted elsewhere, of which it keeps nothing (engine.md §7.5), by the name its note took when it made the link,
+// and by none (null) where the note holds none.
 /**
  * @param {string} tree
  * @param {Reader} read
@@ -25,8 +28,14 @@ import { readTree } from './steps.js';
 export function landingOf(tree, read) {
   const note = LandingNote.of(read.device(RoadmapScopes.landing(tree)));
   const roadmap = readTree(tree, read);
+  const name = (/** @type {string} */ id) => roadmap.nodesById.get(id)?.label ?? note.nameOf(id);
+  const facts = landingFacts(new FollowGraph(roadmap), { nodes: [...note.nodes], edges: note.edges.map((edge) => [...edge]) });
   return {
-    follows: landingFacts(new FollowGraph(roadmap), { nodes: [...note.nodes], edges: note.edges.map((edge) => [...edge]) }),
+    follows: facts.map(({ node, incoming, followed }) => ({
+      node, incoming,
+      removed: incoming.map(([from = '']) => ({ id: from, name: name(from) })),
+      followed: followed.map((entry) => ({ ...entry, name: name(entry.id) })),
+    })),
     cameBack: note.revived.filter((id) => roadmap.nodesById.get(id)?.present === true),
     note,
   };

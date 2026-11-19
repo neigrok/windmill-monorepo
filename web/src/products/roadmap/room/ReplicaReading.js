@@ -49,8 +49,6 @@ export class ReplicaReading {
     this.listeners = new Set([() => this.emitStatus()]);
     this.statusHandlers = new Set();
     this.told = null;
-    // The name of each step of the open roadmap the visit has read, so a line can name one deleted since.
-    this.named = new Map();
     this.landingFailed = false;
     this.holdings = new Map();
     this.last = null;
@@ -102,14 +100,23 @@ export class ReplicaReading {
       .then((events) => { if (!this.closed && events.length) onActivity(events); });
   }
 
-  // §6 What the device tells its owner once of their own changes on this roadmap, a line a step (`ReplicaRoadmap.landed`);
-  // nothing on a roadmap someone else owns. A read that fails tells nothing and reports once, and the room reads on.
+  // §6 What the device tells its owner once of their own changes on this roadmap, from the domain's `landingOf`: a line a
+  // step, in the room's names; nothing on a roadmap someone else owns. `cameBack` where the person's change brought the
+  // step back; `follows` with the names of the deleted steps it was linked from and of the steps it follows through them
+  // (null where the device holds none). `told` is what saying the line clears from the device's note. A read that fails
+  // tells nothing and reports once, and the room reads on.
   landing() {
     if (!this.ready) return [];
     try {
-      const roadmap = this.roadmap();
-      for (const step of roadmap.account.trees.get(this.treeId).nodes) this.named.set(step.id, step.label);
-      return roadmap.landed(this.writes.runner.read(this.scope, (read) => landingOf(this.treeId, read)), this.named);
+      const { follows, cameBack, note } = this.writes.runner.read(this.scope, (read) => landingOf(this.treeId, read));
+      return [
+        ...follows.map(({ node, incoming, removed, followed }) => ({
+          key: `follows:${node}:${incoming.map(([from]) => from).join('\n')}`, step: node, rule: 'follows',
+          removed: removed.map(({ name }) => name), followed: followed.map(({ name }) => name),
+          told: { nodes: note.nodes.includes(node) ? [node] : [], edges: incoming },
+        })),
+        ...cameBack.map((step) => ({ key: `cameBack:${step}`, step, rule: 'cameBack', told: { revived: [step] } })),
+      ];
     } catch (error) {
       if (!this.landingFailed) this.report('roadmap-replica-landing', error);
       this.landingFailed = true;

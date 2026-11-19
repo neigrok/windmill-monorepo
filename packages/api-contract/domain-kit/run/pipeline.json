@@ -736,6 +736,45 @@
     }
   },
   {
+    "name": "a revive of a tag the device knows only by its spent id takes that id's born and commits",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "revive", "t": "tag", "id": "oak", "f": {"label": "Next"}, "fields": ["label"]}],
+      "drawn": [],
+      "spent": [{"t": "tag", "id": "oak", "born": "1000:0:r_aaaaaaaaaaaa"}],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {"committed": {"result": null, "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}}}
+    }
+  },
+  {
+    "name": "a spent id revives only the record it names",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "revive", "t": "tag", "id": "oak", "f": {"label": "Next"}, "fields": ["label"]}],
+      "drawn": [],
+      "spent": [{"t": "tag", "id": "elm", "born": "1000:0:r_aaaaaaaaaaaa"}],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {"refused": {"refused": {"code": "unknown-record", "subject": {"t": "tag", "id": "oak"}, "detail": null, "path": "predicted"}}}
+    }
+  },
+  {
+    "name": "an update of a tag the device knows only by its spent id predicts gone",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "update", "t": "tag", "id": "oak", "f": {"label": "Next"}, "fields": ["label"]}],
+      "drawn": [],
+      "spent": [{"t": "tag", "id": "oak", "born": "1000:0:r_aaaaaaaaaaaa"}],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {"refused": {"refused": {"code": "unknown-record", "subject": {"t": "tag", "id": "oak"}, "detail": null, "path": "predicted"}}}
+    }
+  },
+  {
     "name": "ordinary edits of a dead derived tag still predict gone",
     "input": {
       "scope": "tree/b_00000001",
