@@ -41,4 +41,16 @@ export class WorkspaceStore {
     } catch {
     }
   }
+
+  // The carry-over's delete (roadmap-on-the-engine.md §8.2): the tree's workspaces go only while they are still `seen`,
+  // as `load` read them. Answers whether they went.
+  clearIfStill(treeId, seen) {
+    try {
+      if (this.storage.getItem(KEY_PREFIX + treeId) !== JSON.stringify(seen)) return false;
+      this.storage.removeItem(KEY_PREFIX + treeId);
+      return this.storage.getItem(KEY_PREFIX + treeId) === null;
+    } catch {
+      return false;
+    }
+  }
 }

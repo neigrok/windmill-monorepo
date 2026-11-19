@@ -12,6 +12,9 @@ import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { useAppearance } from '../../../shell/useAppearance.js';
 import { APP_LOCALE } from '../../../platform/i18n/index.js';
 import { track } from '../../../telemetry/beacon.js';
+import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
+import { FixedZone } from '../../../platform/domain-kit/time.js';
+import { DiscardKept } from '../domain/carry.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { t } from '../i18n/index.js';
 import { RoadmapNames, keptChanges } from './KeptChanges.js';
@@ -27,10 +30,20 @@ const REASONS = {
   noteTooLong: t('roadmap.kept.reason.noteTooLong'),
 };
 
-// The changes the list shows: those with words of their own, for a reason the boards give words to. A workspace item
-// the carry-over kept (pastBound) waits for its words (proposal 49.21).
+// The changes the list shows: those with words of their own, for a reason the boards give words to. A record the
+// carry-over kept whole past its bound (pastBound) waits for its words (proposal 49.21).
 export function listed(kept) {
   return kept.filter((change) => change.worded && Object.hasOwn(REASONS, change.reason));
+}
+
+// A record the carry-over set aside, discarded from its ledger, the engine keeping no Undo of it. Answers false where the
+// ledger no longer held it.
+async function discardCarried(engine, change) {
+  const runner = new ActionRunner(new EngineReplica(engine), engine.registry, new FixedZone(0));
+  const outcome = await runner.runAct(new DiscardKept(change.carriedFrom, change.ledgerId));
+  if (outcome.kind !== 'committed') return false;
+  await runner.release(outcome.receipt.gestureId);
+  return true;
 }
 
 function useWide() {
@@ -59,11 +72,11 @@ function useRoadmapNames(engine, notices) {
   return names;
 }
 
-export function KeptList({ engine, notices, onClose }) {
+export function KeptList({ engine, notices, carried = [], onClose }) {
   const { resolved: theme } = useAppearance();
   const wide = useWide();
   const names = useRoadmapNames(engine, notices);
-  const kept = useMemo(() => listed(keptChanges(notices, engine.registry, names).kept), [notices, engine, names]);
+  const kept = useMemo(() => listed(keptChanges(notices, engine.registry, names, carried).kept), [notices, engine, names, carried]);
   const [chosen, setChosen] = useState(null);
   const [asking, setAsking] = useState(false);
   const [copied, setCopied] = useState(null);
@@ -119,11 +132,12 @@ export function KeptList({ engine, notices, onClose }) {
     words.current.focus({ preventScroll: true });
     track('roadmap_kept', { step: 'select', reason: change.reason });
   };
-  // The engine answers `false` for a notice it no longer holds, discarded in another tab: the change closes quietly.
+  // The engine answers `false` for a notice it no longer holds, and the ledger for a record it no longer keeps, each
+  // discarded in another tab: the change closes quietly.
   const discard = async () => {
     const shown = change;
     try {
-      const dismissed = await engine.dismissNotice(shown.id);
+      const dismissed = shown.carriedFrom === null ? await engine.dismissNotice(shown.id) : await discardCarried(engine, shown);
       if (dismissed !== false) track('roadmap_kept', { step: 'discard', reason: shown.reason });
       setAsking(false);
       choose(null);

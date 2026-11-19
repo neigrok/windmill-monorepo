@@ -28,7 +28,8 @@ point for the component showcase.
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, authored starter roadmaps and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
-| `kept/` | The one list of what cannot land (§6, flow 49), where the room reads the device's copy: roadmap's notices in every scope read by the domain, each a kept change in the list's words, offered from the shell's account menu and shown as a dialog or as pages; `RoadmapSession.jsx` mounts it beside every room |
+| `kept/` | The one list of what cannot land (§6, flow 49), where the room reads the device's copy: roadmap's notices in every scope read by the domain, and the records the carry-over set aside, each a kept change in the list's words, offered from the shell's account menu and shown as a dialog or as pages; `RoadmapSession.jsx` mounts it beside every room |
+| `carry/` | The carry-over (§8.2), where the room reads the device's copy: what the old bundle's stores hold (`OldStores.js`, the stores read through their own classes) and what each roadmap's entries come to as the domain's acts, and the run (`CarryOver.js`) that moves them into the replica under a browser lock with its ledger and deletes each entry once carried; `RoadmapSession.jsx` starts it on every load |
 | `tending/`, `reminders/`, `settings/` | Ask AI, reminder preferences and account data export |
 | `marketing/` | Product landing, metadata and self-playing scenes |
 
@@ -201,22 +202,23 @@ on, every room but the demo reads through `ReplicaReading`:
   `kept/KeptHere.jsx` beside the step draft's provider, above every room. It reads roadmap's notices in every scope through
   the engine (`useSyncNotices`), a forgotten roadmap's `scope-dead` among them, and `kept/KeptChanges.js` reads each through
   the domain's `cannotLand` into a kept change: its reason, its title (its own words, else the name the device last read
-  of it in its roadmap) and every word it holds. While the list shows a change, the session offers the shell's account
+  of it in its roadmap) and every word it holds. After them come the records the carry-over set aside in the active
+  replica's ledger rows (the domain's `carriedKept`), each named by its own words or by the step or roadmap it belonged to. While the list shows a change, the session offers the shell's account
   menu `Kept here · N` (flow 49.06, `useAccountRowOffer`), N the list's count. Choosing it opens `kept/KeptList.jsx`: from
   1024px a dialog, the list beside the change it selected with Copy (49.01); below, a page of the list with its count
   and Close (49.02), a page of a change with Copy, Copied, or Copy failed and Select text, and Discard (49.03, 49.05,
-  49.08), and Discard's one question on a page of its own (49.04). Discard dismisses the notice; the list closes when it
-  holds nothing. The boards do not draw, so the list does not build: a layout for 744–1023px (the pages show there),
+  49.08), and Discard's one question on a page of its own (49.04). Discard dismisses the notice, or lets the ledger go of
+  a carried record (`DiscardKept`); the list closes when it holds nothing. The boards do not draw, so the list does not build: a layout for 744–1023px (the pages show there),
   Discard and a copy's outcome from 1024px, the empty list, a change with no words of its own (a mark, a pointer, a link
-  between steps) and a workspace item the carry-over kept (`pastBound`, §8.2); the last two are neither listed nor
-  counted. Each change that cannot land is told once (`roadmap_write_cannot_land`), and a notice no rule lists reports
+  between steps) and a record the carry-over kept whole past its bound (`pastBound`, §8.2); the last two are neither
+  listed nor counted. Each change that cannot land is told once (`roadmap_write_cannot_land`), and a notice no rule lists reports
   `roadmap-kept-unexpected` once, `kept/toldNotices.js` keeping the told ids for the page load and, where the browser
-  keeps storage, the ids of the told notices the engine still holds. A Discard the engine answers `false`, the notice no
+  keeps storage, the ids of the told notices and carried records the engine still holds. A Discard the engine answers `false`, the notice no
   longer held, closes the change quietly.
 - **Sign-out.** Roadmap's `forgetDevice` runs `sync/signOut.js` after the engine's sign-out, Keep or Discard: it takes
   every `landing:*` device row from each replica the device holds (Keep leaves the account's dormant replica with its
-  device rows) and the told notice ids. What Keep holds for the next sign-in, unsent work and kept notices, the
-  engine keeps.
+  device rows) and the told notice ids. What Keep holds for the next sign-in, unsent work, kept notices and the
+  carry-over's ledger, the engine keeps; Discard takes the ledger with its replica.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it.

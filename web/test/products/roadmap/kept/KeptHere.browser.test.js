@@ -21,6 +21,7 @@ import { registry } from '/src/platform/sync/schema.js';
 import { syncSession } from '/src/platform/sync/session.js';
 import { KeptHere } from '/src/products/roadmap/kept/KeptHere.jsx';
 import { KeptList } from '/src/products/roadmap/kept/KeptList.jsx';
+import { useOfferedAccountRows } from '/src/shell/ProductSessions.jsx';
 
 const stamp = '1000:0:r_aaaaaaaaaaaa';
 const reading = () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: 'kept' });
@@ -58,6 +59,20 @@ window.mountList = (dismiss) => {
   const door = { registry: engine.registry, observe: (scope) => engine.observe(scope), dismissNotice: dismiss };
   createRoot(document.getElementById('fixture')).render(React.createElement(KeptList, { engine: door, notices, onClose: () => { window.closed = true; } }));
 };
+// The carry-over's ledger of one old roadmap, holding a change to a roadmap deleted since and a subtask past its bound.
+window.carry = () => window.engine.write(null, (device) => {
+  device.activeReplica.deviceRows('roadmap')['carry:t_0000000000000002'] = { to: null, frontier: {}, items: {}, marks: null, kept: [
+    { id: 'k1', reason: 'roadmapDeleted', subject: { t: 'node', id: 'a' }, values: { label: 'Read the wind well' }, named: '' },
+    { id: 'k2', reason: 'pastBound', subject: { t: 'subtask', id: 's1' }, values: { step: 'a', label: 'Reef '.repeat(50), done: false }, named: 'Read the wind' },
+  ] };
+});
+window.ledger = () => window.engine.readMetadata('self/roadmap').devices['carry:t_0000000000000002'].kept.map((each) => each.id);
+// Kept here with the account menu's rows it offers, each a button that opens what it offers.
+function Menu() {
+  return useOfferedAccountRows().map((row) => React.createElement('button', { key: row.label, className: 'menu-row', onClick: row.onSelect }, row.label));
+}
+window.mountMenu = () => createRoot(document.getElementById('fixture')).render(
+  React.createElement(React.Fragment, null, React.createElement(Menu), React.createElement(KeptHere)));
 window.entryReady = true;
 `;
 const sentry = 'export function captureError(kind, operation, stack, route, tags = {}) { window.issues.push({ operation, tags }); }';
@@ -196,3 +211,22 @@ for (const [answer, reported, discarded] of [['not held', [], []], ['throws', [[
     });
   });
 }
+
+test('a record the carry-over set aside is listed, and its Discard drops it from the ledger and closes the list it emptied', async () => {
+  await withContext({ width: 390 }, async (page) => {
+    await open(page);
+    await page.evaluate(() => window.carry());
+    await page.evaluate(() => window.mountMenu());
+    await page.locator('.menu-row').click();
+    assert.equal(await page.locator('.st-kept-row').count(), 1, 'only the change the boards give words to');
+    await page.locator('.st-kept-row').click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Discard', exact: true }).click();
+    await page.locator('.menu-row').waitFor({ state: 'detached', timeout: 10_000 });
+    await page.locator('.st-kept-page').waitFor({ state: 'detached', timeout: 10_000 });
+    assert.deepEqual({
+      ledger: await page.evaluate(() => window.ledger()),
+      discarded: await page.evaluate(() => window.events.filter((event) => event.name === 'roadmap_kept').map((event) => event.props)),
+    }, { ledger: ['k2'], discarded: [{ step: 'discard', reason: 'roadmapDeleted' }] });
+  });
+});

@@ -152,7 +152,7 @@ function marksShown(saved, nodes) {
 }
 
 // A device record that does not join as a lattice: its steps cannot be known.
-class CorruptDeviceRecord extends Error {
+export class CorruptDeviceRecord extends Error {
   constructor(cause) {
     super('Device record does not join', { cause });
     this.name = 'CorruptDeviceRecord';
@@ -163,7 +163,7 @@ class CorruptDeviceRecord extends Error {
 // does not join, `other` for anything else. Never a message.
 const DEVICE_FAILURES = new Set(['QuotaExceededError', 'AbortError', 'UnknownError', 'ConstraintError', 'DataError', 'DataCloneError',
   'InvalidStateError', 'NotFoundError', 'ReadOnlyError', 'TransactionInactiveError', 'VersionError', 'SecurityError', 'TimeoutError']);
-function failureTags(error) {
+export function failureTags(error) {
   if (error instanceof CorruptDeviceRecord) return { name: 'corrupt' };
   return { name: error instanceof DOMException && DEVICE_FAILURES.has(error.name) ? error.name : 'other' };
 }

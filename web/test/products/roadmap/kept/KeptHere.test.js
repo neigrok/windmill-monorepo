@@ -37,3 +37,33 @@ test('the account menu is offered Kept here with the count of changes the list s
   await settle();
   assert.deepEqual(menu.tree, [], 'a list with nothing to show offers no row');
 });
+
+test('the records the carry-over set aside in the replica’s ledger join the list: those the boards give words to are counted, each is told once, and the list is handed them', async (t) => {
+  browserWith();
+  Object.assign(globalThis.window, { setTimeout: () => 0, clearTimeout: () => {} });
+  const { engine } = await gymAccount(t);
+  const kept = (id, reason, subject, values) => ({ id, reason, subject, values, named: 'Read the wind' });
+  await engine.write(null, (device) => {
+    device.activeReplica.deviceRows('roadmap')['carry:t_0000000000000001'] = { to: null, frontier: {}, items: {}, marks: null, kept: [
+      kept('k1', 'roadmapDeleted', { t: 'node', id: 'a' }, { label: 'Read the wind well' }),
+      kept('k2', 'pastBound', { t: 'subtask', id: 's1' }, { step: 'a', label: 'Reef '.repeat(50), done: false }),
+      kept('k3', 'roadmapDeleted', { t: 'progress', id: 'a' }, { mark: { status: 'complete' } }),
+    ] };
+  });
+  const { useOfferedAccountRows } = await loadScreen('shell/ProductSessions.jsx');
+  const { KeptHere } = await loadScreen('products/roadmap/kept/KeptHere.jsx');
+  const menu = renderHook(t, () => useOfferedAccountRows(), { live: true });
+  const here = renderHook(t, () => KeptHere(), { live: true });
+  await settle();
+  assert.deepEqual(menu.tree.map(({ label, count }) => ({ label, count })), [{ label: 'Kept here', count: 1 }]);
+  assert.deepEqual(JSON.parse(globalThis.window.localStorage.getItem('windmill:roadmap:kept-told')), ['carry:k1', 'carry:k2', 'carry:k3']);
+  menu.tree[0].onSelect();
+  assert.deepEqual(here.tree.props.children.props.carried.map(({ old, id }) => [old, id]),
+    [['t_0000000000000001', 'k1'], ['t_0000000000000001', 'k2'], ['t_0000000000000001', 'k3']]);
+  await engine.write(null, (device) => {
+    const row = device.activeReplica.deviceRows('roadmap')['carry:t_0000000000000001'];
+    row.kept = row.kept.filter((each) => each.id !== 'k1');
+  });
+  await settle();
+  assert.deepEqual(menu.tree, [], 'with nothing the boards give words to, the list offers no row');
+});

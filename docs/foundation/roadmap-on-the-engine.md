@@ -269,8 +269,8 @@ What a device tells a person when a change of theirs met one made elsewhere.
 - **What still cannot land:** a change to a roadmap deleted on another device; one that would pass
   a cap another device filled first; one made after write access ended; a note whose two versions,
   merged, pass its bound. The engine keeps each as a notice with its content. The product lists
-  them in one place with the reason, with any workspace item the carry-over found past a bound
-  (§8.2), and the person may copy what they hold or discard them.
+  them in one place with the reason, with each record the carry-over set aside (§8.2), and the
+  person may copy what they hold or discard them.
   Nothing else is ever shown as refused. (R-2)
 
 - **INV-1.** No gesture of a person's on a step is refused because the step, or a step it links,
@@ -401,25 +401,38 @@ tables, stopping where they differ from those it planned from.
 ### §8.2 What a browser holds
 
 The new bundle carries over what the old one kept. It runs under a browser lock, on every load
-while an old store still holds anything, and writes a ledger of what it carried: each old entry and
-the outbox entry or notice it became.
+while an old store still holds anything and again whenever another replica becomes active, and
+writes a ledger of what it carried in the replica it carried to: a device row a roadmap
+(`carry:<T>`), written in the act that carries, which records the roadmap the old one became, the
+changes and workspace items it carried, and each record it set aside for §6's one list.
 
-- **A roadmap made signed out.** The browser first asks the server whether the id exists. An id the
-  server does not hold becomes a creation in the `anon` replica. One the server holds as the
-  person's own, a claim cut short, is carried as unsent changes to it. One that is another
-  account's or spent is carried under a new id, with the device's pointers moved to it.
+- **A roadmap made signed out** goes to the replica its index row names: the active one where the
+  row names nobody, a signed-in browser's claim the old bundle had begun included, and an account's
+  once that account is signed in. The browser first asks the server whether the id exists. An id
+  the server does not hold becomes a creation that keeps every id the roadmap held. One the person's
+  list holds, a claim cut short, is carried as unsent changes to it. One the server serves for
+  another account, or holds as spent, is created under a new id derived from the old one, with the
+  device's pointers moved to it. Signed out, the server answers only for a roadmap anyone may read,
+  so a private id reads as one it does not hold.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
-  after its first pull. They take the time of the carry-over, so one made days ago with no
-  connection counts as made now.
+  after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
+  connection counts as made now. A roadmap gone from the person's list keeps them for §6's one list,
+  as changes to a deleted roadmap where the server holds it spent and as changes after access ended
+  otherwise.
 - **Marks** a device roadmap holds, and marks left undrained from before roadmap's present sync,
-  are carried as marks; a step a claim would have marked from its seed is marked.
+  are carried as marks; a step a claim would have marked from its seed is marked. A mark left
+  undrained or found on a seed stands only where the person holds no mark of the step.
 - **Workspaces** become `subtask`, `stepLink` and `stepNote` records, in the account the device's
   index names for the roadmap, or the `anon` replica's. Each carried item's id is derived from the
-  old one's, so carrying twice writes nothing twice. A workspace of a roadmap the person does not
-  own is not carried. An item past a bound of §4 is not cut short: it goes to §6's one list, where
-  the person may copy it.
-- An old store is deleted once the ledger shows every entry of it durable in the replica's outbox.
-  The stores that are not sync's stay: the last place, the view, the legend and the ledgers.
+  old one's, so carrying twice writes nothing twice; a note goes after the note its step already
+  holds. A workspace of a roadmap the person does not own is not carried; one of the person's
+  roadmap deleted since goes to §6's one list. An item past a bound of §4, and a step or kind of a
+  roadmap made signed out past its bound or its type's cap, is not cut short: it goes to §6's one
+  list, where the person may copy it.
+- An old store's entry is deleted once the ledger shows it carried, and only while it still holds
+  what was carried: what a tab still on the old bundle writes after the carry stays for the next
+  load, which carries only what the ledger does not record. The stores that are not sync's stay:
+  the last place, the view, the legend and the ledgers.
 
 - **INV-4.** A browser deletes no old store while the ledger lacks an entry of it.
 

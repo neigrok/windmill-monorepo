@@ -83,8 +83,8 @@ export class LocalTreeRegistry {
     }
   }
 
-  // Recovery must distinguish a successful empty index from one the browser could not read.
-  readList(owner = deviceOwner()) {
+  // Every row by tree id, or a throw where the browser could not read the index or it does not read as one.
+  rows() {
     const storage = this.suppliedStorage ?? window.localStorage;
     const entries = JSON.parse(storage.getItem(KEY) ?? '{}');
     if (!entries || typeof entries !== 'object' || Array.isArray(entries)
@@ -94,7 +94,12 @@ export class LocalTreeRegistry {
         || (entry.claimed !== undefined && typeof entry.claimed !== 'boolean'))) {
       throw new Error('Device tree index malformed');
     }
-    return Object.entries(entries)
+    return entries;
+  }
+
+  // Recovery must distinguish a successful empty index from one the browser could not read.
+  readList(owner = deviceOwner()) {
+    return Object.entries(this.rows())
       .filter(([, entry]) => visibleTo(entry, owner))
       .map(([id, entry]) => ({ id, title: entry.title ?? '', updatedAt: entry.updatedAt ?? 0, claimed: !!entry.claimed }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -207,5 +212,15 @@ export class LocalTreeRegistry {
     const entries = this.entries();
     delete entries[id];
     this.write(entries);
+  }
+
+  // The carry-over's delete (roadmap-on-the-engine.md §8.2): the row goes only while it is still the row `seen`.
+  // Answers whether it went.
+  removeIfStill(id, seen) {
+    const entries = this.entries();
+    if (!entries[id] || JSON.stringify(entries[id]) !== JSON.stringify(seen)) return false;
+    delete entries[id];
+    this.write(entries);
+    return JSON.stringify(this.entries()[id]) !== JSON.stringify(seen);
   }
 }

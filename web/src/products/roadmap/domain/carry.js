@@ -24,7 +24,7 @@ import { StepNote, StepNoteValue } from './workspace.js';
 /** @typedef {{ id: string, label: string, icon: string, color: string, description: string, links: { url: string, label: string }[], order: string }} OldStep */
 /** @typedef {{ title: string, guide: string, kinds: OldKind[], steps: OldStep[], links: string[][] }} OldRoadmap */
 /** @typedef {'pastBound' | 'capFilled' | 'roadmapDeleted' | 'accessEnded'} KeptReason */
-/** @typedef {{ id: string, reason: KeptReason, subject: Subject, values: Record<string, Json> }} Kept */
+/** @typedef {{ id: string, reason: KeptReason, subject: Subject, values: Record<string, Json>, named: string }} Kept */
 
 // §8.2 What a browser holds: the rules the carry-over follows as it moves what roadmap's old bundle kept into the
 // replica. Only a browser that ran the old bundle holds its stores, so these rules are the web's alone.
@@ -61,16 +61,18 @@ export function carriedOrds(keys) {
   return ords;
 }
 
-// A record set aside whole, in the words it held, rather than cut short (§8.2): it goes to §6's one list.
+// A record set aside whole, in the words it held, rather than cut short (§8.2): it goes to §6's one list, named by its
+// own words or, where it has none that name it, by what it belongs to (`named`, a step's or a roadmap's name).
 /**
  * @param {string} old
  * @param {KeptReason} reason
  * @param {Subject} subject
  * @param {Record<string, Json>} values
+ * @param {string} [named]
  * @returns {Kept}
  */
-export function kept(old, reason, subject, values) {
-  return Object.freeze({ id: hashText(jcs([old, subject, values])).slice(0, 16), reason, subject, values });
+export function kept(old, reason, subject, values, named = '') {
+  return Object.freeze({ id: hashText(jcs([old, subject, values])).slice(0, 16), reason, subject, values, named });
 }
 
 // What a roadmap the old bundle kept comes to as the engine's records: its words, its kinds in their order, its steps
@@ -298,7 +300,7 @@ export class CarryLedger {
     const strings = (/** @type {unknown} */ value) => (value !== null && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).filter(([, each]) => typeof each === 'string')) : {});
     return new CarryLedger({ to: typeof row.to === 'string' ? row.to : null, frontier: strings(row.frontier), items: strings(row.items),
-      marks: typeof row.marks === 'string' ? row.marks : null, kept: Array.isArray(row.kept) ? row.kept : [] });
+      marks: typeof row.marks === 'string' ? row.marks : null, kept: Array.isArray(row.kept) ? row.kept.map((each) => ({ ...each, named: typeof each?.named === 'string' ? each.named : '' })) : [] });
   }
 
   // The ledger with another carry's entry added: its roadmap where it names one, each writer's newer stamp, its items
@@ -312,6 +314,12 @@ export class CarryLedger {
       kept: [...this.kept, ...entry.kept.filter((each) => !known.has(each.id))] });
   }
 
+  // The ledger less one record it set aside.
+  /** @param {string} id */
+  without(id) {
+    return new CarryLedger({ to: this.to, frontier: this.frontier, items: this.items, marks: this.marks, kept: this.kept.filter((each) => each.id !== id) });
+  }
+
   // Whether the old bundle's change under `stamp` was carried.
   /** @param {string} stamp */
   carried(stamp) {
@@ -323,7 +331,7 @@ export class CarryLedger {
   get json() {
     /** @type {Json} */
     const json = { to: this.to, frontier: { ...this.frontier }, items: { ...this.items }, marks: this.marks,
-      kept: this.kept.map((each) => ({ id: each.id, reason: each.reason, subject: { ...each.subject }, values: each.values })) };
+      kept: this.kept.map((each) => ({ id: each.id, reason: each.reason, subject: { ...each.subject }, values: each.values, named: each.named })) };
     return json;
   }
 }
@@ -356,6 +364,32 @@ export class RecordCarry {
   }
 }
 
+// §6 A record the carry-over set aside, discarded from the one list: its ledger keeps everything else it records.
+// Answers whether the ledger still held it.
+export class DiscardKept {
+  /**
+   * @param {string} old
+   * @param {string} id
+   */
+  constructor(old, id) {
+    this.key = CarryLedger.key(old);
+    this.id = id;
+    this.refusals = RoadmapRefusals;
+    Object.freeze(this);
+  }
+
+  /** @param {ActReader} read */
+  load(read) { return read.inScope(RoadmapScopes.account, (account) => CarryLedger.of(account.device(this.key))); }
+
+  /** @param {CarryLedger} held */
+  decide(held) {
+    if (!held.kept.some((each) => each.id === this.id)) return ActDecision.unchanged(false);
+    const plan = new Plan();
+    plan.device(this.key, held.without(this.id).json);
+    return writeIn(RoadmapScopes.account, plan, true);
+  }
+}
+
 // The ledger of one old roadmap as the replica holds it.
 /**
  * @param {import('../../../platform/domain-kit/reading.js').Reader} read a reader of the account's scope
@@ -365,8 +399,10 @@ export function carryLedgerOf(read, old) {
   return CarryLedger.of(read.device(CarryLedger.key(old)));
 }
 
-// Every record the carry-over set aside, in the order of the old roadmaps' ledgers.
-/** @param {import('../../../platform/domain-kit/reading.js').Reader} read a reader of the account's scope */
-export function carriedKept(read) {
-  return Object.entries(read.devices('carry:')).sort(([a], [b]) => compareText(a, b)).flatMap(([, row]) => CarryLedger.of(row).kept);
+// Every record the carry-over set aside, each with the old roadmap whose ledger holds it, in the order of their ledgers,
+// from roadmap's device rows.
+/** @param {Record<string, Json>} rows */
+export function carriedKept(rows) {
+  return Object.entries(rows).filter(([key]) => CarryLedger.isLedger(key)).sort(([a], [b]) => compareText(a, b))
+    .flatMap(([key, row]) => CarryLedger.of(row).kept.map((each) => ({ old: key.slice('carry:'.length), ...each })));
 }

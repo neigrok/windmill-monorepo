@@ -35,13 +35,18 @@ test('each notice the domain lists is a kept change in the list’s words, named
     [['Cargo', true], ['Macros', true], ['', false], ['', true], ['', true], ['Read the wind', true]], 'with no names read, a change is named only by its own words');
 });
 
-test('a workspace item the carry-over found past a bound is kept whole for the list, named by its own words or its step', () => {
+test('a record the carry-over set aside is a kept change, named by its own words or by what it belonged to, apart from every notice', () => {
   const label = 'Reef '.repeat(50).trim();
-  assert.deepEqual([
-    KeptChange.carried({ id: 'carried:1', subject: { t: 'subtask', id: 's1' }, values: { step: 'a', label } }),
-    KeptChange.carried({ id: 'carried:2', subject: { t: 'stepNote', id: 'a' }, values: { text: 'A long note' } }, 'Basics'),
-  ], [
-    new KeptChange({ id: 'carried:1', reason: 'pastBound', title: label, text: label }),
-    new KeptChange({ id: 'carried:2', reason: 'pastBound', title: 'Basics', text: 'A long note' }),
+  const old = 't_0000000000000001';
+  const kept = keptChanges([], roadmapRegistry, RoadmapNames.NONE, [
+    { old, id: 'k1', reason: 'pastBound', subject: { t: 'subtask', id: 's1' }, values: { step: 'a', label, done: false }, named: 'Basics' },
+    { old, id: 'k2', reason: 'roadmapDeleted', subject: { t: 'stepNote', id: 'a' }, values: { text: 'A long note' }, named: 'Basics' },
+    { old, id: 'k3', reason: 'roadmapDeleted', subject: { t: 'progress', id: 'a' }, values: { mark: { status: 'complete' } }, named: 'Basics' },
+  ]).kept;
+  assert.deepEqual(kept, [
+    new KeptChange({ id: 'carry:k1', reason: 'pastBound', title: label, text: label, carriedFrom: old }),
+    new KeptChange({ id: 'carry:k2', reason: 'roadmapDeleted', title: 'Basics', text: 'A long note', carriedFrom: old }),
+    new KeptChange({ id: 'carry:k3', reason: 'roadmapDeleted', title: 'Basics', text: '', carriedFrom: old }),
   ]);
+  assert.deepEqual(kept.map((change) => [change.ledgerId, change.worded]), [['k1', true], ['k2', true], ['k3', false]]);
 });

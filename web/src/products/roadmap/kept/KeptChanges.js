@@ -1,7 +1,7 @@
 // §6 The one list of what cannot land (flow 49, Kept here): roadmap's notices as the domain reads them (`cannotLand`),
-// and the workspace items the carry-over found past a bound (§8.2), each in the list's words. A kept change names what it
-// changed, holds the reason it cannot land and keeps every word the person wrote, which Copy takes. Every other notice is
-// no refusal a person is shown: it is handed back as `unexpected`, by its code alone.
+// and the records the carry-over set aside in its ledger (§8.2, `carriedKept`), each in the list's words. A kept change
+// names what it changed, holds the reason it cannot land and keeps every word the person wrote, which Copy takes. Every
+// other notice is no refusal a person is shown: it is handed back as `unexpected`, by its code alone.
 
 import { cannotLand } from '../domain/landing.js';
 
@@ -63,31 +63,38 @@ export class RoadmapNames {
 }
 
 export class KeptChange {
-  // `reason` is the domain's for a notice (roadmapDeleted, capFilled, accessEnded or noteTooLong), or pastBound for a
-  // workspace item the carry-over kept whole rather than cut short (§8.2).
-  constructor({ id, reason, title, text }) {
+  // `reason` is the domain's for a notice (roadmapDeleted, capFilled, accessEnded or noteTooLong), or for a record the
+  // carry-over set aside its ledger's: one of those, or pastBound for one it kept whole rather than cut short (§8.2).
+  // `carriedFrom` names the old roadmap whose ledger holds a carried record, null for a notice.
+  constructor({ id, reason, title, text, carriedFrom = null }) {
     this.id = id;
     this.reason = reason;
     this.title = title;
     this.text = text;
+    this.carriedFrom = carriedFrom;
     Object.freeze(this);
   }
 
   // One notice the domain lists, in the list's words. Its title is the name the person wrote, else the one the device
   // last read (`named`); its text every word they wrote, the title's own only where it is all of them.
-  static of({ id, reason, subject, values }, named) {
+  static of({ id, reason, subject, values }, named, carriedFrom = null) {
     const words = WORDS[subject?.t] ?? { name: null, words: [] };
     const written = (field) => (typeof values[field] === 'string' ? values[field].trim() : '');
     const title = (words.name && written(words.name)) || named;
     const all = words.words.map(written).filter(Boolean);
     const text = (all.length > 1 ? all.filter((each) => each !== title) : all).join('\n\n');
-    return new KeptChange({ id, reason, title, text });
+    return new KeptChange({ id, reason, title, text, carriedFrom });
   }
 
-  // A workspace item the carry-over found past a bound of §4 (§8.2): a subtask, a step's link or its note, by the record
-  // it would have been and the values it held.
-  static carried({ id, subject, values }, named = '') {
-    return KeptChange.of({ id, reason: 'pastBound', subject, values }, named);
+  // A record the carry-over set aside (§8.2), as its ledger holds it: by the record it would have been, the values it
+  // held and its reason. Its id is the ledger's, apart from every notice's.
+  static carried({ old, id, reason, subject, values, named }) {
+    return KeptChange.of({ id: `carry:${id}`, reason, subject, values }, named, old);
+  }
+
+  // The ledger's id of a carried record.
+  get ledgerId() {
+    return this.id.slice('carry:'.length);
   }
 
   // A change that carries words of its own, which the list shows and Copy takes; a mark, a pointer or a link carries none.
@@ -96,10 +103,10 @@ export class KeptChange {
   }
 }
 
-// Roadmap's notices read by the domain: the kept changes in the order the engine wrote them, and each other notice's
-// id and code.
-export function keptChanges(notices, registry, names = RoadmapNames.NONE) {
+// Roadmap's notices read by the domain, then the records the carry-over set aside (`carried`, the domain's
+// `carriedKept`): the kept changes, the notices in the order the engine wrote them, and each other notice's id and code.
+export function keptChanges(notices, registry, names = RoadmapNames.NONE, carried = []) {
   const scopes = new Map(notices.map((notice) => [notice.id, notice.scope]));
   const { listed, unexpected } = cannotLand(notices, registry);
-  return { kept: listed.map((each) => KeptChange.of(each, names.of(scopes.get(each.id), each.subject))), unexpected };
+  return { kept: [...listed.map((each) => KeptChange.of(each, names.of(scopes.get(each.id), each.subject))), ...carried.map(KeptChange.carried)], unexpected };
 }

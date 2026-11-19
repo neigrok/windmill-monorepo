@@ -15,9 +15,9 @@ const CHANNEL = 'windmill-roadmap-lane-epochs';
 class DatabaseRecords {
   constructor(db) { this.db = db; }
 
-  // One transaction over a tree's record: `work` reads what is stored and may put its replacement. A failure rejects with
-  // what failed: `work`'s own throw, else the failing request's error, which reaches the transaction before its own
-  // `error` is set.
+  // One transaction over a tree's record: `work` reads what is stored and may put its replacement or delete it. A failure
+  // rejects with what failed: `work`'s own throw, else the failing request's error, which reaches the transaction before
+  // its own `error` is set.
   transact(treeId, mode, work) {
     return new Promise((resolve, reject) => {
       const txn = this.db.transaction(STORE, mode);
@@ -26,7 +26,7 @@ class DatabaseRecords {
       let answer, failure;
       get.onsuccess = () => {
         try {
-          answer = work(get.result, (next) => store.put(next, treeId));
+          answer = work(get.result, (next) => store.put(next, treeId), () => store.delete(treeId));
         } catch (error) {
           failure = error;
           txn.abort();
@@ -73,7 +73,7 @@ class DocumentRecords {
   }
 
   async transact(treeId, mode, work) {
-    return work(this.records.get(treeId), (next) => this.records.set(treeId, structuredClone(next)));
+    return work(this.records.get(treeId), (next) => this.records.set(treeId, structuredClone(next)), () => this.records.delete(treeId));
   }
 
   async treeIds() { return [...this.records.keys()]; }
@@ -154,6 +154,19 @@ export class SyncStore {
     await (await this.records(durable)).clear(treeId);
     this.latest.delete(treeId);
     this.refused.records.delete(treeId);
+  }
+
+  // The carry-over's delete (roadmap-on-the-engine.md §8.2), in the database alone: the tree's record goes only while it
+  // is still the record `seen`, as `load` read it, so what an old tab wrote since stays for the next load to carry.
+  // Answers whether it went.
+  async clearIfStill(treeId, seen) {
+    const gone = await (await this.records(true)).transact(treeId, 'readwrite', (stored, put, remove) => {
+      if (!stored || JSON.stringify(normalizeRecord(stored)) !== JSON.stringify(seen)) return false;
+      remove();
+      return true;
+    });
+    if (gone) this.latest.delete(treeId);
+    return gone;
   }
 
   save(treeId, value) {
