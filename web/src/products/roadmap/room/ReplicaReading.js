@@ -25,10 +25,12 @@ const same = (a, b) => a.length === b.length && a.every((item, index) => item ==
 const DEVICE_ZONE = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
 
 export class ReplicaReading {
-  // `room` holds the handles the room's writes reach for; `say` shows the room's toast.
-  constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, repository = new HttpTreeRepository({ treeId }) }) {
+  // `room` holds the handles the room's writes reach for; `say` shows the room's toast. A reading of no roadmap
+  // (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
+  constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis,
+    repository = treeId === null ? null : new HttpTreeRepository({ treeId }) }) {
     this.treeId = treeId;
-    this.scope = RoadmapScopes.tree(treeId);
+    this.scope = treeId === null ? null : RoadmapScopes.tree(treeId);
     this.room = room;
     this.say = say;
     this.session = session;
@@ -89,6 +91,19 @@ export class ReplicaReading {
     });
     this.repository.loadActivity({ limit: 200, signal: this.stopped.signal })
       .then((events) => { if (!this.closed && events.length) onActivity(events); });
+  }
+
+  // The person's roadmaps alone, for a page that lists them (a reading of no roadmap, `treeId` null): once the engine
+  // stands, the list as the replica holds it now and after each change, and the write door. False where the engine did
+  // not stand within the bound.
+  async readRoadmaps({ signal, onList }) {
+    this.engine = await this.engineWithin(signal);
+    if (!this.engine || signal.aborted) return false;
+    this.unwatch = this.engine.observeEngine(this.changed);
+    this.openWrites(false);
+    this.listeners.add(() => onList(this.list()));
+    onList(this.list());
+    return true;
   }
 
   // The account's roadmaps as the switcher lists them, where the replica keeps them.
@@ -185,12 +200,12 @@ export class ReplicaReading {
   };
 
   // The roadmap as the replica holds it now, observing every scope it is read through: the account's list and, for a
-  // roadmap in it, every roadmap of the account; for any other, the roadmap and each roadmap above it. Unchanged
-  // records answer the reading they answered before.
+  // roadmap in it or a reading of no roadmap, every roadmap of the account; for any other, the roadmap and each roadmap
+  // above it. Unchanged records answer the reading they answered before.
   roadmap() {
     const list = this.observe(RoadmapScopes.account);
     const listed = new Map(list.drawn.filter((record) => record.t === Roadmap.type).map((record) => [String(record.id), record]));
-    const ids = listed.has(this.treeId) ? [...listed.keys()] : this.lineage();
+    const ids = this.treeId === null || listed.has(this.treeId) ? [...listed.keys()] : this.lineage();
     const held = ids.map((id) => this.holding(id, listed.get(id) ?? null));
     const listRead = list.firstPullComplete && list.loaded;
     if (this.last && this.last.listRead === listRead && same(this.last.held, held)) return this.last.roadmap;
@@ -204,18 +219,23 @@ export class ReplicaReading {
     for (let id = this.treeId; id !== null && !ids.includes(id);) {
       ids.push(id);
       const scope = RoadmapScopes.tree(id);
-      if (!this.subscribed.has(scope)) {
-        this.subscribed.add(scope);
-        this.engine.subscribe(scope).catch(() => {});
-      }
+      this.subscribeTo(scope);
       const meta = this.observe(scope).drawn.find((record) => record.t === RoadmapMeta.type);
       id = meta ? RoadmapMeta.decode(Fields.record(meta)).parent?.tree ?? null : null;
     }
     return ids;
   }
 
-  // What the replica holds of one roadmap, the same holding while its records are the same.
+  // A scope the reading comes to read, subscribed once, so the server's copy of it arrives.
+  subscribeTo(scope) {
+    if (this.subscribed.has(scope)) return;
+    this.subscribed.add(scope);
+    this.engine.subscribe(scope).catch(() => {});
+  }
+
+  // What the replica holds of one roadmap, its tree scope subscribed, the same holding while its records are the same.
   holding(id, record) {
+    this.subscribeTo(RoadmapScopes.tree(id));
     const tree = this.observe(RoadmapScopes.tree(id));
     const overlay = this.observe(RoadmapScopes.overlay(id));
     const read = tree.firstPullComplete && tree.loaded;

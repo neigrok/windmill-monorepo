@@ -8,6 +8,7 @@ import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
 import { t } from './i18n/entry/index.js';
+import { YOUR_ROADMAPS } from './identity/HeldDeletion.js';
 
 const StepDraftProvider = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftProvider })));
 const StepDraftNotice = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftNotice })));
@@ -19,6 +20,7 @@ const ROOM_READS_REPLICA = import.meta.env?.VITE_ROADMAP_REPLICA_ROOM === 'on';
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
 const SkillTreeApp = lazy(importSkillTreeApp);
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
+const YourRoadmaps = lazy(() => import('./identity/YourRoadmaps.jsx').then((m) => ({ default: m.YourRoadmaps })));
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
 const importRoadmapLanding = () => import('./marketing/RoadmapLanding.jsx').then((m) => ({ default: m.RoadmapLanding }));
@@ -69,6 +71,8 @@ function render({ hash, pathname, search }) {
   }
 
   if (hash.startsWith('#/browse')) return { Component: BrowsePage, props: {} };
+  // The person's roadmaps, where a deletion of the open one lands: only where the room reads the device's copy.
+  if (ROOM_READS_REPLICA && hash.split('?')[0] === YOUR_ROADMAPS) return { Component: YourRoadmaps, props: {}, inRoom: true };
 
   const isApp = hash.startsWith('#/app') || hash.startsWith('#/t/') || hash.startsWith('#/demo')
     || new URLSearchParams(search).has('view');

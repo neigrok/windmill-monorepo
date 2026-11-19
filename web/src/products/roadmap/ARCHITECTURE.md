@@ -205,10 +205,10 @@ on, every room but the demo reads through `ReplicaReading`:
   the tree a step opens `SetPointer` or `ClearPointer`, its picker listing the person's roadmaps as the replica keeps
   them and reading an address of one of them there (any other from the server). The receipt holds
   them all, its Undo (`revert`) is each act's Undo, last first, and ⌘Z and ⇧⌘Z walk the session's stack of receipts over
-  `runner.undo` and `runner.redo`, bumping `receiptVersion` as today; a held delete stays the room's own hold until it
+  `runner.undo` and `runner.redo`, bumping `receiptVersion` as today; a step's held delete stays the room's own hold until it
   is released, and an act the engine still holds is cancelled in place. Each act leaves the engine's journal
   (`runner.release`) as its receipt leaves the stacks. The owner's screens and events are today's
-  (`SkillTreeView.replica.browser.test.js`). Such a room draws no presence and hands its session
+  (`SkillTreeView.replica.browser.test.js`), but for a roadmap's own deletion, held (The switcher's delete, below). Such a room draws no presence and hands its session
   neither to a reconnect nor to a claim of the device's trees: the engine reconnects, and its lineage rule takes what
   the device holds at sign-in.
 
@@ -593,6 +593,18 @@ tree takes it through its stored record, as any device edit, so another tab with
 load. A write that fails reports `roadmap-device-cascade` once, under the name of what failed, and its tree keeps its
 steps on disk: the open tab's own steps vanish from its screen and come back after a reload, each opening a tree that is
 not found and following its mark, to detach or delete by hand. Nothing on the server is touched.
+
+**A held deletion on the device's copy.** Where the room reads the device's copy, the confirmed delete is the domain's
+`DeleteRoadmap` (`ReplicaSession.deleteRoadmap`), held nine seconds and permanent once the hold ends (R-7): the roadmap
+and its branch leave every list at once, and no request is made. The deletion answers itself as a `HeldDeletion`
+(`identity/HeldDeletion.js`). A row that is not the open roadmap goes as today. The open roadmap's lands the person on
+their roadmaps (`#/app/roadmaps`, `identity/YourRoadmaps.jsx`, flow 51), the deletion in that history entry: the page
+lists the person's roots as the replica keeps them, one row each leading into it (a chevron from 744px), and while the
+hold stands says *Roadmap deleted* with Undo in the room's toast, for what is left of the hold, with no countdown, its
+280 ms fade and a polite word that moves no focus. Undo is the engine's `cancelHeld` (`undeleteRoadmap`), true only
+while every entry of the deletion is still held; it returns the person to the roadmap, whose room says *Deletion undone*
+once its view stands. A page reached after the hold, or reloaded, offers no Undo. A build without the switch has no such
+page: its route table serves `#/app/roadmaps` as any roadmap address.
 
 **Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
 `<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a

@@ -127,6 +127,8 @@
   "roadmap.connect.loop": "This would create a loop",
   "roadmap.common.delete": "Delete",
   "roadmap.deleteConfirm.question": "Delete {step}?",
+  "roadmap.deletion.held": "Roadmap deleted",
+  "roadmap.deletion.undone": "Deletion undone",
   "roadmap.demo.bylinePhone": "Sample",
   "roadmap.demo.bylineWide": "Windmill sample",
   "roadmap.demo.coachButton": "Mark it done",
@@ -708,5 +710,6 @@
   "roadmap.draft.tryAgain": "Try again",
   "roadmap.draft.returnFailed": "Couldn’t return to this step. Your draft is still here. Try again.",
   "roadmap.draft.discardTitle": "Discard this draft?",
-  "roadmap.draft.discardBody": "Your changes haven’t been saved."
+  "roadmap.draft.discardBody": "Your changes haven’t been saved.",
+  "roadmap.yourRoadmaps.title": "Your roadmaps"
 }

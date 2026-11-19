@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 import { until } from '../../../platform/sync/fakes.js';
@@ -233,6 +234,32 @@ test('the legend’s gestures and a step’s pointer: a kind made, named, descri
     assert.deepEqual({ opening: opening(), told }, { opening: undefined, told: { said: [], events: [], statuses: 0 } });
   } finally {
     reading.close();
+    a.close();
+  }
+});
+
+test('a roadmap’s deletion is held nine seconds: hidden from the person’s list at once, taken back within the hold, and permanent once it ends', async () => {
+  const { a, tree } = await sailing();
+  try {
+    const other = committed(await a.runner.runAct(new CreateRoadmap('Learn to knot', { steps: [{ key: 'bowline', label: 'Bowline' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(other.tree), RoadmapScopes.overlay(other.tree)]) a.observe(scope);
+    await a.sync();
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const page = new ReplicaReading({ treeId: null, timers: a.env.timers, session: { getSnapshot: () => snapshot, subscribe: () => () => {} } });
+    const lists = [];
+    assert.equal(await page.readRoadmaps({ signal: new AbortController().signal, onList: (list) => lists.push(list.map((row) => row.title)) }), true);
+    const held = await page.writes.deleteRoadmap(tree);
+    assert.deepEqual({ treeId: held.treeId, holding: held.remainingAt(a.world.now), listed: page.list().map((row) => row.title) },
+      { treeId: tree, holding: CONSTANTS.HOLD_MS, listed: ['Learn to knot'] });
+    assert.equal(await page.writes.undeleteRoadmap(held), true);
+    await until(() => page.list().length === 2, 1000);
+    const again = await page.writes.deleteRoadmap(tree);
+    await a.advance(CONSTANTS.HOLD_MS);
+    await a.sync();
+    assert.deepEqual({ undone: await page.writes.undeleteRoadmap(again), listed: page.list().map((row) => row.title), first: lists[0].sort() },
+      { undone: false, listed: ['Learn to knot'], first: ['Learn to knot', 'Learn to sail'] });
+    page.close();
+  } finally {
     a.close();
   }
 });

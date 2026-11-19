@@ -153,9 +153,12 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
       if (id === treeId && sessionRef.current?.renameTree(title)) return undefined;
       return local ? renameLocalTree(id, title) : renameTree(id, title);
     },
-    // The server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
+    // Where the room reads the device's copy, any row's deletion is held there, and answers itself while held. Otherwise the
+    // server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
     // A tree that lives only here goes with the steps of the other trees here that open it, or not at all (deleteDeviceTree).
     onDelete: async (id, { local = false } = {}) => {
+      const replica = replicaRef.current;
+      if (replica) return replica.writes.deleteRoadmap(id);
       if (local) return deleteDeviceTree(id, { live: sessionRef.current });
       await deleteTree(id);
       if (id === treeId) sessionRef.current?.close();

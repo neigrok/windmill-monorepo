@@ -36,6 +36,8 @@ import { syncSession } from '/src/platform/sync/session.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { SyncStore } from '/src/products/roadmap/sync/SyncStore.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
+import { YourRoadmaps } from '/src/products/roadmap/identity/YourRoadmaps.jsx';
+import { readNavigation, subscribeNavigation } from '/src/shell/navigation.js';
 import { ProductSessions } from '/src/shell/ProductSessions.jsx';
 import { StepDraftProvider, StepDraftNotice } from '/src/products/roadmap/step/StepDraftProvider.jsx';
 import { DocumentDataScope } from '/src/shell/auth/accountChange.js';
@@ -98,9 +100,18 @@ if (params.has('knot')) {
 window.served = await (await fetch('/v1/trees/' + tree)).json().then((body) => body.data);
 const scope = new DocumentDataScope({ invalidate: () => stepDraftSession(document, { create: false })?.invalidate() });
 scope.reconcile(engine);
+// The route table's share of the host: the person's roadmaps at their address, any other roadmap's room at its own.
+function Host() {
+  const [hash, setHash] = React.useState(() => readNavigation().hash);
+  React.useEffect(() => subscribeNavigation(() => setHash(readNavigation().hash)), []);
+  const path = hash.split('?')[0];
+  if (path === '#/app/roadmaps') return React.createElement(YourRoadmaps);
+  const shown = path.startsWith('#/app/') ? path.slice('#/app/'.length) : tree;
+  return React.createElement(SkillTreeView, { key: shown, treeId: shown, replica: params.get('replica') === 'on' });
+}
 createRoot(document.getElementById('root')).render(React.createElement(ProductSessions, {
   dataScope: scope.read, products: [{ session: { Provider: StepDraftProvider, Notice: StepDraftNotice } }],
-}, React.createElement(SkillTreeView, { treeId: tree, replica: params.get('replica') === 'on' })));
+}, React.createElement(Host)));
 `;
 
 const auth = `
@@ -279,6 +290,9 @@ async function markAndNote(context, { replica }) {
   await page.keyboard.type('Check the forecast');
   await page.keyboard.press('Enter');
   await step.getByText('Check the forecast', { exact: true }).waitFor();
+  // The pointer leaves the step's buttons, so no hover preview stands in what is read.
+  await page.mouse.move(0, 0);
+  await page.locator('.st-board-step-preview').waitFor({ state: 'detached' });
   const read = { columns: await boardColumns(page), step: await step.innerText(),
     ...await page.evaluate(() => ({ events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues })), failures };
   await page.close();
@@ -413,5 +427,80 @@ test('with the switch on the step document’s Tree section lists the person’s
     await page.close();
   } finally {
     await context.close();
+  }
+});
+
+test('with the switch on a roadmap’s deletion lands on the person’s roadmaps with its Undo for nine seconds, and is permanent after', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(context, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    const failures = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+    await page.goto(`${origin}/room?account=u_owner&replica=on&knot=1#/app/${TREE}`);
+    const roadmaps = page.locator('.st-roadmaps');
+    const toast = page.locator('.st-board-toast');
+    const deleteOpen = async () => {
+      await page.locator('.st-roadmap-switcher [aria-haspopup="menu"]').click();
+      await page.getByRole('button', { name: 'Delete Learn to sail', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await page.locator('[data-switcher-action="confirm"]').focus();
+      await page.keyboard.press('Enter');
+      await roadmaps.waitFor();
+    };
+    const listed = () => roadmaps.locator('.st-roadmaps-row').allInnerTexts();
+    const treeRecord = () => serverRows('acct:u_owner/roadmap').find((row) => row.t === 'tree' && row.id === TREE);
+
+    await deleteOpen();
+    await toast.getByText('Roadmap deleted', { exact: true }).waitFor();
+    const held = { title: await roadmaps.getByRole('heading', { level: 1 }).innerText(), rows: await listed(), address: await page.evaluate(() => location.hash) };
+    await toast.getByRole('button', { name: 'Undo', exact: true }).click();
+    await page.locator('.st-board-toast', { hasText: 'Deletion undone' }).waitFor();
+    const back = { address: await page.evaluate(() => location.hash), columns: await boardColumns(page) };
+
+    await deleteOpen();
+    await toast.waitFor();
+    await toast.waitFor({ state: 'detached', timeout: 14000 });
+    const shown = await page.evaluate(() => window.events.filter(({ name }) => ['roadmap_sheet', 'roadmap_deletion', 'roadmap_your_roadmaps'].includes(name))
+      .map(({ name, props }) => `${name} ${JSON.stringify(props)}`));
+    await reachesServer(() => treeRecord()?.life?.[0] === 'dead');
+    await page.reload();
+    await roadmaps.locator('.st-roadmaps-row').first().waitFor();
+    const after = { rows: await listed(), toasts: await toast.count() };
+    const told = await page.evaluate(() => ({ reloaded: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues }));
+
+    const narrow = await phone.newPage();
+    await phone.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
+    await narrow.goto(`${origin}/room?account=u_owner&replica=on#/app/roadmaps`);
+    await narrow.locator('.st-roadmaps-row', { hasText: 'Learn to knot' }).waitFor();
+    const phoneRows = { rows: await narrow.locator('.st-roadmaps-row').allInnerTexts(), chevrons: await narrow.locator('.st-roadmaps-row-open').evaluateAll((marks) => marks.filter((mark) => mark.checkVisibility()).length) };
+    assert.deepEqual({ held, back, after, phoneRows, shown, told, failures }, {
+      held: { title: 'Your roadmaps', rows: ['Learn to knot'], address: '#/app/roadmaps' },
+      back: { address: `#/app/${TREE}`, columns: ['locked: Leave the dock', 'upNext: Read the wind', 'done: Choose a course'] },
+      after: { rows: ['Learn to knot'], toasts: 0 },
+      phoneRows: { rows: ['Learn to knot'], chevrons: 0 },
+      shown: [
+        'roadmap_sheet {"step":"open","door":"switcher"}',
+        'roadmap_sheet {"step":"delete","door":"switcher","openers":"none","place":"account"}',
+        'roadmap_deletion {"step":"held"}',
+        'roadmap_your_roadmaps {"step":"shown","count":"1"}',
+        'roadmap_deletion {"step":"undo","outcome":"cancelled"}',
+        'roadmap_sheet {"step":"open","door":"switcher"}',
+        'roadmap_sheet {"step":"delete","door":"switcher","openers":"none","place":"account"}',
+        'roadmap_deletion {"step":"held"}',
+        'roadmap_your_roadmaps {"step":"shown","count":"1"}',
+      ],
+      told: { reloaded: ['roadmap_your_roadmaps {"step":"shown","count":"1"}'], issues: [] },
+      failures: [],
+    });
+    await page.close();
+    await narrow.close();
+  } finally {
+    await context.close();
+    await phone.close();
   }
 });

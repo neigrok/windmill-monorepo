@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './skilltree.css';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
-import { requestNavigation } from '../../shell/navigation.js';
+import { readNavigation, requestNavigation, updateNavigationState } from '../../shell/navigation.js';
 import { Button, ErrorBoundary } from '../../design-system';
 import { track } from '../../telemetry/beacon.js';
 import { ActivityPanel } from './activity/ActivityRows.jsx';
@@ -13,6 +13,7 @@ import { useActivity } from './activity/useActivity.js';
 import { BoardQuery } from './board/Board.js';
 import { BoardToast } from './board/BoardToast.jsx';
 import BoardView from './board/BoardView.jsx';
+import { HeldDeletion } from './identity/HeldDeletion.js';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './identity/RoadmapIdentity.jsx';
 import { GuideEntry } from './guide/GuideEntry.jsx';
 import { GuideNote } from './guide/GuideNote.jsx';
@@ -203,6 +204,13 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   useEffect(() => {
     if (decidedView === null || !load.takeForkNote()) return;
     showToast(forkedToast({ count: tree.nodes.length }), { surface: decidedView === 'board' ? 'board' : 'graph', act: 'fork' });
+  }, [decidedView]);
+  // An Undo of this roadmap's deletion returns here, which says so once its view stands, and once (flow 51).
+  const [undoneDeletion] = useState(() => HeldDeletion.of(readNavigation().state));
+  useEffect(() => {
+    if (decidedView === null || !undoneDeletion?.undone || undoneDeletion.treeId !== treeId) return;
+    showToast(t('roadmap.deletion.undone'), { surface: decidedView === 'board' ? 'board' : 'graph', act: 'notice' });
+    updateNavigationState(HeldDeletion.without);
   }, [decidedView]);
 
   // The Board's query, its acts and what a held delete projects.

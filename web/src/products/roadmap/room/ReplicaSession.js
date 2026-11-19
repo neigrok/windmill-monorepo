@@ -15,7 +15,8 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { ChangeKind, CreateKind, DeleteKind, RecolourKind } from '../domain/kinds.js';
 import { ClearPointer, Complete, Reset, SetPointer } from '../domain/progress.js';
 import { RoadmapChecks, RoadmapRefusals, RoadmapScopes } from '../domain/roadmapRules.js';
-import { SetVisibility, WriteRoadmap } from '../domain/roadmaps.js';
+import { DeleteRoadmap, SetVisibility, WriteRoadmap } from '../domain/roadmaps.js';
+import { HeldDeletion } from '../identity/HeldDeletion.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../domain/steps.js';
 import { AddStepLink, AddSubtask, ChangeSubtask, DeleteStepLink, DeleteSubtask, StepNote, StepNoteValue, Subtask } from '../domain/workspace.js';
 
@@ -63,8 +64,9 @@ export class ReplicaSession {
     this.workspace = new ReplicaWorkspace(this);
   }
 
-  // Runs one write's acts in order and answers the ids of those that wrote, and whether every act was taken. A refusal
-  // ends it and is said, in the words the room says it today; a failure is reported under the write's name and ends it.
+  // Runs one write's acts in order and answers the receipts of those that wrote (`ids`, their act ids), and whether
+  // every act was taken. A refusal ends it and is said, in the words the room says it today; a failure is reported under
+  // the write's name and ends it.
   async write(acts, what) {
     const written = [];
     for (const act of acts) {
@@ -73,15 +75,15 @@ export class ReplicaSession {
         outcome = await this.runner.runAct(act);
       } catch (error) {
         this.report('roadmap-replica-write', error, { write: what });
-        return { acts: written, complete: false };
+        return { receipts: written, ids: written.map((receipt) => receipt.gestureId), complete: false };
       }
       if (outcome.kind === 'refused') {
         this.refused(outcome.refusal, what);
-        return { acts: written, complete: false };
+        return { receipts: written, ids: written.map((receipt) => receipt.gestureId), complete: false };
       }
-      if (outcome.kind === 'committed') written.push(outcome.receipt.gestureId);
+      if (outcome.kind === 'committed') written.push(outcome.receipt);
     }
-    return { acts: written, complete: true };
+    return { receipts: written, ids: written.map((receipt) => receipt.gestureId), complete: true };
   }
 
   refused(refusal, what) {
@@ -93,7 +95,7 @@ export class ReplicaSession {
   // A write no stack holds: its acts' Undo is never asked, so the engine keeps nothing of them.
   async settle(acts, what) {
     const written = await this.write(acts, what);
-    await this.release(written.acts);
+    await this.release(written.ids);
     return written;
   }
 
@@ -112,7 +114,7 @@ export class ReplicaSession {
   dispatch(gesture) {
     const acts = this.actsOf(gesture);
     if (acts.length === 0) return null;
-    const receipt = new Written(this.write(acts, gesture.kind).then((written) => written.acts));
+    const receipt = new Written(this.write(acts, gesture.kind).then((written) => written.ids));
     this.undoStack.push(receipt);
     this.dropRedo();
     return receipt;
@@ -197,6 +199,26 @@ export class ReplicaSession {
     const act = parent === null ? new WriteRoadmap(id, { title }) : new ChangeStep(parent.tree, parent.step, { label: title });
     const { complete } = await this.settle([act], 'title');
     return complete;
+  }
+
+  // A root's deletion, held nine seconds and permanent once the hold ends (R-7), out of the Undo stack: its one Undo is
+  // `undeleteRoadmap` within the hold. Answers the deletion while it is held, null where the roadmap was gone already;
+  // throws where it was not written.
+  async deleteRoadmap(id) {
+    const { receipts, complete } = await this.write([new DeleteRoadmap(id)], 'deleteRoadmap');
+    if (!complete) throw new Error('The roadmap was not deleted');
+    const [held] = receipts;
+    return held ? new HeldDeletion({ treeId: id, actId: held.gestureId, releaseAt: held.releaseAt }) : null;
+  }
+
+  // Answers whether the deletion was taken back: only while every entry of it is still held.
+  async undeleteRoadmap(deletion) {
+    try {
+      return await this.runner.cancelHeld(deletion.actId);
+    } catch (error) {
+      this.report('roadmap-replica-write', error, { write: 'undeleteRoadmap' });
+      return false;
+    }
   }
 
   // The guide, out of the Undo stack as today. Text a guide may not hold never reaches the replica.
