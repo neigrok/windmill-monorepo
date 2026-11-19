@@ -110,6 +110,39 @@ struct SchemaTests {
     }
   }
 
+  // §2.5's v5 on a store whose spent ids keep no seq: each reads back with none, so a preimage read over it has no row to
+  // walk from and its Undo skips (§7.3, undo/restore.json), while a spent id a later pull puts keeps its dead row's seq.
+  @Test func aStoreFromBeforeSpentSeqsMigratesInPlace() throws {
+    let scope = ScopeRef.tree("b_00000001")
+    let born = try Stamp("1100:0:r_aaaaaaaaaaaa")
+    let put = { (store: Store, spent: SpentID) throws in
+      _ = try store.write(.pullPage) { tx in
+        var replica = try tx.replica(tx.activeReplica(), reads: [scope: RowSelection()])!
+        replica.apply(.putSpent(scope, spent))
+        return Planned((), replica.batch)
+      }
+    }
+    let spent = { (store: Store) throws -> [RecordKey: SpentID] in
+      try store.read { tx in try tx.replica(tx.activeReplica(), reads: [scope: RowSelection()])!.spentIDs(scope) }
+    }
+    let (elm, oak) = (RecordKey("tag", "elm"), RecordKey("tag", "oak"))
+    try StoreTests.inFreshDirectory { path in
+      do {
+        let store = try Store(path: path, registry: Self.probe)
+        _ = try store.firstLaunch(identities: try QueuedIdentities(["ids": ["rp_1"]]))
+        try put(store, SpentID(key: elm, born: born, seq: 3))
+        try store.writer.write { db in
+          try db.execute(sql: "ALTER TABLE spent DROP COLUMN seq")
+          try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'v5'")
+        }
+      }
+      let migrated = try Store(path: path, registry: Self.probe)
+      #expect(try spent(migrated) == [elm: SpentID(key: elm, born: born, seq: nil)])
+      try put(migrated, SpentID(key: oak, born: born, seq: 4))
+      #expect(try spent(migrated) == [elm: SpentID(key: elm, born: born, seq: nil), oak: SpentID(key: oak, born: born, seq: 4)])
+    }
+  }
+
   @Test(arguments: [false, true], [false, true])
   func aLegacyJoinedCommandMigratesAndRecoversAcrossDiskFailures(predicted: Bool, committed: Bool) throws {
     let file = try #require(try Corpus.files().first { $0.path == "refusal/transport.json" })

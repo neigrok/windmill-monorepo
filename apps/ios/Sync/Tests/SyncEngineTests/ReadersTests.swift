@@ -221,7 +221,7 @@ struct ReadersTests {
     let born = try Stamp("1000:0:r_aaaaaaaaaaaa")
     _ = try rig.store.write(.pullPage) { tx in
       var replica = try tx.replica(tx.activeReplica(), reads: [tree: RowSelection()])!
-      replica.apply(.putSpent(tree, SpentID(key: RecordKey("tag", "oak"), born: born)))
+      replica.apply(.putSpent(tree, SpentID(key: RecordKey("tag", "oak"), born: born, seq: 3)))
       return Planned((), replica.batch)
     }
     #expect(try rig.engine.read(tree) { reader -> [Stamp?] in [try reader.spentBorn("tag", "oak"), try reader.spentBorn("tag", "elm")] } == [born, nil])

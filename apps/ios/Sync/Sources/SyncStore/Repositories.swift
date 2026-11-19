@@ -92,7 +92,7 @@ public struct StoreTransaction {
     let staged = try Dictionary(grouping: allRows(.staging, of: handle), by: \.scope)
     for (scope, digest) in cursors.staging { staging[scope] = Staging(digest: digest, rows: Rows((staged[scope] ?? []).map(\.row))) }
     var spent: [ScopeRef: [RecordKey: SpentID]] = [:]
-    for record in try GRDB.Row.fetchAll(db, sql: "SELECT scope, type, id, born FROM spent WHERE replica = ?", arguments: [handle.value]) {
+    for record in try GRDB.Row.fetchAll(db, sql: "SELECT scope, type, id, born, seq FROM spent WHERE replica = ?", arguments: [handle.value]) {
       let id = try spentID(record)
       spent[try ScopeRef(record["scope"] as String), default: [:]][id.key] = id
     }
@@ -325,13 +325,13 @@ public struct StoreTransaction {
   }
 
   func spentIDs(of handle: ReplicaHandle, in scope: ScopeRef) throws -> [RecordKey: SpentID] {
-    let records = try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT type, id, born FROM spent WHERE replica = ? AND scope = ?"),
+    let records = try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT type, id, born, seq FROM spent WHERE replica = ? AND scope = ?"),
                                         arguments: [handle.value, scope.text])
     return Dictionary(uniqueKeysWithValues: try records.map(spentID).map { ($0.key, $0) })
   }
 
   func spentID(_ record: GRDB.Row) throws -> SpentID {
-    SpentID(key: RecordKey(record["type"], try RecordID(text: record["id"])), born: try Stamp(record["born"] as String))
+    SpentID(key: RecordKey(record["type"], try RecordID(text: record["id"])), born: try Stamp(record["born"] as String), seq: record["seq"])
   }
 
   // MARK: Rows

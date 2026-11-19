@@ -69,9 +69,9 @@ struct BatchWriter {
       try setStagingDigest(nil, replica: replica, scope: scope)
     case .putSpent(let scope, let spent):
       try db.execute(sql: """
-        INSERT INTO spent (replica, scope, type, id, born) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (replica, scope, type, id) DO UPDATE SET born = excluded.born
-        """, arguments: [replica.value, scope.text, spent.key.type, spent.key.id.text, spent.born.text])
+        INSERT INTO spent (replica, scope, type, id, born, seq) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (replica, scope, type, id) DO UPDATE SET born = excluded.born, seq = excluded.seq
+        """, arguments: [replica.value, scope.text, spent.key.type, spent.key.id.text, spent.born.text, spent.seq])
     case .putCursor(let scope, let record):
       try db.cachedStatement(sql: """
         INSERT INTO cursor (replica, scope, cursor, digest, booted, behind, mismatch_reset, digest_stop) VALUES (?, ?, ?, ?, ?, ?, ?, ?)

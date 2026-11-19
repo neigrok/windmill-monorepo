@@ -397,7 +397,7 @@ public struct PageApplier: Sendable {
     guard row.isAlive else {
       if registry.type(row.key.type)?.identity == .derived {
         guard let born = row.lattice.born else { throw JSONError.shape("the dead derived row \(row.key) carries no born") }
-        replica.apply(.putSpent(scope, SpentID(key: row.key, born: born)))
+        replica.apply(.putSpent(scope, SpentID(key: row.key, born: born, seq: row.seq)))
       }
       for governed in governed(by: row) {
         replica.apply(.putKnown(governed, .gone))
