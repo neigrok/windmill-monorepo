@@ -605,6 +605,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   [interaction handoff](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1555)
   specifies the paths. The web implementation is pending; flow 43's refused-change states and the
   Restore offer for a hidden link retire with that build.
+- **Roadmap on the sync engine · two steps of flow 51 the boards do not draw.** Built behind the room's replica switch
+  (off in production) from [journeys 48–52](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1531): the
+  switcher's confirm before a roadmap's delete still says *This can't be undone*, which is untrue once the delete is held
+  nine seconds with *Undo* (R-7); and *Your roadmaps* with no roadmap left shows only its heading. To draw, for the web's
+  owner: the confirm's copy (or no confirm, since Undo stands for nine seconds), and the empty *Your roadmaps*. Phones
+  have no door to delete a roadmap today, so 51.03 is reached only by address.
 - **Roadmap · iOS · what the web does differently.** [Roadmap · iOS](ios/roadmap.md) is drawn as one room and
   waits for the owner's review. Where it and the web now disagree, for the web's owner to rule or redraw: the web
   says *tree* where iOS says *roadmap* (*Fork this tree*, *Attach a tree*, *Open tree*); the web's phone has no
