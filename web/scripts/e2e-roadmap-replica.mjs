@@ -2,8 +2,9 @@
 // (the room on the device's copy) and once with both off (today's room). One owner on several devices, each a browser
 // context with its own store: Undo and Redo, edits made offline syncing once the connection returns, a change made
 // without knowing of another device's delete (INV-1), the line that tells the person once of a link of theirs another
-// device's delete changed (§6), and a roadmap's deletion from the switcher. Each run has its own
-// database, server and built app on the given ports, and stops and drops them. It prints no id and no roadmap text.
+// device's delete changed (§6), a roadmap's deletion from the switcher, and a change to a roadmap another device deleted,
+// kept in the one list of what cannot land (§6, flow 49) only with the switch on. Each run has its own database, server and
+// built app on the given ports, and stops and drops them. It prints no id and no roadmap text.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -73,8 +74,8 @@ async function seed(mode, secret, account) {
       { id: 'dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['wind'] },
     ] });
     await settle(1100);
-    await plant({ title: planted.knot, nodes: [{ id: 'bowline', label: 'Tie a bowline', color: 'terracotta', prerequisites: [] }] });
-    return sail;
+    const knot = await plant({ title: planted.knot, nodes: [{ id: 'bowline', label: 'Tie a bowline', color: 'terracotta', prerequisites: [] }] });
+    return { sail, knot };
   }
   const source = (path) => import(pathToFileURL(resolve(path)).href);
   const { IDBFactory, IDBKeyRange } = await import('fake-indexeddb');
@@ -103,7 +104,7 @@ async function seed(mode, secret, account) {
     const sail = await plant(new CreateRoadmap(planted.sail, { steps: [
       { key: 'course', label: 'Choose a course' }, { key: 'wind', label: 'Read the wind' }, { key: 'dock', label: 'Leave the dock' },
     ], links: [['course', 'wind'], ['wind', 'dock']] }));
-    await plant(new CreateRoadmap(planted.knot, { steps: [{ key: 'bowline', label: 'Tie a bowline' }], links: [] }));
+    const knot = await plant(new CreateRoadmap(planted.knot, { steps: [{ key: 'bowline', label: 'Tie a bowline' }], links: [] }));
     await engine.start();
     for (let turn = 0; turn < 60 && engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'); turn++) {
       await settle(200);
@@ -111,7 +112,7 @@ async function seed(mode, secret, account) {
       await engine.send();
     }
     assert.ok(!engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'), 'the seed reached the server');
-    return sail;
+    return { sail, knot };
   } finally {
     engine.close();
   }
@@ -188,6 +189,35 @@ class Device {
     await this.page.locator('.st-board-step-layer article').waitFor({ state: 'detached' });
   }
 
+  async rename(label, name) {
+    const step = await this.openStep(label);
+    await step.getByRole('button', { name: 'Edit name', exact: true }).click();
+    await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
+    await this.page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
+    await this.page.getByRole('article', { name, exact: true }).waitFor();
+    await this.closeStep();
+  }
+
+  // The account menu's rows, read on the app's home with it open; it closes again.
+  async accountMenu() {
+    await this.page.goto(`${origin}/app`);
+    await this.page.locator('.wm-head-seat button[aria-expanded]').click();
+    await this.page.getByRole('menu').first().waitFor();
+    const rows = await this.page.getByRole('menuitem').allInnerTexts();
+    await this.page.keyboard.press('Escape');
+    return rows;
+  }
+
+  // The account menu read again until `seen` holds of its rows or the bound passes.
+  async menuUntil(seen, bound = 45_000) {
+    const end = Date.now() + bound;
+    for (;;) {
+      if (seen(await this.accountMenu())) return true;
+      if (Date.now() > end) return false;
+      await settle(1500);
+    }
+  }
+
   async deleteStep(label) {
     const step = await this.openStep(label);
     await step.getByRole('button', { name: 'More', exact: true }).click();
@@ -216,8 +246,13 @@ class Device {
   }
 }
 
+// A screenshot of what a device shows, for comparing with the boards, where WM_E2E_SHOTS names a folder; never printed.
+async function shoot(device, name) {
+  if (process.env.WM_E2E_SHOTS) await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
+}
+
 async function scenarios(mode, browser, secret, account, check) {
-  const sail = await seed(mode, secret, account);
+  const { sail, knot } = await seed(mode, secret, account);
   const address = `#/app/${sail}`;
   const a = await Device.open(browser, secret);
   const devices = [a];
@@ -255,12 +290,7 @@ async function scenarios(mode, browser, secret, account, check) {
       await b.board(address);
       await b.deleteStep('Leave the dock');
       assert.ok(await c.until(address, async () => await c.card('Leave the dock').count() === 0), 'the delete reached the server');
-      const held = await a.openStep('Leave the dock');
-      await held.getByRole('button', { name: 'Edit name', exact: true }).click();
-      await a.page.getByRole('textbox', { name: 'Name', exact: true }).fill('Leave the harbour');
-      await a.page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
-      await a.page.getByRole('article', { name: 'Leave the harbour', exact: true }).waitFor();
-      await a.closeStep();
+      await a.rename('Leave the dock', 'Leave the harbour');
       await a.context.setOffline(false);
       const cameBack = await c.until(address, async () => await c.card('Leave the harbour').count() === 1, 30_000);
       assert.equal(cameBack, mode === 'on', mode === 'on' ? 'the renamed step came back' : 'the renamed step stayed deleted');
@@ -322,6 +352,74 @@ async function scenarios(mode, browser, secret, account, check) {
         assert.equal(response.status, 404, 'the server serves it no more');
       });
     }
+    await check(mode === 'on' ? '§6: a change to a roadmap another device deleted is kept here with its reason; Copy takes its words, Discard asks once and empties the list, and the account menu\'s entry leaves with it'
+      : 'today nothing is kept here: the account menu offers no Kept here after a change to a roadmap another device deleted', async () => {
+      const knotAddress = `#/app/${knot}`;
+      assert.equal((await a.accountMenu()).some((row) => row.startsWith('Kept here')), false, 'nothing is kept before');
+      await a.board(knotAddress);
+      await a.context.setOffline(true);
+      await settle(500);
+      await a.rename('Tie a bowline', 'Tie a running bowline');
+      await b.board(knotAddress);
+      await b.deleteFromSwitcher('Learn to knot');
+      if (mode === 'off') {
+        await b.page.waitForURL((url) => !url.hash.endsWith(knot));
+        await a.context.setOffline(false);
+        await settle(5000);
+        assert.deepEqual({ entry: (await a.accountMenu()).some((row) => row.startsWith('Kept here')), list: await a.page.locator('.st-kept').count() },
+          { entry: false, list: 0 }, 'with the switch off nothing of the list appears');
+        return;
+      }
+      await b.page.locator('.st-board-toast').waitFor();
+      await b.page.locator('.st-board-toast').waitFor({ state: 'detached', timeout: 15_000 });
+      const end = Date.now() + 45_000;
+      let gone = false;
+      while (!gone && Date.now() < end) {
+        await c.page.goto(`${origin}/#/app/roadmaps`);
+        await c.page.locator('.st-roadmaps').waitFor();
+        await settle(1500);
+        gone = await c.page.locator('.st-roadmaps-row').count() === 0;
+      }
+      assert.ok(gone, 'the deletion reached the server');
+      await a.context.setOffline(false);
+      assert.ok(await a.menuUntil((rows) => rows.includes('Kept here · 1')), 'the account menu offers Kept here with one change');
+
+      await a.context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+      await a.page.goto(`${origin}/app`);
+      await a.page.locator('.wm-head-seat button[aria-expanded]').click();
+      await a.page.getByRole('menuitem', { name: 'Kept here · 1', exact: true }).click();
+      const list = a.page.getByRole('dialog', { name: 'Changes kept here', exact: true });
+      await list.waitFor();
+      assert.deepEqual(await list.locator('.st-kept-row').evaluateAll((rows) => rows.map((row) => [row.querySelector('.st-kept-row-title').textContent, row.querySelector('.st-kept-reason').textContent])),
+        [['Tie a running bowline', 'Roadmap deleted elsewhere.']], 'the list shows the change with its reason');
+      await shoot(a, 'kept-1440-list');
+      await list.getByRole('button', { name: 'Copy', exact: true }).click();
+      assert.equal(await a.page.evaluate(() => navigator.clipboard.readText()), 'Tie a running bowline', 'Copy put the change\'s words on the clipboard');
+      await list.getByRole('button', { name: 'Close', exact: true }).click();
+      await list.waitFor({ state: 'detached' });
+      assert.equal(await a.page.evaluate(() => document.activeElement?.closest('.wm-head-seat') !== null), true, 'Close hands focus back to the account seat');
+
+      await a.page.setViewportSize({ width: 390, height: 844 });
+      await a.page.locator('.wm-head-seat button[aria-expanded]').click();
+      await a.page.getByRole('menuitem', { name: 'Kept here · 1', exact: true }).click();
+      const page = a.page.getByRole('dialog', { name: 'Kept here', exact: true });
+      await page.locator('.st-kept-count').waitFor();
+      assert.equal(await page.locator('.st-kept-count').innerText(), '1 change');
+      await shoot(a, 'kept-390-list');
+      await page.locator('.st-kept-row').click();
+      await page.getByRole('button', { name: 'Copy', exact: true }).click();
+      await page.getByText('Copied', { exact: true }).waitFor();
+      await shoot(a, 'kept-390-copied');
+      await page.getByRole('button', { name: 'Discard', exact: true }).click();
+      const ask = a.page.getByRole('alertdialog', { name: 'Discard this change?', exact: true });
+      await ask.waitFor();
+      await shoot(a, 'kept-390-ask');
+      await ask.getByRole('button', { name: 'Discard', exact: true }).click();
+      await a.page.locator('.st-kept').waitFor({ state: 'detached' });
+      await a.page.setViewportSize({ width: 1440, height: 1000 });
+      assert.equal((await a.accountMenu()).some((row) => row.startsWith('Kept here')), false, 'the entry left with the last change');
+      await settle(6000);
+    });
     await check('no device logged an error', async () => {
       assert.deepEqual(devices.flatMap((device) => device.errors), []);
     });
@@ -360,6 +458,8 @@ async function run(mode, browser) {
     await scenarios(mode, browser, secret, account, check);
     const events = Number(sql("select count(*) from events where name like 'roadmap_%'").toString().match(/\d+/)?.[0] ?? 0);
     assert.ok(events > 0, 'the room’s events reached the local intake');
+    const kept = Number(sql("select count(distinct name) from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')").toString().match(/\d+/)?.[0] ?? 0);
+    assert.equal(kept, mode === 'on' ? 2 : 0, 'the kept list’s events reached the local intake only with the switch on');
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
@@ -375,7 +475,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 7, off: 5 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 8, off: 6 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   console.error(error instanceof assert.AssertionError ? error.message : error);
