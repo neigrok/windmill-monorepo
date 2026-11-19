@@ -227,6 +227,6 @@ test('a record the carry-over set aside is listed, and its Discard drops it from
     assert.deepEqual({
       ledger: await page.evaluate(() => window.ledger()),
       discarded: await page.evaluate(() => window.events.filter((event) => event.name === 'roadmap_kept').map((event) => event.props)),
-    }, { ledger: ['k2'], discarded: [{ step: 'discard', reason: 'roadmapDeleted' }] });
+    }, { ledger: ['k2'], discarded: [{ step: 'open', count: '1' }, { step: 'discard', reason: 'roadmapDeleted' }] });
   });
 });
