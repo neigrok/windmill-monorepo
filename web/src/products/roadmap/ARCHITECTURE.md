@@ -182,12 +182,12 @@ on, every room but the demo reads through `ReplicaReading`:
   device's (§6), the domain's `landingOf`, as the room opens and after each change; `ReplicaRoadmap.landed` puts each in
   the room's names, a line a step: the step their edit brought back, or the step they made or linked that now follows
   past a step deleted elsewhere. The device keeps nothing of a step deleted elsewhere (engine.md §7.5), so a deleted step
-  is named as the visit last read it. `room/useRoomLanding.js` holds each line for the rest of the visit and shows it
+  is named from the note, which took its name when the person made the step or link. `room/useRoomLanding.js` holds each line for the rest of the visit and shows it
   (flow 48, `copy.js` `landingNote`) under the step's card on the Board (`ColumnCards`, counted in the card's slot of the
   run) and under the step page's toolbar. The first time either shows it, half of it in view on a Board no step page or
   composer covers, or the page open on its step, the reading's `tell` writes the domain's `ClearLanding` out of the Undo
   stack and the room emits `roadmap_landing`; a later opening is quiet. A line no approved words say, a step that
-  follows nothing past the deleted one or past one whose name the visit never read, stays in the note untold. A read
+  follows nothing past the deleted one or past one the note holds no name of, stays in the note untold. A read
   that throws reports `roadmap-replica-landing` once and tells nothing that visit; the room reads on. Every write of the
   note lets go of what has landed and says nothing (`readNote`), `DeleteRoadmap` takes the notes of the roadmap and its
   subtrees, and a room that finds its roadmap gone as it opens, or sees the person's own roadmap leave their list,
