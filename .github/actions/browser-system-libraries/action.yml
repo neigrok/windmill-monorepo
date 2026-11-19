@@ -25,12 +25,13 @@ runs:
 
     # A cached package installs only where the image lacks it or holds an older version, so the image's libraries are
     # never downgraded. With no package sources, apt resolves the set against the image alone and never downloads:
-    # when a dependency is missing or a package would have to be removed, it changes nothing and the next step
-    # downloads instead.
+    # when a dependency is missing or a package would have to be removed, it changes nothing. Every package Playwright
+    # names must then be installed. Otherwise the next step downloads the libraries.
     - name: Install the cached packages
       id: cached
       if: steps.cache.outputs.cache-hit == 'true'
       shell: bash
+      working-directory: web
       run: |
         no_sources=$(mktemp -d)
         newer=()
@@ -44,12 +45,28 @@ runs:
           newer+=("$deb")
         done
         echo "Installing ${#newer[@]} of the cached packages; the image holds the rest at the same or a newer version."
-        if [[ ${#newer[@]} -eq 0 ]] || sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-remove \
+        if [[ ${#newer[@]} -gt 0 ]] && ! sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-remove \
             -o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts="$no_sources" "${newer[@]}"; then
-          echo "installed=true" >> "$GITHUB_OUTPUT"
-        else
           echo "::warning title=Browser system libraries::The cached packages do not fit this runner image, so this run downloads them. Bump the cache version in .github/actions/browser-system-libraries/action.yml to cache packages that fit."
+          exit 0
         fi
+
+        required=$(node node_modules/playwright/cli.js install-deps --dry-run chromium webkit |
+          sed -n 's/.*--no-install-recommends \([^"]*\)".*/\1/p')
+        if [[ -z $required ]]; then
+          echo "::error title=Browser system libraries::install-deps --dry-run named no packages; its output no longer matches this action."
+          exit 1
+        fi
+        missing=()
+        for package in $required; do
+          dpkg-query --show --showformat '${db:Status-Status}\n' "$package" 2>/dev/null | grep -x installed > /dev/null || missing+=("$package")
+        done
+        if [[ ${#missing[@]} -gt 0 ]]; then
+          echo "::warning title=Browser system libraries::Neither this runner image nor the cached packages hold ${missing[*]}, so this run downloads them. Bump the cache version in .github/actions/browser-system-libraries/action.yml to cache packages that include them."
+          exit 0
+        fi
+        echo "Every package Playwright needs is installed."
+        echo "installed=true" >> "$GITHUB_OUTPUT"
 
     # apt keeps every package it downloads in its archive; emptying it first leaves exactly this install's packages.
     - name: Download and install the packages
