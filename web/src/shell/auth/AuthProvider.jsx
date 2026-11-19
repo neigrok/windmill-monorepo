@@ -27,6 +27,23 @@ function remember(user) {
   try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost' })); }
   catch { captureError('auth', 'auth-hint-storage', '', '/auth'); }
 }
+const syncOf = (id) => PRODUCTS.find((product) => product.id === id)?.sync;
+// The sign-in decisions still due: those the answers leave open, and those answered for work that changed since, which
+// the engine asks again (an answer that pins no work is given to the question as it stands).
+function unanswered(result, answers) {
+  return (result.due ?? []).filter((question) => {
+    const pinned = answers.counted?.[question.product];
+    return !answers.decisions?.[question.product] || (pinned !== undefined && JSON.stringify(pinned) !== JSON.stringify(question.counted));
+  });
+}
+// The sign-out question in the words of the product whose work it all is, where that product words its own.
+async function wordedSignOut(engine, question) {
+  for (const product of PRODUCTS) {
+    const words = await product.sync?.signOutWords?.(engine, question);
+    if (words) return { ...question, words };
+  }
+  return question;
+}
 
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(hint);
@@ -116,6 +133,20 @@ export default function AuthProvider({ children }) {
     channel.current?.postMessage({ type: 'signed-out' });
     signOutResult.current?.resolve(true); signOutResult.current = null;
   }, [settle]);
+  // Cancelling a sign-in its question asks (engine §7.10) leaves the device as it was before it: the work from before stays
+  // here, unsent, and the account's credential goes, recorded first so a reload or another tab finishes it.
+  const cancelSignIn = useCallback(async () => {
+    const engine = syncSession.engine;
+    const account = pending.current?.user.id;
+    await engine.write(null, (device) => {
+      if (device.meta.pendingSignIn?.account === account) delete device.meta.pendingSignIn;
+      device.meta.clearCredential = account;
+    });
+    pending.current = null; setQuestion(null); setError(false);
+    await engine.cleanupCredentials();
+    settle(null, { signedOut: true });
+    channel.current?.postMessage({ type: 'signed-out' });
+  }, [settle]);
   const cleanupDevice = useCallback(async (engine, next = null, navigation = null) => {
     const change = engine.device.meta.deviceCleanup;
     if (!change) return;
@@ -188,11 +219,10 @@ export default function AuthProvider({ children }) {
     }
     let result = await engine.signIn(me.id, answers);
     if (!result.complete) {
-      const automatic = (result.due ?? []).flatMap((question) => {
-        if (answers.decisions?.[question.product]) return [];
-        const answer = PRODUCTS.find((product) => product.id === question.product)?.sync?.adoptionAnswer?.(engine);
+      const automatic = (await Promise.all(unanswered(result, answers).map(async (question) => {
+        const answer = await syncOf(question.product)?.adoptionAnswer?.(engine, question);
         return answer ? [[question.product, answer, question.counted]] : [];
-      });
+      }))).flat();
       if (automatic.length) {
         answers = { ...answers,
           decisions: { ...answers.decisions, ...Object.fromEntries(automatic.map(([product, answer]) => [product, answer])) },
@@ -202,10 +232,11 @@ export default function AuthProvider({ children }) {
     }
     pending.current = { user: me, ...answers, revision };
     if (!result.complete) {
-      const due = result.due?.[0];
-      const product = PRODUCTS.find((product) => product.id === due?.product)?.sync;
+      const due = unanswered(result, answers)[0];
+      const product = syncOf(due?.product);
       const count = product?.adoptionCount?.(engine);
-      setQuestion(due && count !== undefined ? { ...due, count: { ...due.count, [product.signedOutWork.type]: count } } : due ?? null);
+      const words = due ? await product?.signInWords?.(engine, due) ?? null : null;
+      setQuestion(due ? { ...due, ...(count === undefined ? {} : { count: { ...due.count, [product.signedOutWork.type]: count } }), words } : null);
       setError(!result.upgradeRequired && !result.due?.length);
       return;
     }
@@ -278,7 +309,7 @@ export default function AuthProvider({ children }) {
       enqueue(async () => {
         setBusy(true); setError(false);
         try {
-          setQuestion(await syncSession.engine.beginSignOut());
+          setQuestion(await wordedSignOut(syncSession.engine, await syncSession.engine.beginSignOut()));
           track('sync_signout', { outcome: 'pending' });
         } finally { setBusy(false); }
       }).catch(() => { signOutResult.current = null; resolve(false); });
@@ -333,7 +364,7 @@ export default function AuthProvider({ children }) {
             return;
           }
           const result = await finishSignOut({ choice, counted: question.counted }, null, signOutResult.current?.navigation);
-          if (!result.complete) { setQuestion(result); return; }
+          if (!result.complete) { setQuestion(await wordedSignOut(engine, result)); return; }
           signedOut();
         }
       });
@@ -447,8 +478,11 @@ export default function AuthProvider({ children }) {
       onCancel={async () => {
         setBusy(true); setError(false);
         try {
-          await enqueue(() => syncSession.engine.cancelSignOut()); setQuestion(null);
-          signOutResult.current?.resolve(false); signOutResult.current = null;
+          if (question.kind === 'signed-out') await enqueue(cancelSignIn);
+          else {
+            await enqueue(() => syncSession.engine.cancelSignOut()); setQuestion(null);
+            signOutResult.current?.resolve(false); signOutResult.current = null;
+          }
         }
         catch { setError(true); }
         finally { setBusy(false); }
