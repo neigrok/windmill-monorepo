@@ -6,7 +6,10 @@
 // server after another device's delete of its step, named from the device's note in a room opened after a reload (§6), a
 // roadmap's deletion and a sign-out that leave no step's name in the device's store (§6), a roadmap's deletion from the
 // switcher, and a change to a roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49) only
-// with the switch on. Each run has its own database, server and built app on the given ports, and stops and drops them.
+// with the switch on; and the carry-over of what the last old bundle kept in a browser (§8.2), its stores written by the old
+// bundle's own code: with the switch on, a roadmap made signed out, its marks and workspace carried and kept through a
+// sign-in, and a signed-in browser's unsent changes carried to the server, the old stores gone each time; with it off,
+// the old stores untouched. Each run has its own database, server and built app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
 // name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
 // error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
@@ -62,6 +65,8 @@ async function stopped(children) {
     : Promise.race([new Promise((done) => child.once('exit', done)), new Promise((_, fail) => setTimeout(() => fail(new Error('stack shutdown timed out')), 5000).unref())])));
 }
 
+const source = (path) => import(pathToFileURL(resolve(path)).href);
+
 // Two roadmaps of the owner's: three steps in a line, and one of a single step. With the engine on they are planted
 // through roadmap's domain actions on a device of the owner's; with it off, through today's routes.
 async function seed(mode, secret, account) {
@@ -101,7 +106,6 @@ async function seed(mode, secret, account) {
 // domain actions on it, as the room runs them.
 class OwnerDevice {
   static async open(name, secret, account) {
-    const source = (path) => import(pathToFileURL(resolve(path)).href);
     const { IDBFactory, IDBKeyRange } = await import('fake-indexeddb');
     const { BrowserSyncEngine } = await source('src/platform/sync/engine.js');
     const { registry } = await source('src/platform/sync/schema.js');
@@ -152,6 +156,13 @@ class OwnerDevice {
       if (seen()) return true;
       await settle(250);
     }
+    return false;
+  }
+
+  // The device pulls until `seen` holds of its replica, or the bound passes.
+  async pulledWithin(bound, seen) {
+    const end = Date.now() + bound;
+    while (Date.now() < end) if (await this.pulled(seen)) return true;
     return false;
   }
 
@@ -621,6 +632,222 @@ async function scenarios(mode, browser, { secret, second }, account, check) {
   }
 }
 
+// What the last old bundle wrote in a browser (roadmap-on-the-engine.md §8.2): its own code, run here over a stand-in
+// browser's storage, offline, and read back as the browser keeps it: the sync database's records and the storage's keys.
+async function oldBundle(write) {
+  const { IDBFactory } = await import('fake-indexeddb');
+  const storage = {};
+  Object.defineProperties(storage, {
+    getItem: { value: (key) => (Object.hasOwn(storage, key) ? storage[key] : null) },
+    setItem: { value: (key, value) => { storage[key] = String(value); } },
+    removeItem: { value: (key) => { delete storage[key]; } },
+    key: { value: (index) => Object.keys(storage)[index] ?? null },
+    length: { get: () => Object.keys(storage).length },
+  });
+  const listening = { addEventListener() {}, removeEventListener() {} };
+  const stand = { indexedDB: new IDBFactory(), localStorage: storage, window: { localStorage: storage, ...listening }, document: { visibilityState: 'visible', ...listening },
+    WebSocket: class { constructor() { this.readyState = 0; } addEventListener() {} send() {} close() {} },
+    fetch: async () => { throw new TypeError('the old bundle runs offline'); } };
+  const prior = Object.fromEntries(Object.keys(stand).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const [key, value] of Object.entries(stand)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  try {
+    const old = { ...await source('src/products/roadmap/sync/localTrees.js'), ...await source('src/products/roadmap/sync/SyncSession.js'),
+      ...await source('src/products/roadmap/persistence/WorkspaceStore.js'), ...await source('src/products/roadmap/model/NodeWorkspace.js'),
+      ...await source('src/products/roadmap/model/Legend.js') };
+    const id = await write(old);
+    const database = await new Promise((done, fail) => {
+      const request = indexedDB.open('windmill-sync');
+      request.onsuccess = () => done(request.result);
+      request.onerror = () => fail(request.error);
+    });
+    const all = (method) => new Promise((done, fail) => {
+      const request = database.transaction('trees').objectStore('trees')[method]();
+      request.onsuccess = () => done(request.result);
+      request.onerror = () => fail(request.error);
+    });
+    const [keys, values] = [await all('getAllKeys'), await all('getAll')];
+    database.close();
+    return { id, records: keys.map((key, index) => [key, values[index]]), storage: { ...storage } };
+  } finally {
+    for (const [key, descriptor] of Object.entries(prior)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+}
+
+// A roadmap the old bundle planted with nobody signed in, its first step marked in its room, a workspace on it and a mark
+// left undrained on the second.
+const plantedSignedOut = () => oldBundle(async ({ bearImportedTree, SyncSession, WorkspaceStore, DEFAULT_KINDS, addSubtask, emptyWorkspace, setNote }) => {
+  globalThis.window.wmDeviceConfirmation = { owner: null };
+  const id = await bearImportedTree({ title: 'Learn to swim', kinds: DEFAULT_KINDS, nodes: [
+    { id: 'float', label: 'Float on your back', color: 'olive', prerequisites: [] },
+    { id: 'kick', label: 'Kick from the hips', color: 'terracotta', prerequisites: ['float'] },
+  ] });
+  const room = new SyncSession({ treeId: id, title: 'Learn to swim' });
+  await room.start();
+  room.markProgress(['float'], 'complete');
+  await room.persistNow();
+  room.close();
+  new WorkspaceStore().save(id, { float: setNote(addSubtask(emptyWorkspace(), 'Relax the neck'), 'Breathe out through the nose.') });
+  globalThis.window.localStorage.setItem(`windmill:progress:${id}`, JSON.stringify({ completed: ['kick'], completedAt: { kick: 1_700_000_000_000 } }));
+  return id;
+});
+
+// The old bundle's stores, written into a browser context before the app loads, from a page of the origin that runs none.
+async function holdOld(page, fixture) {
+  await page.goto(`${origin}/robots.txt`);
+  await page.evaluate(async ({ records, storage }) => {
+    for (const [key, value] of Object.entries(storage)) localStorage.setItem(key, value);
+    const database = await new Promise((done, fail) => {
+      const request = indexedDB.open('windmill-sync', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('trees');
+      request.onsuccess = () => done(request.result);
+      request.onerror = () => fail(request.error);
+    });
+    await new Promise((done, fail) => {
+      const write = database.transaction('trees', 'readwrite');
+      for (const [key, value] of records) write.objectStore('trees').put(value, key);
+      write.oncomplete = done;
+      write.onerror = () => fail(write.error);
+    });
+    database.close();
+  }, fixture);
+}
+
+// What the old bundle's stores hold in a page, as counts and its storage's keys: the sync database's records, the device
+// index's rows, and the workspaces' and undrained marks' keys.
+const oldIn = (page) => page.evaluate(async () => {
+  const records = await new Promise((done) => {
+    const request = indexedDB.open('windmill-sync');
+    request.onupgradeneeded = () => request.result.createObjectStore('trees');
+    request.onsuccess = () => {
+      const count = request.result.transaction('trees').objectStore('trees').count();
+      count.onsuccess = () => { request.result.close(); done(count.result); };
+    };
+  });
+  let rows = 0;
+  try { rows = Object.keys(JSON.parse(localStorage.getItem('windmill:device-trees') ?? '{}')).length; } catch { rows = -1; }
+  return { records, rows, keys: Object.keys(localStorage).filter((key) => /^windmill:(workspace|progress):/.test(key)).length };
+});
+const NOTHING_OLD = { records: 0, rows: 0, keys: 0 };
+
+async function oldUntil(page, seen, bound = 45_000) {
+  const end = Date.now() + bound;
+  for (;;) {
+    if (seen(await oldIn(page))) return true;
+    if (Date.now() > end) return false;
+    await settle(500);
+  }
+}
+
+// §8.2 on a browser holding old stores: with the switch on, one signed out and then signed in as an account that holds no
+// roadmaps (so its anonymous work joins without a question), and one signed in whose roadmap kept changes it never sent;
+// with the switch off, a browser whose old stores nothing changes.
+async function carryScenario(mode, browser, { secret, carrier }, account, check) {
+  const signedOut = await plantedSignedOut();
+  const contexts = [];
+  const open = async (cookie) => {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+    contexts.push(context);
+    if (cookie) await context.addCookies([{ name: 'wm_session', value: cookie, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(30_000);
+    return { context, page };
+  };
+  try {
+    if (mode === 'off') {
+      await check('§8.2 with the switch off: a browser holding the old bundle’s stores keeps them as they are', async () => {
+        const { page } = await open(null);
+        await holdOld(page, signedOut);
+        const before = await oldIn(page);
+        await page.goto(`${origin}/app`);
+        await settle(6000);
+        const device = new Device(null, page);
+        assert.deepEqual({ before, after: await oldIn(page), ledger: holds(await device.store(), '"carry:') },
+          { before: { records: 1, rows: 1, keys: 2 }, after: { records: 1, rows: 1, keys: 2 }, ledger: false }, 'the old stores stand untouched and no ledger is written');
+      });
+      return;
+    }
+    await check('§8.2 signed out, then signed in: a roadmap made signed out, its marks and its workspace are carried and the old stores go', async () => {
+      const { context, page } = await open(null);
+      await holdOld(page, signedOut);
+      await page.goto(`${origin}/app`);
+      assert.ok(await oldUntil(page, (held) => JSON.stringify(held) === JSON.stringify(NOTHING_OLD)), 'signed out, the old stores went once carried');
+      const device = new Device(context, page);
+      assert.ok(holds(await device.store(), 'Float on your back') && holds(await device.store(), 'Relax the neck'), 'the anon replica holds the roadmap and its workspace');
+      await context.addCookies([{ name: 'wm_session', value: carrier.secret, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+      await page.goto(`${origin}/app`);
+      const phone = await OwnerDevice.open('carrier', carrier.secret, carrier.account);
+      try {
+        const { Id } = await source('src/platform/domain-kit/entities.js');
+        const { StepMark } = await source('src/products/roadmap/domain/progress.js');
+        const { StepNote, Subtask } = await source('src/products/roadmap/domain/workspace.js');
+        const overlay = `self/overlay/${signedOut.id}`;
+        const read = (body) => { try { return phone.runner.read(overlay, body); } catch { return null; } };
+        const carried = await phone.pulledWithin(45_000, () => phone.step(signedOut.id, 'Float on your back') !== null && phone.step(signedOut.id, 'Kick from the hips') !== null
+          && read((each) => ['float', 'kick'].every((step) => each.repository(StepMark).find(new Id(step, StepMark), 'drawn')?.status === 'complete'))
+          && read((each) => each.repository(Subtask).all('drawn').some((subtask) => subtask.label === 'Relax the neck')
+            && each.repository(StepNote).find(new Id('float', StepNote), 'drawn')?.text === 'Breathe out through the nose.'));
+        assert.ok(carried, 'once signed in, the account’s other device holds the roadmap under its id, both marks, the subtask and the note');
+      } finally {
+        phone.engine.close();
+      }
+      assert.deepEqual(await oldIn(page), NOTHING_OLD, 'the old stores stay gone');
+    });
+
+    await check('§8.2 signed in: changes the browser had not sent are carried after the roadmap’s first pull and reach the server, and the old stores go', async () => {
+      const owner = await OwnerDevice.open('diver', secret, account);
+      try {
+        const { CreateRoadmap } = owner.domain;
+        const planted = await owner.runner.runAct(new CreateRoadmap('Learn to dive', { steps: [{ key: 'breathe', label: 'Breathe in' }, { key: 'sink', label: 'Sink down' }],
+          links: [['breathe', 'sink']] }));
+        assert.equal(planted.kind, 'committed', 'the roadmap was planted');
+        await owner.engine.start();
+        await owner.sent();
+        const { tree, steps } = planted.result;
+        const unsent = await oldBundle(async ({ SyncSession, WorkspaceStore, DEFAULT_KINDS, addSubtask, emptyWorkspace }) => {
+          globalThis.window.wmDeviceConfirmation = { owner: account };
+          const at = '1700000000000:0:server';
+          const room = new SyncSession({ treeId: tree, title: 'Learn to dive' });
+          await room.start();
+          room.receiveState({ t: 'subgraph', intent: 'graft', seq: 3, reach: 'writer', title: { v: 'Learn to dive', at },
+            nodes: [{ id: steps.breathe, createdAt: at, label: 'Breathe in', labelAt: at, order: 'a0', orderAt: at },
+              { id: steps.sink, createdAt: at, label: 'Sink down', labelAt: at, order: 'a0', orderAt: at }],
+            edges: [{ from: steps.breathe, to: steps.sink, addedAt: at }],
+            kinds: DEFAULT_KINDS.map((kind, rank) => ({ id: kind.id, createdAt: at, hue: kind.hue, hueAt: at, label: kind.label, labelAt: at,
+              description: kind.description, descriptionAt: at, rank, rankAt: at })) });
+          room.receiveProgressGraft({ marks: [] });
+          room.dispatch({ kind: 'RenameNode', id: steps.breathe, label: 'Breathe in slowly' });
+          room.dispatch({ kind: 'CreateNode', id: 'hold', label: 'Hold your breath', prerequisites: [steps.breathe] });
+          room.markProgress([steps.breathe], 'complete');
+          await room.persistNow();
+          room.close();
+          new WorkspaceStore().save(tree, { [steps.breathe]: addSubtask(emptyWorkspace(), 'Count to four') });
+          return tree;
+        });
+        const { page } = await open(secret);
+        await holdOld(page, unsent);
+        await page.goto(`${origin}/app`);
+        assert.ok(await oldUntil(page, (held) => held.records === 0 && held.keys === 0), 'the old stores went once carried');
+        const { Id } = await source('src/platform/domain-kit/entities.js');
+        const { StepMark } = await source('src/products/roadmap/domain/progress.js');
+        const { Subtask } = await source('src/products/roadmap/domain/workspace.js');
+        const overlay = `self/overlay/${tree}`;
+        const read = (body) => { try { return owner.runner.read(overlay, body); } catch { return null; } };
+        const carried = await owner.pulledWithin(45_000, () => owner.step(tree, 'Breathe in slowly') === steps.breathe && owner.step(tree, 'Hold your breath') !== null
+          && read((each) => each.repository(StepMark).find(new Id(steps.breathe, StepMark), 'drawn')?.status === 'complete')
+          && read((each) => each.repository(Subtask).all('drawn').some((subtask) => subtask.label === 'Count to four')));
+        assert.ok(carried, 'another device of the account holds the rename, the new step, the mark and the subtask');
+      } finally {
+        owner.engine.close();
+      }
+    });
+  } finally {
+    for (const context of contexts) await context.close();
+  }
+}
+
 // One run: its database and owner, the server with the engine as the mode says, the app built with the switch as it
 // says and served on the given port; the scenarios; then everything it started stopped and dropped.
 async function run(mode, browser) {
@@ -629,6 +856,7 @@ async function run(mode, browser) {
   const account = randomUUID();
   const secret = randomBytes(24).toString('hex');
   const second = randomBytes(24).toString('hex');
+  const carrier = { account: randomUUID(), secret: randomBytes(24).toString('hex') };
   const sql = (statement) => execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-c', statement], { stdio: ['ignore', 'pipe', 'pipe'] });
   let server, web, created = false, passed = 0;
   const check = async (name, body) => {
@@ -644,6 +872,7 @@ async function run(mode, browser) {
     execFileSync('createdb', ['-h', host, database]); created = true;
     execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
     sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
+    sql(`insert into users(id,email,name) values('${carrier.account}','web-roadmap-carry@example.com','Web Roadmap Carry'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(carrier.secret)}','${carrier.account}',99999999999999);`);
     const dist = resolve(scratch, `dist-${mode}`);
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'],
       { cwd: process.cwd(), env: { ...process.env, VITE_ROADMAP_REPLICA_ROOM: mode === 'on' ? 'on' : '' }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 });
@@ -654,6 +883,7 @@ async function run(mode, browser) {
     web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
     await scenarios(mode, browser, { secret, second }, account, check);
+    await carryScenario(mode, browser, { secret, carrier }, account, check);
     const events = Number(sql("select count(*) from events where name like 'roadmap_%'").toString().match(/\d+/)?.[0] ?? 0);
     assert.ok(events > 0, 'the room’s events reached the local intake');
     const kept = Number(sql("select count(distinct name) from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')").toString().match(/\d+/)?.[0] ?? 0);
@@ -676,7 +906,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 11, off: 6 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 13, off: 7 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   log.write(`\n${error?.stack ?? error}\n`);
