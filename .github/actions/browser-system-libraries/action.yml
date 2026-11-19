@@ -1,21 +1,20 @@
 name: Browser system libraries
 description: >-
-  Installs the Ubuntu libraries that Playwright's Chromium and WebKit need. The first run on a runner image downloads
-  them from the Ubuntu archive and caches the packages; every later run on that image installs the cached packages
-  with no download.
+  Installs the Ubuntu libraries that Playwright's Chromium and WebKit need. The first run for a Playwright version
+  downloads them from the Ubuntu archive and caches the packages; later runs install the cached packages with no
+  download, and download again only when the cached packages do not fit the runner's image.
 
 runs:
   using: composite
   steps:
-    # dpkg installs the cached packages without resolving them against the image, so a package set is reused only on
-    # the exact image whose apt chose it: on another image it could downgrade a library the image ships.
+    # Bump the trailing version to replace the cached packages.
     - name: Name the package cache
       id: packages
       shell: bash
       working-directory: web
       run: |
         playwright=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")
-        echo "key=browser-system-libraries-chromium-webkit-${ImageOS:?}-${ImageVersion:?}-playwright-$playwright" >> "$GITHUB_OUTPUT"
+        echo "key=browser-system-libraries-chromium-webkit-${ImageOS:?}-playwright-$playwright-v1" >> "$GITHUB_OUTPUT"
 
     - name: Restore the cached packages
       id: cache
@@ -24,19 +23,43 @@ runs:
         path: ~/.cache/browser-system-libraries
         key: ${{ steps.packages.outputs.key }}
 
+    # A cached package installs only where the image lacks it or holds an older version, so the image's libraries are
+    # never downgraded. With no package sources, apt resolves the set against the image alone and never downloads:
+    # when a dependency is missing or a package would have to be removed, it changes nothing and the next step
+    # downloads instead.
     - name: Install the cached packages
+      id: cached
       if: steps.cache.outputs.cache-hit == 'true'
       shell: bash
-      run: sudo DEBIAN_FRONTEND=noninteractive dpkg --install ~/.cache/browser-system-libraries/*.deb
+      run: |
+        no_sources=$(mktemp -d)
+        newer=()
+        for deb in ~/.cache/browser-system-libraries/*.deb; do
+          read -r package version architecture < <(dpkg-deb --show --showformat '${Package} ${Version} ${Architecture}\n' "$deb")
+          [[ $architecture == all ]] || package=$package:$architecture
+          installed=$(dpkg-query --show --showformat '${db:Status-Status} ${Version}' "$package" 2>/dev/null || true)
+          if [[ $installed == "installed "* ]] && dpkg --compare-versions "${installed#installed }" ge "$version"; then
+            continue
+          fi
+          newer+=("$deb")
+        done
+        echo "Installing ${#newer[@]} of the cached packages; the image holds the rest at the same or a newer version."
+        if [[ ${#newer[@]} -eq 0 ]] || sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-remove \
+            -o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts="$no_sources" "${newer[@]}"; then
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning title=Browser system libraries::The cached packages do not fit this runner image, so this run downloads them. Bump the cache version in .github/actions/browser-system-libraries/action.yml to cache packages that fit."
+        fi
 
     # apt keeps every package it downloads in its archive; emptying it first leaves exactly this install's packages.
     - name: Download and install the packages
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: steps.cached.outputs.installed != 'true'
       shell: bash
       working-directory: web
       run: |
         sudo apt-get clean
         node node_modules/playwright/cli.js install-deps chromium webkit
+        rm -rf ~/.cache/browser-system-libraries
         mkdir -p ~/.cache/browser-system-libraries
         cp /var/cache/apt/archives/*.deb ~/.cache/browser-system-libraries/
 
