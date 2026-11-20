@@ -99,8 +99,11 @@ export const RoadmapMeta = new EntityType({
 // links as `readTree` reads them, absent ones included, its meta and its kinds. `overlay` reads its owner's overlay for
 // the marks and pointers, null where the reader takes none (a roadmap someone else owns); `queued` are the overlay's
 // records an entry the device still queues changes. `listed` is its record in the person's own list, null where it is
-// not theirs, and says whether it is present and where it sits; without it the meta says where. `read` says the server
-// has answered for its tree scope; a scope the device holds records of is read.
+// not theirs, and says whether it is present and where it sits; without it the meta says where. `read` says the device
+// holds the server's whole copy of the roadmap: the first pull of every scope it is read through has ended. Before that
+// it is read only where it holds records of it and the server has sent none of them, nor of its overlay (none carries
+// the server's `ru`): a roadmap the device made, which the server does not hold yet. A pull under way leaves it unread,
+// whatever it has brought.
 // §5 Dates: the server has received a mark once no entry the device queues still changes it, and its time is its
 // record's `ru`, the server's; a mark an entry still changes is the device's, timed by its stamp. A roadmap was last
 // changed when the server last received a record of it: the newest `ru` among its record, its tree scope's and its
@@ -119,10 +122,11 @@ export function readRoadmap(id, { listed = null, tree, overlay = null, queued = 
   const changing = new Set(queued.map((record) => recordKey(record.t, record.id)));
   const updatedAt = [listed, ...records, ...overlaid].reduce((latest, record) => (typeof record?.ru === 'number' && (latest === null || record.ru > latest)
     ? record.ru : latest), /** @type {number | null} */ (null));
+  const madeHere = records.length > 0 && [...records, ...overlaid].every((record) => typeof record.ru !== 'number');
   return new RoadmapTree({
     id,
     present: listed === null || alive(listed),
-    read: read || records.length > 0 ? 'loaded' : 'unread',
+    read: read || madeHere ? 'loaded' : 'unread',
     own: listed !== null,
     updatedAt,
     parent: listed ? placeIn(Fields.record(listed)) : meta.parent,

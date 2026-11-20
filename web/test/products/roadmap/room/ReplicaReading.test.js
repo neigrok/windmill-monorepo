@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
+import { steadyTiming } from '../../../../../packages/api-contract/sync/reference/core/clock.js';
+import { onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
 import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
 import { hello, pull } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
 import { push } from '../../../../../packages/api-contract/sync/reference/server/push.js';
@@ -330,6 +332,124 @@ test('the room subscribes the roadmap it opens and drops it on leaving; with no 
   }
 });
 
+// A second device of the owner's, which holds nothing of the roadmap `a` planted, reading it as the room does, and the
+// server answering its pulls a row a page, as it pages a large roadmap, for the scopes `scopes` names alone, each answer
+// `waited` ms after the one before.
+async function freshDevice(a, tree) {
+  const b = await a.device();
+  const snapshot = { engine: b.engine, ready: true, online: true, error: false };
+  const told = [];
+  const reading = new ReplicaReading({ treeId: tree, timers: b.env.timers, track: (name, props) => told.push([name, props]),
+    session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+    repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
+  const opened = { answer: 'pending' };
+  reading.read({ signal: new AbortController().signal }).then((read) => { opened.answer = read; });
+  await until(() => b.engine.openScopes.has(RoadmapScopes.tree(tree)));
+  const page = async (scopes, waited = 0) => {
+    b.env.timers.advance(waited);
+    const asked = pullRequest(b.engine.device.activeReplica, roadmapRegistry, b.engine.scopes());
+    const request = { ...asked, scopes: asked.scopes.filter(({ scope }) => scopes.includes(scope)) };
+    const out = pull({ state: a.server, registry: roadmapRegistry, product: new RoadmapProduct(), account: 'A', request, serverNow: a.world.now,
+      limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 } });
+    await b.engine.write(null, (device, context) => onPullResponse(device.activeReplica, context, request, out.response, steadyTiming(a.world.now, a.world.now)),
+      b.engine.scopes());
+    await until(() => true);
+    return out.response.body.pages.some((each) => each.more);
+  };
+  return { b, snapshot, told, reading, opened, page };
+}
+
+// The owner's roadmap of six steps, three of them marked complete, as the server holds it.
+async function plantedRoadmap(a) {
+  const { tree } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail')));
+  const labels = ['Read the wind', 'Leave the dock', 'Tie a bowline', 'Come about', 'Reef the main', 'Sail solo'];
+  const steps = [];
+  for (const label of labels) steps.push(committed(await a.runner.runAct(new CreateStep(tree, { label }, []))));
+  for (const step of steps.slice(0, 3)) committed(await a.runner.runAct(Complete(tree, step)));
+  for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+  await a.sync();
+  return { tree, labels, done: steps.slice(0, 3) };
+}
+
+test('a device that holds none of a roadmap opens it once it holds the server’s whole copy, its steps and the owner’s marks, never from the pages of a pull under way', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, labels, done } = await plantedRoadmap(a);
+    const { b, snapshot, told, reading, opened, page } = await freshDevice(a, tree);
+    const seen = [];
+    for (let more = true; more;) {
+      more = await page([RoadmapScopes.account, RoadmapScopes.tree(tree)]);
+      seen.push(opened.answer === 'pending' ? 'pending' : opened.answer?.seed.nodes.length ?? null);
+    }
+    assert.deepEqual({ seen: [...new Set(seen)], told }, { seen: ['pending'], told: [] }, 'no page of the tree scope opens the room, nor its last while the owner’s marks are unread');
+    while (await page([RoadmapScopes.overlay(tree)]));
+    await until(() => opened.answer !== 'pending');
+    assert.deepEqual({ steps: opened.answer.seed.nodes.map((step) => step.label).sort(), done: [...opened.answer.overlay.completed].sort(), told },
+      { steps: [...labels].sort(), done: [...done].sort(), told: [] }, 'the room opens on every step and every mark');
+    reading.close();
+
+    const { tree: own } = committed(await b.runner.runAct(new CreateRoadmap('Learn to row', { steps: [{ key: 'grip', label: 'Grip the oars' }], links: [] })));
+    const made = new ReplicaReading({ treeId: own, timers: b.env.timers, session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadActivity: async () => [] } });
+    assert.deepEqual((await made.read({ signal: new AbortController().signal })).seed.nodes.map((step) => step.label), ['Grip the oars'],
+      'a roadmap the device made, of which the server has sent nothing, opens from the device at once');
+    made.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('a room waits on a pull that keeps answering past the bound, and opens on the whole roadmap once it ends', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, labels } = await plantedRoadmap(a);
+    const { told, reading, opened, page } = await freshDevice(a, tree);
+    while (await page([RoadmapScopes.account, RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)], FIRST_COPY_MS - 1));
+    await until(() => opened.answer !== 'pending');
+    assert.deepEqual({ steps: opened.answer?.seed.nodes.map((step) => step.label).sort(), told }, { steps: [...labels].sort(), told: [] });
+    reading.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('a reader’s roadmap the device holds whole opens from its copy with no connection, once the engine has taken its subscription', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+    await a.sync();
+    a.engine.setOnline(false);
+    // The engine as a reader's browser holds it: someone else's roadmap, pulled whole on an earlier visit, in no list of theirs.
+    let taken = null;
+    const nothing = { drawn: [], stored: [], pending: [], outbox: { held: 0, ready: 0, sent: 0, acked: 0 }, loaded: true, firstPullComplete: true };
+    const engine = Object.create(a.engine, {
+      observe: { value: (scope) => {
+        if (scope !== RoadmapScopes.account) return a.engine.observe(scope);
+        const hold = a.engine.observe(scope);
+        return { subscribe: (listener) => hold.subscribe(listener), getSnapshot: () => nothing, release: () => hold.release() };
+      } },
+      subscribe: { value: (scope) => (scope === RoadmapScopes.tree(tree) ? new Promise((resolve) => { taken = () => resolve('subscribed'); }) : a.engine.subscribe(scope)) },
+    });
+    const snapshot = { engine, ready: true, online: false, error: false };
+    const told = [];
+    const reading = new ReplicaReading({ treeId: tree, timers: a.env.timers, track: (name, props) => told.push([name, props]),
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => { throw Object.assign(new Error('offline'), { status: 0 }); }, loadActivity: async () => [] } });
+    let answered = 'pending';
+    reading.read({ signal: new AbortController().signal }).then((read) => { answered = read; });
+    await until(() => taken !== null);
+    await until(() => true);
+    assert.deepEqual({ answered, told }, { answered: 'pending', told: [] }, 'the copy is not judged before the engine has taken the subscription');
+    taken();
+    await until(() => answered !== 'pending');
+    assert.deepEqual({ mine: answered?.seed.mine, steps: answered?.seed.nodes.map((step) => step.label), told }, { mine: false, steps: ['Read the wind'], told: [] });
+    reading.close();
+  } finally {
+    a.close();
+  }
+});
+
 test('a room that leaves while the engine takes its roadmap’s subscription leaves the roadmap unfollowed, however soon it leaves', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
@@ -485,6 +605,58 @@ test('a browser whose copy could not open, as one that keeps nothing, is told at
   const read = leaving.read({ signal: left.signal });
   left.abort();
   assert.deepEqual({ read: await read, told: told.length }, { read: null, told: 2 });
+});
+
+test('a room on an engine that holds the anonymous replica reads and tells nothing until the shell says whose device it is, and reads what the device holds should the shell not say within the bound', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+    await a.sync();
+    // A first visit: the engine opens on the browser's anonymous replica, and binds the person's account, if someone is
+    // signed in, once the shell has asked the server who they are.
+    const visit = () => {
+      const asked = [];
+      const visited = { state: 'anon', asked, listeners: new Set(), told: [], answered: 'pending' };
+      const engine = Object.create(a.engine, {
+        getSnapshot: { value: () => ({ ...a.engine.getSnapshot(), state: visited.state }) },
+        observe: { value: (scope) => { asked.push(scope); return a.engine.observe(scope); } },
+        subscribe: { value: (scope) => { asked.push(scope); return a.engine.subscribe(scope); } },
+      });
+      visited.snapshot = { engine, ready: true, signedIn: null, online: true, error: false };
+      visited.reading = new ReplicaReading({ treeId: tree, timers: a.env.timers, track: (name, props) => visited.told.push([name, props]),
+        session: { getSnapshot: () => visited.snapshot, subscribe: (listener) => { visited.listeners.add(listener); return () => visited.listeners.delete(listener); } },
+        repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
+      visited.reading.read({ signal: new AbortController().signal }).then((read) => { visited.answered = read; });
+      return visited;
+    };
+    const turns = async (count, ms) => {
+      for (let turn = 0; turn < count; turn++) {
+        a.env.timers.advance(ms);
+        await new Promise((later) => setImmediate(later));
+      }
+    };
+
+    const signedIn = visit();
+    await turns(10, (FIRST_COPY_MS - 1) / 10);
+    assert.deepEqual({ answered: signedIn.answered, told: signedIn.told, asked: signedIn.asked }, { answered: 'pending', told: [], asked: [] },
+      'nothing is read from the anonymous replica, and nothing told, while the shell has not said whose device it is');
+    signedIn.state = 'bound';
+    signedIn.snapshot = { ...signedIn.snapshot, signedIn: true };
+    for (const listener of signedIn.listeners) listener();
+    await until(() => signedIn.answered !== 'pending');
+    assert.deepEqual({ steps: signedIn.answered?.seed.nodes.map((step) => step.label), told: signedIn.told }, { steps: ['Read the wind'], told: [] });
+    signedIn.reading.close();
+
+    const undecided = visit();
+    await turns(10, FIRST_COPY_MS / 10);
+    await until(() => undecided.answered !== 'pending');
+    assert.deepEqual({ steps: undecided.answered?.seed.nodes.map((step) => step.label), told: undecided.told }, { steps: ['Read the wind'], told: [] },
+      'a shell that has not said whose device it is within the bound leaves the device’s copy to open');
+    undecided.reading.close();
+  } finally {
+    a.close();
+  }
 });
 
 test('the owner’s workspace comes from their overlay, each step’s items in their own order', async () => {

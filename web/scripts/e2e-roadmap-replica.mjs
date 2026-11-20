@@ -266,6 +266,28 @@ class Device {
       new MutationObserver((records) => {
         for (const record of records) for (const node of record.addedNodes) if (node.classList?.contains('wm-decision')) window.decisionsShown += 1;
       }).observe(document, { childList: true, subtree: true });
+      // Whether today's room has taken its socket's first answer, the subscribe's graft, after which it takes a write: unset
+      // as the room opens or closes a socket, and set once the room's own handler has run on the graft.
+      const Socket = window.WebSocket;
+      window.WebSocket = class extends Socket {
+        constructor(...args) {
+          super(...args);
+          if (!this.url.includes('/v1/socket')) return;
+          window.todaysRoomAnswered = false;
+          this.addEventListener('close', () => { window.todaysRoomAnswered = false; });
+        }
+
+        addEventListener(type, listener, options) {
+          if (type !== 'message' || !this.url.includes('/v1/socket')) return super.addEventListener(type, listener, options);
+          return super.addEventListener(type, (event) => {
+            listener.call(this, event);
+            try {
+              const frame = JSON.parse(event.data);
+              if (frame.t === 'subgraph' && frame.intent === 'delta') window.todaysRoomAnswered = true;
+            } catch {}
+          }, options);
+        }
+      };
     });
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
@@ -283,6 +305,11 @@ class Device {
         }
       });
       socket.on('close', () => device.following.clear());
+    });
+    // Today's room reads its roadmap over `GET /v1/trees/{id}`; the room on the device's copy never does.
+    page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) device.todaysRoom = false; });
+    page.on('request', (request) => {
+      if (request.method() === 'GET' && /^\/v1\/trees\/t_[0-9a-f]+$/.test(new URL(request.url()).pathname)) device.todaysRoom = true;
     });
     page.on('pageerror', () => device.errors.push('pageerror'));
     page.on('console', (message) => { if (message.type() === 'error' && !/Failed to load resource|net::ERR/.test(message.text())) device.errors.push('console'); });
@@ -351,6 +378,8 @@ class Device {
     this.errors = [];
     // The scopes this page's live socket follows, as the frames it sent say: each it sent `sub` for and no `unsub` since.
     this.following = new Set();
+    // Whether the page holds today's room.
+    this.todaysRoom = false;
   }
 
   // Which of a roadmap's scopes the live socket follows: its tree scope, and the person's own overlay of it.
@@ -486,13 +515,18 @@ class Device {
   }
 
   // The connection cut once the service worker controls the page and has primed the offline shell, so the room's
-  // lazy chunks still load: the run waits for what a person's second visit already has.
+  // lazy chunks still load, and once today's room has its socket's first answer, so it takes a write: the run waits for
+  // what a person's second visit already has.
   async offline() {
     const end = Date.now() + 30_000;
     const ready = () => this.page.evaluate(async () => !!navigator.serviceWorker.controller
       && !!(await (await (await caches.open('windmill-shell-v2')).match('/offline-generation'))?.json()));
     while (!await ready()) {
       if (Date.now() > end) throw new Error('the offline shell was not primed within 30 s');
+      await settle(100);
+    }
+    while (this.todaysRoom && !await this.page.evaluate(() => window.todaysRoomAnswered === true)) {
+      if (Date.now() > end) throw new Error('today’s room had no answer from its socket within 30 s');
       await settle(100);
     }
     await this.context.setOffline(true);

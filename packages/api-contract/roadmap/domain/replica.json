@@ -624,6 +624,226 @@
     }
   },
   {
+    "name": "A tree scope the server is still sending is unread, whatever the device holds of it so far: its first pull has not ended, and the rows it brought are the server’s",
+    "input": {
+      "operation": "roadmap",
+      "id": "t_00000000000000f6",
+      "read": false,
+      "listed": {
+        "t": "tree",
+        "id": "t_00000000000000f6",
+        "life": [
+          "alive",
+          "100:0:r_a"
+        ],
+        "born": "100:0:r_a"
+      },
+      "overlay": {
+        "drawn": [],
+        "queued": []
+      },
+      "tree": [
+        {
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": [
+              "Learn to sail",
+              "100:0:r_a"
+            ],
+            "depth": [
+              0,
+              "100:0:srv"
+            ]
+          },
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        },
+        {
+          "t": "node",
+          "id": "wind",
+          "life": [
+            "alive",
+            "101:0:r_a"
+          ],
+          "born": "101:0:r_a",
+          "f": {
+            "label": [
+              "Read the wind",
+              "101:0:r_a"
+            ],
+            "ord": [
+              "a0",
+              "101:0:r_a"
+            ]
+          },
+          "seq": 2,
+          "rc": 1100,
+          "ru": 1100
+        }
+      ]
+    },
+    "expect": {
+      "id": "t_00000000000000f6",
+      "present": true,
+      "read": "unread",
+      "own": true,
+      "updatedAt": 1100,
+      "parent": null,
+      "meta": {
+        "title": "Learn to sail",
+        "guide": "",
+        "guideInherited": false,
+        "root": "t_00000000000000f6",
+        "depth": 0,
+        "visibility": "private",
+        "reach": "private"
+      },
+      "nodes": [
+        {
+          "id": "wind",
+          "present": true,
+          "born": "101:0:r_a",
+          "rc": 1100,
+          "ru": 1100,
+          "label": "Read the wind",
+          "icon": "",
+          "color": "terracotta",
+          "ord": "a0",
+          "status": "none",
+          "description": "",
+          "links": [],
+          "branch": null,
+          "branchStamp": null
+        }
+      ],
+      "edges": [],
+      "kinds": [],
+      "marks": [],
+      "pointers": []
+    }
+  },
+  {
+    "name": "A roadmap the device made, of which the server has sent nothing, is read before the server answers: the device holds the whole of it",
+    "input": {
+      "operation": "roadmap",
+      "id": "t_00000000000000f6",
+      "read": false,
+      "listed": {
+        "t": "tree",
+        "id": "t_00000000000000f6",
+        "life": [
+          "alive",
+          "100:0:r_a"
+        ],
+        "born": "100:0:r_a"
+      },
+      "overlay": {
+        "drawn": [
+          {
+            "t": "progress",
+            "id": "wind",
+            "f": {
+              "mark": [
+                {
+                  "status": "complete",
+                  "outOfOrder": false
+                },
+                "102:0:r_a"
+              ]
+            }
+          }
+        ],
+        "queued": [
+          {
+            "t": "progress",
+            "id": "wind"
+          }
+        ]
+      },
+      "tree": [
+        {
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": [
+              "Learn to sail",
+              "100:0:r_a"
+            ]
+          }
+        },
+        {
+          "t": "node",
+          "id": "wind",
+          "life": [
+            "alive",
+            "101:0:r_a"
+          ],
+          "born": "101:0:r_a",
+          "f": {
+            "label": [
+              "Read the wind",
+              "101:0:r_a"
+            ],
+            "ord": [
+              "a0",
+              "101:0:r_a"
+            ]
+          }
+        }
+      ]
+    },
+    "expect": {
+      "id": "t_00000000000000f6",
+      "present": true,
+      "read": "loaded",
+      "own": true,
+      "updatedAt": null,
+      "parent": null,
+      "meta": {
+        "title": "Learn to sail",
+        "guide": "",
+        "guideInherited": false,
+        "root": "t_00000000000000f6",
+        "depth": 0,
+        "visibility": "private",
+        "reach": "private"
+      },
+      "nodes": [
+        {
+          "id": "wind",
+          "present": true,
+          "born": "101:0:r_a",
+          "rc": null,
+          "ru": null,
+          "label": "Read the wind",
+          "icon": "",
+          "color": "terracotta",
+          "ord": "a0",
+          "status": "none",
+          "description": "",
+          "links": [],
+          "branch": null,
+          "branchStamp": null
+        }
+      ],
+      "edges": [],
+      "kinds": [],
+      "marks": [
+        {
+          "node": "wind",
+          "status": "complete",
+          "outOfOrder": false,
+          "stamp": "102:0:r_a",
+          "recordedAt": null,
+          "deviceAt": 102
+        }
+      ],
+      "pointers": []
+    }
+  },
+  {
     "name": "One tree’s openings: a subtree takes precedence, pointers open roots, and an unknown target is not dangling",
     "input": {
       "operation": "openings",

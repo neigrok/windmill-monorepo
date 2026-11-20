@@ -167,12 +167,24 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   subscribed, once each, and releases every hold, when it leaves; the engine counts a tree's holders, so another reading
   that holds the same roadmap keeps it followed. It reads the engine only through its public API
   (`test/products/roadmap/room/engineBoundary.test.js` holds every `room/` file to that).
-- **Opening.** It opens from what the device holds, asking nothing of the network first: the copy, once the engine
-  stands and the scope's stored rows are `loaded`. A roadmap the device holds nothing of waits for the server's first
-  answer; where the engine cannot reach the server (its `connection` is not `online`, or it is paused for auth or an
-  upgrade), or with no answer within ten seconds (`FIRST_COPY_MS`), the room shows its load error and Try again, as a
-  failed read does. A roadmap the server does not serve, one the device holds nothing of, a hidden subtree (§5) and a
-  root whose meta has not arrived (D-3) are in no address once the server has answered for it: the same load error.
+- **Opening.** It reads nothing, and tells nothing, until the engine stands for the person whose device it is: an
+  engine that holds the browser's anonymous replica stands once the shell has said whether someone is signed in (the
+  session's `signedIn`, null until then), as a signed-in person's first visit holds that replica until the engine
+  binds their account; where the shell has not said within `FIRST_COPY_MS` (its account read failing, or a sign-in
+  question standing), the engine stands as it is, so a device's own copy opens without the network. It opens from what
+  the device holds, asking nothing of the network first, once the scopes' stored rows are `loaded`, but only from a
+  whole copy: the server's, the first pull of the roadmap's tree scope and, for the person's own, of their overlay of
+  it having ended (`firstPullComplete`), or one the device made, of which the server has sent nothing (the domain's
+  `readRoadmap`; signed out, or made offline). Until then the room shows its loading skeleton, so its first view, its
+  counts and its Board are decided on the whole roadmap, never on the rows a pull under way has brought. The person's
+  own roadmap also waits, while the server answers, for every roadmap its counts read through
+  (`ReplicaRoadmap.countsRead`: each its steps open, and theirs); one still unread when the server goes quiet or out
+  of reach stands unread on its step. Where the engine cannot reach the server (its `connection` is not `online`, or
+  it is paused for auth or an upgrade) and the device holds no whole copy, or the server goes ten seconds without an
+  answer (`FIRST_COPY_MS`, from one answer to the next, so a long pull that keeps answering is waited for), the room
+  shows its load error and Try again, as a failed read does. A roadmap the server does not serve, one the device holds
+  nothing of, a hidden subtree (§5) and a root whose meta has not arrived (D-3) are in no address once the server has
+  answered for it: the same load error.
 - **Shapes.** `room/ReplicaRoadmap.js` is the room's edge: each roadmap's records (`HeldRoadmap`) are read by the
   domain's `readRoadmap` into a `RoadmapTree` (its steps, links, meta and kinds, and the owner's marks and pointers, a
   mark dated by the server once no queued entry still changes its record, the snapshot's `pending`), the domain's
@@ -275,7 +287,7 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
 - **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`, `UNSHOWN`), once
   a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
   (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
-  no answer came (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
+  no answer came before the device held a whole copy (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
   engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
   the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
   reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
@@ -347,7 +359,8 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   Settings' export (`readReplicaRoadmaps` in `settings/exportArchive.js`) opens a reading of no roadmap, which subscribes and
   holds what it reads as any reading does and lets go when the export ends, and asks nothing of the server itself:
   `readEveryRoadmap` waits until the device has read the person's list and every roadmap in it, or, where the engine
-  cannot reach the server, until the device's stored rows are loaded, within `FIRST_COPY_MS`. Each root of the list is
+  cannot reach the server, until the device's stored rows are loaded, while the server answers within `FIRST_COPY_MS` of
+  its last answer. Each root of the list is
   then a file from `ReplicaRoadmap.seedOf` and `marksOf`, the reads the room opens a roadmap from; one the device has not
   read stays out, and a copy that does not open is the export's error. For the same records the file is the one today's
   export makes, but where the replica reads them otherwise: steps in their authored order (`ord`, born, id) where today's

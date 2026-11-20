@@ -61,6 +61,28 @@ test('a roadmap someone else owns reads as theirs: no pointer and no workspace, 
   }
 });
 
+test('a roadmap’s counts are read once every roadmap its steps open is read, and each of theirs, a pointer back to itself included', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('My year', { steps: [
+      { key: 'sail', label: 'Learn to sail' }, { key: 'book', label: 'Write the book' },
+    ], links: [] })));
+    const { subtree } = committed(await a.runner.runAct(new CreateSubtree(tree, steps.sail)));
+    const { subtree: knots } = committed(await a.runner.runAct(new CreateSubtree(subtree, committed(await a.runner.runAct(new CreateStep(subtree, { label: 'Tie knots' }, []))))));
+    committed(await a.runner.runAct(SetPointer(tree, steps.book, tree)));
+    const records = (id) => a.engine.observe(RoadmapScopes.tree(id)).getSnapshot().drawn;
+    const overlay = a.engine.observe(RoadmapScopes.overlay(tree)).getSnapshot().drawn;
+    const listed = a.engine.observe(RoadmapScopes.account).getSnapshot().drawn.find((record) => record.t === 'tree' && record.id === tree);
+    const root = new HeldRoadmap({ id: tree, tree: records(tree), overlay, record: listed });
+    const held = (id, read) => new HeldRoadmap({ id, tree: read ? records(id) : [], read });
+    const countsRead = (subtreeRead, knotsRead) => new ReplicaRoadmap(roadmapRegistry, tree, [root, held(subtree, subtreeRead), held(knots, knotsRead)]).countsRead;
+    assert.deepEqual({ neither: countsRead(false, false), subtree: countsRead(true, false), both: countsRead(true, true) },
+      { neither: false, subtree: false, both: true });
+  } finally {
+    a.close();
+  }
+});
+
 test('of two kinds that wear one hue, the legend shows the one born first', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
