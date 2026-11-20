@@ -6,7 +6,8 @@ so reviews, code and roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. Roadmap syncs through a sync of its own:
+**Status:** Specified, and approved by the owner on 2026-11-17. Of it, only the release that teaches the roadmap room
+what a retired build is told (§8.3) is built. Roadmap syncs through a sync of its own:
 a lattice and a socket described in [graph sync](../GRAPH_SYNC_DESIGN.md) and
 [the roadmap tree engine](../../backend/SPEC.md), on the web only. The [sync engine](engine.md)
 serves gym and journal, and its tree and overlay scopes have run only against its test product. The
@@ -320,8 +321,10 @@ the outbox entry or notice it became.
 - A release before the cutover teaches the roadmap room what a retired build is told, and to save
   what it holds and reload when it is. It ships long enough before the cutover for open tabs to
   take it.
-- After the cutover, `/v1/socket` answers the upgrade `410` `client-update-required`, and so do the
-  write routes of §7's table, before authentication or parsing.
+- After the cutover, `/v1/socket` answers both its upgrade and a plain `GET` with `410` and the JSON
+  body code `client-update-required`, and so do the write routes of §7's table, all before
+  authentication or parsing. A browser cannot read why an upgrade failed, so a room whose socket
+  never opens reads the plain `GET`: that answer is how it learns its build is retired.
 - A tab older than that release stays offline and keeps what it writes in the old store, which the
   next load of the new bundle carries over (§8.2).
 
