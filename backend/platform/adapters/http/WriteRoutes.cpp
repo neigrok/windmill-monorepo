@@ -1,5 +1,8 @@
 #include "platform/adapters/http/WriteRoutes.h"
 
+#include <drogon/HttpFilter.h>
+#include <drogon/WebSocketController.h>
+
 #include <algorithm>
 #include <cctype>
 #include <mutex>
@@ -132,12 +135,44 @@ void declareReadRoute(WriteRoute route) {
   readRoutes.push_back(std::move(route));
 }
 
+std::vector<WriteRoute> registeredReadRoutes() {
+  std::lock_guard<std::mutex> lock(routesMutex);
+  return readRoutes;
+}
+
 bool retiredRoute(const drogon::HttpRequestPtr& request) {
   return request->attributes()->get<bool>("wm.retired_route");
 }
 
-drogon::HttpResponsePtr retiredWriteResponse() {
+drogon::HttpResponsePtr retiredRouteResponse() {
   return error(drogon::k410Gone, "This version of the app can no longer save; update it.", "client-update-required");
+}
+
+// What takes a retired socket path's upgrade. Its gate refuses every one before it opens, so no connection reaches it.
+class RetiredSocket : public drogon::WebSocketController<RetiredSocket> {
+public:
+  void handleNewConnection(const drogon::HttpRequestPtr&, const drogon::WebSocketConnectionPtr& conn) override { conn->forceClose(); }
+  void handleNewMessage(const drogon::WebSocketConnectionPtr&, std::string&&, const drogon::WebSocketMessageType&) override {}
+  void handleConnectionClosed(const drogon::WebSocketConnectionPtr&) override {}
+
+  WS_PATH_LIST_BEGIN
+  WS_PATH_LIST_END
+};
+
+// Answers a retired socket path's upgrade as its plain GET is answered, and completes the observation the early advice
+// began from that GET's declaration: Drogon sends a refused upgrade straight back, past every post-handling advice.
+class RetiredUpgradeGate : public drogon::HttpFilter<RetiredUpgradeGate> {
+public:
+  void doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&&) override {
+    const drogon::HttpResponsePtr answer = retiredRouteResponse();
+    finishWriteRequest(req, answer);
+    refuse(answer);
+  }
+};
+
+void WriteRoutes::retireSocket(const std::string& path) {
+  retire(drogon::Get, path);
+  app_.registerWebSocketController(path, RetiredSocket::classTypeName(), {RetiredUpgradeGate::classTypeName()});
 }
 
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,

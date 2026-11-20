@@ -53,15 +53,17 @@ struct RoadmapDeps {
   std::string remindersAdminToken;
   std::shared_ptr<PlanComposer> composer;
   // Set where the engine serves roadmap's scopes (ROADMAP_ENGINE_ENABLED): the activity, the progress, the share page, its
-  // card and video, and the gallery read its records; unset, the rooms and roadmap's own tables, as before the cutover.
+  // card and video, and the gallery read its records, and the rooms' socket and routes are retired; unset, the rooms and
+  // roadmap's own tables serve, as before the cutover.
   std::shared_ptr<EngineReadModels> engineReads;
   // The origins allowed to drive this server from a browser — main.cpp composes the set once, for
   // CORS, and the collab socket gates its upgrade on the same one. Two lists would drift.
   std::set<std::string> allowedOrigins;
 };
 
-// Mounts the roadmap product on the shared app: the collab socket, its presence flush, and every
-// roadmap HTTP route (/v1/trees*, /gallery, /t/:id, /v1/reminders*, /v1/tend*, /v1/compose, …).
+// Mounts the roadmap product on the shared app: the collab socket and its presence flush, or their retirement where the
+// engine serves roadmap's scopes, and every roadmap HTTP route (/v1/trees*, /gallery, /t/:id, /v1/reminders*, /v1/tend*,
+// /v1/compose, …).
 void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps);
 
 }

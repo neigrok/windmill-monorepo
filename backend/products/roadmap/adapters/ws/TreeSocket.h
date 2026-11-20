@@ -4,7 +4,7 @@
 
 namespace wm {
 
-class TreeSocket : public drogon::WebSocketController<TreeSocket> {
+class TreeSocket : public drogon::WebSocketController<TreeSocket, false> {
 public:
   void handleNewConnection(const drogon::HttpRequestPtr& req,
                            const drogon::WebSocketConnectionPtr& conn) override;
@@ -17,7 +17,8 @@ public:
   WS_PATH_LIST_END
 };
 
-// Referenced from registerRoutes so linking windmill_roadmap retains the static WS registration.
-void linkTreeSocket();
+// Makes the controller live at /v1/socket, each connection served through collab(). Call once, before app().run(), and
+// only where roadmap's rooms serve: where the engine serves roadmap's scopes the path is retired (routes.cpp).
+void installTreeSocket();
 
 }

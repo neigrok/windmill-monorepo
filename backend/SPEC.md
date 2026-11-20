@@ -856,7 +856,11 @@ Absent and private-denied answer identically on every surface — no existence l
 
 ## HTTP surface
 
-Registered in `products/roadmap/routes.cpp`.
+Registered in `products/roadmap/routes.cpp`. Where the engine serves roadmap's scopes (`ROADMAP_ENGINE_ENABLED`), the
+rooms' routes are retired ([roadmap on the engine](../docs/foundation/roadmap-on-the-engine.md) §7, §8.3): both verbs of
+`/v1/trees`, the three of `/v1/trees/{id}`, its `/guides` and `/diagnostics`, and `PUT …/subtree` answer 410
+`client-update-required` before authentication or parsing (`WriteRoutes::retire`), and so does the socket (WebSocket
+surface).
 
 | Method | Path |
 | --- | --- |
@@ -1061,7 +1065,10 @@ sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 
 ## WebSocket surface
 
-`products/roadmap/adapters/ws/`. One socket, JSON frames, `t` names the frame type. The
+`products/roadmap/adapters/ws/`, mounted at `/v1/socket` where the rooms serve. Where the engine serves roadmap's scopes
+the path is retired (`WriteRoutes::retireSocket`): its upgrade and a plain GET of it answer 410 `client-update-required`,
+which is how an old build that cannot read a failed upgrade learns it is retired. One socket, JSON frames, `t` names
+the frame type. The
 credential is presented at the upgrade; every write re-proves the session, throttled to one lookup
 a minute, and a revoked session narrows to a guest in place. Visibility is re-asked per frame.
 
