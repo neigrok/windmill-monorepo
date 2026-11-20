@@ -12,11 +12,11 @@ binary. A missing manifest or unreadable live hello stops deployment before migr
 promotion or container replacement. Any change to the minimum accepted schema needs the manual
 acknowledgement described below; ordinary backend batches cannot make that cutoff.
 
-Deploys, Web Deploy on `main` and the production backup run one at a time under the `deploy-vps` lock;
-a pull request's runs never take it. GitHub keeps one waiting run per lock and cancels it when another
-arrives. A newer backend deploy replaces an older one safely, but a waiting Web Deploy cancelled by a
-backend deploy is not replaced: after merges that land close together, check the Web Deploy run of
-the last merge that touched the web and re-run it if it was cancelled.
+Deploys, Web Deploy on `main`, the production backup, the digest resum and the roadmap copy run one at a
+time under the `deploy-vps` lock; a pull request's runs never take it. GitHub keeps one waiting run per
+lock and cancels it when another arrives. A newer backend deploy replaces an older one safely, but a
+waiting Web Deploy cancelled by a backend deploy is not replaced: after merges that land close together,
+check the Web Deploy run of the last merge that touched the web and re-run it if it was cancelled.
 
 ```
  push to main ─▶ test (ctest in builder image)
@@ -54,6 +54,7 @@ the last merge that touched the web and re-run it if it was cancelled.
 | Promote the candidate files, prove Caddy loaded them, verify both ledger databases and start their services (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
+| Copy roadmap's rows for a rehearsal of its cutover, encrypted to the owner (by hand, with the owner's approval; reads only), and the test of what it prints | `/.github/workflows/ops-roadmap-copy.yml`, `test/deploy/ops_roadmap_copy_test.py` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy, and the test that drives it against stand-ins for all public upstreams | `deploy/Caddyfile`, `test/deploy/caddyfile_routes_test.py` |
 | The subscription service's database, its role and its `pg_hba.conf` rules (the `subscriptions-db` one-shot; shipped as `subscriptions-db.next` and promoted with the compose file) | `deploy/subscriptions-db/` |
@@ -659,7 +660,7 @@ joined session, and checks successful callbacks, receipt replay and durable relo
 Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`), never during a deploy: a deploy's
 migration alters `trees`, would wait behind the inventory's read, and would hold every roadmap read
 behind it. Its first step refuses to start while any workflow whose concurrency can take the
-`deploy-vps` lock (Deploy to VPS, Web Deploy, the production backup, the digest resum) has a run queued
+`deploy-vps` lock (Deploy to VPS, Web Deploy, the production backup, the digest resum, the roadmap copy) has a run queued
 or running, a pull request's run aside, since it takes no lock and reaches no server. It then runs
 `windmill_subtree_inventory` inside the live `server` container, which already holds `DATABASE_URL`;
 the tool never writes, and no credential leaves the host. Its one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) is
@@ -684,6 +685,38 @@ docker compose exec -T server windmill_subtree_inventory
 
 Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed or
 stdout did not take the counts.
+
+## Copy production's roadmaps for a rehearsal
+
+Dispatch **Ops · roadmap copy** (`ops-roadmap-copy.yml`) only with the owner's approval of that copy, and only while
+no run holds or waits for the `deploy-vps` lock: it takes that lock, and a run waiting for it is cancelled by the next
+one to wait. It copies what `windmill_roadmap_adopt`, the tool of roadmap's cutover onto the sync engine, reads, for
+the cutover's rehearsal against a copy of production ([§8.1](../../docs/foundation/roadmap-on-the-engine.md)).
+It only reads: both of its sessions run with `default_transaction_read_only`.
+
+- `tables.dump.enc`: a custom-format `pg_dump` of `trees`, `tree_nodes`, `tree_edges`, `tree_kinds`, `node_progress`
+  and `tree_ops`.
+- `ids.tsv.enc`: one `copy` of every account's id, the id of each roadmap with a share card or a share video, and the
+  key of every roadmap scope `sync_scopes` holds, a label and an id a line. The move reads only that these exist, so no
+  address, name, card or video leaves the host. It is read after the dump: an account erased between the two leaves
+  its roadmaps ownerless in the copy.
+- `key.pem`: a key made for the run, sealed to `.github/ops/inventory-recipient.pem`. The runner encrypts both files
+  with it as they arrive from ssh (`openssl enc -aes-256-cbc -pbkdf2`), so no plaintext reaches its disk or the log.
+
+The job log shows each file's size and sha256 and nothing else, and the artifact `roadmap-copy-<run id>` keeps the
+three files for a day. This repository's artifacts are public: download it, check the three digests against the log,
+and delete it at once (`gh api -X DELETE repos/<owner>/<repo>/actions/artifacts/<artifact id>`). Open it in a folder
+only you can read, with the private key that belongs to the certificate:
+
+```sh
+ROADMAP_COPY_KEY=$(openssl smime -decrypt -inform PEM -inkey <key> -in key.pem)
+export ROADMAP_COPY_KEY
+openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ROADMAP_COPY_KEY -in tables.dump.enc -out tables.dump
+openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ROADMAP_COPY_KEY -in ids.tsv.enc -out ids.tsv
+```
+
+The dump is Postgres 16's, so it restores with `pg_restore` 16 or later. The copy is private data: it lives only in a
+throwaway local database and folder, and both are deleted when the rehearsal ends.
 
 ## Windmill One: the entitlement copy
 
