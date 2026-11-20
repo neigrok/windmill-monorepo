@@ -197,7 +197,11 @@ both off: Undo and Redo, edits made offline syncing on reconnect, a change again
 deletion, a change to a roadmap another device deleted, which only the switch keeps in the account menu's Kept here, to
 copy and discard, flow 50's sign-in and sign-out questions, which only the switch asks, and the carry-over of a browser
 holding the old bundle's stores, which only the switch runs; with the switch on, also Settings' export from the device's
-copy with no connection. Build `windmill_server` first (`backend/RUNNING.md`). It builds the app into a temporary folder,
+copy with no connection, readers and births: a stranger, signed out and signed in, reading a public roadmap and the subtree
+its step owns, each followed as it opens and dropped on leaving; a private roadmap the room cannot load, of which the
+browser keeps nothing; a browser that keeps nothing shown the load error, its bare roadmap door staying where it is; and a
+roadmap born at the birth door signed out, held in the anon replica and joining at sign-in an account that holds none.
+Build `windmill_server` first (`backend/RUNNING.md`). It builds the app into a temporary folder,
 serves it on 5183 against the server on 8095 (`WM_E2E_WEB_PORT`, `WM_E2E_PORT`), uses its own databases
 (`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops and drops what it started. `WM_E2E_SHOTS` names a folder
 for screenshots of the kept list and flow 50's questions at 1440 and 390. The journal's twin,

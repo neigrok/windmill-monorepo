@@ -131,11 +131,13 @@ function signedOutPlanter() {
         const engine = await BrowserSyncEngine.open({ telemetry: { event() {}, failure() {} } });
         try {
           const runner = new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0));
+          const trees = [];
           for (const { title, steps } of plans) {
             const outcome = await runner.runAct(new CreateRoadmap(title, { steps: steps.map((label) => ({ key: label, label })), links: [] }));
             if (outcome.kind !== 'committed') throw new Error('a signed-out roadmap was not made');
+            trees.push(String(outcome.result.tree));
           }
-          return engine.device.activeReplica.meta.state;
+          return { state: engine.device.activeReplica.meta.state, trees };
         } finally {
           engine.close();
         }
@@ -285,7 +287,9 @@ class Device {
     await this.page.goto(outsideApp);
     await this.page.addScriptTag({ content: await signedOutPlanter(), type: 'module' });
     await this.page.waitForFunction(() => typeof window.plantSignedOut === 'function');
-    assert.equal(await this.page.evaluate((plans) => window.plantSignedOut(plans), plans), 'anon', 'the roadmaps were made signed out');
+    const { state, trees } = await this.page.evaluate((plans) => window.plantSignedOut(plans), plans);
+    assert.equal(state, 'anon', 'the roadmaps were made signed out');
+    return trees;
   }
 
   // The old bundle's stores (`oldBundle`) written into this browser before the app loads.
@@ -922,10 +926,14 @@ async function accountChoices(browser, { session, empty }, account, check, devic
     assert.deepEqual(titles.filter((title) => ['A quieter home', 'Learn to cook'].includes(title)), ['A quieter home', 'Learn to cook'], 'Add took both roadmaps to the account');
   });
 
-  await check('flow 50: on a phone the question is a page of its own, and Discard takes the roadmap from the browser without it reaching the account', async () => {
+  await check('flow 50: on a phone the question is a page of its own, and Discard takes the roadmap from the browser without it reaching the account, with what the browser kept beside it', async () => {
     const d = await Device.signedOut(browser, { width: 390, height: 844 });
     devices.push(d);
-    await d.plantSignedOut([{ title: 'A slower morning', steps: [] }]);
+    const [morning] = await d.plantSignedOut([{ title: 'A slower morning', steps: [] }]);
+    await d.page.evaluate((tree) => {
+      localStorage.setItem(`windmill:return:${tree}`, JSON.stringify({ completed: [], at: 1 }));
+      localStorage.setItem(`windmill:milestones:${tree}`, JSON.stringify([]));
+    }, morning);
     await d.signIn(session(account));
     const { dialog, said } = await d.decision('Add your roadmaps?');
     assert.deepEqual(said, { lead: '1 roadmap on this browser can join your account.', items: ['A slower morning'],
@@ -935,6 +943,7 @@ async function accountChoices(browser, { session, empty }, account, check, devic
     await dialog.waitFor({ state: 'detached' });
     assert.ok(await d.storeUntil((store) => JSON.stringify(replicasIn(store)) === JSON.stringify([['anon', 0], ['bound', 0]])),
       'the browser holds nothing of the discarded roadmap');
+    await d.page.waitForFunction((tree) => Object.keys(localStorage).every((key) => !key.endsWith(`:${tree}`)), morning, { timeout: 10_000 });
     const titles = await titlesOf(account, (held) => held.includes('Learn to swim'));
     assert.equal(titles.includes('A slower morning'), false, 'the discarded roadmap never reached the account');
   });
@@ -1105,12 +1114,16 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
     }
   });
 
-  await check('E-5 is not built: a reader whose browser keeps nothing is shown the room’s load error for a public roadmap', async () => {
+  await check('E-5 is not built: a reader whose browser keeps nothing is shown the room’s load error for a public roadmap, and the bare roadmap door stays where it is', async () => {
     const d = await Device.signedOut(browser);
     devices.push(d);
     await d.context.addInitScript(() => Object.defineProperty(window, 'indexedDB', { configurable: true, get: () => undefined }));
     await d.page.goto(`${origin}/t/${year}`);
     await d.page.getByText('Couldn’t load this roadmap', { exact: false }).first().waitFor();
+    await d.page.goto(`${origin}/#/app`);
+    await d.page.waitForURL((url) => url.pathname === '/app/roadmap');
+    await settle(3000);
+    assert.equal(new URL(d.page.url()).hash, '#/app', 'the door cannot say which roadmap is the person’s, so it sends them nowhere');
   });
 
   await check('§5 Signed out: a roadmap made at the birth door lives in the browser’s anon replica, the old stores untouched, and joins at sign-in an account that holds none, with no question', async () => {
