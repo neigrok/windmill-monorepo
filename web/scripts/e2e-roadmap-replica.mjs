@@ -17,7 +17,11 @@
 // roadmap and its subtree by link, each followed on the live socket as the room opens it (a signed-in reader's own overlay
 // with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a browser that keeps nothing shown the
 // room's load error (E-5 is not built); and a roadmap made at the birth door signed out, held in the browser's anon replica
-// and joining at sign-in an account that holds none. Last, every person leaves the app, and the run waits, within its
+// and joining at sign-in an account that holds none. The home card, the landing and the room's switcher list the person's
+// roadmaps: with the switch on from the device's copy, the account's signed in and the browser's own signed out; with it
+// off from today's list, which holds none signed out. With the switch on every page meets the server as the move leaves it
+// (§7, §8.3): each route the move retires answers 410 and the old socket refuses, and the run holds that no page asked for
+// one. Last, every person leaves the app, and the run waits, within its
 // bound, until the local intake holds the room's events, those only the switch emits only with it on. Each run has its
 // own database, server and built app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
@@ -79,6 +83,41 @@ async function stopped(children) {
 }
 
 const source = (path) => import(pathToFileURL(resolve(path)).href);
+
+// The routes roadmap's move onto the engine retires or answers 410 (roadmap-on-the-engine.md §7, §8.3), each by its method,
+// its path's shape and the name it is counted under. The fork, the activity and progress reads and tending stay.
+const RETIRED = [
+  ['GET', /^\/v1\/trees$/, 'GET /v1/trees'],
+  ['POST', /^\/v1\/trees$/, 'POST /v1/trees'],
+  ['GET', /^\/v1\/trees\/[^/]+$/, 'GET /v1/trees/{id}'],
+  ['PATCH', /^\/v1\/trees\/[^/]+$/, 'PATCH /v1/trees/{id}'],
+  ['DELETE', /^\/v1\/trees\/[^/]+$/, 'DELETE /v1/trees/{id}'],
+  ['GET', /^\/v1\/trees\/[^/]+\/guides$/, 'GET /v1/trees/{id}/guides'],
+  ['GET', /^\/v1\/trees\/[^/]+\/diagnostics$/, 'GET /v1/trees/{id}/diagnostics'],
+  ['PUT', /^\/v1\/trees\/[^/]+\/subtree$/, 'PUT /v1/trees/{id}/subtree'],
+];
+
+// The browser of a run with the switch on, every page of which meets the server as the move leaves it: each route of
+// `RETIRED` answers 410 `client-update-required` and `/v1/socket` refuses the connection, each refusal counted in `refused`
+// under its route's name, never its id.
+function afterTheMove(browser, refused) {
+  const count = (name) => refused.set(name, (refused.get(name) ?? 0) + 1);
+  return { newContext: async (options) => {
+    const context = await browser.newContext(options);
+    await context.route((url) => url.pathname.startsWith('/v1/trees'), (route) => {
+      const { pathname } = new URL(route.request().url());
+      const retired = RETIRED.find(([method, path]) => method === route.request().method() && path.test(pathname));
+      if (!retired) return route.continue();
+      count(retired[2]);
+      return route.fulfill({ status: 410, contentType: 'application/json', body: JSON.stringify({ code: 'client-update-required' }) });
+    });
+    await context.routeWebSocket((url) => url.pathname === '/v1/socket', (socket) => {
+      count('WS /v1/socket');
+      socket.close({ code: 1008, reason: 'client-update-required' });
+    });
+    return context;
+  } };
+}
 
 // Two roadmaps of the owner's: three steps in a line, and one of a single step. With the engine on they are planted
 // through roadmap's domain actions on a device of the owner's; with it off, through today's routes.
@@ -592,7 +631,7 @@ async function shoot(device, name) {
   await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
 }
 
-async function scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber }, account, check) {
+async function scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, refused }, account, check) {
   const { sail, knot, row } = await seed(mode, secret, account);
   const address = `#/app/${sail}`;
   const a = await Device.open(browser, secret);
@@ -864,9 +903,15 @@ async function scenarios(mode, browser, { secret, second, session, intake, empty
     else await todaysAccountChoices(browser, { secret, session }, check, devices);
     if (mode === 'on') await readersAndBirths(browser, { session, stranger, climber }, account, check, devices);
     await carryScenario(mode, browser, { session, carrier }, account, check, devices);
+    await yourRoadmaps(mode, browser, { session, lister }, check, devices);
     await check('no device logged an error', async () => {
       assert.deepEqual(devices.flatMap((device) => device.errors), [], 'no page threw and no console logged an error');
     });
+    if (mode === 'on') {
+      await check('§7: with the switch on, no page asked the server for a route the move retires', async () => {
+        assert.deepEqual(Object.fromEntries(refused), {}, 'the pages asked the server for none of them');
+      });
+    }
     await check(mode === 'on' ? 'as each person leaves, the intake holds the room’s events, with those only the switch emits'
       : 'as each person leaves, the intake holds the room’s events, and none of those only the switch emits', async () => {
       for (const device of devices) await device.page.goto('about:blank');
@@ -1165,6 +1210,95 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
   });
 }
 
+// §7, §8.4 The person's roadmaps where the home card, the landing and the room's switcher list them. With the switch on,
+// every page of the run meeting the server as the move leaves it (`afterTheMove`), they are the device's copy's: the
+// account's signed in and the browser's own signed out. With it off they are today's list signed in, and signed out it
+// holds none. An account holds two roadmaps, the newer planted last; a browser signed out holds one.
+async function yourRoadmaps(mode, browser, { session, lister }, check, devices) {
+  const planted = [['Learn to sail', ['Choose a course']], ['Learn to row', ['Grip the oars', 'Pull together']]];
+  const trees = [];
+  if (mode === 'on') {
+    const owner = await OwnerDevice.open('lister-seed', session(lister), lister);
+    try {
+      await owner.engine.start();
+      for (const [title, steps] of planted) {
+        trees.push(await owner.plant(new owner.domain.CreateRoadmap(title, { steps: steps.map((label) => ({ key: label, label })), links: [] })));
+        await owner.sent();
+        await settle(1100);
+      }
+    } finally {
+      owner.engine.close();
+    }
+  } else {
+    for (const [title, steps] of planted) {
+      const response = await fetch(`${backend}/v1/trees`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session(lister)}` },
+        body: JSON.stringify({ title, nodes: steps.map((label, index) => ({ id: `s${index}`, label, color: 'terracotta', prerequisites: [] })) }), signal: AbortSignal.timeout(10_000) });
+      assert.ok(response.ok, 'the roadmap was planted');
+      trees.push((await response.json()).treeId);
+      await settle(1100);
+    }
+  }
+  // What the home card, the landing and, where `room` names a roadmap, its room's switcher say once the home card's link
+  // reads `link`: the card's link and line, the landing's offers and line, and each switcher row's name and line, with
+  // how long ago a roadmap was tended said as `recently`.
+  const recently = (text) => text.replace(/just now|\d+ minutes? ago|\d+m ago/, 'recently');
+  const offered = async (d, link, room) => {
+    await d.page.goto(`${origin}/app`);
+    const card = d.page.locator('.wm-rhc');
+    await card.locator('.wm-rhc-link', { hasText: link }).waitFor();
+    const home = [await card.locator('.wm-rhc-link').innerText(), recently(await card.locator('.wm-rhc-body').innerText())];
+    await d.page.goto(`${origin}/`);
+    await d.page.locator('a[href="/roadmap"]').first().click();
+    await d.page.waitForURL((url) => url.pathname === '/roadmap');
+    const hero = d.page.locator('section', { has: d.page.locator('h1') }).first();
+    await hero.getByRole('button', { name: link.replace(' →', ''), exact: true }).waitFor();
+    const landing = { offers: await hero.getByRole('button').allInnerTexts(), line: recently(await hero.locator('.wrap > div').last().innerText()) };
+    if (!room) return { home, landing };
+    await d.board(`#/app/${room}`);
+    await d.page.locator('.st-roadmap-switcher [aria-haspopup="menu"]').click();
+    const rows = await d.page.locator('.st-switcher-row').evaluateAll((each) => each.map((row) => {
+      const name = row.querySelector('span[title]');
+      return [name.textContent, name.nextElementSibling.textContent];
+    }));
+    await d.page.keyboard.press('Escape');
+    return { home, landing, switcher: rows.map(([name, line]) => [name, recently(line)]) };
+  };
+  const NONE_SIGNED_OUT = 'No account needed — your first tree lives in your browser.';
+
+  await check(mode === 'on' ? '§7: with the routes the move retires refused, the home card, the landing and the switcher list the account’s roadmaps from the device’s copy, newest first'
+    : 'today: the home card, the landing and the switcher list the account’s roadmaps from the server’s list, newest first', async () => {
+    const d = await Device.open(browser, session(lister));
+    devices.push(d);
+    assert.deepEqual(await offered(d, 'Resume Learn to row →', trees[0]), {
+      home: ['Resume Learn to row →', 'Learn to row · 0/2 done · last tended recently'],
+      landing: { offers: ['Resume Learn to row', 'My trees'], line: 'Learn to row · 0/2 done · last tended recently' },
+      switcher: [['Learn to row', '0 of 2 · recently · synced'], ['Learn to sail', '0 of 1 · recently · synced']],
+    }, 'each lists the account’s roadmaps in today’s words');
+  });
+
+  if (mode === 'off') {
+    await check('today: signed out, the home card and the landing offer a first roadmap, as the server lists nobody’s', async () => {
+      const d = await Device.signedOut(browser);
+      devices.push(d);
+      assert.deepEqual(await offered(d, 'Start your tree →', null), {
+        home: ['Start your tree →', NONE_SIGNED_OUT],
+        landing: { offers: ['Start your tree', 'Try the live demo'], line: NONE_SIGNED_OUT },
+      }, 'each offers a first roadmap');
+    });
+    return;
+  }
+  await check('§7: signed out, with the routes the move retires refused, the home card, the landing and the switcher list the browser’s own roadmap from its anon replica', async () => {
+    const d = await Device.signedOut(browser);
+    devices.push(d);
+    const [swim] = await d.plantSignedOut([{ title: 'Learn to swim', steps: ['Float on your back'] }]);
+    assert.deepEqual(await offered(d, 'Resume Learn to swim →', swim), {
+      home: ['Resume Learn to swim →', 'Learn to swim · 0/1 done'],
+      landing: { offers: ['Resume Learn to swim', 'My trees'], line: 'Learn to swim · 0/1 done' },
+      switcher: [['Learn to swim', '0 of 1 · on this device']],
+    }, 'each lists the browser’s roadmap in today’s words');
+  });
+}
+
 // What the last old bundle wrote in a browser (roadmap-on-the-engine.md §8.2): its own code, run here over a stand-in
 // browser's storage, offline, and read back as the browser keeps it: the sync database's records and the storage's keys.
 async function oldBundle(write) {
@@ -1328,6 +1462,7 @@ async function run(mode, browser) {
   const carrier = randomUUID();
   const stranger = randomUUID();
   const climber = randomUUID();
+  const lister = randomUUID();
   const secret = randomBytes(24).toString('hex');
   const second = randomBytes(24).toString('hex');
   const sql = (statement) => execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-c', statement], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -1364,7 +1499,7 @@ async function run(mode, browser) {
     }
     execFileSync('createdb', ['-h', host, database]); created = true;
     execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
-    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'),('${empty}','web-roadmap-empty@example.com','Web Roadmap Empty'),('${carrier}','web-roadmap-carry@example.com','Web Roadmap Carry'),('${stranger}','web-roadmap-stranger@example.com','Web Roadmap Stranger'),('${climber}','web-roadmap-climb@example.com','Web Roadmap Climb'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
+    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'),('${empty}','web-roadmap-empty@example.com','Web Roadmap Empty'),('${carrier}','web-roadmap-carry@example.com','Web Roadmap Carry'),('${stranger}','web-roadmap-stranger@example.com','Web Roadmap Stranger'),('${climber}','web-roadmap-climb@example.com','Web Roadmap Climb'),('${lister}','web-roadmap-list@example.com','Web Roadmap List'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
     const dist = resolve(scratch, `dist-${mode}`);
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'],
       { cwd: process.cwd(), env: { ...process.env, VITE_ROADMAP_REPLICA_ROOM: mode === 'on' ? 'on' : '' }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 });
@@ -1374,7 +1509,9 @@ async function run(mode, browser) {
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
     web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
-    await scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber }, account, check);
+    const refused = new Map();
+    await scenarios(mode, mode === 'on' ? afterTheMove(browser, refused) : browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, refused },
+      account, check);
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
@@ -1390,7 +1527,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 26, off: 10 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 29, off: 12 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   log.write(`\n${error?.stack ?? error}\n${error instanceof assert.AssertionError ? inspect({ actual: error.actual, expected: error.expected }, { depth: 6 }) : ''}\n`);
