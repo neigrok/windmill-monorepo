@@ -68,9 +68,9 @@ receipts and retained journal revisions stay in place.
 ## Build and test
 
 ```sh
-cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
+cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:9)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and nine script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and ten script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
@@ -80,9 +80,6 @@ its own: a request keeps every header line it was received with (`headerOccurren
 keeps a cookie per name, domain and path, and a request whose field lines or framing RFC 9112 calls
 invalid is refused. Its headers come first on every include path, so an unpatched Drogon installed
 beside the others never shadows them.
-
-Never build `-O0`: an un-inlined call chain overflows Drogon's worker-thread stack and corrupts
-return values with no crash. That is why the default build type is forced.
 
 Every C++ test file is named by hand in one of four `add_executable` lists in `CMakeLists.txt`. A test
 file not in a list never runs.

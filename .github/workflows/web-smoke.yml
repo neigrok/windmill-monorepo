@@ -42,7 +42,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Install Chromium
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
+
+      - name: Install the browsers
         run: node scripts/install-sync-browser.mjs
 
       - name: Walk the site

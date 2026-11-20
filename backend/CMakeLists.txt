@@ -4,14 +4,11 @@ project(windmill_backend C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# An unset build type means -O0, and -O0's fat un-inlined frames overflow drogon's ~512 KB
-# worker-thread stack once a request handler calls a few layers deep (Caller -> Api -> Service ->
-# Pg -> pqxx) — corrupting by-value return slots (a page read back as an empty/garbage struct) with
-# no crash. Prod builds Release (backend/Dockerfile), so this only ever bit a plain local
-# `cmake -S . -B build`. Default local builds to RelWithDebInfo — optimized like prod, with symbols.
+# An unset build type compiles unoptimized, unlike the Release image (backend/Dockerfile): a plain local
+# `cmake -S . -B build` is RelWithDebInfo, optimized like production, with symbols.
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type (Release-like default; see note above)" FORCE)
-  message(STATUS "No CMAKE_BUILD_TYPE set — defaulting to RelWithDebInfo (an -O0 build overflows drogon's worker stack)")
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type (optimized like production, with symbols)" FORCE)
+  message(STATUS "No CMAKE_BUILD_TYPE set — defaulting to RelWithDebInfo, optimized like production")
 endif()
 
 # The sync contract (packages/api-contract/sync): the registries the sync engine embeds and the golden
@@ -551,6 +548,8 @@ target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
 target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_product_sync)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# One binary links the platform and every product, so no two files define a class under one qualified name.
+add_test(NAME one_definition COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/one_definition_test.py)
 add_test(NAME sync_epoch COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/sync_epoch_test.py $<TARGET_FILE:windmill_rotate_sync_epoch>)
 set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)

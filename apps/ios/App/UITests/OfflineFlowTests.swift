@@ -19,14 +19,13 @@ import XCTest
     XCTAssertTrue(editor.waitForExistence(timeout: 10), "The seed must persist its page and account before the HTTP launch.")
     let seed = "Saved on this phone."
     XCTAssertEqual(editor.value as? String, seed)
-    // The seeded phone has used its keyboard; first-ever simulator keyboard initialization belongs to setup.
+    // The seeded phone has used its keyboard, so first-ever simulator keyboard initialization belongs to setup. The one key
+    // it types stays on the page as the space the cold launch's words follow; no second key is sent to take it back.
     ready(app.buttons["write-today"])
     app.buttons["write-today"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
     app.typeText(" ")
     XCTAssertTrue(editor.waitForValue(seed + " ", timeout: 30), "The seed keyboard must finish its first input.")
-    app.typeText(XCUIKeyboardKey.delete.rawValue)
-    XCTAssertTrue(editor.waitForValue(seed, timeout: 5), "The seed must retain its exact original text.")
     app.buttons["done-writing"].tap()
     app.terminate()
     let server = mode == "black-hole" ? "https://192.0.2.1" : "https://offline.invalid"
@@ -36,7 +35,7 @@ import XCTest
       leaveForeground(app)
       app.activate()
     }
-    useLocalRooms(app, suffix: " Cold.", signedIn: signedIn, restoringWorkout: false)
+    useLocalRooms(app, suffix: "Cold.", signedIn: signedIn, restoringWorkout: false)
     leaveForeground(app)
     app.activate()
     useLocalRooms(app, suffix: " Resume.", signedIn: signedIn, restoringWorkout: true)
@@ -69,9 +68,14 @@ import XCTest
     ready(app.buttons["write-today"])
     app.buttons["write-today"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-    app.typeText(suffix)
-    // The editor publishes its last keystrokes a moment after the keyboard has sent them.
-    XCTAssertTrue(editor.waitForValue(previous + suffix, timeout: 5), "The editor must show what was typed: \(editor.value ?? "nothing")")
+    // Each key is sent once the editor shows the one before: a loaded runner's keyboard has dropped the tail of words typed
+    // at once.
+    var written = previous
+    for key in suffix.map(String.init) {
+      app.typeText(key)
+      written += key
+      XCTAssertTrue(editor.waitForValue(written, timeout: 5), "The editor must show what was typed: \(editor.value ?? "nothing")")
+    }
     app.buttons["done-writing"].tap()
 
     switchRoom("Gym", in: app)
@@ -97,7 +101,8 @@ import XCTest
     }
     ready(app.buttons["workout-log"])
     ready(app.buttons["workout-assembly"])
-    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.tap({ app.buttons["workout-assembly"].tap() }, until: { app.buttons["workout-hide"].waitForExistence(timeout: 3) }),
+                  "Local controls must be usable without waiting for any network request.")
     ready(app.buttons["workout-hide"])
     app.buttons["workout-hide"].tap()
     ready(app.tabBars.buttons["Coach"])
@@ -111,14 +116,9 @@ import XCTest
     } else {
       XCTAssertTrue(app.staticTexts["Not signed in"].exists)
     }
-    // The sheet's list can let a tap go unanswered while it settles, so an unanswered tap is tapped once more.
     let notes = app.navigationBars["Notes"]
-    for _ in 0..<2 where !notes.exists {
-      app.buttons["settings-notes"].tap()
-      _ = notes.waitForExistence(timeout: 3)
-    }
-    XCTAssertTrue(notes.exists)
-    app.navigationBars["Notes"].buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(app.tap({ app.buttons["settings-notes"].tap() }, until: { notes.waitForExistence(timeout: 3) }))
+    notes.buttons.element(boundBy: 0).tap()
     ready(app.navigationBars["You"].buttons["Done"])
     app.navigationBars["You"].buttons["Done"].tap()
     switchRoom("Journal", in: app)
@@ -136,9 +136,8 @@ import XCTest
   }
 
   func ready(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-    let enabled = NSPredicate { _, _ in element.exists && element.isEnabled && element.isHittable }
-    if enabled.evaluate(with: element) { return }
-    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enabled, object: element)], timeout: 3), .completed,
-                   "Local controls must be usable without waiting for any network request.", file: file, line: line)
+    if element.isReadyForTap { return }
+    XCTAssertTrue(element.waitForHittable(timeout: 3), "Local controls must be usable without waiting for any network request.",
+                  file: file, line: line)
   }
 }

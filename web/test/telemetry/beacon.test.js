@@ -5,7 +5,9 @@ import { runInNewContext } from 'node:vm';
 
 const source = await readFile(new URL('../../src/telemetry/beacon.js', import.meta.url), 'utf8');
 
-function queuedBeacon(online = true) {
+// The beacon module over a stand-in page at a fixed clock; `beacon` answers each sendBeacon as the browser would: true,
+// false or a throw. `sent()` reads every request it made, its body parsed.
+function queuedBeacon(online = true, beacon = () => true) {
   const requests = [];
   const listeners = new Map();
   const timers = new Map();
@@ -13,8 +15,9 @@ function queuedBeacon(online = true) {
   const navigator = {
     onLine: online,
     sendBeacon: (url, body) => {
-      requests.push({ url, body });
-      return true;
+      const taken = beacon();
+      requests.push({ via: 'beacon', url, body, taken });
+      return taken;
     },
   };
   const document = { visibilityState: 'visible', addEventListener: (name, handler) => listeners.set(name, handler) };
@@ -33,18 +36,27 @@ function queuedBeacon(online = true) {
       },
     },
     navigator, document, Blob,
+    Date: { now: () => 1_800_000_000_000 },
     clearTimeout: (id) => timers.delete(id),
     crypto: { randomUUID: () => 'session-key' },
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     fetch: (url, request) => {
-      requests.push({ url, ...request, headers: { ...request.headers } });
+      requests.push({ via: 'fetch', url, ...request, headers: { ...request.headers } });
       return Promise.resolve();
     },
   });
-  return { track, requests, navigator, document, timers, storage, dispatch: (name) => listeners.get(name)() };
+  const sent = () => Promise.all(requests.map(async ({ body, ...request }) => (request.via === 'beacon'
+    ? { ...request, type: body.type, body: JSON.parse(await body.text()) }
+    : { ...request, body: JSON.parse(body) })));
+  return { track, requests, sent, navigator, document, timers, storage, dispatch: (name) => listeners.get(name)() };
 }
 
-test('offline events retain their label-only payload and flush once on reconnect', () => {
+const beaconOf = (events) => ({ via: 'beacon', url: '/v1/events', taken: true, type: 'application/json', body: { sessionKey: 'session-key', events } });
+const keepaliveOf = (events) => ({ via: 'fetch', url: '/v1/events', method: 'POST', credentials: 'include', keepalive: true,
+  headers: { 'Content-Type': 'application/json' }, body: { sessionKey: 'session-key', events } });
+const testEvents = (from, to) => Array.from({ length: to - from }, (_, index) => ({ name: 'test_event', clientMs: 1_800_000_000_000, props: { index: from + index } }));
+
+test('offline events retain their label-only payload and leave as one keepalive request on reconnect', async () => {
   const beacon = queuedBeacon(false);
   beacon.track('roadmap_sync_offline', { step: 'shown', pending: '0' });
   beacon.dispatch('pagehide');
@@ -58,20 +70,11 @@ test('offline events retain their label-only payload and flush once on reconnect
   beacon.dispatch('online');
   beacon.dispatch('online');
 
-  assert.equal(beacon.requests.length, 1);
-  const body = JSON.parse(beacon.requests[0].body);
-  assert.deepEqual(body, {
-    sessionKey: 'session-key',
-    events: [{ name: 'roadmap_sync_offline', clientMs: body.events[0].clientMs, props: { step: 'shown', pending: '0' } }],
-  });
+  assert.deepEqual(await beacon.sent(), [keepaliveOf([{ name: 'roadmap_sync_offline', clientMs: 1_800_000_000_000, props: { step: 'shown', pending: '0' } }])]);
   assert.deepEqual([...beacon.storage], [['windmill:beacon:key', 'session-key']]);
-  assert.deepEqual(beacon.requests[0], {
-    url: '/v1/events', method: 'POST', credentials: 'include', keepalive: false,
-    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  });
 });
 
-test('a pending debounce cannot discard events when the browser goes offline', () => {
+test('a pending debounce cannot discard events when the browser goes offline', async () => {
   const beacon = queuedBeacon();
   beacon.track('roadmap_sync_offline', { step: 'shown', pending: '0' });
   beacon.navigator.onLine = false;
@@ -81,11 +84,10 @@ test('a pending debounce cannot discard events when the browser goes offline', (
 
   beacon.navigator.onLine = true;
   beacon.dispatch('online');
-  const events = JSON.parse(beacon.requests[0].body).events;
-  assert.deepEqual(events, [{ name: 'roadmap_sync_offline', clientMs: events[0].clientMs, props: { step: 'shown', pending: '0' } }]);
+  assert.deepEqual(await beacon.sent(), [keepaliveOf([{ name: 'roadmap_sync_offline', clientMs: 1_800_000_000_000, props: { step: 'shown', pending: '0' } }])]);
 });
 
-test('the offline memory queue retains at most 200 events and reconnect sends batches of 50', () => {
+test('the offline memory queue retains at most 200 events and reconnect sends keepalive batches of 50', async () => {
   const beacon = queuedBeacon(false);
   for (let index = 0; index < 240; index++) beacon.track('test_event', { index });
   assert.deepEqual(beacon.requests, []);
@@ -93,30 +95,38 @@ test('the offline memory queue retains at most 200 events and reconnect sends ba
 
   beacon.navigator.onLine = true;
   beacon.dispatch('online');
-  const batches = beacon.requests.map(({ body }) => JSON.parse(body).events);
-  assert.deepEqual(batches.map((events) => events.length), [50, 50, 50, 50]);
-  assert.deepEqual(batches.flat().map(({ name, props }) => ({ name, props })),
-    Array.from({ length: 200 }, (_, index) => ({ name: 'test_event', props: { index: index + 40 } })));
+  assert.deepEqual(await beacon.sent(), [keepaliveOf(testEvents(40, 90)), keepaliveOf(testEvents(90, 140)),
+    keepaliveOf(testEvents(140, 190)), keepaliveOf(testEvents(190, 240))]);
 });
 
-test('online events still flush at 20 and pagehide still uses the beacon transport', async () => {
+// Both outlive their page, so a batch is never on its way in a request that the page's leaving cancels.
+test('a full queue and the debounce send a keepalive request, and pagehide and a hidden page a beacon', async () => {
   const beacon = queuedBeacon();
   for (let index = 0; index < 20; index++) beacon.track('test_event', { index });
-  assert.equal(beacon.requests.length, 1);
   assert.equal(beacon.timers.size, 0);
-  const events = JSON.parse(beacon.requests[0].body).events;
-  assert.deepEqual(events.map(({ name, props }) => ({ name, props })),
-    Array.from({ length: 20 }, (_, index) => ({ name: 'test_event', props: { index } })));
-
   beacon.track('test_event', { index: 20 });
+  [...beacon.timers.values()][0]();
+  beacon.track('test_event', { index: 21 });
   beacon.dispatch('pagehide');
-  assert.equal(beacon.requests.length, 2);
+  beacon.track('test_event', { index: 22 });
+  beacon.document.visibilityState = 'hidden';
+  beacon.dispatch('visibilitychange');
+
   assert.equal(beacon.timers.size, 0);
-  const body = JSON.parse(await beacon.requests[1].body.text());
-  assert.deepEqual(body, {
-    sessionKey: 'session-key',
-    events: [{ name: 'test_event', clientMs: body.events[0].clientMs, props: { index: 20 } }],
-  });
+  assert.deepEqual(await beacon.sent(), [keepaliveOf(testEvents(0, 20)), keepaliveOf(testEvents(20, 21)),
+    beaconOf(testEvents(21, 22)), beaconOf(testEvents(22, 23))]);
+});
+
+test('a beacon the browser refuses or throws on leaves as a keepalive request', async () => {
+  const refused = queuedBeacon(true, () => false);
+  refused.track('test_event', { index: 0 });
+  refused.dispatch('pagehide');
+  const thrown = queuedBeacon(true, () => { throw new TypeError('sendBeacon refused'); });
+  thrown.track('test_event', { index: 0 });
+  thrown.dispatch('pagehide');
+
+  assert.deepEqual(await refused.sent(), [{ ...beaconOf(testEvents(0, 1)), taken: false }, keepaliveOf(testEvents(0, 1))]);
+  assert.deepEqual(await thrown.sent(), [keepaliveOf(testEvents(0, 1))]);
 });
 
 // beacon.js reads window at import time, so the page has to exist before the module does.

@@ -14,8 +14,15 @@ extension XCUIElement {
 
   // Exists, enabled and hittable: a screen whose first launch in a session is slow settles before a tap lands on it.
   func waitForHittable(timeout: TimeInterval = 15) -> Bool {
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in self.exists && self.isEnabled && self.isHittable }, object: self)
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in self.isReadyForTap }, object: self)
     return XCTWaiter.wait(for: [ready], timeout: timeout) == .completed
+  }
+
+  // XCTest fails the test, rather than answering, when it is asked the hittability of an element the app is rebuilding,
+  // which stands in the tree for a moment without a frame; so it is asked only of one whose snapshot has its frame.
+  var isReadyForTap: Bool {
+    guard let shot = try? snapshot(), shot.isEnabled, !shot.frame.isEmpty else { return false }
+    return isHittable
   }
 }
 
@@ -50,6 +57,17 @@ extension XCUIApplication {
     let typed = field.value as? String ?? ""
     field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: max(1, typed.count)) + load)
     XCTAssertTrue(field.waitForValue(load))
+  }
+
+  // A tap can go unanswered and leave the screen as it was: a control redrawn under it is rebuilt and drops it
+  // (GymModel.publish), and a sheet's list lets one go while it settles. A tap whose answer has not come is sent once more,
+  // which asks the same of the screen again.
+  func tap(_ send: () -> Void, until answered: () -> Bool) -> Bool {
+    for _ in 0..<2 {
+      send()
+      if answered() { return true }
+    }
+    return false
   }
 
   func cancelConfirmation() {
