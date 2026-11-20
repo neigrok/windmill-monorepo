@@ -12,11 +12,11 @@ binary. A missing manifest or unreadable live hello stops deployment before migr
 promotion or container replacement. Any change to the minimum accepted schema needs the manual
 acknowledgement described below; ordinary backend batches cannot make that cutoff.
 
-Deploys, Web Deploy on `main` and the production backup run one at a time under the `deploy-vps` lock;
-a pull request's runs never take it. GitHub keeps one waiting run per lock and cancels it when another
-arrives. A newer backend deploy replaces an older one safely, but a waiting Web Deploy cancelled by a
-backend deploy is not replaced: after merges that land close together, check the Web Deploy run of
-the last merge that touched the web and re-run it if it was cancelled.
+Deploys, Web Deploy on `main`, the production backup, the digest resum and the roadmap copy run one at a
+time under the `deploy-vps` lock; a pull request's runs never take it. GitHub keeps one waiting run per
+lock and cancels it when another arrives. A newer backend deploy replaces an older one safely, but a
+waiting Web Deploy cancelled by a backend deploy is not replaced: after merges that land close together,
+check the Web Deploy run of the last merge that touched the web and re-run it if it was cancelled.
 
 ```
  push to main ─▶ test (ctest in builder image)
@@ -54,6 +54,7 @@ the last merge that touched the web and re-run it if it was cancelled.
 | Promote the candidate files, prove Caddy loaded them, verify both ledger databases and start their services (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
+| Copy roadmap's rows for a rehearsal of its cutover, encrypted to the owner (by hand, with the owner's approval, never during a deploy; reads only), and its test | `/.github/workflows/ops-roadmap-copy.yml`, `test/deploy/ops_roadmap_copy_test.py` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy, and the test that drives it against stand-ins for all public upstreams | `deploy/Caddyfile`, `test/deploy/caddyfile_routes_test.py` |
 | The subscription service's database, its role and its `pg_hba.conf` rules (the `subscriptions-db` one-shot; shipped as `subscriptions-db.next` and promoted with the compose file) | `deploy/subscriptions-db/` |
@@ -684,6 +685,47 @@ docker compose exec -T server windmill_subtree_inventory
 
 Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed or
 stdout did not take the counts.
+
+## Copy production's roadmaps for a rehearsal
+
+Dispatch **Ops · roadmap copy** (`ops-roadmap-copy.yml`) only with the owner's approval of that copy. It copies what
+`windmill_roadmap_adopt`, the tool of roadmap's cutover onto the sync engine, reads, for the cutover's rehearsal against a
+copy of production ([§8.1](../../docs/foundation/roadmap-on-the-engine.md)). Its first job refuses while any workflow
+whose concurrency takes the `deploy-vps` lock has a run queued or running, as the subtree inventory's does, because a run
+waiting for the lock is cancelled by the next one to wait; only then does the copy job queue for the lock, so no deploy
+runs beside it. It only reads: both of its sessions run with `default_transaction_read_only`.
+
+- `tables.dump.enc`: a custom-format `pg_dump --strict-names` of `trees`, `tree_nodes`, `tree_edges`, `tree_kinds`,
+  `node_progress` and `tree_ops`.
+- `ids.tsv.enc`: one `copy` of the id of every account that owns a roadmap, a mark or a roadmap scope, of each roadmap
+  with a share card or a share video, and the key of every roadmap scope `sync_scopes` holds, a label and an id a line.
+  The move reads only that these exist, so no address, name, card or video leaves the host. It is read after the dump: an
+  account erased between the two leaves its roadmaps ownerless in the copy.
+- `key.pem`: a key made for the run, sealed to `.github/ops/inventory-recipient.pem`. The runner encrypts both files
+  with it as they arrive from ssh (`openssl enc -aes-256-cbc -pbkdf2`), so no plaintext reaches its disk or the log.
+
+Beside the step's script and ssh's own notices, the job log shows each file's size and sha256. The artifact
+`roadmap-copy-<run id>` keeps the three files for a day, and this repository's artifacts are public: download it into a
+new folder and delete it at once (`gh api -X DELETE repos/<owner>/<repo>/actions/artifacts/<artifact id>`). The
+digests in the log are the copy's only proof of where it came from, so check all three before opening anything. The log
+masks every secret's value wherever it appears, a digest included: mask your digest the same way before comparing it.
+Open it outside any checkout, so no plaintext can be committed, with the private key that belongs to the certificate:
+
+```sh
+umask 077
+plain=$(mktemp -d)
+ROADMAP_COPY_KEY=$(openssl smime -decrypt -inform PEM -inkey <key> -in key.pem)
+export ROADMAP_COPY_KEY
+openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ROADMAP_COPY_KEY -in tables.dump.enc -out "$plain/tables.dump"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ROADMAP_COPY_KEY -in ids.tsv.enc -out "$plain/ids.tsv"
+unset ROADMAP_COPY_KEY
+```
+
+Then delete the downloaded files. The dump is Postgres 16's, so it restores with `pg_restore` 16 or later. It carries
+the six tables' rows and none of `trees`' trigger functions: restore it with `--data-only --disable-triggers` into a
+throwaway database that `db/schema.sql` built, after emptying those six tables of the demo rows the schema seeds, and
+give `users` one row an account id. The copy is private data: it lives only in that database and folder, and both are
+deleted when the rehearsal ends.
 
 ## Windmill One: the entitlement copy
 

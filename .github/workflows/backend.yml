@@ -31,7 +31,8 @@ on:
       - '!services/subscriptions/**/*.md'
       - '!services/ai/**/*.md'
       - '!packages/api-contract/ai/**/*.md'
-  # The restore proof drives the web sync engine, so a pull request that changes it runs here too.
+  # A pull request runs here too when it changes the web sync engine, which the restore proof drives, or the roadmap
+  # copy, whose test runs here.
   pull_request:
     paths:
       - 'backend/**'
@@ -52,6 +53,7 @@ on:
       - 'packages/api-contract/sync/reference/client/**'
       - 'web/src/platform/sync/**'
       - '.github/workflows/backend.yml'
+      - '.github/workflows/ops-roadmap-copy.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/subscriptions.yml'
       - '.github/workflows/ai.yml'
@@ -88,6 +90,9 @@ jobs:
       - uses: actions/checkout@v5
       - name: Verify deployment workflow and image context
         run: python3 backend/test/deploy/deploy_production_test.py DeployWorkflowTest -v
+      - name: The roadmap copy leaves production only encrypted and prints only sizes and digests
+        timeout-minutes: 5
+        run: python3 backend/test/deploy/ops_roadmap_copy_test.py -v
       - name: The production Caddyfile sends each path to its service
         timeout-minutes: 5
         run: python3 backend/test/deploy/caddyfile_routes_test.py -v
