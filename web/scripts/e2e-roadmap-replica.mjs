@@ -31,6 +31,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, request as forward } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -97,26 +98,57 @@ const RETIRED = [
   ['PUT', /^\/v1\/trees\/[^/]+\/subtree$/, 'PUT /v1/trees/{id}/subtree'],
 ];
 
-// The browser of a run with the switch on, every page of which meets the server as the move leaves it: each route of
-// `RETIRED` answers 410 `client-update-required` and `/v1/socket` refuses the connection, each refusal counted in `refused`
-// under its route's name, never its id.
-function afterTheMove(browser, refused) {
+// The server as the move leaves it (§7, §8.3), standing between the built app and the backend in a run with the switch
+// on: each route of `RETIRED` answers 410 `client-update-required` and `/v1/socket` refuses its upgrade so, each refusal
+// counted in `refused` under its route's name, never its id. Every other request and upgrade passes to the backend as it
+// came, an upgrade on a connection of its own, as Drogon needs. It listens on a port the system picks.
+async function afterTheMove(refused) {
   const count = (name) => refused.set(name, (refused.get(name) ?? 0) + 1);
-  return { newContext: async (options) => {
-    const context = await browser.newContext(options);
-    await context.route((url) => url.pathname.startsWith('/v1/trees'), (route) => {
-      const { pathname } = new URL(route.request().url());
-      const retired = RETIRED.find(([method, path]) => method === route.request().method() && path.test(pathname));
-      if (!retired) return route.continue();
+  const gone = JSON.stringify({ code: 'client-update-required' });
+  const toBackend = (request, agent) => forward({ host: '127.0.0.1', port: backendPort, method: request.method, path: request.url, headers: request.headers, agent });
+  const statusLine = (answer) => `HTTP/1.1 ${answer.statusCode} ${answer.statusMessage}\r\n${answer.rawHeaders
+    .flatMap((value, index) => (index % 2 ? [] : [`${value}: ${answer.rawHeaders[index + 1]}`])).join('\r\n')}\r\n\r\n`;
+  const server = createServer((request, response) => {
+    const retired = RETIRED.find(([method, path]) => method === request.method && path.test(request.url.split('?')[0]));
+    if (retired) {
       count(retired[2]);
-      return route.fulfill({ status: 410, contentType: 'application/json', body: JSON.stringify({ code: 'client-update-required' }) });
+      request.resume();
+      response.writeHead(410, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(gone) }).end(gone);
+      return;
+    }
+    const passed = toBackend(request);
+    passed.once('response', (answer) => {
+      response.writeHead(answer.statusCode, answer.headers);
+      answer.pipe(response);
     });
-    await context.routeWebSocket((url) => url.pathname === '/v1/socket', (socket) => {
+    passed.once('error', () => response.destroy());
+    request.pipe(passed);
+  });
+  server.on('upgrade', (request, socket, head) => {
+    socket.once('error', () => socket.destroy());
+    if (request.url.split('?')[0] === '/v1/socket') {
       count('WS /v1/socket');
-      socket.close({ code: 1008, reason: 'client-update-required' });
+      socket.end(`HTTP/1.1 410 Gone\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(gone)}\r\nconnection: close\r\n\r\n${gone}`);
+      return;
+    }
+    const passed = toBackend(request, false);
+    passed.once('upgrade', (answer, peer, tail) => {
+      socket.write(statusLine(answer));
+      if (tail.length) socket.write(tail);
+      if (head.length) peer.write(head);
+      peer.once('error', () => socket.destroy());
+      socket.once('close', () => peer.destroy());
+      peer.pipe(socket).pipe(peer);
     });
-    return context;
-  } };
+    passed.once('response', (answer) => {
+      socket.write(statusLine(answer));
+      answer.pipe(socket);
+    });
+    passed.once('error', () => socket.destroy());
+    passed.end();
+  });
+  await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
+  return server;
 }
 
 // Two roadmaps of the owner's: three steps in a line, and one of a single step. With the engine on they are planted
@@ -1256,6 +1288,11 @@ async function yourRoadmaps(mode, browser, { session, lister }, check, devices) 
     if (!room) return { home, landing };
     await d.board(`#/app/${room}`);
     await d.page.locator('.st-roadmap-switcher [aria-haspopup="menu"]').click();
+    // Until its list arrives the switcher holds the open roadmap alone, as the room knows it, with no tag of where it lives.
+    await d.page.waitForFunction(() => {
+      const shown = [...document.querySelectorAll('.st-switcher-row')];
+      return shown.length > 0 && shown.every((row) => row.querySelector('.st-switcher-tag'));
+    });
     const rows = await d.page.locator('.st-switcher-row').evaluateAll((each) => each.map((row) => {
       const name = row.querySelector('span[title]');
       return [name.textContent, name.nextElementSibling.textContent];
@@ -1486,7 +1523,8 @@ async function run(mode, browser) {
     sql(`insert into sessions(token_hash,user_id,expires_ms) values('${hash(token)}','${user}',99999999999999);`);
     return token;
   };
-  let server, web, created = false, passed = 0;
+  let server, web, moved, created = false, passed = 0;
+  const refused = new Map();
   const check = async (name, body) => {
     try { await body(); } catch (error) { console.error(`FAIL ${mode} · ${name}`); throw error; }
     passed++;
@@ -1507,15 +1545,16 @@ async function run(mode, browser) {
       PORT: String(backendPort), WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin,
       ROADMAP_ENGINE_ENABLED: mode === 'on' ? '1' : '',
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
-    web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
+    moved = mode === 'on' ? await afterTheMove(refused) : null;
+    const served = moved ? `http://127.0.0.1:${moved.address().port}` : backend;
+    web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', served, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
-    const refused = new Map();
-    await scenarios(mode, mode === 'on' ? afterTheMove(browser, refused) : browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, refused },
-      account, check);
+    await scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, refused }, account, check);
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
     if (server) { stopPort(backendPort); server.kill('SIGTERM'); }
+    if (moved) { moved.closeAllConnections(); moved.close(); }
     const exits = await stopped([server, web]);
     for (const result of exits) if (result.status === 'rejected') throw result.reason;
     if (created) execFileSync('dropdb', ['-h', host, database]);
