@@ -2,8 +2,9 @@
 //
 //   node scripts/smoke-roadmap.mjs --base https://windmill.works [--roadmap t_9e407a96b5330ebe] [--api <origin>]
 //
-// --roadmap is a public roadmap with at least one step; the default is the one the public gallery lists.
-// --api is where a preview build's API lives; production serves it from --base.
+// --roadmap is a public roadmap with at least one step; the default is the public demo.
+// --api is where the API and the share pages live: production serves them from --base, a preview build or a local stack
+// (serve-built.mjs, which renders no share page) from its backend.
 // Exit code 0 means every check passed. Results go to stdout, one line per check.
 
 import { chromium } from 'playwright';
@@ -170,16 +171,18 @@ async function switchToBoard(page, role) {
   await page.evaluate(settleVisuals);
 }
 
+// Opens the first card's step and answers the step the card named.
 async function openFirstStep(page) {
   const card = boardCards(page).first();
   const titleLabel = card.locator('.st-board-card-title');
-  const title = (await titleLabel.innerText()).trim();
+  const step = { id: await card.getAttribute('data-step-id'), label: (await titleLabel.innerText()).trim() };
   await titleLabel.click();
   await stepDocument(page).waitFor();
   await page.evaluate(settleVisuals);
   const shown = (await stepDocument(page).innerText()).trim();
-  if (!shown.includes(title)) throw new Error('the step page does not name the selected step');
+  if (!shown.includes(step.label)) throw new Error('the step page does not name the selected step');
   if (!(await page.evaluate(() => window.location.hash)).includes('step=')) throw new Error('the open step is not in the address');
+  return step;
 }
 
 async function closeWithBack(page) {
@@ -226,7 +229,7 @@ async function demoWalk(page, { band, site, visit }) {
   await openAndCloseFork(page, band);
 }
 
-async function publicRoadmapWalk(page, { site, visit }) {
+async function publicRoadmapWalk(page, { site, visit, found }) {
   await page.goto(`${site.base}/t/${site.roadmap}`);
   visit.stage = 'graph';
   await identity(page, 'reader', 'tree').waitFor();
@@ -239,7 +242,7 @@ async function publicRoadmapWalk(page, { site, visit }) {
     if (await page.locator(control).count()) throw new Error(`a reader's Board offers ${control}`);
   }
   visit.stage = 'reader-step';
-  await openFirstStep(page);
+  found.step = await openFirstStep(page);
   for (const action of ['Complete', 'Edit step', 'Reset']) {
     if (await stepDocument(page).getByRole('button', { name: action, exact: true }).count()) throw new Error(`a reader's step offers ${action}`);
   }
@@ -249,14 +252,19 @@ async function publicRoadmapWalk(page, { site, visit }) {
   await closeWithBack(page);
 }
 
-async function stepLinkWalk(page, { site, visit }) {
-  visit.stage = 'public-tree-read';
-  const reply = await page.request.get(`${site.api}/v1/trees/${site.roadmap}`);
-  if (!reply.ok()) throw new Error(`the public roadmap answered ${reply.status()}`);
-  const { data, visibility } = await reply.json();
-  if (visibility !== 'public') throw new Error('the roadmap is not public');
-  const step = data.nodes[0];
+// The server renders a roadmap's share page for crawlers: one it can read names its own address as canonical, and a
+// public one lets them index it. Any other id gets the app's shell as it is.
+async function stepLinkWalk(page, { site, visit, found }) {
+  visit.stage = 'share-page';
+  const share = await page.request.get(`${site.api}/t/${site.roadmap}`);
+  if (!share.ok()) throw new Error(`the share page answered ${share.status()}`);
+  const head = await share.text();
+  const canonical = head.match(/<link rel="canonical" href="([^"]*)" \/>/)?.[1] ?? '';
+  const robots = head.match(/<meta name="robots" content="([^"]*)" \/>/)?.[1] ?? '';
+  if (!canonical.endsWith(`/t/${site.roadmap}`) || !robots.startsWith('index')) throw new Error('the roadmap is not public');
   visit.stage = 'step-link';
+  const { step } = found;
+  if (!step) throw new Error('the public roadmap walk opened no step');
   await page.goto(`${site.base}/t/${site.roadmap}#?step=${encodeURIComponent(step.id)}`);
   await stepDocument(page).waitFor();
   if (!(await stepDocument(page).innerText()).includes(step.label)) throw new Error('the link did not land on its step');
@@ -300,6 +308,7 @@ async function returningVisitWalk(page, { site, visit }) {
   await visit.sessionAnswered(site.roadmap);
 }
 
+// In this order on each band: the step link lands on the step the public roadmap's Board opened (`found`).
 const WALKS = [
   ['the demo lands on the Graph, its Board opens a step, Back returns, Fork opens and closes', demoWalk],
   ['a public roadmap lands on the Graph, its Board reads read-only, and Back and Forward walk its step', publicRoadmapWalk],
@@ -308,12 +317,12 @@ const WALKS = [
   ['/ mounts its app', landingWalk('/', ROOT_LANDING_APP)],
 ];
 
-async function runWalk({ browser, band, site, walk, label, serviceWorkers = 'block' }) {
+async function runWalk({ browser, band, site, walk, label, found = {}, serviceWorkers = 'block' }) {
   const visit = new Visit({ browser, band, site, serviceWorkers });
   const page = await visit.open();
   const started = Date.now();
   try {
-    await walk(page, { band, site, visit });
+    await walk(page, { band, site, visit, found });
   } catch {
     visit.problems.push(`walk-failed-at-${visit.stage}`);
   }
@@ -332,7 +341,8 @@ async function main() {
   const results = [];
   try {
     for (const band of BANDS) {
-      for (const [label, walk] of WALKS) results.push(await runWalk({ browser, band, site, walk, label }));
+      const found = {};
+      for (const [label, walk] of WALKS) results.push(await runWalk({ browser, band, site, walk, label, found }));
     }
     results.push(await runWalk({
       browser, band: BANDS.at(-1), site, walk: returningVisitWalk, serviceWorkers: 'allow',

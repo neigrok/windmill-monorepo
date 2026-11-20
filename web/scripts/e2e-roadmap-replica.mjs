@@ -19,11 +19,13 @@
 // room's load error (E-5 is not built); and a roadmap made at the birth door signed out, held in the browser's anon replica
 // and joining at sign-in an account that holds none. The home card, the landing and the room's switcher list the person's
 // roadmaps: with the switch on from the device's copy, the account's signed in and the browser's own signed out; with it
-// off from today's list, which holds none signed out. With the switch on every page meets the server as the move leaves it
-// (§7, §8.3): each route the move retires answers 410 and the old socket refuses, and the run holds that no page asked for
-// one. Last, every person leaves the app, and the run waits, within its
-// bound, until the local intake holds the room's events, those only the switch emits only with it on. Each run has its
-// own database, server and built app on the given ports, and stops and drops them.
+// off from today's list, which holds none signed out. The public demo, opened signed out and signed in as a stranger, its
+// coach played and its Board and step read, shows the same in both runs, with the switch on from the engine's copy the
+// cutover's `demo` stage adopted before the server started. With the switch on every page meets the server as the move leaves it
+// (§7, §8.3): the server, with its engine on, answers each route the move retires 410 and the old socket refuses, and
+// the run holds, from the server's own refusal lines, that no page asked for one. Last, every person leaves the app, and
+// the run waits, within its bound, until the local intake holds the room's events, those only the switch emits only with
+// it on. Each run has its own database, server and built app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
 // name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
 // error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
@@ -31,9 +33,9 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer, request as forward } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { inspect, isDeepStrictEqual } from 'node:util';
 import { chromium } from 'playwright';
@@ -84,72 +86,6 @@ async function stopped(children) {
 }
 
 const source = (path) => import(pathToFileURL(resolve(path)).href);
-
-// The routes roadmap's move onto the engine retires or answers 410 (roadmap-on-the-engine.md §7, §8.3), each by its method,
-// its path's shape and the name it is counted under. The fork, the activity and progress reads and tending stay.
-const RETIRED = [
-  ['GET', /^\/v1\/trees$/, 'GET /v1/trees'],
-  ['POST', /^\/v1\/trees$/, 'POST /v1/trees'],
-  ['GET', /^\/v1\/trees\/[^/]+$/, 'GET /v1/trees/{id}'],
-  ['PATCH', /^\/v1\/trees\/[^/]+$/, 'PATCH /v1/trees/{id}'],
-  ['DELETE', /^\/v1\/trees\/[^/]+$/, 'DELETE /v1/trees/{id}'],
-  ['GET', /^\/v1\/trees\/[^/]+\/guides$/, 'GET /v1/trees/{id}/guides'],
-  ['GET', /^\/v1\/trees\/[^/]+\/diagnostics$/, 'GET /v1/trees/{id}/diagnostics'],
-  ['PUT', /^\/v1\/trees\/[^/]+\/subtree$/, 'PUT /v1/trees/{id}/subtree'],
-];
-
-// The server as the move leaves it (§7, §8.3), standing between the built app and the backend in a run with the switch
-// on: each route of `RETIRED` answers 410 `client-update-required` and `/v1/socket` refuses its upgrade so, each refusal
-// counted in `refused` under its route's name, never its id. Every other request and upgrade passes to the backend as it
-// came, an upgrade on a connection of its own, as Drogon needs. It listens on a port the system picks.
-async function afterTheMove(refused) {
-  const count = (name) => refused.set(name, (refused.get(name) ?? 0) + 1);
-  const gone = JSON.stringify({ code: 'client-update-required' });
-  const toBackend = (request, agent) => forward({ host: '127.0.0.1', port: backendPort, method: request.method, path: request.url, headers: request.headers, agent });
-  const statusLine = (answer) => `HTTP/1.1 ${answer.statusCode} ${answer.statusMessage}\r\n${answer.rawHeaders
-    .flatMap((value, index) => (index % 2 ? [] : [`${value}: ${answer.rawHeaders[index + 1]}`])).join('\r\n')}\r\n\r\n`;
-  const server = createServer((request, response) => {
-    const retired = RETIRED.find(([method, path]) => method === request.method && path.test(request.url.split('?')[0]));
-    if (retired) {
-      count(retired[2]);
-      request.resume();
-      response.writeHead(410, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(gone) }).end(gone);
-      return;
-    }
-    const passed = toBackend(request);
-    passed.once('response', (answer) => {
-      response.writeHead(answer.statusCode, answer.headers);
-      answer.pipe(response);
-    });
-    passed.once('error', () => response.destroy());
-    request.pipe(passed);
-  });
-  server.on('upgrade', (request, socket, head) => {
-    socket.once('error', () => socket.destroy());
-    if (request.url.split('?')[0] === '/v1/socket') {
-      count('WS /v1/socket');
-      socket.end(`HTTP/1.1 410 Gone\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(gone)}\r\nconnection: close\r\n\r\n${gone}`);
-      return;
-    }
-    const passed = toBackend(request, false);
-    passed.once('upgrade', (answer, peer, tail) => {
-      socket.write(statusLine(answer));
-      if (tail.length) socket.write(tail);
-      if (head.length) peer.write(head);
-      peer.once('error', () => socket.destroy());
-      socket.once('close', () => peer.destroy());
-      peer.pipe(socket).pipe(peer);
-    });
-    passed.once('response', (answer) => {
-      socket.write(statusLine(answer));
-      answer.pipe(socket);
-    });
-    passed.once('error', () => socket.destroy());
-    passed.end();
-  });
-  await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
-  return server;
-}
 
 // Two roadmaps of the owner's: three steps in a line, and one of a single step. With the engine on they are planted
 // through roadmap's domain actions on a device of the owner's; with it off, through today's routes.
@@ -618,6 +554,30 @@ class Device {
       await settle(2000);
     }
   }
+
+  // The public demo at #/demo as this browser is shown it: what it opens on, what its coach's Mark it done says, the
+  // Board's columns after it and the coached step's page.
+  async demo() {
+    const coached = 'Rig the boat yourself';
+    await this.page.goto(`${origin}/#/demo`);
+    const row = this.page.locator('.st-roadmap-identity[data-role="demo"]');
+    const progress = this.page.locator('.st-roadmap-progress');
+    await progress.waitFor();
+    const opened = { view: await row.getAttribute('data-view'), progress: await progress.getAttribute('aria-label'),
+      sample: (await this.page.locator('.st-roadmap-sample').innerText()).trim() };
+    await this.page.getByRole('button', { name: 'Mark it done', exact: true }).click();
+    const toast = this.page.locator('.st-board-toast-message').filter({ hasText: `${coached} done` });
+    await toast.waitFor();
+    const played = { said: (await toast.innerText()).trim(), progress: await progress.getAttribute('aria-label') };
+    await row.getByRole('button', { name: 'Board', exact: true }).click();
+    await this.page.locator('[data-column="done"] .st-board-card-title', { hasText: coached }).waitFor();
+    const board = await this.page.evaluate(() => Object.fromEntries([...document.querySelectorAll('[data-column]')]
+      .map((column) => [column.dataset.column, [...column.querySelectorAll('.st-board-card-title')].map((title) => title.textContent)])));
+    await this.page.locator('.st-board-card-title', { hasText: coached }).click();
+    const step = (await this.page.getByRole('article', { name: coached, exact: true }).innerText()).trim();
+    await this.page.goto(outsideApp);
+    return { opened, played, board, step };
+  }
 }
 
 // The rows of one of the store's caches, `confirmed` or `spentIds`, of one scope: its control record names the
@@ -670,7 +630,7 @@ async function shoot(device, name) {
   await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
 }
 
-async function scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, refused }, account, check) {
+async function scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, demoer, refused }, account, check) {
   const { sail, knot, row } = await seed(mode, secret, account);
   const address = `#/app/${sail}`;
   const a = await Device.open(browser, secret);
@@ -943,6 +903,7 @@ async function scenarios(mode, browser, { secret, second, session, intake, empty
     if (mode === 'on') await readersAndBirths(browser, { session, stranger, climber }, account, check, devices);
     await carryScenario(mode, browser, { session, carrier }, account, check, devices);
     await yourRoadmaps(mode, browser, { session, lister }, check, devices);
+    const demo = await demoVisits({ session, demoer }, check);
     await check('no device logged an error', async () => {
       assert.deepEqual(devices.flatMap((device) => device.errors), [], 'no page threw and no console logged an error');
     });
@@ -969,6 +930,7 @@ async function scenarios(mode, browser, { secret, second, session, intake, empty
       for (const end = Date.now() + 30_000; !isDeepStrictEqual(arrived, expected) && Date.now() < end; arrived = intake()) await settle(500);
       assert.deepEqual(arrived, expected, `the intake held ${JSON.stringify(arrived)}`);
     });
+    return demo;
   } finally {
     for (const device of devices) await device.context.close();
   }
@@ -1255,8 +1217,39 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
   });
 }
 
+// §7 The public demo, the house account's sample: opened at #/demo by a browser signed out and by one signed in as a
+// stranger, its coach played and its Board and coached step read, the two shown alike. With the switch on its room reads
+// the engine's copy, which the cutover's `demo` stage adopted, and its pages meet the server's refusals with the rest of
+// the run; with it off, today's room. Its coach stands on the Graph, so the visits run in a browser that draws WebGL2.
+// Answers what the demo showed, which the two runs compare.
+async function demoVisits({ session, demoer }, check) {
+  const drawing = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const shown = {};
+  try {
+    await check('the demo opens on its Graph at its staged marks, its coach marks its step done, and its Board and step page follow, signed out and signed in alike', async () => {
+      for (const [who, secret] of [['signedOut', null], ['signedIn', session(demoer)]]) {
+        const device = secret ? await Device.open(drawing, secret) : await Device.signedOut(drawing);
+        try {
+          shown[who] = await device.demo();
+          assert.deepEqual(device.errors, [], 'no demo page threw and no console logged an error');
+        } finally {
+          await device.context.close();
+        }
+      }
+      assert.deepEqual({ opened: shown.signedOut.opened, played: shown.signedOut.played },
+        { opened: { view: 'tree', progress: '6 of 17 steps done', sample: 'Windmill sample' },
+          played: { said: 'Rig the boat yourself done · 2 up next', progress: '7 of 17 steps done' } },
+        'the demo opened at its staged marks and its coach marked its step done');
+      assert.deepEqual(shown.signedIn, shown.signedOut, 'a stranger signed in is shown the demo as a browser signed out is');
+    });
+  } finally {
+    await drawing.close();
+  }
+  return shown.signedOut;
+}
+
 // §7, §8.4 The person's roadmaps where the home card, the landing and the room's switcher list them. With the switch on,
-// every page of the run meeting the server as the move leaves it (`afterTheMove`), they are the device's copy's: the
+// every page of the run meeting the server as the move leaves it, they are the device's copy's: the
 // account's signed in and the browser's own signed out. With it off they are today's list signed in, and signed out it
 // holds none. An account holds two roadmaps, the newer planted last; a browser signed out holds one.
 async function yourRoadmaps(mode, browser, { session, lister }, check, devices) {
@@ -1513,6 +1506,7 @@ async function run(mode, browser) {
   const stranger = randomUUID();
   const climber = randomUUID();
   const lister = randomUUID();
+  const demoer = randomUUID();
   const secret = randomBytes(24).toString('hex');
   const second = randomBytes(24).toString('hex');
   const sql = (statement) => execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-c', statement], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -1536,8 +1530,15 @@ async function run(mode, browser) {
     sql(`insert into sessions(token_hash,user_id,expires_ms) values('${hash(token)}','${user}',99999999999999);`);
     return token;
   };
-  let server, web, moved, created = false, passed = 0;
+  let server, web, created = false, passed = 0;
+  // The server's refusals of what the move retires (§8.3), one WARN write line each, counted under its operation, never an id.
   const refused = new Map();
+  const countRefusal = (line) => {
+    const write = /\bwrite (\{.*?\}) - /.exec(line)?.[1];
+    if (!write) return;
+    const { operation, outcome } = JSON.parse(write);
+    if (outcome === 'client-update-required' && operation.startsWith('roadmap.')) refused.set(operation, (refused.get(operation) ?? 0) + 1);
+  };
   const check = async (name, body) => {
     try { await body(); } catch (error) { console.error(`FAIL ${mode} · ${name}`); throw error; }
     passed++;
@@ -1550,24 +1551,28 @@ async function run(mode, browser) {
     }
     execFileSync('createdb', ['-h', host, database]); created = true;
     execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
-    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'),('${empty}','web-roadmap-empty@example.com','Web Roadmap Empty'),('${carrier}','web-roadmap-carry@example.com','Web Roadmap Carry'),('${stranger}','web-roadmap-stranger@example.com','Web Roadmap Stranger'),('${climber}','web-roadmap-climb@example.com','Web Roadmap Climb'),('${lister}','web-roadmap-list@example.com','Web Roadmap List'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
+    sql(`insert into users(id,email,name) values('${account}','web-roadmap@example.com','Web Roadmap'),('${empty}','web-roadmap-empty@example.com','Web Roadmap Empty'),('${carrier}','web-roadmap-carry@example.com','Web Roadmap Carry'),('${stranger}','web-roadmap-stranger@example.com','Web Roadmap Stranger'),('${climber}','web-roadmap-climb@example.com','Web Roadmap Climb'),('${lister}','web-roadmap-list@example.com','Web Roadmap List'),('${demoer}','web-roadmap-demo@example.com','Web Roadmap Demo'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${account}',99999999999999),('${hash(second)}','${account}',99999999999999);`);
     const dist = resolve(scratch, `dist-${mode}`);
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'],
       { cwd: process.cwd(), env: { ...process.env, VITE_ROADMAP_REPLICA_ROOM: mode === 'on' ? 'on' : '' }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 });
+    // With the engine on, the public demo in the engine's shape under the house account, as the cutover's `demo` stage
+    // adopts it from the rows db/schema.sql seeds, while no server holds the database.
+    if (mode === 'on') {
+      log.write(execFileSync(resolve(binaries, 'windmill_roadmap_adopt'), ['demo'], { env: { ...process.env, DATABASE_URL: url, SENTRY_DSN: '' },
+        stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }));
+    }
     server = launch(resolve(binaries, 'windmill_server'), [], { cwd: resolve(repo, 'backend'), env: { ...process.env, DATABASE_URL: url,
       PORT: String(backendPort), WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin,
       ROADMAP_ENGINE_ENABLED: mode === 'on' ? '1' : '',
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
-    moved = mode === 'on' ? await afterTheMove(refused) : null;
-    const served = moved ? `http://127.0.0.1:${moved.address().port}` : backend;
-    web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', served, '--duration', '1200'], { cwd: process.cwd() });
+    for (const output of [server.stdout, server.stderr]) createInterface({ input: output }).on('line', countRefusal);
+    web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
-    await scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, refused }, account, check);
-    return passed;
+    const demo = await scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, demoer, refused }, account, check);
+    return { passed, demo };
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
     if (server) { stopPort(backendPort); server.kill('SIGTERM'); }
-    if (moved) { moved.closeAllConnections(); moved.close(); }
     const exits = await stopped([server, web]);
     for (const result of exits) if (result.status === 'rejected') throw result.reason;
     if (created) execFileSync('dropdb', ['-h', host, database]);
@@ -1579,8 +1584,10 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 29, off: 12 }, 'every scenario of both runs must finish');
-  console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
+  assert.deepEqual({ on: on.passed, off: off.passed }, { on: 30, off: 13 }, 'every scenario of both runs must finish');
+  assert.deepEqual(on.demo, off.demo, 'the demo on the engine showed what today\'s demo shows');
+  console.log('PASS both · the demo on the engine opens, plays and reads as today\'s');
+  console.log(`Roadmap replica local-stack e2e: ${on.passed} passed with both switches on, ${off.passed} with both off, and the demo alike in both; local event intake verified`);
 } catch (error) {
   log.write(`\n${error?.stack ?? error}\n${error instanceof assert.AssertionError ? inspect({ actual: error.actual, expected: error.expected }, { depth: 6 }) : ''}\n`);
   console.error(error instanceof assert.AssertionError && !error.generatedMessage ? error.message : `${error?.name ?? 'Error'}, its message in the stack log`);

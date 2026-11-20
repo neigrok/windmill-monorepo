@@ -201,11 +201,14 @@ copy with no connection, readers and births: a stranger, signed out and signed i
 its step owns, each followed as it opens and dropped on leaving; a private roadmap the room cannot load, of which the
 browser keeps nothing; a browser that keeps nothing shown the load error, its bare roadmap door staying where it is; and a
 roadmap born at the birth door signed out, held in the anon replica and joining at sign-in an account that holds none.
-Build `windmill_server` first (`backend/RUNNING.md`). It builds the app into a temporary folder,
-serves it on 5183 against the server on 8095 (`WM_E2E_WEB_PORT`, `WM_E2E_PORT`), uses its own databases
-(`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops and drops what it started. `WM_E2E_SHOTS` names a folder
-for screenshots of the kept list and flow 50's questions at 1440 and 390. The journal's twin,
-`test:journal:server`, is described in `src/products/journal/README.md`.
+In both runs the public demo, signed out and signed in, opens, plays its coach and reads its Board and step alike; with
+the switch on it reads the engine's copy, which `windmill_roadmap_adopt demo` adopts before the server starts. With the
+switch on, the server's engine is on, so it answers what the move retires `410 client-update-required` (§8.3), and the run
+counts the server's own refusal lines and holds that no page asked for one. Build `windmill_server` and
+`windmill_roadmap_adopt` first (`backend/RUNNING.md`). It builds the app into a temporary folder, serves it on 5183 against the server on 8095
+(`WM_E2E_WEB_PORT`, `WM_E2E_PORT`), uses its own databases (`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops
+and drops what it started. `WM_E2E_SHOTS` names a folder for screenshots of the kept list and flow 50's questions at 1440
+and 390. The journal's twin, `test:journal:server`, is described in `src/products/journal/README.md`.
 
 The test runner caps ordinary file concurrency at four, using one fewer than the available CPUs
 with a minimum of one. This bounds concurrent browser and Vite hosts. Runtime fuzz and performance
@@ -282,11 +285,15 @@ active jobs hides that failure. Confirm the check set belongs to the pushed head
 `.github/workflows/web-smoke.yml` runs `scripts/smoke-roadmap.mjs` from the deployed commit after every successful deploy of
 web or the backend on main, and by hand with a base URL and a public roadmap id. It walks the demo, a public roadmap and the
 landings as a signed-out reader at 390, 744 and 1440, and makes one returning visit through the service worker at 1440,
-read-only, with the event intake and Sentry blocked. It fails on a page error, a console error, a failed same-origin request
-other than the anonymous `/v1/me` 401, a Graph with no painted pixels, a session whose socket never got its reply, any Sentry
-attempt, a `client_error` beacon, a landing the app never mounted over, or a service worker that never took the page and primed
-its shell or answers a returning visit badly. `scripts/benchmark-board.mjs` measures the Board under CPU throttling; it is a
-measuring tool, not a gate.
+read-only, with the event intake and Sentry blocked and the sync engine's pull let through as the read it is. It fails on a page
+error, a console error, a failed same-origin request other than the anonymous `/v1/me` 401, a Graph with no painted pixels, a
+session the server never answered, any Sentry attempt, a `client_error` beacon, a landing the app never mounted over, or a
+service worker that never took the page and primed its shell or answers a returning visit badly. It calls no route roadmap's
+move onto the engine retires, so it walks production on either side of the move: the step link takes its step from the
+reader's Board and the roadmap's visibility from its share page, and a session is answered once today's socket answers its
+subscribe or once the engine has pulled the roadmap and follows it live. Against a local stack (`serve-built.mjs` renders no
+share page), pass the backend as `--api`. `scripts/benchmark-board.mjs` measures the Board under CPU throttling, on roadmaps
+it plants through MCP (`scripts/roadmap-rig/planter.mjs`); it is a measuring tool, not a gate.
 
 ## Offline rooms and browser replicas
 
