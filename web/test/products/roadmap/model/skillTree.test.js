@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SkillTree, respliceEdges } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { NODE_SIZE } from '../../../../src/products/roadmap/theme.js';
 
 const treeOf = (nodes) => new SkillTree({ id: 't', title: 'T', nodes });
 
@@ -109,6 +110,11 @@ test('toRenderModel refuses to render a node the layout gave no position', () =>
     () => tree.toRenderModel(positions, new Map()),
     { message: 'Missing position for node "b"' },
   );
+});
+
+test('a tree with no steps renders the extent of one step at the origin, where a camera fit to it can stand', () => {
+  assert.deepEqual(treeOf([]).toRenderModel(new Map(), new Map()),
+    { nodes: [], edges: [], bounds: { minX: -NODE_SIZE, minY: -NODE_SIZE, maxX: NODE_SIZE, maxY: NODE_SIZE } });
 });
 
 test('without shares the resplice edges, preserves node fields and tree identity, and leaves the source untouched', () => {

@@ -19,7 +19,8 @@ const TIMELESS = new Moment(new Instant(0), new FixedZone(0));
 
 // What the replica holds of one roadmap: its record in the person's list (null for one someone else owns), its tree
 // scope's records, and its owner's overlay with the records of it a queued entry still changes (`queued`); `read` says
-// the server has answered for its tree scope.
+// the device holds the server's whole copy of it: the first pull of its tree scope, and of the owner's overlay for one of
+// the person's own, has ended.
 export class HeldRoadmap {
   constructor({ id, record = null, tree = [], overlay = [], queued = [], read = true }) {
     this.id = id;
@@ -91,8 +92,9 @@ export class ReplicaRoadmap {
 
   get open() { return this.held.get(this.treeId); }
 
-  // `waiting` while the device has not read the roadmap, a roadmap above it or, for one not in it, the account's list;
-  // `missing` where it holds no such roadmap, or the roadmap is hidden, so it is in no address (§5); else `open`.
+  // `waiting` while the device has not read the roadmap, a roadmap above it or, for one not in it, the account's list
+  // (`HeldRoadmap.read`: the server's whole copy, or one the device made); `missing` where it holds no such roadmap, or
+  // the roadmap is hidden, so it is in no address (§5); else `open`.
   get state() {
     if (this.account.trees.get(this.treeId)?.read !== 'loaded' || (!this.mine && !this.listRead)) return 'waiting';
     if (!this.open.holds) return 'missing';
@@ -104,6 +106,18 @@ export class ReplicaRoadmap {
 
   // The open roadmap is the person's own: it is in their account's list.
   get mine() { return this.open?.record != null; }
+
+  // Whether the device has read every roadmap the open one's counts read through: each roadmap its steps open, and each of
+  // theirs in turn.
+  get countsRead() {
+    const seen = new Set();
+    const read = (id) => {
+      if (seen.has(id)) return true;
+      seen.add(id);
+      return this.account.openingsOf(id).every((opening) => opening.status !== 'unread' && (opening.status !== 'loaded' || read(opening.tree)));
+    };
+    return read(this.treeId);
+  }
 
   // Whether the device has read the person's list and every roadmap in it.
   get everyRoadmapRead() {

@@ -20,8 +20,8 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { HeldRoadmap, ReplicaRoadmap } from './ReplicaRoadmap.js';
 import { ReplicaSession } from './ReplicaSession.js';
 
-// How long a room that holds no copy of its roadmap waits on the engine and the server's first answer before it says
-// it could not load the roadmap.
+// How long a room that holds no whole copy of its roadmap waits on the engine to stand, and on the server from one answer
+// to the next, before it says it could not load the roadmap.
 export const FIRST_COPY_MS = 10_000;
 
 const same = (a, b) => a.length === b.length && a.every((item, index) => item === b[index]);
@@ -163,7 +163,9 @@ export class ReplicaReading {
   }
 
   // The reading's roadmap once the device can say what it is: `{ roadmap }` where it stands open, else `{ unshown }` saying
-  // why it cannot be shown (`UNSHOWN`); null where the caller stopped waiting or the reading closed.
+  // why it cannot be shown (`UNSHOWN`); null where the caller stopped waiting or the reading closed. The person's own open
+  // roadmap waits, while the server answers, for every roadmap its counts read through; one the device has not read when
+  // the server goes quiet or out of reach stands unread on its step. A reader's counts are the server's (`ownerMarks`).
   async open(signal) {
     const opened = await standingEngine(this.session, signal, this.timers);
     if (signal.aborted || this.closed) return null;
@@ -173,7 +175,7 @@ export class ReplicaReading {
     const subscription = await this.subscribeTo(this.scope);
     if (signal.aborted || this.closed) return null;
     if (subscription === 'gone') return { unshown: 'missing' };
-    const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting');
+    const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting' && (read.state !== 'open' || !this.owns(read) || read.countsRead));
     if (signal.aborted) return null;
     if (roadmap.state === 'missing') return { unshown: 'missing' };
     if (roadmap.state !== 'open') return { unshown: 'unanswered' };
@@ -344,17 +346,24 @@ export class ReplicaReading {
     for (const scope of this.subscriptions.keys()) this.engine.unsubscribe(scope).catch(() => {});
   }
 
-  // The roadmaps once `read` says the device can say what they are: from the copy it holds, or the server's first answer.
-  // Where the engine cannot reach the server, once nothing is left to read from the device, it says what it holds; with
-  // no answer within the bound, it stops waiting.
+  // The roadmaps once `read` says the device can say what they are: from the copy it holds, or the server's answers. Where
+  // the engine cannot reach the server, once nothing is left to read from the device (every subscription taken, every
+  // scope's stored rows loaded), it says what it holds; once the bound passes with no answer, nothing the device holds
+  // having changed since the last, it stops waiting.
   whenRead(signal, read) {
     return new Promise((resolve) => {
       let roadmap = null;
+      let timer = null;
       const check = () => {
+        const before = roadmap;
         roadmap = this.roadmap();
         const { connection, authPaused, upgradeRequired } = this.engine.getSnapshot();
         const cut = connection !== 'online' || authPaused || upgradeRequired;
-        if (read(roadmap) || (cut && [...this.holds.values()].every(({ hold }) => hold.getSnapshot().loaded))) finish();
+        const nothingLeft = this.subscribing.size === 0 && [...this.holds.values()].every(({ hold }) => hold.getSnapshot().loaded);
+        if (read(roadmap) || (cut && nothingLeft)) return finish();
+        if (roadmap === before) return;
+        this.timers.clearTimeout(timer);
+        timer = this.timers.setTimeout(finish, FIRST_COPY_MS);
       };
       const finish = () => {
         this.listeners.delete(check);
@@ -362,7 +371,6 @@ export class ReplicaReading {
         signal.removeEventListener('abort', finish);
         resolve(roadmap);
       };
-      const timer = this.timers.setTimeout(finish, FIRST_COPY_MS);
       signal.addEventListener('abort', finish, { once: true });
       this.listeners.add(check);
       check();
@@ -425,12 +433,16 @@ export class ReplicaReading {
     return this.subscriptions.get(scope);
   }
 
-  // What the replica holds of one roadmap, its tree scope subscribed, the same holding while its records are the same.
+  // What the replica holds of one roadmap, its tree scope subscribed, the same holding while its records are the same. It
+  // holds the server's whole copy once the first pull of its tree scope has ended and, for one of the person's own, of
+  // their overlay of it too, where the owner's marks are. The engine pulls the person's own roadmaps for their list; any
+  // other it pulls only once it has taken the reading's subscription, and reads as pulled and empty before.
   holding(id, record) {
     this.subscribeTo(RoadmapScopes.tree(id));
     const tree = this.observe(RoadmapScopes.tree(id));
     const overlay = this.observe(RoadmapScopes.overlay(id));
-    const read = !this.subscribing.has(RoadmapScopes.tree(id)) && tree.firstPullComplete && tree.loaded;
+    const whole = (scope) => scope.firstPullComplete && scope.loaded;
+    const read = record === null ? !this.subscribing.has(RoadmapScopes.tree(id)) && whole(tree) : whole(tree) && whole(overlay);
     const known = this.holdings.get(id);
     if (known && known.record === record && known.read === read && same(known.tree, tree.drawn) && same(known.overlay, overlay.drawn)
       && same(known.queued, overlay.pending)) return known.held;

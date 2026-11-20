@@ -10,6 +10,7 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { build } from 'vite';
+import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { hello, pull } from '../../../../packages/api-contract/sync/reference/server/pull.js';
@@ -210,7 +211,11 @@ const http = createServer(async (request, response) => {
       const answer = hello({ state, registry, account, serverTime: serverNow });
       return json(answer.status, answer.body);
     }
-    const out = (endpoint === 'push' ? push : pull)({ state, registry, product, account, request: JSON.parse(text), serverNow });
+    // A browser the test marks `paged` is answered a row a page, a little late, as a large roadmap's pull is.
+    const paged = endpoint === 'pull' && (request.headers.cookie?.includes('paged') ?? false);
+    if (paged) await new Promise((later) => setTimeout(later, 60));
+    const out = (endpoint === 'push' ? push : pull)({ state, registry, product, account, request: JSON.parse(text), serverNow,
+      limits: paged ? { ...CONSTANTS, PULL_PAGE_BYTES: 1 } : CONSTANTS });
     state = out.state;
     return json(out.response.status, out.response.body);
   }
@@ -303,6 +308,60 @@ test('an owner’s roadmap opens from the replica, and again from the device’s
       events: [...online.events.slice(0, 1), 'roadmap_sync_offline {"step":"shown","pending":"0"}', ...online.events.slice(1)] });
   } finally {
     await replica.close();
+    await today.close();
+  }
+});
+
+// A room opened on a browser that holds nothing of the roadmap, its pulls answered a row a page and slowly, as a large
+// roadmap's are, with the Graph saved as its view: what the first frame that shows the roadmap says (the view, the row's
+// count and how many steps the Graph was given), what the Board's columns count the first time it shows, and the events.
+async function firstOpen(context, { replica }) {
+  await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }, { name: 'paged', value: '1', url: origin }]);
+  await context.addInitScript((tree) => {
+    localStorage.setItem('windmill:view:last', JSON.stringify({ [tree]: 'tree' }));
+    window.firstFrames = {};
+    new MutationObserver(() => {
+      const progress = document.querySelector('.st-roadmap-progress');
+      if (progress && !window.firstFrames.row) {
+        window.firstFrames.row = { view: document.querySelector('.st-roadmap-identity').dataset.view, progress: progress.getAttribute('aria-label'),
+          steps: window.scene?.nodesById.size ?? null };
+      }
+      const columns = [...document.querySelectorAll('[data-column]')];
+      if (columns.length && !window.firstFrames.board) {
+        window.firstFrames.board = columns.map((column) => `${column.dataset.column}: ${column.querySelector('.st-board-columns-count')?.textContent}`);
+      }
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  }, TREE);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  const failures = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
+  await page.goto(`${origin}/room?${new URLSearchParams({ account: 'u_owner', replica: replica ? 'on' : 'off' })}#/app/${TREE}`);
+  await page.locator('.st-roadmap-progress').waitFor();
+  await page.getByRole('button', { name: 'Board', exact: true }).click();
+  await page.locator('[data-column]').first().waitFor();
+  const read = await page.evaluate(() => ({ ...window.firstFrames, columns: [...document.querySelectorAll('[data-column]')].map((column) => column.dataset.column),
+    events: window.events.filter(({ name }) => name === 'roadmap_view_open').map(({ name, props }) => `${name} ${JSON.stringify(props)}`), issues: window.issues }));
+  await page.close();
+  return { ...read, failures };
+}
+
+test('a browser that holds nothing of the owner’s roadmap opens it as today’s room does: on its saved view, every step counted from the first frame, however slowly its pull is paged', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const owner = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const fresh = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const today = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(owner, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true });
+    const moved = await firstOpen(fresh, { replica: true });
+    const lattice = await firstOpen(today, { replica: false });
+    assert.deepEqual({ view: moved.row.view, steps: moved.row.steps, board: moved.board }, { view: 'tree', steps: 3, board: ['locked: 1', 'upNext: 1', 'done: 1'] },
+      'the room opens on the Graph its person saved, given every step, and its Board counts every step the first time it shows');
+    assert.deepEqual(moved, lattice);
+  } finally {
+    await owner.close();
+    await fresh.close();
     await today.close();
   }
 });

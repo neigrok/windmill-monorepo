@@ -47,8 +47,10 @@ ID byte order.
 its meta with the server's `parent`, `depth`, `reach` and `guideInherited`, null where the scope holds none; its kinds; and, from its owner's
 overlay, the marks and pointers (a roadmap someone else owns takes no overlay). Its record in the person's
 list, where there is one, makes it `own`, says whether it is present and where it sits; without one the meta
-says where. A tree scope the device holds records of is read; an empty one is read once the server has
-answered for it. §5 Dates: the server has received a mark once no entry the device queues (held, ready, sent or
+says where. A roadmap is read once the device holds the server's whole copy of it (`read`: the first pull of every
+scope it is read through has ended), or where it holds records of its tree scope and the server has sent none of them,
+nor of its overlay (none carries an `ru`): a roadmap the device made, which the server does not hold yet. A pull under
+way leaves it unread, whatever rows it has brought. §5 Dates: the server has received a mark once no entry the device queues (held, ready, sent or
 acked) still changes its record, and its `recordedAt` is that record's `ru`; a mark an entry still changes is the
 device's, with no `recordedAt`. Every mark's `deviceAt` is its stamp's milliseconds. `updatedAt` is the newest `ru` among the
 roadmap's record, its tree scope's records and its overlay's.
