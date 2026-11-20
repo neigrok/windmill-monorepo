@@ -55,7 +55,7 @@ test('signed out, the browser’s roadmaps meet an account that holds roadmaps: 
   const result = await engine.signIn('A');
   const due = roadmapDue(result);
   const told = [];
-  const words = accountChange.signInWords(engine, due, (name, props) => told.push([name, props]));
+  const words = await accountChange.signInWords(engine, due, (name, props) => told.push([name, props]));
   words.onStep('shown');
   words.onStep('add');
   words.onStep('unknown');
@@ -78,7 +78,7 @@ test('one roadmap is asked of in the singular, and work that changes no roadmap 
   const one = await device(t, { holdsRoadmaps: true });
   await one.plant('Learn to sail');
   const asked = roadmapDue(await one.engine.signIn('A'));
-  const words = accountChange.signInWords(one.engine, asked, () => {});
+  const words = await accountChange.signInWords(one.engine, asked, () => {});
 
   const none = await device(t, { holdsRoadmaps: true });
   const gone = await none.plant('Learn to row');
@@ -198,7 +198,8 @@ const { RoadmapProduct } = await import('../../../../../packages/api-contract/sy
 const { FakeChannels, FakeLocks } = await import('../../../platform/sync/fakes.js');
 const { roadmapRegistry } = await import('../domain/vectors.js');
 const { RoadmapScopes } = await import('../../../../src/products/roadmap/domain/roadmapRules.js');
-const { RoadmapMeta, SetVisibility } = await import('../../../../src/products/roadmap/domain/roadmaps.js');
+const { Roadmap, RoadmapMeta, SetVisibility } = await import('../../../../src/products/roadmap/domain/roadmaps.js');
+const { CarryOver } = await import('../../../../src/products/roadmap/carry/CarryOver.js');
 const { Complete } = await import('../../../../src/products/roadmap/domain/progress.js');
 const { DEFAULT_KINDS } = await import('../../../../src/products/roadmap/model/Legend.js');
 const { addSubtask, emptyWorkspace } = await import('../../../../src/products/roadmap/model/NodeWorkspace.js');
@@ -319,9 +320,9 @@ async function editedOffline(tree, title, owner) {
 }
 
 // A roadmap the old bundle planted with nobody signed in.
-async function plantedSignedOut() {
+async function plantedSignedOut(title = 'Learn to sail') {
   globalThis.window.wmDeviceConfirmation = { owner: null };
-  return bearImportedTree({ title: 'Learn to sail', kinds: DEFAULT_KINDS, nodes: [{ id: 'wind', label: 'Read the wind', color: 'olive', prerequisites: [] }] });
+  return bearImportedTree({ title, kinds: DEFAULT_KINDS, nodes: [{ id: 'wind', label: 'Read the wind', color: 'olive', prerequisites: [] }] });
 }
 
 // The old sync database's roadmaps.
@@ -360,13 +361,13 @@ for (const answer of ['discard', 'add', 'cancel']) {
     plantResidue([sail.tree, other]);
     plantPlace(sail.tree);
     const due = roadmapDue(await engine.signIn('A'));
-    const words = accountChange.signInWords(engine, due, () => {});
-    words.onStep(answer);
+    const words = await accountChange.signInWords(engine, due, () => {});
+    const forgotten = words.onStep(answer);
     await pause(0);
     const asked = residue({ [sail.tree]: 'sail', [other]: 'other' });
     if (answer === 'cancel') await engine.cancelSignIn('A');
     else assert.equal((await engine.signIn('A', { decisions: { roadmap: answer }, counted: { roadmap: due.counted } })).complete, true);
-    await pause(0);
+    await forgotten;
     const kept = ['windmill:card:unit', 'windmill:legend:other', 'windmill:milestones:other', 'windmill:return:other', 'windmill:shared:t_00000000000000cc'];
     const all = [...kept, 'windmill:last-place', 'windmill:legend:sail', 'windmill:milestones:sail', 'windmill:return:sail'].sort();
     assert.deepEqual({ asked, answered: residue({ [sail.tree]: 'sail', [other]: 'other' }), state: engine.getSnapshot().state },
@@ -501,7 +502,7 @@ test('signed out, work on another’s public roadmap is named by its changes as 
   await sent(other);
   engine.transport.account = 'B';
   const due = roadmapDue(await engine.signIn('B'));
-  const words = accountChange.signInWords(engine, due, () => {});
+  const words = await accountChange.signInWords(engine, due, () => {});
   assert.deepEqual({ dormant: engine.device.replicas.some((replica) => replica.meta.state === 'dormant' && JSON.stringify(replica.outbox).includes('Secret plan')),
     adoption: accountChange.adoptionAnswer(engine, due), lead: words.lead, items: words.items, note: words.note, secret: JSON.stringify(words).includes('Secret plan') }, {
     dormant: true, adoption: null, lead: '1 roadmap on this browser can join your account.', items: ['Open water · 1 change', 'Learn to sail'],
@@ -509,4 +510,59 @@ test('signed out, work on another’s public roadmap is named by its changes as 
   });
   assert.equal((await engine.signIn('B', { decisions: { roadmap: 'discard' }, counted: { roadmap: due.counted } })).complete, true);
   assert.deepEqual(engine.device.activeReplica.entries().filter((entry) => engine.registry.productOfRef(entry.scope) === 'roadmap').length, 0);
+});
+
+test('a sign-in’s Discard takes the old stores of each roadmap the carry-over carried into the work it counted, the one deleted since among them, while they hold what the question saw, so no later sign-out brings it back; one an old tab wrote since the question, and one it never counted, stay', async (t) => {
+  const accountChange = await import('../../../../src/products/roadmap/sync/accountChange.js');
+  const disk = oldBrowser(t);
+  const server = new Server();
+  const phone = await tab(t, { engines: new IDBFactory(), locks: new FakeLocks(), channels: new FakeChannels() }, server, 'A');
+  assert.equal((await runnerOf(phone).runAct(new CreateRoadmap('Learn to knot'))).kind, 'committed');
+  await sent(phone);
+  const sail = await plantedSignedOut('Learn to sail');
+  const swim = await plantedSignedOut('Learn to swim');
+  const dive = await plantedSignedOut('Learn to dive');
+  await editedOffline('t_00000000000000b1', 'Learn to knit', 'B');
+  const engine = await tab(t, disk, server);
+  const told = [];
+  const reported = [];
+  const carry = new CarryOver({ session: { getSnapshot: () => ({ engine, ready: true }), subscribe: () => () => {} }, locks: disk.locks,
+    report: (operation, error, tags) => reported.push({ operation, tags }), track: () => {} });
+  carry.start();
+  t.after(() => carry.stop());
+  const settled = async () => {
+    await until(engine, () => carry.binding === engine.activeBinding(), 'the carry-over taking up the active replica');
+    for (let running = null; running !== carry.running;) {
+      running = carry.running;
+      await running;
+    }
+  };
+  const listed = () => runnerOf(engine).read(RoadmapScopes.account, (read) => read.repository(Roadmap).all('drawn').map((roadmap) => titleOf(engine, roadmap.id.record)).sort());
+  await settled();
+  const carried = listed();
+  assert.equal((await runnerOf(engine).runAct(new DeleteRoadmap(dive))).kind, 'committed');
+  engine.transport.account = 'A';
+  const due = roadmapDue(await engine.signIn('A'));
+  const words = await accountChange.signInWords(engine, due, (name, props) => told.push([name, props]), { report: (operation, error, tags) => reported.push({ operation, tags }) });
+  const room = new SyncSession({ treeId: swim, title: 'Learn to swim' });
+  await room.start();
+  room.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Float on your back' });
+  await room.persistNow();
+  room.close();
+  const forgotten = words.onStep('discard');
+  assert.equal((await engine.signIn('A', { decisions: { roadmap: 'discard' }, counted: { roadmap: due.counted } })).complete, true);
+  await forgotten;
+  await settled();
+  const discarded = { old: await oldRecords(), rows: Object.keys(new LocalTreeRegistry().entries()).sort() };
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  engine.transport.account = null;
+  await settled();
+  assert.deepEqual({ carried, items: words.items, discarded, signedOut: listed(), told, reported }, {
+    carried: ['Learn to dive', 'Learn to sail', 'Learn to swim'],
+    items: ['Learn to sail', 'Learn to swim'],
+    discarded: { old: [swim, 't_00000000000000b1'].sort(), rows: [swim, 't_00000000000000b1'].sort() },
+    signedOut: ['Learn to swim'],
+    told: [['roadmap_signin', { step: 'discard', roadmaps: '2-5' }], ['roadmap_carry', { stage: 'discarded', roadmaps: '2-5' }]],
+    reported: [],
+  });
 });

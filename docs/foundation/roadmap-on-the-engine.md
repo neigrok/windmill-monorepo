@@ -249,8 +249,10 @@ Every gesture is an action on the domain kit, the same in each language.
   work its question names (engine §7.10). The sign-in question names every roadmap the signed-out
   work changes: the browser's own by name, and another's by its changes ("{roadmap} · N changes"),
   each by the name the browser showed it signed out and never by one another account's replica
-  holds; its Discard takes all of it. A roadmap made and deleted signed out stays deleted either way
-  and goes unnamed, and work that changes no roadmap of the browser's own is added without asking.
+  holds; its Discard takes all of it, and the old stores (§8.2) of each roadmap the carry-over
+  carried into it, while their entries hold what they held as the question was asked. A roadmap made
+  and deleted signed out stays deleted either way and goes unnamed, and work that changes no roadmap
+  of the browser's own is added without asking.
   The sign-out question names, beside the replica's unsent changes, the account's roadmaps the
   browser's old stores still hold (§8.2), each with its changes, and is asked where only those wait;
   its Discard takes exactly those, while their entries hold what it counted. Work a question did not
@@ -445,9 +447,10 @@ items it carried, and each record it set aside for §6's one list.
   a roadmap anyone may read, so a private id reads as one it does not hold.
 - **A creation keeps its old stores until the server takes it.** The `anon` replica sends nothing,
   so a roadmap carried there keeps them until a sign-in adds it to an account and the server takes
-  it. Where the server refuses its id as taken or spent, the roadmap is placed again as that
-  account's from its old stores whole, carried as changes to the roadmap the account's list holds,
-  and the refusal's notice goes.
+  it, or a sign-in's Discard takes them with the work they were carried into (§5). Where the server
+  refuses its id as taken or spent, the roadmap is placed again as that account's from its old
+  stores whole, carried as changes to the roadmap the account's list holds, and the refusal's notice
+  goes.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
   after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
   connection counts as made now. They go only to the account the index row names, or whose list

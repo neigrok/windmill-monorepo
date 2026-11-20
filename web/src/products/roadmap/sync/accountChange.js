@@ -1,8 +1,8 @@
 // Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, §8.2, flow 50): the words
 // of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and of its sign-out question,
 // Keep or Discard, where every unsent change is roadmap's, each naming every roadmap its Discard takes, so a Discard
-// covers exactly the work it named (engine.md §7.10); what the browser kept beside the roadmaps a sign-in's Discard takes;
-// and what an explicit sign-out, an account replacement and an account closure take from the browser: every replica's
+// covers exactly the work it named (engine.md §7.10); what the browser kept beside the roadmaps a sign-in's Discard takes,
+// and the old stores the carry-over carried into them; and what an explicit sign-out, an account replacement and an account closure take from the browser: every replica's
 // landing notes, a dormant one's included, the told notice ids, what the browser kept of every roadmap but the anonymous
 // ones, and, where the account's replica went with a Discard, the old stores its question named. The route table hands
 // these to the shell only where the room reads the copy.
@@ -129,28 +129,43 @@ export function adoptionAnswer(engine, due) {
 // Add your roadmaps? (50.01, 50.03): every roadmap the signed-out work changes, as its Discard takes all of it: the
 // browser's own roadmaps by name, and another's roadmap by its changes, each named as this browser showed it. One the
 // person made and deleted here is not named: added or discarded, it stays deleted. Its Discard takes, with that work, what
-// the browser kept beside the roadmaps it made (`forgetDiscarded`).
-export function signInWords(engine, due, track = beacon) {
+// the browser kept beside the roadmaps it made, and the old stores the carry-over carried into it, as they stand while the
+// question is asked (`forgetDiscarded`).
+export async function signInWords(engine, due, track = beacon, { stores = new OldStores(), report = reportRoadmapFailure } = {}) {
   const roadmaps = ChangedRoadmap.of(engine, due.counted).filter((roadmap) => !roadmap.deleted);
   const count = roadmaps.filter((roadmap) => roadmap.listed).length;
   const asked = countBucket(count);
+  const carried = await carriedInto(engine, due.counted, stores);
   return {
     title: t('roadmap.accountChoice.addTitle'),
     lead: t('roadmap.accountChoice.addLead', { count, shown: formatted(count) }),
     items: roadmaps.map((roadmap) => (roadmap.listed ? roadmap.name : changedRow(roadmap.name, roadmap.changes))),
     note: t('roadmap.accountChoice.addNote', { count }),
     onStep: (step) => {
-      if (step === 'discard') forgetDiscarded(engine, due.counted);
       if (SIGN_IN_STEPS.has(step)) track('roadmap_signin', { step, roadmaps: asked });
+      if (step === 'discard') return forgetDiscarded(engine, due.counted, { carried, stores, track, report });
+      return undefined;
     },
   };
 }
 
+// §8.2 The old roadmaps the carry-over carried into the work a sign-in question counts (`counted`): those whose ledger in
+// the active replica places them on a roadmap that work writes, each by its id with what its old stores hold now.
+async function carriedInto(engine, counted, stores) {
+  const written = new Set(entriesOf(engine, counted).flatMap(roadmapsWrittenBy));
+  const { roadmaps } = await stores.read();
+  return runnerOf(engine).read(RoadmapScopes.account, (read) => Object.fromEntries(roadmaps
+    .filter((roadmap) => written.has(carryLedgerOf(read, roadmap.id).to)).map((roadmap) => [roadmap.id, roadmap.fingerprint])));
+}
+
 // Once the sign-in the person answered with Discard completes and the work it counted (`counted`, its entries' local ids)
 // is gone from the browser, what the browser kept beside each roadmap that work wrote and the anon replica no longer holds
-// goes too: its legend, its ledgers, the last place on it. A sign-in cancelled, or completed with Add after all, takes
-// none of it.
-export async function forgetDiscarded(engine, counted, forget = forgetTreeResidue) {
+// goes too: its legend, its ledgers, the last place on it. So do the old stores the carry-over carried into that work
+// (`carried`), each only while its entries hold what the question saw, so what an old tab wrote since stays: the engine's
+// Discard took the ledger that placed them, and a later anon replica would carry them again. A sign-in cancelled, or
+// completed with Add after all, takes none of it.
+export async function forgetDiscarded(engine, counted, { carried = {}, stores = new OldStores(), forget = forgetTreeResidue, track = beacon,
+  report = reportRoadmapFailure } = {}) {
   const written = new Set(entriesOf(engine, counted).flatMap(roadmapsWrittenBy));
   await new Promise((settled) => {
     const answered = () => {
@@ -165,6 +180,7 @@ export async function forgetDiscarded(engine, counted, forget = forgetTreeResidu
   if (engine.getSnapshot().state !== 'bound' || entriesOf(engine, counted).length > 0) return;
   const held = anonReplicaTrees(engine);
   forget((tree) => written.has(tree) && !held.has(tree));
+  await discardOld(stores, (roadmap) => carried[roadmap.id] === roadmap.fingerprint, { track, report });
 }
 
 // Keep unsent changes? (50.02, 50.04), where every entry the sign-out question counts is roadmap's: how many changes, and
@@ -237,11 +253,19 @@ export async function forgetReplicaRoom({ engine = syncSession.engine, previous 
   }
   const closing = engine.device.meta.closingAccount?.account === previous;
   const named = counted?.account === previous ? counted.roadmaps : {};
+  if (await discardOld(stores, (roadmap) => named[roadmap.id] === roadmap.fingerprint || (closing && roadmap.owner === previous), { track, report })) notes.counted = null;
+}
+
+// A Discard's old roadmaps (§5 Signed out, §8.2): each one `taken` names goes uncarried, its entries only while they hold
+// what was read, told as one count; a store that fails to delete is reported, and keeps them. Answers whether the
+// stores answered.
+async function discardOld(stores, taken, { track, report }) {
   try {
-    const discarded = await stores.discard((roadmap) => named[roadmap.id] === roadmap.fingerprint || (closing && roadmap.owner === previous));
-    notes.counted = null;
+    const discarded = await stores.discard(taken);
     if (discarded > 0) track('roadmap_carry', { stage: 'discarded', roadmaps: countBucket(discarded) });
+    return true;
   } catch (error) {
     report('roadmap-carry-write', error, { stage: 'discard', ...failureTags(error) });
+    return false;
   }
 }
