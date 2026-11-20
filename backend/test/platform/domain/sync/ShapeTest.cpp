@@ -56,3 +56,15 @@ TEST(shape_admits_a_server_origin_s_whole_put_only_at_one_stamp_or_all_null) {
   CHECK_EQ(shapeOfServerFact("null", R"("5000:0:srv")"), std::string("invalid"));
   CHECK_EQ(shapeOfServerFact(R"("5000:0:srv")", "null"), std::string("invalid"));
 }
+
+TEST(shape_counts_default_text_replacement_metadata_in_canonical_effect_bytes) {
+  const ScopeKey scope = ScopeKey::overlay(UserId{"A"}, "b_00000001");
+  Delta delta{.t = "mark", .id = RecordId(std::string("oak"))};
+  delta.x.emplace("memo", TextWrite{.text = "one two", .replacement = true});
+  Json::Value envelope(Json::objectValue);
+  envelope["scope"] = scope.text();
+  envelope["delta"] = effectWire(probe::registry(), scope, delta, true);
+  const auto expected = R"({"delta":{"id":"oak","t":"mark","x":{"memo":{"archive":{},"archiveNonempty":false,"replace":true,"text":"one two"}}},"scope":"acct:A/overlay/b_00000001"})";
+  CHECK_EQ(jcs(envelope), expected);
+  CHECK_EQ(jcs(envelope).size(), 153u);
+}

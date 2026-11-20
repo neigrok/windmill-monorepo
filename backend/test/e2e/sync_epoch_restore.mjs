@@ -21,7 +21,7 @@ import { FakeLocks } from '../../../web/test/platform/sync/fakes.js';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const requireWeb = createRequire(resolve(repo, 'web/package.json'));
-const { IDBFactory } = requireWeb('fake-indexeddb');
+const { IDBFactory, IDBKeyRange } = requireWeb('fake-indexeddb');
 const { values } = parseArgs({ options: {
   'server-bin': { type: 'string', default: resolve(repo, 'backend/build/windmill_server') },
   'clock-server-bin': { type: 'string', default: resolve(repo, 'backend/build/windmill_server_test_clock') },
@@ -192,7 +192,7 @@ async function prove(order, clocked = false) {
         return response;
       },
     });
-    engine = await BrowserSyncEngine.open({ indexedDB, name, transport,
+    engine = await BrowserSyncEngine.open({ indexedDB, keyRange: IDBKeyRange, name, transport,
       navigator: { onLine: online, locks: new FakeLocks() }, document: null, window: null,
       now,
       telemetry: { event: (name, props) => events.push({ name, props }), failure: (operation) => {

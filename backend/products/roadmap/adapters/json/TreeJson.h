@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/application/EngineReadModels.h"
 #include "products/roadmap/domain/Gallery.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Guides.h"
@@ -37,6 +38,9 @@ Json::Value toJson(const Place& place);
 // subtree's `seq`): {created, subtree: {id, root, parent: {tree, step}, depth, seq}, parentSeq}.
 Json::Value toJson(const SubtreeCreation& creation);
 Json::Value toJson(const Progress& progress);
+// The owner's progress as its caller is shown it, with what each standing subtree has come to:
+// {marks, subtrees: [{node, tree, done, total}]}.
+Json::Value toJson(const ShownProgress& shown);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
 // A tree's diagnostics as its writer is answered them: the graph's, and beside them `treeLoops` as
 // [{node, path: [{treeId, title}], pathOmitted?}] and `danglingPointers` as [{node, treeId}], the pointer as it is

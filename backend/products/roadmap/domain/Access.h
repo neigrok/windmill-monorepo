@@ -24,6 +24,12 @@ inline std::string toString(Visibility visibility) {
   return "private";
 }
 
+// The account that owns every roadmap that had no owner before roadmap's move onto the sync engine, the public demo among
+// them (roadmap-on-the-engine.md §7). Its address takes no mail, so nobody signs in as it: nobody writes what it owns, and
+// the gallery, which lists people's roadmaps, lists none of its.
+inline const UserId kHouseAccount{std::string("00000000-0000-4000-8000-00000000d3e0")};
+inline const std::string kHouseEmail = "house@windmill.invalid";
+
 // The read-authorization decision every tree read path calls.
 inline bool canRead(const std::optional<UserId>& caller, const std::optional<UserId>& owner,
                     Visibility visibility) {

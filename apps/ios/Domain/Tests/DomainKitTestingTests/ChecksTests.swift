@@ -69,7 +69,7 @@ struct ChecksTests {
   }
 
   @Test func stepOneRefusesAnEntityOfAnotherScope() {
-    #expect(throws: ChecksTests.failure(1, "item", "the registry declares no item in the product scope self/elsewhere")) {
+    #expect(throws: ChecksTests.failure(1, "item", "the registry declares no type in its fixed scope")) {
       try RegistryCheck.entity(Stray.self, registry: ChecksTests.registry)
     }
   }
@@ -354,7 +354,7 @@ enum Expected {
 // MARK: - Declarations over the check registry
 
 extension ChecksTests {
-  struct Item: Draftable, Removable, Ordered {
+  struct Item: ProductEntity, Draftable, Removable, Ordered {
     static let type = "item"
     static let scope = ScopeRef.product("chk")
     static let orderField = "ord"
@@ -408,7 +408,7 @@ extension ChecksTests {
     }
   }
 
-  struct Page: Draftable {
+  struct Page: ProductEntity, Draftable {
     static let type = "page"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = false
@@ -437,7 +437,7 @@ extension ChecksTests {
     ]
   }
 
-  struct GuardedPage: Draftable {
+  struct GuardedPage: ProductEntity, Draftable {
     static let type = "page"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = true
@@ -459,7 +459,7 @@ extension ChecksTests {
   }
 
   // A reading as the kit saves one fact: every field, the save's moment in `at`.
-  struct Reading: Timestamped, Removable {
+  struct Reading: ProductEntity, Timestamped, Removable {
     static let type = "reading"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = false
@@ -478,7 +478,7 @@ extension ChecksTests {
     static let checks: [Check<Reading>] = []
   }
 
-  struct HalfReading: Writable {
+  struct HalfReading: ProductEntity, Writable {
     static let type = "reading"
     static let scope = ScopeRef.product("chk")
     let id: ID<HalfReading>
@@ -488,7 +488,7 @@ extension ChecksTests {
     static let checks: [Check<HalfReading>] = []
   }
 
-  struct GuardedReading: Draftable {
+  struct GuardedReading: ProductEntity, Draftable {
     static let type = "reading"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = true
@@ -499,7 +499,7 @@ extension ChecksTests {
     static let checks: [Check<GuardedReading>] = []
   }
 
-  struct MistimedReading: Timestamped {
+  struct MistimedReading: ProductEntity, Timestamped {
     static let type = "reading"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = false
@@ -511,7 +511,7 @@ extension ChecksTests {
     static let checks: [Check<MistimedReading>] = []
   }
 
-  struct CheckedReading: Timestamped {
+  struct CheckedReading: ProductEntity, Timestamped {
     static let type = "reading"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = false
@@ -523,7 +523,7 @@ extension ChecksTests {
     static let checks: [Check<CheckedReading>] = [Check("at") { _, _ in }]
   }
 
-  struct StampedPage: Timestamped {
+  struct StampedPage: ProductEntity, Timestamped {
     static let type = "page"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = false
@@ -535,7 +535,7 @@ extension ChecksTests {
     static let checks: [Check<StampedPage>] = []
   }
 
-  struct Flag: Removable {
+  struct Flag: ProductEntity, Removable {
     static let type = "flag"
     static let scope = ScopeRef.product("chk")
     static let heldRemoval = false
@@ -543,14 +543,14 @@ extension ChecksTests {
     init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
   }
 
-  struct Stray: Entity {
+  struct Stray: ProductEntity {
     static let type = "item"
     static let scope = ScopeRef.product("elsewhere")
     let id: ID<Stray>
     init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
   }
 
-  struct Misordered: Ordered {
+  struct Misordered: ProductEntity, Ordered {
     static let type = "item"
     static let scope = ScopeRef.product("chk")
     static let orderField = "name"
@@ -558,7 +558,7 @@ extension ChecksTests {
     init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
   }
 
-  struct Counting: Writable {
+  struct Counting: ProductEntity, Writable {
     static let type = "item"
     static let scope = ScopeRef.product("chk")
     let id: ID<Counting>
@@ -569,7 +569,7 @@ extension ChecksTests {
   }
 
   // An item as a scale writes it: its weight and none of its strings.
-  struct Weighing: Writable {
+  struct Weighing: ProductEntity, Writable {
     static let type = "item"
     static let scope = ScopeRef.product("chk")
     let id: ID<Weighing>
@@ -586,7 +586,7 @@ extension ChecksTests {
     static let checks: [Check<Weighing>] = [Check("weight") { w, _ in w.weight = try Item.weight.apply(w.weight, at: "weight") }]
   }
 
-  struct Lossy: Draftable {
+  struct Lossy: ProductEntity, Draftable {
     static let type = "item"
     static let scope = ScopeRef.product("chk")
     static let savesGuarded = false
@@ -618,7 +618,7 @@ extension ChecksTests {
     let args: [String: JSON]
   }
 
-  struct Task: Writable {
+  struct Task: ProductEntity, Writable {
     static let type = "task"
     static let scope = ScopeRef.product("chk")
     static let state = ChoiceSpec("task.state", values: ["open", "done"])
@@ -636,7 +636,7 @@ extension ChecksTests {
     static let checks: [Check<Task>] = [Check("state") { t, _ in t.state = try Task.state.apply(t.state, at: "state") }]
   }
 
-  struct Shelf: Writable {
+  struct Shelf: ProductEntity, Writable {
     static let type = "shelf"
     static let scope = ScopeRef.product("chk")
     static let tag = TextSpec("shelf.tags", unit: .chars, min: 0, max: 10, trim: true, nfc: true)

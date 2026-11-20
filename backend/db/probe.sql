@@ -11,15 +11,18 @@
 -- the end makes a database built without that cascade cascade too.
 
 create table if not exists probe_boards (
-  scope_key  text not null references sync_scopes(key) on delete cascade,
-  id         text primary key,
-  seq        bigint not null,
-  rc         bigint not null,
-  ru         bigint not null,
-  born       text not null,
-  life       text not null check (life in ('alive', 'dead')),
-  life_stamp text not null
+  scope_key    text not null references sync_scopes(key) on delete cascade,
+  id           text primary key,
+  seq          bigint not null,
+  rc           bigint not null,
+  ru           bigint not null,
+  born         text not null,
+  life         text not null check (life in ('alive', 'dead')),
+  life_stamp   text not null,
+  parent       jsonb,
+  parent_stamp text
 );
+alter table probe_boards add column if not exists parent jsonb, add column if not exists parent_stamp text;
 create index if not exists probe_boards_feed on probe_boards (scope_key, seq);
 
 create table if not exists probe_cards (
@@ -171,6 +174,7 @@ create table if not exists probe_marks (
   primary key (scope_key, id)
 );
 create index if not exists probe_marks_feed on probe_marks (scope_key, seq);
+alter table probe_marks add column if not exists opens text, add column if not exists opens_stamp text;
 
 -- A mark's superseded memo heads (§6.11 step 4); the probe keeps one per record and field.
 create table if not exists probe_marks_revisions (
@@ -182,8 +186,8 @@ create table if not exists probe_marks_revisions (
   primary key (scope_key, id, field, rev)
 );
 
--- The receipts the probe's commands resolve their replays by: the run a probe.start id resolved to, and
--- the board a probe.copy destination was copied from.
+-- The receipts the probe's commands resolve their replays by: the run a probe.start id resolved to, the
+-- board a probe.copy destination was copied from, and the arguments a probe.branch child was created with.
 create table if not exists probe_start_receipts (
   scope_key text not null references sync_scopes(key) on delete cascade,
   called    text not null,
@@ -196,6 +200,14 @@ create table if not exists probe_copy_receipts (
   destination text not null,
   source      text not null,
   primary key (scope_key, destination)
+);
+
+create table if not exists probe_branch_receipts (
+  scope_key text not null references sync_scopes(key) on delete cascade,
+  child     text not null,
+  parent    text not null,
+  title     text not null,
+  primary key (scope_key, child)
 );
 
 do $$

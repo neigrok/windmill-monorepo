@@ -1,0 +1,344 @@
+[
+  {
+    "name": "Every absent prerequisite is traversed beside a surviving direct parent",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "gone", "present": false, "born": null, "rc": null, "ru": null, "label": "gone", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": null, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "gone", "present": true},
+          {"from": "gone", "to": "c", "present": true},
+          {"from": "b", "to": "c", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["c"]
+    },
+    "expect": {
+      "presentIds": ["a", "b", "c"],
+      "states": [{"id": "a", "state": "available"}, {"id": "b", "state": "available"}, {"id": "c", "state": "locked"}],
+      "steps": [
+        {"id": "c", "followed": [{"id": "a", "incoming": [["gone", "c"]], "throughAbsent": true}, {"id": "b", "incoming": [["b", "c"]], "throughAbsent": false}], "unmet": ["a", "b"], "owed": ["a", "b"], "owedCount": 2, "unlocks": []}
+      ]
+    }
+  },
+  {
+    "name": "Duplicate routes keep each immediate incoming edge and count a prerequisite once",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "y", "present": false, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "x", "present": true},
+          {"from": "a", "to": "y", "present": true},
+          {"from": "x", "to": "z", "present": true},
+          {"from": "y", "to": "z", "present": true},
+          {"from": "a", "to": "z", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["a", "z"]
+    },
+    "expect": {
+      "presentIds": ["a", "z"],
+      "states": [{"id": "a", "state": "available"}, {"id": "z", "state": "locked"}],
+      "steps": [
+        {"id": "a", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": ["z"]},
+        {"id": "z", "followed": [{"id": "a", "incoming": [["a", "z"], ["x", "z"], ["y", "z"]], "throughAbsent": true}], "unmet": ["a"], "owed": ["a"], "owedCount": 1, "unlocks": []}
+      ]
+    }
+  },
+  {
+    "name": "Missing node endpoints traverse retained edges and do not become phantom prerequisites",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "missing", "present": true},
+          {"from": "missing", "to": "z", "present": true},
+          {"from": "unknown", "to": "z", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["z"]
+    },
+    "expect": {
+      "presentIds": ["a", "z"],
+      "states": [{"id": "a", "state": "available"}, {"id": "z", "state": "locked"}],
+      "steps": [
+        {"id": "z", "followed": [{"id": "a", "incoming": [["missing", "z"]], "throughAbsent": true}], "unmet": ["a"], "owed": ["a"], "owedCount": 1, "unlocks": []}
+      ]
+    }
+  },
+  {
+    "name": "An absent-only cycle contributes no present prerequisite",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "y", "present": false, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "x", "to": "y", "present": true}, {"from": "y", "to": "x", "present": true}, {"from": "y", "to": "z", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["z"]
+    },
+    "expect": {
+      "presentIds": ["z"],
+      "states": [{"id": "z", "state": "available"}],
+      "steps": [{"id": "z", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": []}]
+    }
+  },
+  {
+    "name": "Effective self-follow remains a blocker but is never owed or unlocked",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "x", "present": true}, {"from": "x", "to": "a", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["a"]
+    },
+    "expect": {
+      "presentIds": ["a"],
+      "states": [{"id": "a", "state": "locked"}],
+      "steps": [
+        {"id": "a", "followed": [{"id": "a", "incoming": [["x", "a"]], "throughAbsent": true}], "unmet": ["a"], "owed": [], "owedCount": 0, "unlocks": []}
+      ]
+    }
+  },
+  {
+    "name": "Owed closure stops at a completed prerequisite and ignores authored seed status",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "complete", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": null, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}, {"from": "b", "to": "c", "present": true}],
+        "kinds": [],
+        "marks": [{"node": "b", "status": "complete", "outOfOrder": true, "recordedAt": 30, "deviceAt": 20}],
+        "pointers": []
+      },
+      "subjects": ["c", "a"]
+    },
+    "expect": {
+      "presentIds": ["a", "b", "c"],
+      "states": [{"id": "a", "state": "available"}, {"id": "b", "state": "complete"}, {"id": "c", "state": "available"}],
+      "steps": [
+        {"id": "c", "followed": [{"id": "b", "incoming": [["b", "c"]], "throughAbsent": false}], "unmet": [], "owed": [], "owedCount": 0, "unlocks": []},
+        {"id": "a", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": []}
+      ]
+    }
+  },
+  {
+    "name": "A cycle is finite and completing one member never unlocks itself",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": null, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}, {"from": "b", "to": "a", "present": true}, {"from": "b", "to": "c", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["a", "c"]
+    },
+    "expect": {
+      "presentIds": ["a", "b", "c"],
+      "states": [{"id": "a", "state": "locked"}, {"id": "b", "state": "locked"}, {"id": "c", "state": "locked"}],
+      "steps": [
+        {"id": "a", "followed": [{"id": "b", "incoming": [["b", "a"]], "throughAbsent": false}], "unmet": ["b"], "owed": ["b"], "owedCount": 1, "unlocks": ["b"]},
+        {"id": "c", "followed": [{"id": "b", "incoming": [["b", "c"]], "throughAbsent": false}], "unmet": ["b"], "owed": ["a", "b"], "owedCount": 2, "unlocks": []}
+      ]
+    }
+  },
+  {
+    "name": "Authored order uses stamp comparison, missing as zero and UTF-8 tie ordering",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "unknown", "present": true, "born": null, "rc": null, "ru": null, "label": "unknown", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "😀", "present": true, "born": "10:0:a", "rc": null, "ru": null, "label": "😀", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "", "present": true, "born": "10:0:a", "rc": null, "ru": null, "label": "", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "early", "present": true, "born": "2:0:z", "rc": null, "ru": null, "label": "early", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": []
+    },
+    "expect": {
+      "presentIds": ["unknown", "early", "", "😀"],
+      "states": [
+        {"id": "unknown", "state": "available"},
+        {"id": "early", "state": "available"},
+        {"id": "", "state": "available"},
+        {"id": "😀", "state": "available"}
+      ],
+      "steps": []
+    }
+  },
+  {
+    "name": "A live edge through a known absent record is not erased by a dead edge",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "x", "present": false}, {"from": "x", "to": "z", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["z"]
+    },
+    "expect": {
+      "presentIds": ["a", "z"],
+      "states": [{"id": "a", "state": "available"}, {"id": "z", "state": "available"}],
+      "steps": [{"id": "z", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": []}]
+    }
+  },
+  {
+    "name": "An out-of-order completed subject still owes its unfinished prerequisites",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}],
+        "kinds": [],
+        "marks": [{"node": "b", "status": "complete", "outOfOrder": true, "recordedAt": 9, "deviceAt": 8}],
+        "pointers": []
+      },
+      "subjects": ["b"]
+    },
+    "expect": {
+      "presentIds": ["a", "b"],
+      "states": [{"id": "a", "state": "available"}, {"id": "b", "state": "complete"}],
+      "steps": [
+        {"id": "b", "followed": [{"id": "a", "incoming": [["a", "b"]], "throughAbsent": false}], "unmet": ["a"], "owed": ["a"], "owedCount": 1, "unlocks": []}
+      ]
+    }
+  },
+  {
+    "name": "A standalone graph treats unresolved openings as unknown and sets their marks aside",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [{"node": "p", "status": "complete", "outOfOrder": false, "recordedAt": 9, "deviceAt": 8}],
+        "pointers": [{"node": "p", "present": true, "opens": "unknown"}]
+      },
+      "subjects": ["p"]
+    },
+    "expect": {
+      "presentIds": ["p"],
+      "states": [{"id": "p", "state": "available"}],
+      "steps": [{"id": "p", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": []}]
+    }
+  }
+]

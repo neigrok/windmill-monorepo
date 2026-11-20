@@ -7,7 +7,7 @@ import SyncTesting
 // corpus over the product's rule book.
 
 // §15.3 a product's corpus under `packages/api-contract/<product>/`: each LOCAL rule's cases (`domain/values.json`), each
-// action's and draft save's decisions (`domain/<feature>-actions.json`) and each derived read's results
+// action's, act's and draft save's decisions (`domain/<feature>-actions.json`) and each derived read's results
 // (`rules/<read>.json`), run over the book that declares them.
 public struct ProductCorpus {
   let book: RuleBook
@@ -52,14 +52,37 @@ public struct ProductCorpus {
     return ["decision": try decision.form(in: decider.scope, registry: book.registry, result: result, refusal: refusal)]
   }
 
+  // An act's case (§9.5), a scene of several scopes, `{scopes: {<scope>: {drawn, stored?}}, device?, ids?, now,
+  // offsetSeconds}` → `{decision}`: the act's load through a reader of each scope's records, one decision minting the
+  // listed ids in order across scopes, a violation its decide throws folded into its refusal, and each segment's gesture
+  // in its scope.
+  public func act<A: ActAction>(_ action: A, _ vector: Vector, result: (A.Result) -> JSON, refusal: (A.Refusal) -> JSON) throws -> JSON {
+    let moment = try Moment(form: vector.input)
+    let scene = try VectorScene(vector.input, now: moment.now.ms, registry: book.registry)
+    let read = ActReader(scene, registry: book.registry, moment: moment)
+    let loaded: A.Loaded = try action.load(read)
+    read.end()
+    let decision: ActDecision<A.Result, A.Refusal>
+    do throws(Violation) {
+      decision = try action.decide(loaded, ids: ActIDSource(context: scene))
+    } catch {
+      decision = .refuse(A.Refusal(error))
+    }
+    return ["decision": try decision.form(registry: book.registry, result: result, refusal: refusal)]
+  }
+
   // An editor opens the drawn entity or starts a new draft, edits its current value, then decides its save (§10.2).
+  public func save<E: Draftable & ProductEntity, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector, opening blank: E,
+                                                   edit: (inout E) -> Void, result: (Saved) -> JSON, refusal: (R) -> JSON) throws -> JSON {
+    try save(type, vector, opening: blank, in: E.scope, edit: edit, result: result, refusal: refusal)
+  }
+
   public func save<E: Draftable, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector, opening blank: E,
-                                                   edit: (inout E) -> Void, result: (Saved) -> JSON, refusal: (R) -> JSON)
-    throws -> JSON
-  {
-    let (context, moment) = try scene(of: vector, in: E.scope)
-    let read = Reader(context, scope: E.scope, moment: moment, registry: book.registry)
-    var draft = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0) } ?? Draft(new: blank)
+                                                   in scope: ScopeRef, edit: (inout E) -> Void, result: (Saved) -> JSON,
+                                                   refusal: (R) -> JSON) throws -> JSON {
+    let (context, moment) = try scene(of: vector, in: scope)
+    let read = Reader(context, scope: scope, moment: moment, registry: book.registry)
+    var draft = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0, in: scope) } ?? Draft(new: blank, in: scope)
     edit(&draft.current)
     return try decision(of: SaveDraft<E, R>(draft), vector, result: result, refusal: refusal)
   }
@@ -72,11 +95,11 @@ public struct ProductCorpus {
     return ["result": try body(Reader(context, scope: scope, moment: moment, registry: book.registry))]
   }
 
-  // A vector's records as the engine's readers of `scope` answer them, at its moment, minting its `ids` in order.
+  // A vector's records as the engine's readers of `scope` answer them, at its moment, minting its `ids` in order: its
+  // `records`, or the scope's in a scene of several scopes, so every form reads a scene as `act` does.
   func scene(of vector: Vector, in scope: ScopeRef) throws -> (VectorReader, Moment) {
     let input = vector.input
-    let rows = try input.member("records")
-    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: rows["device"], registry: book.registry)
+    let records = try VectorRecords(input, in: scope, registry: book.registry)
     let (moment, ids) = (try Moment(form: input), try (input["ids"]?.asArray() ?? []).map { try RecordID(json: $0) })
     let firstPullComplete = try input["firstPullComplete"]?.asBool() ?? true
     let reader = VectorReader(records: records, now: moment.now.ms, ids: ids, firstPullComplete: firstPullComplete,
@@ -95,17 +118,33 @@ extension Moment {
 
 // MARK: - Records
 
-// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, and the
-// device keys it lists, each key's value.
+// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, the
+// device keys it lists, each key's value, and the scope's spent ids it lists, `{t, id, born}`, each id's born.
 package struct VectorRecords: Sendable {
   package var drawn: [Record]
   package var stored: [Record]
   package var device: JSON.Object
+  package var spent: [RecordKey: Stamp]
 
-  package init(drawn: JSON?, stored: JSON?, device: JSON? = nil, registry: Registry) throws {
+  package init(drawn: JSON?, stored: JSON?, device: JSON? = nil, spent: JSON? = nil, registry: Registry) throws {
     self.drawn = try VectorRecords.records(drawn, registry: registry)
     self.stored = try VectorRecords.records(stored, registry: registry)
     self.device = try device?.asObject() ?? [:]
+    self.spent = Dictionary(uniqueKeysWithValues: try (spent?.asArray() ?? []).map { (spentID: JSON) throws -> (RecordKey, Stamp) in
+      (RecordKey(try spentID.member("t").asString(), try RecordID(json: spentID.member("id"))), try Stamp(json: spentID.member("born")))
+    })
+  }
+
+  // A case's records in `scope`, `stored` defaulting to `drawn`: its `records`, device rows among them, or, in a scene of
+  // several scopes, `scopes[scope]` with the scene's `device` rows, a scope the scene leaves out holding none.
+  package init(_ input: JSON, in scope: ScopeRef, registry: Registry) throws {
+    guard case .object(let scopes)? = input["scopes"] else {
+      let rows = try input.member("records")
+      try self.init(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: rows["device"], registry: registry)
+      return
+    }
+    let rows: JSON = scopes[scope.text] ?? ["drawn": []]
+    try self.init(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: input["device"], registry: registry)
   }
 
   static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
@@ -113,9 +152,10 @@ package struct VectorRecords: Sendable {
   }
 }
 
-// A reader over a vector's records: the folded record by id visible or not, and the visible records of a type in id
-// order, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another scope as they do. It
-// mints the ids the vector lists, in order, opaque ones included, and no other; the replica it writes to is one no vector names.
+// A reader over a vector's records: the folded record by id visible or not, the visible records of a type in id order,
+// and the born of a spent id, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another
+// scope as they do. It mints the ids the vector lists, in order, opaque ones included, and no other; the replica it
+// writes to is one no vector names.
 package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
@@ -148,6 +188,8 @@ package final class VectorReader: CommitContext {
     visible(records.stored, try lives(type)).filter { $0.values[field] == id.json }
   }
 
+  package func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { records.spent[RecordKey(try lives(type), id)] }
+
   // The engine's readers throw on a type of another scope.
   func lives(_ type: String) throws -> String {
     guard let scope, !scope.registry.lives(type, in: scope.ref) else { return type }
@@ -179,6 +221,51 @@ package final class VectorReader: CommitContext {
 
   func visible(_ records: [Record], _ type: String) -> [Record] {
     records.filter { $0.type == type && $0.isVisible }.sorted { $0.id < $1.id }
+  }
+}
+
+// An act's scene: each scope's records as the engine's readers of that scope answer them, and the ids it lists, minted in
+// order across scopes and no other.
+package final class VectorScene: ActContext {
+  let input: JSON
+  let registry: Registry
+  let pulled: Bool
+  var ids: [RecordID]
+  package let now: Int64
+  package let replica = "rp_00000000000000000000000000000001"
+  package var actor: String { replica }
+  package let isAnonymous = false
+
+  package init(_ input: JSON, now: Int64, registry: Registry) throws {
+    self.input = input
+    self.registry = registry
+    pulled = try input["firstPullComplete"]?.asBool() ?? true
+    ids = try (input["ids"]?.asArray() ?? []).map { (id: JSON) throws -> RecordID in try RecordID(json: id) }
+    self.now = now
+  }
+
+  package func finishLoad() throws {}
+
+  package func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
+    let records = try VectorRecords(input, in: scope, registry: registry)
+    return try body(VectorReader(records: records, now: now, firstPullComplete: pulled, scope: (scope, registry)))
+  }
+
+  package func mintID(_ type: String, in scope: ScopeRef) throws -> RecordID {
+    guard !ids.isEmpty else { throw CommitFailure.malformed("the vector lists no id left to mint a \(type) in \(scope)") }
+    return ids.removeFirst()
+  }
+
+  package func opaqueID() throws -> String {
+    throw CommitFailure.malformed("an act case mints no opaque id")
+  }
+
+  package func stage(_ scope: ScopeRef, _ segment: (any CommitContext) throws -> Gesture) throws -> StagedRefusal? {
+    throw CommitFailure.malformed("an act case decides one act, and stages nothing")
+  }
+
+  package func beginPart() throws {
+    throw CommitFailure.malformed("an act case decides one act, and has no second part")
   }
 }
 

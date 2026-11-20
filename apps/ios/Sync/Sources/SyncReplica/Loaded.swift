@@ -13,6 +13,8 @@ public struct LoadedReplica: Sendable {
   private(set) var loadedEntries: [OutboxEntry]
   let entrySelection: EntrySelection
   let unreadCommitOrder: Int64
+  // The scopes uncovered projections target as the load found them, which a partial load cannot read off its entries.
+  let loadedProjectionTargets: [ScopeRef]
   public private(set) var confirmed: [ScopeRef: Rows]
   public private(set) var staging: [ScopeRef: Staging]
   public private(set) var spent: [ScopeRef: [RecordKey: SpentID]]
@@ -20,6 +22,10 @@ public struct LoadedReplica: Sendable {
   public private(set) var known: [ScopeRef: KnownKind]
   private(set) var loadedNotices: [Notice]?
   public private(set) var deviceRows: [String: JSON.Object]
+  // K-3 the journal, always loaded whole with the entries it names (§7.3 Undo of an act).
+  public private(set) var journal: Journal
+  // The inverse requests unsettled as the load found them: each one this transaction settles is reported.
+  let loadedUnsettledRequests: [String]
   public private(set) var writes: [StoreWrite] = []
   public private(set) var events: [EngineEvent] = []
   public private(set) var change = StoreChange()
@@ -31,14 +37,15 @@ public struct LoadedReplica: Sendable {
   // Cursors, known scopes and staging digests are always loaded whole; rows, outbox entries and notices as a planner
   // needs, `notices` nil when they were not loaded. Device rows are keyed by product, then by their key's bytes.
   public init(meta: ReplicaMeta, outbox: [OutboxEntry] = [], entries: EntrySelection = .every, unreadCommitOrder: Int64 = 0,
-              confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
+              projectionTargets: [ScopeRef] = [], confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
               spent: [ScopeRef: [RecordKey: SpentID]] = [:], cursors: [ScopeRef: CursorRecord] = [:],
               known: [ScopeRef: KnownKind] = [:], notices: [Notice]? = [], deviceRows: [String: JSON.Object] = [:],
-              wholeScopes: Bool, isActive: Bool = false) {
+              journal: Journal = Journal(), wholeScopes: Bool, isActive: Bool = false) {
     self.meta = meta
     loadedEntries = outbox.sorted { $0.commitOrder < $1.commitOrder }
     entrySelection = entries
     self.unreadCommitOrder = unreadCommitOrder
+    loadedProjectionTargets = projectionTargets
     self.confirmed = confirmed
     self.staging = staging
     self.spent = spent
@@ -46,6 +53,8 @@ public struct LoadedReplica: Sendable {
     self.known = known
     loadedNotices = notices
     self.deviceRows = deviceRows
+    self.journal = journal
+    loadedUnsettledRequests = journal.inverses.filter { $0.state != .settled }.map(\.requestId)
     self.wholeScopes = wholeScopes
     self.isActive = isActive
   }
@@ -65,16 +74,17 @@ public struct LoadedReplica: Sendable {
     return loadedEntries
   }
 
-  // Every entry of a scope, in commit order; after a load of part of the outbox, reading a scope it did not load whole traps.
+  // Every entry with effects in a scope, in commit order; after a load of part of the outbox, reading a scope it did not
+  // load whole traps.
   public func entries(in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || entrySelection.scopes.contains(scope), "the entries of \(scope) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope }
+    return loadedEntries.filter { $0.scopes.contains(scope) }
   }
 
   // The entries that touch one record, in commit order; after a load of part of the outbox, reading a record whose row it did not read traps.
   public func entries(touching key: RecordKey, in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || confirmed[scope]?.wasRead(key) == true, "the entries touching \(key) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope && $0.touches(key) }
+    return loadedEntries.filter { $0.deltas(in: scope).contains { $0.key == key } }
   }
 
   // The entries that touch a record the load read, in commit order: every entry after a load of the whole outbox, and
@@ -83,7 +93,7 @@ public struct LoadedReplica: Sendable {
   public var entriesTouchingReads: [OutboxEntry] {
     if entrySelection.all { return loadedEntries }
     return loadedEntries.filter { entry in
-      entry.drawnDeltas.contains { delta in confirmed[entry.scope].map { $0.covers(delta.key) } ?? wholeScopes }
+      entry.effects().contains { effect in effect.deltas.contains { delta in confirmed[effect.scope].map { $0.covers(delta.key) } ?? wholeScopes } }
     }
   }
 
@@ -94,17 +104,43 @@ public struct LoadedReplica: Sendable {
     return loadedEntries.filter { entry in held.contains { $0.utf8.elementsEqual(entry.gestureId.utf8) } }
   }
 
-  // §7.5 step 2: the scope's stored cursor covers an acked entry of the replica's epoch whose seq it has received whole.
-  public func covers(_ entry: OutboxEntry) -> Bool {
-    guard entry.state == .acked, let cleanSeq = cursors[entry.scope]?.cleanSeq, let seq = entry.resultSeq,
-          let epoch = entry.resultEpoch else { return false }
-    return seq <= cleanSeq && meta.serverEpoch?.utf8.elementsEqual(epoch.utf8) == true
+  // §7.5 step 2: an acked entry of the replica's epoch is covered in a scope whose stored cursor has received `seq` there
+  // whole; an opted entry's projection is covered too in a scope the replica knows gone.
+  public func covers(_ entry: OutboxEntry, in scope: ScopeRef, at seq: Int64?) -> Bool {
+    guard entry.state == .acked, let epoch = entry.resultEpoch, meta.serverEpoch?.utf8.elementsEqual(epoch.utf8) == true else { return false }
+    if entry.predictions != nil && known[scope] == .gone { return true }
+    guard let seq, let cleanSeq = cursors[scope]?.cleanSeq else { return false }
+    return seq <= cleanSeq
   }
 
-  // The entries of `scope` its stored cursor covers, in commit order; a partial load reads its covered selection.
+  // A legacy entry is covered in its scope; an opted one once each projection is, by its own scope.
+  public func covers(_ entry: OutboxEntry) -> Bool {
+    guard let predictions = entry.predictions else { return covers(entry, in: entry.scope, at: entry.resultSeq) }
+    return predictions.allSatisfy { $0.covered || covers(entry, in: $0.scope, at: $0.resultSeq) }
+  }
+
+  // The acked entries with an uncovered effect in `scope` its stored cursor now covers, in commit order; a partial load
+  // reads its covered selection.
   public func covered(in scope: ScopeRef) -> [OutboxEntry] {
     precondition(entrySelection.all || entrySelection.covered?.scope == scope, "the covered entries of \(scope) were read but not loaded")
-    return loadedEntries.filter { $0.scope == scope && covers($0) }
+    return loadedEntries.filter { entry in
+      guard let predictions = entry.predictions else { return entry.scope == scope && covers(entry) }
+      return predictions.contains { $0.scope == scope && !$0.covered && covers(entry, in: scope, at: $0.resultSeq) }
+    }
+  }
+
+  // §7.9 the scopes uncovered projections target, which a bound replica follows, in commit order: read off the outbox when
+  // it was loaded whole, else as the load found them.
+  public var projectionTargets: [ScopeRef] {
+    guard entrySelection.all else {
+      precondition(entrySelection.projectionTargets, "the projection targets of \(meta.replica) were read but not loaded")
+      return loadedProjectionTargets
+    }
+    var targets: [ScopeRef] = []
+    for projection in loadedEntries.flatMap({ $0.predictions ?? [] }) where !projection.covered && !targets.contains(projection.scope) {
+      targets.append(projection.scope)
+    }
+    return targets
   }
 
   // The sent entry numbered `n`, which a push result answers.
@@ -116,6 +152,47 @@ public struct LoadedReplica: Sendable {
   // The entries the load read, or that were written since, by local id.
   public func entry(_ localId: String) -> OutboxEntry? {
     loadedEntries.first { $0.localId.utf8.elementsEqual(localId.utf8) }
+  }
+
+  // An entry the journal names, nil once it ended. A load of the journal reads every one it names; asking for another the
+  // load left unread traps.
+  public func named(_ localId: String) -> OutboxEntry? {
+    if let entry = entry(localId) { return entry }
+    let endedHere = writes.contains { write in
+      guard case .replica(_, .deleteEntry(let deleted)) = write else { return false }
+      return deleted.isSameID(as: localId)
+    }
+    precondition(entrySelection.all || entrySelection.localIds.contains(localId) || endedHere, "\(localId) was read but not loaded")
+    return nil
+  }
+
+  // The records `after` adds or changes over `before`, and the ids it drops.
+  static func changes<Record: Hashable>(_ before: [Record], _ after: [Record], id: (Record) -> String) -> (put: [Record], gone: [String]) {
+    let previous = Dictionary(before.map { (id($0), $0) }) { first, _ in first }
+    let kept = Set(after.map(id))
+    return (after.filter { previous[id($0)] != $0 }, before.map(id).filter { !kept.contains($0) })
+  }
+
+  // The journal changed through `body`: each act, request and cancellation it adds, changes or drops is one write, and each
+  // request the load found unsettled that settles now is reported.
+  public mutating func updateJournal<T>(_ body: (inout Journal) throws -> T) rethrows -> T {
+    var next = journal
+    let value = try body(&next)
+    let acts = LoadedReplica.changes(journal.acts, next.acts, id: \.actId)
+    let inverses = LoadedReplica.changes(journal.inverses, next.inverses, id: \.requestId)
+    let cancellations = LoadedReplica.changes(journal.cancellations, next.cancellations, id: \.inverseActId)
+    for request in inverses.put where loadedUnsettledRequests.contains(where: { $0.isSameID(as: request.requestId) }) {
+      guard case .settled(_, _, _, let applied, let skipped)? = request.result, journal.request(request.requestId)?.state != .settled else { continue }
+      record(.inverseSettled(applied: applied, skipped: skipped))
+    }
+    for id in acts.gone { apply(.deleteAct(id)) }
+    for act in acts.put { apply(.putAct(act)) }
+    for id in inverses.gone { apply(.deleteInverse(id)) }
+    for request in inverses.put { apply(.putInverse(request)) }
+    for id in cancellations.gone { apply(.deleteCancellation(id)) }
+    for cancellation in cancellations.put { apply(.putCancellation(cancellation)) }
+    journal = next
+    return value
   }
 
   public func rows(_ scope: ScopeRef) -> Rows {
@@ -190,6 +267,24 @@ public struct LoadedReplica: Sendable {
       staging[scope] = nil
     case .putKnown(let scope, let kind): known[scope] = kind
     case .deleteKnown(let scope): known[scope] = nil
+    case .putAct(let act):
+      journal.acts.removeAll { $0.actId.isSameID(as: act.actId) }
+      journal.acts.append(act)
+    case .deleteAct(let id): journal.acts.removeAll { $0.actId.isSameID(as: id) }
+    case .putInverse(let request):
+      if let index = journal.inverses.firstIndex(where: { $0.requestId.isSameID(as: request.requestId) }) {
+        journal.inverses[index] = request
+      } else {
+        journal.inverses.append(request)
+      }
+    case .deleteInverse(let id): journal.inverses.removeAll { $0.requestId.isSameID(as: id) }
+    case .putCancellation(let cancellation):
+      if let index = journal.cancellations.firstIndex(where: { $0.inverseActId.isSameID(as: cancellation.inverseActId) }) {
+        journal.cancellations[index] = cancellation
+      } else {
+        journal.cancellations.append(cancellation)
+      }
+    case .deleteCancellation(let id): journal.cancellations.removeAll { $0.inverseActId.isSameID(as: id) }
     case .putNotice(let notice):
       if let index = loadedNotices?.firstIndex(where: { $0.id.utf8.elementsEqual(notice.id.utf8) }) {
         loadedNotices?[index] = notice
@@ -225,8 +320,58 @@ public struct LoadedReplica: Sendable {
     if entry != before { apply(.putEntry(entry)) }
   }
 
-  // D-17: the product dismisses a notice, which hides it until content folds into it. False when the replica holds no
-  // notice `id`.
+  // One pass over a whole outbox, retaining each entry's identity, scope and position.
+  public mutating func updateEntries(_ update: (inout OutboxEntry) throws -> Void) rethrows {
+    precondition(entrySelection.all, "bulk entry updates require the whole outbox")
+    for index in loadedEntries.indices {
+      let before = loadedEntries[index]
+      var entry = before
+      try update(&entry)
+      precondition(entry.localId.utf8.elementsEqual(before.localId.utf8) && entry.commitOrder == before.commitOrder,
+                   "bulk entry updates preserve identity and order")
+      guard entry != before else { continue }
+      let write = ReplicaWrite.putEntry(entry)
+      writes.append(.replica(meta.replica, write))
+      note(write, previousEntry: before)
+      loadedEntries[index] = entry
+    }
+  }
+
+  // §7.5 step 2 an acked entry's coverage as it stands: an opted entry's projections each marked covered once its scope
+  // covers it, and the entry resolved once wholly covered. True when it resolved.
+  @discardableResult
+  public mutating func settle(_ localId: String) throws -> Bool {
+    guard let entry = entry(localId) else { return false }
+    var marked = entry
+    marked.predictions = entry.predictions?.map { projection in
+      var projection = projection
+      if covers(entry, in: projection.scope, at: projection.resultSeq) { projection.covered = true }
+      return projection
+    }
+    if covers(marked) {
+      try move(localId, .resolve)
+      return true
+    }
+    if marked != entry { apply(.putEntry(marked)) }
+    return false
+  }
+
+  // A scope's end, or its leaving the subscription set (§7.5, §7.9): an acked legacy entry of it resolves, and an acked
+  // opted entry's projection into it is covered, the entry resolving once every one is.
+  public mutating func endProjections(in scope: ScopeRef) throws {
+    for entry in entries(in: scope) where entry.state == .acked {
+      guard var predictions = entry.predictions else {
+        if entry.scope == scope { try move(entry.localId, .resolve) }
+        continue
+      }
+      for index in predictions.indices where predictions[index].scope == scope { predictions[index].covered = true }
+      update(entry: entry.localId) { $0.predictions = predictions }
+      try settle(entry.localId)
+    }
+  }
+
+  // D-17: the product dismisses a notice, which hides it until content folds into it; true iff the replica holds it. A
+  // notice the replica does not hold is left alone.
   public mutating func dismiss(notice id: String) -> Bool {
     guard let notice = notices.first(where: { $0.id.utf8.elementsEqual(id.utf8) }) else { return false }
     if !notice.isDismissed { apply(.putNotice(notice.dismissed)) }
@@ -263,7 +408,7 @@ public struct LoadedReplica: Sendable {
   }
 
   // What a write changes for the views, read before it applies: an entry's records before and after it.
-  mutating func note(_ write: ReplicaWrite) {
+  mutating func note(_ write: ReplicaWrite, previousEntry: OutboxEntry? = nil) {
     switch write {
     case .meta(let meta):
       change.status = true
@@ -282,10 +427,11 @@ public struct LoadedReplica: Sendable {
       change.released = true
     case .putEntry(let entry):
       change.outbox = true
-      change.touch(entry.scope, entry.drawnDeltas.map(\.key) + (self.entry(entry.localId)?.drawnDeltas.map(\.key) ?? []))
+      let previous = previousEntry ?? self.entry(entry.localId)
+      for effect in entry.effects() + (previous?.effects() ?? []) { change.touch(effect.scope, effect.deltas.map(\.key)) }
     case .deleteEntry(let localId):
       change.outbox = true
-      if let entry = entry(localId) { change.touch(entry.scope, entry.drawnDeltas.map(\.key)) }
+      if let entry = entry(localId) { for effect in entry.effects() { change.touch(effect.scope, effect.deltas.map(\.key)) } }
     case .putRow(let scope, let row): change.touch(scope, [row.key])
     case .deleteRow(let scope, let key): change.touch(scope, [key])
     case .swapStaging(let scope), .forgetScope(let scope):
@@ -294,6 +440,7 @@ public struct LoadedReplica: Sendable {
     case .beginStaging, .dropStaging: change.released = true
     case .putNotice, .moveNotice: change.notices = true
     case .putStagedRow, .deleteStagedRow, .stagingDigest, .putSpent: break
+    case .putAct, .deleteAct, .putInverse, .deleteInverse, .putCancellation, .deleteCancellation: change.outbox = true
     }
   }
 
@@ -348,11 +495,13 @@ public struct LoadedDevice: Sendable {
 
   public var anon: LoadedReplica? { replicas.first { $0.meta.state == .anon } }
 
-  // §2.5: an outbox entry or a notice of any replica on the device carries the gesture id.
+  // §2.5: an outbox entry, a notice, a reversible act, an inverse request or a cancellation of any replica on the device
+  // carries the gesture id.
   public func carries(gestureId: String) -> Bool {
     replicas.contains { replica in
       replica.outbox.contains { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }
         || replica.notices.contains { Notice.gestureId(ofNotice: $0.id)?.utf8.elementsEqual(gestureId.utf8) == true }
+        || replica.journal.carries(gestureId: gestureId)
     }
   }
 
@@ -440,6 +589,12 @@ extension LoadedReplica {
       }),
       notices: try object["notices"]?.asArray().map { try Notice(json: $0, registry: registry) } ?? [],
       deviceRows: try JSON.map(object["device"]) { try $0.asObject() },
+      journal: Journal(
+        acts: try (object["journal"]?.asArray() ?? []).map { (act: JSON) throws -> ReversibleAct in try ReversibleAct(json: act) },
+        inverses: try (object["inverses"]?.asArray() ?? []).map { (request: JSON) throws -> InverseRequest in try InverseRequest(json: request) },
+        cancellations: try (object["cancellations"]?.asArray() ?? []).map { (receipt: JSON) throws -> CancellationReceipt in
+          try CancellationReceipt(json: receipt)
+        }),
       wholeScopes: true)
   }
 
@@ -458,6 +613,10 @@ extension LoadedReplica {
     object["notices"] = notices.isEmpty ? nil : .array(notices.map(\.storedJSON))
     let device = deviceRows.compactMapValues { $0.isEmpty ? nil : JSON.object($0) }
     object["device"] = JSON.object(from: device) { $0 }
+    let stored = journal.json
+    object["journal"] = stored.acts.isEmpty ? nil : .array(stored.acts)
+    object["inverses"] = stored.inverses.isEmpty ? nil : .array(stored.inverses)
+    object["cancellations"] = stored.cancellations.isEmpty ? nil : .array(stored.cancellations)
     return .object(object)
   }
 }

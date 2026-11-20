@@ -3,6 +3,8 @@
 
 import { moveEntry } from '../core/machines.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
+import { settleEnded } from './journal.js';
+import { effectsOf } from './projections.js';
 
 export function release(replica, registry, ended, entry) {
   if (entry.state !== 'held') return false;
@@ -27,16 +29,26 @@ export function undo(replica, registry, ended, gestureId) {
   const parts = silentFoldOf(replica, registry, gesture.map((entry) => ({ entry, deltas: deltasOf(entry) })));
   for (const entry of gesture) moveEntry(replica, ended, entry, 'undo');
   foldSilently(replica, ended, parts);
+  settleEnded(replica, 'undone');
   return true;
 }
 
 // Held gestures in commit order, with their deadline and records; Undo stands while `releaseAt` is ahead of the device clock.
 export function undoOffers(replica, scope) {
+  const entries = replica.entries();
+  const released = new Set(entries.filter((entry) => entry.state !== 'held').map((entry) => entry.gestureId));
   const gestures = new Map();
-  for (const entry of replica.entries(scope)) gestures.set(entry.gestureId, [...(gestures.get(entry.gestureId) ?? []), entry]);
-  return [...gestures.values()].filter((entries) => entries.every((entry) => entry.state === 'held'))
+  for (const entry of entries) {
+    if (scope !== undefined && !effectsOf(entry, { active: true }).some((effect) => effect.scope === scope)) continue;
+    const group = gestures.get(entry.gestureId) ?? [];
+    group.push(entry);
+    gestures.set(entry.gestureId, group);
+  }
+  return [...gestures.values()].filter((entries) => !released.has(entries[0].gestureId))
     .map((entries) => ({ id: entries[0].gestureId, releaseAt: entries[0].releaseAt,
-      records: entries.flatMap((entry) => (entry.intent.d ?? []).map(({ t, id }) => ({ t, id }))) }));
+      records: entries.flatMap((entry) => (entry.predictions
+        ? effectsOf(entry, { active: true }).filter((effect) => scope === undefined || effect.scope === scope).flatMap(({ d }) => d)
+        : entry.intent.d ?? []).map(({ t, id }) => ({ t, id }))) }));
 }
 
 export function undoOffered(replica, gestureId, deviceNow) {

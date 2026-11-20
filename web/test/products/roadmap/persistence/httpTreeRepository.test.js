@@ -199,8 +199,34 @@ test('loadProgress folds the server frame into the overlay to open at, credentia
       completed: new Set(['a']),
       completedAt: { a: 1700000000000 },
       server: true,
+      subtrees: new Map(),
     });
     assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1/progress', init: { credentials: 'include', signal: undefined } }]);
+  });
+});
+
+test('loadProgress reads what the server says each subtree the steps own has come to, beside the marks or the seeds', async () => {
+  const subtrees = [
+    { node: 'a', tree: 't_a', done: 2, total: 2 },
+    { node: 'b', tree: 't_b', done: 1, total: 3 },
+    { node: 'c', tree: 't_c', done: 0, total: 0 },
+    { node: 'd', tree: 't_d' },
+    { tree: 't_e', done: 1, total: 1 },
+    null,
+  ];
+  const told = new Map([
+    ['a', Opening.owned({ id: 't_a', done: 2, total: 2, state: 'complete' })],
+    ['b', Opening.owned({ id: 't_b', done: 1, total: 3, state: 'open' })],
+    ['c', Opening.owned({ id: 't_c', done: 0, total: 0, state: 'open' })],
+    ['d', Opening.owned({ id: 't_d' })],
+  ]);
+  await withFetch(() => ok({ marks: [{ node: 'b', status: 'complete', at: '900:0:r_phone', markedAt: 1700000000000 }], subtrees }), async () => {
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
+    assert.deepEqual(await repo.loadProgress(SEEDED), { completed: new Set(['b']), completedAt: { b: 1700000000000 }, server: true, subtrees: told });
+  });
+  await withFetch(() => ok({ marks: [], subtrees }), async () => {
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
+    assert.deepEqual(await repo.loadProgress(SEEDED), { completed: new Set(['a']), completedAt: {}, server: false, subtrees: told });
   });
 });
 
@@ -211,6 +237,7 @@ test('loadProgress falls back to the document seeds when the server holds no mar
       completed: new Set(['a']),
       completedAt: {},  // an authored seed status is nobody's mark, at no instant we know
       server: false,
+      subtrees: new Map(),
     });
   });
 });
@@ -222,6 +249,7 @@ test('loadProgress falls back to the seeds when the server never answered at all
       completed: new Set(['a']),
       completedAt: {},
       server: false,
+      subtrees: new Map(),
     });
   });
 });
@@ -339,7 +367,7 @@ test('loadProgress keeps every valid mark around an invalid legacy row and repor
     const reports = [];
     const repository = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1',
       reportFailure: (operation, error, tags) => reports.push({ operation, error, tags }) });
-    assert.deepEqual(await repository.loadProgress(SEEDED), { completed: new Set(['a', 'b']), completedAt: { a: 5, b: 6 }, server: true });
+    assert.deepEqual(await repository.loadProgress(SEEDED), { completed: new Set(['a', 'b']), completedAt: { a: 5, b: 6 }, server: true, subtrees: new Map() });
     assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
       [{ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } }]);
   });

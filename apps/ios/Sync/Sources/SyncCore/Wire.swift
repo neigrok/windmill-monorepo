@@ -162,6 +162,17 @@ public struct ScopeRef: Sendable, Hashable, Comparable, CustomStringConvertible 
     }
   }
 
+  // The scope of the same kind in the tree `id` names, where a governing record resolved to another id; a product or
+  // device scope is itself.
+  public func retargeted(to id: RecordID) -> ScopeRef {
+    guard let tree = id.string else { return self }
+    switch kind {
+    case .tree: return .tree(tree)
+    case .overlay: return .overlay(tree)
+    case .product, .device: return self
+    }
+  }
+
   public var description: String { text }
   public var json: JSON { .string(text) }
 
@@ -225,22 +236,6 @@ extension ScopeKind {
 }
 
 extension TypeDef {
-  // Every record this one names: the parts of its ref-built key, and its ref fields' values (§7.7 step 3).
-  public func references(of id: RecordID, values: [String: JSON]) -> [RecordKey] {
-    var named: [RecordKey] = []
-    switch key {
-    case .ref(let target)?: named.append(RecordKey(target, id))
-    case .tuple(let parts)?:
-      for (part, value) in zip(parts, id.parts ?? []) { named.append(RecordKey(part.ref, RecordID(value))) }
-    case nil: break
-    }
-    for field in fields {
-      guard let target = field.ref, case .string(let value)? = values[field.name] else { continue }
-      named.append(RecordKey(target, RecordID(value)))
-    }
-    return named
-  }
-
   public var clientTimeFields: [String] {
     fields.filter { if case .time = $0.kind { $0.writer == .client } else { false } }.map(\.name)
   }

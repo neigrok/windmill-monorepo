@@ -265,7 +265,7 @@ struct PullTests {
     let own = SubscriptionSet.own(Subscriptions(products: ["probe"], opened: [.tree("b_0000000f"), Self.tree]))
     #expect(try lifecycle.subscriptionSet(of: replica, own) == [
       Self.product, Self.tree, .tree("b_00000002"), .overlay("b_00000002"), .tree("b_00000003"), .overlay("b_00000003"),
-      .tree("b_0000000f"),
+      .tree("b_0000000f"), .overlay("b_0000000f"),
     ])
     let signedOut = LoadedReplica(meta: ReplicaMeta(replica: "rp_2", state: .anon), wholeScopes: true)
     #expect(try lifecycle.subscriptionSet(of: signedOut, .own(Subscriptions(products: ["probe"], opened: [Self.tree, .overlay("b_00000001")])))

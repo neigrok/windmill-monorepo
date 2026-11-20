@@ -1,0 +1,2882 @@
+[
+  {
+    "name": "multibyte id",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"学び\""
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "\"学び\""
+    }
+  },
+  {
+    "name": "non-BMP id at 128 code points",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\""
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\""
+    }
+  },
+  {
+    "name": "non-BMP id at 129 code points",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "BMP id at 128 code points",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "kind",
+      "idJson": "\"界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\""
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "\"界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\""
+    }
+  },
+  {
+    "name": "BMP id at 129 code points",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "kind",
+      "idJson": "\"界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "empty id",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "NUL id",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"a\\u0000b\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "null id",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "null"
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "array id on scalar type",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "[\"a\"]"
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "composed id",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"é\""
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "\"é\""
+    }
+  },
+  {
+    "name": "decomposed id",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"é\""
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "\"é\""
+    }
+  },
+  {
+    "name": "decomposed id counts both code points",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "spaces and delimiters remain valid ids",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\" /\\n:[]\\\" \""
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "\" /\\n:[]\\\" \""
+    }
+  },
+  {
+    "name": "reference key inherits Unicode id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "mark",
+      "idJson": "\"学び😀\""
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "\"学び😀\""
+    }
+  },
+  {
+    "name": "reference key inherits upper bound",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "mark",
+      "idJson": "\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "reference key rejects NUL",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "mark",
+      "idJson": "\"a\\u0000b\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "tuple and nested reference inherit Unicode id domain",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "edge",
+      "idJson": "[\"é\",\"é\"]"
+    },
+    "expect": {
+      "id": true,
+      "field": true,
+      "argument": true,
+      "key": "[\"é\",\"é\"]"
+    }
+  },
+  {
+    "name": "tuple second component inherits upper bound",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "edge",
+      "idJson": "[\"学び\",\"界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\"]"
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "tuple first component rejects NUL",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "edge",
+      "idJson": "[\"\\u0000\",\"a\"]"
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "tuple component cannot be empty",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "edge",
+      "idJson": "[\"a\",\"\"]"
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "a lone high surrogate is not Unicode",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"\\ud800\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "a lone low surrogate is not Unicode",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "mark",
+      "idJson": "\"\\udc00\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "a reversed surrogate pair is not Unicode",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "node",
+      "idJson": "\"\\udc00\\ud800\""
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  },
+  {
+    "name": "a tuple component rejects a lone surrogate",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "node",
+            "scope": "tree",
+            "identity": "derived",
+            "idSpace": "scope",
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            },
+            "derive": {
+              "fallback": "node"
+            },
+            "mint": {
+              "prefix": "",
+              "alphabet": "ab",
+              "length": 16
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "kind": {
+                "kind": "lww",
+                "writer": "client",
+                "ref": "kind"
+              }
+            }
+          },
+          {
+            "type": "kind",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "idDomain": {
+              "type": "string",
+              "unit": "chars",
+              "min": 1,
+              "max": 128
+            }
+          },
+          {
+            "type": "mark",
+            "scope": "overlay",
+            "identity": "keyed",
+            "key": {
+              "ref": "node"
+            },
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "edge",
+            "scope": "tree",
+            "identity": "keyed",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "key": {
+              "tuple": [
+                {
+                  "name": "from",
+                  "ref": "node"
+                },
+                {
+                  "name": "to",
+                  "ref": "mark"
+                }
+              ]
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      },
+      "type": "edge",
+      "idJson": "[\"a\",\"\\ud800\"]"
+    },
+    "expect": {
+      "id": false,
+      "field": false,
+      "argument": false,
+      "key": null
+    }
+  }
+]

@@ -20,6 +20,7 @@ function roomFixture(t, { restoreError = null, overrides = {}, mine = true } = {
     treeRef: { current: tree }, seedRef: { current: { id: 'sail', mine } },
     sceneRef: { current: { announceCeremony: (message, options) => calls.push(['ceremony', message, options]) } },
     sessionRef: { current: { markProgress: (ids, status) => calls.push(['write', ids, status]) } },
+    replicaRef: { current: null },
     returnLedger: { load: () => null, save: (id, value) => calls.push(['ledger', id, value.completed]) },
     milestoneLedger: { has: (treeId, id) => offered.has(id), markOffered: (treeId, id) => offered.add(id) },
     emit: (event) => calls.push(['emit', event.verb, event.nodeId]),

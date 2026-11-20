@@ -2,10 +2,12 @@ import test from 'node:test';
 import { registerNavigationGuard } from '../../../src/shell/navigation.js';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
-import { environment, until } from '../../platform/sync/fakes.js';
+import { environment, tick, until } from '../../platform/sync/fakes.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
+import { journalRoutes } from '../../../src/products/journal/routes.js';
+import { PRODUCTS } from '../../../src/shell/products.js';
 import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_STATUS } from '../../../src/products/roadmap/copy.js';
 
 async function account(t) {
@@ -678,6 +680,8 @@ test('online sign-out completes its anonymous scope and accepts a new draft afte
 
 test('a different cookie owner during committed sign-out fences its own scope before cleanup continues', async (t) => {
   const state = await account(t);
+  const clear = state.engine.credentials.clear, answers = [];
+  state.engine.credentials.clear = async (account) => { const gone = await clear(account); answers.push(gone); return gone; };
   const scope = state.auth().dataScope;
   const before = scope.getSnapshot();
   const transitions = [];
@@ -716,4 +720,181 @@ test('a different cookie owner during committed sign-out fences its own scope be
     { epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } },
     { epoch: before.epoch + 2, phase: 'ready', owner: { kind: 'account', id: 'B' } },
   ]);
+  assert.deepEqual(answers, [false]);
+});
+
+test('the credentials port answers that the browser holds no credential once it logged its own account out, or found none', async (t) => {
+  const state = await account(t);
+  let me = { id: 'A', name: 'Ada' };
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/auth/logout')) { me = null; return { ok: true, status: 200, json: async () => ({}) }; }
+    return { ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) };
+  });
+  const own = await state.engine.credentials.clear('A');
+  const none = await state.engine.credentials.clear('A');
+  assert.deepEqual({ own, none, loggedOut: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/auth/logout')).length },
+    { own: true, none: true, loggedOut: 1 });
+});
+
+test('a paused anon replica waits on the shell\'s 20-second read of the account, which releases it once the browser holds no credential, and nothing else asks the server', async (t) => {
+  const state = await account(t);
+  const engine = state.engine;
+  await engine.start();
+  await until(() => engine.leader);
+  state.setMe(null);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await engine.cleanupCredentials();
+  await state.auth().refresh();
+  const reads = () => globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/v1/me')).length;
+  const told = () => state.env.events.filter(({ name }) => name === 'sync-auth-paused').map(({ props }) => props.outcome);
+  const before = { reads: reads(), fetches: globalThis.fetch.mock.calls.length, told: told().length };
+  await engine.receiveFrame({ op: 'change', scope: 'tree/b_00000001', as: 'A' });
+  for (let i = 0; i < 20; i++) { state.env.timers.advance(15_000); await tick(); }
+  t.mock.timers.tick(19_999);
+  await tick();
+  const waited = { state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+    fetches: globalThis.fetch.mock.calls.length - before.fetches };
+  t.mock.timers.tick(1);
+  await until(() => engine.device.activeReplica.meta.authPaused === false);
+  assert.deepEqual({ waited, reads: reads() - before.reads, fetches: globalThis.fetch.mock.calls.length - before.fetches,
+    told: told().slice(before.told), status: state.auth().status, failures: state.env.failures }, {
+    waited: { state: 'anon', authPaused: true, fetches: 0 },
+    reads: 1, fetches: 1, told: ['paused', 'released'], status: 'ghost', failures: [],
+  });
+});
+
+test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {
+  const state = await account(t);
+  const steps = [];
+  const said = { title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],
+    note: 'Choosing Discard removes this browser roadmap.' };
+  const words = { ...said, onStep: (step) => steps.push(step) };
+  t.mock.method(journalRoutes.sync, 'adoptionAnswer', () => null);
+  t.mock.method(journalRoutes.sync, 'adoptionCount', () => 2);
+  const sync = roadmapRoutes.sync;
+  roadmapRoutes.sync = { signInWords: async (engine, due) => (due.product === 'roadmap' ? words : null) };
+  t.after(() => { roadmapRoutes.sync = sync; });
+  const due = [{ kind: 'signed-out', product: 'journal', count: { page: 3 }, counted: ['j1'] },
+    { kind: 'signed-out', product: 'roadmap', count: { tree: 1, meta: 1 }, counted: ['r1', 'r2'] }];
+  const answered = [];
+  t.mock.method(state.engine, 'signIn', async (_account, answers = {}) => {
+    answered.push(answers);
+    return { complete: due.every((question) => answers.decisions?.[question.product]), due };
+  });
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  const asked = () => {
+    const { product, count, words: worded } = decision().props.question;
+    if (!worded) return { product, count, words: worded };
+    const { onStep, ...shown } = worded;
+    onStep('shown');
+    return { product, count, words: shown };
+  };
+
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const first = asked();
+  await decision().props.onDecision('add');
+  const second = asked();
+  await decision().props.onDecision('discard');
+  assert.deepEqual({ first, second, last: decision().props.question, answered, status: state.auth().status, steps }, {
+    first: { product: 'journal', count: { page: 2 }, words: null },
+    second: { product: 'roadmap', count: { tree: 1, meta: 1 }, words: said },
+    steps: ['shown'],
+    last: null,
+    answered: [{}, { decisions: { journal: 'add' }, counted: { journal: ['j1'] } },
+      { decisions: { journal: 'add', roadmap: 'discard' }, counted: { journal: ['j1'], roadmap: ['r1', 'r2'] } }],
+    status: 'signed-in',
+  });
+});
+
+test('cancelling a sign-in its product words keeps the work from before on the device, unsent, and signs the account out of it', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  state.broadcasts[0].onmessage({ data: { type: 'signed-out' } });
+  await until(() => state.auth().status === 'ghost');
+  await state.engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'made signed out' } }]);
+  const request = state.env.transport.request.bind(state.env.transport);
+  state.env.transport.request = async (endpoint, body) => {
+    const answer = await request(endpoint, body);
+    if (endpoint === 'hello' && answer.response.body.holdsRecords) answer.response.body.holdsRecords.probe = true;
+    return answer;
+  };
+  const steps = [];
+  const said = { title: 'Add your cards?', lead: '1 card on this browser can join your account.', items: ['made signed out'], note: 'Discard removes it.' };
+  const probe = { id: 'probe', sync: { signInWords: async () => ({ ...said, onStep: (step) => steps.push(step) }) } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+
+  state.setMe({ id: 'A', name: 'Ada' });
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const decision = elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  const pendingSignIn = structuredClone(state.engine.device.meta.pendingSignIn);
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/auth/logout')) { state.setMe(null); return { ok: true, status: 200, json: async () => ({}) }; }
+    return { ok: true, status: 200, json: async () => ({ user: { id: 'A', name: 'Ada' } }) };
+  });
+  const { onStep, ...shown } = decision.props.question.words;
+  onStep('cancel');
+  await decision.props.onCancel();
+  const replicas = state.engine.device.replicas.map((replica) => [replica.meta.state, replica.entries().map((entry) => [entry.lineage, entry.scope])]);
+  assert.deepEqual({ asked: [decision.props.question.product, shown], steps, pendingSignIn,
+    after: { question: elementsOf(state.view.tree).find((node) => node.props.onDecision).props.question, status: state.auth().status,
+      pendingSignIn: state.engine.device.meta.pendingSignIn, clearCredential: state.engine.device.meta.clearCredential, replicas },
+    loggedOut: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/auth/logout')).length }, {
+    asked: ['probe', said],
+    steps: ['cancel'],
+    pendingSignIn: { account: 'A' },
+    after: { question: null, status: 'ghost', pendingSignIn: undefined, clearCredential: undefined,
+      replicas: [['anon', [['anon', 'self/probe']]], ['dormant', [['A', 'self/probe']]]] },
+    loggedOut: 1,
+  });
+});
+
+test('a product whose sign-out notice or whose words\' steps throw cannot keep a person from signing out and in: the shell asks without them', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const thrown = () => { throw new Error('the product chunk did not load'); };
+  const words = (title) => ({ title, lead: '1 card on this browser.', items: ['made signed out'], note: 'Discard removes it.', onStep: thrown });
+  const probe = { id: 'probe', signOutNotice: thrown,
+    sync: { signInWords: async () => words('Add your cards?'), signOutWords: async () => words('Keep your cards?') } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+
+  const departure = state.auth().signOut();
+  await until(() => decision()?.props.question);
+  const signOut = decision().props;
+  for (const step of ['shown', 'keep']) signOut.question.words.onStep(step);
+  await signOut.onDecision('keep');
+  const departed = await departure;
+
+  state.engine.online = true;
+  await state.engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'made signed out' } }]);
+  const request = state.env.transport.request.bind(state.env.transport);
+  state.env.transport.request = async (endpoint, body) => {
+    const answer = await request(endpoint, body);
+    if (endpoint === 'hello' && answer.response.body.holdsRecords) answer.response.body.holdsRecords.probe = true;
+    return answer;
+  };
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const signIn = decision().props;
+  for (const step of ['shown', 'add']) signIn.question.words.onStep(step);
+  await signIn.onDecision('add');
+  assert.deepEqual({ departed, notices: signOut.notices, asked: [signOut.question.words.title, signIn.question.words.title],
+    status: state.auth().status, replica: state.engine.device.activeReplica.meta.state, question: decision().props.question },
+  { departed: true, notices: [], asked: ['Keep your cards?', 'Add your cards?'], status: 'signed-in', replica: 'bound', question: null });
+});
+
+test('a product whose sign-out words throw cannot keep a person from signing out: the shell asks in its own words', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const probe = { id: 'probe', sync: { signOutWords: async () => { throw new Error('the product chunk did not load'); } } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => decision()?.props.question);
+  assert.deepEqual(decision().props.question, { complete: false, unsent: 1, ready: 1, sent: 0, counted: [state.entries[0].localId] });
+  await decision().props.onDecision('keep');
+  assert.deepEqual({ departed: await departure, status: state.auth().status, replica: state.engine.device.activeReplica.meta.state },
+    { departed: true, status: 'ghost', replica: 'anon' });
 });

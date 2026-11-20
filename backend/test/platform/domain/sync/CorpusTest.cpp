@@ -197,7 +197,12 @@ Json::Value digestScope(const Json::Value& input) {
 Json::Value derivedId(const Json::Value& input) {
   std::set<std::string> taken;
   for (const Json::Value& id : input["taken"]) taken.insert(id.asString());
-  return object({{"id", deriveId(input["label"].asString(), input["fallback"].asString(), taken)}});
+  try {
+    const std::optional<std::size_t> maxChars = input.isMember("maxChars") ? std::optional<std::size_t>(input["maxChars"].asUInt64()) : std::nullopt;
+    return object({{"id", deriveId(input["label"].asString(), input["fallback"].asString(), taken, maxChars)}});
+  } catch (const std::invalid_argument&) {
+    return object({{"error", true}});
+  }
 }
 
 Json::Value registryLoads(const Json::Value& input) {
@@ -207,6 +212,46 @@ Json::Value registryLoads(const Json::Value& input) {
     return object({{"admitted", false}});
   }
   return object({{"admitted", true}});
+}
+
+// registry/references.json: the document loads and, when given, a field value or a command's arguments are
+// admitted: every name declared, every required argument present, each one's own check, and the typed leaves.
+Json::Value registryReferences(const Json::Value& input) {
+  std::optional<Registry> registry;
+  try {
+    registry.emplace(input["registry"]);
+  } catch (const RegistryError&) {
+    return object({{"admitted", false}});
+  }
+  if (input.isMember("field")) {
+    const Json::Value& field = input["field"];
+    const FieldDef& def = *registry->type(field["type"].asString())->field(field["name"].asString());
+    return object({{"admitted", registry->admitsValue(def, field["value"])}});
+  }
+  if (!input.isMember("command")) return object({{"admitted", true}});
+  const CommandDef& def = *registry->command(input["command"]["name"].asString());
+  const Json::Value& args = input["command"]["args"];
+  bool admitted = true;
+  for (const std::string& name : args.getMemberNames()) admitted = admitted && def.args.contains(name);
+  for (const auto& [name, arg] : def.args) {
+    if (args.isMember(name)) admitted = admitted && registry->admitsArgument(arg, args[name]);
+    else admitted = admitted && arg.optional;
+  }
+  return object({{"admitted", admitted && registry->admitsArguments(def, args)}});
+}
+
+Json::Value registryIds(const Json::Value& input) {
+  const Registry registry{input["registry"]};
+  const std::string name = input["type"].asString();
+  try {
+    const Json::Value id = parseJson(input["idJson"].asString());
+    return object({{"id", registry.isIdOf(*registry.type(name), id)},
+                   {"field", registry.admitsValue(FieldDef{.name = "ref", .ref = name}, id)},
+                   {"argument", registry.admitsArgument(ArgDef{.name = "ref", .type = ArgType::ref, .ref = name}, id)},
+                   {"key", registry.isIdOf(*registry.type(name), id) ? Json::Value(RecordId(id).key()) : Json::Value(Json::nullValue)}});
+  } catch (const JsonError&) {
+    return object({{"id", false}, {"field", false}, {"argument", false}, {"key", Json::Value(Json::nullValue)}});
+  }
 }
 
 Json::Value seededId(const Json::Value& input) {
@@ -308,6 +353,9 @@ void serverConstants(const Json::Value& constants) {
   CHECK_EQ(constants["MAX_RECORD_BYTES"].asUInt64(), limits.maxRecordBytes);
   CHECK_EQ(constants["PUSH_MAX_INTENTS"].asUInt64(), limits.pushMaxIntents);
   CHECK_EQ(constants["PUSH_MAX_BYTES"].asUInt64(), limits.pushMaxBytes);
+  CHECK_EQ(constants["EFFECT_MAX_BYTES"].asUInt64(), limits.effectMaxBytes);
+  CHECK_EQ(constants["RECEIPT_MAX_BYTES"].asUInt64(), limits.receiptMaxBytes);
+  CHECK_EQ(constants["SCOPED_RESPONSE_MAX_BYTES"].asUInt64(), Limits{}.scopedResponseMaxBytes);
   CHECK_EQ(constants["PUSH_WORK_MS"].asUInt64(), limits.pushWorkMs);
   CHECK_EQ(constants["PULL_PAGE_BYTES"].asUInt64(), limits.pullPageBytes);
   CHECK_EQ(constants["PULL_MAX_SCOPES"].asUInt64(), limits.pullMaxScopes);
@@ -376,7 +424,10 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"digest/row.json", digestRow},
       {"digest/scope.json", digestScope},
       {"derive/slug.json", derivedId},
+      {"derive/bounded.json", derivedId},
       {"registry/refusals.json", registryLoads},
+      {"registry/ids.json", registryIds},
+      {"registry/references.json", registryReferences},
       {"identity/seeded.json", seededId},
       {"text/tokens.json", textTokens},
       {"text/script.json", textScript},
@@ -387,8 +438,10 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"identity/table.json", identityTable},
       {"machine/scope.json", scopeMachine},
       {"admit/", admitOverFakes},
-      {"gym/admit.json", [](const Json::Value& input) { test::FakeWorld world(true); return test::gymAdmitVector(world, input); }},
-      {"journal/admit.json", [](const Json::Value& input) { test::FakeWorld world(false, true); return test::journalAdmitVector(world, input); }},
+      {"gym/admit.json", [](const Json::Value& input) { test::FakeWorld world(test::WorldProduct::gym); return test::gymAdmitVector(world, input); }},
+      {"journal/admit.json", [](const Json::Value& input) { test::FakeWorld world(test::WorldProduct::journal); return test::journalAdmitVector(world, input); }},
+      {"roadmap/admit.json", [](const Json::Value& input) { test::FakeWorld world(test::WorldProduct::roadmap); return test::admitVector(world, input); }},
+      {"roadmap/client.json", corpus::ClientRole{"A.1 roadmap replica"}},
       {"journal/revisions.json", wm::journal::engine::retainedRevisions},
       {"journal/client.json", corpus::ClientRole{"A.3 journal replica"}},
       {"journal/content-clock.json", corpus::ClientRole{"A.3 durable content clock"}},
@@ -411,7 +464,9 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"hold/", corpus::ClientRole{"§7.3 holds"}},
       {"refusal/", corpus::ClientRole{"§7.7 refusal and recovery"}},
       {"write/", corpus::ClientRole{"§7.7 write maps"}},
+      {"refs/", corpus::ClientRole{"E-8 compiled reference traversal"}},
       {"lineage/", corpus::ClientRole{"§7.10 lineage"}},
+      {"undo/", corpus::ClientRole{"§7.3 Undo of an act"}},
   });
   return true;
 }();

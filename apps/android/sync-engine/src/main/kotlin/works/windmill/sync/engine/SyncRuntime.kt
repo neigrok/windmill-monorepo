@@ -548,7 +548,13 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         val hint = try { liveHint() } catch (_: Exception) { engine.report(EngineOperation.push, EngineOutcome.failure); false }
         if (response == null) { conflicts = 0; wait.backoff(mono(), engine::draw, hint); return !draining }
-        val next = engine.onPushResponse(request, response, timing)
+        // A 200 the engine cannot read (malformed continuation metadata, or a scoped answer over its bound) changes nothing (§7.4), retried after a
+        // backoff. An unreadable receipt is no such answer: its entry is acknowledged.
+        val next = try { engine.onPushResponse(request, response, timing) } catch (_: JsonError) {
+            engine.report(EngineOperation.push, EngineOutcome.failure, "malformed")
+            engine.recordPushFailure(request, PushFailure.unanswered)
+            wait.backoff(mono(), engine::draw, hint); return false
+        }
         pushLimit = next?.get("limit")?.long()?.toInt() ?: Constants.PUSH_MAX_INTENTS
         val body = response.body
         conflicts = if (response.status == 409) conflicts + 1 else 0

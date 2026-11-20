@@ -40,6 +40,7 @@
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
+#include "products/roadmap/adapters/mcp/RoadmapDoorTools.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
 #include "platform/adapters/postgres/PgAuthRepository.h"
 #include "platform/adapters/amplitude/AmplitudeUsageSink.h"
@@ -54,6 +55,7 @@
 #include "products/roadmap/adapters/postgres/PgOgImageRepository.h"
 #include "products/roadmap/adapters/postgres/PgOgVideoRepository.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
+#include "products/roadmap/adapters/postgres/PgRoadmapRecords.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/adapters/email/ResendReminderSender.h"
 #include "products/roadmap/adapters/postgres/PgReminderRepository.h"
@@ -71,6 +73,7 @@
 #include "platform/application/LiveSessions.h"
 #include "platform/domain/AiFuse.h"
 #include "platform/domain/MailArming.h"
+#include "products/roadmap/application/DoorForks.h"
 #include "products/roadmap/application/ForkService.h"
 #include "platform/application/McpKeyService.h"
 #include "platform/application/OAuthService.h"
@@ -83,6 +86,7 @@
 #include "platform/application/ClosedAccountSweep.h"
 #include "platform/application/RetentionSweep.h"
 #include "products/roadmap/application/ReminderSweep.h"
+#include "products/roadmap/application/RoadmapDoor.h"
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/email/ResendNudgeSender.h"
 #include "platform/adapters/llm/AnthropicClient.h"
@@ -421,7 +425,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(googleClient);
   lifetime.watch(appleClient);
   lifetime.watch(appleNativeVerifier);
-  auto forkSignup = std::make_shared<ForkSignup>(*forkService);
   // The origins allowed to send credentialed (cookie-bearing) requests. The app is always trusted;
   // WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets no CORS grant.
   std::set<std::string> allowedOrigins;
@@ -442,8 +445,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     }
   }
 
-  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
-                                           googleClient, appBaseUrl, appleClient, appleNativeVerifier, allowedOrigins);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
   auto ogImages = std::make_shared<PgOgImageRepository>(pool);
@@ -627,7 +628,20 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
-  auto productsCatalog = sync::productCatalog();
+  // Roadmap's scopes are served through the engine only where ROADMAP_ENGINE_ENABLED is "true"/"1". Production reads it
+  // from the host's roadmap-engine.env, which roadmap's cutover writes (roadmap-on-the-engine.md §8.1).
+  const char* roadmapEngineEnv = std::getenv("ROADMAP_ENGINE_ENABLED");
+  const std::string roadmapEngineFlag = roadmapEngineEnv ? roadmapEngineEnv : "";
+  const bool roadmapEngine = roadmapEngineFlag == "true" || roadmapEngineFlag == "1";
+  auto productsCatalog = sync::productCatalog(roadmapEngine ? sync::RoadmapServing::served : sync::RoadmapServing::withheld);
+  // Where the engine serves roadmap, its read models (the activity, the progress, the share page, the gallery and
+  // reminders' readiness) read its records (roadmap-on-the-engine.md §7); elsewhere the rooms and roadmap's own tables.
+  std::shared_ptr<RoadmapRecords> roadmapRecords;
+  std::shared_ptr<EngineReadModels> engineReads;
+  if (roadmapEngine) {
+    roadmapRecords = std::make_shared<PgRoadmapRecords>(pool);
+    engineReads = std::make_shared<EngineReadModels>(*roadmapRecords, *oplog, *systemClock);
+  }
 #ifdef WM_SYNC_PROBE
   auto syncCatalog = std::make_shared<sync::SyncCatalog>(probe::registry());
   probe::PgProbe probeTables(probe::registry());
@@ -638,6 +652,19 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 #endif
   auto syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
   lifetime.watch(syncEngine, systemClock, sentry);
+
+  // Every server write for a person goes through roadmap's door where the engine serves roadmap's scopes (Roadmap on the
+  // sync engine §7): MCP's tools, tending, the fork and the fork at sign-up, beside the engine's own admissions on its
+  // store and clock. Elsewhere they write through roadmap's rooms, as before the cutover.
+  const bool roadmapOnEngine = productsCatalog->serves("roadmap");
+  auto roadmapDoor = std::make_shared<roadmap::RoadmapDoor>(*productsCatalog, syncEngine->store, *syncEngine->live,
+                                                           syncEngine->serverClock, *systemClock, *sentry);
+  lifetime.watch(roadmapDoor, syncEngine, systemClock, sentry);
+  std::shared_ptr<TreeForks> forks = forkService;
+  if (roadmapOnEngine) forks = std::make_shared<DoorForks>(*roadmapDoor, *tokens);
+  auto forkSignup = std::make_shared<ForkSignup>(*forks);
+  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
+                                           googleClient, appBaseUrl, appleClient, appleNativeVerifier, allowedOrigins);
 
   // Accepted funnel events forward to Amplitude with the session-resolved user_id when
   // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).
@@ -734,8 +761,13 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
-  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *ownerProgress, *systemClock,
-                                                 *treeRegistry, *nodeEdits, appBaseUrl);
+  std::shared_ptr<ToolHost> mcpTools;
+  if (roadmapOnEngine) mcpTools = std::make_shared<RoadmapDoorTools>(*roadmapDoor, *tokens, *systemClock, appBaseUrl);
+  else mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *ownerProgress, *systemClock, *treeRegistry,
+                                                 *nodeEdits, appBaseUrl);
+  // Who may write a tree, for a tend: from the engine's tables where it serves roadmap, from the rooms otherwise.
+  TendingService::AccessOf treeAccess = [registry](const TreeId& tree) { return registry->accessOf(tree); };
+  if (roadmapOnEngine) treeAccess = [roadmapDoor](const TreeId& tree) { return roadmapDoor->accessOf(tree); };
 
   // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
   // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.
@@ -766,7 +798,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(tendingAgent);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
-  auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools, *registry,
+  auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools, treeAccess,
                                                          *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
   lifetime.watch(tendingService, tendRuns, tendingAgent, mcpTools, systemClock, tokens, entitlements,
@@ -779,13 +811,13 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const std::string remindersEnabledFlag = remindersEnabledEnv ? remindersEnabledEnv : "";
   const char* remindersAllowlistEnv = std::getenv("REMINDERS_ALLOWLIST");
   const char* remindersAdminEnv = std::getenv("REMINDERS_ADMIN_TOKEN");
-  auto reminderRepo = std::make_shared<PgReminderRepository>(pool);
+  auto reminderRepo = std::make_shared<PgReminderRepository>(pool, roadmapEngine ? RoadmapEdits::engine : RoadmapEdits::trees);
   MailArming reminderArming(remindersEnabledFlag == "true" || remindersEnabledFlag == "1",
                             remindersAllowlistEnv ? remindersAllowlistEnv : "");
   auto reminderMail = std::make_shared<ResendReminderSender>(*resendClient);
   auto reminderSweep = std::make_shared<ReminderSweep>(*reminderRepo, *reminderMail, *tokens,
-                                                       *systemClock, reminderArming, appBaseUrl);
-  lifetime.watch(reminderSweep, reminderRepo, reminderMail, tokens, systemClock, resendClient);
+                                                       *systemClock, reminderArming, appBaseUrl, engineReads.get());
+  lifetime.watch(reminderSweep, reminderRepo, reminderMail, tokens, systemClock, resendClient, engineReads, roadmapRecords);
   reminderSweep->start();
 
   // Built here because its tools are part of the MCP surface below, constructed once before the
@@ -1270,15 +1302,15 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   RoadmapDeps roadmapDeps{
       .registry = registry, .trees = trees, .progressService = progressService, .ownerProgress = ownerProgress,
       .oplog = oplog, .bus = bus, .presence = presence,
-      .authService = authService, .forkService = forkService, .treeRegistry = treeRegistry,
+      .authService = authService, .forkService = forks, .treeRegistry = treeRegistry,
       .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "", .appBaseUrl = appBaseUrl,
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
       .tokens = tokens, .clock = systemClock,
       .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,
-      .allowedOrigins = allowedOrigins};
+      .engineReads = engineReads, .allowedOrigins = allowedOrigins};
   lifetime.onStop([] { stopCollab(); }, registry, oplog, bus, progressService, ownerProgress, progress, authService,
                   presence, systemClock, authRepo, emailSender, resendClient, tokens, oauthService, oauthRepo,
-                  accountFootprint, liveSessions);
+                  accountFootprint, liveSessions, engineReads, roadmapRecords);
   registerRoutes(app, roadmapDeps);
 
   auto journalPages = std::make_shared<PgJournalRepository>(pool);

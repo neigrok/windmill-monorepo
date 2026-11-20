@@ -4,7 +4,8 @@ import { BrowserSyncEngine } from './engine.js';
 class SyncSession {
   constructor() {
     this.listeners = new Set();
-    this.snapshot = { engine: null, ready: false, signedIn: false, online: true, error: false };
+    // `signedIn` stays null until the shell's account answer says whether someone is signed in on this document.
+    this.snapshot = { engine: null, ready: false, signedIn: null, online: true, error: false };
   }
 
   subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };

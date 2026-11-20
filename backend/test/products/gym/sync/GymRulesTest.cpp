@@ -14,7 +14,7 @@ TEST(gym_import_receipts_compare_raw_arguments) {
   const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
   Json::Value input = vectors[0]["input"];
   input["intent"] = parseJson(R"({"scope":"self/gym","cmd":{"name":"gym.importSession","args":{"id":"session0099","startedAt":1760007200000,"finishedAt":1760010800000,"sets":[]}}})");
-  wm::sync::test::FakeWorld world(true);
+  wm::sync::test::FakeWorld world(sync::test::WorldProduct::gym);
   const auto first = wm::sync::test::gymAdmitVector(world, input);
   CHECK_EQ(first["result"]["s"].asString(), std::string("ok"));
   input["state"] = first["state"];
@@ -25,7 +25,7 @@ TEST(gym_import_receipts_compare_raw_arguments) {
 }
 
 TEST(gym_prefs_keep_unwritten_defaults_off_the_wire) {
-  wm::sync::test::FakeWorld world(true);
+  wm::sync::test::FakeWorld world(sync::test::WorldProduct::gym);
   const Json::Value input = parseJson(R"({"state":{"epoch":"ep-1","clock":{"ms":0,"counter":0}},"origin":{"kind":"replica","account":"A","replica":"r_aaaaaaaaaaaa","n":1},"intent":{"scope":"self/gym","d":[{"t":"prefs","id":"prefs","f":{"units":["lb","1000:0:r_aaaaaaaaaaaa"]}}]},"serverNow":1000})");
   const auto after = wm::sync::test::gymAdmitVector(world, input);
   CHECK_EQ(after["result"]["s"].asString(), std::string("ok"));
@@ -53,7 +53,7 @@ TEST(gym_additive_correction_keeps_more_than_two_hundred_standing_sets) {
   input["state"]["scopes"]["acct:A/gym"]["seq"] = 211;
   input["state"]["scopes"]["acct:A/gym"]["digest"] = scopeDigest(standing).hex();
   input["intent"]["cmd"]["args"]["sets"][0]["setNumber"] = 202;
-  wm::sync::test::FakeWorld world(true);
+  wm::sync::test::FakeWorld world(sync::test::WorldProduct::gym);
   const auto after = wm::sync::test::gymAdmitVector(world, input);
   REQUIRE_EQ(after["result"]["s"].asString(), std::string("ok"));
   std::map<std::string, Json::Value> actual;

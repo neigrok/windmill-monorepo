@@ -1,0 +1,179 @@
+[
+  {
+    "name": "Landing keeps only the device’s own link identities that now bridge absence",
+    "input": {
+      "operation": "landing",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "y", "present": false, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "x", "present": true},
+          {"from": "a", "to": "y", "present": true},
+          {"from": "x", "to": "z", "present": true},
+          {"from": "y", "to": "z", "present": true},
+          {"from": "a", "to": "z", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "edges": [["x", "z"]]
+    },
+    "expect": [{"node": "z", "followed": [{"id": "a", "incoming": [["x", "z"]], "throughAbsent": true}], "incoming": [["x", "z"]]}]
+  },
+  {
+    "name": "An unrelated own link does not acknowledge someone else’s bridge",
+    "input": {
+      "operation": "landing",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "y", "present": false, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "x", "present": true},
+          {"from": "a", "to": "y", "present": true},
+          {"from": "x", "to": "z", "present": true},
+          {"from": "y", "to": "z", "present": true},
+          {"from": "a", "to": "z", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "edges": [["a", "x"]]
+    },
+    "expect": []
+  },
+  {
+    "name": "An own link through an absent root yields a landing fact with no followed prerequisite",
+    "input": {
+      "operation": "landing",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "gone", "present": false, "born": null, "rc": null, "ru": null, "label": "gone", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "gone", "to": "z", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "edges": [["gone", "z"]]
+    },
+    "expect": [{"node": "z", "incoming": [["gone", "z"]], "followed": []}]
+  },
+  {
+    "name": "An own link into an absent-only cycle still changes meaning when its followed set is empty",
+    "input": {
+      "operation": "landing",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "y", "present": false, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "x", "to": "y", "present": true}, {"from": "y", "to": "x", "present": true}, {"from": "x", "to": "z", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "edges": [["x", "z"]]
+    },
+    "expect": [{"node": "z", "incoming": [["x", "z"]], "followed": []}]
+  },
+  {
+    "name": "Each own link into a step reports the absence it bridges, and an own link from a present step is direct and says nothing",
+    "input": {
+      "operation": "landing",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "x", "present": false, "born": null, "rc": null, "ru": null, "label": "x", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "y", "present": false, "born": null, "rc": null, "ru": null, "label": "y", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "x", "present": true},
+          {"from": "a", "to": "y", "present": true},
+          {"from": "x", "to": "z", "present": true},
+          {"from": "y", "to": "z", "present": true},
+          {"from": "a", "to": "z", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "edges": [["a", "z"], ["x", "z"], ["y", "z"]]
+    },
+    "expect": [
+      {
+        "node": "z",
+        "incoming": [["x", "z"], ["y", "z"]],
+        "followed": [{"id": "a", "incoming": [["x", "z"], ["y", "z"]], "throughAbsent": true}]
+      }
+    ]
+  },
+  {
+    "name": "A step deleted elsewhere that the device keeps no record of is read through by its links alone: two own links from it bridge its absence",
+    "input": {
+      "operation": "landing",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "w", "present": true, "born": null, "rc": null, "ru": null, "label": "w", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "z", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "x", "present": true},
+          {"from": "x", "to": "z", "present": true},
+          {"from": "x", "to": "w", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "edges": [["x", "z"], ["x", "w"]]
+    },
+    "expect": [
+      {"node": "w", "incoming": [["x", "w"]], "followed": [{"id": "a", "incoming": [["x", "w"]], "throughAbsent": true}]},
+      {"node": "z", "incoming": [["x", "z"]], "followed": [{"id": "a", "incoming": [["x", "z"]], "throughAbsent": true}]}
+    ]
+  }
+]

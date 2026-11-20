@@ -218,6 +218,17 @@ public struct DeviceWrite: Hashable, Sendable {
   }
 }
 
+// E-7 what an opted command predicts in one scope it changes, its origin's or another's.
+public struct ScopedPrediction: Hashable, Sendable {
+  public var scope: ScopeRef
+  public var changes: [Change]
+
+  public init(scope: ScopeRef, changes: [Change]) {
+    self.scope = scope
+    self.changes = changes
+  }
+}
+
 // §7.1 one user act and its options.
 public struct Gesture: Hashable, Sendable {
   public var changes: [Change]
@@ -228,14 +239,16 @@ public struct Gesture: Hashable, Sendable {
   public var supersede: [String]
   public var command: Command?
   public var predict: [Change]
+  public var scopedPredict: [ScopedPrediction]
   public var local: [DeviceWrite]
   public var gestureId: String?
 
   // `guards`: exactly these lattice registers, each at its stored stamp. `retire`: held removal gestures of these
-  // records end undone first.
+  // records end undone first. `scopedPredict`: an opted command's predictions, scope by scope, beside `predict`'s origin
+  // ones of any other command.
   public init(changes: [Change], atomic: Bool = false, hold: Bool = false, guards: [RegisterRef] = [],
-              retire: [RecordRef] = [], supersede: [String] = [], command: Command? = nil, predict: [Change] = [], local: [DeviceWrite] = [],
-              gestureId: String? = nil) {
+              retire: [RecordRef] = [], supersede: [String] = [], command: Command? = nil, predict: [Change] = [],
+              scopedPredict: [ScopedPrediction] = [], local: [DeviceWrite] = [], gestureId: String? = nil) {
     self.changes = changes
     self.atomic = atomic
     self.hold = hold
@@ -244,13 +257,15 @@ public struct Gesture: Hashable, Sendable {
     self.supersede = supersede
     self.command = command
     self.predict = predict
+    self.scopedPredict = scopedPredict
     self.local = local
     self.gestureId = gestureId
   }
 
   public static func == (lhs: Gesture, rhs: Gesture) -> Bool {
     lhs.changes == rhs.changes && lhs.atomic == rhs.atomic && lhs.hold == rhs.hold && lhs.guards == rhs.guards
-      && lhs.retire == rhs.retire && lhs.supersede.map { Array($0.utf8) } == rhs.supersede.map { Array($0.utf8) } && lhs.command == rhs.command && lhs.predict == rhs.predict && lhs.local == rhs.local
+      && lhs.retire == rhs.retire && lhs.supersede.map { Array($0.utf8) } == rhs.supersede.map { Array($0.utf8) } && lhs.command == rhs.command
+      && lhs.predict == rhs.predict && lhs.scopedPredict == rhs.scopedPredict && lhs.local == rhs.local
       && lhs.gestureId.map { Array($0.utf8) } == rhs.gestureId.map { Array($0.utf8) }
   }
 
@@ -263,6 +278,7 @@ public struct Gesture: Hashable, Sendable {
     hasher.combine(supersede.map { Array($0.utf8) })
     hasher.combine(command)
     hasher.combine(predict)
+    hasher.combine(scopedPredict)
     hasher.combine(local)
     hasher.combine(gestureId.map { Array($0.utf8) })
   }
@@ -273,6 +289,132 @@ public enum CommitOutcome: Hashable, Sendable {
   // scope-dead and cap write nothing; too-large refuses the whole gesture into the notice it names,
   // `notice:<gestureId>/0`.
   case refused(RefusalCode, detail: JSON?, notice: String? = nil)
+}
+
+// §7.3 an act's opt-in to Undo: each named segment's recipes, by its index in the act.
+public struct ActUndo: Sendable, Hashable {
+  public struct Segment: Sendable, Hashable {
+    public let index: Int
+    public let recipes: [ActUndoRecipe]
+
+    public init(index: Int, recipes: [ActUndoRecipe]) {
+      self.index = index
+      self.recipes = recipes
+    }
+  }
+
+  public let segments: [Segment]
+
+  public init(segments: [Segment]) {
+    self.segments = segments
+  }
+
+  // `{version: 1, segments: [{index, recipes}]}`.
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    try object.expectKeys(required: ["version", "segments"])
+    guard try object.member("version").asInteger() == 1 else { throw JSONError.shape("an act undo is version 1") }
+    segments = try object.member("segments").asArray().map { (segment: JSON) throws -> Segment in
+      let fields = try segment.asObject()
+      try fields.expectKeys(required: ["index", "recipes"])
+      return Segment(index: Int(try fields.member("index").asInteger()),
+                     recipes: try fields.member("recipes").asArray().map { (recipe: JSON) throws -> ActUndoRecipe in try ActUndoRecipe(json: recipe) })
+    }
+  }
+}
+
+// §7.3 Undo of an act (K-3): what an Undo or a Redo came to. A pending one says whether the device's view changed; a
+// settled one whether accepted effects changed anything and how many conditional operations applied and skipped.
+public enum InverseResult: Sendable, Hashable {
+  case cancelled(requestId: String, inverseActId: String, changed: Bool)
+  case pending(requestId: String, inverseActId: String, localChanged: Bool)
+  case settled(requestId: String, inverseActId: String, changed: Bool, appliedCount: Int, skippedCount: Int)
+  case unavailable(requestId: String?, reason: String)
+
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    let text = { (key: String) throws -> String in try object.member(key).asString() }
+    switch try text("kind") {
+    case "cancelled": self = .cancelled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool())
+    case "pending":
+      self = .pending(requestId: try text("requestId"), inverseActId: try text("inverseActId"), localChanged: try object.member("localChanged").asBool())
+    case "settled":
+      self = .settled(requestId: try text("requestId"), inverseActId: try text("inverseActId"), changed: try object.member("changed").asBool(),
+                      appliedCount: Int(try object.member("appliedCount").asInteger()), skippedCount: Int(try object.member("skippedCount").asInteger()))
+    case "unavailable":
+      self = .unavailable(requestId: try object.member("requestId").nullable { (id: JSON) throws -> String in try id.asString() }, reason: try text("reason"))
+    default: throw JSONError.shape("an unknown inverse result")
+    }
+  }
+
+  // Its kind as telemetry may name it: cancelled, pending, settled or unavailable, never an id.
+  public var kindName: String {
+    switch self {
+    case .cancelled: "cancelled"
+    case .pending: "pending"
+    case .settled: "settled"
+    case .unavailable: "unavailable"
+    }
+  }
+
+  public var json: JSON {
+    switch self {
+    case .cancelled(let requestId, let inverseActId, let changed):
+      return ["kind": "cancelled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed)]
+    case .pending(let requestId, let inverseActId, let localChanged):
+      return ["kind": "pending", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "localChanged": .bool(localChanged)]
+    case .settled(let requestId, let inverseActId, let changed, let applied, let skipped):
+      return ["kind": "settled", "requestId": .string(requestId), "inverseActId": .string(inverseActId), "changed": .bool(changed),
+              "appliedCount": JSON(applied), "skippedCount": JSON(skipped)]
+    case .unavailable(let requestId, let reason):
+      return ["kind": "unavailable", "requestId": requestId.map(JSON.string) ?? .null, "reason": .string(reason)]
+    }
+  }
+}
+
+public struct ActRequest: Sendable {
+  public let scopes: [ScopeRef]
+  public let hold: Bool
+  public let gestureId: String?
+  // §7.3: the act's opt-in to Undo after its hold, nil for an act that keeps only the held Undo.
+  public let undo: ActUndo?
+  public init(scopes: [ScopeRef], hold: Bool = false, gestureId: String? = nil, undo: ActUndo? = nil) {
+    self.scopes = scopes; self.hold = hold; self.gestureId = gestureId; self.undo = undo
+  }
+}
+
+public struct ScopedGesture: Sendable {
+  public let scope: ScopeRef
+  public let gesture: Gesture
+  public init(scope: ScopeRef, gesture: Gesture) { self.scope = scope; self.gesture = gesture }
+}
+
+public struct ActSegmentReceipt: Sendable {
+  public let scope: ScopeRef
+  public let stamp: Stamp?
+  public let localIds: [String]
+  public let ids: [RecordID?]
+  public init(scope: ScopeRef, stamp: Stamp?, localIds: [String], ids: [RecordID?] = []) {
+    self.scope = scope; self.stamp = stamp; self.localIds = localIds; self.ids = ids
+  }
+}
+
+public struct ActReceipt: Sendable {
+  public let gestureId: String
+  public let segments: [ActSegmentReceipt]
+  public let retired: [String]
+  public let superseded: [String]
+  public let releaseAt: Int64?
+  public init(gestureId: String, segments: [ActSegmentReceipt], retired: [String] = [], superseded: [String] = [], releaseAt: Int64? = nil) {
+    self.gestureId = gestureId; self.segments = segments; self.retired = retired
+    self.superseded = superseded; self.releaseAt = releaseAt
+  }
+  public var localIds: [String] { segments.flatMap(\.localIds) }
+}
+
+public enum ActCommitOutcome: Sendable {
+  case committed(ActReceipt)
+  case refused(segment: Int, code: RefusalCode, detail: JSON?)
 }
 
 public struct CommitReceipt: Hashable, Sendable {
@@ -396,15 +538,21 @@ public struct Record: Hashable, Sendable {
 
 // MARK: - Notices and Undo
 
-// What a refused intent held, and each dependent folded into its refusal (§7.7 step 4).
+// What a refused intent held, and each dependent folded into its refusal (§7.7 step 4). An opted command's predictions
+// keep their scopes, and where a refusal crossed scopes each dependent names the scope it was committed in.
 public struct NoticeContent: Hashable, Sendable {
+  public var scope: ScopeRef?
   public var deltas: [Delta]
   public var command: Command?
+  public var predictions: [ScopedDeltas]?
   public var dependents: [NoticeContent]
 
-  public init(deltas: [Delta] = [], command: Command? = nil, dependents: [NoticeContent] = []) {
+  public init(scope: ScopeRef? = nil, deltas: [Delta] = [], command: Command? = nil, predictions: [ScopedDeltas]? = nil,
+              dependents: [NoticeContent] = []) {
+    self.scope = scope
     self.deltas = deltas
     self.command = command
+    self.predictions = predictions
     self.dependents = dependents
   }
 }

@@ -12,8 +12,8 @@ binary. A missing manifest or unreadable live hello stops deployment before migr
 promotion or container replacement. Any change to the minimum accepted schema needs the manual
 acknowledgement described below; ordinary backend batches cannot make that cutoff.
 
-Deploys, Web Deploy on `main`, the production backup, the digest resum and the roadmap copy run one at a
-time under the `deploy-vps` lock; a pull request's runs never take it. GitHub keeps one waiting run per
+Deploys, Web Deploy on `main`, the production backup, the digest resum, the roadmap copy, roadmap's cutover and its
+restore door run one at a time under the `deploy-vps` lock; a pull request's runs never take it. GitHub keeps one waiting run per
 lock and cancels it when another arrives. A newer backend deploy replaces an older one safely, but a
 waiting Web Deploy cancelled by a backend deploy is not replaced: after merges that land close together,
 check the Web Deploy run of the last merge that touched the web and re-run it if it was cancelled.
@@ -55,6 +55,9 @@ check the Web Deploy run of the last merge that touched the web and re-run it if
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Copy roadmap's rows for a rehearsal of its cutover, encrypted to the owner (by hand, with the owner's approval, never during a deploy; reads only), and its test | `/.github/workflows/ops-roadmap-copy.yml`, `test/deploy/ops_roadmap_copy_test.py` |
+| Roadmap's cutover onto the sync engine (by hand, on the day the owner sets), its host stages and their test, which also drives it against a local stack | `/.github/workflows/roadmap-cutover.yml`, `deploy/roadmap-cutover.sh`, `test/deploy/roadmap_cutover_test.py` |
+| Pause the site or lift the pause (by hand) | `/.github/workflows/ops-maintenance.yml` |
+| Run a cutover's restore again where it stopped (by hand, with the owner's word) | `/.github/workflows/ops-roadmap-restore.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy, and the test that drives it against stand-ins for all public upstreams | `deploy/Caddyfile`, `test/deploy/caddyfile_routes_test.py` |
 | The subscription service's database, its role and its `pg_hba.conf` rules (the `subscriptions-db` one-shot; shipped as `subscriptions-db.next` and promoted with the compose file) | `deploy/subscriptions-db/` |
@@ -177,7 +180,9 @@ must be public.
   that image or its descendants: earlier image schemas recreate retired cutover storage and their
   binaries depend on it. For roadmap trees the floor is `0255cb907`: `tree_nodes` holds no `pos_x`,
   `pos_y` or `pos_hlc`, an earlier image writes them on every tree save, and no image's schema puts
-  them back. Restoring a pre-engine backup is unsupported. A restore from an engine-era
+  them back. Once roadmap is on the sync engine, the floor is the commit its cutover ran from, which
+  `roadmap-engine.floor` on the host names and the deploy enforces
+  ([below](#roadmaps-cutover-onto-the-sync-engine)). Restoring a pre-engine backup is unsupported. A restore from an engine-era
   backup must apply the current schema before starting writers and regenerate `sync_meta.epoch`
   as [the engine restore contract](../../docs/foundation/engine.md) requires.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied on every deploy by the `migrate`
@@ -308,7 +313,7 @@ the grace that container was created with, so a changed value holds from the dep
 
 ## Coordinated client cutoff
 
-The repository registry is schema 12 / minimum 11. Every schema in that interval carries explicit gym
+The repository registry is schema 13 / minimum 11. Every schema in that interval carries explicit gym
 `other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
 schema 12 / minimum 11, verified on 2026-11-01 after
 [deployment 41306516632](https://github.com/neigrok/windmill-monorepo/actions/runs/41306516632).
@@ -322,6 +327,14 @@ once the live hello admits it. The last complete promotion is
 The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
 is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
+
+Schema 13 composes roadmap's registry beside gym's and journal's, and the server binds it
+(`products/roadmap/sync/`). The server reads `ROADMAP_ENGINE_ENABLED` only from the host's `roadmap-engine.env`, which
+is empty until roadmap's cutover writes it ([below](#roadmaps-cutover-onto-the-sync-engine)), so production withholds
+roadmap's scopes: hello says roadmap holds nothing and every roadmap intent is refused. The `roadmap_*` tables
+`db/schema.sql` creates beside roadmap's own stay empty until the cutover
+([roadmap on the engine](../../docs/foundation/roadmap-on-the-engine.md) §8.1) fills them and turns the switch on, which
+also retires the rooms' routes and `/v1/socket`: each answers 410 `client-update-required` (`SPEC.md`, HTTP surface).
 
 1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
    refuses a candidate minimum that differs from the live server.
@@ -600,7 +613,8 @@ place of the published `subscriptions-<sha>`. From the repository root, with Doc
   rehearse() {
     docker compose -p subscriptions-rehearsal --env-file "$REHEARSAL_ENV" -f backend/deploy/docker-compose.yml "$@"
   }
-  trap 'rehearse down -v; rm -f "$REHEARSAL_ENV"' EXIT
+  : > backend/deploy/roadmap-engine.env
+  trap 'rehearse down -v; rm -f "$REHEARSAL_ENV" backend/deploy/roadmap-engine.env' EXIT
   docker build -t windmill-subscriptions:local services/subscriptions
   printf 'POSTGRES_PASSWORD=%s\nSUBSCRIPTIONS_DB_PASSWORD=%s\nSUBSCRIPTIONS_IMAGE=%s\nSENTRY_ENVIRONMENT=local\nDOMAIN_APP=app.localhost\nDOMAIN_API=api.localhost\nACME_EMAIL=ops@example.invalid\n' \
     "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" windmill-subscriptions:local > "$REHEARSAL_ENV"
@@ -726,6 +740,164 @@ the six tables' rows and none of `trees`' trigger functions: restore it with `--
 throwaway database that `db/schema.sql` built, after emptying those six tables of the demo rows the schema seeds, and
 give `users` one row an account id. The copy is private data: it lives only in that database and folder, and both are
 deleted when the rehearsal ends.
+
+## Pause the site
+
+While `~/windmill/maintenance/on` exists, Caddy answers every request on both hosts, but an ACME challenge, with `503`,
+`Retry-After: 600`, `Cache-Control: no-store` and one sentence of plain text: *Windmill is down for a planned update and
+will be back shortly.* The Cloudflare gate still answers first, so a request from outside Cloudflare is refused `403`.
+Caddy mounts `~/windmill/maintenance` read-only and looks for the file on each request, so pausing and lifting need no
+reload, and a deploy that recreates Caddy finds the pause as it was. `deploy-production.sh` creates the folder and never
+the file. `test/deploy/caddyfile_routes_test.py` drives both states.
+
+Roadmap's cutover pauses and lifts the site itself. **Ops · maintenance** (`ops-maintenance.yml`) is the door by hand,
+from `main`: `pause` writes the file and `lift` removes it, each proven through the public page (`503` paused, anything
+else lifted). It refuses while a cutover or its restore has a run queued or running. While paused, every sync engine
+backs off from the bare `503`, a foreign one in [engine](../../docs/foundation/engine.md) §9.6's words, which files its
+Sentry issue once per outage, and a browser tab keeps what it writes in its own store. The sentence is the whole page:
+no designed pause page exists.
+
+## Roadmap's cutover onto the sync engine
+
+**Roadmap cutover** (`roadmap-cutover.yml`) moves production's roadmaps onto the sync engine in one run
+([roadmap on the engine](../../docs/foundation/roadmap-on-the-engine.md) §8.1), its host stages in
+`deploy/roadmap-cutover.sh`, which the run ships to `~/windmill` and calls one stage a step. Every stage prints counts
+and verdicts alone. What the run keeps in its folder on the host, `roadmap-cutover/<run>-<attempt>` (the move's private
+record and what Postgres says of a failed restore), leaves the host only sealed to `.github/ops/inventory-recipient.pem`.
+
+### Before the day
+
+1. The image the cutover runs from is live: an ordinary deploy shipped it, roadmap still off the engine, with this
+   compose file and Caddyfile, so the host has `roadmap-engine.env` (empty) and the pause mounted. The run's check proves
+   that image answers §8.3's retired routes `410` with the engine on before anything pauses; the release that teaches the
+   roadmap room what a retired build is told must have been live long enough for open tabs to take it.
+2. Rehearse on a copy: dispatch **Ops · roadmap copy**, restore it as that section says, and run the tool's `all` on it,
+   or `test/deploy/roadmap_cutover_test.py`'s local stack (below) over it. The rehearsal names every stop for the owner to
+   decide, the ownerless roadmaps the move must expect, how long `all` takes and how long a restore of a dump this size
+   takes.
+3. Where the rehearsal found ownerless roadmaps beside the public demo, the owner sets the repository secret
+   `ROADMAP_ADOPTION_EXPECTED_OWNERLESS` to their ids, one a line. A secret, so no input or log shows them; the run
+   prints their count.
+4. Nothing merges to `main` for the window. A push queues a deploy behind the cutover, which is harmless, but a second
+   one cancels the first while it waits.
+
+### The run
+
+Dispatch **Roadmap cutover** from `main` with `image_tag`, the full commit the live server runs (the `IMAGE_TAG` of the
+last **Deploy to VPS** run), and `backup` typed as `back up, restore on failure`. Its jobs run in order:
+
+| Job · step | Host stage | What it does | What it prints |
+| --- | --- | --- | --- |
+| `web` · Confirm the backup, Build | — | Refuses a run from anything but `main`, another `backup` text or a short `image_tag`; builds the web as Web Deploy does, with `VITE_ROADMAP_REPLICA_ROOM=on`, before anything pauses; keeps it as the run's artifact | the build's own output |
+| `guard` | — | Refuses while any workflow naming the `deploy-vps` lock, another cutover and the restore door among them, has a run queued or running | which one is busy |
+| `cutover` · Check the host is ready | `check` | Refuses unless `.env` names `image_tag`, the server runs its pinned image carrying the tool, `roadmap-engine.env` is empty, compose reads it, Caddy mounts the pause, the site is not paused and the disk holds three times the database and a GiB more; then starts the pinned image once outside compose, with no setting but a throwaway database of its own schema, its port and `ROADMAP_ENGINE_ENABLED=1`, and refuses unless it answers `GET /v1/socket` and `POST /v1/trees` `410 client-update-required`, keeping a probe that does not answer so its last 200 log lines go to the run's folder | the database's size and the free disk in MB; the probe's two answers; `PASS check`, or the probe's container state |
+| Pause the site | `pause` | Writes `maintenance/on`, then waits for the public page and API to answer `503` | `PASS pause`, `PASS site … 503` |
+| Stop the server | `stop` | `docker compose stop server`, then waits up to 30 s for no client session on `windmill` | `PASS stop`, or the sessions by application name |
+| Back up the database | `backup` | A custom-format `pg_dump` of `windmill` to `backups/roadmap-cutover-<run>-<attempt>-<stamp>.dump`, read back by `pg_restore --list`, with its sha256 | the file, its bytes and sha256 |
+| Adopt roadmap's rows and check every digest | `adopt` | `windmill_roadmap_adopt all` in a one-off container of the live image, its private record in the run's folder; `all` ends in its `digests` stage | the count of expected ownerless roadmaps; each stage's line, only in its own shape; `PASS adopt`, `STOP adopt` (exit 3), or that the tool exited before any stage answered |
+| Start the server on the sync engine | `start` | Writes `ROADMAP_ENGINE_ENABLED=1` to `roadmap-engine.env`, then the image's commit to `roadmap-engine.floor`, and recreates the server; writes resume here | `PASS start` with hello's schema and minimum, or the server's container state |
+| Promote the web whose room reads the replica | — | The web preflight, which also holds a release whose room the running server's is not, then the rsync, the IndexNow proof kept | the preflight's verdict; the count of files |
+| Walk the stack | `smoke` | Inside the server's container: hello `200`, `GET /v1/socket` and `POST /v1/trees` `410 client-update-required`, the public demo's progress and activity, its share page and the gallery `200` | one line a check, and after a failed one the server's container state |
+| Lift the pause | `lift` | Removes `maintenance/on`, then waits for the public page and API to answer `200` | `PASS lift`, `PASS site … 200` |
+| Seal what the run kept on the host | `record` | Removes a tool container still running, then streams the run's folder into an encryption under a run key sealed to the owner; after a failure too, from a failed check on | the two files' sizes and sha256 |
+| Keep the sealed record for a day, Forget what the run kept | `forget` | The artifact `roadmap-cutover-record-<run>-<attempt>`; once it is kept, the run's folder is emptied but for the backup's path | `PASS forget` |
+| `walk` | — | Web Smoke's read-only walk of the live site | its checks |
+
+The pause lasts from **Pause the site** to **Lift the pause**; the adoption is its longest stage, and the rehearsal
+measures it. Cancelling the run does not cut the cutover job short: a cancel re-evaluates a running job's condition, and
+its `always()` holds it, so each stage runs on within its own deadline and a stage past its deadline fails like any other.
+Never force-cancel it, which skips every step that would put the site back. To try again, **Re-run all jobs** or
+dispatch again; never **Re-run failed jobs**, which skips the guard.
+
+**A failure before writes resume**, before the start stage writes roadmap's floor, puts everything back. Where the
+backup was verified, **Restore the backup** (`restore`) removes a tool container left running, checks the backup's
+sha256 and listing, restores it into `windmill_restore`, renames `windmill` to `windmill_cutover_<run>_<attempt>` and the
+restored database to `windmill` in one transaction, applies the schema, starts the server, roadmap off the engine, and
+lifts the pause, and marks the run `restored`. The server stopped before the dump and starts only after the restore, so
+no client holds anything newer than the backup, and the epoch stands. A start that failed before it wrote the floor, a
+lost connection among them, takes the same path: one cut short between the switch and the floor never started the server
+on the engine, which its container shows, and the restore empties the switch. One that wrote the floor is refused by the
+host's restore, and goes forward, and so is a switch the server's container holds. Where no backup was taken
+yet, **Return the site as it was** (`undo`) starts the server and lifts the pause: the database was never changed.
+
+A restore that fails leaves the pause on, the server stopped and `windmill` as the move left it; what Postgres said goes
+to the sealed record. Once its cause is settled, the owner dispatches **Ops · roadmap restore**
+(`ops-roadmap-restore.yml`) from `main` with the run's `<run id>-<attempt>` and `confirm` typed as `restore the backup`.
+It refuses beside any workflow that reaches the host, takes the `deploy-vps` lock, and runs the same `restore` again
+where it stopped: once `windmill` holds the backup and the moved database is kept, only the schema, the start and the lift
+are left. The host refuses that restore unless the site is paused, the server stopped, no floor written and the run not yet
+`restored`, as a cutover leaves them before writes resume, so the door never puts a backup over a site that serves again. Either way it
+seals what the run keeps on the host as the cutover does, which also makes it the door for a seal that failed. Where **Return the site as it was** fails, the
+database is as it was: **Deploy to VPS** starts the server, then **Ops · maintenance** lifts the pause.
+
+**From the moment the start stage writes the floor, the cutover goes forward only.** A failure there leaves the site
+paused. Where the start or the walk failed, the step printed the server's container state (its status, exit code and
+restarts) and kept its last 200 log lines for the sealed record: open the record (below) and read `server.log`, then fix
+it forward — **Deploy to VPS** and **Web Deploy** keep roadmap on the engine (below) — and dispatch **Ops · maintenance**
+with `lift`.
+
+**A stop** is a stage whose verdict does not pass: its line names the verdict and counts, and the sealed record names the
+roadmaps. `othersConnected`, counted as `sessions.otherClients`, means a client reached the database after **Stop the
+server** found none; nothing writes while the run holds the lock, so it is a session opened by hand. Every stop
+restores the backup; dispatch again once its cause is settled.
+
+To open the record, download the artifact into a new folder outside any checkout and delete it at once, as the copy's:
+this repository's artifacts are public, and it is kept for a day.
+
+```sh
+umask 077
+ROADMAP_CUTOVER_KEY=$(openssl smime -decrypt -inform PEM -inkey <key> -in key.pem)
+export ROADMAP_CUTOVER_KEY
+openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ROADMAP_CUTOVER_KEY -in record.tar.enc | tar -xf -
+unset ROADMAP_CUTOVER_KEY
+```
+
+It holds `record/`, the tool's files (`products/roadmap/adoption/README.md`) and its `tool.stderr`, after a restore
+`restore.log` and `migrate.log`, and the last 200 lines of a server that did not serve: `probe.log` from a failed check,
+`server.log` from a failed start, walk or restore. Its access lines name the accounts it served, which is why they are
+sealed and never printed. On the host, once the record is kept, the run's folder holds the backup's path alone, and is gone where no backup was
+taken;
+where the seal failed, it keeps the record and the logs until a run of the restore door seals them. The backup and its
+sha256 stay under `backups/`, and after a restore so does the database `windmill_cutover_<run>_<attempt>`: private data
+the owner removes once the cutover is settled (`docker compose exec -T db dropdb -U windmill
+windmill_cutover_<run>_<attempt>`).
+
+### How the switches persist
+
+- **The server**: `~/windmill/roadmap-engine.env`, which compose reads into the server alone (`env_file`). The cutover
+  writes `ROADMAP_ENGINE_ENABLED=1` there; no deploy renders, ships or changes it. `deploy-production.sh` creates it
+  empty where it is missing and refuses any other content before anything changes. While `roadmap-engine.floor` names a
+  commit, or the database holds any of roadmap's scopes on the engine (a database that is down is started, as it stands,
+  to be asked), it refuses the file empty or missing too, so a
+  switch lost on the host stops a deploy rather than turning roadmap back to its own sync. After the server starts, it checks the running server holds exactly
+  what the file says and, while it is on, that the server answers `GET /v1/socket` `410`; it prints `PASS roadmap: …`.
+- **The image**: the cutover writes the commit it ran from to `~/windmill/roadmap-engine.floor`. While that file names a
+  commit, **Deploy to VPS** refuses, before anything reaches the host, an `image_tag` that does not descend from it, a
+  rollback among them: an older image ignores the switch.
+- **The web**: Web Deploy reads the running server's switch before it builds, and builds `VITE_ROADMAP_REPLICA_ROOM` `on`
+  or `off` from it; a pull request's build reaches no host and builds it off. Its preflight holds any release whose room
+  the running server's is not, the cutover's own among them.
+
+No GitHub variable names the switch, and `deploy.yml` never renders or ships either file. `test/deploy/deploy_production_test.py`
+pins all three, and `test/deploy/roadmap_cutover_test.py` the cutover: the order of its stages, the probe of the image,
+the restore before writes resume and the forward-only path after, a connection lost mid-move and at the start, a start
+cut short between the switch and the floor, the restore door beside a floor or a switch the server holds, a server that
+does not serve, whose log reaches the record alone, that only a stage's own line in its own shape reaches the log, and
+that what the run kept reaches the artifact only encrypted.
+
+### Run it locally
+
+From `backend/`, with the built tool and server and a local Postgres, the same test drives the cutover job step by step
+against a local stack in the VPS's place: Postgres databases named `wm_roadmap_cutover_*` seeded with
+`test/platform/infra/roadmap_adopt_fixture.sql`, the server on port 5426, its probe on 5427, and the production Caddyfile
+in Caddy's image in front of the server, needing Docker. It moves the fixture through every stage, runs the tool again to
+show the second run changes nothing, and stops a move to show the restore returns the database exactly as the backup
+holds it:
+
+```sh
+WM_CUTOVER_TOOL=build/windmill_roadmap_adopt WM_CUTOVER_SERVER=build/windmill_server \
+  DATABASE_URL='postgresql:///postgres?host=/tmp' python3 test/deploy/roadmap_cutover_test.py -v CutoverOnALocalStackTest
+```
 
 ## Windmill One: the entitlement copy
 

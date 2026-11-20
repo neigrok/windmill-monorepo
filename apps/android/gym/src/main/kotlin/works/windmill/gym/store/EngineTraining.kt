@@ -61,6 +61,11 @@ import works.windmill.sync.api.DeviceWrite
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.IntentResultDeviceWrites
 import works.windmill.sync.api.Replica
+import works.windmill.sync.api.ActContext
+import works.windmill.sync.api.ActRequest
+import works.windmill.sync.api.ActCommitOutcome
+import works.windmill.sync.api.InverseResult
+import works.windmill.sync.api.UndoSegment
 import works.windmill.sync.api.ScopeReader
 import works.windmill.sync.api.Record
 import works.windmill.sync.api.ViewMode
@@ -119,9 +124,19 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     private val writable = object : Replica by engine {
         override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
             engine.commit(scope) { context -> requireWriteAuthority(); body(context) }
-        override fun undo(gestureId: String): Boolean {
+        override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+            engine.commitAct({ context -> requireWriteAuthority(); prepare(context) }, segment)
+        override fun cancelHeld(gestureId: String): Boolean {
             requireWriteAuthority()
-            return engine.undo(gestureId)
+            return engine.cancelHeld(gestureId)
+        }
+        override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult {
+            requireWriteAuthority()
+            return engine.requestInverse(actId, slots)
+        }
+        override fun releaseReversibleAct(actId: String): Boolean {
+            requireWriteAuthority()
+            return engine.releaseReversibleAct(actId)
         }
     }
     private fun requireSeat(pin: ReplicaPin, reader: ScopeReader) {
@@ -131,6 +146,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     private fun pinnedTo(pin: ReplicaPin) = object : Replica by writable {
         override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
             writable.commit(scope) { context -> requireSeat(pin, context); body(context) }
+        override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+            writable.commitAct({ context ->
+                if (engine.activeReplica() != pin.replica || engine.signInAsking() || context.isAnonymous != pin.anonymous) throw TrainingRefused.accountChanged()
+                prepare(context)
+            }, segment)
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T =
             writable.read(scope) { reader -> requireSeat(pin, reader); body(reader) }
     }
@@ -142,9 +162,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     fun mayWriteOn(pin: ReplicaPin): Boolean = mayWrite && engine.activeReplica() == pin.replica && anonymous == pin.anonymous
     suspend fun <T> pinnedOn(pin: ReplicaPin, body: (ActionRunner) -> T): T = writing(pinnedTo(pin), body)
     // A held removal lasts the window the room asked for; every other gesture keeps the engine's own.
-    private fun holding(holdMs: Long) = object : Replica by writable {
+    internal fun holding(holdMs: Long) = object : Replica by writable {
         override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
             writable.commit(scope) { context -> body(context).also { (gesture, _) -> gesture?.holdMs = holdMs } }
+        override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+            writable.commitAct({ context -> prepare(context).let { (request, value) -> request?.copy(holdMs = holdMs) to value } }, segment)
     }
     private val reader = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
     val imports = WorkoutImports(engine, writeAuthority)
@@ -814,7 +836,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 if (holdMs == null) {
                     try { outcome.receipt.localIds.forEach { releaseIntent(it) } }
                     catch (failure: Exception) {
-                        val restored = try { engine.undo(outcome.receipt.gestureId) }
+                        val restored = try { engine.cancelHeld(outcome.receipt.gestureId) }
                         catch (rollback: Exception) { failure.addSuppressed(rollback); false }
                         if (!restored) throw TrainingDeleteUnconfirmed(failure)
                         throw failure

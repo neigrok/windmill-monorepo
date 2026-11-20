@@ -1,13 +1,15 @@
 import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { utf8 } from '../../../../packages/api-contract/sync/reference/core/encoding.js';
 
 const LIVE_QUEUE_FRAMES = 64;
 const LIVE_QUEUE_BYTES = 1_048_576;
 
 export class HttpTransport {
   constructor({ schema, base = '', fetch = globalThis.fetch, socket = (url) => new WebSocket(url),
-    origin = globalThis.location?.origin, reading, timers = globalThis, limits = CONSTANTS }) {
+    origin = globalThis.location?.origin, reading, timers = globalThis, limits = CONSTANTS, scopedCommands = [] }) {
     Object.assign(this, { schema, base, fetch: fetch.bind(globalThis), socketFactory: socket, origin, reading, timers, limits });
+    this.scopedCommands = new Set(scopedCommands);
   }
 
   async request(endpoint, body, { signal, keepalive = false, anonymous = false } = {}) {
@@ -28,7 +30,9 @@ export class HttpTransport {
         cache: 'no-store',
       });
       const text = await response.text();
-      if (text.length > 2 * this.limits.PULL_PAGE_BYTES * this.limits.PULL_MAX_SCOPES) throw new Error('sync response too large');
+      const scoped = endpoint === 'push' && body?.intents?.some((intent) => this.scopedCommands.has(intent.cmd?.name));
+      const max = scoped ? Math.min(this.limits.SCOPED_RESPONSE_MAX_BYTES ?? CONSTANTS.SCOPED_RESPONSE_MAX_BYTES, CONSTANTS.SCOPED_RESPONSE_MAX_BYTES) : 2 * this.limits.PULL_PAGE_BYTES * this.limits.PULL_MAX_SCOPES;
+      if (utf8(text).length > max) throw new Error('sync response too large');
       let parsed = null;
       if (text) {
         try { parsed = JSON.parse(text); }
@@ -49,10 +53,12 @@ export class HttpTransport {
   }
 }
 
+// One live socket at a time, following the scopes it is given. `binding()` names what the socket is opened for, and each
+// frame reaches `onFrame` with the binding its socket opened under, so its owner can tell a frame of a socket it outlived.
 export class LiveChannel {
-  constructor({ transport, onFrame, onReconnect, onFailure, onFollowing = () => {}, timers = globalThis, now = () => performance.now(),
-    draw = (bound) => Math.random() * bound, limits = CONSTANTS }) {
-    Object.assign(this, { transport, onFrame, onReconnect, onFailure, onFollowing, timers, now, draw, limits });
+  constructor({ transport, onFrame, onReconnect, onFailure, onFollowing = () => {}, binding = () => null, timers = globalThis,
+    now = () => performance.now(), draw = (bound) => Math.random() * bound, limits = CONSTANTS }) {
+    Object.assign(this, { transport, onFrame, onReconnect, onFailure, onFollowing, binding, timers, now, draw, limits });
     this.running = false;
     this.k = 0;
     this.following = new Set();
@@ -72,6 +78,7 @@ export class LiveChannel {
   connect() {
     if (!this.running) return;
     let socket;
+    const opened = this.binding();
     try { socket = this.transport.openLive(); }
     catch { this.ended(); return; }
     this.socket = socket;
@@ -98,7 +105,7 @@ export class LiveChannel {
       this.lastReceived = this.now();
       this.timers.clearTimeout(this.pongTimer);
       this.pingLater();
-      this.frames.push({ socket, data, bytes });
+      this.frames.push({ socket, opened, data, bytes });
       this.queuedBytes += bytes;
       this.drain();
     };
@@ -111,7 +118,7 @@ export class LiveChannel {
     this.draining = true;
     try {
       while (this.frames.length) {
-        const { socket, data, bytes } = this.frames.shift();
+        const { socket, opened, data, bytes } = this.frames.shift();
         this.queuedBytes -= bytes;
         this.activeBytes = bytes;
         try {
@@ -123,7 +130,7 @@ export class LiveChannel {
             this.following.delete(frame.scope);
             this.onFollowing(this.following, previous);
           }
-          await this.onFrame(frame);
+          await this.onFrame(frame, opened);
         } catch { this.breakSocket(socket); }
         finally { this.activeBytes = 0; }
       }

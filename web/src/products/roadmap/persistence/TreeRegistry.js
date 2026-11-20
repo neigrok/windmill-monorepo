@@ -181,14 +181,15 @@ export async function deleteTree(treeId) {
   throw new AuthError('Could not delete the roadmap', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, status: response.status });
 }
 
-// Forks a shared roadmap → { treeId }. The server mints the id; progress starts cleared.
-export async function forkTree(sourceId) {
+// Forks a shared roadmap → { treeId }. The server mints the id; progress starts cleared. `requestId` names the fork:
+// sent again with it — after a lost answer, or a copy the server cut short — the call answers the same copy.
+export async function forkTree(sourceId, requestId = crypto.randomUUID()) {
   let response;
   try {
     response = await fetch(`${API_BASE}/v1/trees/${sourceId}/fork`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ requestId }),
       credentials: 'include',
     });
   } catch {

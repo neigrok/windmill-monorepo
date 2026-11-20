@@ -67,6 +67,9 @@ class CaddyfileRoutesTest(unittest.TestCase):
             "--add-host", "host.docker.internal:host-gateway", "-v", str(config) + ":/etc/caddy/Caddyfile:ro", "caddy:2")
         self.addCleanup(self.docker, "rm", "-f", self.ai_container)
         self.edges = {}
+        maintenance = tempfile.TemporaryDirectory(prefix="caddy-maintenance-")
+        self.addCleanup(maintenance.cleanup)
+        self.maintenance = Path(maintenance.name)
 
     def docker(self, *arguments):
         result = subprocess.run(["docker", *arguments], capture_output=True, text=True, timeout=120, check=True)
@@ -81,7 +84,8 @@ class CaddyfileRoutesTest(unittest.TestCase):
         container = self.docker("run", "-d", "--network", self.network, "-p", "127.0.0.1::443",
                                 "-e", "DOMAIN_APP=app.localhost", "-e", "DOMAIN_API=api.localhost",
                                 "-e", "ACME_EMAIL=ops@example.invalid", "-e", "CF_IPS=" + cloudflare_ranges,
-                                "-v", str(CADDYFILE) + ":/etc/caddy/Caddyfile:ro", "caddy:2")
+                                "-v", str(CADDYFILE) + ":/etc/caddy/Caddyfile:ro",
+                                "-v", str(self.maintenance) + ":/srv/windmill-maintenance:ro", "caddy:2")
         self.addCleanup(self.docker, "rm", "-f", container)
         port = self.docker("port", container, "443/tcp").splitlines()[0].rsplit(":", 1)[1]
         for attempt in range(60):
@@ -138,6 +142,27 @@ class CaddyfileRoutesTest(unittest.TestCase):
             ("app.localhost", "GET", "/v1/allowance-extra"): (200, "server:8080"),
             ("app.localhost", "GET", "/v1/calls"): (200, "server:8080"),
             ("app.localhost", "GET", "/internal/v1/budgets"): (404, "")})
+
+    def test_a_pause_answers_every_path_on_both_hosts_503_until_it_is_lifted_and_the_gate_still_answers_first(self):
+        port = self.edge("0.0.0.0/0 ::/0")
+        routes = self.routes(port)
+        paused = "Windmill is down for a planned update and will be back shortly."
+        (self.maintenance / "on").write_text("roadmap cutover 1-1\n")
+
+        self.assertEqual(self.routes(port), {request: (503, paused) for request in routes})
+        for host, path in (("app.localhost", "/"), ("app.localhost", "/roadmap"), ("app.localhost", "/mcp"), ("api.localhost", "/robots.txt")):
+            self.assertEqual(self.answer(port, host, "GET", path), (503, paused))
+        headers = subprocess.run(["curl", "-sk", "--max-time", "5", "-o", "/dev/null", "-D", "-", "--resolve",
+                                  f"app.localhost:{port}:127.0.0.1", "-H", "CF-Connecting-IP: 17.58.0.1",
+                                  f"https://app.localhost:{port}/v1/sync/hello"], capture_output=True, text=True, timeout=30).stdout.lower()
+        self.assertIn("\nretry-after: 600\n", headers)
+        self.assertIn("\ncache-control: no-store\n", headers)
+        self.assertEqual(self.answer(port, "app.localhost", "GET", "/.well-known/acme-challenge/token")[0], 404)
+        outside = self.edge("192.0.2.0/24")
+        self.assertEqual(set(self.routes(outside).values()), {(403, "")})
+
+        (self.maintenance / "on").unlink()
+        self.assertEqual(self.routes(port), routes)
 
     def test_the_app_store_door_answers_apple_s_subnet_alone(self):
         port = self.edge("0.0.0.0/0 ::/0")

@@ -856,7 +856,11 @@ Absent and private-denied answer identically on every surface — no existence l
 
 ## HTTP surface
 
-Registered in `products/roadmap/routes.cpp`.
+Registered in `products/roadmap/routes.cpp`. Where the engine serves roadmap's scopes (`ROADMAP_ENGINE_ENABLED`), the
+rooms' routes are retired ([roadmap on the engine](../docs/foundation/roadmap-on-the-engine.md) §7, §8.3): both verbs of
+`/v1/trees`, the three of `/v1/trees/{id}`, its `/guides` and `/diagnostics`, and `PUT …/subtree` answer 410
+`client-update-required` before authentication or parsing (`WriteRoutes::retire`), and so does the socket (WebSocket
+surface).
 
 | Method | Path |
 | --- | --- |
@@ -1045,7 +1049,9 @@ the tree's owner alone and names only their trees; a refused delete edits nothin
 `GET /v1/trees/{id}/progress` answers the owner's overlay, `{marks: [{node, status, at, markedAt,
 outOfOrder?}]}`, to anyone who can read the tree: the stored marks to a caller who can write it, whose
 view derives completion again from the tree's `opens`, and `readerView` of them (Model) to every other
-reader. It answers `200` whether or not the trees could be followed.
+reader. Where the engine serves roadmaps (`ROADMAP_ENGINE_ENABLED`), it also answers `subtrees: [{node, tree, done,
+total}]`, what each standing subtree of the roadmap has come to. It answers `200` whether or not the trees could be
+followed.
 
 `/v1/gallery` and `/gallery` are anonymous-allowed; a session only adds the two facts a row wears
 about its reader and never changes which trees are listed, the public roots alone. A card's `done` counts the owner's marks
@@ -1059,7 +1065,10 @@ sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 
 ## WebSocket surface
 
-`products/roadmap/adapters/ws/`. One socket, JSON frames, `t` names the frame type. The
+`products/roadmap/adapters/ws/`, mounted at `/v1/socket` where the rooms serve. Where the engine serves roadmap's scopes
+the path is retired (`WriteRoutes::retireSocket`): its upgrade and a plain GET of it answer 410 `client-update-required`,
+which is how an old build that cannot read a failed upgrade learns it is retired. One socket, JSON frames, `t` names
+the frame type. The
 credential is presented at the upgrade; every write re-proves the session, throttled to one lookup
 a minute, and a revoked session narrows to a guest in place. Visibility is re-asked per frame.
 
@@ -1179,7 +1188,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, `present` and `land_seq` (Model, land seqs); `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc`, `land_seq` |
 | `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp, and `land_seq` |
-| `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
+| `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency; where the engine serves roadmap, its binding writes one row a gesture (`products/roadmap/sync/README.md`) |
 | `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |
 

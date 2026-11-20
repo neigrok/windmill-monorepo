@@ -20,11 +20,16 @@ internal class AndroidSqliteStore(private val db: SQLiteDatabase, private val re
             db.execSQL("PRAGMA synchronous=FULL")
         }
         db.rawQuery("PRAGMA busy_timeout=5000", null).use { it.moveToFirst() }
-        if (db.version !in 0..1) throw StoreFailure()
+        if (db.version !in 0..2) throw StoreFailure()
         if (db.version == 0) transaction {
             if (scalar("SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>'android_metadata' LIMIT 1") != null) throw StoreFailure()
-            for (sql in schema) db.execSQL(sql)
-            db.version = 1
+            for (sql in schema + journalSchema) db.execSQL(sql)
+            db.version = 2
+        }
+        // Version 2 adds the journal of reversible acts (K-3) beside an unchanged version 1 store: it starts empty.
+        if (db.version == 1) transaction {
+            for (sql in journalSchema) db.execSQL(sql)
+            db.version = 2
         }
         val version = scalar("SELECT ref_index_version FROM device WHERE id=1")?.toLong()
         if (version != null && version != registry.version) transaction {
@@ -105,6 +110,10 @@ internal class AndroidSqliteStore(private val db: SQLiteDatabase, private val re
                         }
                     }
                     if (staging.isNotEmpty()) parts.add("staging" to Json.Obj(staging))
+                    for (journal in journalTables) {
+                        val records = decode("SELECT payload FROM ${journal.table} WHERE replica=? ORDER BY ${journal.column}", arrayOf(id))
+                        if (records.isNotEmpty()) parts.add(journal.member to Json.Arr(records))
+                    }
                     add(Json.Obj(parts))
                 }
             }
@@ -154,12 +163,15 @@ internal class AndroidSqliteStore(private val db: SQLiteDatabase, private val re
             for (entry in replica.items("outbox")) {
                 val localId = entry.member("localId").str()
                 if (localId !in changedEntries) continue
-                val keys = Entry(entry).deltas.map { it.key }.distinct()
-                for (key in keys) db.insertWithOnConflict("outbox_touch", null, values("local_id" to localId, "scope" to entry.member("scope").str(), "type" to key.type, "id" to key.id.text), SQLiteDatabase.CONFLICT_IGNORE)
+                for (effect in Entry(entry).effects) for (key in effect.deltas.map { it.key }.distinct())
+                    db.insertWithOnConflict("outbox_touch", null, values("local_id" to localId, "scope" to effect.scope.text, "type" to key.type, "id" to key.id.text), SQLiteDatabase.CONFLICT_IGNORE)
             }
             sync("notice", selected, replica.items("notices").associateBy { it.member("id").str() }, "id") { noticeId, notice ->
                 values("id" to noticeId, "replica" to selected, "scope" to notice.member("scope").str(), "code" to notice.member("code").str(),
                     "at" to notice.member("at").long(), "dismissed" to notice.flag("dismissed"), "payload" to notice.jcs)
+            }
+            for (journal in journalTables) sync(journal.table, selected, replica.items(journal.member).associateBy { it.member(journal.id).str() }, journal.column) { id, payload ->
+                values("replica" to selected, journal.column to id, "payload" to payload.jcs)
             }
             sync("cursor", selected, replica.fields("cursors"), "scope") { scope, payload -> values("replica" to selected, "scope" to scope, "payload" to payload.jcs) }
             sync("known_scope", selected, replica.fields("known"), "scope") { scope, payload -> values("replica" to selected, "scope" to scope, "kind" to payload.str(), "payload" to payload.jcs) }
@@ -229,6 +241,7 @@ internal class AndroidSqliteStore(private val db: SQLiteDatabase, private val re
             buildSet { while (cursor.moveToNext()) add(ScopeRef(cursor.getString(0))) }
         }
     }
+    override fun holdsScope(replica: String, scope: ScopeRef): Boolean = guarded { rowSet(replica, scope) != null || rowSet(replica, scope, staging = true) != null }
     override fun hasRows(replica: String, scope: ScopeRef): Boolean = guarded {
         rowSet(replica, scope)?.let { scalar("SELECT 1 FROM set_row WHERE row_set=? LIMIT 1", arrayOf(it.toString())) != null } ?: false
     }
@@ -331,7 +344,16 @@ internal class AndroidSqliteStore(private val db: SQLiteDatabase, private val re
             "CREATE TABLE notice(id TEXT PRIMARY KEY,replica INTEGER NOT NULL REFERENCES replica ON DELETE CASCADE,scope TEXT NOT NULL,code TEXT NOT NULL,at INTEGER NOT NULL,dismissed INTEGER NOT NULL CHECK(dismissed IN (0,1)),payload TEXT NOT NULL)",
             "CREATE TABLE device_row(replica INTEGER NOT NULL REFERENCES replica ON DELETE CASCADE,product TEXT NOT NULL,key TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(replica,product,key)) WITHOUT ROWID"
         )
+        private val journalTables = listOf(JournalTable("journal", "reversible_act", "act_id", "actId"),
+            JournalTable("inverses", "inverse_request", "request_id", "requestId"), JournalTable("cancellations", "cancellation", "inverse_act_id", "inverseActId"))
+        private val journalSchema = journalTables.map { it.schema }
     }
+}
+
+// K-3: each reversible act, inverse request and cancellation receipt is one row of its replica, keyed by its id and written only when it
+// changes: the replica JSON's `member` array, one record a row of `table`.
+private class JournalTable(val member: String, val table: String, val column: String, val id: String) {
+    val schema: String get() = "CREATE TABLE $table(replica INTEGER NOT NULL REFERENCES replica ON DELETE CASCADE,$column TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(replica,$column)) WITHOUT ROWID"
 }
 
 object AndroidSqlite {
@@ -339,7 +361,8 @@ object AndroidSqlite {
         telemetry: EngineTelemetry = NoEngineTelemetry,
         rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
         intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
-        pendingDeviceWork: works.windmill.sync.api.PendingDeviceWork = { _, _ -> emptyList() }): Engine {
+        pendingDeviceWork: works.windmill.sync.api.PendingDeviceWork = { _, _ -> emptyList() },
+        writerObserver: WriterObserver? = null): Engine {
         val db = try {
             val handler = DatabaseErrorHandler { }
             if (Build.VERSION.SDK_INT >= 28) SQLiteDatabase.openDatabase(file, SQLiteDatabase.OpenParams.Builder()
@@ -362,7 +385,8 @@ object AndroidSqlite {
                     }
                 }
             }
-            return Engine(registry, store, clock, identities, actor, telemetry = telemetry, rewriteDeviceValue = rewriteDeviceValue, intentResultWrites = intentResultWrites, pendingDeviceWork = pendingDeviceWork)
+            return Engine(registry, store, clock, identities, actor, telemetry = telemetry, rewriteDeviceValue = rewriteDeviceValue,
+                intentResultWrites = intentResultWrites, pendingDeviceWork = pendingDeviceWork, writerObserver = writerObserver)
         } catch (failure: Throwable) {
             db.close()
             if (failure is StoreFailure || failure is SQLiteException || failure is IllegalArgumentException) {

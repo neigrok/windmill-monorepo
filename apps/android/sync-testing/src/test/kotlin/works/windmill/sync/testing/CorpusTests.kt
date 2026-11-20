@@ -15,7 +15,7 @@ class CorpusTests(private val vector: Vector) {
         val root = File(System.getProperty("windmill.contract"))
         val corpus = Corpus(File(root, "sync/corpus"))
         val probe = Registry(Json.parse(File(root, "sync/probe.registry.json").readBytes()))
-        val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + JournalCorpus.handlers(root) + ProtocolCorpus.handlers(probe)
+        val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + NetworkCorpus.productHandlers(root) + JournalCorpus.handlers(root) + ProtocolCorpus.handlers(probe)
         @JvmStatic @Parameterized.Parameters(name = "{0}")
         fun vectors(): List<Array<Any>> = handlers.keys.sorted().flatMap { corpus.vectors(it) }.map { arrayOf(it) }
     }
@@ -34,20 +34,34 @@ class CoverageTests {
     @Test fun fullGateClaimsEveryClientFile() {
         assertEquals(emptyList<String>(), corpus.unclaimed(handlers, corpus.clientPaths))
         corpus.requireCoverage(handlers, corpus.clientPaths)
-        assertEquals(53, handlers.size)
-        assertEquals(804, handlers.keys.sumOf { corpus.vectors(it).size })
+        assertEquals(corpus.clientPaths.toSet(), handlers.keys)
+        val discovered = corpus.clientPaths.sorted().flatMap { corpus.vectors(it) }.map { it.file to it.name }
+        val scheduled = CorpusTests.vectors().map { it.single() as Vector }.map { it.file to it.name }
+        assertEquals(discovered, scheduled)
     }
     @Test fun supportedFileWithoutHandlerFails() {
         assertThrows(IllegalStateException::class.java) { corpus.requireCoverage(emptyMap(), listOf("stamp/order.json")) }
+    }
+    @Test fun unicodeDomainMintsWholeScalarsAndKeepsByteIdentities() {
+        val vector = corpus.vectors("registry/refusals.json").first { it.name == "a mint draws Unicode scalars within the id domain" }
+        val registry = Registry(vector.input.member("registry"))
+        val type = registry.type("node")!!
+        val id = type.mint!!.id { size -> assertEquals(2, size); 1 }
+        assertEquals("界" + "🚀".repeat(127), id)
+        assertTrue(registry.isId(Json.of(id), type))
+        assertEquals(registry.json, Registry(registry.json).json)
+        val ids = listOf(RecordID("é"), RecordID("e\u0301"))
+        assertEquals(2, ids.toSet().size)
+        assertEquals(ids, ids.map { RecordID(Json.parse(it.json.jcs)) })
     }
     @Test fun generatedSchemaMatchesCompositionLosslessly() {
         val contract = File(System.getProperty("windmill.contract"), "sync")
         val composition = Json.parse(File(contract, "composition.json").readBytes())
         val registries = composition.member("registries").arr().map { Registry(Json.parse(File(contract, it.str()).readBytes())) }
         assertEquals(Registry.compose(composition.member("composition").str(), registries).json, SyncSchema.registry.json)
-        assertEquals(12L, SyncSchema.version)
+        assertEquals(13L, SyncSchema.version)
         assertEquals(11L, SyncSchema.registry.minVersion)
-        assertEquals(setOf("gym", "journal"), SyncSchema.registry.products.keys)
+        assertEquals(registries.flatMap { it.products.keys }.toSet(), SyncSchema.registry.products.keys)
     }
     @Test fun confirmedRecordsHaveRegistryVisibilityAndNoPendingState() {
         val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))

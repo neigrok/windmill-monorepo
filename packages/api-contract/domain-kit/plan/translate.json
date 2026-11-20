@@ -431,9 +431,9 @@
     "expect": {"error": true}
   },
   {
-    "name": "a derived tag is not written by translation",
-    "input": {"scope": "tree/b_00000001", "plan": [{"op": "create", "t": "tag", "id": "oak", "f": {"label": "Oak"}}]},
-    "expect": {"error": true}
+    "name": "a derived tag create preserves the explicit ID",
+    "input": {"scope": "tree/b_00000001", "plan": [{"op": "create", "t": "tag", "id": "oak-fixed", "f": {"label": "Oak"}}]},
+    "expect": {"gesture": {"changes": [{"op": "create", "t": "tag", "id": "oak-fixed", "f": {"label": "Oak"}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}
   },
   {
     "name": "a guarded update guards every named field, sorted by field bytes",
@@ -1335,5 +1335,578 @@
       "plan": [{"op": "update", "t": "fact", "id": "2027-01-10", "f": {"value": 80, "at": 5}, "fields": ["value"]}]
     },
     "expect": {"error": true}
+  },
+  {"name": "meta declaration binds to a second scope", "input": {"scope": "tree/b_00000002", "plan": [{"op": "create", "t": "meta", "id": "meta", "f": {"title": " Plan "}}]}, "expect": {"gesture": {"changes": [{"op": "write", "t": "meta", "id": "meta", "f": {"title": "Plan"}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}},
+  {"name": "mark declaration binds to a second scope", "input": {"scope": "self/overlay/b_00000002", "plan": [{"op": "create", "t": "mark", "id": "oak", "f": {"done": true, "memo": "first note"}}]}, "expect": {"gesture": {"changes": [{"op": "write", "t": "mark", "id": "oak", "f": {"done": true}, "x": {"memo": {"text": "first note", "from": ""}}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}},
+  {"name": "meta refuses binding to self/probe", "input": {"scope": "self/probe", "plan": [{"op": "guardRead", "t": "meta", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {"name": "meta refuses binding to self/overlay/b_00000002", "input": {"scope": "self/overlay/b_00000002", "plan": [{"op": "guardRead", "t": "meta", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {"name": "mark refuses binding to tree/b_00000002", "input": {"scope": "tree/b_00000002", "plan": [{"op": "guardRead", "t": "mark", "id": "c_00000001", "fields": ["done"]}]}, "expect": {"error": true}},
+  {"name": "mark refuses binding to self/probe", "input": {"scope": "self/probe", "plan": [{"op": "guardRead", "t": "mark", "id": "c_00000001", "fields": ["done"]}]}, "expect": {"error": true}},
+  {"name": "card refuses binding to tree/b_00000002", "input": {"scope": "tree/b_00000002", "plan": [{"op": "guardRead", "t": "card", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {"name": "card refuses binding to self/other", "input": {"scope": "self/other", "plan": [{"op": "guardRead", "t": "card", "id": "c_00000001", "fields": ["title"]}]}, "expect": {"error": true}},
+  {
+    "name": "a derived tag update writes its explicit ID",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "update",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "update",
+            "t": "tag",
+            "id": "oak",
+            "f": {
+              "label": "Next"
+            }
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a derived tag removal deletes its life",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "remove",
+          "t": "tag",
+          "id": "oak"
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "delete",
+            "t": "tag",
+            "id": "oak"
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "revive writes alive and validated named edits with ordinary guards",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "guarded": true
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "revive",
+            "t": "tag",
+            "id": "oak",
+            "f": {
+              "label": "Next"
+            }
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [
+          {
+            "t": "tag",
+            "id": "oak",
+            "field": "label"
+          }
+        ],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "revive can write only alive",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "fields": []
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "revive",
+            "t": "tag",
+            "id": "oak"
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "revive refuses a terminal minted type",
+    "input": {
+      "scope": "self/probe",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "card",
+          "id": "card0001",
+          "f": {
+            "title": "Next"
+          },
+          "fields": [
+            "title"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive requires checked edits",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "checked": []
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive cannot name an undeclared field",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "fields": [
+            "absent"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive keeps one operation per record",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "fields": []
+        },
+        {
+          "op": "update",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive validates the named edit before translation",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "xxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "fields": [
+            "label"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "violation": {
+        "rule": "tag.label",
+        "path": "label",
+        "reason": "tooLong",
+        "max": 24,
+        "unit": "chars",
+        "measured": 25
+      }
+    }
+  },
+  {
+    "name": "revive cannot edit a const field even on a revivable type",
+    "input": {
+      "scope": "tree/b_00000001",
+      "tagField": {
+        "kind": "const",
+        "writer": "client",
+        "unit": "chars",
+        "max": 24,
+        "domain": {
+          "type": "string"
+        }
+      },
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "base": {
+            "label": "Before"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive cannot edit a time field even on a revivable type",
+    "input": {
+      "scope": "tree/b_00000001",
+      "tagField": {
+        "kind": "time",
+        "writer": "client"
+      },
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "base": {
+            "label": "Before"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "revive cannot edit a text field even on a revivable type",
+    "input": {
+      "scope": "tree/b_00000001",
+      "tagField": {
+        "kind": "text",
+        "writer": "client",
+        "unit": "bytes",
+        "max": 24
+      },
+      "plan": [
+        {
+          "op": "revive",
+          "t": "tag",
+          "id": "oak",
+          "f": {
+            "label": "Next"
+          },
+          "fields": [
+            "label"
+          ],
+          "base": {
+            "label": "Before"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "rule 8: a keyed create of a type with life and no field writes its presence alone",
+    "input": {
+      "linkFields": {},
+      "scope": "tree/b_00000001",
+      "plan": [
+        {
+          "op": "create",
+          "t": "link",
+          "id": [
+            "tag0001",
+            "tag0002"
+          ],
+          "f": {},
+          "fields": []
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "put",
+            "t": "link",
+            "id": [
+              "tag0001",
+              "tag0002"
+            ],
+            "present": true
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [
+          {
+            "t": "link",
+            "id": [
+              "tag0001",
+              "tag0002"
+            ]
+          }
+        ],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a command with scoped effects predicts records of other scopes, grouped by scope, its own first",
+    "input": {
+      "cmd": {
+        "name": "probe.branch",
+        "args": {
+          "parent": "b_00000001",
+          "child": "b_00000002",
+          "title": "Child"
+        }
+      },
+      "predict": [
+        {
+          "op": "write",
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": "Child"
+          },
+          "scope": "tree/b_00000002"
+        },
+        {
+          "op": "create",
+          "t": "board",
+          "id": "b_00000002",
+          "f": {}
+        },
+        {
+          "op": "update",
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": "Parent"
+          },
+          "scope": "tree/b_00000001"
+        }
+      ],
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {
+          "name": "probe.branch",
+          "args": {
+            "parent": "b_00000001",
+            "child": "b_00000002",
+            "title": "Child"
+          }
+        },
+        "predict": [],
+        "local": [],
+        "scopedPredict": [
+          {
+            "scope": "self/probe",
+            "changes": [
+              {
+                "op": "create",
+                "t": "board",
+                "id": "b_00000002"
+              }
+            ]
+          },
+          {
+            "scope": "tree/b_00000001",
+            "changes": [
+              {
+                "op": "update",
+                "t": "meta",
+                "id": "meta",
+                "f": {
+                  "title": "Parent"
+                }
+              }
+            ]
+          },
+          {
+            "scope": "tree/b_00000002",
+            "changes": [
+              {
+                "op": "write",
+                "t": "meta",
+                "id": "meta",
+                "f": {
+                  "title": "Child"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "rule 5: a prediction of another scope needs a command with scoped effects",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {
+          "id": "run00001",
+          "startedAt": 1800000000000,
+          "join": false
+        }
+      },
+      "predict": [
+        {
+          "op": "write",
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": "Run"
+          },
+          "scope": "tree/b_00000001"
+        }
+      ],
+      "plan": []
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "rule 5: a prediction names a scope that holds its type",
+    "input": {
+      "cmd": {
+        "name": "probe.branch",
+        "args": {
+          "parent": "b_00000001",
+          "child": "b_00000002",
+          "title": "Child"
+        }
+      },
+      "predict": [
+        {
+          "op": "create",
+          "t": "board",
+          "id": "b_00000002",
+          "f": {},
+          "scope": "tree/b_00000002"
+        }
+      ],
+      "plan": []
+    },
+    "expect": {
+      "error": true
+    }
   }
 ]

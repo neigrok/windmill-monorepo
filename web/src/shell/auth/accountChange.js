@@ -10,12 +10,14 @@ export function restoredDeviceHolder(engine) {
 }
 
 export class DeviceSeat {
-  constructor(products) {
+  constructor(products, reportCredential = () => {}) {
     this.account = null;
     this.previousAccount = null;
     this.lapsed = false;
     this.confirmed = false;
     this.products = products;
+    this.reportCredential = reportCredential;
+    this.credentialReported = false;
   }
 
   // The durable bound replica remembers the holder, without granting session authority.
@@ -27,6 +29,16 @@ export class DeviceSeat {
   async finishDeviceCleanup(change) {
     await Promise.all(this.products.map(async (product) => product.forgetDevice?.(change)));
     if (this.previousAccount === change.previous) this.previousAccount = null;
+  }
+
+  // Tells the engine whose credential the read found (engine.md §9.1): `me`'s account, null for none, undefined for a blip.
+  // A tell that fails is reported once a page, and the read goes on.
+  async tellCredential(engine, me) {
+    try { await engine.credentialHeld(me === undefined ? undefined : me?.id ?? null); }
+    catch (error) {
+      if (!this.credentialReported) this.reportCredential(error);
+      this.credentialReported = true;
+    }
   }
 
   // `me` is a user, null for a real 401, undefined for a blip. Returns null when nothing changes.
@@ -61,6 +73,73 @@ function forget(product, change) {
 
 function complain(product, error) {
   console.error(`forgetDevice failed for product "${product?.id}" — its device residue may survive this account change`, error);
+}
+
+// What products say into the account-change questions (engine.md §7.10): a sign-in question one answers by itself, its
+// count in the product's own records, a question one words itself, the steps of that question told back to it, and the
+// line on what signing out discards from this tab. Each product's hook is isolated: one that throws reports the question
+// it was asked (`adoption`, `signin`, `signout`, `step` or `notice`), and the shell asks as it would of a product that
+// says nothing, in its own words and the engine's count.
+export class ProductQuestions {
+  constructor(products, report = () => {}) {
+    this.products = products;
+    this.report = report;
+  }
+
+  // The answer the due product gives by itself, or nothing for the person to give.
+  adoptionAnswer(engine, due) {
+    return this.ask('adoption', () => this.syncOf(due.product)?.adoptionAnswer?.(engine, due));
+  }
+
+  // How many of its records the due product counts, or nothing for the engine's count.
+  adoptionCount(engine, due) {
+    return this.ask('signin', () => this.syncOf(due.product)?.adoptionCount?.(engine));
+  }
+
+  async signInWords(engine, due) {
+    return this.heard(await this.ask('signin', () => this.syncOf(due.product)?.signInWords?.(engine, due)));
+  }
+
+  // The sign-out question in the words of the product whose work it all is, where that product words its own.
+  async signOutWords(engine, question) {
+    for (const product of this.products) {
+      const words = await this.ask('signout', () => product.sync?.signOutWords?.(engine, question));
+      if (words) return { ...question, words: this.heard(words) };
+    }
+    return question;
+  }
+
+  // Every product's line on what signing out discards from this tab (`signOutNotice()`), asked as the question renders.
+  signOutNotices() {
+    return this.products.flatMap((product) => this.askNow('notice', () => product.signOutNotice?.()) ?? []);
+  }
+
+  // A product's words with each step the person takes told to it (`onStep`), a step it cannot hear dropped.
+  heard(words) {
+    return words && { ...words, onStep: (step) => this.askNow('step', () => words.onStep?.(step)) };
+  }
+
+  async ask(question, hook) {
+    try {
+      return await hook();
+    } catch (error) {
+      this.report(question, error);
+      return undefined;
+    }
+  }
+
+  askNow(question, hook) {
+    try {
+      return hook();
+    } catch (error) {
+      this.report(question, error);
+      return undefined;
+    }
+  }
+
+  syncOf(id) {
+    return this.products.find((product) => product.id === id)?.sync;
+  }
 }
 
 export class DocumentDataScope {

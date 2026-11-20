@@ -21,6 +21,7 @@ export const INTENT_MACHINE = [
   { from: ['sent'], event: 'reidentify', to: ['ready'] },
   { from: ['sent'], event: 'skew-return', to: ['ready'] },
   { from: ['sent'], event: 'rewind', to: ['ready'] },
+  { from: ['ready'], event: 'vacate', to: ['resolved'] },
   { from: ['acked'], event: 'resolve', to: ['resolved'] },
   { from: ['acked'], event: 'epoch', to: ['ready'] },
   { from: ['held', 'ready', 'sent', 'acked'], event: 'discard', to: ['discarded'] },

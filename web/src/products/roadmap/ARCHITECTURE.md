@@ -11,9 +11,9 @@ point for the component showcase.
 | Area | Responsibility |
 |---|---|
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
-| `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
+| `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back, and the person's roadmaps it is read from; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
-| `room/` | What the room holds: the load and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
+| `room/` | What the room holds: the load and its two readings of a roadmap (today's, and the device's copy behind its switch, with a roadmap's birth there) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
@@ -22,12 +22,14 @@ point for the component showcase.
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
 | `layout/` | Deterministic layout engines behind `index.js` |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools |
-| `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB |
+| `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB, and what signing out takes from the device |
 | `persistence/` | HTTP repository, account tree registry and device preferences and ledgers |
 | `shortcuts/`, `input/` | The room's keys and the pure hold recognizer |
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, authored starter roadmaps and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
+| `kept/` | The one list of what cannot land (§6, flow 49), where the room reads the device's copy: roadmap's notices in every scope read by the domain, and the records the carry-over set aside, each a kept change in the list's words, offered from the shell's account menu and shown as a dialog or as pages; `RoadmapSession.jsx` mounts it beside every room |
+| `carry/` | The carry-over (§8.2), where the room reads the device's copy: what the old bundle's stores hold (`OldStores.js`, the stores read through their own classes, what each roadmap's entries come to as the domain's acts, and `CarryNotes`, what the carry-over remembers in this browser from load to load), and the run (`CarryOver.js`) that moves each roadmap only into the replica it started on and that the roadmap belongs to, under a browser lock with its ledger, and deletes each entry once carried and, for a roadmap it created, once the server took it; `RoadmapSession.jsx` starts it on every load, again as another replica becomes active or the active one is bound to another account, and again as the connection returns to a run that left a roadmap waiting. An account's sign-out Discard takes the old roadmaps its question named (`sync/accountChange.js`) |
 | `tending/`, `reminders/`, `settings/` | Ask AI, reminder preferences and account data export |
 | `marketing/` | Product landing, metadata and self-playing scenes |
 
@@ -97,11 +99,13 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 
 ## Loading a roadmap
 
-`room/useRoomLoad.js` loads a tree through `HttpTreeRepository` or the account's device fallback, constructs
-`SkillTree`, derives progress through `UnlockRules`, runs layout and installs the render model in
-`SkillTreeScene` when one is available. Without WebGL2 it installs the tree and model with null scene bounds,
-seeds activity and starts synchronization without any scene or camera calls. Layout is synchronous and cached
-by graph structure, effective engine and, for caption-aware engines, labels.
+`room/useRoomLoad.js` loads a tree through its reading, constructs `SkillTree`, derives progress through `UnlockRules`,
+runs layout and installs the render model in `SkillTreeScene` when one is available, then has the reading follow each
+change. Without WebGL2 it installs the tree and model with null scene bounds, seeds activity and starts following without
+any scene or camera calls. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
+engines, labels. The reading is `room/LatticeReading.js` (`HttpTreeRepository` or the account's device fallback, then
+`SyncSession`) everywhere a build does not turn the replica on; where it does, it is `room/ReplicaReading.js` (Reading
+the device's copy, below).
 
 The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A tree whose pointers the server
 could not follow (`503 opens-unavailable`) reports `roadmap-opens-load` and falls to the device's copy like any failed read. A server tree whose marks can't be
@@ -114,7 +118,10 @@ the marks it keeps and announces none of them as new.
 A failed Board load at 744–1023px offers `RecoveryTreeSwitcher` to authenticated account-root navigation,
 independently of the failed tree's ownership. Shared routes never offer this door. A signed-out device route
 must first establish its unclaimed index row through `LocalTreeRegistry.readList`; a failed read grants no
-capability. Recovery has no current tree, counts, checkmark or edit actions. Account lists use
+capability. Where the room reads the device's copy, that row is the anon replica's list holding the roadmap, and the
+switcher lists the person's roadmaps as the replica keeps them, the account's and the browser's alike (`listHeld`, the room's
+`heldTrees`); before the copy opens it cannot say which are the person's, so the list fails as an account list does, with
+Retry list, and reports nothing the copy's own failure has told. Recovery has no current tree, counts, checkmark or edit actions. Account lists use
 `listServerTrees` and preserve authoritative empty versus failed responses, without adding device rows.
 Device lists strictly read the anonymous index and readable local records. Index, storage and corrupt-record
 failures retain Retry list. The existing array-only registry reads retain their contracts.
@@ -130,8 +137,8 @@ or Retry list after the read; Escape restores the trigger, outside dismissal pre
 and late replies cannot reopen it. Browser history supplies Back. New tree and the gallery use their existing
 navigation callbacks.
 
-After load, `SyncSession` owns the durable lattice. Local gestures and remote frames both produce a projection
-through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
+After a load through `LatticeReading`, `SyncSession` owns the durable lattice. Local gestures and remote frames both
+produce a projection through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
 projection.
 
 A saved camera is scoped to its layout engine and format. Without one, an owner opens at working zoom over the
@@ -142,13 +149,234 @@ scene stays silent unless it is told what to say. Without WebGL2, the planted su
 have no Board presentation and are absent; their undrawn states are in the
 [consistency ledger](../../../../docs/design/consistency.md).
 
+### Reading the device's copy
+
+[Roadmap on the sync engine](../../../../docs/foundation/roadmap-on-the-engine.md) §8.4 moves the room onto the replica.
+A build that sets `VITE_ROADMAP_REPLICA_ROOM=on`, read in one place (`replicaRoom.js`), has the route table hand the room
+`replica`, and Settings' export reads the device's copy too (`settings/YourDataSection.jsx`). Only roadmap's cutover
+and Web Deploy set it: Web Deploy builds the room on exactly when the running server serves roadmap's scopes
+(`test/products/roadmap/routes.test.js` holds every other workflow to building it off). Built off, the room and export
+read as above.
+With the switch on, every room reads through `ReplicaReading`, the demo's among them:
+
+- **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
+  it, E-3), observes the account's list `self/roadmap` and every scope the domain reads the roadmap through: every roadmap
+  of the account where the open one is in the list, else the open one and each roadmap above it (by its `meta.parent`),
+  each subscribed as it comes to be read, and read only once the engine has taken that subscription (it reads a scope it
+  does not pull as pulled and empty, which would hide a subtree whose roadmap above it is not subscribed yet). It keeps one hold on each scope it observes. The room drops every scope it
+  subscribed, once each, and releases every hold, when it leaves; the engine counts a tree's holders, so another reading
+  that holds the same roadmap keeps it followed. It reads the engine only through its public API
+  (`test/products/roadmap/room/engineBoundary.test.js` holds every `room/` file to that).
+- **Opening.** It reads nothing, and tells nothing, until the engine stands for the person whose device it is: an
+  engine that holds the browser's anonymous replica stands once the shell has said whether someone is signed in (the
+  session's `signedIn`, null until then), as a signed-in person's first visit holds that replica until the engine
+  binds their account; where the shell has not said within `FIRST_COPY_MS` (its account read failing, or a sign-in
+  question standing), the engine stands as it is, so a device's own copy opens without the network. It opens from what
+  the device holds, asking nothing of the network first, once the scopes' stored rows are `loaded`, but only from a
+  whole copy: the server's, the first pull of the roadmap's tree scope and, for the person's own, of their overlay of
+  it having ended (`firstPullComplete`), or one the device made, of which the server has sent nothing (the domain's
+  `readRoadmap`; signed out, or made offline). Until then the room shows its loading skeleton, so its first view, its
+  counts and its Board are decided on the whole roadmap, never on the rows a pull under way has brought. The person's
+  own roadmap also waits, while the server answers, for every roadmap its counts read through
+  (`ReplicaRoadmap.countsRead`: each its steps open, and theirs); one still unread when the server goes quiet or out
+  of reach stands unread on its step. Where the engine cannot reach the server (its `connection` is not `online`, or
+  it is paused for auth or an upgrade) and the device holds no whole copy, or the server goes ten seconds without an
+  answer (`FIRST_COPY_MS`, from one answer to the next, so a long pull that keeps answering is waited for), the room
+  shows its load error and Try again, as a failed read does. A roadmap the server does not serve, one the device holds
+  nothing of, a hidden subtree (§5) and a root whose meta has not arrived (D-3) are in no address once the server has
+  answered for it: the same load error.
+- **Shapes.** `room/ReplicaRoadmap.js` is the room's edge: each roadmap's records (`HeldRoadmap`) are read by the
+  domain's `readRoadmap` into a `RoadmapTree` (its steps, links, meta and kinds, and the owner's marks and pointers, a
+  mark dated by the server once no queued entry still changes its record, the snapshot's `pending`), the domain's
+  `RoadmapAccount` reads them, and the open roadmap comes out as the tree data `LatticeReading` hands on: present steps
+  in authored order, each following what `FollowGraph` reads it follows through absent steps (D-5), a step's `opening`
+  from the account's `openingsOf`, the kinds that own their hue (`LegendRead`), its name and `TreePlace` from where the
+  account locates it, the owner's marks with the dates `RoadmapAccount.progress` reads, the owner's workspace from the
+  overlay, the guides above from `RoadmapAccount.guides` (`useRoomGuide` asks the server nothing), and the switcher's
+  and the sheet's list in the order of `RoadmapAccount.list`. A reader's roadmap is read without its overlay: the room
+  shows a reader the owner's marks. It decides nothing: a rule it would need belongs in `domain/`.
+- **Following.** Each publication of an observed scope is read once it has reached every observation; a roadmap whose
+  records did not change answers the reading it answered before. A changed one stands through the room's `onTreeChanged`;
+  the owner's marks go to `RoomProgress.adoptRemote`, as another device's do, and the workspace and guides are seated
+  again. A roadmap that stops standing while the room is open keeps its last picture; the next load says it is not there.
+  The room's activity feed is the server's (`GET /v1/trees/{id}/activity`), asked only where the server holds the
+  roadmap (`served`): a reader's, or one of the account's, whose failed read reports once a visit
+  (`roadmap-activity-load`). A browser's own roadmap signed out, which the server never held, asks nothing and shows no
+  feed.
+- **Landing.** On the person's own roadmap the reading reads what the device tells of their changes that met another
+  device's (§6), the domain's `landingOf`, as the room opens and after each change; `ReplicaReading.landing` puts each in
+  the room's names, a line a step: the step their edit brought back, or the step they made or linked that now follows
+  past a step deleted elsewhere before their link landed. The device keeps nothing of a step deleted elsewhere
+  (engine.md §7.5), so a deleted step is named from the note, which took its name when the person made the step or link. `room/useRoomLanding.js` holds each line for the rest of the visit and shows it
+  (flow 48, `copy.js` `landingNote`) under the step's card on the Board (`ColumnCards`, counted in the card's slot of the
+  run) and under the step page's toolbar. The first time either shows it, half of it in view on a Board no step page or
+  composer covers, or the page open on its step, the reading's `tell` writes the domain's `ClearLanding` out of the Undo
+  stack and the room emits `roadmap_landing`; a later opening is quiet. A line no approved words say, a step that
+  follows nothing past the deleted one or past one the note holds no name of, stays in the note untold. A read
+  that throws reports `roadmap-replica-landing` once and tells nothing that visit; the room reads on. Every write of the
+  note lets go of what has landed and says nothing (`readNote`), `DeleteRoadmap` takes the notes of the roadmap and its
+  subtrees, and a room that finds its roadmap gone as it opens, or sees the person's own roadmap leave their list,
+  writes `ClearLanding`, which lets the whole note go where the domain reads the roadmap gone from the list.
+- **Status.** The Saving, Saved and Offline line is the room's own (`sync/useRoomSyncNotices.js`), read from the engine:
+  `ReplicaReading` answers `subscribeStatus` and `statusSnapshot` in the shape `SyncSession` does, from the engine's
+  `connection` and its auth and upgrade stops (Offline while the browser reports no network, and after the grace while
+  the server goes unanswered), and the `outbox` counts of `tree/T` and its overlay the server has not taken, ready or
+  sent, those a command predicts into them included. It never says refused: what cannot land waits in Kept here.
+- **Kept here.** Roadmap's session (`RoadmapSession.jsx`, the route table's `session` where the switch is on) mounts
+  `kept/KeptHere.jsx` beside the step draft's provider, above every room. It reads roadmap's notices in every scope through
+  the engine (`useSyncNotices`), a forgotten roadmap's `scope-dead` among them, and `kept/KeptChanges.js` reads each through
+  the domain's `cannotLand` into a kept change: its reason, its title (its own words, else the name the device last read
+  of it in its roadmap) and every word it holds. After them come the records the carry-over set aside in the active
+  replica's ledger rows (the domain's `carriedKept`), each named by its own words or by the step or roadmap it belonged to. While the list shows a change, the session offers the shell's account
+  menu `Kept here · N` (flow 49.06, `useAccountRowOffer`), N the list's count. Choosing it opens `kept/KeptList.jsx`: from
+  1024px a dialog, the list beside the change it selected with Copy (49.01); below, a page of the list with its count
+  and Close (49.02), a page of a change with Copy, Copied, or Copy failed and Select text, and Discard (49.03, 49.05,
+  49.08), and Discard's one question on a page of its own (49.04). Discard dismisses the notice, or lets the ledger go of
+  a carried record (`DiscardKept`); the list closes when it holds nothing. The boards do not draw, so the list does not build: a layout for 744–1023px (the pages show there),
+  Discard and a copy's outcome from 1024px, the empty list, a change with no words of its own (a mark, a pointer, a link
+  between steps) and a record the carry-over kept whole past its bound (`pastBound`, §8.2); the last two are neither
+  listed nor counted. Each change that cannot land is told once (`roadmap_write_cannot_land`), and a notice no rule lists reports
+  `roadmap-kept-unexpected` once, `kept/toldNotices.js` keeping the told ids for the page load and, where the browser
+  keeps storage, the ids of the told notices and carried records the engine still holds. A Discard the engine answers `false`, the notice no
+  longer held, closes the change quietly.
+- **Sign-in and sign-out (flow 50).** The engine's lineage rule adds the roadmaps made signed out to an account that
+  holds none without asking. Where it holds some, the shell asks *Add your roadmaps?* in roadmap's words
+  (`sync/accountChange.js`, through the route table's `sync` group): every roadmap the signed-out work changes, as its
+  Discard takes all of it, in the order the browser first changed them, a subtree's work its root's: the browser's own by
+  name, and another's, such as one whose step the person marked as a reader, as "{roadmap} · N changes", named as the
+  anon replica holds it and never from another replica. A roadmap made and deleted signed out goes unnamed; work that
+  changes no roadmap of the browser's own is added without asking. At sign-out, where every unsent change is roadmap's,
+  the shell asks *Keep unsent changes?* with each roadmap they change and how many, and with the account's roadmaps the
+  old stores still hold (§8.2) and their changes, asked where only those wait; any other sign-out keeps the shell's words.
+  A change is one act of the person's, the engine's entries of one gesture: making a roadmap, which writes its record and
+  its first words, is one change, and so is a gesture composed over several scopes; an old roadmap no server holds yet is
+  one change, and each of its marks and workspace items another. Escape
+  cancels either: a cancelled sign-in signs the account out and leaves the work on the browser, unsent. Each step is
+  told (`roadmap_signin`, `roadmap_signout`). `claimLocalTrees` claims nothing here. A sign-in's Discard takes, once the
+  sign-in completes with the work it counted gone, the legend, the ledgers and the last place of each roadmap that work
+  wrote and the anon replica no longer holds, and the old stores of each roadmap the carry-over carried into that work,
+  while they hold what they held as the question was asked (`forgetDiscarded`); Add and a cancel take none.
+- **Sign-out.** Roadmap's `forgetDevice` runs the same module's sweep after the engine's sign-out, Keep or Discard, an
+  account replacement or a closure, and again at the next start where one was cut short: it takes every `landing:*`
+  device row from each replica the device holds (Keep leaves the account's dormant replica with its device rows), the
+  told notice ids, and the legend, the return and milestone ledgers, the last place and the share residue of every
+  roadmap but the anonymous ones (the anon replica's and those it reads, and the old index's rows that name nobody,
+  `persistence/deviceResidue.js`). It leaves the stores today's sync wrote to the carry-over (INV-4), but where the
+  account's replica went with a Discard: then it takes the old roadmaps that sign-out's question named, while they hold
+  what it counted (`CarryNotes.counted`, noted as the person answers Discard), or for a closure every one whose index
+  row names the account. What Keep holds for the next sign-in, unsent work, kept notices and the carry-over's ledger, the
+  engine keeps; Discard takes the ledger with its replica.
+- **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
+  marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, the failure
+  reported once a visit (`roadmap-progress-load`, through a repository that knows the server keeps the roadmap, `served`,
+  as the activity read's does, Following above). The replica holds none of
+  the owner's marks of a subtree, so a step that owns one stands on what that read's `subtrees` says the subtree has come
+  to (`HttpTreeRepository.loadProgress`, then `ReplicaRoadmap.seedOf`), the pill and its words as today's room shows
+  them, through every change the room follows until its next load; one the read says nothing of, or whose read fails,
+  stands `unread`. No subtree is subscribed for it. A link to a readable roadmap opens it this way signed in or not (the
+  anon replica pulls the readable trees it opens), its tree scope and each roadmap's above it subscribed as the room opens
+  and dropped as it leaves; a subtree's door is a new room, so the subtree is subscribed as the person goes in. A
+  signed-in reader's own overlay of the roadmap comes with its tree scope (E-3), where their own marks live; the room
+  shows the owner's, and offers a reader no mark. A roadmap the person may not read, a private one a stranger opens among
+  them, is in no address: the load error.
+- **The demo.** The sample at `#/demo` is a public roadmap of the house account (§7, §8.1), and its room opens as a
+  reader's does, whoever's list holds it: its tree scope subscribed as the room opens and dropped as it leaves, each
+  subtree its steps own standing on what `GET /v1/trees/{id}/progress` says, and the server's activity feed. Its marks
+  are the demo's stage (`stagedMarks` in `demo/demoStage.js`) in place of its owner's, as with the switch off, so its
+  coach finds Rig the boat yourself the one step up next, and a visitor's marks live in the room alone. It asks nothing
+  of a route §7 retires.
+- **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`, `UNSHOWN`), once
+  a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
+  (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
+  no answer came before the device held a whole copy (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
+  engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
+  the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
+  reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
+- **Births.** A roadmap is born through the domain on the replica the engine holds active (`room/ReplicaBirth.js`): the
+  blank birth and a pasted plan (`paste/NewTreeBirth.jsx`) and a quest (`quests/QuestShelf.jsx`) are `CreateRoadmap`, with
+  a plan's legend of its own in place of the genesis kinds and the steps it brings done then marked, signed out in the
+  browser's anon replica (§5 Signed out) and signed in in the account's, which the engine sends; nothing goes to
+  `POST /v1/trees` or the old stores. A birth answers its roadmap once the creation commits, and whether it was born in
+  the anon replica as the engine stood before it: marking the done steps is a second commit, and a refusal or failure
+  there reports `marks` and costs the marks alone, so a retry never makes a second roadmap. A birth that plants nothing
+  throws a `BirthFailure` with a bounded reason, `unkept`, `unopened` or `refused`, which the door's
+  `roadmap_board_create` carries; only `unopened` and `marks` report. A browser whose copy could not open is told before
+  anyone types, signed in or not, as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to
+  the newest of the person's list as the replica keeps it (`ReplicaReading.readList`), or to the quests; where the copy
+  cannot open it cannot say which, so it stays, and the reading tells why (`roadmap_load`).
+- **The person's roadmaps outside the room.** The home card and the landing offer the newest of the person's roadmaps
+  back through `useYourRoadmaps` (`resume.js`), which reads the copy's list (`ReplicaReading.followRoadmaps`, a reading
+  of no roadmap) once the device can say what each roadmap is, and again as it changes: the account's signed in and the
+  browser's own signed out, where today's surfaces read `GET /v1/trees` signed in alone. It loads the reading with its
+  first use, so neither surface carries the room's modules where the switch is off; the landing's cache of the list
+  still stands for the first paint of a person signed in. A list the copy has not read is unread, not empty: the home
+  card and the landing keep what they held, so the cache stands and nothing overwrites it, and the landing's chrome
+  waits on the copy as it waits on today's list, signed out too, until the copy lists the roadmaps, does not open within
+  `FIRST_COPY_MS`, or cannot open at all; a copy that opens after its bound is listed then. The demo's coach reads the
+  copy's list to know whether a person signed in owns a roadmap. Its rows carry no `dominantKind`, so each surface draws
+  a roadmap in its default hue (Open work).
+- **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
+  `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
+  stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's
+  (`SkillTreeView.replica.browser.test.js`), but for a roadmap's own deletion, held (The switcher's delete, below).
+  - *Out of the Undo stack, as today:* the owner's marks are each step's `Complete` or `Reset` (whether a step's pointer
+    opens a standing roadmap read from the account, as the domain asks); a roadmap's name, from the room or a switcher's
+    row, is `WriteRoadmap`, and a subtree's is its owning step's label (`ChangeStep`); the guide is `WriteRoadmap`, the
+    share dialog's visibility `SetVisibility`; the workspace's edits go through `ReplicaWorkspace`, subtasks and links by
+    the domain's workspace actions and the note through the kit's one draft of it, saved in place. Each such act is
+    released at once, so the engine keeps no Undo of it.
+  - *Gestures:* `dispatch(gesture)` as today, each one or more of the domain's acts. They are decided first over what
+    the replica holds (`ReplicaSession.decide`, the kit runner's `decideAct` and gone check, each act on its own, before
+    anything is written): a gesture the domain refuses is null, so the room shows what it shows today for that
+    gesture's failure, and its refusal is said in today's words where there are some. Then they are written as one
+    composed act (`runner.runComposed`, domain-kit.md §9.7), each part reading what the parts before it plan; a part
+    refused there writes nothing of the gesture. The receipt's `landed` answers the parts' results once the act was
+    taken, and the room says a gesture's success (its toast, its `saved` event, its activity line) only then (`onceLanded` in
+    `board/acts.js`, at once on roadmap's own session). A paste's steps are pulsed and told under the ids the domain
+    gave them, from the import's result. A new step is `CreateStep` under the id the room minted for it, so the room
+    selects and reveals it as today; a change of its words or kind `ChangeStep`, a reorder `MoveStep` below the sibling
+    the drop names, a delete `DeleteStep`, links `ChangePrerequisites` on the step they lead to, a paste `ImportSteps`
+    under the step it lands beneath and its new kinds `CreateKind` after; an edit of a step's words and prerequisites, a
+    link moved to another step and a gesture on several steps are each act in turn, parts of the one act. The legend's kinds are
+    `CreateKind`, `ChangeKind`, `RecolourKind` and `DeleteKind`; the tree a step opens `SetPointer` or `ClearPointer`,
+    its picker listing the person's roadmaps as the replica keeps them and reading an address there too: one of theirs
+    from the room's reading, and any other by a reading of its own (`ReplicaReading.readCard`), which subscribes the
+    roadmap while it reads it, as a reader's room does, where today's picker asks `GET /v1/trees/{id}` (§7 retires it);
+    reads of one address while its reading is out share that reading (`heldTrees.read` in `room/useRoomLoad.js`).
+    The copy names no author, so a roadmap the person can only read is said as readable, without whose.
+  - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
+    ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A
+    step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
+    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. What each Undo and
+    Redo came to (`applied`, `skipped`, `unavailable`) is emitted as `roadmap_undo` once the engine knows: the reading's
+    every change asks the session to follow the ones the server still settles (`followInverses`).
+  - *Refusals and failures:* a write the domain refuses is said in today's words where there are some (a roadmap at its
+    cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
+    store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
+    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
+  - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
+    engine reconnects, and its lineage rule takes what the device holds at sign-in.
+- **Export.** The row's Export writes the room's picture (below), here `ReplicaRoadmap.seed` and the owner's marks.
+  Settings' export (`readReplicaRoadmaps` in `settings/exportArchive.js`) opens a reading of no roadmap, which subscribes and
+  holds what it reads as any reading does and lets go when the export ends, and asks nothing of the server itself:
+  `readEveryRoadmap` waits until the device has read the person's list and every roadmap in it, or, where the engine
+  cannot reach the server, until the device's stored rows are loaded, while the server answers within `FIRST_COPY_MS` of
+  its last answer. Each root of the list is
+  then a file from `ReplicaRoadmap.seedOf` and `marksOf`, the reads the room opens a roadmap from; one the device has not
+  read stays out, and a copy that does not open is the export's error. For the same records the file is the one today's
+  export makes, but where the replica reads them otherwise: steps in their authored order (`ord`, born, id) where today's
+  server sends them in id order, so siblings and a step's first prerequisite follow the roadmap's order; a step that
+  followed a step deleted elsewhere follows what that step followed (D-5) where today's server drops the link; and a step
+  is done by the owner's mark alone, as the room shows it, where today's export falls back to the steps' seed `status`
+  for a roadmap the owner never marked.
+
 ## A step that opens a tree
 
 A step opens a tree two ways: it owns a subtree (below), or it points at another tree of its owner's. The pointer is the
 node register `opens`; what either comes to is an `Opening` (`model/Opening.js`): the opened tree's title, whether it is
 complete, done of total and whether it leads back, or that nothing of the owner's stands at the other end. A step that
 owns a subtree opens it whatever its pointer holds (`Opening.owned`, `owned: true`). `GET /v1/trees/{id}` answers the openings to the owner, the
-repository builds them, and `useRoomLoad` stands them on every projection it hands on (`Openings.onto`), so each such
+repository builds them, and `LatticeReading` stands them on every projection it hands on (`Openings.onto`), so each such
 step carries its `opening` through every tree built from it. Only the owner's room stands pointers: a reader, a shared
 address and the demo see a step that points at a tree as an ordinary one. A tree that lives only on this device is answered by the device instead (below). Until the session has joined the server's state the load is the newer word: a step it
 named opens that tree and a step it did not opens none, whatever an older copy on the device holds. From then on the
@@ -162,8 +390,8 @@ confirmation or reconnect, and the same round asks nothing twice. A load that re
 a `503`) leaves every pointer `unread` and asks nothing more.
 
 The device's copy of a server roadmap holds its pointers, the ids of the trees its steps open, in the stored lattice,
-and nothing else of those trees. It goes when the account that held the device signs out or another signs in
-(`forgetDeviceTrees`), and a lapsed session keeps it.
+and nothing else of those trees. Where the room reads today's sync, it goes when the account that held the device signs
+out or another signs in (`forgetDeviceTrees`), and a lapsed session keeps it.
 
 **On the device.** A tree that lives only on this device (`LocalTreeRegistry.onDevice`: a row its holder sees that no
 account has claimed) opens trees on this device. `model/OpenedTrees.js` holds the server's rule (`OpenedTrees` in
@@ -229,10 +457,15 @@ holder (`useRoomHolder` in `room/useRoomAuthority.js`, the one answer to who hol
 that lives only on this device, whoever is at the device, signed in or not (`place: 'device'`), until a claim takes the
 tree to the account and the hook asks again; on any other, the account that holds the room as its owner, once the server
 has answered for it in this document (`confirmed` in the shell's auth context; a page that starts with no connection
-stands on the cached account, which is not one) (`place: 'account'`). The way back shows where this device's index keeps
-the roadmap it leads to for that holder, under the title the index keeps: as that account's (`LocalTreeRegistry.owned`),
-or as a tree that lives only here (`onDevice`); `open` writes that row for the roadmap it leaves before it navigates, as
-its session may not have stored anything yet. Without a holder there is no way back, no carried view or step, no door
+stands on the cached account, which is not one) (`place: 'account'`). Where the room reads the device's copy, the
+engine's binding answers instead (whether the active replica is bound): the owner's roadmap in the browser's anon replica is whoever's at the
+device (`place: 'device'`) until a sign-in's lineage rule takes it to an account, and one in a replica bound to the
+account is the account's, with no connection and through a lapse too, as its copy is; no index is read. The way back
+shows where this device's index keeps the roadmap it leads to for that holder, under the title the index keeps: as that
+account's (`LocalTreeRegistry.owned`), or as a tree that lives only here (`onDevice`); `open` writes that row for the
+roadmap it leaves before it navigates, as its session may not have stored anything yet. Where the room reads the
+device's copy the title is the holder's list there (`heldCard`, the reading's `card`) and `open` writes nothing, as the
+old index is the carry-over's alone (§8.2). Without a holder there is no way back, no carried view or step, no door
 into a tree by a pointer and no event; a subtree's are anyone's who reads it (A subtree, below). So on a tree the server
 keeps, a lapsed session, its copy on a device with nobody signed in and a start with no connection, and anywhere a reader,
 keep a pointer's tree mark and go nowhere; on a tree that lives only on
@@ -295,7 +528,8 @@ that opens no tree, and a ⋯ on its heading on one that does, the heading and t
 
 The + and Change tree open `TreePicker`: a nested dialog in the step document from 744px and a full-screen page over the Shell
 on phones, with the field and the commit in the reach band. `TreeChoices` is its model: the person's roadmaps on the
-server but the one they are in (`listServerTrees`, the switcher's order), one choice, the tree the step opens
+server but the one they are in (`listServerTrees`, the switcher's order; where the room reads the device's copy, the
+replica's, in the same order), one choice, the tree the step opens
 arriving chosen, and Find a tree narrowing by title as the prerequisites picker does. On a tree that lives only on this
 device the rows are this device's trees but the one they are in, newest first, done of total worked out on the device
 (`listDeviceTrees`), each tagged *on this device* as the switcher tags them; the context says how many trees are on this
@@ -307,7 +541,9 @@ reported once as `roadmap-device-opens-read` and not again by the picker. Attach
 on screen. Only this app's address (`pastedTreeId`: `<origin>/t/<id>` or `<origin>/#/app/<id>`, the scheme and a step
 optional) or a bare tree id (`t_` and sixteen lowercase hex characters, the id the server mints) names a roadmap; any
 other text only filters and sends nothing. One of theirs selects its row. Any other is read once it was pasted or the
-field has been still for 300 ms, and once per id (`readTreeCard`): a roadmap they can only read is the one blocked row
+field has been still for 300 ms, and once per id (`readTreeCard`; where the room reads the device's copy, from the copy, Reading the
+device's copy): a read that answered stands for its id, and where the room reads the device's copy, an id asked again
+before its read answers shares that one reading. A roadmap they can only read is the one blocked row
 and Fork tree is the only commit, and one they cannot read says so. Fork runs `ForkDoor`, which hands the copy back
 instead of opening it; the list is read again and the copy is a row to choose, so attaching stays its own act. A list
 that cannot be read says *Couldn’t load your trees* with Try again; an address whose read failed says *Couldn’t load
@@ -396,7 +632,7 @@ request lost while online among them), or `device`.
 Guides add downward: an agent working a tree is given the guides of its owner's trees above it, farthest first, and
 then the tree's own, and the note shows its holder the same stack. `useRoomGuide` reads them once each time the room
 opens a tree the server keeps for its holder, the account the tree visit acts for (`GET /v1/trees/{id}/guides`,
-`readGuides`), and hands them on as `above`, each `{ treeId, title, text }` (`guidesAbove` in `guide/GuidesAbove.js`):
+`readGuides`; a room on the device's copy asks nothing, its guides above coming with its roadmap), and hands them on as `above`, each `{ treeId, title, text }` (`guidesAbove` in `guide/GuidesAbove.js`):
 the reply without the tree's own entry, since the room holds that guide and a save shows at once. A reader, the
 shared-reader mode, the demo, a device with nobody signed in, a tree that lives only on this device and a lapsed session
 make no read and are shown nothing from above. The guides from above live in memory alone. Leaving the tree aborts the
@@ -486,7 +722,7 @@ New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match a
 original text after Unicode lowercasing. Its current row comes from the host projection, with up next and
 locked counts from the same unfiltered Board model as Next. At 1,000 or more total steps it uses
 `exactProgress` when both state counts are supplied, otherwise the truthful done/total `progressLabel`. Other
-roadmaps come from `listAllTrees`. Readers never receive the owner sheet. `TreeSwitcher` is the row's
+roadmaps come from `listAllTrees`, or where the room reads the device's copy from the copy's list. Readers never receive the owner sheet. `TreeSwitcher` is the row's
 equivalent from 744px and owns rename and delete. Its row actions appear on hover or while the row contains
 keyboard focus, and stay visible on coarse-pointer tablets at 744–1023px, with 44px targets. Rename commits on
 Enter or blur; Escape cancels and returns focus to Rename. Keep or Escape in a delete confirmation returns focus
@@ -523,13 +759,28 @@ load. A write that fails reports `roadmap-device-cascade` once, under the name o
 steps on disk: the open tab's own steps vanish from its screen and come back after a reload, each opening a tree that is
 not found and following its mark, to detach or delete by hand. Nothing on the server is touched.
 
-**Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
+**A held deletion on the device's copy.** Where the room reads the device's copy, the confirmed delete is the domain's
+`DeleteRoadmap` (`ReplicaSession.deleteRoadmap`), held nine seconds and permanent once the hold ends (R-7): the roadmap
+and its branch leave every list at once, and no request is made. The deletion answers itself as a `HeldDeletion`
+(`identity/HeldDeletion.js`). A row that is not the open roadmap goes as today. The open roadmap's lands the person on
+their roadmaps (`#/app/roadmaps`, `identity/YourRoadmaps.jsx`, flow 51), the deletion in that history entry: the page
+lists the person's roots as the replica keeps them, one row each leading into it (a chevron from 744px), and while the
+hold stands says *Roadmap deleted* with Undo in the room's toast, for what is left of the hold, with no countdown, its
+280 ms fade and a polite word that moves no focus. Undo is the engine's `cancelHeld` (`undeleteRoadmap`), true only
+while every entry of the deletion is still held; it returns the person to the roadmap, whose room says *Deletion undone*
+once its view stands. A page reached after the hold, or reloaded, offers no Undo. A build without the switch has no such
+page: its route table serves `#/app/roadmaps` as any roadmap address.
+
+**Export** builds one Markdown file through `buildRoadmapExport` in `exportArchive.js`, with a
 `<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a
 replant reads past, and every step, including each root, is a list item with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
 Markdown viewers. Indentation preserves primary prerequisites; additional prerequisites become `needs also`
-notes. Kind descriptions and link labels are outside the paste format. Settings exports all roadmaps as a zip. A roadmap it
-can't read stays out, marks included, and the line says *Exported 1 of 2 roadmaps.*; with none read nothing downloads and the
-line is the export's error.
+notes. Kind descriptions, link labels and the workspace are outside the paste format. The row's Export writes the room's
+picture of the open roadmap, a subtree included, with a step whose delete is held left out. Settings exports every roadmap
+of the person's list as a zip (`buildExportArchive`), a subtree being no row of it: from the server and this device's store
+(`readAccountRoadmaps`), or where the room reads the device's copy, from there (`readReplicaRoadmaps`, Reading the device's
+copy, above). A roadmap it can't read stays out, marks included, and the line says *Exported 1 of 2 roadmaps.*; with none
+read nothing downloads and the line is the export's error.
 
 **The device line.** The host derives an anonymous or lapsed line: the Shell carries it from 744px, and both
 phone views receive the tappable `DeviceLine`. A restored paused account keeps `lapsed` true after reload;
@@ -821,7 +1072,9 @@ there is no intermediate selected-step bar. From 744px Fork opens the centred di
 Graph toasts keep their intrinsic width and clear the camera, minimap, active naming or tool panel and legend.
 Phone toasts clear any refusal card. Room toasts remain outside the hidden product canvas so the shared document's
 Copy link and attachment outcomes remain visible above its pinned actions. Created nodes reveal only after their
-model reaches the scene. The demo coach chip hides with the origin while a document is open.
+model reaches the scene. The demo coach chip mounts once the room holds its roadmap, so its arrival settle counts from
+the roadmap's arrival and it stands beside its step however long the open took; it hides with the origin while a
+document is open.
 
 ## Toasts and Undo
 
@@ -846,8 +1099,9 @@ switch.
 Complete restores that step's progress and a held delete cancels. Every other write holds its session receipt:
 `SyncSession.dispatch(gesture)` returns an opaque receipt or null when nothing applies, and `receiptUndo` calls
 `revert(receipt)`, which restamps that captured inverse once, leaving alone any field written since the receipt by this
-person or a peer, and removes it from the stack. A write the session refused says nothing happened. Ask AI wrote on the
-server, so its Undo deletes exactly what the run says it planted.
+person or a peer, and removes it from the stack. A write the session refused says nothing happened. A room on the
+device's copy holds `ReplicaSession`'s receipts instead, each act's Undo the kit's (Reading the device's copy, above). Ask
+AI wrote on the server, so its Undo deletes exactly what the run says it planted.
 
 ⌘Z and ⇧⌘Z walk the session's global structural stack across both views, refused under a covering layer and in a text
 field. A held delete is the last act though it is not on the stack: ⌘Z during a hold cancels it as the toast's Undo does,
@@ -1155,3 +1409,8 @@ selectable; owners can make a tree private again.
   latency budget beyond the tuck ceiling.
 - The unlinked-node reconnect tag, activity burst coalescing and narrow activity-dock collapse are not built.
   Design gaps belong in the [consistency ledger](../../../../docs/design/consistency.md).
+- Where the room reads the device's copy, the person's list (the domain's `list`, `ReplicaRoadmap.list`) carries no
+  `dominantKind`, the most-worn hue today's server list sends, so the home card's and the landing's dot, the switcher's
+  ring and the sheet's hue draw every roadmap in the default hue. Signed out, the list orders the roadmaps the server
+  has received nothing of by id, so the home card and the landing offer back the one with the smallest id, not the
+  newest.

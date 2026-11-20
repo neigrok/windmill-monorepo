@@ -304,6 +304,15 @@ jobs:
           PORT="${SSH_PORT:-22}"
           SSH="ssh -i deploy_key -p ${PORT} -o StrictHostKeyChecking=accept-new"
 
+          # Roadmap on the sync engine runs only on the commit its cutover ran from and those after it, which the host's
+          # roadmap-engine.floor names (backend/deploy/README.md, "Roadmap's cutover onto the sync engine"): an older image
+          # ignores the switch and serves roadmap's own sync beside the engine's. Read before anything reaches the host.
+          floor=$($SSH "$SSH_USER@$SSH_HOST" 'cat ~/windmill/roadmap-engine.floor 2> /dev/null || true' < /dev/null)
+          if [ -n "$floor" ] && { [[ ! "$floor" =~ ^[a-f0-9]{40}$ ]] || ! git merge-base --is-ancestor "$floor" "$IMAGE_TAG" 2> /dev/null; }; then
+            echo 'Refusing deploy: roadmap is on the sync engine, and the selected image is older than the commit its cutover ran from.' >&2
+            exit 1
+          fi
+
           # A folder left by a refused candidate would take the next copy inside it, so it goes first.
           $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill && rm -rf ~/windmill/subscriptions-db.next ~/windmill/ai-db.next'
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \

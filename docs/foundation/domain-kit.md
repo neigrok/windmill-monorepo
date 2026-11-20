@@ -9,7 +9,9 @@ client's design, whose public API the kit binds to.
 
 **Status:** Built in Swift (`apps/ios/Domain`); Kotlin implements it from this spec. Each
 implementation passes the shared vectors of §15. `WindmillKit` supplies the product-neutral AI
-client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there.
+client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there. Undo of an act (§9.6)
+is built in the web, Swift and Kotlin kits over their engines, with the held-only `undo` named `cancelHeld`,
+each passing `run/undo.json`.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;
@@ -17,7 +19,8 @@ each product declares its own entities, value objects, aggregates, repositories,
 kit names no product concept. Appendices A–C illustrate it; they are not kit content.
 
 **Consumers.** Gym (iOS, Android) and journal (iOS), with the phone Coach. Roadmap is web-only and is
-not a kit consumer. Every type the kit writes lives in a product scope (engine D-4), fixed per type.
+not a kit consumer. An entity can bind to a product, tree or overlay scope (engine D-4). An ordinary
+reader, action and plan addresses one scope; an act composes ordered scoped plans in one local transaction (§9.5).
 
 **Outside the kit:**
 - **UI, absolutely.** No SwiftUI, UIKit, AppKit, Combine, Observation, Compose or `android.*`; no
@@ -78,9 +81,10 @@ initialiser, which runs the checks, constructs one (§4.5).
 
 **D-12 Aggregate.** A root entity and its children: value objects in the root's fields, entities whose
 registry `parent` reference names the root, or keyed entities whose key is the root's id. An aggregate
-lives in one scope and is loaded in one action's load phase. The kit guarantees the atomicity of one
-gesture only: a plan writing several of its records is admitted whole or not at all (INV-3). Records
-written by different gestures merge per field (engine §3.2). The kit has no aggregate base type.
+lives in one scope and is loaded in one action's load phase. A plan writing several of its records
+is admitted whole or not at all (INV-3). An act groups plans in one local transaction, while each
+segment retains separate remote admission (§9.5). Records written by different intents merge per
+field (engine §3.2). The kit has no aggregate base type.
 
 **D-13 Rule.** An invariant a product states about its records. Every rule is exactly one of:
 - **LOCAL**: its verdict is a function of one register's value (a value object makes coupled values
@@ -116,7 +120,7 @@ committed on this device was refused by the server). A product refusal is the pr
 built from a `Violation` or a `Refused` by one total mapping (§12).
 
 **D-20 Draft.** An entity being edited: its id, its base (the value it was opened from or a blank,
-then what its last save stored) and its current value (§10).
+then what its last save stored), its current value and its bound scope (§10).
 
 **D-21 Instant, local day, zone, moment.** An instant is integer epoch milliseconds. A local day is a
 Gregorian `YYYY-MM-DD` date. A zone maps an instant to its offset from UTC. A moment is an instant
@@ -347,9 +351,11 @@ Kotlin does not check global mutable state (an `object` holding a `var`); a doma
 ```swift
 public protocol Entity: Sendable {
   static var type: String { get }                  // the registry type, from SyncSchema
-  static var scope: ScopeRef { get }               // its product scope, from SyncSchema
   var id: ID<Self> { get }
   init(_ record: Fields) throws(DecodeError)
+}
+public protocol ProductEntity: Entity {
+  static var scope: ScopeRef { get }               // its fixed scope, from SyncSchema
 }
 public protocol Writable: Entity {
   var fields: [String: JSON] { get }               // every field the client writes; nil as JSON null
@@ -357,7 +363,10 @@ public protocol Writable: Entity {
 }
 public protocol Removable: Entity { static var heldRemoval: Bool { get } }
 public protocol Ordered: Entity { static var orderField: String { get } }
-public protocol Draftable: Writable { static var savesGuarded: Bool { get } }
+public protocol Draftable: Writable {
+  static var savesGuarded: Bool { get }
+  static var savesReversibly: Bool { get }         // false unless declared (§10.2)
+}
 public protocol Timestamped: Draftable { static var timestampField: String { get } }
 
 public struct ID<E: Entity>: Hashable, Comparable, Sendable {
@@ -376,13 +385,16 @@ interface Entity<E : Entity<E>> { val id: Id<E> }
 interface Writable<E : Writable<E>> : Entity<E> { fun fields(): Map<String, Json> }
 interface EntityType<E : Entity<E>> {                             // the entity's companion object
     val type: String
-    val scope: ScopeRef
+    val scope: ScopeRef? get() = null             // null requires an explicit actual scope
     fun decode(f: Fields): E
 }
 interface WritableType<E : Writable<E>> : EntityType<E> { val checks: List<Check<E>> }
 interface RemovableType<E : Entity<E>> : EntityType<E> { val heldRemoval: Boolean }
 interface OrderedType<E : Entity<E>> : EntityType<E> { val orderField: String }
-interface DraftType<E : Writable<E>> : WritableType<E> { val savesGuarded: Boolean }
+interface DraftType<E : Writable<E>> : WritableType<E> {
+    val savesGuarded: Boolean
+    val savesReversibly: Boolean get() = false    // §10.2
+}
 interface TimestampedType<E : Writable<E>> : DraftType<E> { val timestampField: String }
 @JvmInline value class Id<E>(val record: RecordId) { constructor(day: LocalDay) : this(RecordId(day.text)) }
 ```
@@ -394,8 +406,27 @@ optional is a nullable type, and an overload that differs from another only in t
 may refuse after building one leaves the plan a refusal path reuses untouched. `Decider.decision` turns only a
 `Violation` into a refusal, so a decider reading untrusted JSON turns `DecodeError` and `JsonError` into its own.
 
-**The developer declares** per entity: its type and scope, its stored properties, its constructor
+**The developer declares** per entity: its registry type, its fixed scope when it has one, its stored properties, its constructor
 from `Fields`, and when written, `fields` and `checks`.
+
+A tree or overlay entity declares its type once, with no placeholder tree id. Swift's base `Entity`
+has no scope; `ProductEntity` adds the fixed-scope requirement used by gym and journal. Kotlin's
+`EntityType.scope` and JavaScript's `EntityType.scope` are nullable fixed scopes. A null scope requires
+an explicit actual scope; it never means the current tree or every scope.
+
+The action or reader supplies that actual scope. `Registry.lives(type, actualScope)` must hold (on
+web, the type's registry scope kind must equal `scopeKindOf(actualScope)`). A fixed declaration must
+also equal the actual scope exactly. Readers and translation reject mismatches before any write.
+`ID<E>` remains scope-free: the enclosing reader, draft and engine gesture retain the scope, so the
+same typed id in two trees names independent records. Any collection combining those records keys
+by scope as well as type and id. Standard deciders also require their load reader to match
+the scope they were constructed with; composition cannot load one tree and write another.
+
+On web, a fixed declaration is annotated `EntityType<Value, string>` so its static `scope`
+remains a string; a dynamic declaration has `scope: null`. Kotlin
+`runner.open(type, id, scope = actual)`, `runner.open(type, id, blank, scope = actual)`,
+`runner.mint(type, scope = actual)` and draft/standard-action constructors accept the same
+explicit `scope`. Both languages retain fixed-scope defaults for existing callers.
 
 Rules:
 - An entity is a value type (Swift `struct`, Kotlin `data class`) whose stored properties are values.
@@ -410,6 +441,7 @@ Rules:
   delete it. `heldRemoval` is true iff the binding holds that delete (engine Appendix A, "Held").
 - `Ordered.orderField` names a client `lww` field whose domain is `fracKey`.
 - `Draftable.savesGuarded` is true iff the binding guards the type's editor save.
+- `Draftable.savesReversibly` is true iff every save of the type opts into Undo of an act (§10.2, §9.6).
 - A registry type flagged `wholePut` (engine §2.4) is one fact, saved whole: its entity writes every
   client-written field of the type, and a `Draftable` of it saves unguarded (§10.2 step 1).
 - `Timestamped.timestampField` names the field that records each save's own moment: a client `lww`
@@ -474,7 +506,7 @@ public struct DecodeError: Error, Equatable, Sendable {
 
 `RegistryCheck.entity(E.self, sample:book:registry:)` (§14.4), run by each product's tests for every
 entity, fails unless:
-1. the registry declares `E.type` in a product scope whose reference is `E.scope`;
+1. the registry declares `E.type`; if the entity declares a fixed scope, the type lives in that scope;
 2. `Removable` implies the type has life;
 3. `Ordered.orderField` is a client `lww` field with a `fracKey` domain;
 4. every key of `sample.fields` is a client-written, non-serial field of the type, and none is the
@@ -833,6 +865,7 @@ public struct RuleBook: Sendable {
 
 ```swift
 public struct Reader {                                  // valid only inside one run or read
+  public let scope: ScopeRef
   public let moment: Moment
   public var replica: String { get }                   // the replica a run's commit writes to (engine §7.12), "" in a read
   public func repository<E: Entity>(_ type: E.Type) -> Repository<E>
@@ -854,6 +887,7 @@ public struct Repository<E: Entity> {
   public func all(in view: ViewMode) throws -> [E]
   public func children<P: Entity>(of parent: ID<P>, via field: String, in view: ViewMode) throws -> [E]
   public func capacity() throws -> Capacity
+  public func spentBorn(_ id: ID<E>) throws -> Stamp?
   public static func decode(_ records: some Sequence<Record>) throws(DecodeError) -> [E]
 }
 extension Repository where E: Ordered {
@@ -870,6 +904,12 @@ extension Repository where E: Ordered {
   `RecordsView`.
 - `children` reads through the engine's indexed read (ER-12), so its cost follows the children, not
   the type.
+- `spentBorn` is the born of the scope's spent id of the record (engine §2.5 `SpentId`): what the device
+  keeps of a derived record deleted elsewhere once its row is gone (engine §7.5), nil for any other id. Such a
+  record is in neither view, and a revival (§8.1) takes this born; an id the device never knew has neither.
+  On the web the repository also answers `spentSeq(id)`, the `seq` of the dead row the spent id came from (engine
+  §2.5), null where it keeps none, and a confirmed record (`Reader.confirmed`) keeps its row's `seq`: the server's
+  order of a delete and of a write the device holds. Swift's and Kotlin's repositories carry no `spentSeq`.
 - A record that fails to decode throws `DecodeError`: a schema fault, surfaced, never skipped.
 - A product declares an aggregate's repository as a function composing these.
 
@@ -934,10 +974,15 @@ public struct Plan: Sendable {
   public mutating func insert<E: Writable & Ordered>(_ value: Valid<E>, below anchor: RecordID?)
   public mutating func update<E: Writable>(_ value: Valid<E>, fields: [String]? = nil,
                                            from base: E? = nil, guarded: Bool = false)
+  public mutating func revive<E: Writable>(_ value: Valid<E>, fields: [String],
+                                           from base: E? = nil, guarded: Bool = false)
   public mutating func remove<E: Removable>(_ id: ID<E>)
   public mutating func move<E: Ordered>(_ id: ID<E>, below anchor: ID<E>?)
   public mutating func guardRead<E: Entity>(_ id: ID<E>, fields: [String])
   public mutating func device(_ key: String, _ value: JSON?)
+  public mutating func undoBy(_ recipes: UndoRecipe...)                                    // §9.6
+  public mutating func evidenceForUndo()                                                    // §9.6
+  public var undo: (version: Int, recipes: [UndoRecipe])? { get }
 }
 ```
 
@@ -946,7 +991,10 @@ public struct Plan: Sendable {
 - `update` names fields, by default `value.checked`, which pairs with `Valid(_:fields:at:)`: a value
   validated for every field names every field. The engine writes each named field whose value
   differs from `drawn` (engine §7.1 step 4).
-- `guarded` guards every lattice field the update names; `guardRead` guards registers the decision
+- `revive` names explicit checked fields and writes alive with their edits in one change. The registry
+  must give the type a birth identity and declare `revivable: true`; a terminal minted type cannot be
+  revived. It retains the record's original born. An empty field list revives without edits; const, time and text edits are forbidden.
+- `guarded` guards every lattice field the update or revival names; `guardRead` guards registers the decision
   read without writing, as a device-minted Coach proposal guards its routine's `name` and `entries`
   (engine A.2). Text fields are never guarded (engine §7.1 step 6).
 - A plan is **held** iff it removes a type whose `heldRemoval` is true. Holds cover removals only; a
@@ -954,19 +1002,24 @@ public struct Plan: Sendable {
   step 10).
 - An action builds a plan from the value it loaded and names only the fields its caller set, never
   every field, so a value another writer stored is never rewritten by normalisation.
+- `undoBy` opts the plan's act into Undo after its hold with the recipes an Undo runs (§9.6); `evidenceForUndo`
+  names the plan's segment for that Undo with no recipe of its own; `undo` is them as engine §7.3's
+  `{version: 1, recipes}`, with `recipes` empty for evidence alone, or nil.
 
 ### §8.2 Translation to one gesture
 
 `translate(plan, registry) → Gesture` is pure. Operations map by identity class (engine §4.1):
 
-| Plan operation | `minted` | `keyed` with life | `keyed` without life | `singleton` |
+| Plan operation | `minted` or `derived` | `keyed` with life | `keyed` without life | `singleton` |
 |---|---|---|---|---|
 | `create`, `insert` | `.create(t, id: .given(id), f, anchor:)` | `.put(t, id, present: true, f)`, and `retire` names the record | `.write(t, id, f)` | `.write(t, singletonId, f)` |
 | `update` | `.update(t, id, f)` | `.put(t, id, present: nil, f)` | `.write(t, id, f)` | `.write(t, singletonId, f)` |
+| `revive` | `.revive(t, id, f)` when `revivable: true` | — | — | — |
 | `remove` | `.delete(t, id)` | `.put(t, id, present: false)` | — | — |
 | `move` | `.move(t, id, to: OrderAnchor(field: orderField, below:))` | same | same | — |
 
-- `f` holds the named fields' values, less a nil `time` field of a minted create (§5.3). A text field,
+- A derived type takes the explicit ID in the value. The kit does not derive an ID from a label.
+- `f` holds the named fields' values, less a nil `time` field of a minted or derived create (§5.3). A text field,
   by the registry's field kinds, goes in `texts` as a `TextEdit`, edited from its value in the
   operation's base: an update's `base`, or the draft's base in a present-again save's create (§10.2
   step 5). A create with no base edits from `""`.
@@ -981,9 +1034,9 @@ public struct Plan: Sendable {
 | `changes` | the operations, in the order the plan made them |
 | `atomic` | true iff the plan's ordinary operations write more than one record; a command already groups its deltas into one atomic intent (engine §7.1 step 7) |
 | `hold` | true iff the plan is held |
-| `guards` | every lattice field a guarded update names, and every `guardRead` register |
+| `guards` | every lattice field a guarded update or revival names, and every `guardRead` register |
 | `retire` | every keyed-with-life record the plan creates |
-| `command`, `predict` | the plan's command and predictions (§8.4) |
+| `command`, `predict`, `scopedPredict` | the plan's command and predictions (§8.4) |
 | `local` | the plan's device writes, in order |
 | `gestureId` | nil (the engine mints it) |
 
@@ -1005,16 +1058,27 @@ when:
 2. two writing operations name one record; read guards may name that same record;
 3. a held plan contains any operation other than removals of held types and device writes, or runs a
    command;
-4. `create` names an `Ordered` type (use `insert`), or `create(_:fields:)` a minted type;
-5. a prediction's type is not in the command's registry `predicts`;
+4. `create` names an `Ordered` type (use `insert`), or `create(_:fields:)` a minted or derived type;
+5. a prediction's type is not in the command's registry `predicts`, or does not live in the scope the
+   prediction names, or a prediction names a scope other than the plan's on a command without
+   `scopedEffects` (engine E-7);
 6. a named field is not client-written, is `serial` or the order field, is absent from
    `value.fields`, or is not among `value.checked`;
-7. an update names a `const` or `time` field (engine §4.4), or a text field without a `base`;
-8. an update names no field, or a keyed create writes no field;
-9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4).
+7. an update names a `const` or `time` field (engine §4.4), or a text field without a `base`; a revival
+   names a const, time or text field;
+8. an update names no field, or a keyed create writes no field, except a create of a keyed type with
+   life that declares no field, which writes the record's presence alone;
+9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4);
+10. a plan names Undo recipes in a single action that is not `reversible` (§9.6).
 
-So a held plan carries removals only, and `drawn` and `stored` differ only in records a held removal
-names (INV-9).
+A malformed Undo recipe (a target outside its restore command's types, an unset target without its default,
+a created record that exists before the act) fails the act as a programming fault, before anything is
+written (engine §7.3).
+
+A revival of a type without `revivable: true` is also a `PlanError`.
+
+A held ordinary plan carries removals only. When an act contains a held plan, its shared hold also
+covers the other segments; `stored` excludes their held changes until release (§9.5).
 
 ### §8.4 Server commands and predictions
 
@@ -1025,9 +1089,9 @@ public protocol ServerCommand: Sendable {
   var args: [String: JSON] { get }            // ref<t>: an id; time and instant: Instant.ms
 }
 public struct Prediction: Sendable {
-  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction
-  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction
-  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>) -> Prediction
+  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction
+  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction
+  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>, in scope: ScopeRef? = nil) -> Prediction
 }
 ```
 
@@ -1039,6 +1103,10 @@ public struct Prediction: Sendable {
   included, unvalidated. The engine draws them until the command's entry resolves, once the cursor
   covers its result (engine §7.5 step 2), and restamps or rewrites them through the write map (engine
   §7.7).
+- A prediction names its scope when it is not the plan's: a command with `scopedEffects` MAY predict
+  records in every scope it changes (engine E-7). Translation then carries every prediction in
+  `scopedPredict`, grouped by scope, the plan's own first and the rest in UTF-8 order, each group in
+  the plan's order, and leaves `predict` empty; with no other scope, `predict` carries them all.
 - A removal prediction draws a dead life register, preserving the record's born. It becomes a
   keyed `put(present: false)` or a minted `delete`; a refused command restores the prior record.
 - A product holds no predicted id across the result; it reads the record again from a view.
@@ -1094,8 +1162,13 @@ public final class ActionRunner: Sendable {
   public init(replica: any Replica, registry: Registry, zone: any Zone)
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal>
   public func read<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T
-  public func undo(_ gestureId: String) throws -> Bool
-  public func mint<E: Entity>(_ type: E.Type) -> ID<E>
+  public func cancelHeld(_ gestureId: String) throws -> Bool
+  public func undo(_ actId: String) throws -> InverseResult                                  // §9.6
+  public func redo(_ requestId: String, productSlots: [ProductSlot]? = nil) throws -> InverseResult
+  public func inverseResult(_ requestId: String) -> InverseResult
+  public func release(_ actId: String) throws
+  public func mint<E: Entity>(_ type: E.Type, in scope: ScopeRef) -> ID<E>
+  public func mint<E: ProductEntity>(_ type: E.Type) -> ID<E>
   public func moment() throws -> Moment
 }
 ```
@@ -1113,7 +1186,8 @@ public final class ActionRunner: Sendable {
 4. **Decide** by `decision` (§9.1). `refuse` and `unchanged` return no gesture: the engine writes
    nothing and ticks no clock (engine §7.1).
 5. **Gone.** For every update, remove or move of a type with life, `ctx.drawn(t, id)` must hold the
-   record alive, and every insert or move that names an anchor needs that anchor visible, with its
+   record alive. A revival instead needs a known born: the drawn record's, or, where `drawn` holds no
+   record, the born of the scope's spent id of it (engine §7.1 step 4); with neither it refuses the same way. Every insert or move that names an anchor needs that anchor visible, with its
    order key, in `drawn` or in `stored` (engine D-25). Otherwise the body returns no gesture and the
    outcome is `refused(R(Refused(unknown-record, subject, path: .predicted)))`, whose subject is the
    first gone record or absent anchor in the plan's order. The engine throws on either write (engine
@@ -1127,8 +1201,9 @@ public final class ActionRunner: Sendable {
    once, from this outcome, and a draft saved again at every pause piles up no notices. A dismissal
    that throws rethrows from `run`.
 
-`read` builds a reader over `Replica.read`. `undo` is `Replica.undo`: true iff every entry of the
-gesture was still held (engine §7.3). `mint` is `Replica.mintID`. `moment` is `Replica.physNow()`
+`read` builds a reader over `Replica.read`. `cancelHeld` is `Replica.cancelHeld`, the engine's held-only
+`undo`: true iff every entry of the gesture was still held (engine §7.3). `undo`, `redo`, `inverseResult` and
+`release` are §9.6's. `mint` is `Replica.mintID`. `moment` is `Replica.physNow()`
 with the runner's zone.
 
 `run` is synchronous and not cancellable (engine §7.1). The UI calls it from a non-cancellable
@@ -1144,7 +1219,8 @@ ability's writes (gym Coach §4.3 step 2): on `write` it adds the unguarded mess
 plan, on `refuse` it writes that update alone. A plan the engine refuses at commit records nothing, so
 an executor that can hear of such a refusal in decide does: `cap` by the growth rule (§7.3), as
 `save_note` does at the 10-note cap. It saves a note of its own with `SaveDraft(creating:)` and
-returns a result of its own, never `Saved` (§10.1).
+returns a result of its own, never `Saved` (§10.1). Acts that must read each other's writes compose
+into one act through `runComposed` (§9.7).
 
 ### §9.4 Abilities
 
@@ -1167,24 +1243,163 @@ product. Swift keeps the same types in `GymDomain/Coach/Catalog.swift` (`JSONSch
 
 ---
 
+### §9.5 Acts over ordered scopes
+
+`ActReader.inScope(scope, body)` lends a `Reader` over the immutable initial snapshot only for that
+body. The act reader serves `load` only. Load is pure and deterministic: the browser may replay it
+while the same IndexedDB writer transaction hydrates a previously unread scope; native storage
+loads it once. The runner calls `ActContext.finishLoad()` before decide. This closes scope reads
+and rethrows the first scope or read failure even if load caught it. Decide then runs exactly once,
+without retained readers. All requested scopes hydrate before the first segment; subsequent segment
+reads resume that segment, never decide again.
+
+`ActIDSource.mint(type, inScope: scope)` shares reservations across the act. Load must borrow every
+existing scope where decide will mint, even when no record needs reading there. Omission fails before
+randomness is drawn. A new tree or overlay needs no initial borrow when the initial snapshot has no
+cache, cursor, known state, pending entry or governing record for it; the act must create its governing
+record in an earlier segment before using its newly minted identities. An unopened existing cache
+is never treated as empty.
+
+`ActAction` loads through an `ActReader`, then decides an `ActDecision`: `write(ActPlan, result)`,
+`unchanged(result)` or `refuse(refusal)`. `ActPlan` holds an ordered list of `ScopedPlan(scope, plan)`.
+The same scope may appear more than once. Each enclosed `Plan` retains its own record uniqueness,
+guard, command and held-removal rules; records may be written again in a later segment.
+
+`ActIDSource.mint(type, inScope:)` and `opaqueID()` reserve identities without exposing a reader.
+Both enforce the end of load before drawing randomness. Every load and segment uses the same
+captured moment. IDs remain scope-free values.
+
+`ActionRunner.runAct` uses the engine's `commitAct` (§7.1), preparing the ordered scope list and
+whether any segment is held. For segment `i`, its callback checks `firstGone` and translates that
+segment against the tentative projection of segments `0..<i`, including explicit predictions.
+Creating a record before updating it, or creating a governing record before writing its tree,
+therefore uses the earlier segment's result. The original load snapshot never changes meaning.
+
+`ActOutcome.committed(result, ActReceipt)` reports the one local transaction. Its receipt keeps the
+shared gesture ID, each ordered segment's scope, stamp and local IDs, the flat retired and superseded
+gesture IDs, and the shared release deadline. A predicted refusal, engine refusal or technical
+failure leaves no segment, device write, clock tick, reservation or notice from the act durable.
+Remote admission remains separate for each intent. Existing `Action`, `Plan`, `run`, `Outcome` and
+`CommitReceipt` retain their single-scope contracts.
+
+On the web, `runAct(act, {binding})` takes the engine's `activeBinding()` (engine §7.12) a product read when it
+planned the act, before the awaits of a multi-step write, and hands it to `commitAct`. The engine commits the act
+only while that binding stands, and otherwise rejects the run with its `ReplicaChanged` before the act loads, so
+nothing of it is written: a sign-in or a sign-out in between cannot carry the act into another replica or
+account (engine §7.1 Ordered local acts). The runner passes the rejection through; the product decides what the
+act becomes. Without `binding` nothing is checked. Swift's and Kotlin's runners take no binding.
+
+### §9.6 Undo of an act (K-3)
+
+```swift
+public struct UndoTarget: Sendable {                    // a slot of a record, in its scope or the plan's
+  public static func field<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> UndoTarget
+  public static func text<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> UndoTarget
+  public static func life<E: Entity>(_ id: ID<E>, in scope: ScopeRef? = nil) -> UndoTarget
+}
+public enum UndoRecipe: Sendable {
+  case fields(restoreCommand: String, targets: [(UndoTarget, default: JSON?)])
+  case createdRecord(restoreCommand: String, id: AnyID)
+  case command(String, input: JSON, ownedFields: [UndoTarget], unchangedCreatedRecords: [(AnyID, ScopeRef?)],
+               unchangedCreatedScopes: [ScopeRef])
+}
+public enum InverseResult: Sendable, Equatable {
+  case cancelled(requestId: String, inverseActId: String, changed: Bool)
+  case pending(requestId: String, inverseActId: String, localChanged: Bool)
+  case settled(requestId: String, inverseActId: String, changed: Bool, appliedCount: Int, skippedCount: Int)
+  case unavailable(requestId: String?, reason: String)
+}
+public struct ProductSlot: Sendable { public let index: Int; public let scope: ScopeRef; public let plan: Plan }
+```
+
+- **Opting in.** A plan names its Undo recipes with `undoBy`: earlier values of client fields, texts and
+  lives restored by the scope's `engine: "restore"` command; a record the plan creates, deleted again while
+  its own writes are all that changed it; or a product `inverse: true` command over evidence the engine builds
+  (owned fields, created records, created scopes; engine §6.4). A target unset before the act carries the
+  value equivalent to unset as its default. A target or record without a scope lives in the plan's.
+- **Evidence.** A plan whose segment writes what another segment's command recipe must prove, such as the
+  first writes of a scope the act created, calls `evidenceForUndo()`: the engine journals that segment's
+  receipts with no recipe of its own, so the evidence holds. An act names at least one recipe.
+- **Acts.** `runAct` translates each segment's recipes into `ActRequest.undo = {version: 1, segments: [{index,
+  recipes}]}`, so the engine journals the act (engine §7.3 Undo of an act). A single action declares
+  `reversible: true` (JS `reversible`, Swift and Kotlin the `Decider` requirement of the same name) and then runs
+  through the same one-segment act path, its loads, decision, `firstGone` and result unchanged, its receipt the
+  one segment's. A plan that opts into Undo from any other single action is a `PlanError` (rule 10).
+- **Undo** is `undo(actId)`, `actId` the act's gesture id: an act whose entries are all still held is
+  cancelled in place (`cancelled`); otherwise the engine reserves the inverse at once (`pending`, with whether
+  the device's view changed) and it settles as the act's sources do (`settled`, with whether accepted effects
+  changed anything and how many operations applied and skipped). An Undo never erases a write the device had
+  not seen when it acted: such an operation skips, and counts. A restore that revives a record draws it at
+  once, with the values it had, though its death was already pulled. An act that did not opt in is
+  `unavailable`.
+  `inverseResult(requestId)` reads the result as it stands.
+- **Redo** is `redo(requestId)`: the inverse of the Undo, which writes back the values the act wrote, only
+  where the Undo applied, and re-creates no terminal record. `productSlots` replaces the stored recipes whole,
+  by the inverse act's source ordinal, each with the scope that source wrote: a product's Redo of a creation
+  names its own command and a fresh id. A field target there must be one the act journaled. The Redo of a
+  held act cancelled in place writes back what the act's own writes took out; one whose act ran a product
+  command is `unavailable` (`product-redo-required`) without `productSlots`.
+- `release(actId)` tells the engine the product's stack no longer holds the act, so its journal and values go.
+  A product keeps its own stack of acts for its Undo and Redo keys; the engine keeps no stack, and at its start
+  releases every act no unsettled request reads, since no product stack outlives its process.
+- The kit corpus's `run/undo.json` holds these results over the real engine and the reference server.
+
+### §9.7 Composed acts
+
+A gesture that is several acts, one after another (a bulk delete or recolour, an edit with its prerequisites, a
+link moved to another step, a paste that also creates kinds), runs as one act through
+`ActionRunner.runComposed(parts)`. A gesture refused where it is made writes nothing.
+
+```swift
+public enum ComposedOutcome<R> {
+  case committed(results: [any Sendable], receipt: ActReceipt)   // each part's result, in order
+  case unchanged(results: [any Sendable])
+  case refused(part: Int, refusal: R)
+}
+extension ActionRunner {
+  public func runComposed<R>(_ parts: [AnyActAction<R>]) throws -> ComposedOutcome<R>
+}
+```
+
+- **In order.** Each part loads through an `ActReader` and decides as `runAct` decides one act (§9.5), but reads
+  through every segment of the parts before it: the runner stages each part's segments with the engine's
+  `ActContext.stage` (engine §7.1) once the part decides, checking `firstGone` and translating each against the
+  tentative projection, and opens the next part's load with `ActContext.beginPart`. A later part therefore reads an earlier part's create, update or removal, and an
+  identity it mints avoids theirs. Decisions stay pure: staging is the engine's, inside the one transaction.
+- **All or nothing.** A part's refusal, a failed check, a gone record, or a segment the engine would refuse
+  locally refuses the whole act before anything is written, as `refused(part, refusal)`, the refusal in that
+  part's own words. A part that decides `unchanged` adds no segment; an act none of whose parts writes is
+  `unchanged`.
+- **One act.** The parts' segments commit as one act's ordered segments (§9.5): one gesture id, one hold, held
+  when any part's plan holds, and one Undo carrying every part's recipes by their segment index (§9.6). An
+  engine refusal at commit names its segment, and so its part. `cancelHeld` and `undo` take back every part.
+- **One binding.** On the web, `runComposed(parts, {binding})` guards the whole act as `runAct` does (§9.5).
+- The kit corpus's `run/composed.json` holds these over the real engine and the reference server.
+
 ## §10 Drafts
 
 ### §10.1 The draft and its save
 
 ```swift
 public struct Draft<E: Draftable> {                        // a value; not Sendable
+  public let scope: ScopeRef
   public let id: ID<E>
   public private(set) var base: E                          // opened or blank; then the last save's
   public var current: E
   public private(set) var isNew: Bool
   public let placement: Placement?                         // a new draft of an Ordered type
-  public init(new blank: E)
-  public init(opening value: E)
+  public init(new blank: E, in scope: ScopeRef)
+  public init(opening value: E, in scope: ScopeRef)
   public var touched: [String] { get }                     // UTF-8 order
   public var isDirty: Bool { get }
   public func rebased(onto theirs: E) -> Draft
 }
-extension Draft where E: Ordered { public init(new blank: E, placed: Placement) }
+extension Draft where E: Ordered { public init(new blank: E, in scope: ScopeRef, placed: Placement) }
+extension Draft where E: ProductEntity {
+  public init(new blank: E)
+  public init(opening value: E)
+}
+extension Draft where E: ProductEntity & Ordered { public init(new blank: E, placed: Placement) }
 public enum SaveResult<R: ProductRefusal>: Sendable {
   case saved(CommitReceipt?)                               // nil: nothing needed writing
   case refused(R)
@@ -1195,13 +1410,20 @@ public struct Saved: Equatable {                           // made only by SaveD
   public let exists: Bool                                  // the record is in `stored` after the save
 }
 extension ActionRunner {
-  public func open<E: Draftable>(_ id: ID<E>) throws -> Draft<E>?                  // nil: not in drawn
-  public func open<E: Draftable>(_ id: ID<E>, orNew blank: E) throws -> Draft<E>  // keyed or singleton
+  public func open<E: Draftable>(_ id: ID<E>, in scope: ScopeRef) throws -> Draft<E>?
+  public func open<E: Draftable>(_ id: ID<E>, in scope: ScopeRef, orNew blank: E) throws -> Draft<E>
+  public func open<E: Draftable & ProductEntity>(_ id: ID<E>) throws -> Draft<E>?
+  public func open<E: Draftable & ProductEntity>(_ id: ID<E>, orNew blank: E) throws -> Draft<E>
   public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, _ type: SaveDraft<E, R>.Type)
     -> SaveResult<R>
+  public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, in scope: ScopeRef,
+                                                  _ type: SaveDraft<E, R>.Type) -> SaveResult<R>
 }
 ```
 
+- Every draft retains the actual scope supplied at construction or opening. Edits, rebasing and each
+  save preserve it. `save` uses that bound scope; its explicit `in:` overload requires the same scope.
+  A fixed entity cannot be rebound, even to a scope of the same kind.
 - A field is **touched** when its value in `current` differs from its value in `base`, by JCS of
   `fields`. `isDirty` is true iff a field is touched.
 - `init(new:)` takes a **blank** as its base: the entity with its id and nothing a person set. A
@@ -1271,7 +1493,7 @@ field refuses `stale` against this device's write.
   `runner.save(draft, Routine, GymRefusals) { draft = it }` is an editor's save. The write-back runs
   once, before `save` returns, with the draft after the save, whatever the result. `save` traps on a
   thread other than the one the draft was opened on, which the draft carries, and `edit` traps on a
-  change that returns another id. `mint`, `run`, `undo` and `moment` follow §9.2.
+  change that returns another id. `mint`, `run`, `cancelHeld` and `moment` follow §9.2.
 - An Android editor opens, edits and saves its draft on the main thread, so its commit runs there: one
   local commit that never awaits the network (engine §7.1). The Swift engine budgets 8 ms p95 (Swift
   engine §4.6); the Kotlin engine's budget is owed (ER-10).
@@ -1285,8 +1507,19 @@ field refuses `stale` against this device's write.
 ### §10.2 Save: `SaveDraft<E, R>`
 
 **Load:** `drawn := find(id, in: .drawn)`, `stored := find(id, in: .stored)`, `folded :=` the record
-of `id` in `stored`, visible or not (ER-3), the reader's moment, and for a new draft of an `Ordered`
-type, `anchor := anchor(placement ?? .bottom)`.
+of `id` in `stored`, visible or not (ER-3), the reader's moment, for a new draft of an `Ordered`
+type, `anchor := anchor(placement ?? .bottom)`, and, when `E.savesReversibly`, the `engine: "restore"`
+command of the type's scope kind that restores the type (none is a programming fault).
+
+**Reversible.** A save of a type that `savesReversibly` is a reversible action (§9.6): `ActionRunner.save`
+runs it through the one-segment act path, and its receipt's gesture id is the act an Undo names. Every plan
+it writes below also names its Undo: a record it creates where no record was (`drawn` and `folded` nil, steps 4
+and 5), where the type has life, governs no tree and is not whole-put, by `createdRecord`; otherwise each field
+it writes by `fields`, a text by its `text` slot, each with the draft base's value as its default, and, for a
+record it brings back to life (present again, a keyed or revivable type with life), its life, `dead` by
+default. A whole-put type, or a written field that is not a client `lww` field or text, is a programming
+fault. Its text restores under engine §7.3's history
+rule: it skips when anything the device had not seen changed the record since it read it.
 
 **Decide**, in order. A `Saved` names the fields the draft takes, a written field at its validated
 value, and `exists`, whether the record is in `stored` after the save:
@@ -1343,7 +1576,7 @@ value, and `exists`, whether the record is in `stored` after the save:
 
 ```swift
 public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
-  public init(creating value: E)                           // an executor's own new record
+  public init(creating value: E, in scope: ScopeRef)        // an executor's own new record
   public var id: ID<E> { get }                             // the draft's, or the created value's
   public var scope: ScopeRef { get }
   public func load(_ read: Reader) throws -> SaveDraftLoaded<E>
@@ -1354,19 +1587,22 @@ public struct SaveDraftLoaded<E: Draftable>: Sendable {
   public let moment: Moment
 }
 public struct Remove<E: Removable, R: ProductRefusal>: Action {
-  public init(_ id: ID<E>)
+  public init(_ id: ID<E>, in scope: ScopeRef)
   public var scope: ScopeRef { get }
   public func load(_ read: Reader) throws -> E?
   public func decide(_ loaded: E?, ids: IDSource) throws(Violation) -> Decision<Void, R>
 }
 public struct Move<E: Ordered, R: ProductRefusal>: Action {
-  public init(_ id: ID<E>, below: ID<E>?)
+  public init(_ id: ID<E>, in scope: ScopeRef, below: ID<E>?)
   public var scope: ScopeRef { get }
   public func load(_ read: Reader) throws -> (moving: E?, above: ID<E>?)
   public func decide(_ loaded: (moving: E?, above: ID<E>?), ids: IDSource) throws(Violation) -> Decision<Void, R>
 }
-extension SaveDraft where E: Ordered { public init(creating value: E, placed: Placement) }
+extension SaveDraft where E: Ordered { public init(creating value: E, in scope: ScopeRef, placed: Placement) }
 ```
+
+`ProductEntity` retains the scope-free conveniences `SaveDraft(creating:)`,
+`SaveDraft(creating:placed:)`, `Remove(id)` and `Move(id, below:)`; they bind to `E.scope`.
 
 | Save or action | Load | Decide |
 |---|---|---|
@@ -1381,8 +1617,8 @@ extension SaveDraft where E: Ordered { public init(creating value: E, placed: Pl
   done. A drop in place writes nothing, so it never reverts another device's reorder.
 - `Remove` reads `drawn`: a record the person cannot see, including one inside a delete window, is not
   removed again. Its receipt carries `gestureId` and `releaseAt` for Undo.
-- **Undo** is `runner.undo(gestureId)` while the engine offers it (engine §7.3). After release the
-  delete stands.
+- **Undo** of a held removal is `runner.cancelHeld(gestureId)` while the engine offers it (engine §7.3).
+  After release the delete stands, unless its action is reversible (§9.6).
 - **Referential consequences** of a removal (a routine's proposals, a session's sets) are the
   server's (engine §2.2). The client writes none of them.
 
@@ -1570,8 +1806,10 @@ public final class Harness {
   public func advance(ms: Int64)                           // the clock; due holds release
   public func leave()                                      // engine §7.3 leaving the app
   public func failNextCommit()                             // the next commit, written or not (ER-9)
-  public func drawn<E: Entity>(_ type: E.Type) throws -> [E]
-  public func stored<E: Entity>(_ type: E.Type) throws -> [E]
+  public func drawn<E: Entity>(_ type: E.Type, in scope: ScopeRef) throws -> [E]
+  public func stored<E: Entity>(_ type: E.Type, in scope: ScopeRef) throws -> [E]
+  public func drawn<E: ProductEntity>(_ type: E.Type) throws -> [E]
+  public func stored<E: ProductEntity>(_ type: E.Type) throws -> [E]
   public func notices<R: ProductRefusal>(_ type: R.Type) throws -> [DomainNotice<R>]
   public func undoOffers() -> [UndoOffer]
 }
@@ -1589,7 +1827,7 @@ the engine's test support (ER-9). Kotlin's `Harness` has the same members over `
 - **Deterministic.** No engine loop starts; `sync`, `advance` and `leave` call step functions on one
   thread of control. The clock is `SimClock`, ids come from a seeded random source, the zone is fixed.
 - **Reads.** `drawn` and `stored` list in `Repository.all` order. An `UndoOffer`'s `id` is its gesture
-  id, which `runner.undo` takes; `advance(ms: Constants.holdMs)` (`SyncCore`, engine Appendix B
+  id, which `runner.cancelHeld` takes; `advance(ms: Constants.holdMs)` (`SyncCore`, engine Appendix B
   `HOLD_MS`) releases every hold committed before it.
 - **The store** is the engine's real store held in memory (ER-9, ER-10).
 - **The server** is the engine's `ModelServer`. Its generic core passes the engine's server corpus.
@@ -1642,10 +1880,16 @@ public struct ProductCorpus {                                                   
   public func decision<D: Decider>(of decider: D, _ vector: Vector, result: (D.Result) -> JSON,
                                    refusal: (D.Refusal) -> JSON) throws -> JSON       // an action's case
   public func save<E: Draftable, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector,
-                                                   opening blank: E, edit: (inout E) -> Void,
+                                                   opening blank: E, in scope: ScopeRef, edit: (inout E) -> Void,
                                                    result: (Saved) -> JSON, refusal: (R) -> JSON)
     throws -> JSON                                                                   // a draft save's case
+  public func save<E: Draftable & ProductEntity, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector,
+                                                                   opening blank: E, edit: (inout E) -> Void,
+                                                                   result: (Saved) -> JSON, refusal: (R) -> JSON)
+    throws -> JSON
   public func read(_ vector: Vector, in scope: ScopeRef, _ body: (Reader) throws -> JSON) throws -> JSON
+  public func act<A: ActAction>(_ action: A, _ vector: Vector, result: (A.Result) -> JSON,
+                                refusal: (A.Refusal) -> JSON) throws -> JSON           // an act's case (§9.5)
 }
 extension Entity { public init(form: JSON) throws }                                 // {id, fields}
 public enum Contract { public static func vectors(_ path: String) throws -> [Vector] }
@@ -1658,7 +1902,9 @@ public struct Vector: Sendable {
 Each product's tests run `RegistryCheck` for every entity (§3.4) and command (§8.4), `RuleBookCheck`
 and `RuleBookParity` over its rule book (§6.3), and `ProductCorpus` over every case of its
 `values.json`, each feature's `<feature>-actions.json` and each `rules/<read>.json` (§15.3),
-comparing the result with the case's `expect` by JCS. `vectors`, `file` and `Contract.vectors` take
+comparing the result with the case's `expect` by JCS. An act's case is a scene of several scopes, `{scopes: {<scope>: {drawn, stored?}}, device?,
+ids?, now, offsetSeconds}`, decided as `{write: {segments: [{scope, gesture}], result}}`, `{unchanged:
+{result}}` or `{refuse}`. `vectors`, `file` and `Contract.vectors` take
 paths under `packages/api-contract/`. A feature's actions test maps each case's `action` to the
 decider it names, built from the case's `input`, and gives the JSON forms of its result and its
 product refusal; a draft's save runs through `save`, which opens the draft of `blank`'s id over the
@@ -1692,6 +1938,7 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 | `capacity/count.json` | §7.3 over `stored`, held deletes counted | `{records, type}` → `{used, cap, full}` |
 | `plan/translate.json` | §8.2 every cell, text edits from an update's `base` and from `""`, anchors, `retire`, hold, exact guards, null fields, UTF-8 order; every §8.3 rule; §8.4 a command's specs applied, nested strings included | `{plan}` → `{gesture}`, `{violation}` or `{error}` |
 | `run/pipeline.json` | §9.2 gone for update, remove and move; an emptied gesture → `unchanged`, a retire-only receipt → `committed`; the refusal subject | `{plan, drawn, receipt?}` → `{outcome}` |
+| `run/act-decisions.json` | §9.5 an act's decision as a product's vectors read it: each segment's gesture in its scope and in order, ids minted in order across scopes, a violation in any segment refusing the act, each scope's records read in that scope | `{loads, segments, scopes, ids?}` → `{decision}` |
 | `draft/save.json` | §10.2 every step: a whole save of a `wholePut` type, untouched, edited, over a record another device deleted and inside a delete window, its timestamp at `now`, and refused on a check; unchanged; gone, a keyed record another device deleted included; an untouched new minted draft (refused on its checks) and a prefilled one (created); present again, new and inside a delete window, and over an invisible keyed record, whose untouched field is taken from it; already stored, `exists` included; stale; update; a text field edited from the base's text, and from `""` in a blank; `creating`, which refuses `id-taken` over a drawn or stored record | `{draft | creating, drawn, stored, anchor?, now, offsetSeconds}` → `{decision}` |
 | `draft/script.json` | §10.1 and §10.3 as operation scripts: `new`, `open` (absent → nil; `orNew` on a minted type, or with a blank of another key, traps), `edit`, `save` (§10.2 over the case's records; `fail: true` fails the commit; a `current` of another id traps), `rebase` (touched and untouched fields; an unguarded type, and a `theirs` of another id, trap), and `records`, which replaces the records; the draft after each op. A refused and a failed save leave the draft as it was; a quantum field is taken rounded, and a whole save's timestamp as written | `{drawn, stored, now, offsetSeconds, ops}` → `{steps: [{draft, result?} | {trap: true}]}` |
 | `refusal/subject.json` | §12.1 subjects; the notice's gesture id and `values(of:)` | `{source, plan? | notice?}` → `{subject, gestureId?, values?}` |
@@ -1764,7 +2011,7 @@ stated here; ER-10 is the Kotlin engine owner's.
 |---|---|---|
 | ER-1 | `SyncAPI` (Kotlin `:sync-api`, plain JVM) holds the values of D-2, the `Replica` port and the readers, and depends only on `SyncCore`. Every value type has a public memberwise initialiser. | Swift engine §5.2 |
 | ER-2 | `Replica.commit<T>(scope, body) -> (outcome: CommitOutcome?, value: T)`: the body may return no gesture, which writes nothing and ticks no clock. It throws only before its transaction commits. | engine §7.1, the read-and-commit form |
-| ER-3 | `ScopeReader` and `CommitContext` offer `stored(type)` and `drawn(type)` (visible records), lookups by id (the folded record, visible or not), `device(key)` and `firstPullComplete()`. | engine §7.6, §7.9, §2.5 `DeviceRow` |
+| ER-3 | `ScopeReader` and `CommitContext` offer `stored(type)` and `drawn(type)` (visible records), lookups by id (the folded record, visible or not), the born of the scope's spent id of a record (nil where it keeps none), `device(key)` and `firstPullComplete()`. | engine §7.6, §7.9, §7.5, §2.5 `DeviceRow` and `SpentId` |
 | ER-4 | `Change.create(…, anchor: OrderAnchor?)` and `Change.move(t, id, to: OrderAnchor)`; the anchor may be a member only `stored` holds. | engine D-25, §7.1 step 4 |
 | ER-5 | `Gesture.guards: [RegisterRef]` guards exactly the lattice registers named; a text field is never guarded. | engine §7.1 step 6, D-19 |
 | ER-6 | `Gesture.retire: [RecordRef]` undoes held, command-free gestures whose every delta removes a named record, in the commit's transaction; `CommitReceipt.retired` lists them. | engine §7.1 step 4, §8.1, INV-10 |
@@ -1779,7 +2026,8 @@ stated here; ER-10 is the Kotlin engine owner's.
 | ER-15 | The engine's package meets §2.1–§2.4 as the layering tests read it: its modules and their kinds, its package dependency, each module's imports, tools 6.2 and language mode 6, its targets' settings, a constant-data manifest, no symbolic link, and `GRDB` from `SyncStore` only. | Swift engine §1.1 |
 | ER-16 | `Registry` makes public what the kit reads: per type, its identity class, life, cap and each field's kind, writer, domain, quantum and `parent`; per command, its arguments with their domains, and `predicts`. | engine §2.4 |
 | ER-17 | `SyncTesting` publicly offers `Record(confirmed: Row, registry:)`: a confirmed row that no outbox entry touches, as the engine's readers hand it to a product (visible by the registry's rule, nothing pending or held, each text merged as the row says), so a product's tests build a vector's records from the modules `<P>DomainTests` may import (§2.1). | engine §7.6, §9.1 |
-| ER-18 | `CommitOutcome.refused(code, detail:, notice:)`: `notice` names the notice a commit wrote while refusing its gesture (`too-large`), and is nil for every other refusal. The `Replica` port offers `dismissNotice(_ id:)`. | engine §7.1 step 8, D-17 |
+| ER-18 | `CommitOutcome.refused(code, detail:, notice:)`: `notice` names the notice a commit wrote while refusing its gesture (`too-large`), and is nil for every other refusal. The `Replica` port offers `dismissNotice(_ id:)`, which answers whether the active replica held the notice; one it does not hold is no failure. | engine §7.1 step 8, D-17 |
+| ER-19 | `ActRequest.undo` journals an act; the `Replica` port offers `cancelHeld(gestureId) -> Bool` (the engine's held-only `undo`), `requestInverse(actId, slots:) -> InverseResult`, `readInverseResult(requestId)` and `releaseReversibleAct(actId)`. | engine §7.3 Undo of an act |
 
 ## Appendix A: Example: the gym routine editor
 
@@ -1794,7 +2042,7 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-public struct Routine: Draftable, Removable {
+public struct Routine: ProductEntity, Draftable, Removable {
   public static let type = Gym.Types.routine
   public static let scope = Gym.scope
   public static let savesGuarded = true
@@ -1923,7 +2171,7 @@ case .failed(let error): showNotSaved(error)                                    
 // Keep mine → draft = draft.rebased(onto: theirs!), then Save; Take theirs → draft = Draft(opening: theirs!)
 
 if case .committed(_, let receipt) = try runner.run(DeleteRoutine(routine.id)) {       // held 9 s
-  undoTransient.show(receipt.gestureId, until: receipt.releaseAt!)                     // Undo → runner.undo(gestureId)
+  undoTransient.show(receipt.gestureId, until: receipt.releaseAt!)                     // Undo → runner.cancelHeld(gestureId)
 }
 ```
 
@@ -1988,7 +2236,7 @@ held delete keeps its slot until it lands; a reorder writes one `ord`; a new not
 Its `note.cap`, `note.gone`, `note.stale` and `note.taken` rules are the book's standard rules (§6.3).
 
 ```swift
-public struct Note: Draftable, Removable, Ordered {
+public struct Note: ProductEntity, Draftable, Removable, Ordered {
   public static let type = Gym.Types.note
   public static let scope = Gym.scope
   public static let orderField = "ord"

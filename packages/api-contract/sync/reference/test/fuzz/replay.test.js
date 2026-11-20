@@ -11,8 +11,9 @@ const steps = Number(process.env.FUZZ_STEPS ?? 160);
 
 // corpus/README.md "Replay coverage": a fuzz of `seeds` runs or more, each of `steps` steps or more, from
 // any first seed, has at least one seed that produces each event of the tier. Each event sits in the
-// smallest tier at which ten or more of a fuzz's seeds, on average, produce it; a survey of 60 fuzzes of
-// 60×160 and 30 of 500×300 (`seeds.mjs` in the R115 change list) showed that, with no miss.
+// smallest tier at which ten or more of a fuzz's seeds, on average, produce it; the E-8 survey of 60 fuzzes of
+// 60×160 and 30 of 500×300, from first seeds 1, 1001, 2001, …, showed that, with no miss, and K-3's survey of
+// 30 fuzzes of 60×160 and 10 of 500×300 for its Undo events (corpus/README.md).
 const COVERAGE = [
   {
     seeds: 60,
@@ -27,6 +28,8 @@ const COVERAGE = [
       'http 401 unauthenticated',
       'epoch change', 'server restored', 'store restored', 'store cloned',
       'activeReplicaChanged announced', 'ok with a joining write map', 'refused cap', 'http 413 request-too-large', 'retry',
+      'a pushed reference names a record a redirect resolved to',
+      'opted act', 'undo pending',
     ],
   },
   {
@@ -37,6 +40,9 @@ const COVERAGE = [
       'pull served as anonymous', 'pull served as another account',
       'frame served as anonymous', 'frame served as another account', 'http 409 account-mismatch',
       'refused internal', 'http 409 gap', 'http 409 replica-forked', 'ended refused by target-merged', 'http 400 malformed',
+      'sprout answered with its step\'s subtree', 'adopt answered with a labelled tag',
+      'undo cancelled', 'redo pending', 'reversible act released', 'inverse settled applied', 'inverse settled skipped',
+      'ended resolved by vacate',
     ],
   },
 ];

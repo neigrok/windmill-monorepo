@@ -17,8 +17,10 @@ const NONE_ABOVE = Object.freeze([]);
 // tree, which the note opens from and hands focus back to. `above` holds the guides of the holder's trees above this
 // one, farthest first, each { treeId, title, text }: empty where there are none and for anyone but `holder`, who holds
 // the room as its owner, where it is an account on a tree the server keeps. `aboveUnread` says a read of them was asked
-// and no answer of the contract's shape has come: it has not answered, or it failed.
-export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef }) {
+// and no answer of the contract's shape has come: it has not answered, or it failed. `replica` says the room reads the
+// device's copy, whose guides above come with its roadmap (`held`, in the shape the server's read answers, null until the
+// roadmap is read): such a room asks the server nothing, before its roadmap is read or after.
+export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef, replica = false, held = null }) {
   const text = tree?.guide ?? '';
   const { owner } = who;
   const [opened, setOpened] = useState(null);
@@ -83,7 +85,7 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
   // that failed leaves parent status unread and the tree's own guide standing; it reports once, as does an answer that is not
   // the contract's shape, whose well-formed guides still show.
   useEffect(() => {
-    if (!holder || new LocalTreeRegistry().get(treeId)?.claimed === false) return undefined;
+    if (!holder || replica || new LocalTreeRegistry().get(treeId)?.claimed === false) return undefined;
     const request = new AbortController();
     setRead({ treeId, holder, above: null });
     readGuides(treeId, request.signal).then((reply) => {
@@ -98,10 +100,12 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
       request.abort();
       setRead(null);
     };
-  }, [treeId, holder]);
+  }, [treeId, holder, replica]);
   const asked = holder && read?.treeId === treeId && read.holder === holder ? read : null;
-  const above = asked?.above ?? NONE_ABOVE;
-  const aboveUnread = asked !== null && !asked.shaped;
+  const replicated = useMemo(() => (holder && replica && held ? guidesAbove(held, { treeId, untitled: t('roadmap.common.untitled') }).above : null),
+    [treeId, holder, replica, held]);
+  const above = replicated ?? asked?.above ?? NONE_ABOVE;
+  const aboveUnread = replicated === null && asked !== null && !asked.shaped;
 
   const shown = Boolean(tree) && !who.shared && !who.demo && (who.owner || (who.reader && (hasGuide(text) || opened !== null)));
   const roadmapTitle = tree?.title?.trim() || t('roadmap.common.untitled');

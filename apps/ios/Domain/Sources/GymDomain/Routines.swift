@@ -62,7 +62,7 @@ public struct RoutineEntry: ValueObject, Equatable {
   }
 }
 
-public struct Routine: Draftable, Removable, Equatable {
+public struct Routine: ProductEntity, Draftable, Removable, Equatable {
   public static let type = Gym.Types.routine
   public static let scope = Gym.scope
   public static let savesGuarded = true

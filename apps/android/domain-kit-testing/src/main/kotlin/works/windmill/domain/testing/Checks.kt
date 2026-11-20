@@ -59,7 +59,7 @@ object RegistryCheck {
     }
     private fun declaration(type: EntityType<*>, registry: Registry): TypeDef {
         val definition = registry.type(type.type) ?: failure(1, type.type, "the registry holds no type")
-        if (!definition.scope.startsWith("product:") || type.scope != ScopeRef.product(definition.scope.drop(8))) failure(1, type.type, "the registry declares no type in the entity product scope")
+        if (type.scope?.let { !registry.lives(type.type, it) } == true) failure(1, type.type, "the registry declares no type in its fixed scope")
         if (type is RemovableType<*> && !definition.life) failure(2, type.type, "a removable type without life")
         (type as? OrderedType<*>)?.orderField?.let { name ->
             val field = definition.fields[name]

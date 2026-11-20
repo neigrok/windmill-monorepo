@@ -1,0 +1,402 @@
+[
+  {
+    "name": "Board search trims, ignores IDs and preserves full progress",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "abc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "abcd", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "z", "present": true, "born": null, "rc": null, "ru": null, "label": "ABC basics", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "xabc", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": null, "ru": null, "label": "Other", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "abc", "links": [], "branch": null},
+          {"id": "hidden", "present": false, "born": null, "rc": null, "ru": null, "label": "abc", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"search": " ABC "}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 5},
+      "sort": "roadmap",
+      "branch": null,
+      "recovery": "search",
+      "columns": [
+        {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "upNext", "count": 2, "ids": ["d", "z"], "shown": ["d", "z"], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "d", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "z", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0}
+      ]
+    }
+  },
+  {
+    "name": "Board reasons use authored unmet order and transitive owed count",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "gone", "present": false, "born": null, "rc": null, "ru": null, "label": "gone", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": null, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "gone", "present": true},
+          {"from": "gone", "to": "c", "present": true},
+          {"from": "b", "to": "c", "present": true}
+        ],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 3},
+      "sort": "roadmap",
+      "branch": null,
+      "recovery": null,
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["c"], "shown": ["c"], "folded": false},
+        {"name": "upNext", "count": 2, "ids": ["a", "b"], "shown": ["a", "b"], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "a", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "b", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "c", "column": "locked", "needs": {"first": "a", "extra": 1, "toGo": 2}, "unlocks": null, "unlockCount": 0}
+      ]
+    }
+  },
+  {
+    "name": "Done uses server receipt time then device time, unknown last, and folds at twelve",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "n00", "present": true, "born": null, "rc": null, "ru": null, "label": "n00", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n01", "present": true, "born": null, "rc": null, "ru": null, "label": "n01", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n02", "present": true, "born": null, "rc": null, "ru": null, "label": "n02", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n03", "present": true, "born": null, "rc": null, "ru": null, "label": "n03", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n04", "present": true, "born": null, "rc": null, "ru": null, "label": "n04", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n05", "present": true, "born": null, "rc": null, "ru": null, "label": "n05", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n06", "present": true, "born": null, "rc": null, "ru": null, "label": "n06", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n07", "present": true, "born": null, "rc": null, "ru": null, "label": "n07", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n08", "present": true, "born": null, "rc": null, "ru": null, "label": "n08", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n09", "present": true, "born": null, "rc": null, "ru": null, "label": "n09", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n10", "present": true, "born": null, "rc": null, "ru": null, "label": "n10", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n11", "present": true, "born": null, "rc": null, "ru": null, "label": "n11", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n12", "present": true, "born": null, "rc": null, "ru": null, "label": "n12", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n13", "present": true, "born": null, "rc": null, "ru": null, "label": "n13", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [
+          {"node": "n00", "status": "complete", "outOfOrder": false, "recordedAt": 0, "deviceAt": 0},
+          {"node": "n01", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 1},
+          {"node": "n02", "status": "complete", "outOfOrder": false, "recordedAt": 2, "deviceAt": 2},
+          {"node": "n03", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 3},
+          {"node": "n04", "status": "complete", "outOfOrder": false, "recordedAt": 4, "deviceAt": 4},
+          {"node": "n05", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 5},
+          {"node": "n06", "status": "complete", "outOfOrder": false, "recordedAt": 6, "deviceAt": 6},
+          {"node": "n07", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 7},
+          {"node": "n08", "status": "complete", "outOfOrder": false, "recordedAt": 8, "deviceAt": 8},
+          {"node": "n09", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 9},
+          {"node": "n10", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 10},
+          {"node": "n11", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 11},
+          {"node": "n12", "status": "complete", "outOfOrder": false, "recordedAt": 12, "deviceAt": 12},
+          {"node": "n13", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": null}
+        ],
+        "pointers": []
+      },
+      "query": {"sort": "newest"}
+    },
+    "expect": {
+      "overall": {"done": 14, "total": 14},
+      "sort": "newest",
+      "branch": null,
+      "recovery": null,
+      "columns": [
+        {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
+        {
+          "name": "done",
+          "count": 14,
+          "ids": ["n12", "n11", "n10", "n09", "n08", "n07", "n06", "n05", "n04", "n03", "n02", "n01", "n00", "n13"],
+          "shown": ["n12", "n11", "n10", "n09", "n08", "n07", "n06", "n05", "n04", "n03", "n02", "n01"],
+          "folded": true
+        }
+      ],
+      "cards": [
+        {"id": "n00", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n01", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n02", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n03", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n04", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n05", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n06", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n07", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n08", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n09", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n10", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n11", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n12", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n13", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0}
+      ]
+    }
+  },
+  {
+    "name": "Board newest dates put unknown last with authored ties",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": 20, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": 10, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": 20, "ru": null, "label": "d", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"sort": "newest"}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 4},
+      "sort": "newest",
+      "branch": null,
+      "recovery": null,
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
+        {"name": "upNext", "count": 3, "ids": ["d", "c", "a"], "shown": ["d", "c", "a"], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "a", "column": "upNext", "needs": null, "unlocks": {"first": "b", "extra": 0}, "unlockCount": 1},
+        {"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 0},
+        {"id": "c", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "d", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0}
+      ]
+    }
+  },
+  {
+    "name": "Board oldest dates put unknown last with authored ties",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": 20, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": 10, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": 20, "ru": null, "label": "d", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"sort": "oldest"}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 4},
+      "sort": "oldest",
+      "branch": null,
+      "recovery": null,
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
+        {"name": "upNext", "count": 3, "ids": ["c", "d", "a"], "shown": ["c", "d", "a"], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "a", "column": "upNext", "needs": null, "unlocks": {"first": "b", "extra": 0}, "unlockCount": 1},
+        {"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 0},
+        {"id": "c", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "d", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0}
+      ]
+    }
+  },
+  {
+    "name": "Branch and hue filters narrow cards without changing states or progress",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": 20, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": 10, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": 20, "ru": null, "label": "d", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"branch": "b", "kinds": ["terracotta"]}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 4},
+      "sort": "roadmap",
+      "branch": "b",
+      "recovery": "kinds",
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
+        {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [{"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 0}]
+    }
+  },
+  {
+    "name": "Board retains Unicode lowercase search distinct from MCP",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "umlaut", "present": true, "born": null, "rc": null, "ru": null, "label": "Ä", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "query": {"search": "ä"}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 1},
+      "sort": "roadmap",
+      "branch": null,
+      "recovery": "search",
+      "columns": [
+        {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "upNext", "count": 1, "ids": ["umlaut"], "shown": ["umlaut"], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [{"id": "umlaut", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0}]
+    }
+  },
+  {
+    "name": "Expanding Done shows every completion without changing its order",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "n00", "present": true, "born": null, "rc": null, "ru": null, "label": "n00", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n01", "present": true, "born": null, "rc": null, "ru": null, "label": "n01", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n02", "present": true, "born": null, "rc": null, "ru": null, "label": "n02", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n03", "present": true, "born": null, "rc": null, "ru": null, "label": "n03", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n04", "present": true, "born": null, "rc": null, "ru": null, "label": "n04", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n05", "present": true, "born": null, "rc": null, "ru": null, "label": "n05", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n06", "present": true, "born": null, "rc": null, "ru": null, "label": "n06", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n07", "present": true, "born": null, "rc": null, "ru": null, "label": "n07", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n08", "present": true, "born": null, "rc": null, "ru": null, "label": "n08", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n09", "present": true, "born": null, "rc": null, "ru": null, "label": "n09", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n10", "present": true, "born": null, "rc": null, "ru": null, "label": "n10", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n11", "present": true, "born": null, "rc": null, "ru": null, "label": "n11", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n12", "present": true, "born": null, "rc": null, "ru": null, "label": "n12", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "n13", "present": true, "born": null, "rc": null, "ru": null, "label": "n13", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [],
+        "kinds": [],
+        "marks": [
+          {"node": "n00", "status": "complete", "outOfOrder": false, "recordedAt": 0, "deviceAt": 0},
+          {"node": "n01", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 1},
+          {"node": "n02", "status": "complete", "outOfOrder": false, "recordedAt": 2, "deviceAt": 2},
+          {"node": "n03", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 3},
+          {"node": "n04", "status": "complete", "outOfOrder": false, "recordedAt": 4, "deviceAt": 4},
+          {"node": "n05", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 5},
+          {"node": "n06", "status": "complete", "outOfOrder": false, "recordedAt": 6, "deviceAt": 6},
+          {"node": "n07", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 7},
+          {"node": "n08", "status": "complete", "outOfOrder": false, "recordedAt": 8, "deviceAt": 8},
+          {"node": "n09", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 9},
+          {"node": "n10", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 10},
+          {"node": "n11", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 11},
+          {"node": "n12", "status": "complete", "outOfOrder": false, "recordedAt": 12, "deviceAt": 12},
+          {"node": "n13", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": null}
+        ],
+        "pointers": []
+      },
+      "query": {"sort": "newest", "doneExpanded": true}
+    },
+    "expect": {
+      "overall": {"done": 14, "total": 14},
+      "sort": "newest",
+      "branch": null,
+      "recovery": null,
+      "columns": [
+        {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
+        {
+          "name": "done",
+          "count": 14,
+          "ids": ["n12", "n11", "n10", "n09", "n08", "n07", "n06", "n05", "n04", "n03", "n02", "n01", "n00", "n13"],
+          "shown": ["n12", "n11", "n10", "n09", "n08", "n07", "n06", "n05", "n04", "n03", "n02", "n01", "n00", "n13"],
+          "folded": false
+        }
+      ],
+      "cards": [
+        {"id": "n00", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n01", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n02", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n03", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n04", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n05", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n06", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n07", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n08", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n09", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n10", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n11", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n12", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "n13", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0}
+      ]
+    }
+  }
+]

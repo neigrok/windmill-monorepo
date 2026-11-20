@@ -9,7 +9,10 @@ import { ZERO_DIGEST } from '../../../../packages/api-contract/sync/reference/co
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 import { epochChange } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
-import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
+import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
+import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
+import { ActDecision, ActPlan, ScopedPlan } from '../../../src/platform/domain-kit/acts.js';
 import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';
 import { Id } from '../../../src/platform/domain-kit/entities.js';
@@ -18,9 +21,11 @@ import { Placement, Reader, Views } from '../../../src/platform/domain-kit/readi
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
+import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { Fault } from '../../../src/platform/domain-kit/values.js';
-import { environment } from '../sync/fakes.js';
-import { PROBE_SCOPE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
+import { environment, tick, until } from '../sync/fakes.js';
+import { OTHER, product, productScope, row, serverState, st, treeScope } from '../sync/oracle-adapters/fixtures.js';
+import { PROBE_SCOPE, PROBE_TREE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
 import { Contract, momentOf, probeRegistry, viewRecords } from './vectors.js';
 
 /** @typedef {import('./probe.js').ProbeRefusal} ProbeRefusal */
@@ -77,6 +82,12 @@ test('view reference indexes preserve stored holds, drawn changes, visibility an
   assert.deepEqual(ids(laps.children(first, 'runId', 'stored')), ['lap00001', 'lap00002']);
 });
 
+test('a view built again from another view\'s own values keeps its spent ids, as a product that narrows a view builds one', () => {
+  const views = Views.ofRecords(probeRegistry, { drawn: [], stored: [], spent: [{ t: 'tag', id: 'oak', born: '1000:0:r_aaaaaaaaaaaa' }] });
+  const again = new Views(probeRegistry, /** @type {any} */ ({ ...views, drawn: new Map() }));
+  assert.deepEqual([again.spentBorn('tag', 'oak'), again.spentBorn('tag', 'elm')], ['1000:0:r_aaaaaaaaaaaa', null]);
+});
+
 test('view reference indexes compare tuple references by JCS and exclude absent fields', () => {
   const schema = /** @type {any} */ (Contract.json('sync/probe.registry.json'));
   schema.types.find((/** @type {{ type: string }} */ type) => type.type === 'tag').fields.linkId = { kind: 'const', writer: 'client', ref: 'link' };
@@ -87,7 +98,7 @@ test('view reference indexes compare tuple references by JCS and exclude absent 
     { t: 'tag', id: 'tag-c', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { label: ['Unlinked', '1:0:srv'] } },
   ]);
   const views = Views.ofRecords(registry, { drawn: rows, stored: rows });
-  const tags = new Reader(views, Probe.tag.scope, momentOf({})).repository(Probe.tag);
+  const tags = new Reader(views, PROBE_TREE, momentOf({})).repository(Probe.tag);
   assert.deepEqual(tags.children(new Id(['left', 'right'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-a']);
   assert.deepEqual(tags.children(new Id(['right', 'left'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-b']);
   assert.deepEqual(tags.children(new Id('["left","right"]', Probe.link), 'linkId', 'stored'), []);
@@ -118,9 +129,88 @@ test('a new card saves through the engine, its removal is held with its releaseA
   assert.deepEqual(cards(), { drawn: [], stored: cards().stored });
   assert.equal(cards().stored.length, 1);
 
-  assert.equal(await runner.undo(receipt.gestureId), true);
+  assert.equal(await runner.cancelHeld(receipt.gestureId), true);
   assert.equal(cards().drawn.length, 1);
   assert.equal(engine.observe(PROBE_SCOPE).getSnapshot().drawn.length, 1);
+  engine.close();
+});
+
+test('a read leaves no hold on the scope it reads: one the app observes keeps its holders, and any other is let go', async () => {
+  const { engine, runner } = await open();
+  const observed = engine.observe(PROBE_SCOPE);
+  for (const scope of [PROBE_SCOPE, PROBE_SCOPE, PROBE_TREE]) runner.read(scope, (read) => read.firstPullComplete());
+  assert.equal(engine.views.get(PROBE_SCOPE)?.holders, 1);
+  assert.equal(engine.views.has(PROBE_TREE), false);
+  observed.release();
+  assert.equal(engine.views.has(PROBE_SCOPE), false);
+  engine.close();
+});
+
+// A follower tab holds no observation of the tree and reads it through the kit: first when the leader's pull
+// brings the tree to the device after the follower opened, then after the leader pulls another device's edit.
+test('a follower tab reads a scope nothing holds there as the device last stored it, one born after the tab opened included', async () => {
+  const env = environment();
+  /** @type {any} */ (env).state = new ServerState(serverState(/** @type {any} */ ({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'tag', id: 'oak', born: st(1), life: ['alive', st(1)], f: { label: ['Oak', st(1)] }, seq: 1 })] },
+  })));
+  const leader = await BrowserSyncEngine.open(env.options);
+  await leader.start();
+  await until(() => leader.leader);
+  /** @type {any} */ (env.transport).account = 'A';
+  await leader.signIn('A');
+  const follower = await BrowserSyncEngine.open(env.options);
+  await follower.start();
+  for (let turn = 0; turn < 20; turn++) await tick();
+  const runner = new ActionRunner(new EngineReplica(follower), env.options.registry, new FixedZone(0));
+  const labels = () => runner.read(PROBE_TREE, (read) => read.repository(Probe.tag).all('drawn').map((tag) => tag.fields().label));
+  const pulled = async () => {
+    for (let round = 0; round < 3; round++) { leader.kickPull(); await leader.pull(); }
+    const generation = leader.device.activeReplica.cacheGenerations[`confirmed:${PROBE_TREE}`];
+    await until(() => follower.device.activeReplica.cacheGenerations[`confirmed:${PROBE_TREE}`] === generation, 500);
+  };
+  try {
+    assert.deepEqual({ leader: leader.leader, follower: Boolean(follower.leader), scopes: Object.keys(follower.device.activeReplica.confirmed) },
+      { leader: true, follower: false, scopes: [] });
+    await pulled();
+    assert.deepEqual(labels(), ['Oak']);
+    /** @type {any} */ (env).state = push(/** @type {any} */ ({ state: /** @type {any} */ (env).state, registry: env.options.registry, product,
+      account: 'A', serverNow: env.timers.time, request: { replica: 'rp_0000000000000000000000000000000b', account: 'A', ackThrough: 0,
+        intents: [{ n: 1, scope: PROBE_TREE, d: [{ t: 'tag', id: 'oak', born: st(1), f: { label: ['Elm', st(2, 0, OTHER)] } }] }] } })).state;
+    await pulled();
+    assert.deepEqual({ labels: labels(), observed: follower.views.has(PROBE_TREE) }, { labels: ['Elm'], observed: false });
+  } finally { follower.close(); leader.close(); }
+});
+
+// A port that publishes a scope without its stored rows breaks the engine's rule (engine §7.8): the read faults and lets
+// go of its hold, rather than answering the scope empty.
+test('a read of a snapshot that is not loaded faults rather than answering the scope empty', () => {
+  let released = 0;
+  const engine = { observe: () => ({ getSnapshot: () => ({ drawn: [], stored: [], loaded: false }), release: () => { released += 1; } }) };
+  const runner = new ActionRunner(new EngineReplica(engine), probeRegistry, new FixedZone(0));
+  assert.throws(() => runner.read(PROBE_TREE, (read) => read.repository(Probe.tag).all('drawn')),
+    (error) => error instanceof Fault && error.message === 'the engine published a scope without its stored rows');
+  assert.equal(released, 1);
+});
+
+// An observation's first hold folds the scope from the published replica, which holds every scope's rows; its last
+// release only drops the fold. Subscriptions and pulls follow the replica's scopes, never an observation.
+test('reads of a scope nobody holds, on a started and signed-in engine, ask the network nothing and schedule nothing', async () => {
+  const env = environment();
+  const engine = await BrowserSyncEngine.open(env.options);
+  engine.observe(PROBE_SCOPE);
+  await engine.start();
+  await until(() => engine.leader);
+  /** @type {any} */ (env.transport).account = 'A';
+  await engine.signIn('A');
+  const runner = new ActionRunner(new EngineReplica(engine), env.options.registry, new FixedZone(0));
+  for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+  const before = { requests: env.requests.length, timers: [...env.timers.tasks.keys()], scopes: engine.scopes() };
+  for (let read = 0; read < 5; read++) runner.read(PROBE_TREE, (reader) => reader.repository(Probe.tag).all('drawn'));
+  for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+  assert.deepEqual({ requests: env.requests.length, timers: [...env.timers.tasks.keys()], scopes: engine.scopes(), observed: engine.views.has(PROBE_TREE) },
+    { ...before, observed: false });
   engine.close();
 });
 
@@ -174,13 +264,13 @@ test('a commit reads the current tab transaction, including confirmed values ben
   assert.deepEqual(runner.read(PROBE_SCOPE, metadata), before, 'the first tab has received no peer refresh');
   const loaded = await runner.run(action(PROBE_SCOPE, metadata, (value) => Decision.unchanged(value)));
   assert.deepEqual(loaded, { kind: 'unchanged', result: {
-    confirmed: { ...confirmed, rc: 1, ru: 1 },
+    confirmed: { ...confirmed, seq: 5, rc: 1, ru: 1 },
     drawn: { startedAt: 1, label: 'Pending' },
     devices: { 'picture:abcdefgh': { kept: true } },
     commands: [{ gestureId: receipt.gestureId, command: { name: command.name, args: command.args }, canSupersede: false, isAdmitted: true }],
     checkpoint: { epoch: 'ep-current', cleanSeq: 5 }, actor: engine.actor, isAnonymous: false, complete: true,
   } });
-  await engine.refresh(false, [PROBE_SCOPE]);
+  await engine.refresh();
   assert.deepEqual(runner.read(PROBE_SCOPE, metadata), loaded.kind === 'unchanged' && loaded.result);
   engine.close(); peer.close();
 });
@@ -392,3 +482,81 @@ test('a too-large commit is refused once, with the record as its subject, and it
   assert.equal(notices[0].dismissed, true);
   engine.close();
 });
+
+test('dynamic drafts persist independently by scope and a scoped held removal undoes only its tree', async () => {
+  const { engine, runner } = await open();
+  try {
+    await engine.commit(PROBE_SCOPE, [
+      { op: 'create', t: 'board', id: 'b_00000001', f: {} },
+      { op: 'create', t: 'board', id: 'b_00000002', f: {} },
+    ]);
+    for (const [scope, title] of [['tree/b_00000001', 'First'], ['tree/b_00000002', 'Second']]) {
+      assert.ok(scope && title);
+      const draft = runner.openOrNew(Probe.meta, new Id('meta', Probe.meta), probeValue(Probe.meta, 'meta'), scope)
+        .edit((meta) => probeValue(Probe.meta, meta.id.record, { title }));
+      const saved = await runner.save(draft, ProbeRefusals);
+      assert.equal(saved.result.kind, 'saved');
+      assert.equal(saved.draft.scope, scope);
+      const twice = await runner.save(saved.draft.edit((meta) => probeValue(Probe.meta, meta.id.record, { title: `${title} twice` })), ProbeRefusals);
+      assert.equal(twice.result.kind, 'saved');
+      assert.equal(twice.draft.scope, scope);
+      await engine.commit(scope, [{ op: 'put', t: 'link', id: ['left', 'right'], present: true, f: { strength: 2 } }]);
+    }
+    assert.deepEqual(['tree/b_00000001', 'tree/b_00000002'].map((scope) => runner.open(Probe.meta, new Id('meta', Probe.meta), scope)?.current.fields()),
+      [{ title: 'First twice' }, { title: 'Second twice' }]);
+    const id = new Id(['left', 'right'], Probe.link);
+    const removed = await runner.run(new Remove(id, ProbeRefusals, 'tree/b_00000002'));
+    assert.equal(removed.kind, 'committed');
+    const receipt = removed.kind === 'committed' ? removed.receipt : assert.fail('not committed');
+    assert.ok(receipt.releaseAt !== null);
+    const counts = () => ['tree/b_00000001', 'tree/b_00000002'].map((scope) => runner.read(scope, (read) => ({
+      drawn: read.repository(Probe.link).all('drawn').length,
+      stored: read.repository(Probe.link).all('stored').length,
+    })));
+    assert.deepEqual(counts(), [{ drawn: 1, stored: 1 }, { drawn: 0, stored: 1 }]);
+    assert.equal(await runner.cancelHeld(receipt.gestureId), true);
+    assert.deepEqual(counts(), [{ drawn: 1, stored: 1 }, { drawn: 1, stored: 1 }]);
+    assert.throws(() => runner.open(Probe.meta, new Id('meta', Probe.meta)), Fault);
+    assert.throws(() => runner.mint(Probe.card, 'tree/b_00000001'), Fault);
+  } finally { engine.close(); }
+});
+
+// Engine §7.1 Ordered local acts: an act planned under one binding commits only while it stands. A sign-in or a sign-out
+// in between, the sign-in that binds the anon replica in place included, rejects the run before the act loads.
+/** @type {Record<string, { before: (engine: any) => Promise<unknown>, change: (engine: any) => Promise<{ complete: boolean }> }>} */
+const bindingChanges = {
+  'a sign-in to a new replica': { before: async () => {}, change: (engine) => engine.signIn('A') },
+  'a sign-in that binds the anon replica in place': {
+    before: (engine) => engine.commit(PROBE_SCOPE, [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'made signed out' } }]),
+    change: (engine) => engine.signIn('A') },
+  'a sign-out': { before: (engine) => engine.signIn('A'), change: (engine) => engine.finishSignOut({ choice: 'keep' }) },
+};
+for (const [name, { before, change }] of Object.entries(bindingChanges)) for (const run of ['runAct', 'runComposed']) {
+  test(`${run} planned before ${name} throws ReplicaChanged before it loads and writes nothing, and runs under the new binding`, async () => {
+    const { env, engine, runner } = await open();
+    /** @type {any} */ (env.transport).account = 'A';
+    await before(engine);
+    const planned = engine.activeBinding();
+    assert.equal((await change(engine)).complete, true);
+    let loads = 0;
+    /** @type {import('../../../src/platform/domain-kit/acts.js').ActAction<import('../../../src/platform/domain-kit/time.js').Moment, null, ProbeRefusal>} */
+    const board = { refusals: ProbeRefusals,
+      load: (read) => {
+        loads++;
+        read.inScope(PROBE_SCOPE, () => null);
+        return read.moment;
+      },
+      decide: (moment) => {
+        const plan = new Plan();
+        plan.create(new Valid(probeValue(Probe.board, 'b_00000002', {}), moment));
+        return ActDecision.write(new ActPlan([new ScopedPlan(PROBE_SCOPE, plan)]), null);
+      } };
+    const commit = (/** @type {string | null} */ binding) => run === 'runAct' ? runner.runAct(board, { binding }) : runner.runComposed([board], { binding });
+    const stored = (await engine.store.read()).device.toJSON();
+    await assert.rejects(commit(planned), ReplicaChanged);
+    assert.deepEqual({ loads, device: (await engine.store.read()).device.toJSON(), failures: env.failures }, { loads: 0, device: stored, failures: [] });
+    assert.equal((await commit(engine.activeBinding())).kind, 'committed');
+    assert.deepEqual(runner.read(PROBE_SCOPE, (read) => read.repository(Probe.board).all('drawn').map((each) => each.id.record)), ['b_00000002']);
+    engine.close();
+  });
+}

@@ -1,0 +1,363 @@
+# By hand only, on the day the owner set: roadmap's cutover onto the sync engine in production (Roadmap on the sync
+# engine §8.1), its host stages in backend/deploy/roadmap-cutover.sh. Every stage prints counts and verdicts alone; the
+# move's private record leaves the host only sealed to the owner. The runbook: backend/deploy/README.md, "Roadmap's
+# cutover onto the sync engine".
+name: Roadmap cutover
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Full main commit SHA the live server runs; its windmill_roadmap_adopt moves the rows
+        required: true
+        type: string
+      backup:
+        description: 'Type "back up, restore on failure": the run backs up the database once the server stops, and restores it on any failure before the server starts on the engine'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # The web the cutover promotes, its room reading the replica, built before the site pauses and as Web Deploy builds it.
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Confirm the backup
+        env:
+          CONFIRMATION: ${{ inputs.backup }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo 'Refusing the cutover: it runs from main alone.' >&2
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != "back up, restore on failure" ]; then
+            echo 'Refusing the cutover: the backup input must read "back up, restore on failure".' >&2
+            exit 1
+          fi
+          if [[ ! "$IMAGE_TAG" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'Refusing the cutover: image_tag must be a full commit SHA.' >&2
+            exit 1
+          fi
+        working-directory: .
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Cache self-hosted embedding model
+        uses: actions/cache@v5
+        with:
+          path: web/public/models
+          key: models-${{ hashFiles('web/scripts/fetch-model.mjs') }}
+
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
+
+      - name: Build
+        env:
+          VITE_SENTRY_DSN: https://8ccb99ec79873a1f7ad27fb1939906d0@o4511760691953664.ingest.de.sentry.io/4511760715350096
+          VITE_RELEASE: ${{ github.sha }}
+          VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
+          VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
+          VITE_ROADMAP_REPLICA_ROOM: on
+        run: npm run build
+
+      - name: Record the release's sync compatibility
+        run: python3 ../backend/deploy/sync_compatibility.py metadata ../packages/api-contract/sync web-sync-compatibility.json
+
+      - name: Keep the web for the cutover
+        uses: actions/upload-artifact@v4
+        with:
+          name: roadmap-cutover-web-${{ github.run_id }}
+          path: |
+            web/dist/
+            web/web-sync-compatibility.json
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+  # A run waiting for the deploy-vps lock is cancelled by the next one to wait, so the cutover queues for the lock only
+  # once no deploy holds it or waits for it, and no other cutover runs.
+  guard:
+    needs: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Refuse while a deploy or another cutover runs or waits to run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Every workflow that names the deploy-vps lock reaches the host, read from the workflows themselves, this one
+          # among them; a pull request's run takes no lock and reaches no server, and this run is the one asking.
+          deploys=$(grep -l 'deploy-vps' .github/workflows/*.yml | sort)
+          if ! printf '%s\n' "$deploys" | grep -qx '.github/workflows/deploy.yml'; then
+            echo "Deploy to VPS no longer names the deploy-vps lock, so a deploy cannot be told apart: refusing to run." >&2
+            exit 1
+          fi
+          for workflow in $deploys; do
+            for status in queued in_progress waiting requested pending; do
+              runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$(basename "$workflow")" --status "$status" \
+                --json event,databaseId --jq "[.[] | select(.event != \"pull_request\" and .databaseId != $GITHUB_RUN_ID)] | length")
+              if [ "$runs" -ne 0 ]; then
+                echo "Not now: $(basename "$workflow") has a run $status. Dispatch the cutover again once it has finished." >&2
+                exit 1
+              fi
+            done
+          done
+
+  # Cancelling the run does not cut this job short: a cancel re-evaluates a running job's condition, and always() holds
+  # it, so every step runs on within its own deadline.
+  cutover:
+    needs: guard
+    if: always() && needs.guard.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      SITE: https://${{ vars.DOMAIN_APP }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github
+            backend/deploy
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: roadmap-cutover-web-${{ github.run_id }}
+          path: ${{ runner.temp }}/web
+
+      # `host` runs one command on the host; `site` waits up to 30 s for the public site to answer a status on its page
+      # and its API, through Cloudflare as a person reaches it.
+      - name: Reach the host
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/deploy_key"
+          cat > "$RUNNER_TEMP/host" <<'HOST'
+          #!/usr/bin/env bash
+          exec ssh -i "$RUNNER_TEMP/deploy_key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            -o ServerAliveInterval=30 "$SSH_USER@$SSH_HOST" "$@"
+          HOST
+          cat > "$RUNNER_TEMP/site" <<'SITE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          for ((attempt = 0; attempt < 30; attempt++)); do
+            page=$(curl --silent --output /dev/null --max-time 10 --write-out '%{http_code}' "$SITE/" || true)
+            api=$(curl --silent --output /dev/null --max-time 10 --write-out '%{http_code}' \
+              -H 'Sync-Schema: 2147483647' "$SITE/v1/sync/hello" || true)
+            if [ "$page" = "$1" ] && [ "$api" = "$1" ]; then
+              echo "PASS site: $SITE answers $1 on its page and its API"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FAIL site: $SITE answers $page on its page and $api on its API, not $1" >&2
+          exit 1
+          SITE
+          chmod 700 "$RUNNER_TEMP/host" "$RUNNER_TEMP/site"
+          "$RUNNER_TEMP/host" 'cat > ~/windmill/roadmap-cutover.sh' < backend/deploy/roadmap-cutover.sh
+
+      - name: Check the host is ready
+        id: check
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh check $RUN $IMAGE_TAG" < /dev/null'
+
+      - name: Pause the site
+        id: pause
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh pause $RUN" < /dev/null
+          "$RUNNER_TEMP/site" 503
+
+      - name: Stop the server
+        id: stop
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh stop $RUN" < /dev/null'
+
+      - name: Back up the database
+        id: backup
+        timeout-minutes: 30
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh backup $RUN" < /dev/null'
+
+      # The ownerless roadmaps the move adopts under the house account beside the public demo, one id a line, are a
+      # secret so no log or input shows them; only their count is printed.
+      - name: Adopt roadmap's rows and check every digest
+        id: adopt
+        timeout-minutes: 120
+        env:
+          EXPECTED_OWNERLESS: ${{ secrets.ROADMAP_ADOPTION_EXPECTED_OWNERLESS }}
+        run: |
+          set -euo pipefail
+          count=$(python3 -c 'import os, re, sys
+          ids = [line.strip() for line in os.environ["EXPECTED_OWNERLESS"].splitlines() if line.strip()]
+          if any(re.fullmatch(r"t_[0-9a-f]{16}", id) is None for id in ids):
+              sys.exit("FAIL adopt: ROADMAP_ADOPTION_EXPECTED_OWNERLESS holds a line that is not a roadmap id")
+          print(len(ids))')
+          echo "Ownerless roadmaps the move expects beside the public demo: $count"
+          printf '%s' "$EXPECTED_OWNERLESS" | "$RUNNER_TEMP/host" \
+            "umask 077 && mkdir -p ~/windmill/roadmap-cutover/$RUN && cat > ~/windmill/roadmap-cutover/$RUN/expected-ownerless"
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh adopt $RUN" < /dev/null
+
+      # Writes the switch, then the floor, then starts the server on them: from the floor on, the cutover goes forward only.
+      - name: Start the server on the sync engine
+        id: start
+        timeout-minutes: 10
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh start $RUN" < /dev/null'
+
+      - name: Promote the web whose room reads the replica
+        id: web
+        timeout-minutes: 15
+        working-directory: ${{ runner.temp }}/web
+        run: |
+          set -euo pipefail
+          client=$(python3 -c 'import json, sys; sys.path.insert(0, sys.argv[1]); from sync_compatibility import compatibility; value = compatibility(json.load(open("web-sync-compatibility.json"))); print(value["schema"], value["minSchema"])' \
+            "$GITHUB_WORKSPACE/backend/deploy")
+          "$RUNNER_TEMP/host" "cd ~/windmill && python3 - web-preflight $client on" < "$GITHUB_WORKSPACE/backend/deploy/sync_compatibility.py"
+          "$RUNNER_TEMP/host" 'mkdir -p ~/windmill/web' < /dev/null
+          # The IndexNow proof Web Deploy keeps stays as it is.
+          proof_pattern=$(printf '[0-9a-f]%.0s' {1..32})
+          rsync -az --delete -e "ssh -i $RUNNER_TEMP/deploy_key -p ${SSH_PORT:-22} -o StrictHostKeyChecking=accept-new" \
+            "--filter=P /$proof_pattern.txt" dist/ "$SSH_USER@$SSH_HOST:windmill/web/" \
+            2>&1 | sed -E 's/[0-9a-f]{32}\.txt/[IndexNow proof]/g' >&2
+          echo "PASS web: $(find dist -type f | wc -l | tr -d ' ') files promoted, built from $GITHUB_SHA with roadmap's room on"
+
+      - name: Walk the stack
+        id: smoke
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh smoke $RUN" < /dev/null'
+
+      - name: Lift the pause
+        id: lift
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh lift $RUN" < /dev/null
+          "$RUNNER_TEMP/site" 200
+
+      # A failure before writes resume puts the database back as the backup holds it and the site as it was. A start that
+      # did not succeed may have written the floor already; the host's restore refuses where it has, or where the server's
+      # container holds the switch, which is where writes may have resumed.
+      - name: Restore the backup
+        if: (failure() || cancelled()) && steps.backup.outcome == 'success' && steps.start.outcome != 'success'
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh restore $RUN" < /dev/null
+          "$RUNNER_TEMP/site" 200
+
+      - name: Return the site as it was
+        if: (failure() || cancelled()) && steps.pause.outcome != 'skipped' && steps.backup.outcome != 'success'
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh undo $RUN" < /dev/null
+          "$RUNNER_TEMP/site" 200
+
+      # The run's folder on the host, its private record, what Postgres said of a restore and what a server that did not
+      # serve logged, sealed as it arrives from ssh under the run's own key, and only that key sealed to the owner's
+      # certificate, so no plaintext reaches the runner's disk or the log. A folder that cannot be sealed stays on the
+      # host and turns nothing back. A failed check seals the probe's log, where the probe ran.
+      - name: Seal what the run kept on the host
+        id: seal
+        if: always() && (steps.backup.outcome == 'success' || steps.check.outcome == 'failure')
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          umask 077
+          sealed="$RUNNER_TEMP/roadmap-cutover-record"
+          mkdir "$sealed"
+          run_key=$(openssl rand -hex 32)
+          printf '%s' "$run_key" \
+            | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed/key.pem" .github/ops/inventory-recipient.pem
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh record $RUN" < /dev/null \
+            | ROADMAP_CUTOVER_KEY="$run_key" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:ROADMAP_CUTOVER_KEY \
+              -out "$sealed/record.tar.enc"
+          cd "$sealed"
+          for file in key.pem record.tar.enc; do
+            printf '%s: %s bytes\n' "$file" "$(wc -c < "$file" | tr -d ' ')"
+          done
+          sha256sum key.pem record.tar.enc
+
+      - name: Keep the sealed record for a day
+        id: upload
+        if: always() && steps.seal.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: roadmap-cutover-record-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/roadmap-cutover-record/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Forget what the run kept on the host
+        if: always() && steps.upload.outcome == 'success'
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh forget $RUN" < /dev/null'
+
+      - name: Forget the deploy key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/deploy_key"
+
+  # The read-only walk of the live site Web Smoke runs, once the pause is lifted.
+  walk:
+    needs: cutover
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
+
+      - name: Install the browsers
+        run: node scripts/install-sync-browser.mjs
+
+      - name: Walk the live site
+        env:
+          SMOKE_BASE_URL: https://${{ vars.DOMAIN_APP }}
+        run: node scripts/smoke-roadmap.mjs

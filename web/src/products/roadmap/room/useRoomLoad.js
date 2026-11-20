@@ -1,28 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { plantedToast, welcomeBackToast } from '../copy.js';
-import { DEMO_STAGED_COMPLETED, DEMO_TREE_ID } from '../demo/demoStage.js';
+import { DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
 import { Opening, Openings } from '../model/Opening.js';
-import { OpenedTrees } from '../model/OpenedTrees.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
-import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
-import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner, deviceOwnerAnswered } from '../persistence/LocalTreeRegistry.js';
+import { deviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { peekBorn, takePlantNote } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
-import { SyncSession } from '../sync/SyncSession.js';
-import { refusalReporter } from '../sync/refusals.js';
-import { loadDeviceMarks, loadDeviceTree, readDeviceTrees } from '../sync/localTrees.js';
 import { frontierTarget, opensOnFrontier, viewportInsets } from '../graph/viewport.js';
 import { track } from '../../../telemetry/beacon.js';
-
-const deviceTrees = new LocalTreeRegistry();
-// A read of what the trees steps open waits this long after the confirmation that asks for it, so a burst asks once,
-// and is given this long.
-const POINTER_READ_AFTER_MS = 600;
-const POINTER_READ_LIMIT_MS = 10000;
+import { LatticeReading } from './LatticeReading.js';
+import { ReplicaReading } from './ReplicaReading.js';
 
 // A saved camera the layout and its format still mean, and the step that place remembered if the tree still holds it.
 function savedPlace(place, seed) {
@@ -32,42 +23,11 @@ function savedPlace(place, seed) {
   return { camera, selection };
 }
 
-// What the server or this device holds for the confirmed owner, with the marks its room shows: the server's, or those of
-// the device's record its session restores. A tree neither has is an expected answer.
-async function readRoadmap({ treeId, demo, signal }) {
-  const repo = new HttpTreeRepository({ treeId });
-  let seed = null;
-  try { seed = await repo.loadTree({ signal }); } catch { /* fall through to the blob */ }
-  if (signal.aborted) return null;
-  const fromDevice = !seed;
-  if (fromDevice) seed = await loadDeviceTree(treeId, { ownerResolved: true });
-  if (!seed) return { unknown: true };
-  const overlay = demo
-    ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
-    : await (fromDevice ? loadDeviceMarks(seed) : repo.loadProgress(seed, { signal }));
-  const serverActivity = await repo.loadActivity({ limit: 200, signal });
-  return { seed, overlay, serverActivity };
-}
-
-// A roadmap's pointers in one word, so a change of any of them shows.
-const pointersOf = (tree) => tree.nodes.flatMap((step) => (step.opens ? `${step.id}>${step.opens}` : [])).join(' ');
-
-// What the trees a device tree's steps open come to, worked out on the device over its own trees, with `tree`'s steps as
-// they stand now. A read the device could not make, already reported, leaves every pointer unread.
-async function openingsOnDevice(tree) {
-  let trees;
-  try {
-    trees = await readDeviceTrees();
-  } catch {
-    return new Openings();
-  }
-  trees.set(tree.id, { completed: new Set(), ...trees.get(tree.id), title: tree.title, nodes: tree.nodes });
-  return new OpenedTrees(trees).openings(tree.id);
-}
-
-// From the door to a live session: repository, domain, layout, the first view, then the socket; a retry runs it again.
-export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, dismissToast, desktopEditorRef, onRemoteProgress }) {
-  const { sceneRef, sessionRef, projectionRef, treeRef, seedRef, peersRef } = room;
+// From the door to a live room: the reading, then domain, layout and the first view, then the reading follows each
+// change; a retry runs it again. With `replica` the room reads the device's copy through the sync engine
+// (`ReplicaReading`), the demo as a reader's; without it, it reads as it does today (`LatticeReading`).
+export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica = false, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, showToast, dismissToast, desktopEditorRef, onRemoteProgress, onLanding }) {
+  const { sceneRef, sessionRef, replicaRef, projectionRef, treeRef, seedRef } = room;
   const [placeStore] = useState(() => new PlaceStore());
   const [returnLedger] = useState(() => new ReturnLedger());
   const [loading, setLoading] = useState(true);
@@ -75,13 +35,17 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
   const [reloadKey, setReloadKey] = useState(0);
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
-  const [treePlace, setTreePlace] = useState(null); // where the tree sits among the trees, as the server read it; null for a device copy
+  const [treePlace, setTreePlace] = useState(null); // where the tree sits among the trees as its reading says; null where it says nothing
   const [syncSession, setSyncSession] = useState(null);
+  const [guides, setGuides] = useState(null); // the guides above the tree as the replica holds them; null where the server is asked
   const accountAtLoad = useRef(null);
   const plantNoteRef = useRef(null); // null until read; survives StrictMode’s double effect
   const knownRef = useRef(new Map()); // `<step>><tree>` → what the picker knew of a tree chosen here, until the server's read
+  const readingRef = useRef(null);
+  const loadToldRef = useRef(false); // the visit has told why its roadmap cannot be shown (`roadmap_load`), whatever readings it runs
+  const [reported] = useState(() => new Set()); // the server's reads of the roadmap that failed and reported this visit
   const latest = useRef(null);
-  latest.current = { structure, onRemoteProgress };
+  latest.current = { structure, onRemoteProgress, onLanding };
   const { layoutRef } = structure;
   const { selectedId, selectedIdRef, setSelectedId } = selection;
 
@@ -95,41 +59,33 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
     setTreeVisibility(null);
     setTreeMine(false);
     setTreePlace(null);
+    setGuides(null);
     knownRef.current = new Map();
     framing.firstFrameRef.current = null;
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
+    const reading = replica ? new ReplicaReading({ treeId, demo, room, say: showToast, toldRef: loadToldRef, reported })
+      : new LatticeReading({ treeId, demo, shared, demotion, known: knownRef, room });
+    readingRef.current = reading;
+    replicaRef.current = replica ? reading : null;
 
     async function loadTree() {
-      await resolveDeviceOwner();
-      await deviceOwnerAnswered();
+      await reading.settleHolder();
       if (cancelled) return;
       accountAtLoad.current = deviceOwner();
       const layoutName = layoutNameFrom(window.location);
-      const engine = await loadLayoutEngine(layoutName);
+      const layout = await loadLayoutEngine(layoutName);
       if (cancelled) return;
-      layoutRef.current = { requestedName: layoutName, name: engine.constructor.layoutName, engine };
-      const read = await readRoadmap({ treeId, demo, signal });
-      if (cancelled || !read) return;
-      if (read.unknown) {
+      layoutRef.current = { requestedName: layoutName, name: layout.constructor.layoutName, engine: layout };
+      const read = await reading.read({ signal });
+      if (cancelled) return;
+      if (!read) {
         setLoadError(true);
         setLoading(false);
         return;
       }
-      const { overlay, serverActivity } = read;
-      const owner = read.seed.mine === true && !shared && !demo;
-      const sits = read.seed.place ?? null;
-      // A step that owns a subtree opens it for anyone who reads the tree. Only its owner's room reads the tree a step's
-      // pointer names: anyone else sees such a step as an ordinary one. A tree that lives only here, until a claim takes it
-      // to the account, has its facts worked out on the device, and its projection is the device's own word, so its
-      // pointers always decide. Any other copy from the device read none, so its pointers stand unread.
-      const onDevice = () => owner && new LocalTreeRegistry().onDevice(read.seed.id) !== null;
-      let openings = !owner ? read.seed.openings?.subtreesAlone() ?? null
-        : onDevice() ? await openingsOnDevice(read.seed) : read.seed.openings ?? new Openings();
-      if (cancelled) return;
-      const standing = (projection, joined, own = new Set(), subtrees = new Map()) => (openings
-        ? openings.onto(projection, { joined: joined || onDevice(), own, known: knownRef.current, subtrees })
-        : projection);
-      const seed = standing(read.seed, false);
+      const { seed, overlay } = read;
+      const owner = seed.mine === true && !shared && !demo;
+      const sits = seed.place ?? null;
       const nextTree = new SkillTree(seed);
       const states = UnlockRules.derive(nextTree, overlay);
       const model = nextTree.toRenderModel(structure.layoutPositions(nextTree), states);
@@ -161,12 +117,14 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       treeRef.current = nextTree;
       seedRef.current = seed;
       progressActs.adoptLoaded(overlay);
-      activity.seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity });
+      activity.seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity: read.serverActivity ?? [] });
       structure.install(nextTree, model, mountedScene?.getBounds() ?? null);
       setTreeVisibility(seed.visibility ?? null);
       setTreeMine(seed.mine ?? false);
       setTreePlace(sits);
-      workspace.hydrateWorkspaces(seed.id);
+      setGuides(read.guides ?? null);
+      if (read.workspace) workspace.adoptWorkspaces(read.workspace);
+      else workspace.hydrateWorkspaces(seed.id);
       legend.hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null);
       workspace.pushArcs();
       if (place.selection) setSelectedId(place.selection);
@@ -176,81 +134,21 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
-      // Only owned trees enter the device index, so a visited share cannot be claimed.
-      sessionRef.current?.close();
-      peersRef.current.clear();
-      let projected = read.seed;
-      let shown = seed;
-      // What the room stands shows its pointers' facts, and tells the session which lead to no tree: a mark there is an
-      // ordinary mark and is owed, as the server records it.
-      const stand = () => {
-        shown = standing(projected, session.joinedServer, session.ownPointers(), session.subtrees());
-        session.pointersLeadNowhere(shown.nodes.flatMap((step) => (step.opening?.dangling ? [[step.id, step.opening.treeId]] : [])));
-        latest.current.structure.onTreeChanged(shown);
-        workspace.pushArcs();
-        return shown;
-      };
-      // The facts follow the pointers the server holds. A pointer the room has no read facts of (unread, or as the picker
-      // knew it) is read once the server has confirmed it: this device's own on its ack, a peer's with its frame. A read
-      // that fails, or still says nothing of it, waits for the next confirmation or reconnect. Only a writer's read says
-      // more than its load: a reader's room fills its subtrees from the load and the subtree frames, and reads no more.
-      let asked = '';
-      const followPointers = () => {
-        if (onDevice() || !openings?.read || read.seed.mine !== true) return;
-        const own = session.ownPointers();
-        const lacking = shown.nodes.flatMap((step) => (step.opening && (!step.opening.read || step.opening.provisional) && !own.has(step.id)
-          ? `${step.id}>${step.opening.treeId}` : [])).join(' ');
-        const ask = `${session.confirmations} ${lacking}`;
-        if (lacking === '' || ask === asked) return;
-        asked = ask;
-        setTimeout(async () => {
-          if (cancelled || asked !== ask) return;
-          const fresh = await new HttpTreeRepository({ treeId }).loadTree({ signal: AbortSignal.timeout(POINTER_READ_LIMIT_MS) }).catch(() => null);
-          if (cancelled || fresh?.mine !== true) return;
-          openings = owner ? fresh.openings : fresh.openings.subtreesAlone();
-          stand();
-        }, POINTER_READ_AFTER_MS);
-      };
-      // On the device the facts are worked out again whenever a pointer changes, and the last read asked stands.
-      let pointersRead = pointersOf(read.seed);
-      const followOnDevice = () => {
-        const pointers = pointersOf(projected);
-        if (pointers === pointersRead) return;
-        pointersRead = pointers;
-        openingsOnDevice(projected).then((fresh) => {
-          if (cancelled || pointersRead !== pointers || !onDevice()) return;
-          openings = fresh;
-          stand();
-        });
-      };
-      // A subtree is no row of this device's index: the switcher lists roots alone.
-      const subtree = sits?.subtree === true;
-      const session = new SyncSession({
-        treeId: seed.id, title: seed.title, guide: seed.guide ?? '', subtree,
-        registry: seed.mine && !shared && !demo && !demotion && !subtree ? deviceTrees : null,
-      })
-        .onTreeChanged((data) => {
-          projected = data;
-          stand();
-          if (onDevice()) followOnDevice();
-          else followPointers();
-        })
-        .onConfirmed(followPointers)
-        .onPresence((frame) => peersRef.current.set(frame.actor, {
-          name: frame.profile?.name, color: frame.profile?.color,
-          cursor: frame.cursor ?? null, selection: frame.selection ?? null,
-        }))
-        .onPeer((frame) => {
-          if (frame.event === 'leave') { peersRef.current.delete(frame.actor); return; }
-          if (!peersRef.current.has(frame.actor)) {
-            peersRef.current.set(frame.actor, { name: frame.profile?.name, color: frame.profile?.color, cursor: null, selection: null });
-          }
-        })
-        .onProgress((remote) => latest.current.onRemoteProgress(remote));
-      sessionRef.current = session;
-      session.subscribeRefusals(refusalReporter());
-      setSyncSession(session);
-      session.start();
+      reading.follow({
+        onTree: (shown) => {
+          latest.current.structure.onTreeChanged(shown);
+          workspace.pushArcs();
+        },
+        onProgress: (remote) => latest.current.onRemoteProgress(remote),
+        onWorkspace: (byNode) => {
+          workspace.adoptWorkspaces(byNode);
+          workspace.pushArcs();
+        },
+        onGuides: setGuides,
+        onLanding: (lines) => latest.current.onLanding(lines),
+        onActivity: activity.addServerActivity,
+      });
+      setSyncSession(reading.status);
     }
 
     // The repository reports its own transport failures; anything else that stops the load reports `roadmap-load`.
@@ -265,6 +163,9 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       cancelled = true;
       wanted.abort();
       dismissToast('left');
+      reading.close();
+      readingRef.current = null;
+      replicaRef.current = null;
       sessionRef.current?.close();
       sessionRef.current = null;
       setSyncSession(null);
@@ -308,8 +209,39 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
   // What the picker knew of a tree chosen here, so its row stands at once; the server's read replaces it.
   const knowTree = useCallback((stepId, tree) => { knownRef.current.set(`${stepId}>${tree.id}`, Opening.chosen(tree)); }, []);
 
+  // Where the room reads the replica: the open room's switcher's list, the account's roadmaps as the replica keeps them;
+  // and the person's roadmaps as the recovery switcher and the tree picker read a list, as the server's is read
+  // (`listServerTrees`): not authoritative before the device's copy opens, when it cannot say which are theirs, the copy's
+  // failure already told. An address of one of them is read there, and any other from the copy too, by a reading of its
+  // own that subscribes the roadmap while it reads it, as a reader's room does: one reading an address at a time, whose
+  // answer every read of that address asks while it is out shares.
+  const listTrees = useCallback(async () => readingRef.current?.list() ?? [], []);
+  const card = useCallback((id) => readingRef.current?.card(id) ?? null, []);
+  const heldTrees = useMemo(() => {
+    const asked = new Map();
+    return {
+      list: async () => {
+        const rows = readingRef.current?.list() ?? null;
+        return rows === null ? { rows: [], authoritative: false, status: 0, reported: true } : { rows, authoritative: true };
+      },
+      read: async (id) => {
+        const held = readingRef.current?.card(id) ?? null;
+        if (held) return held;
+        if (!asked.has(id)) {
+          const address = new ReplicaReading({ treeId: id });
+          asked.set(id, address.readCard().finally(() => {
+            asked.delete(id);
+            address.close();
+          }));
+        }
+        return asked.get(id);
+      },
+    };
+  }, []);
+
   return {
-    loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree,
+    loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree, guides,
+    listTrees: replica ? listTrees : null, card: replica ? card : null, heldTrees: replica ? heldTrees : null,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }

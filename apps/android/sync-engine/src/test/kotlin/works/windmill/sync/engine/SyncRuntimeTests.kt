@@ -20,6 +20,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
+import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class SyncRuntimeTests {
@@ -1026,6 +1027,21 @@ class SyncRuntimeTests {
         }
     }
 
+    // §7.4: the server holds the write, so an ok whose receipt the replica cannot read still acknowledges its entry. Its projections end at
+    // once, sync goes on, and the malformed push is reported without its content.
+    @Test fun anOkWithoutTheReceiptItsOptedCommandNeedsAcknowledgesItsEntryAndReportsTheMalformedPush() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.engine.commit(product, Gesture(emptyList(), command = Command("probe.capture", Json.objectOf())))
+            val step = async { fixture.runtime.senderStep(leaving = true) }
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            assertTrue(step.await())
+            assertEquals(emptyList<Entry>(), fixture.engine.device.current().entries())
+            settles(true) { EngineEvent(EngineOperation.sync, EngineOutcome.failure, "sync-push-malformed") in fixture.events }
+            assertEquals(emptyMap<String, Map<ScopeRef, PushFailure>>(), fixture.engine.pushFailures)
+        }
+    }
+
     @Test fun pushServedAsAnotherAccountPausesWithoutApplyingItsResults() = runBlocking {
         Fixture().use { fixture ->
             fixture.create()
@@ -1128,13 +1144,13 @@ class SyncRuntimeTests {
         }
     }
 
-    @Test fun boundReplicaRetainsExplicitTreeAlongsideItsProductSubscriptions() = runBlocking {
+    @Test fun boundReplicaPairsAnExplicitTreeWithItsOwnOverlay() = runBlocking {
         Fixture().use { fixture ->
             val tree = ScopeRef.tree("b_00000001")
             fixture.transport.controlPulls = true
             fixture.engine.subscribe(tree); fixture.runtime.enter()
             val request = fixture.pull()
-            assertEquals(setOf(product.text, tree.text), request.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
+            assertEquals(setOf(product.text, tree.text, "self/overlay/b_00000001"), request.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
             request.answer.complete(Reply.Unreachable)
             Unit
         }
@@ -1158,7 +1174,7 @@ class SyncRuntimeTests {
             fixture.clock.wall += 10_000
             val due = async { fixture.runtime.pullerStep() }
             val next = fixture.pull()
-            assertEquals(setOf(product.text, "tree/b_00000001"), next.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
+            assertEquals(setOf(product.text, "tree/b_00000001", "self/overlay/b_00000001"), next.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
             next.answer.complete(Reply.Unreachable); due.await(); Unit
         }
     }
@@ -2380,7 +2396,7 @@ class SyncRuntimeTests {
             fixture.transport.controlPulls = true
             fixture.runtime.enter()
             val ordinary = fixture.pull()
-            assertEquals(listOf(product.text), ordinary.request.member("scopes").arr().map { it.member("scope").str() })
+            assertEquals(listOf("self/overlay/b_00000001", product.text), ordinary.request.member("scopes").arr().map { it.member("scope").str() })
             ordinary.answer.complete(Reply.Unreachable)
             val repull = fixture.pull()
             assertEquals(listOf(tree.text), repull.request.member("scopes").arr().map { it.member("scope").str() })

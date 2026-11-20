@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { releaseDue } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
@@ -10,10 +10,12 @@ import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wi
 import { scopeDigest } from '../../../../packages/api-contract/sync/reference/core/digest.js';
 import { hashText } from '../../../src/platform/sync/core/encoding.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { environment, until, tick } from './fakes.js';
+import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './oracle-adapters/fixtures.js';
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
-import { Device } from '../../../../packages/api-contract/sync/reference/client/replica.js';
+import { Device, Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
 
 const card = (id = 'card0001') => [{ op: 'create', t: 'card', id, f: { title: 'secret' } }];
 const readyHello = (env) => {
@@ -22,6 +24,7 @@ const readyHello = (env) => {
   return { response: { status: 200, body: { as: env.transport.account, epoch: 'ep-1', serverTime: now,
     schema: env.options.registry.version, minSchema: env.options.registry.minVersion } }, timing: { send: reading, recv: reading } };
 };
+const peer = async (env) => { const engine = await BrowserSyncEngine.open(env.options); await engine.start(); return engine; };
 const open = async (env) => {
   const engine = await BrowserSyncEngine.open(env.options);
   engine.observe('self/probe');
@@ -188,22 +191,171 @@ test('durable commits publish stable React snapshots; exceptions publish no part
   unsubscribe(); engine.close();
 });
 
-test('a store that cannot commit is a store failure reported as storage; the read-and-commit function’s own throw is neither', async () => {
+test('a store that cannot commit is a store failure reported as storage; a transaction body’s own throw passes to its caller unreported', async () => {
   const env = environment(), engine = await BrowserSyncEngine.open(env.options);
   const refusal = new Error('the product refuses this');
   await assert.rejects(engine.commit('self/probe', () => { throw refusal; }), (error) => error === refusal);
   await assert.rejects(engine.commit('self/probe', [{ op: 'nope', t: 'card', id: 'card0002' }]),
     (error) => error instanceof CommitError && error.kind === 'malformed');
-  assert.deepEqual(env.failures, []);
-  const bug = new TypeError('an engine step broke');
+  const bug = new TypeError('a step broke');
   await assert.rejects(engine.write(null, () => { throw bug; }), (error) => error === bug);
-  assert.deepEqual(env.failures, ['storage'], 'the engine’s own broken step still reports');
+  assert.deepEqual(env.failures, []);
   const quota = new DOMException('quota', 'QuotaExceededError');
   engine.store.transact = () => Promise.reject(quota);
   await assert.rejects(engine.commit('self/probe', card('card0003')),
     (error) => error instanceof CommitError && error.kind === 'store' && error.cause === quota);
+  assert.deepEqual(env.failures, ['storage']);
+  engine.close();
+});
+
+test('the engine’s own release, which no caller hears, reports its broken step as storage, and a store failure once', async () => {
+  const env = environment(), engine = await open(env);
+  const entries = Replica.prototype.entries;
+  const releaseDue = async (failures) => {
+    env.timers.tasks.get(engine.holdTimer).callback();
+    await until(() => env.failures.length === failures);
+    for (let turn = 0; turn < 20; turn++) await tick();
+  };
+  try {
+    await engine.commit('self/probe', card('card0001'), { hold: true });
+    Replica.prototype.entries = function () { throw new TypeError('a release broke'); };
+    await releaseDue(1);
+    Replica.prototype.entries = entries;
+    assert.deepEqual(env.failures, ['storage']);
+    await engine.commit('self/probe', card('card0002'), { hold: true });
+    const quota = new DOMException('quota', 'QuotaExceededError');
+    engine.store.transact = () => Promise.reject(quota);
+    await releaseDue(2);
+    assert.deepEqual(env.failures, ['storage', 'storage']);
+  } finally { Replica.prototype.entries = entries; engine.close(); }
+});
+
+test('dismissing a notice the active replica does not hold answers false, changes nothing and reports nothing', async () => {
+  const env = environment(), engine = await open(env);
+  const before = (await engine.store.read()).device.toJSON();
+  const revision = engine.revision;
+  assert.equal(await engine.dismissNotice('notice:gone/0'), false);
+  assert.deepEqual({ device: (await engine.store.read()).device.toJSON(), revision: engine.revision, failures: env.failures },
+    { device: before, revision, failures: [] });
+  engine.close();
+});
+
+test('a store failure while sending or pulling reports storage once and never as transport', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  const transact = engine.store.transact.bind(engine.store), quota = new DOMException('quota', 'QuotaExceededError');
+  engine.store.transact = (change, options) => (options?.readonly ? transact(change, options) : Promise.reject(quota));
+  await engine.send();
+  engine.kickPull(); await engine.pull();
   assert.deepEqual(env.failures, ['storage', 'storage']);
   engine.close();
+});
+
+test('a burst of writes in one minute never starves the transport failure that follows it', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  for (let n = 0; n < 40; n++) await engine.commit('self/probe', [{ op: 'put', t: 'day', id: `2026-10-${String(n % 28 + 1).padStart(2, '0')}`, present: true, f: { score: n % 11 } }]);
+  assert.ok(env.events.filter(({ name }) => name === 'sync-writer').length > 0);
+  env.transport.request = async () => { throw new Error('offline'); };
+  await engine.send();
+  assert.deepEqual(env.failures, ['transport']);
+  engine.close();
+});
+
+test('an observation lives while a hold is unreleased: a released hold hears nothing more, and the last release drops the scope', async () => {
+  const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+  const tag = (id, seq) => row({ t: 'tag', id, life: ['alive', st(seq)], born: st(seq), seq });
+  const store = (id, seq) => engine.write(null, (device) => device.activeReplica.putConfirmed(tree, tag(id, seq)), [tree]);
+  try {
+    const first = engine.observe(tree), second = engine.observe(tree);
+    const heard = [0, 0];
+    first.subscribe(() => heard[0]++);
+    second.subscribe(() => heard[1]++);
+    await store('oak', 1);
+    assert.ok(heard[0] > 0 && heard[1] > 0);
+    first.release(); first.release();
+    const [before, other] = heard;
+    await store('ash', 2);
+    assert.equal(heard[0], before);
+    assert.ok(heard[1] > other);
+    assert.deepEqual(second.getSnapshot().drawn.map(({ id }) => id), ['ash', 'oak']);
+    assert.equal(engine.views.has(tree), true);
+    second.release();
+    assert.equal(engine.views.has(tree), false);
+    const silent = [...heard];
+    await store('elm', 3);
+    assert.deepEqual(heard, silent);
+    const third = engine.observe(tree);
+    assert.deepEqual(third.getSnapshot().drawn.map(({ id }) => id), ['ash', 'elm', 'oak']);
+    third.release();
+  } finally { engine.close(); }
+});
+
+test('every publication reads every scope the replica holds: a tree pulled unobserved is whole at its first observation', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  const tags = ['ash', 'elm', 'oak'].map((id, index) => row({ t: 'tag', id, life: ['alive', st(1)], born: st(1), seq: index + 2 }));
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })], 'tree:b_00000001': tags },
+  }));
+  const engine = await open(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
+    assert.equal(engine.views.has(tree), false);
+    const view = engine.observe(tree).getSnapshot();
+    assert.deepEqual({ loaded: view.loaded, drawn: view.drawn.map(({ id }) => id) }, { loaded: true, drawn: ['ash', 'elm', 'oak'] });
+  } finally { engine.close(); }
+});
+
+test('the engine snapshot says the connection: offline from the browser, unreachable after a request failed, online once one answers, in every tab', async () => {
+  const env = environment(), engine = await open(env), other = await peer(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    const told = [];
+    engine.observeEngine(() => told.push(engine.getSnapshot().connection));
+    assert.equal(engine.getSnapshot().connection, 'online');
+    const request = env.transport.request.bind(env.transport);
+    env.transport.request = async () => { throw new Error('offline'); };
+    engine.kickPull(); await engine.pull();
+    assert.equal(engine.getSnapshot().connection, 'unreachable');
+    await until(() => other.getSnapshot().connection === 'unreachable');
+    env.transport.request = async (endpoint, body) => (endpoint === 'pull' ? { response: { status: 503, body: { retryAfterMs: 0 } }, timing: {} } : request(endpoint, body));
+    engine.pullWait.until = 0; engine.kickPull(); await engine.pull();
+    assert.equal(engine.getSnapshot().connection, 'unreachable');
+    env.transport.request = request;
+    engine.pullWait.until = 0; engine.kickPull(); await engine.pull();
+    assert.equal(engine.getSnapshot().connection, 'online');
+    await until(() => other.getSnapshot().connection === 'online');
+    engine.setOnline(false);
+    assert.equal(engine.getSnapshot().connection, 'offline');
+    engine.setOnline(true);
+    assert.equal(engine.getSnapshot().connection, 'online');
+    assert.deepEqual(told.filter((state, index) => state !== told[index - 1]), ['unreachable', 'online', 'offline', 'online']);
+  } finally { other.close(); engine.close(); }
+});
+
+test('an observation names the drawn records an outbox entry still changes and counts its scope\'s entries by state', async () => {
+  const env = environment(), engine = await open(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    const view = engine.observe('self/probe');
+    await engine.commit('self/probe', card('card0001'), { hold: true });
+    await engine.commit('self/probe', card('card0002'));
+    let snapshot = view.getSnapshot();
+    assert.deepEqual(snapshot.pending.map(({ id }) => id), ['card0001', 'card0002']);
+    assert.ok(snapshot.pending.every((record, index) => record === snapshot.drawn[index]));
+    assert.deepEqual(snapshot.outbox, { held: 1, ready: 1, sent: 0, acked: 0 });
+    await engine.release(engine.device.activeReplica.entries().find((entry) => entry.state === 'held').localId);
+    await engine.send(); await until(() => !engine.sending);
+    assert.deepEqual(view.getSnapshot().outbox, { held: 0, ready: 0, sent: 0, acked: 2 });
+    engine.kickPull(); await engine.pull();
+    snapshot = view.getSnapshot();
+    assert.deepEqual(snapshot.pending, []);
+    assert.deepEqual(snapshot.outbox, { held: 0, ready: 0, sent: 0, acked: 0 });
+    assert.deepEqual(snapshot.drawn.map(({ id, seq }) => [id, typeof seq]), [['card0001', 'number'], ['card0002', 'number']]);
+  } finally { engine.close(); }
 });
 
 test('undo offers are the held gestures, each with its own deadline and records, until undone or released', async () => {
@@ -285,7 +437,7 @@ test('persisted restore reopens storage and coordination and retains observation
   dispatch('pageshow'); await engine.restoring;
   assert.equal(engine.closed, false);
   assert.equal(engine.online, false);
-  assert.equal(engine.observe('self/probe'), observation);
+  assert.equal(engine.observe('self/probe').getSnapshot(), observation.getSnapshot());
   assert.equal(observation.getSnapshot().drawn[0].id, 'card0001');
   assert.equal(seen.at(-1), observation.getSnapshot());
   assert.deepEqual(events, ['suspended', 'restored']);
@@ -397,6 +549,121 @@ test('sign-in pins Add/Discard decisions and sign-out Keep isolates dormant acco
 });
 
 const deviceDraftWork = (product, rows) => product === 'probe' ? Object.keys(rows).filter((key) => key === 'rack' || key.startsWith('picture:')) : [];
+
+const bindingChanges = {
+  'a sign-in to a new replica': { before: async () => {}, change: (engine) => engine.signIn('A'), keepsReplica: false },
+  'a sign-in that binds the anon replica in place': { before: (engine) => engine.commit('self/probe', card('card0009')),
+    change: (engine) => engine.signIn('A'), keepsReplica: true },
+  'a sign-out': { before: (engine) => engine.signIn('A'), change: (engine) => engine.finishSignOut({ choice: 'keep' }), keepsReplica: false },
+};
+for (const [name, { before, change, keepsReplica }] of Object.entries(bindingChanges)) test(`an act planned before ${name} throws ReplicaChanged, writes and reports nothing, and one planned after it commits`, async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A';
+  await before(engine);
+  const planned = { replica: engine.activeReplica(), binding: engine.activeBinding() };
+  assert.equal((await change(engine)).complete, true);
+  assert.deepEqual({ sameReplica: engine.activeReplica() === planned.replica, sameBinding: engine.activeBinding() === planned.binding },
+    { sameReplica: keepsReplica, sameBinding: false });
+  const stored = (await engine.store.read()).device.toJSON();
+  const told = { events: env.events.length, failures: env.failures.length };
+  let prepared = 0;
+  await assert.rejects(engine.commitAct(() => { prepared++; return { request: { scopes: ['self/probe'], hold: false }, value: card() }; },
+    (changes) => ({ changes }), { binding: planned.binding }), ReplicaChanged);
+  assert.deepEqual({ prepared, device: (await engine.store.read()).device.toJSON(), events: env.events.slice(told.events), failures: env.failures.slice(told.failures) },
+    { prepared: 0, device: stored, events: [], failures: [] });
+  const queued = engine.device.activeReplica.entries().map((entry) => entry.localId);
+  const { outcome } = await engine.commitAct([{ scope: 'self/probe', changes: card() }], {}, { binding: engine.activeBinding() });
+  assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.localId), [...queued, ...outcome.segments[0].localIds]);
+  engine.close();
+});
+
+for (const [name, { before, change, keepsReplica }] of Object.entries(bindingChanges)) for (const ending of keepsReplica ? ['answered'] : ['answered', 'aborted'])
+  test(`a pull ${ending} after ${name}, and the frame deferred behind it, apply nothing, pause nothing and count as no failure`, async () => {
+    const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+    env.transport.account = 'A';
+    await before(engine);
+    await engine.subscribe(tree);
+    const transport = env.transport.request.bind(env.transport);
+    let answer;
+    env.transport.request = async (endpoint, body, options) => {
+      const reply = await transport(endpoint, body, options);
+      if (endpoint !== 'pull') return reply;
+      return new Promise((resolve, reject) => {
+        answer = () => resolve(reply);
+        if (ending === 'aborted') options.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+      });
+    };
+    const pulling = engine.pull();
+    await until(() => answer);
+    env.transport.request = transport;
+    await engine.receiveFrame({ op: 'not-found', scope: tree, as: engine.device.activeReplica.meta.account ?? null });
+    assert.equal(engine.deferredFrames.has(tree), true);
+    const told = env.failures.length;
+    assert.equal((await change(engine)).complete, true);
+    const stored = (await engine.store.read()).device.toJSON();
+    answer(); await pulling;
+    assert.deepEqual({ device: (await engine.store.read()).device.toJSON(), failures: env.failures.slice(told), backoff: engine.pullWait.k, due: engine.pullWait.due(env.timers.time) },
+      { device: stored, failures: [], backoff: 0, due: true });
+    engine.close();
+  });
+
+for (const [name, { before, change }] of Object.entries(bindingChanges)) test(`a frame that lands after ${name} applies nothing and pauses nothing`, async () => {
+  const env = environment(), engine = await open(env), tree = 'tree/b_00000001';
+  env.transport.account = 'A';
+  await before(engine);
+  await engine.subscribe(tree);
+  const write = engine.write.bind(engine);
+  let landing;
+  engine.write = (operation, ...rest) => {
+    const written = write(operation, ...rest);
+    if (['sync-signin', 'sync-signout'].includes(operation))
+      landing ??= engine.receiveFrame({ op: 'not-found', scope: tree, as: engine.device.activeReplica.meta.account ?? null });
+    return written;
+  };
+  assert.equal((await change(engine)).complete, true);
+  await landing;
+  assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, known: engine.device.activeReplica.known, failures: env.failures },
+    { authPaused: false, known: {}, failures: [] });
+  engine.close();
+});
+
+test('a sign-in another tab completes in place stops the leader\'s socket, so a frame that socket carried lands nowhere', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const leader = await open(env), tab = await peer(env);
+  await leader.subscribe(tree);
+  await leader.pull();
+  const socket = env.sockets.at(-1);
+  socket.readyState = 1; socket.onopen();
+  const deliver = socket.onmessage;
+  await tab.commit('self/probe', card('card0009'));
+  env.transport.account = 'B';
+  assert.equal((await tab.signIn('B')).complete, true);
+  await until(() => leader.device.activeReplica.meta.state === 'bound');
+  deliver({ data: JSON.stringify({ op: 'not-found', scope: tree, as: null }) });
+  await until(() => !leader.live.draining);
+  assert.deepEqual({ sameReplica: leader.activeReplica() === tab.activeReplica(), followedBy: leader.live.socket === socket ? 'the old socket' : 'another',
+    oldSocket: socket.readyState, authPaused: leader.device.activeReplica.meta.authPaused, known: leader.device.activeReplica.known },
+  { sameReplica: true, followedBy: 'another', oldSocket: 3, authPaused: false, known: {} });
+  tab.close(); leader.close();
+});
+
+test('an act planned before a re-identify of the active replica commits: the binding outlives the replica\'s id', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  const planned = { replica: engine.activeReplica(), binding: engine.activeBinding() };
+  await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+  assert.deepEqual({ sameReplica: engine.activeReplica() === planned.replica, sameBinding: engine.activeBinding() === planned.binding },
+    { sameReplica: false, sameBinding: true });
+  const { outcome } = await engine.commitAct([{ scope: 'self/probe', changes: card() }], {}, { binding: planned.binding });
+  assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.localId), outcome.segments[0].localIds);
+  engine.close();
+});
 
 test('sign-in carries a device-only draft into an empty account and reopening retains it once', async () => {
   const env = environment();
@@ -536,11 +803,11 @@ test('process death between IndexedDB page chunks leaves the cursor unmoved and 
     more: false, seq: 1, digest: scopeDigest(rows) };
   const original = engine.write.bind(engine);
   engine.write = async (...args) => { const result = await original(...args); engine.close(); return result; };
-  await assert.rejects(engine.storePage(handle, null, page));
+  await assert.rejects(engine.storePages(handle, [{ cursor: null, page }]));
   engine = await open(env);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').cursor, null);
   assert.equal(engine.device.activeReplica.confirmedRows('self/probe').length, 64);
-  await engine.storePage(handle, null, page);
+  await engine.storePages(handle, [{ cursor: null, page }]);
   assert.equal(engine.device.activeReplica.confirmedRows('self/probe').length, 130);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').digest, page.digest);
   assert.equal(engine.device.activeReplica.cursorOf('self/probe').booted, true);
@@ -710,7 +977,7 @@ test('changed-epoch successes and product receipts commit together, survive relo
   engine.close();
   engine = await BrowserSyncEngine.open(env.options);
   assert.deepEqual(engine.device.toJSON(), recovered);
-  assert.deepEqual(env.failures, ['storage']);
+  assert.deepEqual(env.failures, [], 'the receipt callback’s own throw is its caller’s to report');
   engine.close();
 });
 
@@ -756,6 +1023,163 @@ test('anonymous replicas reject authenticated scope answers without caching exis
   engine.close();
 });
 
+test('an anon replica answered as an account stays paused through the sign-in, and the sign-out that ends it pulls its open tree, after a reload too', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 }),
+        row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 2 })] },
+  }));
+  const reading = (engine) => ({ state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+    firstPullComplete: engine.readMetadata(tree).firstPullComplete, rows: engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id) });
+  let engine = await open(env);
+  await engine.subscribe(tree);
+  env.transport.account = 'A';
+  await engine.pull();
+  assert.deepEqual(reading(engine), { state: 'anon', authPaused: true, firstPullComplete: false, rows: [] });
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  env.transport.account = null;
+  engine.close();
+  engine = await open(env);
+  await engine.subscribe(tree);
+  await engine.pull();
+  assert.deepEqual(reading(engine), { state: 'anon', authPaused: false, firstPullComplete: true, rows: ['meta', 'oak'] });
+  engine.close();
+});
+
+for (const [left, gone] of [['no credential', true], ['another account\'s credential', false]])
+  test(`an anon replica a live frame served as an account paused, whose cancelled sign-in's cleanup leaves ${left}, ${gone ? 'resumes' : 'stays paused'}`, async () => {
+    const env = environment(), tree = 'tree/b_00000001';
+    env.state = new ServerState(serverState({
+      scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+      rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+        'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+    }));
+    const cleared = [];
+    env.options.credentials = { clear: async (account) => { cleared.push(account); return gone; } };
+    const engine = await open(env);
+    await engine.commit('self/probe', card());
+    await engine.subscribe(tree);
+    await engine.pull();
+    env.transport.account = 'A';
+    assert.equal((await engine.signIn('A')).complete, false);
+    await engine.receiveFrame({ op: 'change', scope: tree, as: 'A' });
+    assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync() }, { authPaused: true, canSync: false });
+    await engine.cancelSignIn('A');
+    env.transport.account = gone ? null : 'B';
+    await engine.cleanupCredentials();
+    assert.deepEqual({ cleared, state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+      canSync: engine.canSync(), owed: engine.device.meta.clearCredential },
+    { cleared: ['A'], state: 'anon', authPaused: !gone, canSync: gone, owed: undefined });
+    engine.close();
+  });
+
+test('cancelling a pending sign-in drops it and owes the account\'s credential in one write, leaving the anon replica active with its work', async () => {
+  const env = environment();
+  const cleared = [];
+  env.options.credentials = { clear: async (account) => { cleared.push(account); return true; } };
+  const engine = await open(env);
+  await engine.commit('self/probe', card());
+  const replica = engine.activeReplica();
+  const entries = structuredClone(engine.device.activeReplica.entries());
+  assert.deepEqual(await engine.signIn('A'), { complete: false, authPaused: true });
+  const writes = [];
+  const write = engine.write.bind(engine);
+  engine.write = (...args) => { writes.push(args[0]); return write(...args); };
+  await engine.cancelSignIn('A');
+  assert.deepEqual({ writes, pendingSignIn: engine.device.meta.pendingSignIn, owed: engine.device.meta.clearCredential, cleared,
+    replica: engine.activeReplica(), state: engine.device.activeReplica.meta.state, entries: engine.device.activeReplica.entries() },
+  { writes: [null], pendingSignIn: undefined, owed: 'A', cleared: [], replica, state: 'anon', entries });
+  await engine.cleanupCredentials();
+  assert.deepEqual({ cleared, owed: engine.device.meta.clearCredential }, { cleared: ['A'], owed: undefined });
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  const bound = structuredClone(engine.device.meta);
+  await assert.rejects(engine.cancelSignIn('A'), /no sign-in is pending/);
+  assert.deepEqual({ meta: engine.device.meta, state: engine.device.activeReplica.meta.state }, { meta: bound, state: 'bound' });
+  engine.close();
+});
+
+test('a sign-in supersedes a credential deletion owed for an earlier session: the credential the browser holds is the one signing in', async () => {
+  const env = environment();
+  env.options.credentials = { clear: async () => { throw new Error('network unavailable'); } };
+  const engine = await open(env);
+  assert.equal((await engine.signIn('A')).complete, false);
+  await engine.cancelSignIn('A');
+  await engine.cleanupCredentials();
+  assert.equal(engine.device.meta.clearCredential, 'A');
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.deepEqual({ owed: engine.device.meta.clearCredential, pendingSignIn: engine.device.meta.pendingSignIn, account: engine.device.activeReplica.meta.account },
+    { owed: undefined, pendingSignIn: undefined, account: 'A' });
+  engine.close();
+});
+
+test('the session owner\'s records ride the engine\'s calls: a device cleanup clears only the marker it finished, and an account closure is recorded only for the account bound', async () => {
+  const env = environment();
+  const engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await assert.rejects(engine.recordAccountClosure('B', 'session-1'), /account changed during closure/);
+  await engine.recordAccountClosure('A', 'session-1');
+  assert.deepEqual(engine.device.meta.closingAccount, { account: 'A', sessionId: 'session-1' });
+  await engine.clearAccountClosure('session-0');
+  assert.deepEqual(engine.device.meta.closingAccount, { account: 'A', sessionId: 'session-1' });
+  await engine.clearAccountClosure('session-1');
+  assert.equal(engine.device.meta.closingAccount, undefined);
+  await engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+  const owed = structuredClone(engine.device.meta.deviceCleanup);
+  await engine.clearDeviceCleanup({ ...owed, generation: owed.generation - 1 });
+  assert.deepEqual(engine.device.meta.deviceCleanup, owed);
+  await engine.clearDeviceCleanup(owed);
+  assert.deepEqual({ previous: owed.previous, left: engine.device.meta.deviceCleanup }, { previous: 'A', left: undefined });
+  engine.close();
+});
+
+test('a bound replica pauses once the session owner finds the browser holds another credential, or none; an unknown answer changes nothing', async () => {
+  const env = environment();
+  const engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await engine.credentialHeld(undefined);
+  await engine.credentialHeld('A');
+  assert.equal(engine.device.activeReplica.meta.authPaused, false);
+  await engine.credentialHeld(null);
+  assert.deepEqual({ authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync(),
+    paused: env.events.filter(({ name }) => name === 'sync-auth-paused').map(({ props }) => props.outcome) },
+  { authPaused: true, canSync: false, paused: ['paused'] });
+  engine.close();
+});
+
+test('a product drops one kind of its device rows from every replica in one write, and reads its rows, the anon replica\'s records and whether an account\'s replica stays only through the engine', async () => {
+  const env = environment();
+  const engine = await open(env);
+  const picture = { at: 1 };
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await engine.commit('self/probe', [], { local: { 'picture:account01': picture, rack: { body: 'account' } } });
+  await engine.finishSignOut({ choice: 'keep' });
+  await engine.commit('self/probe', card(), { local: { 'picture:anon0001': picture, rack: { body: 'anon' } } });
+  const rows = engine.readDeviceRows('probe');
+  const read = { rows, frozen: Object.isFrozen(rows), same: engine.readDeviceRows('probe') === rows, other: engine.readDeviceRows('gym'),
+    anonymous: engine.anonymousRecords(), keepsA: engine.hasReplicaOf('A'), keepsB: engine.hasReplicaOf('B') };
+  const writes = [];
+  const write = engine.write.bind(engine);
+  engine.write = (...args) => { writes.push(args[0]); return write(...args); };
+  await engine.dropDeviceRows('probe', 'picture');
+  await assert.rejects(engine.dropDeviceRows('probe', 'landing'), /probe declares no device row landing/);
+  const replicas = (await engine.store.read()).device.replicas.map((replica) => [replica.meta.state, replica.device.probe]);
+  assert.deepEqual({ ...read, writes, replicas }, {
+    rows: { 'picture:anon0001': picture, rack: { body: 'anon' } }, frozen: true, same: true, other: {},
+    anonymous: { scopes: ['self/probe'], records: [{ scope: 'self/probe', t: 'card', id: 'card0001' }] }, keepsA: true, keepsB: false,
+    writes: [null],
+    replicas: [['anon', { rack: { body: 'anon' } }], ['dormant', { rack: { body: 'account' } }]],
+  });
+  engine.close();
+});
+
 test('finished offline sign-out durably owes cookie cleanup; restart retries a failed cleanup', async () => {
   const env = environment();
   let calls = 0;
@@ -782,6 +1206,114 @@ test('finished offline sign-out durably owes cookie cleanup; restart retries a f
   engine.close();
 });
 
+// A browser's anonymous pull carries no cookie, and its live socket carries whichever cookie the browser holds as it opens,
+// which the server serves every frame on that socket as.
+function cookieBrowser(env) {
+  const request = env.transport.request.bind(env.transport);
+  env.transport.request = async (endpoint, body, options = {}) => {
+    if (!options.anonymous) return request(endpoint, body, options);
+    const held = env.transport.account;
+    env.transport.account = null;
+    try { return await request(endpoint, body, options); } finally { env.transport.account = held; }
+  };
+  const openLive = env.transport.openLive.bind(env.transport);
+  env.transport.openLive = () => Object.assign(openLive(), { servedAs: env.transport.account });
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+}
+
+test('a sign-out made offline deletes the credential it owes before the live socket reopens, so the reopened socket serves the anon replica as nobody and it stays unpaused and pulling', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  cookieBrowser(env);
+  env.options.credentials = { clear: async (account) => {
+    if (env.transport.account === account) env.transport.account = null;
+    return env.transport.account === null;
+  } };
+  const engine = await open(env);
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  engine.setOnline(false);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  assert.equal(engine.device.meta.clearCredential, 'A');
+  await engine.subscribe(tree);
+  const sockets = env.sockets.length;
+  engine.setOnline(true);
+  for (let i = 0; i < 100 && engine.device.meta.clearCredential !== undefined; i++) await tick();
+  await engine.pull();
+  engine.follow();
+  const socket = env.sockets.at(-1);
+  socket.readyState = 1;
+  socket.onopen();
+  socket.onmessage({ data: JSON.stringify({ op: 'change', scope: tree, as: socket.servedAs }) });
+  await until(() => !engine.live.draining);
+  const pulls = env.requests.filter(({ endpoint }) => endpoint === 'pull').length;
+  await engine.pull();
+  assert.deepEqual({ reopened: env.sockets.length > sockets, servedAs: socket.servedAs, owed: engine.device.meta.clearCredential,
+    state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync(),
+    pulled: env.requests.filter(({ endpoint }) => endpoint === 'pull').length > pulls },
+  { reopened: true, servedAs: null, owed: undefined, state: 'anon', authPaused: false, canSync: true, pulled: true });
+  engine.close();
+});
+
+test('while a credential\'s deletion is owed and cannot run, the anon replica pulls but opens no live socket, and closes one it held', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  cookieBrowser(env);
+  env.options.credentials = { clear: async () => { throw new Error('network unavailable'); } };
+  const engine = await open(env);
+  await engine.subscribe(tree);
+  await engine.pull();
+  engine.follow();
+  const held = env.sockets.at(-1);
+  assert.deepEqual(await engine.signIn('A'), { complete: false, authPaused: true });
+  await engine.cancelSignIn('A');
+  await engine.cleanupCredentials();
+  const sockets = env.sockets.length;
+  const pulls = env.requests.filter(({ endpoint }) => endpoint === 'pull').length;
+  engine.kickPull([tree]);
+  await engine.pull();
+  engine.follow();
+  assert.deepEqual({ owed: engine.device.meta.clearCredential, held: held.readyState, opened: env.sockets.length - sockets, live: engine.live.running,
+    pulled: env.requests.filter(({ endpoint }) => endpoint === 'pull').length > pulls, authPaused: engine.device.activeReplica.meta.authPaused },
+  { owed: 'A', held: 3, opened: 0, live: false, pulled: true, authPaused: false });
+  engine.close();
+});
+
+test('an anon replica a frame paused stays paused on its own, whatever time passes, until the session owner reads that the browser holds no credential; each turn is told once', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  cookieBrowser(env);
+  env.options.credentials = { clear: async () => false };
+  const engine = await open(env);
+  const told = () => env.events.filter(({ name }) => name === 'sync-auth-paused').map(({ props }) => props.outcome);
+  try {
+    env.transport.account = 'A';
+    assert.equal((await engine.signIn('A')).complete, true);
+    await engine.subscribe(tree);
+    assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+    const before = told().length;
+    await engine.receiveFrame({ op: 'change', scope: tree, as: 'A' });
+    await engine.refresh();
+    const requests = env.requests.length;
+    for (let i = 0; i < 20; i++) { env.timers.advance(15_000); await tick(); }
+    const waited = { authPaused: engine.device.activeReplica.meta.authPaused, requests: env.requests.length - requests };
+    await engine.credentialHeld(undefined);
+    await engine.credentialHeld('A');
+    const unknownOrHeld = engine.device.activeReplica.meta.authPaused;
+    env.transport.account = null;
+    await engine.credentialHeld(null);
+    await engine.pull();
+    assert.deepEqual({ waited, unknownOrHeld, authPaused: engine.device.activeReplica.meta.authPaused, canSync: engine.canSync(),
+      told: told().slice(before), pulled: env.requests.slice(requests).some(({ endpoint }) => endpoint === 'pull') }, {
+      waited: { authPaused: true, requests: 0 },
+      unknownOrHeld: true,
+      authPaused: false, canSync: true,
+      told: ['paused', 'released'], pulled: true,
+    });
+  } finally { engine.close(); }
+});
+
 test('changed sign-out work re-pins Discard; Cancel resumes the account', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A'; await engine.signIn('A'); engine.setOnline(false);
@@ -797,7 +1329,6 @@ test('changed sign-out work re-pins Discard; Cancel resumes the account', async 
   engine.close();
 });
 
-const peer = async (env) => { const engine = await BrowserSyncEngine.open(env.options); await engine.start(); return engine; };
 
 test('a peer sign-out durably supersedes a delayed hello even after reload', async () => {
   const env = environment(), a = await open(env);
@@ -986,9 +1517,9 @@ for (const stop of ['response', 'page']) test(`a pull whose ${stop} lands as the
   env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
   await engine.commit('self/probe', card());
   await engine.send();
-  const request = env.transport.request.bind(env.transport), storePage = engine.storePage.bind(engine);
+  const request = env.transport.request.bind(env.transport), storePages = engine.storePages.bind(engine);
   if (stop === 'response') env.transport.request = async (...args) => { const answer = await request(...args); engine.close(); return answer; };
-  else engine.storePage = async (...args) => { engine.close(); return storePage(...args); };
+  else engine.storePages = async (...args) => { engine.close(); return storePages(...args); };
   await engine.pull();
   await assert.rejects(engine.write(null, () => {}), (error) => error instanceof CommitError && error.kind === 'store');
   assert.deepEqual(env.failures, []);
@@ -1012,7 +1543,362 @@ test('stale sign-out cannot finish against another account after a missed invali
   assert.equal(stale.device.activeReplica.meta.account, 'A');
   await assert.rejects(stale.finishSignOut({ choice: 'keep' }), /account changed during sign-out/);
   const { device } = await peerEngine.store.read();
-  assert.equal(device.activeReplica.meta.account, 'B');
-  assert.equal(device.meta.clearCredential, 'A');
+  assert.deepEqual({ account: device.activeReplica.meta.account, owed: device.meta.clearCredential }, { account: 'B', owed: undefined });
   stale.close(); peerEngine.close();
+});
+
+test('a bound reader opening a foreign tree follows its own overlay and schedules both first pulls', async () => {
+  const env = environment(), engine = await open(env);
+  try {
+    env.transport.account = 'B';
+    await engine.signIn('B');
+    await until(() => engine.leader);
+    await engine.subscribe('tree/b_00000001');
+    assert.deepEqual(engine.scopes(), ['self/probe', 'tree/b_00000001', 'self/overlay/b_00000001']);
+    assert.equal(engine.pullDirty.has('self/overlay/b_00000001'), true);
+    assert.equal(engine.readMetadata('self/overlay/b_00000001').firstPullComplete, false);
+  } finally { engine.close(); }
+});
+
+test('pages that share a chunk see a board the same answer killed: its tree page applies nothing', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  const board = (life, seq) => row({ t: 'board', id: 'b_00000001', life, born: st(1), seq });
+  const oak = row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 1 });
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [board(['alive', st(1)], 1)], 'tree:b_00000001': [oak] },
+  }));
+  const engine = await open(env);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+    for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
+    assert.deepEqual(engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id), ['oak']);
+    const replica = engine.device.activeReplica;
+    const live = (seq) => Cursor.encode({ e: 'ep-1', m: 'live', s: seq });
+    const dead = board(['dead', st(2)], 2), ash = row({ t: 'tag', id: 'ash', life: ['alive', st(2)], born: st(2), seq: 2 });
+    const outcomes = await engine.storePages(replica.storageHandle, [
+      { cursor: replica.cursorOf('self/probe').cursor, page: { scope: 'self/probe', kind: 'rows', rows: [dead], more: false, seq: 2, cursor: live(2), digest: scopeDigest([]) } },
+      { cursor: replica.cursorOf(tree).cursor, page: { scope: tree, kind: 'rows', rows: [ash], more: false, seq: 2, cursor: live(2), digest: scopeDigest([oak, ash]) } },
+    ]);
+    assert.deepEqual(outcomes, ['applied', 'outside']);
+    assert.equal(engine.lastWrite.rowWrites, 1);
+    assert.deepEqual(engine.device.activeReplica.known, { [tree]: 'gone', 'self/overlay/b_00000001': 'gone' });
+    assert.deepEqual(engine.device.activeReplica.confirmedRows(tree).map(({ id }) => id), ['oak']);
+  } finally { engine.close(); }
+});
+
+for (const denial of ['page', 'frame']) test(`a reader overlay survives ack and pull, leaves with the last tab, and clears on a ${denial} denial`, async () => {
+  const env = environment(), tree = 'tree/b_00000001', overlay = 'self/overlay/b_00000001';
+  const ownerMark = row({ t: 'mark', id: 'oak', f: { done: [true, st(1)] }, seq: 1 });
+  env.state = new ServerState(serverState({ scopes: {
+    'acct:A/probe': productScope('A'), 'acct:B/probe': productScope('B'),
+    'tree:b_00000001': treeScope('A', 'b_00000001'),
+    'acct:A/overlay/b_00000001': overlayScope('A', 'b_00000001'),
+  }, rows: {
+    'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+    'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 }),
+      row({ t: 'tag', id: 'oak', life: ['alive', st(1)], born: st(1), f: { label: ['Oak', st(1)] }, seq: 2 })],
+    'acct:A/overlay/b_00000001': [ownerMark],
+  } }));
+  const engine = await open(env);
+  let other;
+  try {
+    env.transport.account = 'B'; await engine.signIn('B'); await until(() => engine.leader);
+    await engine.subscribe(tree); await engine.pull();
+    const view = engine.observe(overlay);
+    assert.deepEqual(view.getSnapshot().drawn, []);
+    assert.equal(engine.readMetadata(overlay).firstPullComplete, true);
+    await engine.commit(overlay, [{ op: 'write', t: 'mark', id: 'oak', f: { done: false } }]);
+    await engine.send(); await until(() => !engine.sending);
+    assert.deepEqual(engine.device.activeReplica.entries().map(({ state }) => state), ['acked']);
+    const ownMark = view.getSnapshot().drawn.map((record) => ({ ...record, seq: 1, rc: env.timers.time, ru: env.timers.time }));
+    engine.kickPull(); await engine.pull();
+    assert.deepEqual(engine.device.activeReplica.entries(), []);
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    assert.deepEqual(env.state.toJSON().rows['acct:A/overlay/b_00000001'], [ownerMark]);
+    other = await peer(env); await other.subscribe(tree);
+    await until(() => [...engine.peerScopes.values()].some((scopes) => scopes.has(tree)));
+    await engine.unsubscribe(tree);
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    await until(() => [...other.peerScopes.values()].every((scopes) => !scopes.has(tree)));
+    if (denial === 'page') await other.unsubscribe(tree);
+    else {
+      engine.setOnline(false);
+      other.close(); other = null;
+    }
+    await until(() => engine.scopes().length === 1);
+    await engine.refresh();
+    assert.deepEqual(view.getSnapshot().drawn, []);
+    other?.close(); other = null;
+    engine.setOnline(true);
+    await engine.subscribe(tree); await engine.pull();
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    if (denial === 'frame') await engine.receiveFrame({ op: 'not-found', scope: tree, as: 'B' });
+    else await engine.storePages(engine.device.activeReplica.storageHandle, [{ cursor: engine.device.activeReplica.cursorOf(tree).cursor, page: { scope: tree, kind: 'not-found' } }]);
+    assert.deepEqual(engine.device.activeReplica.known, { [tree]: 'not-found', [overlay]: 'not-found' });
+    assert.deepEqual(engine.scopes(), ['self/probe']);
+    assert.deepEqual(view.getSnapshot().drawn, []);
+    await engine.subscribe(tree);
+    assert.deepEqual(engine.device.activeReplica.known, {});
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    assert.equal(engine.readMetadata(overlay).firstPullComplete, false);
+    await engine.pull();
+    assert.deepEqual(view.getSnapshot().drawn, ownMark);
+    assert.deepEqual(env.failures, []);
+  } finally { other?.close(); engine.close(); }
+});
+
+test('an open anonymous tree resolves its overlay separately for each bound account', async () => {
+  const env = environment(), engine = await open(env);
+  const tree = 'tree/b_00000001', overlay = 'self/overlay/b_00000001';
+  try {
+    await engine.subscribe(tree);
+    assert.deepEqual(engine.scopes(), [tree]);
+    await assert.rejects(engine.subscribe(overlay), /tree/);
+    env.transport.account = 'B'; await engine.signIn('B');
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    engine.setOnline(false);
+    await engine.beginSignOut(); await engine.finishSignOut({ choice: 'keep' });
+    assert.deepEqual(engine.scopes(), [tree]);
+    assert.deepEqual(engine.observe(overlay).getSnapshot().drawn, []);
+    env.transport.account = 'A'; engine.setOnline(true); await engine.signIn('A');
+    assert.deepEqual(engine.scopes(), ['self/probe', tree, overlay]);
+    assert.deepEqual(engine.observe(overlay).getSnapshot().drawn, []);
+  } finally { engine.close(); }
+});
+
+test('a tree unsubscribed before its subscribe resolves stays closed, neither pulled nor followed, and opens with the next subscribe', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const pulled = () => env.requests.filter(({ endpoint, request }) => endpoint === 'pull' && request.scopes.some(({ scope }) => scope === tree)).length;
+  const reading = () => ({ open: engine.openScopes.has(tree), scopes: engine.scopes(), pulled: pulled(), sockets: env.sockets.length });
+  try {
+    await Promise.all([engine.subscribe(tree), engine.unsubscribe(tree)]);
+    await engine.pull();
+    const closed = reading();
+    await engine.subscribe(tree);
+    await engine.pull();
+    assert.deepEqual({ closed, reopened: reading() },
+      { closed: { open: false, scopes: [], pulled: 0, sockets: 0 }, reopened: { open: true, scopes: [tree], pulled: 1, sockets: 1 } });
+  } finally { engine.close(); }
+});
+
+test('a tree two products hold open stays pulled until the last of them lets it go, and an unsubscribe before its subscribe resolves closes that holder alone', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const reading = () => ({ open: engine.openScopes.has(tree), scopes: engine.scopes() });
+  try {
+    await Promise.all([engine.subscribe(tree), engine.subscribe(tree)]);
+    await engine.unsubscribe(tree);
+    const afterFirst = reading();
+    await Promise.all([engine.subscribe(tree), engine.unsubscribe(tree)]);
+    const afterRaced = reading();
+    await engine.unsubscribe(tree);
+    const afterLast = reading();
+    await engine.unsubscribe(tree);
+    const afterUnpaired = reading();
+    await engine.subscribe(tree);
+    assert.deepEqual({ afterFirst, afterRaced, afterLast, afterUnpaired, reopened: reading() }, {
+      afterFirst: { open: true, scopes: [tree] }, afterRaced: { open: true, scopes: [tree] }, afterLast: { open: false, scopes: [] },
+      afterUnpaired: { open: false, scopes: [] }, reopened: { open: true, scopes: [tree] },
+    });
+  } finally { engine.close(); }
+});
+
+test('an anon replica whose last tree is unsubscribed has nothing to pull, and its puller run still ends following it on the live socket', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  try {
+    await engine.subscribe(tree);
+    await engine.pull();
+    const socket = env.sockets.at(-1);
+    socket.readyState = 1;
+    socket.onopen();
+    const followed = [...engine.live.following];
+    const pulls = env.requests.filter(({ endpoint }) => endpoint === 'pull').length;
+    await engine.unsubscribe(tree);
+    env.timers.advance(0);
+    await until(() => socket.readyState === 3);
+    assert.deepEqual({ followed, following: [...engine.live.following], sent: socket.sent, running: engine.live.running,
+      pulls: env.requests.filter(({ endpoint }) => endpoint === 'pull').length - pulls },
+    { followed: [tree], following: [], sent: [{ op: 'sub', scopes: [tree] }, { op: 'unsub', scopes: [tree] }], running: false, pulls: 0 });
+  } finally { engine.close(); }
+});
+
+test('a public tree read signed out goes from the device at a sign-in that leaves the anon replica behind a new one: none of its rows stays at rest', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const atRest = () => new Promise((resolve, reject) => {
+    const request = engine.store.database.transaction('rows').objectStore('rows').getAll();
+    request.onsuccess = () => resolve(request.result.map(({ value }) => value.t).sort());
+    request.onerror = () => reject(request.error);
+  });
+  try {
+    await engine.subscribe(tree);
+    await engine.pull();
+    const anon = engine.activeReplica();
+    const read = { scopes: Object.keys(engine.device.activeReplica.confirmed), rows: await atRest() };
+    env.transport.account = 'B';
+    assert.equal((await engine.signIn('B')).complete, true);
+    await engine.unsubscribe(tree);
+    env.timers.advance(0);
+    await until(() => engine.store.garbage.size === 0);
+    const stored = (await engine.store.read()).device.replicas.map((replica) => ({ anon: replica.id === anon, state: replica.meta.state,
+      scopes: Object.keys(replica.confirmed), cursors: Object.keys(replica.cursors), known: replica.known }));
+    assert.deepEqual({ read, stored, rows: await atRest() }, {
+      read: { scopes: [tree], rows: ['meta'] },
+      stored: [{ anon: true, state: 'anon', scopes: [], cursors: [], known: {} }, { anon: false, state: 'bound', scopes: [], cursors: [], known: {} }],
+      rows: [],
+    });
+  } finally { engine.close(); }
+});
+
+test('an anon replica forgets the not-found of a tree it may not read once no product holds it open, and keeps one an entry still writes', async () => {
+  const env = environment(), denied = 'tree/b_00000001', written = 'tree/b_00000002';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001'), 'tree:b_00000002': treeScope('A', 'b_00000002') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 }),
+      row({ t: 'board', id: 'b_00000002', life: ['alive', st(1)], born: st(1), seq: 2 })] },
+  }));
+  const engine = await open(env);
+  const stored = async () => (await engine.store.read()).device.activeReplica.known;
+  try {
+    await engine.subscribe(denied);
+    await engine.subscribe(written);
+    await engine.commit(written, [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }]);
+    await engine.pull();
+    const open = await stored();
+    await engine.pull();
+    const pulledAgain = await stored();
+    await engine.unsubscribe(denied);
+    await engine.unsubscribe(written);
+    await engine.pull();
+    assert.deepEqual({ open, pulledAgain, closed: await stored(), entries: engine.device.activeReplica.entries().map(({ scope }) => scope) }, {
+      open: { [denied]: 'not-found', [written]: 'not-found' },
+      pulledAgain: { [denied]: 'not-found', [written]: 'not-found' },
+      closed: { [written]: 'not-found' },
+      entries: [written],
+    });
+  } finally { engine.close(); }
+});
+
+test('a bound replica forgets the not-found of another account\'s tree it may not read once it is closed, and keeps the gone of its own dead tree', async () => {
+  const env = environment(), denied = 'tree/b_00000001', dead = 'tree/b_00000003';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'acct:B/probe': productScope('B'),
+      'tree:b_00000001': treeScope('A', 'b_00000001'), 'tree:b_00000003': treeScope('B', 'b_00000003', { state: 'dead' }) },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const stored = async () => (await engine.store.read()).device.activeReplica.known;
+  try {
+    env.transport.account = 'B';
+    assert.equal((await engine.signIn('B')).complete, true);
+    await engine.subscribe(denied);
+    await engine.subscribe(dead);
+    await engine.pull();
+    const open = await stored();
+    await engine.unsubscribe(denied);
+    await engine.unsubscribe(dead);
+    await engine.pull();
+    assert.deepEqual({ open, closed: await stored(), reopened: await engine.subscribe(dead) }, {
+      open: { [denied]: 'not-found', 'self/overlay/b_00000001': 'not-found', [dead]: 'gone', 'self/overlay/b_00000003': 'gone' },
+      closed: { [dead]: 'gone', 'self/overlay/b_00000003': 'gone' },
+      reopened: 'gone',
+    });
+  } finally { engine.close(); }
+});
+
+test('an opted act journals in IndexedDB, and its Undo survives a reopen, reports its wait and settles through the reference server', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send(); await engine.pull();
+  const title = { scope: 'self/probe', t: 'card', id: 'card0001', slot: { kind: 'field', name: 'title' } };
+  const { outcome: act } = await engine.commitAct([{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'renamed' } }] }],
+    { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: title }] }] }] } });
+  await engine.send(); await engine.pull();
+  assert.equal(engine.device.activeReplica.journal[0].sourceEntries[0].attempts[0].outcome, 'ok');
+  env.transport.response = () => new Promise(() => {});
+  const requested = await engine.requestInverse(act.gestureId);
+  assert.deepEqual([requested.kind, requested.localChanged], ['pending', true]);
+  assert.equal(engine.observe('self/probe').getSnapshot().drawn.find((record) => record.t === 'card').f.title[0], 'secret');
+  engine.close();
+  env.transport.response = null;
+  const reopened = await open(env);
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), requested);
+  await reopened.send(); await reopened.pull();
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), { kind: 'settled', requestId: requested.requestId,
+    inverseActId: requested.inverseActId, changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(reopened.device.activeReplica.confirmedRows('self/probe')[0].f.title[0], 'secret');
+  const inverse = env.events.filter(({ name }) => name === 'sync-inverse').map(({ props }) => props);
+  assert.equal(inverse.length, 3);
+  assert.deepEqual(inverse[0], { outcome: 'pending' });
+  assert.deepEqual(Object.keys(inverse[1]).sort(), ['ageMs', 'outcome', 'waiting']);
+  assert.deepEqual([inverse[1].outcome, inverse[1].waiting], ['pending', 1]);
+  assert.ok(Number.isSafeInteger(inverse[1].ageMs) && inverse[1].ageMs >= 0);
+  assert.deepEqual(inverse[2], { outcome: 'settled', applied: 1, skipped: 0 });
+  assert.deepEqual(reopened.device.activeReplica.journal, []);
+  assert.equal(await reopened.releaseReversibleAct(act.gestureId), false);
+  reopened.close();
+});
+
+test('a tag deleted on another device keeps its dead row\'s seq in IndexedDB, so the Undo of its revival after a reopen applies', async () => {
+  const env = environment(), tree = 'tree/b_00000001', oak = { t: 'tag', id: 'oak', born: st(1) };
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ ...oak, life: ['alive', st(1)], f: { label: ['Oak', st(1)] }, seq: 1 })] },
+  }));
+  const serverOak = () => env.state.rows['tree:b_00000001'][JSON.stringify(['tag', 'oak'])];
+  const engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  for (let round = 0; round < 3; round++) { engine.kickPull(); await engine.pull(); }
+  env.state = push({ state: env.state, registry, product, account: 'A', serverNow: env.timers.time, request: { replica: 'rp_0000000000000000000000000000000b',
+    account: 'A', ackThrough: 0, intents: [{ n: 1, scope: tree, d: [{ ...oak, life: ['dead', st(2, 0, OTHER)] }] }] } }).state;
+  engine.kickPull(); await engine.pull();
+  const deathSeq = serverOak().seq;
+  assert.deepEqual(engine.device.activeReplica.confirmedRows(tree), []);
+  engine.close();
+
+  const reopened = await open(env);
+  const life = { scope: tree, t: 'tag', id: 'oak', slot: { kind: 'life' } };
+  const label = { scope: tree, t: 'tag', id: 'oak', slot: { kind: 'field', name: 'label' } };
+  const { outcome: act } = await reopened.commitAct([{ scope: tree, changes: [{ op: 'revive', t: 'tag', id: 'oak', f: { label: 'Next' } }] }],
+    { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree',
+      targets: [{ target: life, defaultValue: 'dead' }, { target: label, defaultValue: 'Oak' }] }] }] } });
+  assert.deepEqual(reopened.device.activeReplica.journal[0].sourceEntries[0].preimages.map(({ rowSeq }) => rowSeq), [deathSeq, deathSeq]);
+  await reopened.send(); await reopened.pull();
+  assert.deepEqual([serverOak().life[0], serverOak().f.label[0]], ['alive', 'Next']);
+  const requested = await reopened.requestInverse(act.gestureId);
+  await reopened.send(); await reopened.pull();
+  assert.deepEqual(reopened.readInverseResult(requested.requestId), { kind: 'settled', requestId: requested.requestId,
+    inverseActId: requested.inverseActId, changed: true, appliedCount: 2, skippedCount: 0 });
+  assert.deepEqual([serverOak().life[0], serverOak().f.label[0]], ['dead', 'Oak']);
+  assert.deepEqual(reopened.device.activeReplica.confirmedRows(tree), []);
+  assert.deepEqual(env.failures, []);
+  reopened.close();
 });

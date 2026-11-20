@@ -27,38 +27,20 @@ const LOCAL_HEADER = 30;
 const CENTRAL_HEADER = 46;
 const END_RECORD = 22;
 
-// The zip of every roadmap that could be read, and how many were asked for. Nothing to put in it downloads nothing.
-export async function buildExportArchive() {
-  const trees = await listAllTrees();
-  const files = [];
-  for (const tree of trees) {
-    const loaded = await loadForExport(tree);
-    if (!loaded) continue;
-    const markdown = serializePlan(loaded.treeData, loaded.treeData.kinds, loaded.progress);
-    files.push({ name: fileNameFor(loaded.treeData, tree.id), text: markdown });
-  }
-  if (files.length > 0) downloadExport({ name: 'windmill-export.zip', bytes: storeZip(files), type: 'application/zip' });
-  return { count: files.length, total: trees.length };
-}
-
-async function loadForExport(tree) {
-  try {
-    return await (tree.origin === 'server' ? loadServerTree(tree.id) : loadDeviceTree(tree.id));
-  } catch (error) {
-    reportExportFailure('roadmap-export-load', error);
-    return null;
-  }
-}
-
-export function reportExportFailure(operation, error, tags) {
-  reportRoadmapFailure(operation, error, tags, '#/settings');
-}
-
+// One roadmap's file: its title and guide, every step with its own mark, in the paste format.
 export function buildRoadmapExport(treeData, progress) {
   return {
-    name: fileNameFor(treeData, treeData.id),
+    name: fileNameFor(treeData),
     text: serializePlan(treeData, treeData.kinds, progress),
   };
+}
+
+// One .md per tree: a slug of the title, disambiguated by a short slice of the tree id.
+function fileNameFor({ id, title }) {
+  const slug = String(title ?? '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'roadmap';
+  const short = id.replace(/^t_/, '').slice(0, 8);
+  return `${slug}-${short}.md`;
 }
 
 export function downloadExport({ name, text, bytes, type = 'text/markdown;charset=utf-8' }) {
@@ -72,6 +54,69 @@ export function downloadExport({ name, text, bytes, type = 'text/markdown;charse
   } finally {
     anchor.remove();
     URL.revokeObjectURL(url);
+  }
+}
+
+export function reportExportFailure(operation, error, tags) {
+  reportRoadmapFailure(operation, error, tags, '#/settings');
+}
+
+// The zip of every roadmap of the person's list that `readRoadmaps` could read, handed to `download`: how many files it
+// holds, and how many roadmaps the list holds. Nothing to put in it downloads nothing; null where the list could not be read.
+export async function buildExportArchive(readRoadmaps, download = downloadExport) {
+  const roadmaps = await readRoadmaps();
+  if (roadmaps === null) return null;
+  const files = roadmaps.flatMap((roadmap) => (roadmap ? [buildRoadmapExport(roadmap.treeData, roadmap.progress)] : []));
+  if (files.length > 0) download({ name: 'windmill-export.zip', bytes: storeZip(files), type: 'application/zip' });
+  return { count: files.length, total: roadmaps.length };
+}
+
+// What Settings' Export all came to, as `roadmap_export` tells it: `unopened` where the device's copy did not open in time
+// (`archive` null), `done` where it holds every roadmap of the list, none among them, `failed` where it holds none of
+// several, and `partial` otherwise.
+export function exportOutcome(archive) {
+  if (archive === null) return 'unopened';
+  if (archive.count === archive.total) return 'done';
+  return archive.count === 0 ? 'failed' : 'partial';
+}
+
+// The person's roadmaps as the device's copy holds them (roadmap-on-the-engine.md §8.4), each read through the domain as
+// the room reads it, and with no connection what the device holds: null for one the device has not read, or whose read
+// threw. Null where the copy did not open. `collaborators` are what the reading is given (the engine's holder, timers).
+export async function readReplicaRoadmaps(collaborators = {}) {
+  const { ReplicaReading } = await import('../room/ReplicaReading.js');
+  const reading = new ReplicaReading({ ...collaborators, treeId: null });
+  try {
+    const roadmaps = await reading.readEveryRoadmap({ signal: new AbortController().signal });
+    if (!roadmaps) return null;
+    return roadmaps.account.list().map(({ id }) => {
+      try {
+        const treeData = roadmaps.seedOf(id);
+        return treeData && { treeData, progress: roadmaps.marksOf(id) };
+      } catch (error) {
+        reportExportFailure('roadmap-export-load', error);
+        return null;
+      }
+    });
+  } finally {
+    reading.close();
+  }
+}
+
+// The person's roadmaps as roadmap's own sync keeps them, which retires at the move (§8.4): the server's list and this
+// device's own, each read from the server or the device's store, null where it could not be.
+export async function readAccountRoadmaps() {
+  const roadmaps = [];
+  for (const tree of await listAllTrees()) roadmaps.push(await loadForExport(tree));
+  return roadmaps;
+}
+
+async function loadForExport(tree) {
+  try {
+    return await (tree.origin === 'server' ? loadServerTree(tree.id) : loadDeviceTree(tree.id));
+  } catch (error) {
+    reportExportFailure('roadmap-export-load', error);
+    return null;
   }
 }
 
@@ -105,14 +150,6 @@ function progressFrom(treeData, overlay) {
   return {
     completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
   };
-}
-
-// One .md per tree: a slug of the title, disambiguated by a short slice of the tree id.
-function fileNameFor(treeData, treeId) {
-  const slug = String(treeData.title ?? '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'roadmap';
-  const short = treeId.replace(/^t_/, '').slice(0, 8);
-  return `${slug}-${short}.md`;
 }
 
 // A store-only (method 0, no compression) ZIP writer emitting raw bytes: local file headers, a

@@ -76,11 +76,13 @@ data class AbilityCase(val file: String, val name: String, val seat: Seat, val n
     }
 }
 
-// Confirmed records listed by each view, and the device keys the scene lists with their values; the engine ER-17
-// factory performs visibility and text decoding.
+// Confirmed records listed by each view, the device keys the scene lists with their values, and the scope's spent ids with
+// their born; the engine ER-17 factory performs visibility and text decoding.
 data class VectorRecords(val drawn: List<works.windmill.sync.api.Record>, val stored: List<works.windmill.sync.api.Record>,
-    val device: Map<String, Json> = emptyMap()) {
-    constructor(drawn: Json?, stored: Json?, registry: Registry, device: Json? = null) : this(records(drawn, registry), records(stored, registry), device?.obj() ?: emptyMap())
+    val device: Map<String, Json> = emptyMap(), val spent: Map<RecordKey, Stamp> = emptyMap()) {
+    constructor(drawn: Json?, stored: Json?, registry: Registry, device: Json? = null, spent: Json? = null) : this(
+        records(drawn, registry), records(stored, registry), device?.obj() ?: emptyMap(),
+        (spent?.arr() ?: emptyList()).associate { RecordKey(it.member("t").str(), RecordID(it.member("id"))) to Stamp(it.member("born").str()) })
     companion object {
         fun records(rows: Json?, registry: Registry): List<works.windmill.sync.api.Record> =
             (rows?.arr() ?: emptyList()).map { Record(confirmed = Row(it), registry = registry) }
@@ -113,6 +115,7 @@ class VectorReader(val records: VectorRecords, override val now: Long, ids: List
     override fun stored(type: String) = visible(records.stored, type)
     override fun drawn(type: String, field: String, id: RecordID) = drawn(type).filter { it.values[field] == id.json }
     override fun stored(type: String, field: String, id: RecordID) = stored(type).filter { it.values[field] == id.json }
+    override fun spentBorn(type: String, id: RecordID): Stamp? = records.spent[RecordKey(lives(type), id)]
     override fun confirmed(type: String, id: RecordID) = stored(type, id)
     override fun device(key: String): Json? = records.device[key]
     override fun firstPullComplete() = pulled
@@ -134,6 +137,8 @@ class VectorReplica(records: VectorRecords, val now: Long, val registry: Registr
     var answer: CommitOutcome? = null) : Replica {
     private val lock = Any()
     private var currentRecords = records
+    val scopes = mutableMapOf<ScopeRef, VectorRecords>()
+    val commitScopes = mutableListOf<ScopeRef>()
     private val committedGestures = mutableListOf<Gesture>()
     var records: VectorRecords
         get() = synchronized(lock) { currentRecords }
@@ -142,21 +147,27 @@ class VectorReplica(records: VectorRecords, val now: Long, val registry: Registr
     private var failNext = false
     fun failNextCommit() { synchronized(lock) { failNext = true } }
     override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> {
-        val (gesture, value) = body(VectorReader(records, now, scope = scope, registry = registry))
+        val (gesture, value) = body(VectorReader(scopes[scope] ?: records, now, scope = scope, registry = registry))
         return synchronized(lock) {
             if (failNext) { failNext = false; throw CommitFailure(CommitFailure.Kind.storeFailure, "the disk is full") }
             if (gesture == null) null to value else {
                 committedGestures.add(gesture)
+                commitScopes.add(scope)
                 val id = "g${committedGestures.size}"
                 (answer ?: CommitOutcome.Committed(CommitReceipt(id, Stamp.UNSET, listOf("$id/0"), emptyList(), null, emptyList()))) to value
             }
         }
     }
-    override fun undo(gestureId: String) = false
-    override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T) = body(VectorReader(records, now, scope = scope, registry = registry))
+    override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+        error("act vectors use the real engine")
+    override fun cancelHeld(gestureId: String) = false
+    override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult = error("inverse vectors use the real engine")
+    override fun readInverseResult(requestId: String): InverseResult = error("inverse vectors use the real engine")
+    override fun releaseReversibleAct(actId: String): Boolean = error("inverse vectors use the real engine")
+    override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T) = body(VectorReader(scopes[scope] ?: records, now, scope = scope, registry = registry))
     override fun mintID(type: String): RecordID = throw CommitFailure.malformed("a vector mints no id")
     override fun physNow() = now
-    override fun dismissNotice(id: String): Unit = throw ContractError("a vector's commit writes no notice, and $id was dismissed")
+    override fun dismissNotice(id: String): Boolean = throw ContractError("a vector's commit writes no notice, and $id was dismissed")
 }
 
 val RecordRef.form: Json get() = Json.objectOf("t" to Json.of(type), "id" to id.json)
@@ -177,6 +188,7 @@ val Gesture.form: Json get() = Json.objectOf("changes" to Json.Arr(changes.map {
     "hold" to Json.of(hold), "guards" to Json.Arr(guards.map { Json.objectOf("t" to Json.of(it.type), "id" to it.id.json, "field" to Json.of(it.field)) }),
     "retire" to Json.Arr(retire.map { it.form }), "cmd" to (command?.json ?: Json.Null), "predict" to Json.Arr(predict.map { it.form }),
     "local" to Json.Arr(local.map { Json.objectOf("key" to Json.of(it.key), "value" to (it.value ?: Json.Null)) }))
+    .with("scopedPredict" to scopedPredict?.let { groups -> Json.Arr(groups.map { Json.objectOf("scope" to it.scope.json, "changes" to Json.Arr(it.changes.map { change -> change.form })) }) })
 val CommitReceipt.form: Json get() = Json.objectOf("gestureId" to Json.of(gestureId), "localIds" to Json.Arr(localIds.map(Json::of)),
     "releaseAt" to (releaseAt?.let(Json::of) ?: Json.Null), "retired" to Json.Arr(retired.map(Json::of)))
 

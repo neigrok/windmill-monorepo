@@ -1,12 +1,14 @@
 // A column's run of step cards: only the cards in view render, each measured as it paints, with a spacer standing in for
 // every stretch skipped. A folded Done ends with the Show all row. Steps that arrive while the Board is mounted wake once.
+// A step the room has a landing line for (§6) carries it under its card, and says when the line is in view.
 
 import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { regroup, DONE_RECENT_LIMIT } from './Board.js';
 import { StepCard } from './StepCard.jsx';
 import { SHOW_ALL } from './traversal.js';
-import { reasonLine, showAllDone } from '../copy.js';
+import { landingNote, reasonLine, showAllDone } from '../copy.js';
 import { prefersReducedMotion } from '../theme.js';
+import { Landed } from '../room/useRoomLanding.js';
 import { TreeDoor } from '../room/useTreeVisit.js';
 
 export const WAKE_MS = 2400; // the Arrived edge settles over two 1200ms pulses
@@ -22,6 +24,7 @@ const LINES = {
   title: { height: 24, advance: 7.6 },
   reason: { height: 18, advance: 5.8 },
   excerpt: { height: 20, advance: 5.6 },
+  landed: { height: 20, advance: 6.4 },
 };
 
 // Lucide's chevron-down on the 24 grid: 2px strokes, so 1.5px at 18 and 1.67px at 20, as the Board icons draw it.
@@ -44,6 +47,11 @@ export function estimatedHeight(card, width) {
   const lines = texts.map(([text, line]) => Math.min(2, Math.max(1, Math.ceil((text.length * line.advance) / room))) * line.height);
   const rows = card.opening && card.opening.face !== 'unread' ? [...lines, CARD.pill] : lines;
   return CARD.frame + rows.reduce((sum, height) => sum + height, 0) + (rows.length - 1) * CARD.gap;
+}
+
+// An unmeasured landing line's height in a run `width` wide: its words wrap at the run's full width.
+function estimatedLineHeight(words, width) {
+  return Math.max(1, Math.ceil((words.length * LINES.landed.advance) / Math.max(1, width))) * LINES.landed.height;
 }
 
 // A column's cards stacked top to bottom with a gap between, in px from the run's top edge.
@@ -261,8 +269,10 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
 export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVED, selectedId, onSelect, onExpandDone, swipe = false, onComplete, selection = null, selectable, onHold, leaving = NOTHING_ARRIVED, pinned = NOTHING_ARRIVED, dimmed = NOTHING_ARRIVED }) {
   const [swiped, setSwiped] = useState(null);
   const openTree = useContext(TreeDoor);
+  const landed = useContext(Landed);
   const listRef = useRef(null);
   const heights = useRef(new Map());
+  const lineHeights = useRef(new Map());
   const latest = useRef(null);
   const anchor = useRef(null);
   const observer = useRef(null);
@@ -273,9 +283,16 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
   const [range, setRange] = useState(FIRST_PAINT);
   const { cards, folded, total } = shown;
 
+  // The landing line under a step's card, every one of its lines as one note; null where it has none.
+  const lineOf = (id) => (landed.lines.has(id) ? landingNote(landed.lines.get(id)) : null);
+  // A card and its landing line take one slot of the run.
   const stack = useMemo(
-    () => new CardStack(cards.map((card) => heights.current.get(card.id) ?? estimatedHeight(card, run.width)), run.gap),
-    [cards, measured, run],
+    () => new CardStack(cards.map((card) => {
+      const cardHeight = heights.current.get(card.id) ?? estimatedHeight(card, run.width);
+      const line = lineOf(card.id);
+      return line === null ? cardHeight : cardHeight + run.gap + (lineHeights.current.get(card.id) ?? estimatedLineHeight(line, run.width));
+    }), run.gap),
+    [cards, measured, run, landed.lines],
   );
   const items = useMemo(() => {
     const pins = new Set([stopId, pendingId, selectedId, ...pinned].filter((id) => typeof id === 'string'));
@@ -326,6 +343,14 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
     observer.current = new ResizeObserver((entries) => {
       let changed = false;
       for (const entry of entries) {
+        const line = entry.target.dataset.landedFor;
+        if (line !== undefined) {
+          const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.target.offsetHeight;
+          if (height === 0 || lineHeights.current.get(line) === height) continue;
+          lineHeights.current.set(line, height);
+          changed = true;
+          continue;
+        }
         const id = entry.target.dataset.stepId;
         if (id === undefined) {
           const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
@@ -361,7 +386,7 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
   // Before the window paints: hold the view still, then watch only the cards it newly rendered and let go of the dropped.
   useLayoutEffect(() => {
     keepAnchor();
-    const rendered = new Set(listRef.current.querySelectorAll(':scope > .st-board-card, :scope > .st-board-swipe'));
+    const rendered = new Set(listRef.current.querySelectorAll(':scope > .st-board-card, :scope > .st-board-swipe, :scope > .st-board-landed'));
     for (const element of observed.current) if (!rendered.has(element)) observer.current.unobserve(element);
     for (const element of rendered) if (!observed.current.has(element)) observer.current.observe(element);
     observed.current = rendered;
@@ -369,6 +394,17 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
 
   useEffect(follow, [stack]);
   useEffect(() => setSwiped(null), [swipe]);
+
+  // A landing line counts as shown once half of it is in view on a Board that stands uncovered.
+  useEffect(() => {
+    const shown = landed.shown;
+    if (!shown) return undefined;
+    const seen = new IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.intersectionRatio >= 0.5) shown(entry.target.dataset.landedFor);
+    }, { threshold: 0.5 });
+    for (const element of listRef.current.querySelectorAll(':scope > .st-board-landed')) seen.observe(element);
+    return () => seen.disconnect();
+  }, [items, landed]);
 
   // A focused Show all unfolds into the card that took its place.
   useEffect(() => {
@@ -385,28 +421,33 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
   return (
     <>
       <div className="st-board-cards" ref={listRef}>
-        {items.map((item) => (typeof item === 'number'
-          ? (
-            <StepCard
-              key={cards[item].id}
-              card={cards[item]}
-              selected={cards[item].id === selectedId}
-              selecting={selection !== null}
-              checked={selection?.ids.includes(cards[item].id) ?? false}
-              onHold={!selectable || selectable(cards[item].id) ? onHold : undefined}
-              arrived={arrived.has(cards[item].id)}
-              tabIndex={cards[item].id === stopId ? 0 : -1}
-              onSelect={onSelect}
-              swipe={swipe}
-              open={swiped === cards[item].id}
-              onSwipe={setSwiped}
-              onComplete={onComplete}
-              onOpenTree={openTree}
-              leaving={leaving.has(cards[item].id)}
-              dimmed={dimmed.has(cards[item].id)}
-            />
-          )
-          : <div key={`spacer-${item.from}`} className="st-board-cards-spacer" style={{ height: item.spacer }} aria-hidden />))}
+        {items.map((item) => {
+          if (typeof item !== 'number') return <div key={`spacer-${item.from}`} className="st-board-cards-spacer" style={{ height: item.spacer }} aria-hidden />;
+          const card = cards[item];
+          const line = lineOf(card.id);
+          return (
+            <React.Fragment key={card.id}>
+              <StepCard
+                card={card}
+                selected={card.id === selectedId}
+                selecting={selection !== null}
+                checked={selection?.ids.includes(card.id) ?? false}
+                onHold={!selectable || selectable(card.id) ? onHold : undefined}
+                arrived={arrived.has(card.id)}
+                tabIndex={card.id === stopId ? 0 : -1}
+                onSelect={onSelect}
+                swipe={swipe}
+                open={swiped === card.id}
+                onSwipe={setSwiped}
+                onComplete={onComplete}
+                onOpenTree={openTree}
+                leaving={leaving.has(card.id)}
+                dimmed={dimmed.has(card.id)}
+              />
+              {line !== null && <p className="st-board-landed" data-landed-for={card.id}>{line}</p>}
+            </React.Fragment>
+          );
+        })}
       </div>
       {folded && (
         <button type="button" tabIndex={stopId === SHOW_ALL ? 0 : -1} className="st-board-show-all" onClick={expand}>

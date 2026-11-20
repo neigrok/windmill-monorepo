@@ -6,6 +6,7 @@
 #include "products/roadmap/adapters/mcp/EditReceipt.h"
 #include "products/roadmap/adapters/mcp/ReadShape.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
+#include "products/roadmap/adapters/mcp/RoadmapToolParts.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
 #include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/TreeRoom.h"
@@ -36,28 +37,8 @@ namespace wm {
 
 namespace {
 
-constexpr char kSeedStatusMoved[] =
-    ".status is your own mark on this surface, not the document's — the authored baseline every "
-    "reader sees is \"seedStatus\", and your own progress goes in \"progress\": [{nodeId, status}].";
 
-std::string writeRefusalSentence(WriteRefusal refusal) {
-  if (refusal == WriteRefusal::nobodysTree)
-    return std::string(truthOf(refusal)) + ". You can still read it with get_tree, and copy it into "
-                                          "a roadmap of your own with create_tree then import_subgraph.";
-  return std::string(truthOf(refusal)) + ". Call list_trees to see the roadmaps you own.";
-}
 
-// A refused `kind` completes under the code of its reason, so a caller naming a kind the legend lacks, or
-// creating a node that names none where it must, is told apart from a malformed call; the code never carries
-// the kind or the node it named.
-ToolResult kindRefused(const KindRefusal& refusal) {
-  switch (refusal.reason) {
-    case KindRefusal::Reason::unknownKind: return ToolResult::failure(refusal.sentence, "kind-unknown");
-    case KindRefusal::Reason::hueMismatch: return ToolResult::failure(refusal.sentence, "kind-hue-mismatch");
-    case KindRefusal::Reason::unnamedHue: return ToolResult::failure(refusal.sentence, "kind-unnamed");
-  }
-  return ToolResult::failure(refusal.sentence);
-}
 
 // A minted id is the server's own choice, so it is held under kMaxIdLength with room for the
 // "-N" a collision appends — a long label never refuses its own node by way of the id.
@@ -80,57 +61,12 @@ std::string slugify(const std::string& label) {
   return out.empty() ? "node" : out;
 }
 
-std::optional<std::string> commandKindFor(const std::string& tool) {
-  if (tool == "create_node")    return "CreateNode";
-  if (tool == "add_kind")       return "AddKind";
-  if (tool == "remove_kind")    return "RemoveKind";
-  return std::nullopt;
-}
 
-bool namesAnExistingKind(const std::string& tool) {
-  return tool == "remove_kind";
-}
 
-// `prefix` is blank at the top level and "nodes[3]." inside a list. A node's label, icon and
-// description are typed here and capped by the domain — validate() for a command, admit() for a
-// graft — whose one sentence names every field over its cap and, for an append, the body the node
-// would hold.
-std::optional<std::string> checkAnnotation(const Json::Value& node, const std::string& prefix) {
-  if (std::optional<std::string> bad = optionalString(node["description"], prefix + "description"))
-    return bad;
-  return optionalLinks(node["links"], prefix + "links");
-}
 
-// A legend kind id a node write files the node under; which kinds exist is the room's to say.
-std::optional<std::string> optionalKind(const Json::Value& value, const std::string& path) {
-  if (value.isNull()) return std::nullopt;
-  return requireString(value, path, Empty::rejected, kMaxIdLength);
-}
 
-Json::Value progressStatusArgument(const Json::Value& value) {
-  if (!value.isString()) return value;
-  const auto status = parseProgressStatus(value.asString());
-  if (!status) return value;
-  return progressStatusName(*status);
-}
 
-// Each register an imported node or kind may leave out, by its name on this surface: a node's
-// `seedStatus` is the document's `status`.
-constexpr std::pair<const char*, NodeRegister> kImportedNodeRegisters[] = {
-    {"label", NodeRegister::label},             {"icon", NodeRegister::icon},
-    {"color", NodeRegister::color},             {"order", NodeRegister::order},
-    {"seedStatus", NodeRegister::status},       {"description", NodeRegister::description},
-    {"links", NodeRegister::links},             {"opens", NodeRegister::opens}};
-constexpr std::pair<const char*, KindRegister> kImportedKindRegisters[] = {
-    {"label", KindRegister::label},
-    {"description", KindRegister::description}};
 
-// `expectedSeq`, when a batch tool is sent one: a non-negative integer, the revision read from get_tree or get_nodes.
-std::optional<std::string> checkExpectedSeq(const Json::Value& args) {
-  if (args.isMember("expectedSeq") && (!args["expectedSeq"].isInt64() || args["expectedSeq"].asInt64() < 0))
-    return "expectedSeq must be a non-negative integer from get_tree or get_nodes";
-  return std::nullopt;
-}
 
 // A batch written against a revision the tree has moved past is refused whole, before anything is applied.
 std::optional<std::string> staleExpectedSeq(const Json::Value& args, const TreeRoom& room) {
@@ -139,34 +75,7 @@ std::optional<std::string> staleExpectedSeq(const Json::Value& args, const TreeR
          std::to_string(room.head()) + ". Nothing changed; read get_nodes or get_tree and retry with the current seq.";
 }
 
-std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
-  if (!node.isObject()) return path + " must be an object, got " + typeName(node);
-  if (std::optional<std::string> bad = requireString(node["id"], path + ".id", Empty::rejected, kMaxIdLength))
-    return bad;
-  if (std::optional<std::string> bad = optionalString(node["label"], path + ".label")) return bad;
-  if (std::optional<std::string> bad = optionalString(node["icon"], path + ".icon")) return bad;
-  if (std::optional<std::string> bad = optionalOneOf(node["color"], path + ".color", kHues)) return bad;
-  if (std::optional<std::string> bad = optionalKind(node["kind"], path + ".kind")) return bad;
-  if (std::optional<std::string> bad = optionalOneOf(progressStatusArgument(node["seedStatus"]), path + ".seedStatus", kStatuses))
-    return bad;
-  if (!node["status"].isNull()) return path + kSeedStatusMoved;
-  if (std::optional<std::string> bad = optionalString(node["order"], path + ".order")) return bad;
-  if (std::optional<std::string> bad = optionalStrings(node["prerequisites"], path + ".prerequisites", kMaxIdLength))
-    return bad;
-  if (std::optional<std::string> bad = optionalString(node["opens"], path + ".opens", kMaxIdLength)) {
-    // A read answers `opens` as an object, so a node sent back as it was read is told which part of it to send.
-    if (node["opens"].isObject()) return *bad + ". Send the id alone: the treeId inside the opens that a read answers.";
-    return bad;
-  }
-  return checkAnnotation(node, path + ".");
-}
 
-// A pointer a call sends a step: the argument path that names it, the step and the tree it names, an empty id for none.
-struct SentPointer {
-  std::string path;
-  NodeId step;
-  TreeId tree;
-};
 
 // Every pointer a call sends a step that owns no subtree must be valid (OpenedTrees::pointsAt): a standing root of the
 // caller's, asked of the registry once for the whole call. A pointer sent a step that owns a subtree, present or deleted,
@@ -212,18 +121,6 @@ std::vector<NodeId> refusedPointersOf(const TreeRoom& room, const std::vector<Se
   return room.refusedPointers(steps);
 }
 
-// What a receipt says of the pointers its call sent steps that own a subtree: each id in `opensRefused`, the rest of the
-// call applied, and what to do instead in `opensError`. Nothing for a call none of whose pointers was refused.
-void answerRefusedPointers(const std::vector<NodeId>& refused, Json::Value& receipt) {
-  if (refused.empty()) return;
-  Json::Value ids(Json::arrayValue);
-  for (const NodeId& step : refused) ids.append(step.str());
-  receipt["opensRefused"] = ids;
-  receipt["opensError"] =
-      "Some steps own a subtree, which each opens whatever its opens holds: their opens was left as it was and the rest "
-      "of the call applied — those ids are listed in opensRefused. To open another roadmap from this tree, set opens on "
-      "a step that owns no subtree.";
-}
 
 // How long a follow a reply waits on may take: a read's of the trees its steps open, and an edit's for its receipt, made
 // once the edit is saved. Past it the reply goes out without what the follow would have told, and says so, rather than
@@ -271,53 +168,6 @@ ToolResult withClosedLoops(TreeRegistry& trees, const UserId& actor, const TreeI
   return ToolResult::json(receipt);
 }
 
-// Both `nodeId` and `id` land on payload["id"]; runs before commandFromJson decodes.
-std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& payload) {
-  // Strip nulls: commandFromJson reads presence with isMember, so `links: null` would empty a node's links.
-  for (const std::string& key : payload.getMemberNames())
-    if (payload[key].isNull()) payload.removeMember(key);
-
-  // Read through the const overload: jsoncpp's mutable operator[] CREATES the member it probes.
-  const Json::Value& args = payload;
-
-  if (namesAnExistingKind(tool)) {
-    std::string kind;
-    if (std::optional<std::string> bad = requireHandle(args, kKindHandle, "", kind)) return bad;
-    payload["id"] = kind;
-  }
-
-  if (tool == "create_node") {
-    if (!args[kNodeHandle.published].isNull())
-      return "\"nodeId\" names a node that already exists — the id you propose for a NEW node "
-             "is \"id\", and is minted from the label when you omit it.";
-    if (std::optional<std::string> bad = requireString(args["label"], "label", Empty::rejected)) return bad;
-    if (std::optional<std::string> bad = optionalString(args["id"], "id", kMaxIdLength)) return bad;
-    if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
-    if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues)) return bad;
-    if (std::optional<std::string> bad = optionalKind(args["kind"], "kind")) return bad;
-    if (std::optional<std::string> bad = optionalStrings(args["prerequisites"], "prerequisites", kMaxIdLength))
-      return bad;
-    if (std::optional<std::string> bad = optionalString(args["parentId"], "parentId", kMaxIdLength))
-      return bad;
-    if (std::optional<std::string> bad = optionalString(args["opens"], "opens", kMaxIdLength)) return bad;
-    // A created node opens the tree this call names and no other: the pointer is always written, so
-    // an id a deleted node held brings none of that node's pointer back.
-    if (args["opens"].isNull()) payload["opens"] = "";
-    return checkAnnotation(args, "");
-  }
-  if (tool == "add_kind") {
-    if (!args[kKindHandle.alias].isNull())
-      return "\"kindId\" names a kind that already exists — the id you propose for a NEW kind "
-             "is \"id\".";
-    if (std::optional<std::string> bad = requireString(args["id"], "id", Empty::rejected, kMaxIdLength))
-      return bad;
-    if (std::optional<std::string> bad = requireOneOf(args["hue"], "hue", kHues)) return bad;
-    if (std::optional<std::string> bad = optionalString(args["label"], "label", kMaxKindLabelLength))
-      return bad;
-    return optionalString(args["description"], "description", kMaxKindDescriptionLength);
-  }
-  return std::nullopt;  // remove_kind takes its handle alone
-}
 
 // Holds the tree's strand and opens the room; an absent tree becomes a tool-level error. A write lands in the room
 // here, asks for its save (RoomRegistry::persist) and builds its receipt; it waits for the save once this returns, so
@@ -801,25 +651,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
   return withClosedLoops(trees, actor, tree, pointerEdit, edited);
 }
 
-// `"a", "b", "c"` — every offender in one sentence, so one round-trip fixes the batch.
-std::string quotedList(const std::vector<std::string>& ids) {
-  std::string out;
-  for (const std::string& id : ids) {
-    if (!out.empty()) out += ", ";
-    out += "\"" + id + "\"";
-  }
-  return out;
-}
 
-// The subtrees a call names in `branches` (SPEC.md, Model, Subtrees): a list of at most `cap` tree ids.
-std::variant<std::set<TreeId>, std::string> branchesOf(const Json::Value& args, std::size_t cap) {
-  if (std::optional<std::string> bad = optionalStrings(args["branches"], "branches", kMaxIdLength)) return *bad;
-  if (args["branches"].size() > cap)
-    return "branches has " + std::to_string(args["branches"].size()) + " items, max " + std::to_string(cap);
-  std::set<TreeId> branches;
-  for (const Json::Value& branch : args["branches"]) branches.emplace(branch.asString());
-  return branches;
-}
 
 // A call that would remove owning steps without naming their subtrees is refused whole, every branch named with its
 // size, read off the stored rows once the strand is released; a read that fails leaves the sizes out, is reported, and
@@ -854,49 +686,8 @@ ToolResult branchesUnconfirmed(TreeRegistry& trees, const std::vector<Unconfirme
                              kBranchUnconfirmed);
 }
 
-// One mark as the caller asked for it. `outOfOrder` is their word that completing the node before
-// its prerequisites is meant; it lands on the row beside the status.
-struct RequestedMark {
-  NodeId node;
-  ProgressStatus status;
-  bool outOfOrder = false;
-};
 
-// A way the marks a write carries beside its tree edit fell short, said in the receipt's `progressError` after any
-// said before it, the receipt answering progressApplied: false.
-void fellShort(Json::Value& receipt, const std::string& sentence) {
-  const std::string said = receipt.get("progressError", "").asString();
-  receipt["progressApplied"] = false;
-  receipt["progressError"] = said.empty() ? sentence : said + " " + sentence;
-}
 
-// What a batch of marks came to, as its tool answers it.
-struct MarkedBatch {
-  Json::Value results{Json::arrayValue};  // a row per mark that named a node, in the batch's order
-  Json::Value skipped{Json::arrayValue};  // ids naming no node in the tree
-  Json::Value refused{Json::arrayValue};  // ids of nodes that follow the tree they open and took no mark
-  bool cameToARefusal = false;            // no mark was recorded and at least one was refused
-  bool changed = false;                   // a row recorded a mark the caller did not hold
-
-  // The marks as a write that carries them beside its tree edit answers them — an import's `progress[]`, update_nodes'
-  // marks: a row each in `progress`, and the ids skipped or refused listed, each said in `progressError`. `unchanged`
-  // says the whole call changed nothing, so a receipt whose tree edit landed nothing stops saying it beside a row that
-  // recorded a mark.
-  void answerOnto(Json::Value& receipt) const {
-    receipt["progress"] = results;
-    if (changed) receipt.removeMember("unchanged");
-    if (!skipped.empty()) {
-      receipt["progressSkipped"] = skipped;
-      fellShort(receipt, "Some requested progress names nodes absent after the graft; those ids are listed in "
-                         "progressSkipped.");
-    }
-    if (!refused.empty()) {
-      receipt["progressRefused"] = refused;
-      fellShort(receipt, "Some requested progress marks nodes that open a tree, which take no mark of their own — each "
-                         "is complete when the tree it opens is; those ids are listed in progressRefused.");
-    }
-  }
-};
 
 // The sentence is the refusal of a call that could not be applied at all.
 std::variant<MarkedBatch, std::string> applyProgressBatch(
@@ -1006,23 +797,6 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
   return answerSave(saving.wait(), landed, std::move(updated));
 }
 
-// One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
-// completion that rides only a `complete` status. An update_nodes row and an import's progress row are read by this,
-// so each takes the same checks; `path` names the row in a refusal.
-std::variant<RequestedMark, std::string> readMark(const Json::Value& row, const std::string& path) {
-  const std::string field = path + ".";
-  std::string node;
-  if (std::optional<std::string> bad = requireHandle(row, kNodeHandle, path, node)) return *bad;
-  if (std::optional<std::string> bad = requireOneOf(progressStatusArgument(row["status"]), field + "status", kStatuses))
-    return *bad;
-  const ProgressStatus status = *parseProgressStatus(row["status"].asString());
-  if (std::optional<std::string> bad = optionalBool(row["outOfOrder"], field + "outOfOrder")) return *bad;
-  const bool outOfOrder = row["outOfOrder"].asBool();
-  if (outOfOrder && status != ProgressStatus::complete)
-    return "argument \"" + field + "outOfOrder\" acknowledges completing a node before its prerequisites, so it " +
-           "rides status \"complete\" only, got \"" + progressStatusName(status) + "\"";
-  return RequestedMark{NodeId{node}, status, outOfOrder};
-}
 
 // update_nodes and change_edges: a batch of rows planned against the room and landed as ONE op, or not at all. An
 // update_nodes row edits an existing node and carries the caller's own mark, which lands after the tree fields, as an
@@ -1269,85 +1043,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   return edited;
 }
 
-// A legend's kinds as a call sends them, checked item by item before treeFromJson reads them, an id once
-// per list; `limit` caps the items when the list is the whole legend, 0 when it joins one.
-std::optional<std::string> checkKinds(const Json::Value& kinds, std::size_t limit) {
-  if (std::optional<std::string> bad = optionalObjects(kinds, "kinds", limit)) return bad;
-  std::map<std::string, Json::ArrayIndex> kindIdAt;
-  for (Json::ArrayIndex i = 0; i < kinds.size(); ++i) {
-    const std::string path = "kinds[" + std::to_string(i) + "]";
-    if (std::optional<std::string> bad = requireString(kinds[i]["id"], path + ".id", Empty::rejected, kMaxIdLength))
-      return bad;
-    if (std::optional<std::string> bad = requireOneOf(kinds[i]["hue"], path + ".hue", kHues)) return bad;
-    if (std::optional<std::string> bad = optionalString(kinds[i]["label"], path + ".label", kMaxKindLabelLength))
-      return bad;
-    if (std::optional<std::string> bad =
-            optionalString(kinds[i]["description"], path + ".description", kMaxKindDescriptionLength))
-      return bad;
-    const auto [seen, fresh] = kindIdAt.emplace(kinds[i]["id"].asString(), i);
-    if (!fresh)
-      return path + ".id \"" + seen->first + "\" is already used by kinds[" + std::to_string(seen->second) +
-             "] — an id names one kind per batch";
-  }
-  return std::nullopt;
-}
 
-// Checked before treeFromJson reads it: the decoder indexes each item as an object.
-std::optional<std::string> checkImport(const Json::Value& args) {
-  if (args["nodes"].isNull())
-    return "missing required argument \"nodes\". Pass \"nodes\": [] to import only kinds or progress.";
-  // Two rows under one id is malformed, not an upsert: which wins is order-dependent.
-  if (std::optional<std::string> bad = optionalObjects(args["nodes"], "nodes")) return bad;
-  std::map<std::string, Json::ArrayIndex> nodeIdAt;
-  for (Json::ArrayIndex i = 0; i < args["nodes"].size(); ++i) {
-    const std::string path = "nodes[" + std::to_string(i) + "]";
-    if (std::optional<std::string> bad = checkImportedNode(args["nodes"][i], path)) return bad;
-    const auto [seen, fresh] = nodeIdAt.emplace(args["nodes"][i]["id"].asString(), i);
-    if (!fresh)
-      return path + ".id \"" + seen->first + "\" is already used by nodes[" +
-             std::to_string(seen->second) + "] — an id names one node per batch";
-  }
-
-  // Each description is within its own cap by here; the batch is bounded as a whole, since the
-  // graft is one frame every subscriber receives entire.
-  std::size_t descriptionBytes = 0;
-  for (const Json::Value& node : args["nodes"])
-    if (node["description"].isString()) descriptionBytes += node["description"].asString().size();
-  if (descriptionBytes > kMaxImportDescriptionBytes)
-    return "nodes carries " + std::to_string(descriptionBytes) + " bytes of description text, " +
-           std::to_string(descriptionBytes - kMaxImportDescriptionBytes) + " over the " +
-           std::to_string(kMaxImportDescriptionBytes) + "-byte cap one call may carry — split the import";
-
-  if (std::optional<std::string> bad = checkKinds(args["kinds"], 0)) return bad;
-
-  if (std::optional<std::string> bad = optionalObjects(args["progress"], "progress", kMaxProgressUpdates)) return bad;
-
-  if (!args["dryRun"].isNull() && !args["dryRun"].isBool())
-    return "argument \"dryRun\" must be a boolean, got " + typeName(args["dryRun"]);
-  if (std::optional<std::string> bad =
-          optionalOneOf(args["prerequisiteMode"], "prerequisiteMode", kPrerequisiteModes))
-    return bad;
-
-  if (std::optional<std::string> bad = optionalStrings(args["tombstone"], "tombstone", kMaxIdLength)) return bad;
-  if (args["tombstone"].size() > kMaxTombstones)
-    return "tombstone has " + std::to_string(args["tombstone"].size()) + " items, max " +
-           std::to_string(kMaxTombstones);
-  // An id is upserted or tombstoned, never both; and no upserted node may hang off a node this call
-  // deletes. Every offender is named, so one round-trip fixes the batch.
-  std::set<std::string> tombstoned;
-  for (const Json::Value& id : args["tombstone"]) tombstoned.insert(id.asString());
-  std::vector<std::string> both;
-  for (const std::string& id : tombstoned) if (nodeIdAt.count(id)) both.push_back(id);
-  if (!both.empty())
-    return "tombstone names " + quotedList(both) +
-           ", which nodes[] also carries — an id is upserted or tombstoned, never both";
-  for (Json::ArrayIndex i = 0; i < args["nodes"].size(); ++i)
-    for (const Json::Value& prereq : args["nodes"][i]["prerequisites"])
-      if (tombstoned.count(prereq.asString()))
-        return "nodes[" + std::to_string(i) + "].prerequisites names \"" + prereq.asString() +
-               "\", which tombstone deletes in this same call — drop it from one of them";
-  return std::nullopt;
-}
 
 ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& edits, const TreeId& tree,
                           const Json::Value& args, Clock& clock, const ToolCaller& caller) {
@@ -1592,38 +1288,6 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   return answered;
 }
 
-// One `nodeId` (or its `id` alias) or a `nodeIds` list, never both, never neither.
-std::optional<std::string> deleteTargets(const Json::Value& args, std::vector<NodeId>& out) {
-  const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
-  const bool batch = !args["nodeIds"].isNull();
-  if (!single && !batch)
-    return "missing required argument \"nodeId\" (or a \"nodeIds\" list of 1 to " +
-           std::to_string(kMaxDeleteNodeIds) + " ids). " + kNodeHandle.hint;
-  if (single && batch)
-    return "pass a single \"nodeId\" or a \"nodeIds\" list, not both — one form names what this call "
-           "deletes.";
-  if (single) {
-    std::string node;
-    if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", node)) return bad;
-    out = {NodeId{node}};
-    return std::nullopt;
-  }
-  if (std::optional<std::string> bad = optionalStrings(args["nodeIds"], "nodeIds", kMaxIdLength)) return bad;
-  if (args["nodeIds"].empty())
-    return "argument \"nodeIds\" is an empty list — pass at least one id to delete.";
-  if (args["nodeIds"].size() > kMaxDeleteNodeIds)
-    return "nodeIds has " + std::to_string(args["nodeIds"].size()) + " items, max " +
-           std::to_string(kMaxDeleteNodeIds);
-  std::map<std::string, Json::ArrayIndex> seenAt;
-  for (Json::ArrayIndex i = 0; i < args["nodeIds"].size(); ++i) {
-    const auto [seen, fresh] = seenAt.emplace(args["nodeIds"][i].asString(), i);
-    if (!fresh)
-      return "nodeIds[" + std::to_string(i) + "] \"" + seen->first + "\" is already used by nodeIds[" +
-             std::to_string(seen->second) + "] — an id names one node per batch";
-    out.emplace_back(seen->first);
-  }
-  return std::nullopt;
-}
 
 // Every id is checked before any is applied, and the deletions — with the edges they dangle, when asked — land through
 // NodeEdits as one frame under one seq: the tree is never seen between them.
@@ -1710,27 +1374,6 @@ ToolResult createTree(TreeRegistry& trees, const std::string& origin, const User
   return ToolResult::json(out);
 }
 
-// The words each refusal of a subtree's create is answered in, under its code; an absent tree's are every read's, so a
-// tree the caller may not read is answered as one that is not there, and one they may read and not write as every write
-// tool answers it.
-std::string subtreeRefusalSentence(SubtreeRefusal refusal, const TreeId& tree, const NodeId& step) {
-  switch (refusal) {
-    case SubtreeRefusal::noSuchTree: return "no such tree \"" + tree.str() + "\"";
-    case SubtreeRefusal::notYours: return writeRefusalSentence(WriteRefusal::notYours);
-    case SubtreeRefusal::nobodysTree: return writeRefusalSentence(WriteRefusal::nobodysTree);
-    case SubtreeRefusal::stepGone:
-      return "no node in this tree is named " + quotedList({step.str()}) + ". " + kNodeHandle.hint;
-    case SubtreeRefusal::depthLimit:
-      return "subtrees go at most " + std::to_string(kMaxTreeDepth) + " levels below their roadmap, and this tree sits " +
-             std::to_string(kMaxTreeDepth) + " levels below it already";
-    case SubtreeRefusal::stepOpensATree:
-      return "step " + quotedList({step.str()}) + " opens a roadmap of yours: clear its opens with update_nodes "
-             "before it holds a subtree";
-    case SubtreeRefusal::savePending:
-      return "this roadmap's last change is still being saved: try again. Nothing was created.";
-  }
-  throw std::logic_error("an unknown subtree refusal");
-}
 
 // The subtree a step owns, created empty under it or, when the step owns one already, answered as it is: a retry after a
 // lost reply answers the same subtree with `created: false`, completes `unchanged`, and says that kinds it sent were not

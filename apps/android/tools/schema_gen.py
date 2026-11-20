@@ -146,7 +146,7 @@ def generate(contract):
     products, types, commands, codes = set(), set(), set(), set()
     version = None
     for filename in composition["registries"]:
-        if Path(filename).name != filename or not filename.endswith(".registry.json"):
+        if not isinstance(filename, str) or not re.fullmatch(r"[a-z][a-z0-9-]*\.registry\.json", filename):
             raise ValueError("invalid registry filename")
         registry = load(contract / filename)
         validate(schema, registry, schema)

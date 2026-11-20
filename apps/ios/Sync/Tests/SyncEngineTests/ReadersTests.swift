@@ -1,14 +1,14 @@
 import SyncAPI
 import SyncCore
-import SyncEngine
+@testable import SyncEngine
 import SyncReplica
 import SyncStore
 import SyncTesting
 import Testing
 
 // The readers a `read` and a commit's body get (§7.6, design §5.2): drawn and stored apart, the indexed read by a ref
-// field (ER-12), device rows, the first pull, ids minted inside a commit, and every misuse of a reader, which is
-// malformed (§7.1) wherever it surfaces.
+// field (ER-12), spent ids, device rows, the first pull, ids minted inside a commit, and every misuse of a reader, which
+// is malformed (§7.1) wherever it surfaces.
 
 struct ReadersTests {
   static let scope = ScopeRef.product("shelf")
@@ -31,6 +31,74 @@ struct ReadersTests {
 
   static func ids(_ records: [Record]) -> [String] { records.map(\.id.description) }
 
+  @Test func everyReadPathPreservesHeldPendingAndTextMetadata() throws {
+    var document = try Rig.shelf.json.asObject()
+    document["types"] = .array(try document.member("types").asArray().map { value in
+      var type = try value.asObject()
+      if type["type"] == "item" {
+        var fields = try type.member("fields").asObject()
+        for name in ["memo", "detail", "untouched"] {
+          fields[name] = ["kind": "text", "writer": "client", "unit": "bytes", "max": 80]
+        }
+        type["fields"] = .object(fields)
+      }
+      return .object(type)
+    })
+    let rig = try Rig(registry: Registry(json: .object(document)))
+    let scope = Self.scope
+    let seeded = try Stamp("1:0:r_seed")
+    let changed = try Stamp("2:0:r_change")
+    let keys = ["i_aaaa", "i_bbbb", "i_cccc"].map { RecordKey("item", RecordID($0)) }
+    let rows = keys.map { key in
+      Row(key: key, lattice: Lattice(life: Life(.alive, seeded), born: seeded,
+        fields: ["listId": Register("l_one", seeded), "name": Register(key.id.json, seeded)]),
+        texts: Dictionary(uniqueKeysWithValues: ["memo", "detail", "untouched"].map { ($0, TextState(text: "confirmed", rev: 1, merged: true)) }),
+        seq: 1, rc: 5, ru: 6)
+    }
+    let entries = [
+      OutboxEntry(localId: "held/0", gestureId: "held", lineage: "anon", scope: scope, state: .held, commitOrder: 1,
+        releaseAt: Int64.max, stamp: changed, intent: Intent(scope: scope, deltas: [
+          Delta(key: keys[0], texts: ["memo": TextWrite(text: "held memo", base: .rev(1))]),
+          Delta(key: keys[1], lattice: Lattice(fields: ["name": Register("held name", changed)])),
+        ]), predict: [Delta(key: keys[0], texts: ["detail": TextWrite(text: "held detail", base: .rev(1))])]),
+      OutboxEntry(localId: "ready/0", gestureId: "ready", lineage: "anon", scope: scope, state: .ready, commitOrder: 2,
+        releaseAt: 0, stamp: changed, intent: Intent(scope: scope, deltas: [
+          Delta(key: keys[1], texts: ["memo": TextWrite(text: "ready memo", base: .rev(1))]),
+        ]), predict: [Delta(key: keys[1], texts: ["detail": TextWrite(text: "ready detail", base: .rev(1))])]),
+    ]
+    _ = try rig.store.write(.commit) { tx in
+      let replica = try tx.activeReplica()
+      return Planned((), ReplicaBatch(writes: rows.map { .replica(replica, .putRow(scope, $0)) }
+        + entries.map { .replica(replica, .putEntry($0)) }))
+    }
+    for mode in [ViewMode.drawn, .stored] {
+      let expected = keys.enumerated().map { index, key in
+        let pending = index == 1 || index == 0 && mode == .drawn
+        var texts = Dictionary(uniqueKeysWithValues: ["memo", "detail", "untouched"].map {
+          ($0, TextValue(text: "confirmed", merged: true, pending: false))
+        })
+        if pending {
+          for field in ["memo", "detail"] {
+            texts[field] = TextValue(text: "\(index == 0 ? "held" : "ready") \(field)", merged: false, pending: true)
+          }
+        }
+        return Record(type: "item", id: key.id, life: Life(.alive, seeded), born: seeded,
+          values: ["listId": "l_one", "name": index == 1 && mode == .drawn ? "held name" : key.id.json],
+          texts: texts, serials: [:], rc: 5, ru: 6, isVisible: true, isPending: pending, isHeld: index < 2)
+      }
+      let indexed = Dictionary(uniqueKeysWithValues: zip(keys, expected))
+      try rig.store.read { tx in
+        let reader = try TransactionReader(tx, core: rig.engine.core, scope: scope, deviceNow: Rig.startMs)
+        let all = try Listing("item", mode, in: scope, registry: rig.store.registry)
+        let narrowed = try Listing("item", mode, where: Listing.Narrowing(field: "listId", id: "l_one"), in: scope, registry: rig.store.registry)
+        #expect(try reader.records(Set(keys), mode) == indexed)
+        #expect(try reader.records(all) == expected)
+        #expect(try reader.records(narrowed) == expected)
+        #expect(try reader.records(Set(keys), in: narrowed) == indexed)
+      }
+    }
+  }
+
   @Test func queuedCommandsReportAdmissionBeforeTheirPredictionIsPulled() async throws {
     let rig = try Rig(account: "A")
     _ = try rig.engine.commit(Rig.scope) { context -> (Gesture?, Void) in
@@ -43,6 +111,25 @@ struct ReadersTests {
     #expect(await rig.engine.sender.step() == .again)
     #expect(try rig.engine.commit(Rig.scope) { context in (nil as Gesture?, try context.commands().map(\.isAdmitted)) }.value == [true])
     #expect(try rig.outbox() == ["admission/0 acked 1"])
+  }
+
+  // E-7: an opted command's prediction in another scope reads pending there, as drawn and in a list, while its command
+  // stays listed by its origin alone.
+  @Test func aScopedPredictionReadsPendingInItsTargetWhileItsCommandStaysTheOrigins() throws {
+    let rig = try Rig(account: "A")
+    let child = ScopeRef.tree("b_00000002")
+    _ = try rig.commit(Gesture(
+      changes: [], command: Command(name: "probe.branch", args: ["parent": "b_00000001", "child": "b_00000002", "title": "Branch"]),
+      scopedPredict: [ScopedPrediction(scope: child, changes: [.write("meta", "meta", ["title": "Branch"])])], gestureId: "branch"))
+    let meta = try #require(try rig.engine.read(child) { try $0.drawn("meta", "meta") })
+    #expect((meta.values["title"], meta.isPending, meta.isHeld) == ("Branch", true, false))
+    let pending: [Bool] = try rig.engine.read(child) { (reader: any ScopeReader) -> [Bool] in try reader.stored("meta").map(\.isPending) }
+    #expect(pending == [true])
+    let listed = { (scope: ScopeRef) throws -> [String] in
+      try rig.engine.commit(scope) { (context: any CommitContext) -> (Gesture?, [String]) in (nil, try context.commands().map(\.gestureId)) }.value
+    }
+    #expect(try listed(child) == [])
+    #expect(try listed(Rig.scope) == ["branch"])
   }
 
   // §7.12: a read-and-commit body is given the id of the replica its commit writes to, the active one as it stands at
@@ -69,6 +156,7 @@ struct ReadersTests {
     }
     #expect(throws: ended) { try kept!.drawn("item") }
     #expect(throws: ended) { try kept!.device("anything") }
+    #expect(throws: ended) { try kept!.spentBorn("item", "i_aaaa") }
     var context: (any CommitContext)?
     _ = try rig.engine.commit(Self.scope) { body -> (Gesture?, Void) in
       context = body
@@ -91,6 +179,7 @@ struct ReadersTests {
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag") }),
       (Rig.scope, CommitFailure(.malformed, "card.title is not a top-level ref field"), { _ = try $0.stored("card", where: "title", is: "card0001") }),
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag", where: "label", is: "tag0001") }),
+      (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.spentBorn("tag", "tag0001") }),
       (.device("probe"), CommitFailure(.malformed, "device/probe is no product, tree or overlay scope of the registry"), { _ = try $0.drawn("card") }),
     ]
     for (scope, failure, use) in misuses {
@@ -122,6 +211,25 @@ struct ReadersTests {
       type: "item", id: "i_aaaa", life: alive, born: Self.seeded, values: values, texts: [:], serials: [:], rc: 5, ru: 6,
       isVisible: true, isPending: false, isHeld: true))
     #expect(try rig.engine.read(Self.scope) { [try Self.ids($0.drawn("item")), try Self.ids($0.stored("item"))] } == [[], ["i_aaaa"]])
+  }
+
+  // §2.5, §7.5: a spent id is all the device keeps of a derived record deleted elsewhere. Both readers answer its born, nil
+  // for an id the scope keeps no spent id of, and a revive of the record takes that born (§7.1 step 4).
+  @Test func bothReadersAnswerTheBornOfASpentIdAndARevivalTakesIt() throws {
+    let rig = try Rig()
+    let tree = ScopeRef.tree("b_00000001")
+    let born = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    _ = try rig.store.write(.pullPage) { tx in
+      var replica = try tx.replica(tx.activeReplica(), reads: [tree: RowSelection()])!
+      replica.apply(.putSpent(tree, SpentID(key: RecordKey("tag", "oak"), born: born, seq: 3)))
+      return Planned((), replica.batch)
+    }
+    #expect(try rig.engine.read(tree) { reader -> [Stamp?] in [try reader.spentBorn("tag", "oak"), try reader.spentBorn("tag", "elm")] } == [born, nil])
+    let read = try rig.engine.commit(tree) { context -> (Gesture?, Stamp?) in
+      (Gesture(changes: [.revive("tag", "oak", ["label": "Next"])]), try context.spentBorn("tag", "oak"))
+    }.value
+    #expect(read == born)
+    #expect(try rig.engine.read(tree) { try $0.drawn("tag", "oak")?.born } == born)
   }
 
   // ER-12: the index names the confirmed side; a pending write that moves a reference is seen leaving and arriving.
@@ -181,6 +289,59 @@ struct ReadersTests {
   @Test func theFirstPullIsCompleteForAScopeTheReplicaDoesNotPull() throws {
     #expect(try Rig().engine.read(Rig.scope) { try $0.firstPullComplete() })
     #expect(try Rig(account: "A").engine.read(Rig.scope) { try $0.firstPullComplete() } == false)
+  }
+
+  @Test func aReadersTreeKeepsItsOwnOverlayUntilTheLastSubscriptionLeaves() async throws {
+    let tree = ScopeRef.tree("b_00000001")
+    let overlay = ScopeRef.overlay("b_00000001")
+    let rig = try Rig(account: "B")
+    try rig.engine.subscribe(tree)
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() } == false)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: tree, seq: 0), Rig.rows(in: overlay, seq: 0)], as: "B"))
+    _ = await rig.engine.puller.step()
+    #expect(rig.transport.pulls.last?.scopes.map(\.scope) == [Rig.scope, tree, overlay])
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() })
+    try rig.engine.subscribe(overlay)
+    try rig.engine.unsubscribe(tree)
+    #expect(try rig.active().cursors[overlay] != nil)
+    try rig.engine.unsubscribe(overlay)
+    #expect(try rig.active().cursors[overlay] == nil)
+
+    try rig.engine.commit(Rig.scope, Gesture(changes: [.create("board", id: .given("b_00000001"))]))
+    try rig.engine.subscribe(tree)
+    try rig.engine.unsubscribe(tree)
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() } == false)
+  }
+
+  @Test(arguments: ["page", "frame"])
+  func aTreeDenialForgetsItsExplicitOverlayAndResolvesOnlyAcknowledgedWork(_ door: String) async throws {
+    let rig = try Rig(account: "B")
+    let tree = ScopeRef.tree("b_00000001"), overlay = ScopeRef.overlay("b_00000001")
+    let mark = try Row(json: ["t": "mark", "id": "oak", "f": ["done": [true, "1000:0:r_server00001"]], "seq": 1, "rc": 1000, "ru": 1000])
+    try rig.engine.subscribe(tree)
+    try rig.engine.subscribe(overlay)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: tree, seq: 0), Rig.rows([mark], in: overlay, seq: 1)], as: "B"))
+    _ = await rig.engine.puller.step()
+    try rig.commit(Gesture(changes: [.write("mark", "oak", ["done": false])], gestureId: "g1"), in: overlay)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 2)], as: "B"))
+    _ = await rig.engine.sender.step()
+    try rig.commit(Gesture(changes: [.write("mark", "oak", ["done": true])], gestureId: "g2"), in: overlay)
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g2/0 ready"])
+    if door == "frame" {
+      await rig.engine.puller.enqueue(.notFound(tree, servedAs: "B"), for: try rig.meta().replica)
+    } else {
+      rig.engine.puller.wants.add([tree])
+      rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(tree, "not-found")], as: "B"))
+    }
+    _ = await rig.engine.puller.step()
+    #expect(try rig.active().known == [tree: .notFound, overlay: .notFound])
+    #expect(try rig.store.read { try $0.device(rows: true).activeReplica.confirmed[overlay]?.all ?? [] } == [])
+    #expect(try rig.active().cursors[overlay] == nil)
+    #expect(try rig.outbox() == ["g2/0 ready"])
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() })
+    try rig.engine.subscribe(tree)
+    #expect(try rig.active().known == [:])
+    #expect(try rig.engine.read(overlay) { try $0.firstPullComplete() } == false)
   }
 
   // Board ids are eight hex digits: the draws are queued so the first id is one drawn already holds.

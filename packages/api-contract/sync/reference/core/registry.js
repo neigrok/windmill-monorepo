@@ -1,7 +1,8 @@
 // §2.4 the registry: types, fields and commands, in registry.schema.json's format.
 // Scope references (§9.1 ScopeRef) map to registry scope kinds here.
 
-import { checkFieldValue } from './values.js';
+import { References } from './references.js';
+import { checkFieldValue, checkScalarId } from './values.js';
 
 const LATTICE_KINDS = new Set(['lww', 'ranked', 'fww', 'const', 'time']);
 const SYNTAX_CHARACTERS = '^$\\.*+?()[]{}|/';
@@ -171,20 +172,6 @@ export class TypeDef {
   get parentField() {
     return this.fieldNames((field) => field.parent === true)[0];
   }
-
-  // Every id this record names: ref fields' values, and the parts of a ref-built key (§7.7 step 3).
-  referencesOf(id, fieldValues) {
-    const found = [];
-    if (this.key?.ref) found.push({ via: 'key', name: null, t: this.key.ref, id });
-    if (this.key?.tuple) {
-      this.key.tuple.forEach((part, index) => found.push({ via: 'key', name: part.name, t: part.ref, id: id[index] }));
-    }
-    for (const [name, def] of Object.entries(this.fields)) {
-      const value = fieldValues[name];
-      if (def.ref && typeof value === 'string') found.push({ via: 'field', name, t: def.ref, id: value });
-    }
-    return found;
-  }
 }
 
 export class Registry {
@@ -269,6 +256,20 @@ export class Registry {
       throw new RegistryError(`${this.name}: ${message}`);
     };
     for (const type of this.types.values()) {
+      const definitions = ['idPattern', 'idDomain', 'key'].filter((name) => Object.hasOwn(type, name));
+      if (definitions.length !== 1) fail(`${type.type}: exactly one idPattern, idDomain or key defines ids`);
+      if (type.key && type.identity !== 'keyed') fail(`${type.type}: only a keyed type declares key`);
+      if (type.singletonId !== undefined && type.identity !== 'singleton') fail(`${type.type}: only a singleton declares singletonId`);
+      if (type.idDomain !== undefined) {
+        const domain = type.idDomain;
+        if (!domain || typeof domain !== 'object' || Array.isArray(domain)
+          || Object.keys(domain).some((name) => !['type', 'unit', 'min', 'max'].includes(name))
+          || domain.type !== 'string' || domain.unit !== 'chars' || domain.min !== 1
+          || !Number.isSafeInteger(domain.max) || domain.max < 1) fail(`${type.type}: idDomain is a nonempty bounded string in chars`);
+        if (!['derived', 'keyed'].includes(type.identity) || (type.identity === 'derived' && type.idSpace !== 'scope')
+          || (type.idSpace !== undefined && type.idSpace !== 'scope')) fail(`${type.type}: idDomain is for scope-local derived or keyed ids`);
+        if (type.identity === 'derived' && (!type.derive || checkScalarId(type, type.derive.fallback))) fail(`${type.type}: derive fallback is outside idDomain`);
+      }
       if (type.identity === 'singleton' && type.life) fail(`${type.type}: a singleton has no life`);
       if (type.hasBorn && !type.life) fail(`${type.type}: minted and derived types have life`);
       if (type.governs && !type.scope.startsWith('product:')) fail(`${type.type}: a governing type lives in a product scope`);
@@ -277,9 +278,15 @@ export class Registry {
       if (type.governs && type.idSpace !== 'global') fail(`${type.type}: a governing type's ids are global`);
       if (type.hasBorn && !type.mint) fail(`${type.type}: minted and derived types declare mint`);
       if (type.mint) {
-        const pattern = new RegExp(type.idPattern, 'u');
-        const sample = (char) => type.mint.prefix + char.repeat(type.mint.length);
-        if ([...type.mint.alphabet].some((char) => !pattern.test(sample(char)))) fail(`${type.type}: a minted id does not match idPattern`);
+        const { prefix, alphabet, length } = type.mint;
+        if (type.idDomain) {
+          if (typeof prefix !== 'string' || typeof alphabet !== 'string'
+            || [prefix, alphabet].some((text) => text.includes('\0') || /[\uD800-\uDFFF]/u.test(text))
+            || [...alphabet].length < 2 || !Number.isSafeInteger(length) || length < 1
+            || length > type.idDomain.max - [...prefix].length) fail(`${type.type}: mint is outside idDomain`);
+        } else {
+          if ([...alphabet].some((char) => checkScalarId(type, prefix + char.repeat(length)))) fail(`${type.type}: a minted id does not match idPattern`);
+        }
       }
       if (type.idPattern !== undefined && !isPortablePattern(type.idPattern)) fail(`${type.type}: idPattern ${type.idPattern} is outside §2.4's patterns`);
       if (!type.origins.includes('replica')) fail(`${type.type}: origins always include replica`);
@@ -303,11 +310,7 @@ export class Registry {
         if ((field.min !== undefined || field.max !== undefined) && field.unit === undefined) fail(`${type.type}.${name}: a bound states its unit`);
         const fault = field.domain ? domainFault(field.domain) : null;
         if (fault) fail(`${type.type}.${name}: ${fault}`);
-        if (Object.hasOwn(field, 'default')) {
-          if (!LATTICE_KINDS.has(field.kind)) fail(`${type.type}.${name}: a default is for a lattice field`);
-          const reason = checkFieldValue(this, field, field.default);
-          if (reason) fail(`${type.type}.${name}: the default is off the field's domain: ${reason}`);
-        }
+        if (Object.hasOwn(field, 'default') && !LATTICE_KINDS.has(field.kind)) fail(`${type.type}.${name}: a default is for a lattice field`);
         if (field.opens) {
           const placed = type.scope === 'tree' && type.identity === 'singleton' && field.writer === 'server';
           if (!placed) fail(`${type.type}.${name}: opens is for a server-written field of a tree singleton`);
@@ -316,6 +319,22 @@ export class Registry {
       }
     }
     for (const command of this.commands.values()) {
+      if (command.scopedEffects !== undefined && command.scopedEffects !== true) fail(`${command.name}: scopedEffects is true or absent`);
+      if (command.engine !== undefined && (!['capture', 'restore'].includes(command.engine) || !command.scopedEffects || Object.keys(command.args).length)) fail(`${command.name}: an engine command requires scopedEffects and empty args`);
+      if (command.engine === 'restore') {
+        if (!command.predicts?.length) fail(`${command.name}: a restore command predicts the types it restores`);
+        for (const t of command.predicts ?? []) {
+          const type = this.types.get(t);
+          if (type && (type.scope !== command.scope || type.governs)) fail(`${command.name}: a restore restores types of its scope that govern no tree`);
+        }
+        if (command.refPaths !== undefined) fail(`${command.name}: a restore's arguments are fixed`);
+      }
+      if (command.inverse !== undefined) {
+        const input = command.args.input;
+        if (command.inverse !== true || !command.scopedEffects || command.engine !== undefined) fail(`${command.name}: an inverse command is a product command with scopedEffects`);
+        if (Object.keys(command.args).join() !== 'input' || input.type !== 'json' || input.optional) fail(`${command.name}: an inverse command declares only its required json input`);
+      }
+      for (const t of command.predicts ?? []) if (!this.types.has(t)) fail(`${command.name}: predicts unknown ${t}`);
       if (command.serverInternal && command.origins.includes('replica')) fail(`${command.name}: server-internal commands have server origin only`);
       if (command.beforePull && !command.serverInternal) fail(`${command.name}: a beforePull command is server-internal`);
       for (const t of command.predicts ?? []) if (this.types.get(t)?.wholePut) fail(`${command.name}: no command writes the wholePut type ${t}`);
@@ -324,6 +343,14 @@ export class Registry {
         if (ref && !this.types.has(ref)) fail(`${command.name}.${name}: ref to unknown ${ref}`);
         const fault = arg.domain ? domainFault(arg.domain) : null;
         if (fault) fail(`${command.name}.${name}: ${fault}`);
+      }
+    }
+    this.references = new References(this, fail);
+    for (const type of this.types.values()) {
+      for (const [name, field] of Object.entries(type.fields)) {
+        if (!Object.hasOwn(field, 'default')) continue;
+        const reason = checkFieldValue(this, field, field.default);
+        if (reason) fail(`${type.type}.${name}: the default is off the field's domain: ${reason}`);
       }
     }
     const declared = new Set();

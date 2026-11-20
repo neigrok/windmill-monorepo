@@ -516,6 +516,55 @@ struct TelemetryTests {
     #expect(recorder.failures == [Recorded(name: "sync_push", kind: "decode", properties: [:], durationMs: nil)])
   }
 
+  // §7.4: a scoped receipt that does not decode still acknowledges its entry, with no receipt, so its projections end at
+  // once and the pull brings the rows; it reports as a malformed admission carrying none of its ids.
+  @Test func aMalformedScopedReceiptAcknowledgesItsEntryAndReportsMalformed() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(account: "A", telemetry: recorder)
+    try rig.commit(Gesture(changes: [], command: Command(name: "probe.capture", args: [:]), gestureId: "secret-id"))
+    let receipt: JSON = ["windmillKit": ["v": 1, "effects": [["scope": "self/probe", "beforeSeq": 1, "seq": 1, "rows": [], "private": "x"]]]]
+    let result: JSON = ["n": 1, "s": "ok", "seq": 1, "write": [], "detail": receipt]
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [result]))
+    _ = await rig.engine.sender.step()
+    await drain(rig.engine.core.telemetry)
+    let outcome = Recorded(name: "sync_push_outcome", kind: nil, properties: ["outcome": "ok"], durationMs: 0)
+    let failure = Recorded(name: "sync_admission", kind: "malformed", properties: [:], durationMs: nil)
+    #expect(try rig.outbox() == [])
+    #expect(recorder.events == [outcome])
+    #expect(recorder.failures == [failure])
+  }
+
+  // §7.3 Undo of an act: a request reports its outcome, one still waiting at engine start its count and the oldest one's
+  // age, and its settlement in a later transaction its operation counts; never an id or a value.
+  @Test func anInverseRequestReportsItsOutcomeAndSettlementByCountsAlone() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(account: "A", telemetry: recorder)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Rig.cardRow("card0001", "private", seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    let target = Target(RecordAddress(scope: Rig.scope, key: RecordKey("card", "card0001")), .field("title"))
+    let undo = ActUndo(segments: [ActUndo.Segment(index: 0, recipes: [.fields(restoreCommand: "probe.restore", targets: [RestoreTarget(target: target)])])])
+    let act = try rig.engine.commitAct({ _ in (ActRequest(scopes: [Rig.scope], undo: undo), ()) }, segment: { _, _, _ in
+      Gesture(changes: [.update("card", "card0001", ["title": "secret"])])
+    })
+    guard case .committed(let receipt)? = act.outcome else { Issue.record("the act did not commit"); return }
+    guard case .pending = try rig.engine.requestInverse(receipt.gestureId) else { Issue.record("the Undo is not pending"); return }
+    rig.clock.advance(ms: 5_000)
+    let relaunched = try Rig.engine(over: rig.store, clock: rig.clock, random: rig.random, transport: rig.transport, tokens: rig.tokens,
+                                    forkGuard: rig.forkGuard, connectivity: rig.connectivity, slicing: rig.slicing, drivesLoops: false,
+                                    bindings: [], events: rig.events, telemetry: recorder)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "invalid")]))
+    #expect(await relaunched.sender.step() == .again)
+    #expect(await relaunched.sender.step() == .idle)
+    await drain(rig.engine.core.telemetry)
+    await drain(relaunched.core.telemetry)
+    let requested = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending"], durationMs: nil)
+    let waiting = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending", "waiting": "1", "age_ms": "5000"], durationMs: nil)
+    let settled = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "settled", "applied": "0", "skipped": "0"], durationMs: nil)
+    let reported: [Recorded] = recorder.events.filter { $0.name == "sync_inverse" }
+    #expect(reported == [requested, waiting, settled])
+    #expect(try rig.outbox() == [])
+  }
+
   @Test func corruptStoreReadEnqueuesAStaticDiagnosticAndPropagatesTheFailure() async throws {
     let recorder = Recorder()
     let armed = Mutex(false)
@@ -550,6 +599,23 @@ struct TelemetryTests {
     armed.withLock { $0 = true }
     #expect(throws: CommitFailure.self) {
       try rig.commit(Gesture(changes: [Rig.card("card0001", "private")], gestureId: "secret-id"))
+    }
+    await drain(rig.engine.core.telemetry)
+    #expect(recorder.failures == [Recorded(name: "storage_write", kind: "storage", properties: [:], durationMs: nil)])
+  }
+
+  @Test func anActStorageFaultReportsOnceAndItsBodyFailureIsNotStorage() async throws {
+    let recorder = Recorder()
+    let armed = Mutex(false)
+    let rig = try Rig(crashPoints: CrashPoints { point in
+      if point == .beforeCommit(.commit), armed.withLock({ $0 }) { throw StoreError.corrupt("private stored value") }
+    }, telemetry: recorder)
+    #expect(throws: RigError.self) {
+      try rig.engine.commitAct({ _ -> (ActRequest?, Void) in throw RigError("private body") }, segment: { _, _, _ in Gesture(changes: []) })
+    }
+    armed.withLock { $0 = true }
+    #expect(throws: CommitFailure.self) {
+      try rig.engine.commitAct([ScopedGesture(scope: Rig.scope, gesture: Gesture(changes: [Rig.card("card0001", "private")]))])
     }
     await drain(rig.engine.core.telemetry)
     #expect(recorder.failures == [Recorded(name: "storage_write", kind: "storage", properties: [:], durationMs: nil)])

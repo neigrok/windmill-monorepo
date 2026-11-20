@@ -17,13 +17,14 @@ test('the corpus reads the replica for its own account, and makes no REST reques
   const snapshot = { drawn: [
     { t: 'page', id: '2026-08-04', x: { body: 'better' }, f: { mood: [0], energy: [null], source: ['typed'] } },
     { t: 'page', id: '2026-08-05', x: { body: '' }, f: { mood: [null], energy: [null], source: ['typed'] } },
-  ], notices: [], firstPullComplete: true };
+  ], notices: [], loaded: true, firstPullComplete: true };
   snapshot.stored = snapshot.drawn;
   const engine = { registry, now: () => Date.parse('2026-08-05T12:00:00Z'), activeReplica: () => 'replica',
     readMetadata: () => ({ devices: {}, confirmed: new Map(), firstPullComplete: snapshot.firstPullComplete,
       commands: [], actor: 'writer', isAnonymous: false, checkpoint: { epoch: null, cleanSeq: null } }),
-    observe: () => ({ getSnapshot: () => snapshot }), device: { activeReplica: {
-    meta: { state: 'bound', account: 'A', serverOffsetMs: 0 }, deviceRows: () => ({}), confirmedRow: () => null,
+    readDeviceRows: () => ({}),
+    observe: () => ({ getSnapshot: () => snapshot, release() {} }), device: { activeReplica: {
+    meta: { state: 'bound', account: 'A', serverOffsetMs: 0 }, confirmedRow: () => null,
   } } };
   holding(t, { engine, snapshot: { ...syncSession.snapshot, engine, ready: true } });
   t.mock.method(globalThis, 'fetch', () => assert.fail('local pages used REST'));

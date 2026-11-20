@@ -446,3 +446,85 @@ TEST(sync_service_push_409_keeps_a_binding_it_inserted_once_a_concurrent_push_ta
   CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 0}})")));
   CHECK_EQ(jcs(world.dump()["results"]), jcs(tallied));
 }
+
+// A product the deployment withholds holds nothing: hello says so, its product scope pulls empty, its trees are not
+// found, and it admits no intent, writing nothing. The same stores served answer what they hold.
+TEST(sync_service_answers_a_withheld_product_as_holding_nothing_and_admits_none_of_its_intents) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  const Json::Value card = parseJson(R"({"t": "card", "id": "card0001", "born": "1000:0:r_aaaaaaaaaaaa", "life": ["alive", "1000:0:r_aaaaaaaaaaaa"],
+      "f": {"title": ["Card", "1000:0:r_aaaaaaaaaaaa"]}, "seq": 1, "rc": 100, "ru": 100})");
+  const Json::Value board = parseJson(R"({"t": "board", "id": "b_00000001", "born": "1000:0:r_aaaaaaaaaaaa", "life": ["alive", "1000:0:r_aaaaaaaaaaaa"],
+      "seq": 2, "rc": 200, "ru": 200})");
+  const Json::Value meta = parseJson(R"({"t": "meta", "id": "meta", "f": {"title": ["Board", "1000:0:r_aaaaaaaaaaaa"]}, "seq": 1, "rc": 200, "ru": 200})");
+  Json::Value state = parseJson(R"({"epoch": "ep-1", "clock": {"ms": 3000, "counter": 0}, "scopes": {
+      "acct:A/probe": {"kind": "product", "owner": "A", "state": "alive", "seq": 2, "counters": {}},
+      "tree:b_00000001": {"kind": "tree", "owner": "A", "governedBy": "acct:A/probe#board#b_00000001", "state": "alive", "seq": 1, "counters": {}}}})");
+  state["rows"]["acct:A/probe"].append(card);
+  state["rows"]["acct:A/probe"].append(board);
+  state["rows"]["tree:b_00000001"].append(meta);
+  state["scopes"]["acct:A/probe"]["digest"] = scopeDigest({card, board}).hex();
+  state["scopes"]["tree:b_00000001"]["digest"] = scopeDigest({meta}).hex();
+  world.seed(state);
+  const Json::Value seeded = world.dump();
+  const Registry& registry = world.catalog().registry();
+  SyncCatalog withheld(registry);
+  for (const TypeDef& type : registry.types()) withheld.bindType(world.catalog().store(type.name), world.catalog().rules(type.name));
+  for (const CommandDef& command : registry.commands()) {
+    if (!command.engine) withheld.bindCommand(command.name, world.catalog().command(command.name));
+  }
+  withheld.withhold("probe");
+  withheld.seal();
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  const Credential owner = Credential::sent(world.account("A"));
+  const std::string pull = R"({"scopes": [{"scope": "self/probe", "cursor": null}, {"scope": "tree/b_00000001", "cursor": null},
+      {"scope": "self/overlay/b_00000001", "cursor": null}]})";
+  auto pageOf = [](const Json::Value& page) {
+    Json::Value seen(Json::objectValue);
+    for (const char* part : {"scope", "kind", "seq", "digest"}) {
+      if (page.isMember(part)) seen[part] = page[part];
+    }
+    seen["rows"] = Json::UInt64(page["rows"].size());
+    return seen;
+  };
+
+  Admission withholding(withheld, world.store(), world.feed, world.clock(), world.failures);
+  SyncService closed(withheld, world.store(), withholding, clock);
+  const SyncReply hello = closed.hello(owner);
+  const SyncReply pulled = closed.pull(owner, pull);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
+  request["intents"].append(cardIntent(1, "card0002"));
+  request["intents"].append(parseJson(R"({"n": 2, "scope": "tree/b_00000001", "d": [{"t": "meta", "id": "meta", "f": {"title": ["Renamed", "2000:0:r_aaaaaaaaaaaa"]}}]})"));
+  TimeBudget budget(60'000);
+  const SyncReply pushed = closed.push(owner, jcs(request), budget);
+
+  CHECK_EQ(jcs(hello.body["holdsRecords"]), jcs(parseJson(R"({"probe": false})")));
+  CHECK_EQ(jcs(hello.body["holdings"]), jcs(parseJson(R"({"probe": {"count": 0, "lastWrittenAt": null}})")));
+  CHECK_EQ(pulled.status, 200);
+  Json::Value pages(Json::arrayValue);
+  for (const Json::Value& page : pulled.body["pages"]) pages.append(pageOf(page));
+  CHECK_EQ(jcs(pages), jcs(parseJson(R"([
+      {"scope": "self/probe", "kind": "rows", "seq": 0, "digest": "0000000000000000000000000000000000000000000000000000000000000000", "rows": 0},
+      {"scope": "tree/b_00000001", "kind": "not-found", "rows": 0}, {"scope": "self/overlay/b_00000001", "kind": "not-found", "rows": 0}])")));
+  CHECK_EQ(pushed.status, 200);
+  CHECK_EQ(jcs(pushed.body["results"]), jcs(parseJson(R"([{"n": 1, "s": "refused", "code": "forbidden"}, {"n": 2, "s": "refused", "code": "not-found"}])")));
+  CHECK_EQ(jcs(world.dump()["scopes"]), jcs(seeded["scopes"]));
+  CHECK_EQ(jcs(world.dump()["rows"]), jcs(seeded["rows"]));
+  CHECK(world.feed.published.empty());
+
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  SyncService open(world.catalog(), world.store(), admission, clock);
+  const SyncReply servedHello = open.hello(owner);
+  const SyncReply servedPull = open.pull(owner, pull);
+
+  CHECK_EQ(jcs(servedHello.body["holdsRecords"]), jcs(parseJson(R"({"probe": true})")));
+  CHECK_EQ(jcs(servedHello.body["holdings"]), jcs(parseJson(R"({"probe": {"count": 1, "lastWrittenAt": 100}})")));
+  Json::Value servedPages(Json::arrayValue);
+  for (const Json::Value& page : servedPull.body["pages"]) servedPages.append(pageOf(page));
+  Json::Value expected = parseJson(R"([{"scope": "self/probe", "kind": "rows", "seq": 2, "rows": 2}, {"scope": "tree/b_00000001", "kind": "rows", "seq": 1, "rows": 1},
+      {"scope": "self/overlay/b_00000001", "kind": "rows", "seq": 0, "digest": "0000000000000000000000000000000000000000000000000000000000000000", "rows": 0}])");
+  expected[0]["digest"] = seeded["scopes"]["acct:A/probe"]["digest"];
+  expected[1]["digest"] = seeded["scopes"]["tree:b_00000001"]["digest"];
+  CHECK_EQ(jcs(servedPages), jcs(expected));
+}

@@ -9,7 +9,7 @@ import { Registry } from '../../../../packages/api-contract/sync/reference/core/
 import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 import { Views } from '../../../src/platform/domain-kit/reading.js';
 import { FixedZone, Instant, Moment } from '../../../src/platform/domain-kit/time.js';
-import { translate } from '../../../src/platform/domain-kit/translation.js';
+import { translate, translateUndo } from '../../../src/platform/domain-kit/translation.js';
 import { ChoiceSpec, CountSpec, Fault, NumberSpec, Path, TextSpec } from '../../../src/platform/domain-kit/values.js';
 
 /** @typedef {import('../../../src/platform/domain-kit/values.js').Json} Json */
@@ -91,7 +91,7 @@ export function viewRecords(rows) {
 
 // A vector's records as the kit's Views: rows become view records, ids are minted from the given list.
 /**
- * @param {{ drawn?: any[], stored?: any[] }} records
+ * @param {{ drawn?: any[], stored?: any[], spent?: import('../../../src/platform/domain-kit/reading.js').SpentId[] }} records
  * @param {{ ids?: RecordID[], firstPullComplete?: boolean }} [options]
  */
 export function vectorViews(records, { ids = [], firstPullComplete = true } = {}) {
@@ -99,6 +99,7 @@ export function vectorViews(records, { ids = [], firstPullComplete = true } = {}
   return Views.ofRecords(probeRegistry, {
     drawn: viewRecords(records.drawn),
     stored: viewRecords(records.stored ?? records.drawn),
+    spent: records.spent ?? [],
     firstPullComplete,
     mintId: (type) => {
       const id = left.shift();
@@ -111,8 +112,12 @@ export function vectorViews(records, { ids = [], firstPullComplete = true } = {}
 // The commit double (D-18's port) every run and script vector runs over: it answers the receipt the
 // vector gives, or `g<k>` for its k-th committed gesture, and never changes its records by itself.
 export class VectorReplica {
+  /** @type {Record<string, any>} */
+  scopes = {};
+  /** @type {string[]} */
+  commitScopes = [];
   /**
-   * @param {{ drawn?: any[], stored?: any[] }} records
+   * @param {{ drawn?: any[], stored?: any[], spent?: import('../../../src/platform/domain-kit/reading.js').SpentId[] }} records
    * @param {number} now
    * @param {CommitOutcome | null} answer
    */
@@ -127,8 +132,9 @@ export class VectorReplica {
 
   /** @param {string} scope */
   read(scope) {
-    const views = vectorViews(this.records);
-    return { drawn: views.drawn, stored: views.stored, devices: {}, firstPullComplete: true };
+    const records = this.scopes[scope] ?? this.records;
+    const views = vectorViews(records);
+    return { drawn: views.drawn, stored: views.stored, spent: records.spent ?? [], devices: {}, firstPullComplete: true };
   }
 
   /**
@@ -144,12 +150,16 @@ export class VectorReplica {
     }
     if (gesture === null) return { outcome: null, value };
     this.gestures.push(gesture);
+    this.commitScopes.push(scope);
     const id = `g${this.gestures.length}`;
     return { outcome: this.answer ?? { receipt: { gestureId: id, localIds: [`${id}/0`], retired: [], releaseAt: null } }, value };
   }
 
+  /** @returns {never} */
+  commitAct() { throw new ContractError('act vectors use the real engine'); }
+
   /** @param {string} gestureId */
-  undo(gestureId) {
+  cancelHeld(gestureId) {
     return false;
   }
 
@@ -165,7 +175,10 @@ export class VectorReplica {
     return this.now;
   }
 
-  /** @param {string} id */
+  /**
+   * @param {string} id
+   * @returns {boolean}
+   */
   dismissNotice(id) {
     throw new ContractError(`a vector's commit writes no notice, and ${id} was dismissed`);
   }
@@ -249,7 +262,7 @@ export function savedForm(saved) {
 
 /**
  * @param {import('../../../src/platform/domain-kit/drafts.js').Draft<any>} draft
- * @returns {Json}
+ * @returns {Record<string, Json>}
  */
 export function draftForm(draft) {
   return { id: draft.id.json, base: draft.base.fields(), current: draft.current.fields(), isNew: draft.isNew, placement: placementForm(draft.placement) };
@@ -265,8 +278,11 @@ export function draftForm(draft) {
  */
 export function decisionForm(decision, scope, resultForm, refusalForm) {
   switch (decision.kind) {
-    case 'write':
-      return { write: { gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(decision.plan, scope, probeRegistry))), result: resultForm(decision.result) } };
+    case 'write': {
+      const undo = translateUndo(decision.plan, scope);
+      return { write: { gesture: /** @type {Json} */ (/** @type {unknown} */ (translate(decision.plan, scope, probeRegistry))),
+        ...(undo === null ? {} : { undo: /** @type {Json} */ (/** @type {unknown} */ (undo)) }), result: resultForm(decision.result) } };
+    }
     case 'unchanged':
       return { unchanged: { result: resultForm(decision.result) } };
     default:
@@ -302,7 +318,7 @@ export function withRecordsReversed(input) {
   if (Array.isArray(input)) return input.map(withRecordsReversed);
   if (input === null || typeof input !== 'object') return input;
   return Object.fromEntries(Object.entries(input).map(([key, value]) =>
-    [key, (key === 'drawn' || key === 'stored') && Array.isArray(value) ? [...value].reverse() : withRecordsReversed(value)]));
+    [key, (key === 'drawn' || key === 'stored' || key === 'spent') && Array.isArray(value) ? [...value].reverse() : withRecordsReversed(value)]));
 }
 
 /**

@@ -5,12 +5,16 @@ import SyncCore
 // rules here are a test double pinned by its product's corpus.
 
 public protocol ServerRules: Sendable {
+  var localCheckTypes: Set<String>? { get }
   func elsewhere(_ key: RecordKey, product: JSON.Object) -> Bool
   // §6.1 step 7: a command's replay, read from the locked rows and its stored arguments; a replay skips the guards.
   func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool
 
+  func discoverEffectScopes(in context: RuleContext, command: CheckedCommand?) throws -> Set<ScopeKey>
+  func effects(_ changes: [RecordChange], in context: inout RuleContext) throws -> Effects
+
   // §6.4: the handler, deterministic given the locked rows, the arguments and `serverNow`.
-  func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome
+  func run(_ command: CheckedCommand, in context: RuleContext) throws -> CommandOutcome
 
   // §6.1 step 10: the product's rules on the joined records; the deltas it appends pass steps 5, 6 and 9.
   func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta]
@@ -23,8 +27,28 @@ public protocol ServerRules: Sendable {
 // A product with no rules of its own conforms with an empty body: no command replays, every command is invalid, a check
 // appends nothing, and every superseded text head is kept.
 extension ServerRules {
+  public var localCheckTypes: Set<String>? { nil }
   public func elsewhere(_ key: RecordKey, product: JSON.Object) -> Bool { false }
   public func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { false }
+
+  public func discoverEffectScopes(in context: RuleContext, command: CheckedCommand?) throws -> Set<ScopeKey> { [] }
+  public func effects(_ changes: [RecordChange], in context: inout RuleContext) throws -> Effects {
+    try localEffects(changes, in: &context)
+  }
+
+  public func localEffects(_ changes: [RecordChange], in context: inout RuleContext) throws -> Effects {
+    let types = localCheckTypes ?? Set(context.registry.types.filter { type in
+      (type.scope.productName ?? context.registry.governingType?.scope.productName)
+        .map { context.ruleProducts.contains($0) } ?? false
+    }.map(\.name))
+    var scopes = Set(changes.filter { types.contains($0.key.type) }.map(\.scope))
+    if context.deltas.contains(where: { types.contains($0.key.type) }) { scopes.insert(context.scope) }
+    guard scopes.count <= 1 else { throw AdmissionFault(description: "local rules span multiple scopes") }
+    var local = context.rebound(to: scopes.first ?? context.scope)
+    let deltas = try check(changes, in: &local)
+    context.product = local.product
+    return Effects(byScope: [local.scope: deltas])
+  }
 
   public func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
     throw Refusal(.invalid)
@@ -41,6 +65,7 @@ extension ServerRules {
 public struct RuleContext: Sendable {
   public let registry: Registry
   public let scope: ScopeKey
+  public let originScope: ScopeKey
   public let origin: IntentOrigin
   public let deltas: [PlannedDelta]
   public let guards: [Guard]
@@ -50,8 +75,17 @@ public struct RuleContext: Sendable {
   let rules: any ServerRules
   let state: ServerState
   let joined: [RecordKey: Row]
+  let declared: Set<ScopeKey>
+  let scopedJoins: [ScopeKey: [RecordKey: Row]]
+  var ruleProducts: Set<String>
 
   public var account: String { origin.account }
+
+  func rebound(to scope: ScopeKey) -> RuleContext {
+    RuleContext(registry: registry, scope: scope, originScope: originScope, origin: origin, deltas: deltas, guards: guards,
+                serverNow: serverNow, product: product, rules: rules, state: state,
+                joined: scopedJoins[scope] ?? [:], declared: declared, scopedJoins: scopedJoins, ruleProducts: ruleProducts)
+  }
 
   // §4.2 the id state as admission locked it, before this intent.
   public func idState(of key: RecordKey) -> IdState {
@@ -74,6 +108,59 @@ public struct RuleContext: Sendable {
     var byKey = (state.rows[scope] ?? [:]).filter { $0.key.type.utf8.elementsEqual(type.utf8) }
     for (key, row) in joined where key.type.utf8.elementsEqual(type.utf8) { byKey[key] = row }
     return byKey.sorted { $0.key < $1.key }.map(\.value)
+  }
+
+  public func scopedRecord(_ key: RecordKey, in scope: ScopeKey) throws(AdmissionFault) -> Row? {
+    guard declared.contains(scope) else { throw AdmissionFault(description: "undeclared effect read") }
+    return scopedJoins[scope]?[key] ?? state.rows[scope]?[key]
+  }
+
+  public func scopedRecords(ofType type: String, in scope: ScopeKey) throws(AdmissionFault) -> [Row] {
+    guard declared.contains(scope) else { throw AdmissionFault(description: "undeclared effect read") }
+    var rows = (state.rows[scope] ?? [:]).filter { $0.key.type.isSameID(as: type) }
+    for (key, row) in scopedJoins[scope] ?? [:] where key.type.isSameID(as: type) { rows[key] = row }
+    return rows.sorted { $0.key < $1.key }.map(\.value)
+  }
+
+  // The epoch the server serves (§10.4), which a restore or an inverse command's evidence names.
+  public var epoch: String { state.epoch }
+
+  // A scope's sequence as stored, nil while it is absent.
+  public func seq(of scope: ScopeKey) -> Int64? { state.scopes[scope]?.seq }
+
+  // A stored row of the intent's scope or of a scope its discovery declared, as stored before this intent.
+  public func stored(_ key: RecordKey, in scope: ScopeKey) throws(AdmissionFault) -> Row? {
+    guard scope == self.scope || declared.contains(scope) else { throw AdmissionFault(description: "undeclared effect read") }
+    return state.rows[scope]?[key]
+  }
+
+  // §6.4 the first condition a product inverse command's evidence breaks against the scopes as stored, or nil: another
+  // epoch, an owned field another write moved, a created record or a created scope changed since.
+  public func skip(by evidence: Evidence) throws(AdmissionFault) -> String? {
+    try skip(by: evidence) { (key: RecordKey, scope: ScopeKey) throws(AdmissionFault) -> Row? in try stored(key, in: scope) }
+  }
+
+  // The same against rows `row` reads, each in the scope its reference names for this account.
+  func skip(by evidence: Evidence, reading row: (RecordKey, ScopeKey) throws(AdmissionFault) -> Row?) throws(AdmissionFault) -> String? {
+    guard evidence.expectedEpoch.isSameID(as: epoch) else { return "epoch-changed" }
+    for owned in evidence.ownedFields {
+      let found: Row? = try ScopeKey(owned.target.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
+        try row(owned.target.key, key)
+      }
+      guard found?.version(of: owned.target.slot) == owned.version else { return "version-changed" }
+    }
+    for created in evidence.unchangedCreatedRecords {
+      let found: Row? = try ScopeKey(created.record.scope, account: account).flatMap { (key: ScopeKey) throws(AdmissionFault) -> Row? in
+        try row(created.record.key, key)
+      }
+      guard let found, found.lattice.life?.isAlive == true, found.seq == created.rowSeq, found.footprint == created.footprint else {
+        return "record-changed"
+      }
+    }
+    for created in evidence.unchangedCreatedScopes where ScopeKey(created.scope, account: account).flatMap(seq(of:)) != created.seq {
+      return "scope-changed"
+    }
+    return nil
   }
 
   // A tree is readable while it is alive and its owner is the caller or it is open (D-4, INV-7(e)).
@@ -109,22 +196,27 @@ public struct RecordChange: Sendable, Hashable {
   public var diesHere: Bool { before.isAlive && !after.isAlive }
 }
 
-// A handler's answer (§6.4, D-20): server deltas for the intent's scope, the write map it claims, the writes into
-// scopes this intent creates (§6.1 step 14), and the product's server state after it.
+public struct Effects: Sendable, Hashable {
+  public var byScope: [ScopeKey: [PlannedDelta]]
+
+  public init(byScope: [ScopeKey: [PlannedDelta]] = [:]) { self.byScope = byScope }
+}
+
+// A command returns its local deltas, declared target writes, write claims and product state.
 public struct CommandOutcome: Sendable, Hashable {
   public var deltas: [PlannedDelta]
   public var write: [WriteClaim]
   public var detail: JSON?
   public var product: JSON.Object
-  public var created: [ScopeKey: [PlannedDelta]]
+  public var into: [ScopeKey: [PlannedDelta]]
 
   public init(deltas: [PlannedDelta] = [], write: [WriteClaim] = [], detail: JSON? = nil, product: JSON.Object,
-              created: [ScopeKey: [PlannedDelta]] = [:]) {
+              into: [ScopeKey: [PlannedDelta]] = [:]) {
     self.deltas = deltas
     self.write = write
     self.detail = detail
     self.product = product
-    self.created = created
+    self.into = into
   }
 }
 

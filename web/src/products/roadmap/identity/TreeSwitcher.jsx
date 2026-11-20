@@ -12,6 +12,7 @@ import { ON_DEVICE, ROADMAP_SHEET, formatCount } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
 import { deleteCost, withoutTree } from './deleteCost.js';
+import { HeldDeletion } from './HeldDeletion.js';
 import { onTreeClaimed } from '../sync/claimLocalTrees.js';
 import './identity.css';
 
@@ -226,8 +227,9 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       const routeAtDelete = readNavigation().hash;
       const currentAtDelete = currentRef.current?.id;
       deleteRequestsRef.current.add(tree.id);
+      let deleted;
       try {
-        await onDelete?.(tree.id, { local });
+        deleted = await onDelete?.(tree.id, { local });
       } catch (error) {
         reportUnexpectedFailure('roadmap-switcher-delete', error);
         track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed', place });
@@ -246,7 +248,13 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
         focusRef.current = { id: tree.id === currentAtDelete ? null : nextRow?.id };
       }
       if (tree.id !== currentAtDelete) return;
-      setOpen(false); // land on the newest remaining, or hand bare #/app to the resolver
+      setOpen(false);
+      // A deletion held on the device's copy lands on the person's roadmaps with its Undo standing; any other on the newest
+      // remaining, or hands bare #/app to the resolver.
+      if (deleted instanceof HeldDeletion) {
+        deleted.landOn(transaction);
+        return;
+      }
       transaction.navigate(remaining.length ? `#/app/${remaining[0].id}` : '#/app');
     };
     if (tree.id !== currentRef.current?.id) return run(null);

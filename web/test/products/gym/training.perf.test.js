@@ -13,8 +13,8 @@ const stamp = '1000:0:r_aaaaaaaaaaaa';
 const row = (t, id, fields) => ({ t, id, born: stamp, life: ['alive', stamp], f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
 function log(t, rows = []) {
   browserWith();
-  let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], firstPullComplete: true };
-  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], loaded: true, firstPullComplete: true };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
   const engine = { registry, now: () => Date.now(), device: { activeReplica: { meta: { serverOffsetMs: 0 } } },
     readMetadata: () => ({ firstPullComplete: records.firstPullComplete }), activeReplica: () => 'bound', observe: () => observation,
     getSnapshot: () => ({ state: 'bound' }), observeEngine: () => () => {} };

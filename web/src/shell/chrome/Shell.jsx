@@ -5,6 +5,7 @@ import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'r
 import { CloudOff } from 'lucide-react';
 import { BrandMark, Tooltip } from '../../design-system';
 import { PageFrame } from '../PageFrame.jsx';
+import { useOfferedAccountRows } from '../ProductSessions.jsx';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -127,6 +128,7 @@ export function Shell({ location, acceptedPathname = location.pathname, neutral 
   const lendDoorSkin = useSignInDoorHost();
   const { resolved: appearance } = useAppearance();
   const roomStatus = useRoomStatus();
+  const offered = useOfferedAccountRows();
   const room = resolveRoom(location.pathname, neutral, roomProduct);
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
@@ -183,6 +185,7 @@ export function Shell({ location, acceptedPathname = location.pathname, neutral 
               onSettings={() => navigate('/app/settings')}
               onConnect={() => navigate('/app/connect')}
               onSignOut={signOut}
+              offered={offered}
             />
           )}
         </div>

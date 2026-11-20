@@ -94,8 +94,8 @@ struct BatchWriterTests {
     #expect(rebuilt.stored == rebuilt.expected)
   }
 
-  // The touch index is a function of the entries too: after puts of new and rewritten entries, deletes and renames, it
-  // equals its recomputation.
+  // The touch and projection indexes are functions of the entries too: after puts of new and rewritten entries, legacy
+  // and opted, projections covered on their own, deletes and renames, they equal their recomputation.
   @Test func theTouchIndexEqualsItsRecomputationAfterAnyBatches() throws {
     var random = SeededRandom.fromEnvironment()
     let store = try Store.inMemory(registry: Self.probe)
@@ -115,13 +115,20 @@ struct BatchWriterTests {
         switch random.below(5) {
         case 0, 1:
           let scope = random.chance(0.7) ? Self.scope : overlay
+          let target = scope == overlay ? Self.scope : overlay
+          let opted = random.chance(0.3)
           writes.append(.replica(replica, .putEntry(OutboxEntry(
             localId: "e\(round)/\(k)", gestureId: "e\(round)", lineage: "anon", scope: scope, state: .ready,
             commitOrder: Int64(round * 10 + k + 1), releaseAt: 0, stamp: stamp,
-            intent: Intent(scope: scope, deltas: deltas(&random, scope)), predict: deltas(&random, scope)))))
+            intent: Intent(scope: scope, deltas: deltas(&random, scope)), predict: opted ? [] : deltas(&random, scope),
+            predictions: opted ? [Projection(scope: scope, deltas: deltas(&random, scope)), Projection(scope: target, deltas: deltas(&random, target))] : nil))))
         case 2 where !outbox.isEmpty:
           var entry = random.pick(outbox)
           entry.intent.deltas = deltas(&random, entry.scope)
+          for index in entry.predictions?.indices ?? 0..<0 where random.chance(0.5) {
+            entry.predictions![index].resultSeq = Int64(random.below(9))
+            entry.predictions![index].covered = random.chance(0.5)
+          }
           writes.append(.replica(replica, .putEntry(entry)))
         case 3 where !outbox.isEmpty:
           writes.append(.replica(replica, .deleteEntry(random.pick(outbox).localId)))

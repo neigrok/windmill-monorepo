@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { readGuides, setGuide, setVisibility } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
 import { AuthError } from '../../../../src/shell/auth/AuthClient.js';
-import { listServerTrees, readTreeCard } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
+import { forkTree, listServerTrees, readTreeCard } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
 
 const BASE = 'http://localhost:8088';
 const realFetch = global.fetch;
@@ -216,4 +216,14 @@ test('readGuides — a read its caller aborted rejects as the browser’s abort,
   stubFetch(() => { request.abort(); throw aborted; });
 
   await assert.rejects(readGuides('t_abc', request.signal), (err) => err === aborted);
+});
+
+test('forkTree names its fork by a request id, so a resend answers the same copy', async () => {
+  const calls = stubFetch(() => ({ ok: true, status: 201, json: async () => ({ data: { id: 't_0000000000000c01' } }) }));
+  assert.deepEqual(await forkTree('t_0000000000000a01', 'fork-key'), { treeId: 't_0000000000000c01' });
+  assert.deepEqual(await forkTree('t_0000000000000a01', 'fork-key'), { treeId: 't_0000000000000c01' });
+  await forkTree('t_0000000000000a01');
+  assert.deepEqual(calls.map(({ url, init }) => ({ url, method: init.method })), Array(3).fill({ url: `${BASE}/v1/trees/t_0000000000000a01/fork`, method: 'POST' }));
+  assert.deepEqual(calls.slice(0, 2).map(({ init }) => JSON.parse(init.body)), [{ requestId: 'fork-key' }, { requestId: 'fork-key' }]);
+  assert.match(JSON.parse(calls[2].init.body).requestId, /^[0-9a-f-]{36}$/);
 });

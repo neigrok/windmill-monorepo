@@ -341,11 +341,11 @@ Coach's records are private to a person and are no part of a roadmap's shared st
 reader of a shared roadmap can see. They are records of the [sync engine](engine.md), in a registry
 for the product `roadmap` under the scope `self/roadmap`, beside gym's and journal's in the
 composition. (R-4) They join the registry that holds a roadmap's structure
-([Roadmap on the sync engine](roadmap-on-the-engine.md) §3).
+([Roadmap on the sync engine](roadmap-on-the-engine.md) §4).
 
 | Type | Holds |
 |---|---|
-| `coachThread` | One conversation: its scope (a roadmap's id, or all roadmaps), the step it started from if any, its title. The registry's primary type |
+| `coachThread` | One conversation: its scope (a roadmap's id, or all roadmaps), the step it started from if any, its title |
 | `coachMessage` | One message, in the shape of gym's `message`: who wrote it, its text, pictures, and for Coach's its state, `truncated`, refusal code, the calls it made, its receipts and the id of a proposal it carries |
 | `coachProposal` | §7 |
 | `coachWriteFate` | What became of one receipt's write after its turn ended: undone, or refused by the server |

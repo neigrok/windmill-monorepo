@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { Opening } from '../../../src/products/roadmap/model/Opening.js';
 import {
+  landingLine,
+  landingNote,
   openTreeAction,
   openTreeLabel,
   treeBand,
@@ -84,6 +86,20 @@ import {
   showMore,
   draftLine,
 } from '../../../src/products/roadmap/copy.js';
+
+test('copy — a landing note says each of a step’s lines, and a line no approved words say is null', () => {
+  const follows = (removed, followed) => ({ rule: 'follows', removed, followed });
+  assert.deepEqual([
+    landingNote([{ rule: 'cameBack' }]),
+    landingNote([follows(['Rig the boat'], ['Name the boat parts'])]),
+    landingNote([follows(['Rig the boat', 'Tie a bowline'], ['Name the boat parts', 'Read the wind']), { rule: 'cameBack' }]),
+  ], [
+    'Your edit brought this step back.',
+    'Rig the boat was removed. This now follows Name the boat parts.',
+    'Rig the boat and Tie a bowline were removed. This now follows Name the boat parts and Read the wind. Your edit brought this step back.',
+  ]);
+  assert.deepEqual([landingLine(follows(['Rig the boat'], [])), landingLine(follows([''], ['Name the boat parts']))], [null, null]);
+});
 
 test('copy — the canon strings the demo speaks verbatim', () => {
   assert.equal(DEMO_COPY.coachSentence, 'This step is up next — mark it done.');

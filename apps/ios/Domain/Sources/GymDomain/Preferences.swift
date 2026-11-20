@@ -3,7 +3,7 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-public struct GymPreferences: Draftable, Equatable {
+public struct GymPreferences: ProductEntity, Draftable, Equatable {
   public static let type = Gym.Types.prefs
   public static let scope = Gym.scope
   public static let savesGuarded = false

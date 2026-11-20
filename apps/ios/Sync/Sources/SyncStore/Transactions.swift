@@ -1,6 +1,41 @@
+import GRDB
 import SyncAPI
 import SyncCore
 import SyncReplica
+
+struct ActRefusal: Error {
+  let segment: Int
+  let code: RefusalCode
+  let detail: JSON?
+}
+
+// §7.1 a composed act's staging: each part's segment commits into the act's own transaction, inside a savepoint the act
+// rolls back once it has prepared, so a later part reads through every segment staged before it and nothing staged outlives
+// prepare. The request's segments then commit afresh.
+public final class ActStaging {
+  let commit: (Gesture, ScopeRef, Int) throws -> (outcome: CommitOutcome, written: Bool)
+  var offset = 0
+  var hasStaged = false
+
+  init(commit: @escaping (Gesture, ScopeRef, Int) throws -> (outcome: CommitOutcome, written: Bool)) {
+    self.commit = commit
+  }
+
+  // The gesture as one more segment of the staged act: nil, or the refusal its commit meets, which writes nothing.
+  public func stage(_ gesture: Gesture, in scope: ScopeRef) throws -> StagedRefusal? {
+    var staged = gesture
+    staged.gestureId = "staged"
+    let (outcome, written) = try commit(staged, scope, offset)
+    switch outcome {
+    case .refused(let code, let detail, _):
+      return StagedRefusal(code: code, detail: detail)
+    case .committed(let receipt):
+      offset += receipt.localIds.count
+      hasStaged = hasStaged || written
+      return nil
+    }
+  }
+}
 
 // The design's §3.5 table: one Action per transaction, each an ordered load → plan → batch inside one `write`; a commit
 // that mints ids its load did not cover loads them all and plans again. The runtime calls these; a crash between any two of
@@ -53,6 +88,138 @@ extension Store {
     return Written(value: written.value.outcome!, events: written.events, change: written.change)
   }
 
+  public func commitAct<T>(instance: Instance, identities: IdentitySource,
+                           prepare: (StoreTransaction, ActStaging) throws -> (ActRequest?, T),
+                           segment: (T, Int, ScopeRef, StoreTransaction) throws -> Gesture) throws -> Written<(outcome: ActCommitOutcome?, value: T)> {
+    var value: T?
+    do {
+      return try transaction(.commit) { db in
+        let tx = StoreTransaction(db: db, registry: registry)
+        let active = try tx.activeReplica()
+        guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
+        try planners.commits.checkWritable(meta)
+        let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
+        let firstOrder = try loaded(active, in: tx).nextCommitOrder
+        var preparation: (request: ActRequest?, value: T)?
+        try db.inSavepoint {
+          let staging = ActStaging { (gesture: Gesture, scope: ScopeRef, offset: Int) throws -> (outcome: CommitOutcome, written: Bool) in
+            let (outcome, batch) = try self.commitSegment(gesture, in: scope, of: active, tx: tx, instance: instance, identities: identities,
+                                                          offset: offset, firstOrder: firstOrder, capture: nil)
+            guard case .committed = outcome, !batch.writes.isEmpty else { return (outcome, false) }
+            try BatchWriter(db: db, registry: self.registry).apply(batch)
+            return (outcome, true)
+          }
+          preparation = try prepare(tx, staging)
+          return staging.hasStaged ? .rollback : .commit
+        }
+        guard case let (request, prepared)? = preparation else { preconditionFailure("an act prepares before it commits") }
+        value = prepared
+        guard let request, !request.scopes.isEmpty else { return Written(value: (nil, prepared), events: [], change: StoreChange()) }
+        if let id = request.gestureId, try tx.carries(gestureId: id) { throw CommitFailure.malformed("the act gesture id is taken") }
+        let undoReads = UndoPlan.reads(of: request.undo, scopes: request.scopes)
+        let undoPlan = try planners.commits.undoPlan(request.undo, scopes: request.scopes,
+                                                     in: try loaded(active, in: tx, reads: undoReads, entries: EntrySelection()))
+        let gestureId = try request.gestureId ?? identities.gestureID()
+        var receipts: [ActSegmentReceipt] = []
+        var retired: [String] = [], superseded: [String] = []
+        var localCount = 0
+        var events: [EngineEvent] = []
+        var change = StoreChange()
+        var wrote = false
+        for (index, scope) in request.scopes.enumerated() {
+          var gesture = try segment(prepared, index, scope, tx)
+          guard gesture.gestureId == nil || gesture.gestureId == gestureId, !gesture.hold || request.hold else {
+            throw CommitFailure.malformed("a segment must use its act's identity and hold")
+          }
+          gesture.gestureId = gestureId
+          gesture.hold = request.hold
+          let capture = undoPlan?.opts(index) == true ? try planners.commits.capture(for: gesture, in: scope) : nil
+          let (outcome, batch) = try commitSegment(gesture, in: scope, of: active, tx: tx, instance: instance, identities: identities,
+                                                   offset: localCount, firstOrder: firstOrder, capture: capture)
+          switch outcome {
+          case .refused(let code, let detail, _): throw ActRefusal(segment: index, code: code, detail: detail)
+          case .committed(let receipt):
+            let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
+            receipts.append(ActSegmentReceipt(scope: scope, stamp: changed ? receipt.stamp : nil, localIds: receipt.localIds, ids: receipt.ids))
+            if changed {
+              try BatchWriter(db: db, registry: registry).apply(batch)
+              events += batch.events
+              change.merge(batch.change)
+              wrote = true
+            }
+            localCount += receipt.localIds.count
+            for id in receipt.retired where !retired.contains(id) { retired.append(id) }
+            for id in receipt.superseded where !superseded.contains(id) { superseded.append(id) }
+          }
+        }
+        if wrote, undoPlan != nil {
+          var replica = try loaded(active, in: tx, reads: undoReads, entries: EntrySelection())
+          try planners.commits.record(act: gestureId, plan: undoPlan, receipts: receipts, in: &replica)
+          try BatchWriter(db: db, registry: registry).apply(replica.batch)
+          change.merge(replica.batch.change)
+        }
+        let receipt = ActReceipt(gestureId: gestureId, segments: receipts, retired: retired, superseded: superseded,
+          releaseAt: request.hold && localCount > 0 ? instance.deviceNow + limits.holdMs : nil)
+        return Written(value: (wrote ? .committed(receipt) : nil, prepared), events: events, change: change)
+      }
+    } catch let refusal as ActRefusal {
+      return Written(value: (.refused(segment: refusal.segment, code: refusal.code, detail: refusal.detail), value!), events: [], change: StoreChange())
+    }
+  }
+
+  // One gesture as the act's segment at `offset`, over the rows it reads and the entries that touch them; a plan that drew
+  // ids its load did not read is planned again over the same draws with those records read. Its outcome, and the batch it
+  // would write.
+  func commitSegment(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction, instance: Instance,
+                     identities: IdentitySource, offset: Int, firstOrder: Int64, capture: String?) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
+    var reads = planners.commits.reads(of: gesture, in: scope)
+    var draws: [Draw] = []
+    while true {
+      var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
+      do {
+        let outcome = try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities,
+                                                  gestureIdTaken: false, draws: draws, actOffset: offset, actFirstOrder: firstOrder, capture: capture)
+        return (outcome, replica.batch)
+      } catch let unread as UnreadDraws {
+        reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
+        draws = unread.draws
+      }
+    }
+  }
+
+  // MARK: Undo of an act (§7.3, K-3)
+
+  // requestInverse(sourceActId, inverseSlots?): a held cancellation, or the inverse slots reserved, projected and, where
+  // the act's sources are authoritative, materialized, in one transaction.
+  public func requestInverse(_ sourceActId: String, replacing slots: [ActUndo.Segment]? = nil, instance: Instance,
+                             identities: IdentitySource) throws -> Written<InverseResult> {
+    try write(.inverse) { tx in
+      let active = try tx.activeReplica()
+      let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
+      let reads = planners.inverses.reads(of: sourceActId, in: try loaded(active, in: tx))
+      var replica = try loaded(active, in: tx, reads: reads)
+      let result = try planners.inverses.request(sourceActId, replacing: slots, in: &replica, as: instance, identities: identities)
+      return Planned(result, replica.batch)
+    }
+  }
+
+  // readInverseResult(requestId).
+  public func readInverseResult(_ requestId: String) throws -> InverseResult {
+    try read { tx in
+      let replica = try loaded(try tx.activeReplica(), in: tx, entries: EntrySelection())
+      return planners.inverses.read(requestId, in: replica)
+    }
+  }
+
+  // releaseReversibleAct(actId): false when the active replica's journal holds no such act.
+  public func releaseReversibleAct(_ actId: String) throws -> Written<Bool> {
+    try write(.inverse) { tx in
+      var replica = try loaded(try tx.activeReplica(), in: tx, entries: EntrySelection())
+      let released = planners.inverses.release(actId, in: &replica)
+      return Planned(released, replica.batch)
+    }
+  }
+
   // True iff every entry of the gesture was held, and so removed.
   public func undo(_ gestureId: String) throws -> Written<Bool> {
     try onActive(.undo) { replica in try planners.hold.undo(gestureId, in: &replica) }
@@ -79,13 +246,13 @@ extension Store {
     }
   }
 
-  // D-17: a dismissed notice is hidden, never deleted, since an orphan's refusal may still fold into it. A notice the
-  // active replica does not hold throws.
-  public func dismissNotice(_ id: String) throws -> Written<Void> {
+  // D-17: a dismissed notice is hidden, never deleted, since an orphan's refusal may still fold into it; true iff the
+  // active replica holds it. A notice it does not hold is left alone: false, nothing written and nothing thrown.
+  public func dismissNotice(_ id: String) throws -> Written<Bool> {
     try write(.dismissNotice) { tx in
       var replica = try loaded(try tx.activeReplica(), in: tx, notices: true)
-      guard replica.dismiss(notice: id) else { throw StoreError.noNotice(id) }
-      return Planned((), replica.batch)
+      let held = replica.dismiss(notice: id)
+      return Planned(held, replica.batch)
     }
   }
 
@@ -136,8 +303,10 @@ extension Store {
     try write(step.transaction) { tx in
       let page: (page: PullPage, chunk: PageChunk)? = if case .page(let page, _, let chunk) = step { (page, chunk) } else { nil }
       let reads = planners.pages.reads(of: step).merging(page == nil ? [:] : planners.lifecycle.reads(of: subscribed)) { $0.union($1) }
-      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let meta = try tx.meta(of: id),
-            var replica = try tx.replica(id, reads: reads, entries: planners.pages.entries(of: step, in: meta)),
+      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let meta = try tx.meta(of: id) else { return Planned(nil, ReplicaBatch()) }
+      var entries = planners.pages.entries(of: step, in: meta)
+      entries.projectionTargets = page != nil
+      guard var replica = try tx.replica(id, reads: reads, entries: entries),
             replica.meta.account.map({ Array($0.utf8) }) == account.map({ Array($0.utf8) })
       else { return Planned(nil, ReplicaBatch()) }
       let set = page == nil ? [] : Set(try planners.lifecycle.subscriptionSet(of: replica, subscribed))
@@ -154,7 +323,8 @@ extension Store {
                     instance: Instance) throws -> Written<(outcome: FrameOutcome, unsettled: Bool, next: [ScopeRef])?> {
     try write(.liveFrame) { tx in
       let reads = planners.pages.reads(of: frame).merging(planners.lifecycle.reads(of: subscribed)) { $0.union($1) }
-      let entries = planners.pages.entries(of: frame, settling: count)
+      var entries = planners.pages.entries(of: frame, settling: count)
+      entries.projectionTargets = true
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8), var replica = try tx.replica(id, reads: reads, entries: entries) else {
         return Planned(nil, ReplicaBatch())
       }

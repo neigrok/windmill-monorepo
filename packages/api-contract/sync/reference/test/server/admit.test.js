@@ -7,15 +7,66 @@ import { latticeOf } from '../../core/rows.js';
 import { admit } from '../../server/admit.js';
 import { serverCall } from '../../server/requests.js';
 import { ServerState } from '../../server/state.js';
+import { EffectPlanProduct } from '../../vectors/effect-plan.js';
 import { Rng, overlayScope, product, productScope, registry, row, serverState, treeScope } from '../../vectors/fixtures.js';
 
 const CORPUS = new URL('../../../corpus/admit/', import.meta.url);
+
+test('generated effects reject NUL in text and its base', () => {
+  const { input } = JSON.parse(readFileSync(new URL('cross-scope.json', CORPUS), 'utf8'))[0];
+  const scope = 'acct:A/overlay/b_00000001';
+  const results = ['command', 'check'].flatMap((phase) => [
+    { text: 'a\u0000b', base: { text: '' } }, { text: 'text', base: { text: 'a\u0000b' } },
+  ].map((memo) => {
+    const effectPlan = { declared: [scope], command: { 'acct:A/probe': input.effectPlan.command['acct:A/probe'] } };
+    effectPlan[phase] = { ...effectPlan[phase], [scope]: [{ t: 'mark', id: 'oak', x: { memo } }] };
+    const outcome = admit({ ...input, state: new ServerState(input.state), registry, product: new EffectPlanProduct(effectPlan) });
+    return { result: outcome.result, unchanged: jcs(outcome.state.toJSON()) === jcs(input.state) };
+  }));
+  assert.deepEqual(results, Array.from({ length: 4 }, () => ({ result: { s: 'refused', code: 'invalid' }, unchanged: true })));
+});
+
+test('raw and normalized replacements share the exact canonical effect budget', () => {
+  const { input } = JSON.parse(readFileSync(new URL('cross-scope.json', CORPUS), 'utf8'))[0];
+  const scope = 'acct:A/overlay/b_00000001';
+  const raw = { t: 'mark', id: 'oak', x: { memo: { text: 'one two', replace: true } } };
+  const normalized = structuredClone(raw);
+  Object.assign(normalized.x.memo, { archiveNonempty: false, archive: {} });
+  const results = [raw, normalized].map((delta) => [116, 152, 153].map((bytes) => {
+    const product = new EffectPlanProduct({ declared: [scope], command: { [scope]: [delta] } });
+    const outcome = admit({ ...input, state: new ServerState(input.state), registry, product, limits: { ...CONSTANTS, EFFECT_MAX_BYTES: bytes } });
+    return outcome.result.code ?? outcome.result.s;
+  }));
+  assert.deepEqual(results, [['too-large', 'too-large', 'ok'], ['too-large', 'too-large', 'ok']]);
+});
+
+test('the effect encoding budget accommodates ten thousand maximal Unicode node ids', () => {
+  const prefix = '\u{1f332}'.repeat(127);
+  const born = `9007199254740991:4294967295:r_${'a'.repeat(32)}`;
+  let bytes = 0;
+  for (let i = 0; i < 10_000; i += 1) {
+    const id = prefix + String.fromCodePoint(0x10000 + i);
+    assert.equal([...id].length, 128);
+    assert.equal(Buffer.byteLength(id), 512);
+    bytes += Buffer.byteLength(jcs({ scope: 'tree:t_0000000000000001', delta: { t: 'node', id, born, f: { color: ['#ff0088', null] } } }));
+  }
+  assert.equal(bytes, 6_790_000);
+  assert.ok(bytes > CONSTANTS.PUSH_MAX_BYTES);
+  assert.ok(bytes < CONSTANTS.EFFECT_MAX_BYTES);
+});
 
 for (const file of readdirSync(CORPUS).filter((name) => name.endsWith('.json') && name !== 'requests.json').sort()) {
   test(`admit/${file} replays through admit`, () => {
     for (const { name, input, expect } of JSON.parse(readFileSync(new URL(file, CORPUS), 'utf8'))) {
       const limits = { ...CONSTANTS, ...(input.limits ?? {}) };
-      const outcome = admit({ state: new ServerState(input.state), registry, product, origin: input.origin, intent: input.intent, serverNow: input.serverNow, limits });
+      const state = new ServerState(input.state);
+      const run = () => admit({ state, registry, product: input.effectPlan ? new EffectPlanProduct(input.effectPlan) : product, origin: input.origin, intent: input.intent, serverNow: input.serverNow, limits });
+      if (expect.fault) {
+        assert.throws(run, /undeclared effect target|local check spans multiple scopes|an inverse command reports no outcome/, name);
+        assert.equal(jcs(state.toJSON()), jcs(expect.state), name);
+        continue;
+      }
+      const outcome = run();
       assert.equal(jcs(outcome.result), jcs(expect.result), name);
       assert.equal(jcs(outcome.state.toJSON()), jcs(expect.state), name);
     }

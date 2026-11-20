@@ -15,20 +15,19 @@ export class Remove {
   /**
    * @param {import('./entities.js').Id<E>} id
    * @param {import('./refusals.js').Refusals<R>} refusals
+   * @param {string | null} [scope]
    */
-  constructor(id, refusals) {
+  constructor(id, refusals, scope = id.entity.scope) {
+    this.scope = id.entity.boundScope(scope);
     precondition(id.entity.isRemovable, `${id.entity.type} is not Removable`);
     this.id = id;
     this.refusals = refusals;
     Object.freeze(this);
   }
 
-  get scope() {
-    return this.id.entity.scope;
-  }
-
   /** @param {import('./reading.js').Reader} read */
   load(read) {
+    precondition(read.scope === this.scope, 'a decider loads its bound scope');
     return read.repository(this.id.entity).find(this.id, 'drawn');
   }
 
@@ -54,17 +53,15 @@ export class Move {
    * @param {import('./entities.js').Id<E>} id
    * @param {import('./entities.js').Id<E> | null} below
    * @param {import('./refusals.js').Refusals<R>} refusals
+   * @param {string | null} [scope]
    */
-  constructor(id, below, refusals) {
+  constructor(id, below, refusals, scope = id.entity.scope) {
+    this.scope = id.entity.boundScope(scope);
     precondition(id.entity.isOrdered, `${id.entity.type} is not Ordered`);
     this.id = id;
     this.below = below;
     this.refusals = refusals;
     Object.freeze(this);
-  }
-
-  get scope() {
-    return this.id.entity.scope;
   }
 
   // The member and the one above it, in `drawn` order.
@@ -73,6 +70,7 @@ export class Move {
    * @returns {{ moving: E | null, above: import('./entities.js').Id<E> | null }}
    */
   load(read) {
+    precondition(read.scope === this.scope, 'a decider loads its bound scope');
     const members = read.repository(this.id.entity).all('drawn');
     const index = members.findIndex((member) => member.id.equals(this.id));
     if (index < 0) return { moving: null, above: null };

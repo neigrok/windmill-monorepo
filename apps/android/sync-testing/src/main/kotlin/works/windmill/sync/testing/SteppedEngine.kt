@@ -8,13 +8,14 @@ import works.windmill.sync.engine.*
 
 // Step mode uses the engine's public API and memory store; no loop or background scheduler starts.
 class SteppedEngine private constructor(private val registry: Registry, snapshot: Json?, private val draws: List<Int>, pushMaxBytes: Int,
-    val clock: SimClock, private val seed: Long, private val account: String?, shared: Fleet?, rules: works.windmill.sync.modelserver.ServerRules, private val legacyDraws: Boolean) : AutoCloseable {
+    val clock: SimClock, private val seed: Long, private val account: String?, shared: Fleet?, rules: works.windmill.sync.modelserver.ServerRules, private val legacyDraws: Boolean,
+    effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES) : AutoCloseable {
     private class Fleet(val clock: SimClock, val server: ModelServerHandle, val seed: Long) {
         val devices = mutableListOf<SteppedEngine>()
         var joined = 0
     }
-    constructor(registry: Registry, snapshot: Json? = null, draws: List<Int> = emptyList(), pushMaxBytes: Int = Constants.PUSH_MAX_BYTES) :
-        this(registry, snapshot, draws, pushMaxBytes, SimClock(), 117, "acct-1", null, works.windmill.sync.modelserver.NoServerRules(), true)
+    constructor(registry: Registry, snapshot: Json? = null, draws: List<Int> = emptyList(), pushMaxBytes: Int = Constants.PUSH_MAX_BYTES, effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES) :
+        this(registry, snapshot, draws, pushMaxBytes, SimClock(), 117, "acct-1", null, works.windmill.sync.modelserver.NoServerRules(), true, effectMaxBytes)
     constructor(registry: Registry, startMs: Long, seed: Long = 1, account: String? = "acct-1", rules: works.windmill.sync.modelserver.ServerRules = works.windmill.sync.modelserver.NoServerRules()) :
         this(registry, null, emptyList(), Constants.PUSH_MAX_BYTES, SimClock(startMs), seed, account,
             null, rules, false)
@@ -24,15 +25,20 @@ class SteppedEngine private constructor(private val registry: Registry, snapshot
     var drawIndex = 0
     private var closed = false
     private val random = java.util.Random(seed)
-    val engine = Engine.memory(registry, snapshot, clock, object : IdentitySource {
-        override fun opaqueID() = if (legacyDraws) "g${++gestures}" else "seed-$seed-g${++gestures}"
+    val engine: Engine = Engine.memory(registry, snapshot, clock, object : IdentitySource {
+        override fun opaqueID(): String {
+            if (!legacyDraws) return "seed-$seed-g${++gestures}"
+            var id: String
+            do id = "g${++gestures}" while (ClientCorpus.carriesGesture(engine.snapshot(), id))
+            return id
+        }
         override fun draw(bound: Int): Int {
             val index = drawIndex++
             val value = if (draws.isEmpty()) { if (legacyDraws) java.util.Random(seed + index).nextInt(bound) else random.nextInt(bound) }
                 else draws.getOrNull(index) ?: error("draw-queue-exhausted")
             return value.also { require(it in 0 until bound) }
         }
-    }, if (legacyDraws) "r_aaaaaaaaaaaa" else "r_${java.lang.Long.toUnsignedString(seed, 16).padStart(16, '0')}", pushMaxBytes)
+    }, if (legacyDraws) "r_aaaaaaaaaaaa" else "r_${java.lang.Long.toUnsignedString(seed, 16).padStart(16, '0')}", pushMaxBytes, effectMaxBytes = effectMaxBytes)
     val replica: Replica get() = engine
     val server: ModelServerHandle get() = fleet.server
     val transport = InMemoryTransport(fleet.server, clock)
@@ -91,11 +97,39 @@ class SteppedEngine private constructor(private val registry: Registry, snapshot
 }
 
 object ClientCorpus {
+    // A vector's next gesture id passes over every id an outbox entry, a notice, a reversible act, an inverse request or a cancellation of
+    // the device already carries (corpus/README.md).
+    fun carriesGesture(device: Json, gestureId: String): Boolean = device.member("replicas").arr().any { replica ->
+        replica["outbox"]?.arr().orEmpty().any { it.member("gestureId").str() == gestureId } ||
+            replica["notices"]?.arr().orEmpty().any { it.member("id").str().removePrefix("notice:").substringBeforeLast('/') == gestureId } ||
+            replica["journal"]?.arr().orEmpty().any { it.member("actId").str() == gestureId } ||
+            replica["inverses"]?.arr().orEmpty().any { it.member("requestId").str() == gestureId || it.member("inverseActId").str() == gestureId } ||
+            replica["cancellations"]?.arr().orEmpty().any { it.member("inverseActId").str() == gestureId }
+    }
+    // A `commitAct` step: its segments, each a scope's gesture, and the act's options (`undo`, K-3's opt-in).
+    fun act(engine: Engine, step: Json): ActCommitOutcome? {
+        val segments = step["segments"]?.orNull()?.arr()?.map { item -> ScopedGesture(ScopeRef(item.member("scope")), gesture(item["changes"] ?: Json.array(), item["opts"] ?: Json.objectOf())) }
+        val opts = step["opts"] ?: Json.objectOf()
+        opts.expectKeys(emptyList(), listOf("undo"))
+        val undo = opts["undo"]?.let { undo ->
+            undo.expectKeys(listOf("version", "segments"))
+            if (undo.member("version") != Json.of(1)) throw CommitFailure.malformed("undo-version")
+            undoSegments(undo.member("segments"))
+        }
+        return engine.commitAct({ segments?.let { ActRequest(it.map { item -> item.scope }, it.any { item -> item.gesture.hold }, undo = undo) } to segments },
+            { values, index, _ -> values!![index].gesture }).first
+    }
+    // `[{index, recipes}]`: an act's Undo segments, or a Redo's explicit slots by source ordinal.
+    fun undoSegments(json: Json): List<UndoSegment> = json.arr().map { segment ->
+        segment.expectKeys(listOf("index", "recipes"))
+        UndoSegment(segment.member("index").long(0).toInt(), segment.member("recipes").arr().map(UndoRecipe::read))
+    }
     fun handlers(probe: Registry): Map<String, Handler> {
-        val paths = listOf("commit/deltas.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
+        val paths = listOf("commit/deltas.json", "commit/acts.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
         return paths.associateWith { { input: Json -> steps(probe, input) } } + mapOf(
             "view/drawn.json" to { input: Json -> view(probe, input, ViewMode.drawn) },
-            "view/stored.json" to { input: Json -> view(probe, input, ViewMode.stored) })
+            "view/stored.json" to { input: Json -> view(probe, input, ViewMode.stored) },
+            "refs/traversal.json" to { input: Json -> traversal(probe, input) })
     }
     fun change(json: Json, prediction: Boolean = false): Change {
         val type = json.member("t").str()
@@ -120,7 +154,18 @@ object ClientCorpus {
         opts["guard"]?.arr()?.map { RegisterRef(it.member("t").str(), RecordID(it.member("id")), it.member("field").str()) }.orEmpty(),
         opts["retire"]?.arr()?.map { RecordRef(it.member("t").str(), RecordID(it.member("id"))) }.orEmpty(),
         opts["supersede"]?.arr()?.map { it.str() }.orEmpty(), opts["cmd"]?.let(::Command),
-        opts["predict"]?.arr()?.map { change(it, prediction = true) }.orEmpty(), opts["local"]?.obj()?.map { DeviceWrite(it.key, it.value.orNull()) }.orEmpty(), opts["gestureId"]?.str())
+        opts["predict"]?.arr()?.map { change(it, prediction = true) }.orEmpty(), opts["local"]?.obj()?.map { DeviceWrite(it.key, it.value.orNull()) }.orEmpty(), opts["gestureId"]?.str(),
+        scopedPredict = opts["scopedPredict"]?.arr()?.map { group ->
+            group.expectKeys(listOf("scope", "changes"))
+            ScopedPrediction(ScopeRef(group.member("scope")), group.member("changes").arr().map { change(it, prediction = true) })
+        })
+    // A vector's `limits` shrink the constants a client runner can configure; naming any other fails the vector (corpus/README.md).
+    data class Limits(val pushMaxBytes: Int, val effectMaxBytes: Int)
+    fun limits(input: Json): Limits {
+        val limits = input["limits"] ?: Json.objectOf()
+        limits.expectKeys(emptyList(), listOf("PUSH_MAX_BYTES", "EFFECT_MAX_BYTES"))
+        return Limits(limits["PUSH_MAX_BYTES"]?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES, limits["EFFECT_MAX_BYTES"]?.long(1)?.toInt() ?: Constants.EFFECT_MAX_BYTES)
+    }
     fun outcome(result: CommitOutcome): Json = when (result) {
         is CommitOutcome.Committed -> Json.Obj(buildList {
             add("localIds" to Json.Arr(result.receipt.localIds.map(Json::of))); add("retired" to Json.Arr(result.receipt.retired.map(Json::of))); add("stamp" to result.receipt.stamp.json)
@@ -128,8 +173,20 @@ object ClientCorpus {
         })
         is CommitOutcome.Refused -> Json.Obj(buildList { add("refused" to Json.of(result.code.text)); result.detail?.let { add("detail" to it) } })
     }
+    fun outcome(result: ActCommitOutcome): Json = when (result) {
+        is ActCommitOutcome.Refused -> Json.Obj(buildList {
+            add("refused" to Json.of(result.code.text)); add("segment" to Json.of(result.segment)); result.detail?.let { add("detail" to it) }
+        })
+        is ActCommitOutcome.Committed -> result.receipt.let { receipt -> Json.objectOf(
+            "gestureId" to Json.of(receipt.gestureId), "segments" to Json.Arr(receipt.segments.map { item -> Json.objectOf(
+                "scope" to item.scope.json, "stamp" to (item.stamp?.json ?: Json.Null), "localIds" to Json.Arr(item.localIds.map(Json::of)),
+                "ids" to Json.Arr(item.ids.map { it?.json ?: Json.Null })) }),
+            "retired" to Json.Arr(receipt.retired.map(Json::of)), "superseded" to Json.Arr(receipt.superseded.map(Json::of)),
+            "releaseAt" to (receipt.releaseAt?.let(Json::of) ?: Json.Null)) }
+    }
     fun steps(registry: Registry, input: Json): Json {
-        SteppedEngine(registry, input.member("device"), input["draws"]?.arr()?.map { it.long().toInt() }.orEmpty(), input["limits"]?.get("PUSH_MAX_BYTES")?.long()?.toInt() ?: Constants.PUSH_MAX_BYTES).use { stepped ->
+        val limits = limits(input)
+        SteppedEngine(registry, input.member("device"), input["draws"]?.arr()?.map { it.long().toInt() }.orEmpty(), limits.pushMaxBytes, limits.effectMaxBytes).use { stepped ->
             val results = input.member("steps").arr().map { step ->
                 stepped.now = step["deviceNow"]?.long() ?: 0
                 val beforeGesture = stepped.gestures; val beforeDraw = stepped.drawIndex
@@ -138,11 +195,16 @@ object ClientCorpus {
                         "commit" -> if (step["changes"] === Json.Null) {
                             stepped.engine.commit(ScopeRef(step.member("scope"))) { null to Unit }; Json.Null
                         } else outcome(stepped.engine.commit(ScopeRef(step.member("scope")), gesture(step["changes"] ?: Json.array(), step["opts"] ?: Json.objectOf())))
-                        "undo" -> Json.of(stepped.engine.undo(step.member("gestureId").str()))
+                        "commitAct" -> {
+                            val result = act(stepped.engine, step)
+                            if (result == null || result is ActCommitOutcome.Refused) { stepped.gestures = beforeGesture; stepped.drawIndex = beforeDraw }
+                            result?.let(::outcome) ?: Json.Null
+                        }
+                        "undo" -> Json.of(stepped.engine.cancelHeld(step.member("gestureId").str()))
                         "releaseAll" -> { stepped.engine.releaseHeld(true); Json.Null }
                         "releaseDue" -> { stepped.engine.releaseHeld(); Json.Null }
                         "release" -> Json.of(stepped.engine.release(step.member("localId").str()))
-                        "dismiss" -> { stepped.engine.dismissNotice(step.member("id").str()); Json.Null }
+                        "dismiss" -> Json.of(stepped.engine.dismissNotice(step.member("id").str()))
                         "view" -> {
                             val scope = ScopeRef(step.member("scope"))
                             val shown = stepped.engine.materialized(scope, if (step.member("withHeld").bool()) ViewMode.drawn else ViewMode.stored)
@@ -163,6 +225,21 @@ object ClientCorpus {
             }
             return Json.objectOf("returns" to Json.Arr(results), "device" to stepped.engine.snapshot(), "ended" to Json.Arr(stepped.engine.ended()))
         }
+    }
+    // The compiled traversal of one holder: every identity it resolves before any map, then the holder after each map in order.
+    fun traversal(registry: Registry, input: Json): Json {
+        val references = registry.references
+        val scope = ScopeRef(input.member("scope"))
+        val record = input["record"]
+        var holder = record ?: input.member("cmd")
+        val leaves = if (record != null) references.recordLeaves(record.member("t").str()) else references.commandLeaves(holder.member("name").str())
+        val found = references.resolve(leaves, holder, scope).map { Json.objectOf("role" to Json.of(it.leaf.role.name), "scope" to it.scope.json,
+            "t" to Json.of(it.key.type), "id" to it.key.id.json) }.sortedWith { a, b -> compareBytes(a.jcs, b.jcs) }
+        for (mappings in input.member("maps").arr()) {
+            val map = RecordMap(registry, mappings.arr().map(::Mapping))
+            holder = if (record != null) references.remapRecord(scope, holder, map) else references.remapCommand(scope, holder, map)
+        }
+        return Json.objectOf("references" to Json.Arr(found), "after" to holder)
     }
     fun view(registry: Registry, input: Json, mode: ViewMode): Json {
         val replica = input.member("replica")

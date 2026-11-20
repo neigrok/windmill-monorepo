@@ -5,7 +5,7 @@ import SyncSchema
 
 // A weigh-in: the lifter's one number for one local day, keyed by that day. It is one fact, saved whole, so the newest
 // save of the day wins whole: its weight, its moment and its presence.
-public struct WeighIn: Draftable, Removable, Timestamped, Equatable {
+public struct WeighIn: ProductEntity, Draftable, Removable, Timestamped, Equatable {
   public static let type = Gym.Types.weighin
   public static let scope = Gym.scope
   public static let savesGuarded = false

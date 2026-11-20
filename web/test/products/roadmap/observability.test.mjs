@@ -202,10 +202,12 @@ test('every prop of every event fits one row of its event in OBSERVABILITY.md, a
   assert.deepEqual(problems, []);
 });
 
-// Two props take their value from running code, where the audit above cannot read them: each is held to one list.
-test('the doors into a step’s tree and what an owner’s room knows of its trees are the values OBSERVABILITY.md lists', async () => {
+// Four props take their value from running code, where the audit above cannot read them: each is held to one list.
+test('the doors into a step’s tree, what an owner’s room knows of its trees, why a room cannot show its roadmap and why a birth planted nothing are the values OBSERVABILITY.md lists', async () => {
   const { TREE_DOORS } = await import('../../../src/products/roadmap/room/useTreeVisit.js');
   const { Opening, Openings } = await import('../../../src/products/roadmap/model/Opening.js');
+  const { UNSHOWN } = await import('../../../src/products/roadmap/room/ReplicaReading.js');
+  const { BirthFailure } = await import('../../../src/products/roadmap/room/ReplicaBirth.js');
   const rows = documentedRows();
   assert.deepEqual(rows.get('roadmap_tree_open').map((row) => row.door.values), [[...TREE_DOORS]]);
   const offered = namesIn(code, /\b(?:useTreeDoor|openTree)\([^()]*, '([a-z]+)'\)/g);
@@ -214,6 +216,14 @@ test('the doors into a step’s tree and what an owner’s room knows of its tre
   const read = Opening.fromWire({ treeId: 't_sail', title: 'Sail', state: 'open', done: 1, total: 2, loop: false });
   const known = [[{}], [{ opening: read }], [{ opening: Opening.unread('t_sail') }]].map((steps) => Openings.known(steps));
   assert.deepEqual(rows.get('roadmap_view_open').map((row) => row.trees), [{ values: known, optional: true }]);
+
+  assert.deepEqual(rows.get('roadmap_load').map((row) => row.outcome), [{ values: [...UNSHOWN], optional: false }]);
+  const unshown = namesIn(code, /\bunshown\('([a-z]+)'\)/g).concat(namesIn(code, /\{ unshown: '([a-z]+)' \}/g));
+  assert.deepEqual(unshown.sort(), [...UNSHOWN].sort());
+
+  const plantedNothing = BirthFailure.REASONS.filter((reason) => reason !== 'marks');
+  assert.deepEqual(rows.get('roadmap_board_create').filter((row) => row.reason).map((row) => row.reason), [{ values: plantedNothing, optional: true }]);
+  assert.match(failuresTable, new RegExp(`^\\| \`roadmap-plant\` \\|[^\\n]*\`reason: ${BirthFailure.REPORTED.join('/')}\``, 'm'));
 });
 
 const REPORTERS = new Set(['reportRoadmapFailure', 'reportUnexpectedFailure', 'report', 'reportFailure']);

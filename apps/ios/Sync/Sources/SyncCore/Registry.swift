@@ -8,6 +8,8 @@ public struct Registry: Sendable {
   public let products: [ProductDef]
   public let types: [TypeDef]
   public let commands: [CommandDef]
+  // E-8: every leaf of every type and command, compiled once (§2.4 References).
+  public private(set) var references = References()
 
   public init(json: JSON) throws(RegistryError) {
     do {
@@ -26,6 +28,7 @@ public struct Registry: Sendable {
     } catch {
       throw RegistryError(context: "registry", underlying: error)
     }
+    references = try References(compiling: self)
     try checkReferences()
   }
 
@@ -45,6 +48,7 @@ public struct Registry: Sendable {
     products = parts.flatMap(\.products)
     types = parts.flatMap(\.types)
     commands = parts.flatMap(\.commands)
+    references = try References(compiling: self)
     try checkReferences()
   }
 
@@ -102,7 +106,7 @@ public struct Registry: Sendable {
         throw RegistryError("type \(type.name) lives in the undeclared product \(product)")
       }
       for field in type.fields {
-        guard let value = field.defaultValue, !admits(value, for: field) else { continue }
+        guard let value = field.defaultValue, !admits(value, for: field, of: type) else { continue }
         throw RegistryError("type \(type.name) field \(field.name): the default \(value.jcsText) is no value of the field")
       }
     }
@@ -116,6 +120,10 @@ public struct Registry: Sendable {
       }
       for predicted in command.predicts where type(predicted)?.wholePut == true {
         throw RegistryError("command \(command.name) predicts \(predicted), a wholePut type only deltas write")
+      }
+      guard command.engine == .restore else { continue }
+      for restored in command.predicts.compactMap({ (name: String) -> TypeDef? in type(name) }) where restored.scope != command.scope || restored.governsTree {
+        throw RegistryError("command \(command.name) restores \(restored.name): a restore restores types of its scope that govern no tree")
       }
     }
   }
@@ -208,6 +216,7 @@ public struct TypeDef: Sendable {
   public let identity: IdentityClass
   public let idSpace: IDSpace?
   public let idPattern: Pattern?
+  public let idDomain: Domain?
   public let key: Key?
   public let singletonId: String?
   public let deriveFallback: String?
@@ -242,7 +251,7 @@ public struct TypeDef: Sendable {
       let object = try json.asObject()
       try object.expectKeys(
         required: ["type", "scope", "identity", "life", "origins", "fields"],
-        optional: ["idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows",
+        optional: ["idSpace", "idPattern", "idDomain", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows",
                    "governs", "cap", "visibleWhen", "primary", "headline"])
       name = try object.member("type").asString()
       guard RegistryName.isTypeOrField(name) else { throw RegistryError("\(name) is not a type name") }
@@ -250,6 +259,17 @@ public struct TypeDef: Sendable {
       identity = try IdentityClass(decoding: object.member("identity").asString())
       idSpace = try object["idSpace"].map { try IDSpace(decoding: $0.asString()) }
       idPattern = try object["idPattern"].map { try Pattern($0.asString()) }
+      idDomain = try object["idDomain"].map { value in
+        let definition = try value.asObject()
+        try definition.expectKeys(required: ["type", "unit", "min", "max"])
+        guard try definition.member("type").asString() == "string",
+              try definition.member("unit").asString() == "chars",
+              try definition.member("min").asInteger() == 1 else {
+          throw RegistryError("idDomain is a nonempty bounded string in chars")
+        }
+        _ = try definition.member("max").asInteger(atLeast: 1)
+        return try Domain(json: value)
+      }
       key = try object["key"].map { try Key(json: $0) }
       singletonId = try object["singletonId"]?.asString()
       deriveFallback = try object["derive"].map { derive in
@@ -294,8 +314,8 @@ public struct TypeDef: Sendable {
   func checkRules() throws(RegistryError) {
     switch identity {
     case .minted, .derived:
-      guard idSpace != nil, idPattern != nil, revivable != nil, deadRows != nil, mint != nil, life else {
-        throw RegistryError("a minted or derived type has idSpace, idPattern, revivable, deadRows, mint and life")
+      guard idSpace != nil, idPattern != nil || idDomain != nil, revivable != nil, deadRows != nil, mint != nil, life else {
+        throw RegistryError("a minted or derived type has idSpace, an ID definition, revivable, deadRows, mint and life")
       }
       guard identity == .minted || deriveFallback != nil else { throw RegistryError("a derived type has derive") }
     case .singleton:
@@ -305,7 +325,16 @@ public struct TypeDef: Sendable {
     case .keyed:
       guard !life || deadRows != nil else { throw RegistryError("a keyed type with life has deadRows") }
     }
-    guard key != nil || idPattern != nil else { throw RegistryError("a type without a key has an idPattern") }
+    guard [key != nil, idPattern != nil, idDomain != nil].filter({ $0 }).count == 1 else {
+      throw RegistryError("exactly one idPattern, idDomain or key defines ids")
+    }
+    guard singletonId == nil || identity == .singleton else { throw RegistryError("only a singleton has singletonId") }
+    if idDomain != nil {
+      guard (identity == .derived || identity == .keyed), idSpace == nil || idSpace == .scope else {
+        throw RegistryError("idDomain is for scope-local derived or keyed ids")
+      }
+      if let deriveFallback, !isScalarID(.string(deriveFallback)) { throw RegistryError("derive fallback is outside idDomain") }
+    }
     guard deriveFallback == nil || identity == .derived else { throw RegistryError("only a derived type has derive") }
     guard seeded == nil || identity == .minted else { throw RegistryError("only a minted type is seeded") }
     guard mint == nil || hasBorn else { throw RegistryError("only a minted or derived type has mint") }
@@ -347,10 +376,17 @@ public struct TypeDef: Sendable {
         throw RegistryError("field \(field.name): opens the value \(value) outside its domain")
       }
     }
-    if let mint, let idPattern {
-      for symbol in mint.alphabet.unicodeScalars {
-        guard idPattern.matches(mint.prefix + String(repeating: String(symbol), count: mint.length)) else {
-          throw RegistryError("a minted id of \(symbol) does not match \(idPattern.source)")
+    if let mint {
+      if let idMaxChars {
+        guard !mint.prefix.unicodeScalars.contains("\0"), !mint.alphabet.unicodeScalars.contains("\0"),
+              mint.length <= idMaxChars - mint.prefix.unicodeScalars.count else {
+          throw RegistryError("mint is outside idDomain")
+        }
+      } else if let idPattern {
+        for symbol in mint.alphabet.unicodeScalars {
+          guard idPattern.matches(mint.prefix + String(repeating: String(symbol), count: mint.length)) else {
+            throw RegistryError("a minted id of \(symbol) does not match \(idPattern.source)")
+          }
         }
       }
     }
@@ -367,6 +403,7 @@ public struct TypeDef: Sendable {
     ]
     object["idSpace"] = idSpace.map { .string($0.rawValue) }
     object["idPattern"] = idPattern.map { .string($0.source) }
+    object["idDomain"] = idDomain?.json
     object["key"] = key?.json
     object["singletonId"] = singletonId.map { .string($0) }
     object["derive"] = deriveFallback.map { ["fallback": .string($0)] }
@@ -523,6 +560,8 @@ public struct FieldDef: Sendable {
   // when the field declares none; JSON null when it declares null.
   public let defaultValue: JSON?
   public let opens: [String]?
+  // E-8 typed leaves in the value, as declared; `References` compiles and checks them with the registry.
+  public let refPaths: JSON?
 
   init(name: String, json: JSON) throws(RegistryError) {
     do {
@@ -530,7 +569,7 @@ public struct FieldDef: Sendable {
       let object = try json.asObject()
       try object.expectKeys(
         required: ["kind", "writer"],
-        optional: ["ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens"])
+        optional: ["ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens", "refPaths"])
       self.name = name
       kind = try FieldKind(name: object.member("kind").asString(), rank: object["rank"], serialNext: object["serialNext"])
       writer = try Writer(decoding: object.member("writer").asString())
@@ -543,6 +582,7 @@ public struct FieldDef: Sendable {
       domain = try object["domain"].map { try Domain(json: $0) }
       defaultValue = object["default"]
       opens = try object["opens"]?.asDistinctStrings()
+      refPaths = object["refPaths"]
       guard !parent || ref != nil else { throw RegistryError("the parent field is a ref") }
       guard !kind.isText || bounds?.max != nil else { throw RegistryError("a text field has unit and max") }
       guard !kind.isSerial || writer == .server else { throw RegistryError("a serial field is server-written") }
@@ -563,6 +603,7 @@ public struct FieldDef: Sendable {
     object["domain"] = domain?.json
     object["default"] = defaultValue
     object["opens"] = opens.map { .array($0.map { .string($0) }) }
+    object["refPaths"] = refPaths
     switch kind {
     case .ranked(let rank):
       object["rank"] = .object(JSON.Object(uniqueKeysWithValues: rank.values.map { ($0.value, JSON($0.rank)) }))
@@ -847,6 +888,13 @@ public struct Domain: Sendable {
 // MARK: - Commands
 
 public struct CommandDef: Sendable {
+  // A command the platform runs itself: `capture` admits the intent's ordinary deltas, checks and consequences with no
+  // product mutation, so its receipt captures them; `restore` writes back earlier values under conditions, its arguments
+  // fixed (§2.4, §6.4, K-3).
+  public enum Engine: String, Sendable {
+    case capture, restore
+  }
+
   public let name: String
   public let scope: ScopeKind
   public let origins: [Origin]
@@ -854,12 +902,20 @@ public struct CommandDef: Sendable {
   public let args: [ArgumentDef]
   public let predicts: [String]
   public let beforePull: Bool
+  // E-7: its success carries a scoped receipt, and a commit may predict records in every scope it changes.
+  public let scopedEffects: Bool
+  public let engine: Engine?
+  // K-3: a product command an Undo or Redo recipe runs, its wire arguments `{input, evidence}` (§6.4).
+  public let inverse: Bool
+  // E-8 typed leaves in the arguments, as declared; `References` compiles and checks them with the registry.
+  public let refPaths: JSON?
 
   init(json: JSON) throws(RegistryError) {
     do {
       let object = try json.asObject()
       try object.expectKeys(
-        required: ["name", "scope", "origins", "serverInternal", "args"], optional: ["predicts", "beforePull"])
+        required: ["name", "scope", "origins", "serverInternal", "args"],
+        optional: ["predicts", "beforePull", "scopedEffects", "engine", "inverse", "refPaths"])
       name = try object.member("name").asString()
       guard RegistryName.isCommand(name) else { throw RegistryError("\(name) is not a command name") }
       scope = try ScopeKind(text: object.member("scope").asString())
@@ -868,6 +924,24 @@ public struct CommandDef: Sendable {
       args = try object.member("args").asObject().members.map { try ArgumentDef(name: $0.key, json: $0.value) }
       predicts = try object["predicts"]?.asDistinctStrings() ?? []
       beforePull = try object["beforePull"]?.asBool() ?? false
+      refPaths = object["refPaths"]
+      scopedEffects = try object["scopedEffects"]?.asBool() ?? false
+      guard object["scopedEffects"] == nil || scopedEffects else { throw RegistryError("scopedEffects is true or absent") }
+      engine = try object["engine"].map { (json: JSON) throws -> Engine in
+        guard let engine = Engine(rawValue: try json.asString()) else { throw RegistryError("the engine runs capture or restore") }
+        return engine
+      }
+      guard engine == nil || scopedEffects && args.isEmpty else { throw RegistryError("an engine command has scoped effects and no arguments") }
+      guard engine != .restore || !predicts.isEmpty else { throw RegistryError("a restore command predicts the types it restores") }
+      guard engine != .restore || refPaths == nil else { throw RegistryError("a restore's arguments are fixed") }
+      inverse = try object["inverse"]?.asBool() ?? false
+      guard object["inverse"] == nil || inverse else { throw RegistryError("inverse is true or absent") }
+      if inverse {
+        guard scopedEffects, engine == nil else { throw RegistryError("an inverse command is a product command with scoped effects") }
+        guard args.count == 1, let input = args.first, input.name == "input", case .json = input.type, !input.optional else {
+          throw RegistryError("an inverse command declares only its required json input")
+        }
+      }
       guard !origins.isEmpty else { throw RegistryError("a command has at least one origin") }
       guard !serverInternal || !origins.contains(.replica) else {
         throw RegistryError("a server-internal command has server origin only")
@@ -888,6 +962,10 @@ public struct CommandDef: Sendable {
     ]
     object["predicts"] = predicts.isEmpty ? nil : .array(predicts.map { .string($0) })
     object["beforePull"] = beforePull ? true : nil
+    object["scopedEffects"] = scopedEffects ? true : nil
+    object["engine"] = engine.map { .string($0.rawValue) }
+    object["inverse"] = inverse ? true : nil
+    object["refPaths"] = refPaths
     return .object(object)
   }
 }
