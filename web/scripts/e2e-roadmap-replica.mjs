@@ -20,10 +20,10 @@
 // and joining at sign-in an account that holds none. The home card, the landing and the room's switcher list the person's
 // roadmaps: with the switch on from the device's copy, the account's signed in and the browser's own signed out; with it
 // off from today's list, which holds none signed out. With the switch on every page meets the server as the move leaves it
-// (§7, §8.3): each route the move retires answers 410 and the old socket refuses (`retired-roadmap-routes.mjs`, standing
-// in front of the backend), and the run holds that no page asked for one. Last, every person leaves the app, and the run waits, within its
-// bound, until the local intake holds the room's events, those only the switch emits only with it on. Each run has its
-// own database, server and built app on the given ports, and stops and drops them.
+// (§7, §8.3): the server, with its engine on, answers each route the move retires 410 and the old socket refuses, and
+// the run holds, from the server's own refusal lines, that no page asked for one. Last, every person leaves the app, and
+// the run waits, within its bound, until the local intake holds the room's events, those only the switch emits only with
+// it on. Each run has its own database, server and built app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
 // name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
 // error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
@@ -33,10 +33,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { inspect, isDeepStrictEqual } from 'node:util';
 import { chromium } from 'playwright';
-import { refuseRetiredRoutes } from './retired-roadmap-routes.mjs';
 
 const repo = resolve('..');
 const binaries = resolve(process.argv[2] ?? '../backend/build');
@@ -1190,7 +1190,7 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
 }
 
 // §7, §8.4 The person's roadmaps where the home card, the landing and the room's switcher list them. With the switch on,
-// every page of the run meeting the server as the move leaves it (`refuseRetiredRoutes`), they are the device's copy's: the
+// every page of the run meeting the server as the move leaves it, they are the device's copy's: the
 // account's signed in and the browser's own signed out. With it off they are today's list signed in, and signed out it
 // holds none. An account holds two roadmaps, the newer planted last; a browser signed out holds one.
 async function yourRoadmaps(mode, browser, { session, lister }, check, devices) {
@@ -1470,8 +1470,15 @@ async function run(mode, browser) {
     sql(`insert into sessions(token_hash,user_id,expires_ms) values('${hash(token)}','${user}',99999999999999);`);
     return token;
   };
-  let server, web, moved, created = false, passed = 0;
+  let server, web, created = false, passed = 0;
+  // The server's refusals of what the move retires (§8.3), one WARN write line each, counted under its operation, never an id.
   const refused = new Map();
+  const countRefusal = (line) => {
+    const write = /\bwrite (\{.*?\}) - /.exec(line)?.[1];
+    if (!write) return;
+    const { operation, outcome } = JSON.parse(write);
+    if (outcome === 'client-update-required' && operation.startsWith('roadmap.')) refused.set(operation, (refused.get(operation) ?? 0) + 1);
+  };
   const check = async (name, body) => {
     try { await body(); } catch (error) { console.error(`FAIL ${mode} · ${name}`); throw error; }
     passed++;
@@ -1492,16 +1499,14 @@ async function run(mode, browser) {
       PORT: String(backendPort), WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin,
       ROADMAP_ENGINE_ENABLED: mode === 'on' ? '1' : '',
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
-    moved = mode === 'on' ? await refuseRetiredRoutes({ backendPort, refused }) : null;
-    const served = moved ? `http://127.0.0.1:${moved.address().port}` : backend;
-    web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', served, '--duration', '1200'], { cwd: process.cwd() });
+    for (const output of [server.stdout, server.stderr]) createInterface({ input: output }).on('line', countRefusal);
+    web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
     await scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber, lister, refused }, account, check);
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
     if (server) { stopPort(backendPort); server.kill('SIGTERM'); }
-    if (moved) { moved.closeAllConnections(); moved.close(); }
     const exits = await stopped([server, web]);
     for (const result of exits) if (result.status === 'rejected') throw result.reason;
     if (created) execFileSync('dropdb', ['-h', host, database]);
