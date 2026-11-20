@@ -607,6 +607,46 @@ test('a browser whose copy could not open, as one that keeps nothing, is told at
   assert.deepEqual({ read: await read, told: told.length }, { read: null, told: 2 });
 });
 
+test('a room on an engine that holds the anonymous replica reads nothing and tells nothing until the shell says whose device it is, however long that takes, and then reads the account’s copy', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+    await a.sync();
+    // A signed-in person's first visit: the engine opens on the browser's anonymous replica, and binds their account once
+    // the shell has asked the server who they are.
+    let state = 'anon';
+    const asked = [];
+    const engine = Object.create(a.engine, {
+      getSnapshot: { value: () => ({ ...a.engine.getSnapshot(), state }) },
+      observe: { value: (scope) => { asked.push(scope); return a.engine.observe(scope); } },
+      subscribe: { value: (scope) => { asked.push(scope); return a.engine.subscribe(scope); } },
+    });
+    const listeners = new Set();
+    let snapshot = { engine, ready: true, signedIn: null, online: true, error: false };
+    const session = { getSnapshot: () => snapshot, subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); } };
+    const told = [];
+    const reading = new ReplicaReading({ treeId: tree, timers: a.env.timers, track: (name, props) => told.push([name, props]), session,
+      repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
+    let answered = 'pending';
+    reading.read({ signal: new AbortController().signal }).then((read) => { answered = read; });
+    for (let turn = 0; turn < 20; turn++) {
+      a.env.timers.advance(FIRST_COPY_MS);
+      await new Promise((later) => setImmediate(later));
+    }
+    assert.deepEqual({ answered, told, asked }, { answered: 'pending', told: [], asked: [] },
+      'nothing is read from the anonymous replica, and nothing told, while the shell has not said whose device it is');
+    state = 'bound';
+    snapshot = { ...snapshot, signedIn: true };
+    for (const listener of listeners) listener();
+    await until(() => answered !== 'pending');
+    assert.deepEqual({ steps: answered?.seed.nodes.map((step) => step.label), mine: answered?.seed.mine, told }, { steps: ['Read the wind'], mine: true, told: [] });
+    reading.close();
+  } finally {
+    a.close();
+  }
+});
+
 test('the owner’s workspace comes from their overlay, each step’s items in their own order', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {

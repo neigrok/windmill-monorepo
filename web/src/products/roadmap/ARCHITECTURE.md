@@ -165,8 +165,11 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   subscribed, once each, and releases every hold, when it leaves; the engine counts a tree's holders, so another reading
   that holds the same roadmap keeps it followed. It reads the engine only through its public API
   (`test/products/roadmap/room/engineBoundary.test.js` holds every `room/` file to that).
-- **Opening.** It opens from what the device holds, asking nothing of the network first, once the engine stands and the
-  scopes' stored rows are `loaded`, but only from a whole copy: the server's, the first pull of the roadmap's tree scope
+- **Opening.** It reads nothing, and tells nothing, until the engine stands for the person whose device it is: an engine
+  that holds the browser's anonymous replica stands once the shell has said whether someone is signed in (the session's
+  `signedIn`, null until then), as a signed-in person's first visit holds that replica until the engine binds their
+  account, and `FIRST_COPY_MS` does not run while the shell finds out. It opens from what the device holds, asking
+  nothing of the network first, once the scopes' stored rows are `loaded`, but only from a whole copy: the server's, the first pull of the roadmap's tree scope
   and, for the person's own, of their overlay of it having ended (`firstPullComplete`), or one the device made, of which
   the server has sent nothing (the domain's `readRoadmap`; signed out, or made offline). Until then the room shows its
   loading skeleton, so its first view, its counts and its Board are decided on the whole roadmap, never on the rows a
