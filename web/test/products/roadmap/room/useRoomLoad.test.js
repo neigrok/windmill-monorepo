@@ -86,7 +86,8 @@ for (const demo of [false, true]) {
   });
 }
 
-test('a room on the device’s copy tells once a visit why it cannot show its roadmap, though a sign-in reads it again, and its recovery list cannot say which roadmaps are the person’s', async (t) => {
+test('a room on the device’s copy tells once a visit why it cannot show its roadmap, though a sign-in reads it again; its recovery list cannot say which roadmaps are the person’s, and its picker reads an address from the copy alone', async (t) => {
+  const asked = t.mock.method(globalThis, 'fetch', async () => ({ ok: false, status: 410, json: async () => ({ code: 'client-update-required' }) }));
   const events = [];
   globalThis.roomLoadEvents = events;
   t.after(() => { delete globalThis.roomLoadEvents; });
@@ -107,6 +108,8 @@ test('a room on the device’s copy tells once a visit why it cannot show its ro
   assert.deepEqual({ reloads: view.tree.reloadKey, readings: readings.mock.callCount(), events, list: await view.tree.heldTrees.list() }, {
     reloads: 1, readings: 2, events: [['roadmap_load', { outcome: 'unkept' }]], list: { rows: [], authoritative: false, status: 0, reported: true },
   });
+  const address = await view.tree.heldTrees.read('t_00000000000000aa').then(() => 'read', (error) => error.status);
+  assert.deepEqual({ address, asked: asked.mock.callCount(), events: events.length }, { address: 0, asked: 0, events: 1 });
 });
 
 test('a lapsed cold room loads its owned replica and presents the existing signed-out device line', async (t) => {
