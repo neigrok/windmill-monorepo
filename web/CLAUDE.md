@@ -201,9 +201,11 @@ copy with no connection, readers and births: a stranger, signed out and signed i
 its step owns, each followed as it opens and dropped on leaving; a private roadmap the room cannot load, of which the
 browser keeps nothing; a browser that keeps nothing shown the load error, its bare roadmap door staying where it is; and a
 roadmap born at the birth door signed out, held in the anon replica and joining at sign-in an account that holds none.
-With the switch on, the server's engine is on, so it answers what the move retires `410 client-update-required` (§8.3), and
-the run counts the server's own refusal lines and holds that no page asked for one. Build `windmill_server` first
-(`backend/RUNNING.md`). It builds the app into a temporary folder, serves it on 5183 against the server on 8095
+In both runs the public demo, signed out and signed in, opens, plays its coach and reads its Board and step alike; with
+the switch on it reads the engine's copy, which `windmill_roadmap_adopt demo` adopts before the server starts. With the
+switch on, the server's engine is on, so it answers what the move retires `410 client-update-required` (§8.3), and the run
+counts the server's own refusal lines and holds that no page asked for one. Build `windmill_server` and
+`windmill_roadmap_adopt` first (`backend/RUNNING.md`). It builds the app into a temporary folder, serves it on 5183 against the server on 8095
 (`WM_E2E_WEB_PORT`, `WM_E2E_PORT`), uses its own databases (`WM_E2E_DB_PREFIX`), prints no id or roadmap text, and stops
 and drops what it started. `WM_E2E_SHOTS` names a folder for screenshots of the kept list and flow 50's questions at 1440
 and 390. The journal's twin, `test:journal:server`, is described in `src/products/journal/README.md`.
