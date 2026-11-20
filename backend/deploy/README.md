@@ -809,7 +809,7 @@ its `always()` holds it, so each stage runs on within its own deadline and a sta
 Never force-cancel it, which skips every step that would put the site back. To try again, **Re-run all jobs** or
 dispatch again; never **Re-run failed jobs**, which skips the guard.
 
-**A failure before writes resume**, before the start stage writes roadmap's switch, puts everything back. Where the
+**A failure before writes resume**, before the start stage writes roadmap's floor, puts everything back. Where the
 backup was verified, **Restore the backup** (`restore`) removes a tool container left running, checks the backup's
 sha256 and listing, restores it into `windmill_restore`, renames `windmill` to `windmill_cutover_<run>_<attempt>` and the
 restored database to `windmill` in one transaction, applies the schema, starts the server, roadmap off the engine, and
@@ -825,8 +825,8 @@ to the sealed record. Once its cause is settled, the owner dispatches **Ops · r
 (`ops-roadmap-restore.yml`) from `main` with the run's `<run id>-<attempt>` and `confirm` typed as `restore the backup`.
 It refuses beside any workflow that reaches the host, takes the `deploy-vps` lock, and runs the same `restore` again
 where it stopped: once `windmill` holds the backup and the moved database is kept, only the schema, the start and the lift
-are left. The host refuses that restore unless the site is paused, the server stopped and the run not yet `restored`, as
-a cutover leaves them before writes resume, so the door never puts a backup over a site that serves again. Either way it
+are left. The host refuses that restore unless the site is paused, the server stopped, no floor written and the run not yet
+`restored`, as a cutover leaves them before writes resume, so the door never puts a backup over a site that serves again. Either way it
 seals what the run keeps on the host as the cutover does, which also makes it the door for a seal that failed. Where **Return the site as it was** fails, the
 database is as it was: **Deploy to VPS** starts the server, then **Ops · maintenance** lifts the pause.
 

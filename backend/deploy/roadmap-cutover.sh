@@ -303,7 +303,8 @@ print(int(hello["schema"]), int(hello["minSchema"]))')
         fail "roadmap's switch is written and the server's container holds it, so the cutover goes forward only"
       : > roadmap-engine.env
       rm -f roadmap-engine.floor.next
-      printf "NOTE restore: the start wrote roadmap's switch, not its floor, and never started the server on it; the switch is emptied\n"
+      printf "NOTE restore: the start wrote roadmap's switch, not its floor, and never started the server on it; %s\n" \
+        "the switch is emptied"
     fi
     backup=$(cat "$work/backup")
     docker rm -f "$tool" > /dev/null 2>&1 || true
