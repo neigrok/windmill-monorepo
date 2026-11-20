@@ -1,16 +1,17 @@
 // The room's reading of a roadmap from the device's copy, behind the switch the route table reads (roadmap-on-the-engine.md
 // §5, §8.4). As the room opens it subscribes the roadmap's tree scope, and with it the account's overlay of it (E-3); a
-// roadmap someone else owns is read with each roadmap above it, each subscribed the same way. It observes the account's
-// list (`self/roadmap`) and every scope the domain reads the roadmap through, opens from what the device holds without
-// waiting on the network, follows each change, and drops every scope it subscribed when the room leaves. On the
-// person's own roadmap it is the room's write door too: the domain's actions on the kit's runner, through the room's
-// session (`ReplicaSession`); and it reads, and clears once said, what the device tells of the person's own changes
-// that met another device's (§6), and lets that note go whole when it finds the roadmap gone.
+// roadmap someone else owns, the demo among them, is read with each roadmap above it, each subscribed the same way. It
+// observes the account's list (`self/roadmap`) and every scope the domain reads the roadmap through, opens from what the
+// device holds without waiting on the network, follows each change, and drops every scope it subscribed when the room
+// leaves. On the person's own roadmap it is the room's write door too: the domain's actions on the kit's runner, through
+// the room's session (`ReplicaSession`); and it reads, and clears once said, what the device tells of the person's own
+// changes that met another device's (§6), and lets that note go whole when it finds the roadmap gone.
 
 import { Fields } from '../../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
 import { syncSession } from '../../../platform/sync/session.js';
 import { track as beacon } from '../../../telemetry/beacon.js';
+import { stagedMarks } from '../demo/demoStage.js';
 import { ClearLanding, landingOf } from '../domain/landing.js';
 import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
@@ -64,8 +65,10 @@ export class ReplicaReading {
   // failed and reported in the visit, which every reading a sign-in or Try again runs in it shares, so each reports once a
   // visit. The reading asks the server about its roadmap only where the server holds it (`served`, as `read` learns it), so
   // each such read reports as a server tree's does. A reading of no roadmap (`treeId` null) reads the person's roadmaps
-  // alone, and asks the server nothing.
-  constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure, track = beacon,
+  // alone, and asks the server nothing. `demo` reads the sample roadmap at `#/demo` as every visitor reads it, a reader of
+  // someone else's roadmap whoever's list holds it, showing the demo's staged marks (`stagedMarks`) where a reader is shown
+  // its owner's.
+  constructor({ treeId, demo = false, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure, track = beacon,
     toldRef = { current: false }, reported = new Set(), repository = treeId === null ? null : new HttpTreeRepository({ treeId, served: true,
       reportFailure: (operation, ...details) => {
         if (reported.has(operation)) return;
@@ -73,6 +76,7 @@ export class ReplicaReading {
         report(operation, ...details);
       } }) }) {
     this.treeId = treeId;
+    this.demo = demo;
     this.scope = treeId === null ? null : RoadmapScopes.tree(treeId);
     this.room = room;
     this.say = say;
@@ -113,9 +117,9 @@ export class ReplicaReading {
   // The roadmap as the device holds it once it can be shown, and null where it cannot be, which the room says with its
   // load error and the reading tells (`roadmap_load`): the engine could not open or did not stand within the bound, the
   // person may read no such roadmap here, or no answer came within the bound. A roadmap someone else owns shows its
-  // owner's marks and how far each of its subtrees is, as the server reads them. The roadmap's scope is the reading's to
-  // drop from the moment it asks for it, and the engine leaves a holder that left before its subscription was taken
-  // closed, so a room that leaves while the engine takes the subscription leaves it unfollowed.
+  // owner's marks, the demo its staged ones, and how far each of its subtrees is, as the server reads them. The roadmap's
+  // scope is the reading's to drop from the moment it asks for it, and the engine leaves a holder that left before its
+  // subscription was taken closed, so a room that leaves while the engine takes the subscription leaves it unfollowed.
   async read({ signal }) {
     const answer = await this.open(signal);
     if (answer === null) return null;
@@ -124,12 +128,16 @@ export class ReplicaReading {
     const { roadmap } = answer;
     this.opened = roadmap;
     this.served = !roadmap.mine || this.engine.getSnapshot().state === 'bound';
-    this.openWrites(roadmap.mine);
-    if (roadmap.mine) return { seed: roadmap.seed, overlay: roadmap.marks, workspace: roadmap.workspace, guides: roadmap.guides };
+    this.openWrites(this.owns(roadmap));
+    if (this.owns(roadmap)) return { seed: roadmap.seed, overlay: roadmap.marks, workspace: roadmap.workspace, guides: roadmap.guides };
     const { subtrees, ...overlay } = await this.ownerMarks(roadmap.seed);
     this.subtrees = subtrees;
-    return { seed: roadmap.seedOf(this.treeId, subtrees), overlay, workspace: null, guides: roadmap.guides };
+    return { seed: roadmap.seedOf(this.treeId, subtrees), overlay: this.demo ? stagedMarks() : overlay, workspace: null, guides: roadmap.guides };
   }
+
+  // Whether the room reads the roadmap as its owner's: the person's own, in their list, but the demo, which every visitor
+  // reads as a reader's.
+  owns(roadmap) { return roadmap.mine && !this.demo; }
 
   // The owner's marks of a roadmap someone else owns, as the server reads them (`GET /v1/trees/{id}/progress`, §7), or the
   // steps' seeds where that read fails: the device holds none of them. The repository reports the failure, once a visit.
@@ -195,7 +203,7 @@ export class ReplicaReading {
       if (roadmap === shown || roadmap.state !== 'open') return;
       shown = roadmap;
       onTree(roadmap.seedOf(this.treeId, this.subtrees));
-      if (roadmap.mine) {
+      if (this.owns(roadmap)) {
         onProgress(roadmap.marks);
         onWorkspace(roadmap.workspace);
         onLanding(this.landing());

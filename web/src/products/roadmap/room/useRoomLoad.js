@@ -25,7 +25,7 @@ function savedPlace(place, seed) {
 
 // From the door to a live room: the reading, then domain, layout and the first view, then the reading follows each
 // change; a retry runs it again. With `replica` the room reads the device's copy through the sync engine
-// (`ReplicaReading`); without it, and for the demo, it reads as it does today (`LatticeReading`).
+// (`ReplicaReading`), the demo as a reader's; without it, it reads as it does today (`LatticeReading`).
 export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica = false, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, showToast, dismissToast, desktopEditorRef, onRemoteProgress, onLanding }) {
   const { sceneRef, sessionRef, replicaRef, projectionRef, treeRef, seedRef } = room;
   const [placeStore] = useState(() => new PlaceStore());
@@ -48,7 +48,6 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   latest.current = { structure, onRemoteProgress, onLanding };
   const { layoutRef } = structure;
   const { selectedId, selectedIdRef, setSelectedId } = selection;
-  const readsReplica = replica && !demo;
 
   useEffect(() => {
     let cancelled = false;
@@ -64,10 +63,10 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
     knownRef.current = new Map();
     framing.firstFrameRef.current = null;
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
-    const reading = readsReplica ? new ReplicaReading({ treeId, room, say: showToast, toldRef: loadToldRef, reported })
+    const reading = replica ? new ReplicaReading({ treeId, demo, room, say: showToast, toldRef: loadToldRef, reported })
       : new LatticeReading({ treeId, demo, shared, demotion, known: knownRef, room });
     readingRef.current = reading;
-    replicaRef.current = readsReplica ? reading : null;
+    replicaRef.current = replica ? reading : null;
 
     async function loadTree() {
       await reading.settleHolder();
@@ -242,7 +241,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
 
   return {
     loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree, guides,
-    readsReplica, listTrees: readsReplica ? listTrees : null, card: readsReplica ? card : null, heldTrees: readsReplica ? heldTrees : null,
+    listTrees: replica ? listTrees : null, card: replica ? card : null, heldTrees: replica ? heldTrees : null,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }
