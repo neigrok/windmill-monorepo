@@ -14,8 +14,8 @@
 // marks and workspace carried and kept through a sign-in, its old stores kept until the server takes it, and a signed-in
 // browser's unsent changes carried to the server, its old stores gone once carried; with it off, the old stores untouched.
 // With the switch on, also readers and signed-out births (§5): a stranger, signed out and signed in, opening a public
-// roadmap and its subtree by link, each followed on the live socket as the room opens it (a signed-in reader's own overlay
-// with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a browser that keeps nothing shown the
+// roadmap and its subtree by link, the card of the step that owns it showing how far the subtree is, each followed on the
+// live socket as the room opens it (a signed-in reader's own overlay with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a browser that keeps nothing shown the
 // room's load error (E-5 is not built); and a roadmap made at the birth door signed out, held in the browser's anon replica
 // and joining at sign-in an account that holds none. Last, every person leaves the app, and the run waits, within its
 // bound, until the local intake holds the room's events, those only the switch emits only with it on. Each run has its
@@ -164,7 +164,7 @@ class OwnerDevice {
     const { FixedZone } = await source('src/platform/domain-kit/time.js');
     const { CreateRoadmap, CreateSubtree, Roadmap, RoadmapMeta, SetVisibility } = await source('src/products/roadmap/domain/roadmaps.js');
     const { ChangeStep, CreateStep, RoadmapStep } = await source('src/products/roadmap/domain/steps.js');
-    const { StepMark } = await source('src/products/roadmap/domain/progress.js');
+    const { Complete, StepMark } = await source('src/products/roadmap/domain/progress.js');
     const { StepNote, Subtask } = await source('src/products/roadmap/domain/workspace.js');
     const { Id } = await source('src/platform/domain-kit/entities.js');
     const transport = new HttpTransport({ schema: registry.version, base: backend, reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: name }),
@@ -176,7 +176,7 @@ class OwnerDevice {
       telemetry: { event() {}, failure(operation) { throw new Error(`the ${name} device's engine failed: ${operation}`); } } });
     await engine.signIn(account);
     return new OwnerDevice(engine, new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0)),
-      { CreateRoadmap, CreateSubtree, SetVisibility, ChangeStep, CreateStep, RoadmapStep, Roadmap, RoadmapMeta, StepMark, StepNote, Subtask, Id });
+      { CreateRoadmap, CreateSubtree, SetVisibility, ChangeStep, CreateStep, Complete, RoadmapStep, Roadmap, RoadmapMeta, StepMark, StepNote, Subtask, Id });
   }
 
   constructor(engine, runner, domain) {
@@ -360,6 +360,13 @@ class Device {
   }
 
   card(label) { return this.page.locator('.st-board-card-title', { hasText: label }); }
+
+  // What the pill on the step's card says and the face it wears, or null where the card has none.
+  async pill(label) {
+    const pill = this.page.locator('.st-board-card', { has: this.card(label) }).locator('.st-board-tree-pill');
+    if (await pill.count() === 0) return null;
+    return { words: await pill.textContent(), face: await pill.getAttribute('class') };
+  }
 
   async board(address) {
     await this.page.goto(`${origin}/${address}`);
@@ -1069,8 +1076,9 @@ async function todaysAccountChoices(browser, { secret, session }, check, devices
 }
 
 // §5 A reader and Signed out, with the switch on. A stranger opens the owner's public roadmap and the subtree its step owns
-// by their link, signed out and signed in: the room follows each tree scope as it opens it, the signed-in reader's own
-// overlay with it (E-3) and the signed-out reader's none, and drops both as the person leaves. A private roadmap is in
+// by their link, signed out and signed in: the step's card shows how far the subtree is, as the server's read of the
+// owner's progress says (§7), the room follows each tree scope as it opens it, the signed-in reader's own overlay with it
+// (E-3) and the signed-out reader's none, and drops both as the person leaves. A private roadmap is in
 // no address for them, and the browser keeps none of it. A browser that keeps nothing is shown the room's load error, as
 // the web holds no replica in memory yet (E-5). A roadmap made signed out at the birth door lives in the browser's anon
 // replica, the old stores untouched, and joins at sign-in an account that holds none, with no question.
@@ -1078,7 +1086,7 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
   const owner = await OwnerDevice.open('readers-seed', session(account), account);
   let year, sub, closed;
   try {
-    const { CreateRoadmap, CreateSubtree, CreateStep, SetVisibility } = owner.domain;
+    const { CreateRoadmap, CreateSubtree, CreateStep, Complete, SetVisibility } = owner.domain;
     const made = await owner.write(new CreateRoadmap('A year at sea', { steps: [{ key: 'sail', label: 'Learn to sail' }, { key: 'bay', label: 'Cross the bay' }],
       links: [['sail', 'bay']] }));
     year = String(made.tree);
@@ -1086,19 +1094,24 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
     closed = await owner.plant(new CreateRoadmap('A private plan', { steps: [{ key: 'start', label: 'Keep it to myself' }], links: [] }));
     await owner.engine.start();
     await owner.sent();
-    await owner.write(new CreateStep(sub, { label: 'Tie a bowline' }, []));
+    const knot = await owner.write(new CreateStep(sub, { label: 'Tie a bowline' }, []));
+    await owner.write(new CreateStep(sub, { label: 'Splice a rope' }, []));
+    await owner.write(Complete(sub, knot));
     await owner.write(new SetVisibility(year, 'public'));
     await owner.sent();
   } finally {
     owner.engine.close();
   }
   const NONE = { tree: false, overlay: false };
-  // The stranger opens the roadmap by its link and goes into the subtree from its step's page; each roadmap's scopes are
-  // followed on the live socket as the room opens it. Leaving for the journal drops them, where `leaves` asks it.
+  // The stranger opens the roadmap by its link, its step's card showing how far the subtree is, and goes into the subtree
+  // from the step's page; each roadmap's scopes are followed on the live socket as the room opens it. Leaving for the
+  // journal drops them, where `leaves` asks it.
   const readsAndLeaves = async (d, overlay, leaves) => {
     devices.push(d);
     await d.board(`t/${year}`);
     await d.card('Cross the bay').waitFor();
+    assert.deepEqual(await d.pill('Learn to sail'), { words: '1 of 2', face: 'st-board-tree-pill st-board-tree-pill--open st-board-tree-pill--leads' },
+      'the card of the step that owns the subtree shows how far the subtree is');
     const opened = await d.followsUntil(year, { tree: true, overlay });
     const step = await d.openStep('Learn to sail');
     await step.getByRole('button', { name: 'Open subtree', exact: true }).click();
@@ -1113,11 +1126,11 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
       'leaving drops both');
   };
 
-  await check('§5: a stranger signed out opens a public roadmap by its link and goes into the subtree its step owns, each followed as it opens', async () => {
+  await check('§5, §7: a stranger signed out opens a public roadmap by its link, sees how far the subtree its step owns is, and goes into it, each followed as it opens', async () => {
     await readsAndLeaves(await Device.signedOut(browser), false, false);
   });
 
-  await check('§5, E-3: a stranger signed in reads it the same way, their own overlay followed with each roadmap, and leaving drops them all', async () => {
+  await check('§5, §7, E-3: a stranger signed in reads it the same way, the subtree’s progress on its step’s card, their own overlay followed with each roadmap, and leaving drops them all', async () => {
     await readsAndLeaves(await Device.open(browser, session(stranger)), true, true);
   });
 

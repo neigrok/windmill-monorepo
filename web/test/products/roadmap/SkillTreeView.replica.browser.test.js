@@ -45,7 +45,9 @@ import { stepDraftSession } from '/src/products/roadmap/step/StepDraftSession.js
 import { getRoomStatus } from '/src/shell/roomStatus.js';
 import { ActionRunner, EngineReplica } from '/src/platform/domain-kit/runner.js';
 import { FixedZone } from '/src/platform/domain-kit/time.js';
-import { ChangeStep } from '/src/products/roadmap/domain/steps.js';
+import { ChangeStep, CreateStep } from '/src/products/roadmap/domain/steps.js';
+import { CreateSubtree } from '/src/products/roadmap/domain/roadmaps.js';
+import { Complete } from '/src/products/roadmap/domain/progress.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
@@ -106,6 +108,27 @@ if (params.has('seed')) {
     await new Promise((settle) => setTimeout(settle, 50));
   }
 }
+// The owner's subtrees: Choose a course's, its one step done, Read the wind's, of two steps with one of them done, and
+// Leave the dock's, of none.
+if (params.has('subtrees')) {
+  const runner = new ActionRunner(new EngineReplica(engine), engine.registry, new FixedZone(0));
+  const made = async (act) => {
+    const outcome = await runner.runAct(act);
+    if (outcome.kind !== 'committed') throw new Error('a subtree was not planted');
+    return outcome.result;
+  };
+  const { subtree: charted } = await made(new CreateSubtree(tree, 'course'));
+  await made(Complete(charted, await made(new CreateStep(charted, { label: 'Chart the course' }, []))));
+  const { subtree } = await made(new CreateSubtree(tree, 'wind'));
+  await made(new CreateSubtree(tree, 'dock'));
+  const knot = await made(new CreateStep(subtree, { label: 'Tie a bowline' }, []));
+  await made(new CreateStep(subtree, { label: 'Splice a rope' }, []));
+  await made(Complete(subtree, knot));
+  for (let turn = 0; engine.device.activeReplica.outbox.some((entry) => entry.state !== 'acked'); turn++) {
+    if (turn === 200) throw new Error('the subtrees never settled');
+    await new Promise((settle) => setTimeout(settle, 50));
+  }
+}
 if (params.has('knot')) {
   await engine.commit('self/roadmap', [{ op: 'create', t: 'tree', id: ${JSON.stringify(KNOT)} }]);
   await engine.commit('tree/' + ${JSON.stringify(KNOT)}, [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Learn to knot' } },
@@ -160,8 +183,17 @@ const files = new Map(output.map((file) => ['/' + file.fileName, file.type === '
 const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
 
 // The model server: roadmap's records as the engine's reference server keeps them, and today's routes over the same
-// roadmap. The owner's marks are what both rooms show a reader.
+// roadmap. The owner's marks, and what each subtree its steps own has come to, are what both rooms show a reader.
 let state = null;
+// The rows the reference server holds of every scope whose key names `part`, as it stands after the last push.
+const serverRows = (part) => Object.entries(state.rows).filter(([key]) => key.includes(part)).flatMap(([, rows]) => Object.values(rows));
+// Each subtree a step of the roadmap owns, as the server counts it: its steps, and those the owner marked complete.
+const subtreesOf = () => serverRows(`tree:${TREE}`).filter((row) => row.t === 'node' && row.f?.branch?.[0]).map((row) => {
+  const tree = row.f.branch[0];
+  const total = serverRows(`tree:${tree}`).filter((step) => step.t === 'node' && step.life?.[0] === 'alive').length;
+  const done = serverRows(`acct:u_owner/overlay/${tree}`).filter((mark) => mark.t === 'progress' && mark.f?.mark?.[0]?.status === 'complete').length;
+  return { node: row.id, tree, done, total };
+});
 const product = new RoadmapProduct();
 const served = { id: TREE, title: 'Learn to sail', kinds: GENESIS.map(([id, hue, label, description]) => ({ id, hue, label, description })),
   nodes: STEPS.map(([id, label, prerequisites]) => ({ id, label, color: 'terracotta', order: 'a0', prerequisites })) };
@@ -184,9 +216,13 @@ const http = createServer(async (request, response) => {
   }
   if (url.pathname === `/v1/trees/${TREE}`) {
     const mine = request.headers.cookie?.includes('owner') ?? false;
-    return json(200, { data: served, root: TREE, parent: null, path: [], depth: 0, mine, visibility: 'public' });
+    const owned = new Map(subtreesOf().map(({ node, tree, done, total }) => [node, { id: tree, done, total, state: total > 0 && done === total ? 'complete' : 'open' }]));
+    const nodes = served.nodes.map((node) => (owned.has(node.id) ? { ...node, subtree: owned.get(node.id) } : node));
+    return json(200, { data: { ...served, nodes }, root: TREE, parent: null, path: [], depth: 0, mine, visibility: 'public' });
   }
-  if (url.pathname === `/v1/trees/${TREE}/progress`) return json(200, { marks: [{ node: 'course', status: 'complete', at: `${Date.now()}:0:srv` }] });
+  if (url.pathname === `/v1/trees/${TREE}/progress`) {
+    return json(200, { marks: [{ node: 'course', status: 'complete', at: `${Date.now()}:0:srv` }], subtrees: subtreesOf() });
+  }
   if (url.pathname.endsWith('/activity')) return json(200, { events: [] });
   if (url.pathname.endsWith('/guides')) return json(200, { guides: [] });
   if (url.pathname.startsWith('/v1/')) return json(200, {});
@@ -219,9 +255,9 @@ after(async () => {
   http.close();
 });
 
-// A room opened and read: what its row says, its Board's columns, the open step's page, the room's status line and every
-// event it emitted. `account` is who is signed in, `address` the room's hash.
-async function readRoom(context, { account, replica, address, seed = false, offline = false }) {
+// A room opened and read: what its row says, its Board's columns and the pill of each card that opens a tree, the open
+// step's page, the room's status line and every event it emitted. `account` is who is signed in, `address` the room's hash.
+async function readRoom(context, { account, replica, address, seed = false, subtrees = false, offline = false }) {
   if (account === 'u_owner') await context.addCookies([{ name: 'fixture', value: 'owner', url: origin }]);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -230,6 +266,7 @@ async function readRoom(context, { account, replica, address, seed = false, offl
   page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()); });
   const params = new URLSearchParams({ account, replica: replica ? 'on' : 'off' });
   if (seed) params.set('seed', '1');
+  if (subtrees) params.set('subtrees', '1');
   if (offline) params.set('offline', '1');
   await page.goto(`${origin}/room?${params}${address}`);
   await page.locator('.st-roadmap-progress').waitFor();
@@ -239,12 +276,16 @@ async function readRoom(context, { account, replica, address, seed = false, offl
   await page.locator('[data-column]').first().waitFor();
   const row = await page.locator('.st-roadmap-identity').innerText();
   const columns = await boardColumns(page);
+  const pills = await page.evaluate(() => [...document.querySelectorAll('.st-board-card')].flatMap((card) => {
+    const pill = card.querySelector('.st-board-tree-pill');
+    return pill ? [{ step: card.querySelector('.st-board-card-title').textContent, face: pill.className, words: pill.textContent, drawn: pill.outerHTML }] : [];
+  }));
   await page.locator('.st-board-card-title', { hasText: 'Read the wind' }).click();
   const step = await page.getByRole('article', { name: 'Read the wind', exact: true }).innerText();
   const read = await page.evaluate(() => ({ status: window.roomStatus(), events: window.events.map(({ name, props }) => `${name} ${JSON.stringify(props)}`),
     issues: window.issues, syncFailures: window.syncFailures }));
   await page.close();
-  return { row, columns, step, ...read, failures };
+  return { row, columns, pills, step, ...read, failures };
 }
 
 test('an owner’s roadmap opens from the replica, and again from the device’s copy offline, with the screens and events of today’s room', async () => {
@@ -284,8 +325,35 @@ test('a signed-in reader opens a shared roadmap from the replica as they do toda
   }
 });
 
-// The rows the reference server holds of every scope whose key names `part`, as it stands after the last push.
-const serverRows = (part) => Object.entries(state.rows).filter(([key]) => key.includes(part)).flatMap(([, rows]) => Object.values(rows));
+test('a reader’s Board shows how far each subtree its steps own has come, signed in or not, as today’s room shows it: from the server’s read of the owner’s progress', async () => {
+  state = ServerState.empty({ epoch: 'ep-room', accounts: { u_owner: { name: 'Owner' }, u_reader: { name: 'Reader' } } });
+  const owner = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await readRoom(owner, { account: 'u_owner', replica: true, address: `#/app/${TREE}`, seed: true, subtrees: true });
+    for (const account of ['u_reader', '']) {
+      const replica = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+      const today = await newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+      try {
+        const shared = await readRoom(replica, { account, replica: true, address: `#/t/${TREE}` });
+        const lattice = await readRoom(today, { account, replica: false, address: `#/t/${TREE}` });
+        assert.deepEqual({ columns: shared.columns, pills: shared.pills.map(({ step, face, words }) => ({ step, face, words })) }, {
+          columns: ['locked: Leave the dock', 'upNext: Read the wind', 'done: Choose a course'],
+          pills: [
+            { step: 'Leave the dock', face: 'st-board-tree-pill st-board-tree-pill--empty st-board-tree-pill--leads', words: 'No steps' },
+            { step: 'Read the wind', face: 'st-board-tree-pill st-board-tree-pill--open st-board-tree-pill--leads', words: '1 of 2' },
+            { step: 'Choose a course', face: 'st-board-tree-pill st-board-tree-pill--complete st-board-tree-pill--leads', words: '1 of 1' },
+          ],
+        }, `the ${account ? 'signed-in' : 'signed-out'} reader's Board shows each subtree's pill`);
+        assert.deepEqual(shared, { ...lattice, failures: [] });
+      } finally {
+        await replica.close();
+        await today.close();
+      }
+    }
+  } finally {
+    await owner.close();
+  }
+});
 
 async function reachesServer(check) {
   for (let turn = 0; turn < 600; turn++) {

@@ -59,12 +59,15 @@ export class HeldRoadmap {
 }
 
 // A step's opening as the room's surfaces read it (`model/Opening.js`), from what the domain says the roadmap it opens
-// comes to; `title` is that roadmap's name where it stands.
-function openingOf(opening, title) {
+// comes to; `title` is that roadmap's name where it stands. A subtree that stands on its step takes `told`, what the
+// server said it has come to, where that names the same subtree: a reader's device holds none of the owner's marks of it.
+function openingOf(opening, title, told) {
   const counted = opening.status === 'loaded' && opening.counts !== null;
   if (opening.kind === 'subtree') {
-    if (counted) return Opening.owned({ id: opening.tree, ...opening.counts, state: opening.complete ? 'complete' : 'open' });
-    return opening.status === 'dangling' ? new Opening({ treeId: opening.tree, read: true, owned: true }) : Opening.owned({ id: opening.tree });
+    if (opening.status === 'dangling') return new Opening({ treeId: opening.tree, read: true, owned: true });
+    if (told?.treeId === opening.tree) return told;
+    if (!counted) return Opening.owned({ id: opening.tree });
+    return Opening.owned({ id: opening.tree, ...opening.counts, state: opening.complete ? 'complete' : 'open' });
   }
   if (opening.status === 'dangling') return new Opening({ treeId: opening.tree, read: true });
   if (!counted) return Opening.unread(opening.tree);
@@ -113,14 +116,15 @@ export class ReplicaRoadmap {
 
   // A roadmap as the room's tree data: its present steps in authored order, each following what the domain reads it
   // follows through absent steps (D-5) and carrying the roadmap it opens; the kinds that own their hue; its name, guide,
-  // place and the visibility its share reads. Null where the device has not read it or it does not stand.
-  seedOf(id) {
+  // place and the visibility its share reads. Null where the device has not read it or it does not stand. `told` is what
+  // the server's read of the owner's progress said each subtree of its steps has come to, by step, for a reader's room.
+  seedOf(id, told = new Map()) {
     const graph = this.account.graph(id);
     if (graph === null) return null;
     const tree = this.account.trees.get(id);
     const location = this.account.locate(id);
     const openings = new Map(this.account.openingsOf(id).map((opening) => {
-      const shown = openingOf(opening, this.account.locate(opening.tree).title);
+      const shown = openingOf(opening, this.account.locate(opening.tree).title, told.get(opening.node));
       return [opening.node, opening.tree === id ? shown.inItsOwnTree() : shown];
     }));
     const owners = new Set(new LegendRead(tree).result().owners.map((owner) => owner.id));

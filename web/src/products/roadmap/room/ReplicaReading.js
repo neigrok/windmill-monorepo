@@ -85,6 +85,9 @@ export class ReplicaReading {
     this.told = null;
     this.landingFailed = false;
     this.holdings = new Map();
+    // What the server's read of the owner's progress said, as a reader's room opened, each subtree its roadmap's steps
+    // own has come to, by step (§7): the device holds none of the owner's marks of them.
+    this.subtrees = new Map();
     this.last = null;
     this.stopped = new AbortController();
     this.closed = false;
@@ -98,8 +101,8 @@ export class ReplicaReading {
   // The roadmap as the device holds it once it can be shown, and null where it cannot be, which the room says with its
   // load error and the reading tells (`roadmap_load`): the engine could not open or did not stand within the bound, the
   // person may read no such roadmap here, or no answer came within the bound. A roadmap someone else owns shows its
-  // owner's marks, as the server reads them. The roadmap's scope is the reading's to drop from the moment it asks for it,
-  // so a room that leaves while the engine takes the subscription leaves it unfollowed.
+  // owner's marks and how far each of its subtrees is, as the server reads them. The roadmap's scope is the reading's to
+  // drop from the moment it asks for it, so a room that leaves while the engine takes the subscription leaves it unfollowed.
   async read({ signal }) {
     const opened = await standingEngine(this.session, signal, this.timers);
     if (signal.aborted) return null;
@@ -123,9 +126,10 @@ export class ReplicaReading {
     if (roadmap.state !== 'open') return this.unshown('unanswered');
     this.opened = roadmap;
     this.openWrites(roadmap.mine);
-    const seed = roadmap.seed;
-    const overlay = roadmap.mine ? roadmap.marks : await this.repository.loadProgress(seed, { signal: AbortSignal.timeout(FIRST_COPY_MS) });
-    return { seed, overlay, workspace: roadmap.mine ? roadmap.workspace : null, guides: roadmap.guides };
+    if (roadmap.mine) return { seed: roadmap.seed, overlay: roadmap.marks, workspace: roadmap.workspace, guides: roadmap.guides };
+    const { subtrees, ...overlay } = await this.repository.loadProgress(roadmap.seed, { signal: AbortSignal.timeout(FIRST_COPY_MS) });
+    this.subtrees = subtrees;
+    return { seed: roadmap.seedOf(this.treeId, subtrees), overlay, workspace: null, guides: roadmap.guides };
   }
 
   // Why the room's roadmap cannot be shown (`UNSHOWN`), told as the reading gives up on it, once a visit.
@@ -149,7 +153,7 @@ export class ReplicaReading {
       own = own && roadmap.state !== 'missing' && roadmap.mine;
       if (roadmap === shown || roadmap.state !== 'open') return;
       shown = roadmap;
-      onTree(roadmap.seed);
+      onTree(roadmap.seedOf(this.treeId, this.subtrees));
       if (roadmap.mine) {
         onProgress(roadmap.marks);
         onWorkspace(roadmap.workspace);
