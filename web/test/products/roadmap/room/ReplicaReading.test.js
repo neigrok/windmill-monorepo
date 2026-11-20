@@ -547,3 +547,45 @@ test('the tree picker reads an address from the device’s copy, its own subscri
     a.close();
   }
 });
+
+test('a reader’s room whose reads of the owner’s marks and of the activity fail opens on the steps’ seeds with no feed, and each failure reports once a visit under a server tree’s name', async (t) => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+    await a.sync();
+    // A stranger's browser: no roadmap of theirs in the list, so the roadmap is someone else's, read with its owner's marks.
+    const nothing = { drawn: [], stored: [], pending: [], outbox: { held: 0, ready: 0, sent: 0, acked: 0 }, loaded: true, firstPullComplete: true };
+    const engine = Object.create(a.engine, { observe: { value: (scope) => {
+      const hold = a.engine.observe(scope);
+      if (scope !== RoadmapScopes.account) return hold;
+      return { subscribe: (listener) => hold.subscribe(listener), getSnapshot: () => nothing, release: () => hold.release() };
+    } } });
+    const snapshot = { engine, ready: true, online: true, error: false };
+    const asked = [];
+    t.mock.method(globalThis, 'fetch', async (url) => {
+      asked.push(String(url).split('/').at(-1));
+      return { ok: false, status: 503, json: async () => ({ code: 'unavailable' }) };
+    });
+    const reports = [];
+    const reported = new Set();
+    const overlays = [];
+    const feeds = [];
+    for (const visit of ['opens', 'a sign-in reads it again']) {
+      const reading = new ReplicaReading({ treeId: tree, timers: a.env.timers, reported, report: (operation, error) => reports.push([visit, operation, error ?? null]),
+        session: { getSnapshot: () => snapshot, subscribe: () => () => {} } });
+      overlays.push((await reading.read({ signal: new AbortController().signal })).overlay);
+      reading.follow({ onTree: () => {}, onProgress: () => {}, onWorkspace: () => {}, onGuides: () => {}, onLanding: () => {}, onActivity: (events) => feeds.push(events) });
+      await until(() => asked.length === overlays.length * 2);
+      reading.close();
+    }
+    const seeds = { completed: new Set(), completedAt: {}, server: false };
+    const activity = 'activity?since=0&limit=200';
+    assert.deepEqual({ overlays, reports, asked, feeds }, {
+      overlays: [seeds, seeds], reports: [['opens', 'roadmap-progress-load', null], ['opens', 'roadmap-activity-load', null]],
+      asked: ['progress', activity, 'progress', activity], feeds: [],
+    });
+  } finally {
+    a.close();
+  }
+});

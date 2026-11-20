@@ -7,14 +7,16 @@ import { API_BASE } from '../../../shell/apiBase.js';
 import { BoundaryFailure, reportInvalidProgressMark, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
 
 export class HttpTreeRepository {
-  // An owner naming `operation` reports every read under it; a tree this repository did not read came off this device, and its reads report nothing.
-  constructor({ baseUrl = API_BASE, treeId, operation = null, reportFailure = reportRoadmapFailure } = {}) {
+  // An owner naming `operation` reports every read under it. A tree this repository did not read came off this device, and
+  // its reads report nothing, but where the server keeps it (`served`: a room on the device's copy, whose marks of someone
+  // else's roadmap and whose activity the server alone holds): its reads report as a read tree's do.
+  constructor({ baseUrl = API_BASE, treeId, operation = null, served = false, reportFailure = reportRoadmapFailure } = {}) {
     if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;
     this.treeId = treeId;
     this.operation = operation;
     this.reportFailure = reportFailure;
-    this.treeRead = false;
+    this.treeRead = served;
   }
 
   // One read's parsed answer, null when a 2xx is not JSON; anything else throws, reporting `operation` for a server failure or a loss someone was waiting on.

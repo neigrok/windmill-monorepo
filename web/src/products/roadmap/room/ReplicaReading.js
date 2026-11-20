@@ -59,10 +59,16 @@ export function standingEngine(session, signal, timers = globalThis) {
 
 export class ReplicaReading {
   // `room` holds the handles the room's writes reach for; `say` shows the room's toast; `toldRef` is the visit's note that
-  // it has told why its roadmap cannot be shown, which every reading a sign-in or Try again runs in it shares. A reading of
-  // no roadmap (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
+  // it has told why its roadmap cannot be shown, and `reported` the static names of the server's reads of the roadmap that
+  // failed and reported in the visit, which every reading a sign-in or Try again runs in it shares, so each reports once a
+  // visit. A reading of no roadmap (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
   constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure, track = beacon,
-    toldRef = { current: false }, repository = treeId === null ? null : new HttpTreeRepository({ treeId }) }) {
+    toldRef = { current: false }, reported = new Set(), repository = treeId === null ? null : new HttpTreeRepository({ treeId, served: true,
+      reportFailure: (operation, ...details) => {
+        if (reported.has(operation)) return;
+        reported.add(operation);
+        report(operation, ...details);
+      } }) }) {
     this.treeId = treeId;
     this.scope = treeId === null ? null : RoadmapScopes.tree(treeId);
     this.room = room;
@@ -109,8 +115,18 @@ export class ReplicaReading {
     this.opened = roadmap;
     this.openWrites(roadmap.mine);
     const seed = roadmap.seed;
-    const overlay = roadmap.mine ? roadmap.marks : await this.repository.loadProgress(seed, { signal: AbortSignal.timeout(FIRST_COPY_MS) });
+    const overlay = roadmap.mine ? roadmap.marks : await this.ownerMarks(seed);
     return { seed, overlay, workspace: roadmap.mine ? roadmap.workspace : null, guides: roadmap.guides };
+  }
+
+  // The owner's marks of a roadmap someone else owns, as the server reads them (`GET /v1/trees/{id}/progress`, §7), or the
+  // steps' seeds where that read fails: the device holds none of them. The repository reports the failure, once a visit.
+  async ownerMarks(seed) {
+    try {
+      return await this.repository.loadProgress(seed, { signal: AbortSignal.timeout(FIRST_COPY_MS) });
+    } catch {
+      return { completed: new Set(seed.nodes.filter((step) => step.status === 'complete').map((step) => step.id)), completedAt: {}, server: false };
+    }
   }
 
   // What an address comes to for the person, for the tree picker, read from the copy as the room reads its roadmap, where

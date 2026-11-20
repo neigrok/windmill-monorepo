@@ -43,6 +43,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   const knownRef = useRef(new Map()); // `<step>><tree>` → what the picker knew of a tree chosen here, until the server's read
   const readingRef = useRef(null);
   const loadToldRef = useRef(false); // the visit has told why its roadmap cannot be shown (`roadmap_load`), whatever readings it runs
+  const [reported] = useState(() => new Set()); // the server's reads of the roadmap that failed and reported this visit
   const latest = useRef(null);
   latest.current = { structure, onRemoteProgress, onLanding };
   const { layoutRef } = structure;
@@ -63,7 +64,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
     knownRef.current = new Map();
     framing.firstFrameRef.current = null;
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
-    const reading = readsReplica ? new ReplicaReading({ treeId, room, say: showToast, toldRef: loadToldRef })
+    const reading = readsReplica ? new ReplicaReading({ treeId, room, say: showToast, toldRef: loadToldRef, reported })
       : new LatticeReading({ treeId, demo, shared, demotion, known: knownRef, room });
     readingRef.current = reading;
     replicaRef.current = readsReplica ? reading : null;

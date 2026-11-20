@@ -247,7 +247,9 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   row names the account. What Keep holds for the next sign-in, unsent work, kept notices and the carry-over's ledger, the
   engine keeps; Discard takes the ledger with its replica.
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
-  marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, and the
+  marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, the failure
+  reported once a visit (`roadmap-progress-load`, through a repository that knows the server keeps the roadmap, `served`,
+  so the room's activity read reports its failures once a visit too, `roadmap-activity-load`), and the
   steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it. A link to a readable
   roadmap opens it this way signed in or not (the anon replica pulls the readable trees it opens), its tree scope and
   each roadmap's above it subscribed as the room opens and dropped as it leaves; a subtree's door is a new room, so the
