@@ -7,10 +7,14 @@ underscores because `/v1/events` accepts snake_case names. Each engine instance 
 injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
-The beacon keeps up to 200 newest queued events in memory while the browser is offline and flushes
-them on reconnect in batches of at most 50. It adds no content or properties and stores no queue on
-disk, keeping best-effort delivery independent of browser storage and leaving no behavioral history on a
-possibly shared device. Reloading loses that queue; failed attempted sends remain fire-and-forget.
+The beacon sends what it has queued in batches of at most 50: as keepalive requests once 20 events wait,
+five seconds after the first and on reconnect, and through `navigator.sendBeacon` when the page hides (a
+keepalive request where the browser refuses the beacon). Both outlive the page, so a batch already sent
+still lands when the page navigates, reloads or closes. While the browser is offline it keeps up to 200
+newest queued events in memory and sends them on reconnect. It adds no content or properties and stores no
+queue on disk, keeping best-effort delivery independent of browser storage and leaving no behavioral
+history on a possibly shared device. Reloading or closing the page while offline loses that queue; failed
+attempted sends remain fire-and-forget.
 
 Only a deployed build reports as `environment: production`. `scripts/test.mjs` drops the build's DSN, so a test run never reaches
 Sentry, though a branch that predates that rule can still report from CI as `development`: read production's failures under

@@ -1,5 +1,6 @@
-// First-party funnel telemetry. track() queues; batches flush to POST /v1/events when the queue
-// fills, on a short debounce, and on page hide via sendBeacon. Offline events stay in the bounded
+// First-party funnel telemetry. track() queues; batches flush to POST /v1/events when the queue fills,
+// on a short debounce and on reconnect as keepalive requests, and on page hide via sendBeacon, so a batch
+// already sent outlives a page that navigates, reloads or closes. Offline events stay in the bounded
 // memory queue until reconnect; attempted sends are fire-and-forget and never affect the product.
 
 import { API_BASE } from '../shell/apiBase.js';
@@ -116,7 +117,7 @@ function send(events, transport) {
     fetch(`${API_BASE}/v1/events`, {
       method: 'POST',
       credentials: 'include',
-      keepalive: transport === 'beacon',
+      keepalive: true, // a sent batch has left the queue, so its request outlives the page
       headers: { 'Content-Type': 'application/json' },
       body,
     }).catch(() => {});
