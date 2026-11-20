@@ -260,7 +260,7 @@ export function RoadmapLanding() {
   const { user, status } = useAuth();
   const signedIn = status === 'signed-in';
   const [cached] = useState(() => readTreesCache(user?.email));
-  const listed = useYourRoadmaps(signedIn);
+  const { list: listed, waiting } = useYourRoadmaps(signedIn);
   const landed = useRef(false);
 
   useEffect(() => {
@@ -278,8 +278,9 @@ export function RoadmapLanding() {
   const trees = listed ?? (signedIn ? cached : null);
   const newest = trees?.length ? trees[0] : null;
 
-  // Signed in with the list still out: the tree count is unknown, so the chrome waits.
-  const resolving = signedIn && trees === null;
+  // With the list still out and its answer due, signed in or, where the device's copy holds the browser's own, signed out:
+  // the tree count is unknown, so the chrome waits.
+  const resolving = trees === null && waiting;
 
   const seat = { label: t('roadmap.landing.myTrees'), count: trees?.length ?? null, note: t('roadmap.landing.seatNote') };
 

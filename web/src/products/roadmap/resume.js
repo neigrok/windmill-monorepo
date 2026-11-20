@@ -34,30 +34,34 @@ export function resumeSummary({ name, tended }, progress) {
 
 // The person's roadmaps, newest first, from where this build's room reads them: where it reads the device's copy
 // (replicaRoom.js), the copy's list once the device can say what each roadmap is, signed in or out, and again as it
-// changes; elsewhere the server's list (`GET /v1/trees`), read once while `signedIn`. Null until the first answer, and
-// empty where none could be read. The copy's reading loads with its first use, so neither surface carries the room's
-// modules where the switch is off.
+// changes; elsewhere the server's list (`GET /v1/trees`), read once while `signedIn`. `list` is null until the first
+// answer and while the copy's list is unread, so a surface keeps what it held; `waiting` says that answer is still due:
+// today's list while it is asked, and the copy's until it is listed, or the copy did not open within the bound, or could
+// not open at all. A copy that opens after its bound is listed then. The copy's reading loads with its first use, so
+// neither surface carries the room's modules where the switch is off.
 export function useYourRoadmaps(signedIn) {
-  const [roadmaps, setRoadmaps] = useState(null);
+  const [list, setList] = useState(null);
+  const [unread, setUnread] = useState(false);
   useEffect(() => {
     if (ROOM_READS_REPLICA) {
       const wanted = new AbortController();
       let reading = null;
+      setUnread(false);
       import('./room/ReplicaReading.js').then(({ ReplicaReading }) => {
-        if (wanted.signal.aborted) return true;
+        if (wanted.signal.aborted) return undefined;
         reading = new ReplicaReading({ treeId: null });
-        return reading.followRoadmaps({ signal: wanted.signal, onList: setRoadmaps });
-      }, () => false).then((stood) => { if (!stood && !wanted.signal.aborted) setRoadmaps([]); });
+        return reading.followRoadmaps({ signal: wanted.signal, onList: setList, onUnread: () => setUnread(true) });
+      }).catch(() => { if (!wanted.signal.aborted) setUnread(true); });
       return () => {
         wanted.abort();
         reading?.close();
       };
     }
-    setRoadmaps(null);
+    setList(null);
     if (!signedIn) return undefined;
     let wanted = true;
-    listTrees().then((rows) => { if (wanted) setRoadmaps(rows); });
+    listTrees().then((rows) => { if (wanted) setList(rows); });
     return () => { wanted = false; };
   }, [signedIn]);
-  return roadmaps;
+  return { list, waiting: list === null && !unread && (ROOM_READS_REPLICA || signedIn) };
 }

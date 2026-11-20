@@ -585,7 +585,7 @@ test('a reader who goes into a subtree waits for the roadmap above it to be subs
   }
 });
 
-test('the home card and the landing read the person’s roadmaps once the device can say what each is, newest first, and again as they change; with no copy they list nothing and tell nothing', async () => {
+test('the home card and the landing read the person’s roadmaps once the device can say what each is, newest first, and again as they change; with no copy the list is unread, and they tell nothing', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
     const sail = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
@@ -598,7 +598,7 @@ test('the home card and the landing read the person’s roadmaps once the device
       session: { getSnapshot: () => snapshot, subscribe: () => () => {} } });
     const lists = [];
     const shown = ({ id, title, done, total, origin }) => ({ id, title, done, total, origin });
-    assert.equal(await reading.followRoadmaps({ signal: new AbortController().signal, onList: (list) => lists.push(list.map(shown)) }), true);
+    await reading.followRoadmaps({ signal: new AbortController().signal, onList: (list) => lists.push(list.map(shown)), onUnread: () => assert.fail('the copy stood') });
     assert.deepEqual(lists, [[{ id: sail.tree, title: 'Learn to sail', done: 1, total: 1, origin: 'server' }]]);
 
     await a.advance(1000);
@@ -612,9 +612,37 @@ test('the home card and the landing read the person’s roadmaps once the device
 
     const unkept = new ReplicaReading({ treeId: null, timers: a.env.timers, track: (name, props) => told.push([name, props]),
       session: { getSnapshot: () => ({ engine: null, ready: false, online: true, error: true }), subscribe: () => () => {} } });
-    assert.deepEqual({ stood: await unkept.followRoadmaps({ signal: new AbortController().signal, onList: () => assert.fail('nothing is listed') }), told },
-      { stood: false, told: [] });
+    const heard = [];
+    await unkept.followRoadmaps({ signal: new AbortController().signal, onList: () => assert.fail('nothing is listed'), onUnread: () => heard.push('unread') });
+    assert.deepEqual({ heard, told }, { heard: ['unread'], told: [] });
     unkept.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('the home card and the landing wait on a copy that opens late: the list is unread at the bound, and listed once the copy stands', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const sail = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(sail.tree), RoadmapScopes.overlay(sail.tree)]) a.observe(scope);
+    await a.sync();
+    let snapshot = { engine: null, ready: false, online: true, error: false };
+    const listeners = new Set();
+    const session = { getSnapshot: () => snapshot, subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); } };
+    const reading = new ReplicaReading({ treeId: null, timers: a.env.timers, track: () => assert.fail('a list tells nothing'), session });
+    const heard = [];
+    reading.followRoadmaps({ signal: new AbortController().signal, onList: (list) => heard.push(list.map(({ title }) => title)), onUnread: () => heard.push('unread') });
+    a.env.timers.advance(FIRST_COPY_MS - 1);
+    await until(() => true);
+    const beforeTheBound = [...heard];
+    a.env.timers.advance(1);
+    await until(() => true);
+    snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    for (const listener of listeners) listener();
+    await until(() => heard.length === 2).catch(() => {});
+    assert.deepEqual({ beforeTheBound, heard }, { beforeTheBound: [], heard: ['unread', ['Learn to sail']] });
+    reading.close();
   } finally {
     a.close();
   }

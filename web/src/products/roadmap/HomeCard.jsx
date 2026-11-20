@@ -26,7 +26,7 @@ function cachedTrees() {
 export function HomeCard() {
   const { status } = useAuth();
   const [cached] = useState(cachedTrees);
-  const trees = useYourRoadmaps(status === 'signed-in') ?? cached;
+  const trees = useYourRoadmaps(status === 'signed-in').list ?? cached;
 
   const newest = trees?.length ? trees[0] : null;
   const resume = newest ? resumeOf(newest) : null;

@@ -35,8 +35,9 @@ export const UNSHOWN = Object.freeze(['unkept', 'unopened', 'missing', 'unanswer
 
 // The engine the shell opens for this document, once it stands: `{ engine }`, or `{ unshown }` saying why there is none to
 // read or write through: `unkept` where it could not open, as in a browser that keeps nothing (no replica held in memory
-// stands in for one yet, E-5), and `unopened` where it did not stand within the bound or the caller stopped waiting.
-export function standingEngine(session, signal, timers = globalThis) {
+// stands in for one yet, E-5), and `unopened` where it did not stand within the bound or the caller stopped waiting. A
+// `bound` of null waits for as long as the caller does.
+export function standingEngine(session, signal, timers = globalThis, bound = FIRST_COPY_MS) {
   return new Promise((resolve) => {
     const check = () => {
       const { engine, ready, error } = session.getSnapshot();
@@ -50,7 +51,7 @@ export function standingEngine(session, signal, timers = globalThis) {
       resolve(answer);
     };
     const abort = () => finish({ unshown: 'unopened' });
-    const timer = timers.setTimeout(abort, FIRST_COPY_MS);
+    const timer = bound === null ? null : timers.setTimeout(abort, bound);
     const stop = session.subscribe(check);
     signal.addEventListener('abort', abort, { once: true });
     check();
@@ -274,12 +275,21 @@ export class ReplicaReading {
 
   // The person's roadmaps as the switcher lists them, for a surface that offers the newest back (the home card, the
   // landing; a reading of no roadmap): once the device can say what each is, as `readEveryRoadmap` waits, and again after
-  // each change, the account's or, signed out, the browser's own. False where the engine did not stand within the bound.
-  async followRoadmaps({ signal, onList }) {
-    if (await this.readEveryRoadmap({ signal }) === null || signal.aborted) return false;
+  // each change, the account's or, signed out, the browser's own. Where the copy does not stand within the bound the list
+  // is unread (`onUnread`), and the reading lists it once the copy stands, however late; a copy that could not open
+  // leaves it unread.
+  async followRoadmaps({ signal, onList, onUnread }) {
+    const first = await standingEngine(this.session, signal, this.timers);
+    if (signal.aborted || this.closed) return;
+    if (!first.engine) onUnread();
+    const { engine } = first.unshown === 'unopened' ? await standingEngine(this.session, signal, this.timers, null) : first;
+    if (!engine || signal.aborted || this.closed) return;
+    this.engine = engine;
+    this.unwatch = engine.observeEngine(this.changed);
+    await this.whenRead(signal, (roadmaps) => roadmaps.everyRoadmapRead);
+    if (signal.aborted || this.closed) return;
     this.listeners.add(() => onList(this.list()));
     onList(this.list());
-    return true;
   }
 
   // The account's roadmaps as the switcher lists them, where the replica keeps them; null before the engine stands, when

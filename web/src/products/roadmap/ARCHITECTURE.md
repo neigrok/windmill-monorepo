@@ -284,8 +284,11 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   of no roadmap) once the device can say what each roadmap is, and again as it changes: the account's signed in and the
   browser's own signed out, where today's surfaces read `GET /v1/trees` signed in alone. It loads the reading with its
   first use, so neither surface carries the room's modules where the switch is off; the landing's cache of the list
-  still stands for the first paint of a person signed in. The demo's coach reads the copy's list to know whether a person
-  signed in owns a roadmap. A list the copy cannot read is empty. Its rows carry no `dominantKind`, so each surface draws
+  still stands for the first paint of a person signed in. A list the copy has not read is unread, not empty: the home
+  card and the landing keep what they held, so the cache stands and nothing overwrites it, and the landing's chrome
+  waits on the copy as it waits on today's list, signed out too, until the copy lists the roadmaps, does not open within
+  `FIRST_COPY_MS`, or cannot open at all; a copy that opens after its bound is listed then. The demo's coach reads the
+  copy's list to know whether a person signed in owns a roadmap. Its rows carry no `dominantKind`, so each surface draws
   a roadmap in its default hue (Open work).
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
   `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session

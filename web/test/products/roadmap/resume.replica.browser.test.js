@@ -40,30 +40,42 @@ const boot = crypto.randomUUID();
 const transport = new HttpTransport({ schema: 13, base: '', reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot }),
   socket: () => ({ readyState: 0, send() {}, close() { this.readyState = 3; } }),
   fetch: (url, options) => fetch(url, { ...options, headers: { ...options.headers, 'x-fixture-account': account ?? '' } }) });
-const engine = await syncSession.open({ registry: new Registry(${registryJson}), transport, appVersion: '1',
-  credentials: { clear: async () => {} }, telemetry: { event() {}, failure() {} } });
-if (account && engine.device.activeReplica.meta.state !== 'bound') await engine.signIn(account);
-syncSession.publish({ signedIn: Boolean(account) });
-// The person's roadmaps on this device's copy, as the room makes them: the account's sent and taken by the server, the
-// browser's own signed out kept unsent.
-for (const [tree, title, steps, done] of JSON.parse(params.get('plant') ?? '[]')) {
-  await engine.commit('self/roadmap', [{ op: 'create', t: 'tree', id: tree }]);
-  await engine.commit('tree/' + tree, [{ op: 'write', t: 'meta', id: 'meta', f: { title } },
-    ...steps.map((label, index) => ({ op: 'create', t: 'node', id: 's' + index, f: { label, ord: 'a' + index } }))], { atomic: true });
-  if (done) await engine.commit('self/overlay/' + tree, [{ op: 'write', t: 'progress', id: 's0', f: { mark: { status: 'complete', outOfOrder: false } } }]);
-  for (let turn = 0; account && (engine.device.activeReplica.outbox.some((each) => each.state !== 'acked') || !engine.device.activeReplica.confirmedRows('tree/' + tree).length); turn++) {
-    if (turn === 200) throw new Error('the roadmap never settled');
-    await new Promise((settle) => setTimeout(settle, 50));
+// The device's copy opened, with the person's roadmaps on it as the room makes them: the account's sent and taken by the
+// server, the browser's own signed out kept unsent.
+async function openCopy() {
+  const engine = await syncSession.open({ registry: new Registry(${registryJson}), transport, appVersion: '1',
+    credentials: { clear: async () => {} }, telemetry: { event() {}, failure() {} } });
+  if (account && engine.device.activeReplica.meta.state !== 'bound') await engine.signIn(account);
+  syncSession.publish({ signedIn: Boolean(account) });
+  for (const [tree, title, steps, done] of JSON.parse(params.get('plant') ?? '[]')) {
+    await engine.commit('self/roadmap', [{ op: 'create', t: 'tree', id: tree }]);
+    await engine.commit('tree/' + tree, [{ op: 'write', t: 'meta', id: 'meta', f: { title } },
+      ...steps.map((label, index) => ({ op: 'create', t: 'node', id: 's' + index, f: { label, ord: 'a' + index } }))], { atomic: true });
+    if (done) await engine.commit('self/overlay/' + tree, [{ op: 'write', t: 'progress', id: 's0', f: { mark: { status: 'complete', outOfOrder: false } } }]);
+    for (let turn = 0; account && (engine.device.activeReplica.outbox.some((each) => each.state !== 'acked') || !engine.device.activeReplica.confirmedRows('tree/' + tree).length); turn++) {
+      if (turn === 200) throw new Error('the roadmap never settled');
+      await new Promise((settle) => setTimeout(settle, 50));
+    }
+    await new Promise((settle) => setTimeout(settle, 20));
   }
-  await new Promise((settle) => setTimeout(settle, 20));
 }
-createRoot(document.getElementById('root')).render(React.createElement(React.Fragment, null,
+const draw = () => createRoot(document.getElementById('root')).render(React.createElement(React.Fragment, null,
   React.createElement(HomeCard), React.createElement(RoadmapLanding)));
+// A page that draws the two surfaces before its copy opens, \`late\` ms after, finishes loading first, so the surfaces'
+// own reading of the copy loads while it waits.
+const late = Number(params.get('late') ?? 0);
+if (late) {
+  draw();
+  setTimeout(openCopy, late);
+} else {
+  await openCopy();
+  draw();
+}
 `;
 
 const auth = `
 const account = new URLSearchParams(location.search).get('account');
-export const useAuth = () => ({ status: account ? 'signed-in' : 'ghost', user: account ? { name: 'Ada' } : null,
+export const useAuth = () => ({ status: account ? 'signed-in' : 'ghost', user: account ? { name: 'Ada', email: 'ada@example.com' } : null,
   account: account ? { id: account } : null, confirmed: true, lapsed: false, refresh: async () => null, signOut: async () => {} });
 `;
 
@@ -205,5 +217,60 @@ test('signed out, the device’s copy offers back the browser’s own roadmap wh
     copy: { home: ['Resume Learn to swim →', 'Learn to swim · 0/1 done'], landing: { offers: ['Resume Learn to swim', 'My trees'], line: 'Learn to swim · 0/1 done' }, failures: [] },
     today: { home: ['Start your tree →', first], landing: { offers: ['Start your tree', 'Try the live demo'], line: first }, failures: [] },
     refused: 0,
+  });
+});
+
+// A page whose copy opens `late` ms after it draws, past the bound the copy is first waited for: what the landing's chrome
+// offers while it waits, once the bound passes, and once the copy opens and lists `link`, with the landing's cache of the
+// person's list after the bound and at the end. `cached` is that cache as an earlier visit left it.
+async function lateCopy({ account = null, plant, cached = null, link, late = 13_000 }) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await context.addCookies([{ name: 'fixture', value: `${account ? 'signed-in' : 'ghost'}-moved`, url: origin }]);
+    if (cached) await context.addInitScript((rows) => { if (!localStorage.getItem('windmill:trees:ada@example.com')) localStorage.setItem('windmill:trees:ada@example.com', rows); }, JSON.stringify(cached));
+    const page = await context.newPage();
+    const failures = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    const cache = () => page.evaluate(() => JSON.parse(localStorage.getItem('windmill:trees:ada@example.com') ?? 'null')?.map(({ title }) => title) ?? null);
+    const params = new URLSearchParams({ replica: 'on', late: String(late), plant: JSON.stringify(plant) });
+    if (account) params.set('account', account);
+    await page.goto(`${origin}/host?${params}`);
+    const hero = page.locator('section', { has: page.locator('h1') }).first();
+    const cluster = page.locator('.landing-cluster');
+    const offers = async () => ({ chrome: await cluster.getByRole('button').allInnerTexts(), hero: await hero.getByRole('button').allInnerTexts() });
+    await hero.getByRole('button').first().waitFor({ timeout: 10_000 });
+    const waiting = await offers();
+    // The bound (`FIRST_COPY_MS`, ten seconds from the reading's start) has passed and the copy has not opened yet.
+    await page.waitForFunction(() => performance.now() >= 11_000, null, { timeout: 15_000 });
+    const atTheBound = { ...await offers(), cache: await cache(), early: await page.evaluate((at) => performance.now() < at, late) };
+    await hero.getByRole('button', { name: link, exact: true }).waitFor({ timeout: late + 10_000 }).catch(() => {});
+    await page.waitForFunction((name) => !name || JSON.parse(localStorage.getItem('windmill:trees:ada@example.com') ?? '[]')[0]?.title === name,
+      account ? link.replace('Resume ', '') : null, { timeout: 5_000 }).catch(() => {});
+    return { waiting, atTheBound, opened: { ...await offers(), cache: await cache() }, failures };
+  } finally {
+    await context.close();
+  }
+}
+
+test('signed out, a copy that opens after the bound: the landing’s chrome waits on it as it waits on a person signed in, then offers a first roadmap, and the browser’s own once the copy opens', async () => {
+  state = ServerState.empty({ epoch: 'ep-resume-late', accounts: {} });
+  const seen = await lateCopy({ link: 'Resume Learn to swim', plant: [[SAIL, 'Learn to swim', ['Float on your back'], false]] });
+  assert.deepEqual(seen, {
+    waiting: { chrome: [], hero: ['Start your tree', 'Try the live demo'] },
+    atTheBound: { chrome: ['Sign in', ''], hero: ['Start your tree', 'Try the live demo'], cache: null, early: true },
+    opened: { chrome: ['Sign in', ''], hero: ['Resume Learn to swim', 'My trees'], cache: null },
+    failures: [],
+  });
+});
+
+test('signed in, a copy that opens after the bound leaves the landing’s cache of the list as an earlier visit left it, and the landing offers it, until the copy lists the account’s roadmaps', async () => {
+  state = ServerState.empty({ epoch: 'ep-resume-late-account', accounts: { u_owner: { name: 'Owner' } } });
+  const seen = await lateCopy({ account: 'u_owner', link: 'Resume Learn to row', cached: [{ id: SAIL, title: 'Learn to sail', done: 1, total: 3, updatedAt: Date.now() }],
+    plant: [[SAIL, 'Learn to sail', ['Choose a course', 'Read the wind', 'Leave the dock'], true], [ROW, 'Learn to row', ['Grip the oars', 'Pull together'], false]] });
+  assert.deepEqual(seen, {
+    waiting: { chrome: ['My trees', 'A'], hero: ['Resume Learn to sail', 'My trees'] },
+    atTheBound: { chrome: ['My trees', 'A'], hero: ['Resume Learn to sail', 'My trees'], cache: ['Learn to sail'], early: true },
+    opened: { chrome: ['My trees', 'A'], hero: ['Resume Learn to row', 'My trees'], cache: ['Learn to row', 'Learn to sail'] },
+    failures: [],
   });
 });
