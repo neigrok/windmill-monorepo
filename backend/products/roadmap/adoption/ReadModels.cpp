@@ -125,15 +125,30 @@ Json::Value wholeTree(ToolHost& host, Json::Value arguments, const UserId& calle
   return answer;
 }
 
-// MCP's steps by id: the engine's tools list a roadmap's steps in its order, the rooms' by id.
-Json::Value stepsById(Json::Value answer) {
-  const Json::Value& value = answer["value"];
-  if (!value.isObject() || !value["tree"].isObject() || !value["tree"]["nodes"].isArray()) return answer;
-  Json::Value& nodes = answer["value"]["tree"]["nodes"];
-  std::vector<Json::Value> sorted(nodes.begin(), nodes.end());
-  std::sort(sorted.begin(), sorted.end(), [](const Json::Value& a, const Json::Value& b) { return a["id"].asString() < b["id"].asString(); });
-  nodes = Json::Value(Json::arrayValue);
-  for (Json::Value& node : sorted) nodes.append(std::move(node));
+// A list in the order of its members' text, so two lists compare by the members they hold and how often.
+Json::Value inTextOrder(const Json::Value& list) {
+  std::vector<Json::Value> members(list.begin(), list.end());
+  std::sort(members.begin(), members.end(), [](const Json::Value& a, const Json::Value& b) { return dump(a) < dump(b); });
+  Json::Value out(Json::arrayValue);
+  for (Json::Value& member : members) out.append(std::move(member));
+  return out;
+}
+
+// What the audit compares of an answer. MCP get_tree holds three lists whose order says nothing: its steps, which the
+// engine's tools list in the roadmap's order and the rooms' by id, its edges, and each step's prerequisites. Each is
+// compared as the members it holds, so a member one side holds and the other lacks still differs. Every other list keeps
+// its order.
+Json::Value comparable(const std::string& question, Json::Value answer) {
+  if (question != "mcp.getTree" || !answer.isObject() || !answer.isMember("value") || !answer["value"].isObject()) return answer;
+  Json::Value& value = answer["value"];
+  if (value.isMember("edges") && value["edges"].isArray()) value["edges"] = inTextOrder(value["edges"]);
+  if (!value.isMember("tree") || !value["tree"].isObject() || !value["tree"].isMember("nodes") || !value["tree"]["nodes"].isArray())
+    return answer;
+  Json::Value& nodes = value["tree"]["nodes"];
+  for (Json::Value& node : nodes)
+    if (node.isObject() && node.isMember("prerequisites") && node["prerequisites"].isArray())
+      node["prerequisites"] = inTextOrder(node["prerequisites"]);
+  nodes = inTextOrder(nodes);
   return answer;
 }
 
@@ -193,7 +208,7 @@ std::vector<Json::Value> answersOf(ReadModelSide& side, const Survey& survey) {
     tree["kindFields"] = list({"id", "hue", "label", "description"});
     tree["limit"] = kPageLimit;
     answers.ask("mcp.getTree", id, readable,
-                [&](ReadModelSide& on, std::optional<std::int64_t>& seq) { return stepsById(wholeTree(on.mcp, tree, owner, seq)); });
+                [&](ReadModelSide& on, std::optional<std::int64_t>& seq) { return wholeTree(on.mcp, tree, owner, seq); });
     Json::Value progress(Json::objectValue);
     progress["treeId"] = id;
     progress["fields"] = list({"completed", "cleared", "outOfOrder"});
@@ -239,7 +254,7 @@ StageReport compareAnswers(const std::vector<Json::Value>& old, const std::vecto
     if (failed(line["answer"])) report.counts.add("newFailed." + question);
     if (was.isMember("seq") && line.isMember("seq") && line["seq"].asInt64() > was["seq"].asInt64())
       report.counts.add("mcp.seqContinuedAboveTheOld");
-    const bool held = dump(was["answer"]) == dump(line["answer"]);
+    const bool held = dump(comparable(question, was["answer"])) == dump(comparable(question, line["answer"]));
     const bool readable = was["readableToday"].asBool();
     report.counts.add((!readable ? "unreadableToday." : held ? "same." : "differ.") + question);
     if (held) continue;

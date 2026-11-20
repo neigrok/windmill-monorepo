@@ -37,13 +37,15 @@ struct ReadModelSide {
 // answer's seq. An answer that threw is the failure's type alone.
 // Four parts of an answer are left out, each a change made by design: an MCP answer's seq, which continues above the old
 // one (kept beside the answer, and counted where it did); a step's order key, which the move may give (the documents
-// compare the order of the steps; MCP's are kept by id, the engine's tools listing them in their order); a mark's stamp,
-// which the move gives where roadmap held none (its time is kept); and what each subtree came to, which the engine's
-// progress answer adds.
+// compare the order of the steps); a mark's stamp, which the move gives where roadmap held none (its time is kept); and
+// what each subtree came to, which the engine's progress answer adds.
 std::vector<Json::Value> answersOf(ReadModelSide& side, const Survey& survey);
 
-// The new server's answers against the old one's, question by question. A question about a roadmap the old server cannot
-// read today (Surveyed::readableToday), or an owner's account-wide question where it holds one, is counted apart: the new
-// answer is not held to one the old server never gave.
+// The new server's answers against the old one's, question by question. MCP get_tree's steps, its edges and each step's
+// prerequisites are compared without their order, which says nothing in them: the engine's tools list a roadmap's steps
+// in its order and the rooms' by id, and each server lists a step's edges as it holds them. A member only one side holds
+// still differs. A question about a roadmap the old server cannot read today (Surveyed::readableToday), or an owner's
+// account-wide question where it holds one, is counted apart: the new answer is not held to one the old server never
+// gave.
 StageReport compareAnswers(const std::vector<Json::Value>& old, const std::vector<Json::Value>& now, const PrivateRecord& record);
 }
