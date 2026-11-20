@@ -223,7 +223,7 @@ test('signed out, the device’s copy offers back the browser’s own roadmap wh
 // A page whose copy opens `late` ms after it draws, past the bound the copy is first waited for: what the landing's chrome
 // offers while it waits, once the bound passes, and once the copy opens and lists `link`, with the landing's cache of the
 // person's list after the bound and at the end. `cached` is that cache as an earlier visit left it.
-async function lateCopy({ account = null, plant, cached = null, link, late = 13_000 }) {
+async function lateCopy({ account = null, plant, cached = null, link, late = 15_000 }) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   try {
     await context.addCookies([{ name: 'fixture', value: `${account ? 'signed-in' : 'ghost'}-moved`, url: origin }]);
@@ -240,8 +240,9 @@ async function lateCopy({ account = null, plant, cached = null, link, late = 13_
     const offers = async () => ({ chrome: await cluster.getByRole('button').allInnerTexts(), hero: await hero.getByRole('button').allInnerTexts() });
     await hero.getByRole('button').first().waitFor({ timeout: 10_000 });
     const waiting = await offers();
-    // The bound (`FIRST_COPY_MS`, ten seconds from the reading's start) has passed and the copy has not opened yet.
-    await page.waitForFunction(() => performance.now() >= 11_000, null, { timeout: 15_000 });
+    // The bound (`FIRST_COPY_MS`, ten seconds from the reading's start as the page loads) has passed and the copy has not
+    // opened yet.
+    await page.waitForFunction(() => performance.now() >= 12_500, null, { timeout: 15_000 });
     const atTheBound = { ...await offers(), cache: await cache(), early: await page.evaluate((at) => performance.now() < at, late) };
     await hero.getByRole('button', { name: link, exact: true }).waitFor({ timeout: late + 10_000 }).catch(() => {});
     await page.waitForFunction((name) => !name || JSON.parse(localStorage.getItem('windmill:trees:ada@example.com') ?? '[]')[0]?.title === name,

@@ -62,9 +62,9 @@ export class ReplicaReading {
   // `room` holds the handles the room's writes reach for; `say` shows the room's toast; `toldRef` is the visit's note that
   // it has told why its roadmap cannot be shown, and `reported` the static names of the server's reads of the roadmap that
   // failed and reported in the visit, which every reading a sign-in or Try again runs in it shares, so each reports once a
-  // visit. The server is asked of a roadmap only where it holds it (`served`, as `read` learns it), so each such read
-  // reports as a server tree's does. A reading of no roadmap (`treeId` null) reads the person's roadmaps alone, and asks
-  // the server nothing.
+  // visit. The reading asks the server about its roadmap only where the server holds it (`served`, as `read` learns it), so
+  // each such read reports as a server tree's does. A reading of no roadmap (`treeId` null) reads the person's roadmaps
+  // alone, and asks the server nothing.
   constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure, track = beacon,
     toldRef = { current: false }, reported = new Set(), repository = treeId === null ? null : new HttpTreeRepository({ treeId, served: true,
       reportFailure: (operation, ...details) => {

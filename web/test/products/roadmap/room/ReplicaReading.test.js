@@ -731,8 +731,9 @@ test('a reader’s room whose reads of the owner’s marks and of the activity f
 });
 
 test('a room asks the server for its roadmap’s activity only where the server holds the roadmap: the account’s own reports a lost read, and the browser’s own signed out is asked nothing', async (t) => {
+  const page = globalThis.document;
   globalThis.document = { visibilityState: 'visible' };
-  t.after(() => { delete globalThis.document; });
+  t.after(() => { globalThis.document = page; });
   const asked = [];
   t.mock.method(globalThis, 'fetch', async (url) => {
     asked.push(String(url).split('/').at(-1));
