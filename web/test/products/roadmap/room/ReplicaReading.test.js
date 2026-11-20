@@ -11,6 +11,7 @@ import { Complete, SetPointer } from '../../../../src/products/roadmap/domain/pr
 import { AddStepLink, AddSubtask } from '../../../../src/products/roadmap/domain/workspace.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { FIRST_COPY_MS, ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
+import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 
 const committed = (outcome) => {
   assert.equal(outcome.kind, 'committed', JSON.stringify(outcome));
@@ -199,6 +200,49 @@ test('a subtree stands on its step with how far it is, a pointer opens the roadm
     const hidden = new ReplicaReading({ treeId: subtree, timers: a.env.timers, track: (name, props) => told.push([name, props]),
       session: { getSnapshot: () => snapshot, subscribe: () => () => {} }, repository: { loadActivity: async () => [] } });
     assert.deepEqual({ read: await hidden.read({ signal: new AbortController().signal }), told }, { read: null, told: [['roadmap_load', { outcome: 'missing' }]] });
+  } finally {
+    a.close();
+  }
+});
+
+test('a reader’s step that owns a subtree stands on what the server says the subtree has come to, through each change the room follows; one it says nothing of stays unread', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('My year', { steps: [
+      { key: 'sail', label: 'Learn to sail' }, { key: 'bay', label: 'Cross the bay' }, { key: 'book', label: 'Write the book' },
+    ], links: [['sail', 'bay']] })));
+    const sail = committed(await a.runner.runAct(new CreateSubtree(tree, steps.sail))).subtree;
+    const bay = committed(await a.runner.runAct(new CreateSubtree(tree, steps.bay))).subtree;
+    const book = committed(await a.runner.runAct(new CreateSubtree(tree, steps.book))).subtree;
+    for (const id of [tree, sail, bay, book]) a.observe(RoadmapScopes.tree(id));
+    await a.sync();
+    // The engine as a stranger's browser sees it: no roadmap of theirs in the list, so the roadmap is someone else's.
+    const nothing = { drawn: [], stored: [], pending: [], outbox: { held: 0, ready: 0, sent: 0, acked: 0 }, loaded: true, firstPullComplete: true };
+    const engine = Object.create(a.engine, { observe: { value: (scope) => (scope === RoadmapScopes.account
+      ? { subscribe: () => () => {}, getSnapshot: () => nothing, release: () => {} } : a.engine.observe(scope)) } });
+    const snapshot = { engine, ready: true, online: true, error: false };
+    const subtrees = new Map([
+      [steps.sail, Opening.owned({ id: sail, done: 1, total: 2, state: 'open' })],
+      [steps.bay, Opening.owned({ id: bay, done: 0, total: 0, state: 'open' })],
+    ]);
+    const reading = new ReplicaReading({ treeId: tree, timers: a.env.timers, session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => ({ completed: new Set(), completedAt: {}, server: true, subtrees }), loadActivity: async () => [] } });
+    const read = await reading.read({ signal: new AbortController().signal });
+    const pills = (seed) => Object.fromEntries(seed.nodes.map(({ label, opening }) => [label, [opening.face, opening.done, opening.total]]));
+    assert.deepEqual({ pills: pills(read.seed), overlay: read.overlay, workspace: read.workspace }, {
+      pills: { 'Learn to sail': ['open', 1, 2], 'Cross the bay': ['empty', 0, 0], 'Write the book': ['unread', 0, 0] },
+      overlay: { completed: new Set(), completedAt: {}, server: true }, workspace: null,
+    });
+
+    const followed = [];
+    reading.follow({ onTree: (seed) => followed.push(pills(seed)), onProgress: () => assert.fail('a reader is shown the owner’s marks the server read'),
+      onWorkspace: () => {}, onGuides: () => {}, onLanding: () => {}, onActivity: () => {} });
+    committed(await a.runner.runAct(new ChangeStep(tree, steps.bay, { label: 'Cross the sound' })));
+    await a.sync();
+    await until(() => followed.length >= 1);
+    const renamed = { 'Learn to sail': ['open', 1, 2], 'Cross the sound': ['empty', 0, 0], 'Write the book': ['unread', 0, 0] };
+    assert.deepEqual(followed, followed.map(() => renamed), 'every picture the room follows keeps what the server said');
+    reading.close();
   } finally {
     a.close();
   }

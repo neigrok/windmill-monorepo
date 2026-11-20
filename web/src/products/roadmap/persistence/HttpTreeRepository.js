@@ -1,7 +1,7 @@
 // Tree reads over HTTP, per treeId. A bootstrap read only: a live SyncSession's private
 // lane owns the overlay.
 
-import { Openings, TreePlace } from '../model/Opening.js';
+import { Opening, Openings, TreePlace } from '../model/Opening.js';
 import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { BoundaryFailure, reportInvalidProgressMark, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
@@ -56,7 +56,9 @@ export class HttpTreeRepository {
     };
   }
 
-  // The owner's marks on a share, else the document's seeds. A server tree whose marks can't be read throws rather than open on a false count.
+  // The owner's marks on a share, else the document's seeds, and what the server says each subtree the steps own has come
+  // to (`subtrees`, by step; none where it says nothing). A server tree whose marks can't be read throws rather than open
+  // on a false count.
   async loadProgress(treeData, { signal } = {}) {
     const operation = this.treeRead ? this.operation ?? 'roadmap-progress-load' : null;
     const body = await this.answer('loadProgress', '/progress', { operation, signal }).catch((error) => {
@@ -67,15 +69,21 @@ export class HttpTreeRepository {
       this.reportFailure(operation);
       throw new BoundaryFailure(`loadProgress ${this.treeId}: the answer is not JSON`);
     }
+    const subtrees = new Map((Array.isArray(body?.subtrees) ? body.subtrees : []).flatMap((row) => {
+      if (typeof row?.node !== 'string' || typeof row.tree !== 'string') return [];
+      const state = row.total > 0 && row.done === row.total ? 'complete' : 'open';
+      return [[row.node, Opening.owned({ id: row.tree, done: row.done, total: row.total, state })]];
+    }));
     if (body?.marks?.length) {
       const lattice = new ProgressLattice();
       lattice.join(body, () => reportInvalidProgressMark(this.reportFailure));
-      return { ...lattice.overlay(), server: true };
+      return { ...lattice.overlay(), server: true, subtrees };
     }
     return {
       completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
       completedAt: {},  // an authored seed status carries no instant
       server: false,
+      subtrees,
     };
   }
 

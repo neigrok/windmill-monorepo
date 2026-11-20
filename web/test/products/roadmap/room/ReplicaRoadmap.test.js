@@ -9,13 +9,14 @@ import { Complete, SetPointer } from '../../../../src/products/roadmap/domain/pr
 import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { HeldRoadmap, ReplicaRoadmap } from '../../../../src/products/roadmap/room/ReplicaRoadmap.js';
+import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 
 const committed = (outcome) => {
   assert.equal(outcome.kind, 'committed', JSON.stringify(outcome));
   return outcome.result;
 };
 
-test('a roadmap someone else owns reads as theirs: no pointer and no workspace, its subtrees unread, and its place from the roadmaps above it', async () => {
+test('a roadmap someone else owns reads as theirs: no pointer and no workspace, its subtrees as the server tells them or else unread, and its place from the roadmaps above it', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
     const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('My year', { steps: [
@@ -37,6 +38,13 @@ test('a roadmap someone else owns reads as theirs: no pointer and no workspace, 
       book: { id: steps.book, label: 'Write the book', icon: '', color: 'terracotta', order: 'a1',
         createdAt: { ms: 1_800_000_000_000, counter: 1, actor: 'r_000000000002' }, createdMs: null, prerequisites: [],
         status: undefined, description: undefined, links: undefined, opens: undefined } });
+
+    const told = Opening.owned({ id: subtree, done: 1, total: 2, state: 'open' });
+    const toldOf = (word) => root.seedOf(tree, new Map([[steps.sail, word]])).nodes.find((step) => step.id === steps.sail).opening;
+    const other = toldOf(Opening.owned({ id: 't_00000000000000ff', done: 1, total: 1, state: 'complete' }));
+    assert.deepEqual({ same: toldOf(told) === told, other: { treeId: other.treeId, read: other.read, owned: other.owned, face: other.face } },
+      { same: true, other: { treeId: subtree, read: false, owned: true, face: 'unread' } },
+      'the server’s word stands on the step whose subtree it names, and a word of another subtree leaves it unread');
 
     assert.equal(new ReplicaRoadmap(roadmapRegistry, subtree, [held(subtree)]).state, 'waiting', 'where it stands waits for the roadmap above it');
     const inside = new ReplicaRoadmap(roadmapRegistry, subtree, [held(subtree), held(tree)]);

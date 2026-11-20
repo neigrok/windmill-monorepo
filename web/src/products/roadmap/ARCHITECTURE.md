@@ -249,13 +249,16 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, the failure
   reported once a visit (`roadmap-progress-load`, through a repository that knows the server keeps the roadmap, `served`,
-  so the room's activity read reports its failures once a visit too, `roadmap-activity-load`), and the
-  steps that own a subtree standing `unread`, as the replica holds none of the owner's marks of it. A link to a readable
-  roadmap opens it this way signed in or not (the anon replica pulls the readable trees it opens), its tree scope and
-  each roadmap's above it subscribed as the room opens and dropped as it leaves; a subtree's door is a new room, so the
-  subtree is subscribed as the person goes in. A signed-in reader's own overlay of the roadmap comes with its tree scope
-  (E-3), where their own marks live; the room shows the owner's, and offers a reader no mark. A roadmap the person may not
-  read, a private one a stranger opens among them, is in no address: the load error.
+  so the room's activity read reports its failures once a visit too, `roadmap-activity-load`). The replica holds none of
+  the owner's marks of a subtree, so a step that owns one stands on what that read's `subtrees` says the subtree has come
+  to (`HttpTreeRepository.loadProgress`, then `ReplicaRoadmap.seedOf`), the pill and its words as today's room shows
+  them, through every change the room follows until its next load; one the read says nothing of, or whose read fails,
+  stands `unread`. No subtree is subscribed for it. A link to a readable roadmap opens it this way signed in or not (the
+  anon replica pulls the readable trees it opens), its tree scope and each roadmap's above it subscribed as the room opens
+  and dropped as it leaves; a subtree's door is a new room, so the subtree is subscribed as the person goes in. A
+  signed-in reader's own overlay of the roadmap comes with its tree scope (E-3), where their own marks live; the room
+  shows the owner's, and offers a reader no mark. A roadmap the person may not read, a private one a stranger opens among
+  them, is in no address: the load error.
 - **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`, `UNSHOWN`), once
   a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
   (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
