@@ -182,6 +182,8 @@ const retired = (pathname) => RETIRED.some((route) => route.test(pathname));
 let state = null;
 const serverRows = (part) => Object.entries(state.rows).filter(([key]) => key.includes(part)).flatMap(([, rows]) => Object.values(rows));
 const product = new RoadmapProduct();
+// How long the server takes to answer the owner's progress, as a slow network's first open of the demo waits on it.
+let progressAfterMs = 0;
 
 // A server of one build: past the cutover (`cutover`), where every retired route answers 410 and the owner's progress
 // is read from the house account's overlay as the server keeps it, or today's, which answers the demo over its routes.
@@ -209,6 +211,7 @@ function serve(files, { cutover }) {
       return json(200, { data: TODAYS_DEMO, root: DEMO_TREE_ID, parent: null, path: [], depth: 0, mine: false, visibility: 'public' });
     }
     if (url.pathname === `/v1/trees/${DEMO_TREE_ID}/progress`) {
+      await new Promise((settle) => setTimeout(settle, progressAfterMs));
       const marks = serverRows(`acct:u_house/overlay/${DEMO_TREE_ID}`).filter((row) => row.t === 'progress')
         .map((row) => ({ node: row.id, status: row.f.mark[0].status, at: `${Date.now()}:0:srv` }));
       return json(200, { marks, subtrees: [] });
@@ -345,3 +348,18 @@ for (const account of [null, 'u_reader']) {
     }, 'today’s demo reads as it does today: the tree, the activity feed and its own session');
   });
 }
+
+test('a demo whose first open waits on a slow server still plays: its coach waits for the roadmap, and stands beside its step', async () => {
+  await plantDemo();
+  progressAfterMs = 2500;
+  try {
+    const engine = await visitDemo('engine');
+    assert.deepEqual({ opened: engine.opened, played: engine.played, failures: engine.failures }, {
+      opened: { view: 'tree', row: 'Learn to sail\nWindmill sample\n6/17\n/\nFork', progress: '6 of 17 steps done' },
+      played: { coach: `${DEMO_COPY.coachSentence}\n\n×\n${DEMO_COPY.coachButton}`, seat: ['38px', '300px'], said: DEMO_COPY.unlockToast, progress: '7 of 17 steps done' },
+      failures: [],
+    });
+  } finally {
+    progressAfterMs = 0;
+  }
+});

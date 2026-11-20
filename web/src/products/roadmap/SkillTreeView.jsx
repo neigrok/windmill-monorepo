@@ -724,7 +724,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
         <ForkDoor open={forkOpen} presentation={phone ? 'sheet' : 'dialog'} treeId={treeId} signedIn={status === 'signed-in'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 
-      {demo && coachAllowed && scene && canvasView && (
+      {demo && coachAllowed && scene && canvasView && tree && (
         <CoachChip
           scene={scene}
           nodeId={COACHED_NODE_ID}

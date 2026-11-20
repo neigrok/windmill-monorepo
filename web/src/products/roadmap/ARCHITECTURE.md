@@ -1056,7 +1056,9 @@ there is no intermediate selected-step bar. From 744px Fork opens the centred di
 Graph toasts keep their intrinsic width and clear the camera, minimap, active naming or tool panel and legend.
 Phone toasts clear any refusal card. Room toasts remain outside the hidden product canvas so the shared document's
 Copy link and attachment outcomes remain visible above its pinned actions. Created nodes reveal only after their
-model reaches the scene. The demo coach chip hides with the origin while a document is open.
+model reaches the scene. The demo coach chip mounts once the room holds its roadmap, so its arrival settle counts from
+the roadmap's arrival and it stands beside its step however long the open took; it hides with the origin while a
+document is open.
 
 ## Toasts and Undo
 
