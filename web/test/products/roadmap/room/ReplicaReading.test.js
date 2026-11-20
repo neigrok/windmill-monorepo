@@ -607,41 +607,53 @@ test('a browser whose copy could not open, as one that keeps nothing, is told at
   assert.deepEqual({ read: await read, told: told.length }, { read: null, told: 2 });
 });
 
-test('a room on an engine that holds the anonymous replica reads nothing and tells nothing until the shell says whose device it is, however long that takes, and then reads the account’s copy', async () => {
+test('a room on an engine that holds the anonymous replica reads and tells nothing until the shell says whose device it is, and reads what the device holds should the shell not say within the bound', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {
     const { tree } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
     for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
     await a.sync();
-    // A signed-in person's first visit: the engine opens on the browser's anonymous replica, and binds their account once
-    // the shell has asked the server who they are.
-    let state = 'anon';
-    const asked = [];
-    const engine = Object.create(a.engine, {
-      getSnapshot: { value: () => ({ ...a.engine.getSnapshot(), state }) },
-      observe: { value: (scope) => { asked.push(scope); return a.engine.observe(scope); } },
-      subscribe: { value: (scope) => { asked.push(scope); return a.engine.subscribe(scope); } },
-    });
-    const listeners = new Set();
-    let snapshot = { engine, ready: true, signedIn: null, online: true, error: false };
-    const session = { getSnapshot: () => snapshot, subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); } };
-    const told = [];
-    const reading = new ReplicaReading({ treeId: tree, timers: a.env.timers, track: (name, props) => told.push([name, props]), session,
-      repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
-    let answered = 'pending';
-    reading.read({ signal: new AbortController().signal }).then((read) => { answered = read; });
-    for (let turn = 0; turn < 20; turn++) {
-      a.env.timers.advance(FIRST_COPY_MS);
-      await new Promise((later) => setImmediate(later));
-    }
-    assert.deepEqual({ answered, told, asked }, { answered: 'pending', told: [], asked: [] },
+    // A first visit: the engine opens on the browser's anonymous replica, and binds the person's account, if someone is
+    // signed in, once the shell has asked the server who they are.
+    const visit = () => {
+      const asked = [];
+      const visited = { state: 'anon', asked, listeners: new Set(), told: [], answered: 'pending' };
+      const engine = Object.create(a.engine, {
+        getSnapshot: { value: () => ({ ...a.engine.getSnapshot(), state: visited.state }) },
+        observe: { value: (scope) => { asked.push(scope); return a.engine.observe(scope); } },
+        subscribe: { value: (scope) => { asked.push(scope); return a.engine.subscribe(scope); } },
+      });
+      visited.snapshot = { engine, ready: true, signedIn: null, online: true, error: false };
+      visited.reading = new ReplicaReading({ treeId: tree, timers: a.env.timers, track: (name, props) => visited.told.push([name, props]),
+        session: { getSnapshot: () => visited.snapshot, subscribe: (listener) => { visited.listeners.add(listener); return () => visited.listeners.delete(listener); } },
+        repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
+      visited.reading.read({ signal: new AbortController().signal }).then((read) => { visited.answered = read; });
+      return visited;
+    };
+    const turns = async (count, ms) => {
+      for (let turn = 0; turn < count; turn++) {
+        a.env.timers.advance(ms);
+        await new Promise((later) => setImmediate(later));
+      }
+    };
+
+    const signedIn = visit();
+    await turns(10, (FIRST_COPY_MS - 1) / 10);
+    assert.deepEqual({ answered: signedIn.answered, told: signedIn.told, asked: signedIn.asked }, { answered: 'pending', told: [], asked: [] },
       'nothing is read from the anonymous replica, and nothing told, while the shell has not said whose device it is');
-    state = 'bound';
-    snapshot = { ...snapshot, signedIn: true };
-    for (const listener of listeners) listener();
-    await until(() => answered !== 'pending');
-    assert.deepEqual({ steps: answered?.seed.nodes.map((step) => step.label), mine: answered?.seed.mine, told }, { steps: ['Read the wind'], mine: true, told: [] });
-    reading.close();
+    signedIn.state = 'bound';
+    signedIn.snapshot = { ...signedIn.snapshot, signedIn: true };
+    for (const listener of signedIn.listeners) listener();
+    await until(() => signedIn.answered !== 'pending');
+    assert.deepEqual({ steps: signedIn.answered?.seed.nodes.map((step) => step.label), told: signedIn.told }, { steps: ['Read the wind'], told: [] });
+    signedIn.reading.close();
+
+    const undecided = visit();
+    await turns(10, FIRST_COPY_MS / 10);
+    await until(() => undecided.answered !== 'pending');
+    assert.deepEqual({ steps: undecided.answered?.seed.nodes.map((step) => step.label), told: undecided.told }, { steps: ['Read the wind'], told: [] },
+      'a shell that has not said whose device it is within the bound leaves the device’s copy to open');
+    undecided.reading.close();
   } finally {
     a.close();
   }

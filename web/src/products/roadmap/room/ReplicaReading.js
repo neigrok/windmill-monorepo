@@ -37,16 +37,15 @@ export const UNSHOWN = Object.freeze(['unkept', 'unopened', 'missing', 'unanswer
 // The engine the shell opens for this document, once it stands for the person whose device it is: `{ engine }`, or
 // `{ unshown }` saying why there is none to read or write through: `unkept` where it could not open, as in a browser that
 // keeps nothing (no replica held in memory stands in for one yet, E-5), and `unopened` where it did not stand within the
-// bound or the caller stopped waiting. An engine that holds the browser's anonymous replica stands only once the shell has
-// said whether someone is signed in (`signedIn`, null before): a signed-in person's first visit holds that replica until
-// the engine binds their account. The bound runs while the engine opens, not while the shell finds whose device it is;
-// one of null waits for as long as the caller does.
+// bound or the caller stopped waiting. An engine that holds the browser's anonymous replica stands once the shell has said
+// whether someone is signed in (`signedIn`, null before), as a signed-in person's first visit holds that replica until the
+// engine binds their account; where the shell has not said within the bound, it stands as it is, so the device's own copy
+// opens without the network. A `bound` of null waits for as long as the caller does.
 export function standingEngine(session, signal, timers = globalThis, bound = FIRST_COPY_MS) {
   return new Promise((resolve) => {
     const check = () => {
       const { engine, ready, error, signedIn } = session.getSnapshot();
       if (ready && engine && (signedIn !== null || engine.getSnapshot().state === 'bound')) finish({ engine });
-      else if (ready && engine) timers.clearTimeout(timer);
       else if (error) finish({ unshown: 'unkept' });
     };
     const finish = (answer) => {
@@ -56,7 +55,11 @@ export function standingEngine(session, signal, timers = globalThis, bound = FIR
       resolve(answer);
     };
     const abort = () => finish({ unshown: 'unopened' });
-    const timer = bound === null ? null : timers.setTimeout(abort, bound);
+    const expire = () => {
+      const { engine, ready } = session.getSnapshot();
+      finish(ready && engine ? { engine } : { unshown: 'unopened' });
+    };
+    const timer = bound === null ? null : timers.setTimeout(expire, bound);
     const stop = session.subscribe(check);
     signal.addEventListener('abort', abort, { once: true });
     check();
