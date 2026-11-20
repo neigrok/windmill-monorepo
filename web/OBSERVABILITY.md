@@ -38,7 +38,8 @@ refusal text never enter telemetry properties.
 | `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with how many are `waiting` and the oldest one's `ageMs` |
 | `sync-signin`, `sync-signout` | Lineage decisions and authentication transitions |
 | `sync-auth-paused` | The active replica's sync stopping for its credential, told once by the transaction that makes the change: `paused` (a `401`, an answer or frame served as another principal, or the shell reading that the browser no longer holds the account's credential), `released` (a sign-in, a sign-out, the shell reading that the browser holds no credential, or a credential deletion that leaves none) |
-| `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
+| `sync-upgrade` | Sync stopping for an upgrade: `paused` at a `426` or a hello's `minSchema` above the registry; `superseded` when a bundle of a newer store version opens the device store, closing it under this tab (engine.md §7.8), which releases its locks at once (`sync-leader` `released` when it led); `reloaded` as that tab reloads itself, at the first moment that loses nothing on its screen |
+| `sync-persist`, `sync-leader` | Persistence request result and lock ownership |
 | `sync-refused`, `sync-push-malformed` | Terminal refusals, and malformed push responses or receipts: a 400, or a `200` whose receipt or inverse outcomes the replica cannot read, which still acknowledges its entry |
 | `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency, sampled: the first 10 writes of each minute that change the store |
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
@@ -46,12 +47,12 @@ refusal text never enter telemetry properties.
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
 integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
 1,000), `ageMs` (capped at 30 days), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `settled`,
-`paused`, `failed`, `acquired`, `released`). No id or value of an act, request or record enters them.
+`paused`, `failed`, `acquired`, `released`, `superseded`, `reloaded`). No id or value of an act, request or record enters them.
 Failures reach Sentry with kind `sync`, route `/sync` and no stack, under these static operations only:
 
 | Failure | When |
 |---|---|
-| `sync-storage` | The device store did not open, commit or read; an engine step no caller hears (a release, a cleanup, a peer's refresh) failed; a persisted restore failed |
+| `sync-storage` | The device store did not open, commit or read; an engine step no caller hears (a release, a cleanup, a peer's refresh) failed; a persisted restore failed. A store a newer store version's upgrade closed reports nothing: that is `sync-upgrade` `superseded`, and a write the tab tries afterwards reaches its caller as a `CommitError` of kind `store` |
 | `sync-transport` | A hello, push or pull failed or answered what the engine cannot read, while the replica could sync; a store failure on the way is `sync-storage` alone |
 | `sync-live` | The live socket ended or failed while it was wanted |
 | `sync-leadership` | The tab lock or the channel between tabs failed |
