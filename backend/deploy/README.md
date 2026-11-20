@@ -805,14 +805,14 @@ last **Deploy to VPS** run), and `backup` typed as `back up, restore on failure`
 The pause lasts from **Pause the site** to **Lift the pause**; the adoption is its longest stage, and the rehearsal
 measures it. Cancelling the run does not cut the cutover job short: a cancel re-evaluates a running job's condition, and
 its `always()` holds it, so each stage runs on within its own deadline and a stage past its deadline fails like any other.
-Never force-cancel it, which skips every step that would put the site back. **Re-run all jobs** of a failed run, or
-dispatch again; **Re-run failed jobs** reuses the run's web build.
+Never force-cancel it, which skips every step that would put the site back. To try again, **Re-run all jobs** or
+dispatch again; never **Re-run failed jobs**, which skips the guard.
 
 **A failure before writes resume**, before the start stage writes roadmap's switch, puts everything back. Where the
 backup was verified, **Restore the backup** (`restore`) removes a tool container left running, checks the backup's
 sha256 and listing, restores it into `windmill_restore`, renames `windmill` to `windmill_cutover_<run>_<attempt>` and the
 restored database to `windmill` in one transaction, applies the schema, starts the server, roadmap off the engine, and
-lifts the pause. The server stopped before the dump and starts only after the restore, so no client holds anything newer
+lifts the pause; it removes a `roadmap-engine.floor` a start cut short wrote, and marks the run `restored`. The server stopped before the dump and starts only after the restore, so no client holds anything newer
 than the backup, and the epoch stands. A start that failed before it wrote the switch, a lost connection among them,
 takes the same path; one that wrote it is refused by the host's restore, and goes forward. Where no backup was taken
 yet, **Return the site as it was** (`undo`) starts the server and lifts the pause: the database was never changed.
@@ -822,7 +822,9 @@ to the sealed record. Once its cause is settled, the owner dispatches **Ops · r
 (`ops-roadmap-restore.yml`) from `main` with the run's `<run id>-<attempt>` and `confirm` typed as `restore the backup`.
 It refuses beside any workflow that reaches the host, takes the `deploy-vps` lock, and runs the same `restore` again
 where it stopped: once `windmill` holds the backup and the moved database is kept, only the schema, the start and the lift
-are left. It seals what the run keeps on the host as the cutover does. Where **Return the site as it was** fails, the
+are left. The host refuses that restore unless the site is paused, the server stopped and the run not yet `restored`, as
+a cutover leaves them before writes resume, so the door never puts a backup over a site that serves again. Either way it
+seals what the run keeps on the host as the cutover does, which also makes it the door for a seal that failed. Where **Return the site as it was** fails, the
 database is as it was: **Deploy to VPS** starts the server, then **Ops · maintenance** lifts the pause.
 
 **From the moment the start stage writes the switch, the cutover goes forward only.** A failure there leaves the site
@@ -856,9 +858,9 @@ windmill_cutover_<run>_<attempt>`).
 
 - **The server**: `~/windmill/roadmap-engine.env`, which compose reads into the server alone (`env_file`). The cutover
   writes `ROADMAP_ENGINE_ENABLED=1` there; no deploy renders, ships or changes it. `deploy-production.sh` creates it
-  empty where it is missing and refuses any other content before anything changes. While the database holds any of
-  roadmap's scopes on the engine, it refuses the file empty or missing too, so a switch lost on the host stops a deploy
-  rather than turning roadmap back to its own sync. After the server starts, it checks the running server holds exactly
+  empty where it is missing and refuses any other content before anything changes. While `roadmap-engine.floor` names a
+  commit, or the database holds any of roadmap's scopes on the engine, it refuses the file empty or missing too, so a
+  switch lost on the host stops a deploy rather than turning roadmap back to its own sync. After the server starts, it checks the running server holds exactly
   what the file says and, while it is on, that the server answers `GET /v1/socket` `410`; it prints `PASS roadmap: …`.
 - **The image**: the cutover writes the commit it ran from to `~/windmill/roadmap-engine.floor`. While that file names a
   commit, **Deploy to VPS** refuses, before anything reaches the host, an `image_tag` that does not descend from it, a

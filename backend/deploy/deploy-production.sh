@@ -29,8 +29,12 @@ if [[ -n "$roadmap_switch" && "$roadmap_switch" != ROADMAP_ENGINE_ENABLED=1 ]]; 
   printf 'FAIL roadmap-engine.env holds something other than ROADMAP_ENGINE_ENABLED=1\n' >&2
   exit 1
 fi
-# The database decides too: once the engine holds roadmap's scopes, a server off the engine would serve roadmap's old
-# tables beside them, so a switch lost or emptied there is refused rather than recreated off.
+# The cutover's floor and the database decide too: once a cutover ran here, or the engine holds roadmap's scopes, a server
+# off the engine would serve roadmap's old tables beside them, so a switch lost or emptied is refused, not recreated off.
+if [[ -z "$roadmap_switch" && -s roadmap-engine.floor ]]; then
+  printf 'FAIL roadmap-engine.floor says roadmap is on the sync engine here, and roadmap-engine.env does not say ROADMAP_ENGINE_ENABLED=1\n' >&2
+  exit 1
+fi
 if [[ -z "$roadmap_switch" && -f .env && -n "$(docker compose ps -q db 2> /dev/null)" ]]; then
   on_engine=$(docker compose exec -T db psql --username=windmill --dbname=windmill -XAtq -v ON_ERROR_STOP=1 \
     -c "select to_regclass('public.sync_scopes') is not null" 2> /dev/null) || on_engine=unread

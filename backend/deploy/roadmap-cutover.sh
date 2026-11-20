@@ -92,10 +92,16 @@ case "$stage" in
     ((beside_backups >= needed && beside_database >= needed)) || fail "too little free disk for a backup and its restore"
     # The pinned image, serving roadmap's scopes over a throwaway database of its own schema, on no setting of the live
     # server's but its port: what §8.3 asks of it after the move, proven before anything pauses.
-    probe_settings=$(mktemp)
+    # A probe a killed check left behind goes first: its container, its database and its settings, which name the password.
+    umask 077
+    mkdir -p roadmap-cutover
+    probe_settings=roadmap-cutover/probe.env
+    leftovers=$(docker ps -aq --filter name=windmill-roadmap-probe-)
+    [[ -z "$leftovers" ]] || docker rm -f $leftovers > /dev/null
     trap 'docker rm -f "$probe" > /dev/null 2>&1 || true; rm -f "$probe_settings"
-          sql postgres "drop database if exists windmill_roadmap_probe" > /dev/null 2>&1 || true' EXIT
-    sql postgres "drop database if exists windmill_roadmap_probe" > /dev/null 2>&1 || fail "a probe database left behind could not be dropped"
+          sql postgres "drop database if exists windmill_roadmap_probe with (force)" > /dev/null 2>&1 || true' EXIT
+    sql postgres "drop database if exists windmill_roadmap_probe with (force)" > /dev/null 2>&1 ||
+      fail "a probe database left behind could not be dropped"
     docker compose exec -T db createdb --username=windmill --owner=windmill windmill_roadmap_probe
     docker run --rm --entrypoint cat "$pinned" /app/db/schema.sql |
       docker compose exec -T db psql --username=windmill --dbname=windmill_roadmap_probe -Xq -v ON_ERROR_STOP=1 > /dev/null 2>&1 ||
@@ -249,10 +255,16 @@ print(int(hello["schema"]), int(hello["minSchema"]))')
     rm -f maintenance/on
     printf 'PASS lift: maintenance/on is gone\n'
     ;;
-  # Run again where it stopped: once windmill holds the backup and the moved database is kept, only the start is left.
+  # Only beside the run it belongs to: the site paused and the server stopped, as the cutover leaves them before writes
+  # resume. Run again where it stopped: once windmill holds the backup and the moved database is kept, only the start is
+  # left; once it finished, it is never run again.
   restore)
     [[ -s "$work/backup" ]] || fail "this run holds no verified backup"
+    [[ ! -e "$work/restored" ]] || fail "this run's backup is restored already"
     [[ ! -s roadmap-engine.env ]] || fail "roadmap's switch is written, so the cutover goes forward only"
+    [[ -e maintenance/on ]] || fail "the site is not paused, so whatever runs here now is not this run's"
+    [[ -z "$(docker compose ps -q server)" ]] || fail "the server is running, so whatever runs here now is not this run's"
+    rm -f roadmap-engine.floor
     backup=$(cat "$work/backup")
     docker rm -f "$tool" > /dev/null 2>&1 || true
     if [[ "$(sql postgres "select count(*) from pg_database where datname = '$moved'")" == 0 ]]; then
@@ -276,6 +288,7 @@ print(int(hello["schema"]), int(hello["minSchema"]))')
       fail "the schema did not apply to the restored database; its words go to the sealed record"
     docker compose up -d --no-deps --no-recreate --pull never server
     serving || fail "the server did not answer on the restored database within 60 s, and the site stays paused"
+    printf 'restored\n' > "$work/restored"
     rm -f maintenance/on
     printf 'PASS restore: windmill is %s again, its sha256 matched; the moved database is kept as %s\n' "$backup" "$moved"
     printf 'PASS restore: the server serves as before the cutover, roadmap off the engine, and the site is lifted\n'

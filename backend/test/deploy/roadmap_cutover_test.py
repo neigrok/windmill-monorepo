@@ -376,6 +376,8 @@ def model_answer(state, arguments):
     if arguments == ["rm", "-f", PROBE]:
         probe["running"] = False
         return 0, "", ""
+    if arguments == ["ps", "-aq", "--filter", "name=windmill-roadmap-probe-"]:
+        return 0, PROBE + "\n" if probe["running"] else "", ""
     if arguments == ["rm", "-f", TOOL]:
         return 0, "", ""
     if arguments == ["run", "--rm", "--entrypoint", "cat", PINNED, "/app/db/schema.sql"]:
@@ -395,6 +397,9 @@ def model_answer(state, arguments):
             server["env"] = dict(line.split("=", 1) for line in Path("roadmap-engine.env").read_text().splitlines() if line)
         return 0, "", ""
     if arguments == ["compose", "run", "--rm", "--no-deps", "-T", "migrate"]:
+        if state.get("migrateFails"):
+            state["migrateFails"] = False
+            return 1, "", "psql: ERROR: PRIVATE_ROW_CANARY\n"
         return 0, "", ""
     if arguments[:5] == ["compose", "run", "--rm", "--no-deps", "-T"]:
         mounts = dict(tuple(reversed(argument.split(":")[:2])) for argument in arguments
@@ -439,7 +444,7 @@ def model_database(state, command):
         if "pg_terminate_backend" in sql:
             return 0, "0\n", ""
         if sql.startswith("drop database if exists "):
-            state["databases"] = [name for name in state["databases"] if name != sql.rsplit(" ", 1)[1]]
+            state["databases"] = [name for name in state["databases"] if name != sql.split()[4]]
             return 0, "", ""
         if sql.startswith("alter database windmill rename to "):
             moved = sql.split("rename to ", 1)[1].split(";", 1)[0]
@@ -605,10 +610,11 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
                          ["rm -f", "psql", "pg_restore", "psql", "createdb", "pg_restore", "psql", "psql", "compose run", "compose up", "curl"])
         self.assertEqual(self.stage.sealed()[1], {
             "backup": backup + "\n", "record/stops.jsonl": '{"reason":"stop.unknownStepStatus","roadmap":"t_a000000000000001"}\n',
-            "record/tool.stderr": "", "restore.log": "", "migrate.log": ""})
+            "record/tool.stderr": "", "restore.log": "", "migrate.log": "", "restored": "restored\n"})
         files = self.files()
         self.assertEqual((files["roadmap-engine.env"], "roadmap-engine.floor" in files, "maintenance/on" in files), (b"", False, False))
-        self.assertEqual(sorted(name for name in files if name.startswith("roadmap-cutover/")), [f"roadmap-cutover/{RUN}/backup"])
+        self.assertEqual(sorted(name for name in files if name.startswith("roadmap-cutover/")),
+                         [f"roadmap-cutover/{RUN}/backup", f"roadmap-cutover/{RUN}/restored"])
         self.stage.assert_nothing_private(self, log)
 
     def test_a_host_lost_while_it_moves_the_rows_is_restored_and_what_the_move_wrote_is_sealed(self):
@@ -639,6 +645,18 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
         files = self.files()
         self.assertEqual((files["roadmap-engine.env"], files["maintenance/on"]), (b"ROADMAP_ENGINE_ENABLED=1\n", f"roadmap cutover {RUN}\n".encode()))
         self.assertEqual(self.model()["databases"], ["windmill"])
+
+    def test_a_probe_a_killed_check_left_behind_is_removed_before_the_next_check_starts_its_own(self):
+        self.model(probe={"running": True}, databases=["windmill", "windmill_roadmap_probe"])
+        (self.stage.windmill / "roadmap-cutover").mkdir()
+        (self.stage.windmill / "roadmap-cutover/probe.env").write_text("DATABASE_URL=postgresql://windmill:PRIVATE_SSH_KEY_CANARY@db\n")
+        outcomes, log = self.stage.job().run()
+        self.assertEqual(outcomes["check"], "success")
+        state = self.model()
+        self.assertEqual((state["probe"]["running"], state["databases"], (self.stage.windmill / "roadmap-cutover/probe.env").exists()),
+                         (False, ["windmill"], False))
+        self.assertLess(state["commands"].index(["rm", "-f", PROBE]),
+                        next(index for index, command in enumerate(state["commands"]) if command[:5] == ["run", "-d", "--rm", "--name", PROBE]))
 
     def test_a_failure_before_the_backup_leaves_the_database_untouched_and_returns_the_site_as_it_was(self):
         for failure, stages, last in (({"otherSessions": [1] * 30}, ["check", "pause", "stop", "undo"], None),
@@ -671,6 +689,13 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
         self.assertEqual((files["roadmap-engine.env"], files["maintenance/on"]), (b"ROADMAP_ENGINE_ENABLED=1\n", f"roadmap cutover {RUN}\n".encode()))
         self.stage.assert_nothing_private(self, log)
 
+    def door(self, attempt):
+        shutil.rmtree(self.stage.root / "runner/temp")
+        (self.stage.root / "runner/temp").mkdir()
+        door = mapping((REPOSITORY / ".github/workflows/ops-roadmap-restore.yml").read_text().splitlines())["jobs"]["restore"]
+        return Job(door, {**self.stage.context, "inputs.run": RUN, "github.run_attempt": attempt}, self.stage.workspace,
+                   self.stage.environment, self.stage.root / "artifact", self.stage.root / "artifacts").run()
+
     def test_a_restore_pg_restore_refuses_keeps_windmill_and_the_pause_and_the_restore_door_finishes_it_where_it_stopped(self):
         self.model(tool={"stdout": STOPPED, "stderr": "", "exit": 3, "record": {}}, restoreFails=True)
         outcomes, log = self.stage.job().run()
@@ -684,24 +709,41 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
                          (["windmill", "windmill_restore"], False, True))
         self.stage.assert_nothing_private(self, log)
 
-        door = mapping((REPOSITORY / ".github/workflows/ops-roadmap-restore.yml").read_text().splitlines())["jobs"]["restore"]
-        backup = self.backup()
-        for attempt, lines in (("1", RESTORED.format(backup)),
-                               ("2", "NOTE restore: windmill holds the backup already and the moved database is kept, so only the "
-                                     "start is left\n" + RESTORED.format(backup))):
-            with self.subTest(attempt=attempt):
-                self.model(restoreFails=False)
-                shutil.rmtree(self.stage.root / "runner/temp")
-                (self.stage.root / "runner/temp").mkdir()
-                job = Job(door, {**self.stage.context, "inputs.run": RUN, "github.run_attempt": attempt}, self.stage.workspace,
-                          self.stage.environment, self.stage.root / "artifact", self.stage.root / "artifacts")
-                outcomes, log = job.run()
-                self.assertEqual({step: outcome for step, outcome in outcomes.items() if outcome != "success"}, {})
-                self.assertEqual(printed(log, "Restore the backup"), lines + SITE.format(200))
+        # The door's first run swaps the backup in and stops at the schema; its second takes up from there.
+        self.model(restoreFails=False, migrateFails=True)
+        outcomes, log = self.door("1")
+        self.assertEqual((outcomes["restore"], outcomes["seal"], outcomes["upload"]), ("failure", "success", "success"))
+        self.assertEqual(printed(log, "Restore the backup"),
+                         "FAIL restore: the schema did not apply to the restored database; its words go to the sealed record\n")
+        self.assertEqual((self.model()["databases"], "maintenance/on" in self.files()), (["windmill", "windmill_cutover_4242_1"], True))
+        outcomes, log = self.door("2")
+        self.assertEqual({step: outcome for step, outcome in outcomes.items() if outcome != "success"}, {})
+        self.assertEqual(printed(log, "Restore the backup"),
+                         "NOTE restore: windmill holds the backup already and the moved database is kept, so only the start is left\n" +
+                         RESTORED.format(self.backup()) + SITE.format(200))
+        state = self.model()
+        self.assertEqual((state["databases"], state["server"]["running"], "maintenance/on" in self.files()),
+                         (["windmill", "windmill_cutover_4242_1"], True, False))
+        self.stage.assert_nothing_private(self, log)
+
+    def test_the_restore_door_never_restores_over_a_site_that_serves_again(self):
+        self.model(tool={"stdout": STOPPED, "stderr": "", "exit": 3, "record": {}})
+        self.assertEqual(self.stage.job().run()[0]["Restore the backup"], "success")
+        moved = self.model()["databases"]
+        for attempt, undone, reason in (("1", lambda: None, "this run's backup is restored already"),
+                                        ("2", lambda: (self.stage.windmill / f"roadmap-cutover/{RUN}/restored").unlink(),
+                                         "the site is not paused, so whatever runs here now is not this run's"),
+                                        ("3", lambda: (self.stage.windmill / "maintenance/on").write_text("paused by hand\n"),
+                                         "the server is running, so whatever runs here now is not this run's")):
+            with self.subTest(reason=reason):
+                undone()
+                self.model(databases=[name for name in moved if name != "windmill_cutover_4242_1"], commands=[])
+                outcomes, log = self.door(attempt)
+                self.assertEqual((outcomes["restore"], printed(log, "Restore the backup")), ("failure", f"FAIL restore: {reason}\n"))
                 state = self.model()
-                self.assertEqual((state["databases"], state["server"]["running"], "maintenance/on" in self.files()),
-                                 (["windmill", "windmill_cutover_4242_1"], True, False))
-                self.stage.assert_nothing_private(self, log)
+                self.assertEqual((state["databases"], state["server"]["running"]), (["windmill"], True))
+                self.assertFalse(any(command[:4] == ["compose", "exec", "-T", "db"] and command[4] in ("pg_restore", "createdb")
+                                     for command in state["commands"]))
 
     def test_a_host_already_on_the_engine_or_on_another_image_is_refused_before_anything_changes(self):
         for change, reason in ((lambda: (self.stage.windmill / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n"),
@@ -832,6 +874,9 @@ def stack_docker(arguments):
                                                        for argument in arguments[3:]]]).returncode
     if arguments == ["rm", "-f", f"windmill-roadmap-probe-{RUN}"]:
         stack_stop(state.get("probePid"))
+        return 0
+    if arguments == ["ps", "-aq", "--filter", "name=windmill-roadmap-probe-"]:
+        print(f"windmill-roadmap-probe-{RUN}" if stack_alive(state.get("probePid")) else "")
         return 0
     if arguments == ["compose", "ps", "-q", "server"]:
         print("windmill-server" if stack_alive(server) else "")

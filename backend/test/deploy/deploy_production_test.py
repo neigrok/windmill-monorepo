@@ -739,6 +739,18 @@ class DeployProductionTest(unittest.TestCase):
                         path.write_text(switch)
                     self.state(**{"commands": [], "roadmapOnEngine": False, "databaseUnreadable": False, **state})
                     self.assert_preflight_refusal(reason)
+        for switch in ("", None):
+            with self.subTest(floor=True, switch=switch):
+                self.upload_candidate()
+                path = self.work / "roadmap-engine.env"
+                path.unlink(missing_ok=True)
+                if switch is not None:
+                    path.write_text(switch)
+                (self.work / "roadmap-engine.floor").write_text("c" * 40 + "\n")
+                self.state(**{"commands": [], "roadmapOnEngine": False, "databaseUnreadable": False, "dbRunning": False})
+                self.assert_preflight_refusal("roadmap-engine.floor says roadmap is on the sync engine here, and roadmap-engine.env "
+                                              "does not say ROADMAP_ENGINE_ENABLED=1")
+                (self.work / "roadmap-engine.floor").unlink()
         for state in ({"dbRunning": False, "roadmapOnEngine": True}, {"syncScopes": False}):
             with self.subTest(state=state):
                 self.upload_candidate()
@@ -1068,6 +1080,8 @@ class DeployWorkflowTest(unittest.TestCase):
         self.assertEqual([line.strip() for line in script.splitlines() if "roadmap-engine.env" in line and not line.lstrip().startswith("#")],
                          ["[[ ! -e roadmap-engine.env ]] || roadmap_switch=$(cat roadmap-engine.env)",
                           "printf 'FAIL roadmap-engine.env holds something other than ROADMAP_ENGINE_ENABLED=1\\n' >&2",
+                          "printf 'FAIL roadmap-engine.floor says roadmap is on the sync engine here, and roadmap-engine.env does not say "
+                          "ROADMAP_ENGINE_ENABLED=1\\n' >&2",
                           "printf 'FAIL the database holds roadmap on the sync engine, and roadmap-engine.env does not say "
                           "ROADMAP_ENGINE_ENABLED=1\\n' >&2",
                           "[[ -e roadmap-engine.env ]] || : > roadmap-engine.env",
