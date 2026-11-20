@@ -17,8 +17,9 @@
 // roadmap and its subtree by link, each followed on the live socket as the room opens it (a signed-in reader's own overlay
 // with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a browser that keeps nothing shown the
 // room's load error (E-5 is not built); and a roadmap made at the birth door signed out, held in the browser's anon replica
-// and joining at sign-in an account that holds none. Each run has its own database, server and built app on the given
-// ports, and stops and drops them.
+// and joining at sign-in an account that holds none. Last, every person leaves the app, and the run waits, within its
+// bound, until the local intake holds the room's events, those only the switch emits only with it on. Each run has its
+// own database, server and built app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
 // name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
 // error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
@@ -29,7 +30,7 @@ import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { inspect } from 'node:util';
+import { inspect, isDeepStrictEqual } from 'node:util';
 import { chromium } from 'playwright';
 
 const repo = resolve('..');
@@ -591,7 +592,7 @@ async function shoot(device, name) {
   await device.page.screenshot({ path: resolve(process.env.WM_E2E_SHOTS, `${name}.png`) });
 }
 
-async function scenarios(mode, browser, { secret, second, session, empty, carrier, stranger, climber }, account, check) {
+async function scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber }, account, check) {
   const { sail, knot, row } = await seed(mode, secret, account);
   const address = `#/app/${sail}`;
   const a = await Device.open(browser, secret);
@@ -858,7 +859,6 @@ async function scenarios(mode, browser, { secret, second, session, empty, carrie
       await a.page.locator('.st-kept').waitFor({ state: 'detached' });
       await a.page.setViewportSize({ width: 1440, height: 1000 });
       assert.equal((await a.accountMenu()).some((row) => row.startsWith('Kept here')), false, 'the entry left with the last change');
-      await settle(6000);
     });
     if (mode === 'on') await accountChoices(browser, { session, empty }, account, check, devices);
     else await todaysAccountChoices(browser, { secret, session }, check, devices);
@@ -866,6 +866,24 @@ async function scenarios(mode, browser, { secret, second, session, empty, carrie
     await carryScenario(mode, browser, { session, carrier }, account, check, devices);
     await check('no device logged an error', async () => {
       assert.deepEqual(devices.flatMap((device) => device.errors), [], 'no page threw and no console logged an error');
+    });
+    await check(mode === 'on' ? 'as each person leaves, the intake holds the room’s events, with those only the switch emits'
+      : 'as each person leaves, the intake holds the room’s events, and none of those only the switch emits', async () => {
+      for (const device of devices) await device.page.goto('about:blank');
+      const on = mode === 'on';
+      const expected = {
+        room: true,
+        kept: on ? ['roadmap_kept', 'roadmap_write_cannot_land'] : [],
+        carry: on ? ['carried', 'cleared', 'found'] : [],
+        undo: on ? ['redo:applied', 'undo:applied'] : [],
+        questions: on ? ['roadmap_signin:add', 'roadmap_signin:cancel', 'roadmap_signin:discard', 'roadmap_signin:shown',
+          'roadmap_signout:discard', 'roadmap_signout:keep', 'roadmap_signout:shown'] : [],
+        unshown: on ? ['missing', 'unkept'] : [],
+        exported: on ? 1 : 0,
+      };
+      let arrived = intake();
+      for (const end = Date.now() + 30_000; !isDeepStrictEqual(arrived, expected) && Date.now() < end; arrived = intake()) await settle(500);
+      assert.deepEqual(arrived, expected, `the intake held ${JSON.stringify(arrived)}`);
     });
   } finally {
     for (const device of devices) await device.context.close();
@@ -1313,6 +1331,20 @@ async function run(mode, browser) {
   const secret = randomBytes(24).toString('hex');
   const second = randomBytes(24).toString('hex');
   const sql = (statement) => execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-c', statement], { stdio: ['ignore', 'pipe', 'pipe'] });
+  // What the intake holds of the room's events, as bounded labels and counts, never an id or a person's words: whether
+  // any came, the kept list's, the carry-over's stages, what Undo and Redo came to, each step of the sign-in and sign-out
+  // questions, why a room could not show its roadmap, and Settings' exports once it had a connection again.
+  const labels = (statement) => execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    .split('\n').filter(Boolean).sort();
+  const intake = () => ({
+    room: labels("select count(*) > 0 from events where name like 'roadmap_%'")[0] === 't',
+    kept: labels("select distinct name from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')"),
+    carry: labels("select distinct props->>'stage' from events where name = 'roadmap_carry' and props->>'stage' in ('carried', 'cleared', 'discarded', 'found')"),
+    undo: labels("select distinct (props->>'action') || ':' || (props->>'outcome') from events where name = 'roadmap_undo'"),
+    questions: labels("select distinct name || ':' || (props->>'step') from events where name in ('roadmap_signin', 'roadmap_signout')"),
+    unshown: labels("select distinct props->>'outcome' from events where name = 'roadmap_load' and props->>'outcome' in ('missing', 'unkept')"),
+    exported: Number(labels("select count(*) from events where name = 'roadmap_export' and props->>'door' = 'settings' and props->>'outcome' = 'done'")[0]),
+  });
   // A new session of `user`, the owner by default, whose secret a browser or a device signs in with.
   const session = (user = account) => {
     const token = randomBytes(24).toString('hex');
@@ -1342,29 +1374,7 @@ async function run(mode, browser) {
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
     web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', backend, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
-    await scenarios(mode, browser, { secret, second, session, empty, carrier, stranger, climber }, account, check);
-    const events = Number(sql("select count(*) from events where name like 'roadmap_%'").toString().match(/\d+/)?.[0] ?? 0);
-    assert.ok(events > 0, 'the room’s events reached the local intake');
-    const kept = sql("select coalesce(string_agg(distinct name, ',' order by name), '') as names from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')")
-      .toString().split('\n').map((line) => line.trim()).find((line) => line !== 'names' && /^[a-z_]+(?:,[a-z_]+)*$/.test(line))?.split(',') ?? [];
-    assert.deepEqual(kept, mode === 'on' ? ['roadmap_kept', 'roadmap_write_cannot_land'] : [], 'the kept list’s events reached the local intake only with the switch on');
-    const stages = sql("select coalesce(string_agg(distinct props->>'stage', ',' order by props->>'stage'), '') as stages from events where name = 'roadmap_carry'")
-      .toString().split('\n').map((line) => line.trim()).find((line) => line !== 'stages' && /^[a-z]+(?:,[a-z]+)*$/.test(line))?.split(',') ?? [];
-    assert.deepEqual(['carried', 'cleared', 'discarded', 'found'].filter((stage) => stages.includes(stage)), mode === 'on' ? ['carried', 'cleared', 'found'] : [],
-      'the carry-over’s stages reached the local intake only with the switch on, a fresh browser’s first run waiting for its sign-in');
-    const undone = sql("select coalesce(string_agg(distinct (props->>'action') || ':' || (props->>'outcome'), ',' order by (props->>'action') || ':' || (props->>'outcome')), '') from events where name = 'roadmap_undo'")
-      .toString().match(/(?:undo|redo):[a-z]+(?:,(?:undo|redo):[a-z]+)*/)?.[0] ?? '';
-    assert.equal(undone, mode === 'on' ? 'redo:applied,undo:applied' : '', 'what the room’s Undo and Redo came to reached the local intake only with the switch on');
-    const asked = sql("select coalesce(string_agg(distinct name || ':' || (props->>'step'), ',' order by name || ':' || (props->>'step')), '') from events where name in ('roadmap_signin', 'roadmap_signout')")
-      .toString().match(/roadmap_sign[a-z_]*:[a-z]+(?:,roadmap_sign[a-z_]*:[a-z]+)*/)?.[0] ?? '';
-    assert.equal(asked, mode === 'on' ? 'roadmap_signin:add,roadmap_signin:cancel,roadmap_signin:discard,roadmap_signin:shown,roadmap_signout:discard,roadmap_signout:keep,roadmap_signout:shown' : '',
-      'each step of the sign-in and sign-out questions reached the local intake only with the switch on');
-    const unshown = sql("select coalesce(string_agg(distinct props->>'outcome', ',' order by props->>'outcome'), '') as outcomes from events where name = 'roadmap_load'")
-      .toString().split('\n').map((line) => line.trim()).find((line) => line !== 'outcomes' && /^[a-z]+(?:,[a-z]+)*$/.test(line)) ?? '';
-    assert.deepEqual(['missing', 'unkept'].filter((outcome) => unshown.split(',').includes(outcome)), mode === 'on' ? ['missing', 'unkept'] : [],
-      'why a room could not show its roadmap reached the local intake only with the switch on: a private roadmap a stranger opened, a browser that keeps nothing');
-    const exported = Number(sql("select count(*) from events where name = 'roadmap_export' and props->>'door' = 'settings' and props->>'outcome' = 'done'").toString().match(/\d+/)?.[0] ?? 0);
-    assert.equal(exported, mode === 'on' ? 1 : 0, 'Settings’ export reached the local intake once it had a connection again');
+    await scenarios(mode, browser, { secret, second, session, intake, empty, carrier, stranger, climber }, account, check);
     return passed;
   } finally {
     if (web) { stopPort(webPort); web.kill('SIGTERM'); }
@@ -1380,7 +1390,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const on = await run('on', browser);
   const off = await run('off', browser);
-  assert.deepEqual({ on, off }, { on: 25, off: 9 }, 'every scenario of both runs must finish');
+  assert.deepEqual({ on, off }, { on: 26, off: 10 }, 'every scenario of both runs must finish');
   console.log(`Roadmap replica local-stack e2e: ${on} passed with both switches on, ${off} with both off; local event intake verified`);
 } catch (error) {
   log.write(`\n${error?.stack ?? error}\n${error instanceof assert.AssertionError ? inspect({ actual: error.actual, expected: error.expected }, { depth: 6 }) : ''}\n`);
