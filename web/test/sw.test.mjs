@@ -30,18 +30,18 @@ function boot({ fetches, openFails = false, putFails = false, matchFails = false
   };
   const caches = { open: async (name) => { if (fails(openFails, name)) throw quota(); return cacheFor(name); },
     keys: async () => [...stores.keys()], delete: async (name) => stores.delete(name) };
-  const listeners = new Map(), network = [], claimed = { count: 0 };
-  const self = { addEventListener: (type, listener) => listeners.set(type, listener), skipWaiting: () => {},
+  const listeners = new Map(), network = [], claimed = { count: 0 }, skipped = { count: 0 };
+  const self = { addEventListener: (type, listener) => listeners.set(type, listener), skipWaiting: () => { skipped.count++; },
     clients: { claim: async () => { claimed.count++; } }, location: { origin: ORIGIN } };
   const fetchImpl = async (request, options) => {
     const key = keyOf(request); network.push({ key, options });
     return fetches ? fetches(key, options) : reply(key === '/offline-assets.json' ? '["/assets/app.js"]' : key);
   };
-  vm.runInContext(SW, vm.createContext({ self, caches, fetch: fetchImpl, URL, AbortController,
+  vm.runInContext(SW, vm.createContext({ self, caches, fetch: fetchImpl, URL, AbortController, URLPattern: class { constructor(init) { this.init = init; } },
     Response: class { constructor(body) { return reply(body); } },
     setTimeout: (callback, ms) => setTimeout(callback, Math.min(ms, timeout)), clearTimeout }), { filename: 'sw.js' });
   return {
-    network, claimed, stores,
+    network, claimed, skipped, stores,
     entries(name) { return [...(stores.get(name) ?? [])].map(([key, value]) => [key, value.body]); },
     async pointer() { return (await cacheFor(SHELL_CACHE).match(POINTER))?.json() ?? {}; },
     handle(url, { mode = 'no-cors', method = 'GET', destination = '' } = {}) {
@@ -49,6 +49,7 @@ function boot({ fetches, openFails = false, putFails = false, matchFails = false
       listeners.get('fetch')({ request: { url, method, mode, destination }, respondWith: (value) => { answer = Promise.resolve(value); } });
       return answer;
     },
+    install(addRoutes) { let waited; listeners.get('install')({ addRoutes, waitUntil: (value) => { waited = value; } }); return waited; },
     activate() { let waited; listeners.get('activate')({ waitUntil: (value) => { waited = value; } }); return waited; },
     warm(urls = []) { let waited; listeners.get('message')({ data: { type: 'warm', urls }, waitUntil: (value) => { waited = value; } }); return waited; },
     async refresh() {
@@ -79,6 +80,16 @@ test('the worker declines API, model, foreign-origin and non-GET requests', () =
   assert.equal(worker.handle('https://windmill.works.evil.example/assets/app.js'), null);
   assert.equal(worker.handle('https://fonts.example/font.woff2'), null);
   assert.deepEqual(worker.network, []);
+});
+
+test('installation routes /v1/ past the worker where the browser takes routes, and a refused route still installs it', async () => {
+  const routed = boot(), refused = boot(), unrouted = boot();
+  const rules = [];
+  await routed.install(async (rule) => { rules.push(rule); });
+  await refused.install(async () => { throw new TypeError('refused'); });
+  assert.equal(unrouted.install(undefined), undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(rules)), [{ condition: { urlPattern: { init: { pathname: '/v1/*' } } }, source: 'network' }]);
+  assert.deepEqual([routed.skipped.count, refused.skipped.count, unrouted.skipped.count], [1, 1, 1]);
 });
 
 test('navigations return network responses without promoting unverified HTML', async () => {
