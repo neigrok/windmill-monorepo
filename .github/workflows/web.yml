@@ -13,6 +13,7 @@ on:
       - 'backend/test/deploy/deploy_production_test.py'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
+      - '.github/actions/browser-system-libraries/**'
       - '!web/**/*.md'
       - 'web/emails/README.md'
   pull_request:
@@ -23,6 +24,7 @@ on:
       - 'backend/test/deploy/deploy_production_test.py'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
+      - '.github/actions/browser-system-libraries/**'
       - '!web/**/*.md'
       - 'web/emails/README.md'
   workflow_dispatch:
@@ -61,9 +63,8 @@ jobs:
           path: web/public/models
           key: models-${{ hashFiles('web/scripts/fetch-model.mjs') }}
 
-      # The runner's regional Ubuntu mirror can serve package files slowly enough to spend the job's time limit.
-      - name: Fetch the browsers' system libraries from the main Ubuntu archive
-        run: echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
 
       # Single origin: no API host is baked in — apiBase.js resolves the backend as same-origin.
       # Set VITE_API_BASE_URL only for a preview build that must reach a remote backend.
