@@ -25,6 +25,10 @@ matching the container does not establish that its inherited text is current.
   Shared component typography and mixed prose/numeral runs must not be flattened into one Gym style.
 - **F5 / 1w · Unused glow.** Audit the Gym library's Daylight `glow/set-done` values and remove
   unused bindings. Daylight web has no set-done glow.
+- **Planned-maintenance page.** While `ops-maintenance.yml` or roadmap's cutover pauses the site,
+  `backend/deploy/Caddyfile` answers every page and API path with a 503 and one plain-text sentence,
+  "Windmill is down for a planned update and will be back shortly." No board draws it. Draw the page a
+  person lands on during a pause, in the brand's voice and both themes, and say what an open tab shows.
 
 ### Sync engine
 

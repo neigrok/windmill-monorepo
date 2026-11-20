@@ -106,9 +106,10 @@ journal's `page` and `journalState` and its two commands, `journal.savePage` and
 `products/roadmap/sync/` binds roadmap's fourteen types and five product commands on `roadmap_*` tables of
 their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v13/minimum-11 catalog.
 `windmill_server` serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, roadmap's scopes only
-where `ROADMAP_ENGINE_ENABLED` is `true` or `1`: production passes no such variable, so it withholds them, and
-they read as absent and admit nothing, until roadmap's cutover. The engine is the only writer of gym and
-journal client data. Every gym write the server makes for a lifter — the MCP gym
+where `ROADMAP_ENGINE_ENABLED` is `true` or `1`: production reads it only from the host's `roadmap-engine.env`,
+empty until roadmap's cutover writes it, and until then withholds them, so they read as absent and admit
+nothing. The engine is the only writer of gym and journal client data. Every gym write the server makes for a
+lifter — the MCP gym
 tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, the
 proposal unlink a Coach conversation's delete makes, and the `interrupted` a dropped phone Coach turn
 leaves — goes through `GymDoor`, the one `GymWriteDoor`, as a server-origin intent; it builds its own

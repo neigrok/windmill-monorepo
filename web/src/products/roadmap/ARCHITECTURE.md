@@ -153,8 +153,10 @@ have no Board presentation and are absent; their undrawn states are in the
 
 [Roadmap on the sync engine](../../../../docs/foundation/roadmap-on-the-engine.md) §8.4 moves the room onto the replica.
 A build that sets `VITE_ROADMAP_REPLICA_ROOM=on`, read in one place (`replicaRoom.js`), has the route table hand the room
-`replica`, and Settings' export reads the device's copy too (`settings/YourDataSection.jsx`); production's build sets
-nothing (`test/products/roadmap/routes.test.js` holds every workflow to that), so its room and export read as above.
+`replica`, and Settings' export reads the device's copy too (`settings/YourDataSection.jsx`). Only roadmap's cutover
+and Web Deploy set it: Web Deploy builds the room on exactly when the running server serves roadmap's scopes
+(`test/products/roadmap/routes.test.js` holds every other workflow to building it off). Built off, the room and export
+read as above.
 With the switch on, every room reads through `ReplicaReading`, the demo's among them:
 
 - **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with

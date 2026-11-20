@@ -35,8 +35,9 @@ Postgres. `roadmap/client.json` belongs to the client role.
 `platform/infra/SyncProducts` composes roadmap beside gym and journal at schema 13 / minimum 11. `windmill_server`
 serves roadmap's scopes only where `ROADMAP_ENGINE_ENABLED` is `true` or `1`; otherwise the catalog withholds the
 product (`SyncCatalog::withhold`): hello says it holds nothing, `self/roadmap` pulls empty, its trees and overlays are
-not found, and an intent is refused `forbidden` in `self/roadmap` and `not-found` elsewhere. Production's compose file
-passes no such variable (`test/deploy/deploy_production_test.py` holds it to that).
+not found, and an intent is refused `forbidden` in `self/roadmap` and `not-found` elsewhere. Production reads it only from
+the host's `roadmap-engine.env`, which roadmap's cutover writes and every later deploy keeps
+(`backend/deploy/README.md`; `test/deploy/deploy_production_test.py` holds deploys to it).
 
 Every admission logs its one `sync.admit` line and each command its `sync.command.<name>` line, with product
 `roadmap`, door, outcome or refusal code and duration, and reports an unexpected failure to Sentry under those static

@@ -628,9 +628,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
-  // Roadmap's scopes are served through the engine only where ROADMAP_ENGINE_ENABLED is "true"/"1": a test stack, an
-  // end-to-end run, CI. Production's compose file passes no such variable, so production withholds them until roadmap's
-  // cutover (roadmap-on-the-engine.md §8.1).
+  // Roadmap's scopes are served through the engine only where ROADMAP_ENGINE_ENABLED is "true"/"1". Production reads it
+  // from the host's roadmap-engine.env, which roadmap's cutover writes (roadmap-on-the-engine.md §8.1).
   const char* roadmapEngineEnv = std::getenv("ROADMAP_ENGINE_ENABLED");
   const std::string roadmapEngineFlag = roadmapEngineEnv ? roadmapEngineEnv : "";
   const bool roadmapEngine = roadmapEngineFlag == "true" || roadmapEngineFlag == "1";
