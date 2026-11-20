@@ -19,8 +19,9 @@
 // Discard takes those its question named (accountChange.js). A roadmap that cannot be placed yet waits.
 //
 // A creation keeps its old stores until the server takes it: the anon replica sends nothing, so a roadmap carried into
-// it keeps them until a sign-in adds it to an account and the server takes it there. Where the server refuses its id as
-// taken or spent, the roadmap is placed again as the account's, from its old stores whole, and the notice goes.
+// it keeps them until a sign-in adds it to an account and the server takes it there, or a sign-in's Discard takes them
+// with the work they were carried into (accountChange.js). Where the server refuses its id as taken or spent, the
+// roadmap is placed again as the account's, from its old stores whole, and the notice goes.
 //
 // What cannot land. Each roadmap's acts are written as one composed act with the ledger last; a part the domain refuses
 // is set aside, in the ledger's one list where it is past a bound, past a cap, of a roadmap deleted or of one no longer

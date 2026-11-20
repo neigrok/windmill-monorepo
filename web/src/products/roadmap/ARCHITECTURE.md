@@ -242,7 +242,8 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   cancels either: a cancelled sign-in signs the account out and leaves the work on the browser, unsent. Each step is
   told (`roadmap_signin`, `roadmap_signout`). `claimLocalTrees` claims nothing here. A sign-in's Discard takes, once the
   sign-in completes with the work it counted gone, the legend, the ledgers and the last place of each roadmap that work
-  wrote and the anon replica no longer holds (`forgetDiscarded`); Add and a cancel take none.
+  wrote and the anon replica no longer holds, and the old stores of each roadmap the carry-over carried into that work,
+  while they hold what they held as the question was asked (`forgetDiscarded`); Add and a cancel take none.
 - **Sign-out.** Roadmap's `forgetDevice` runs the same module's sweep after the engine's sign-out, Keep or Discard, an
   account replacement or a closure, and again at the next start where one was cut short: it takes every `landing:*`
   device row from each replica the device holds (Keep leaves the account's dormant replica with its device rows), the
