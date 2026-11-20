@@ -416,8 +416,8 @@ tables, stopping where they differ from those it planned from.
   parse is unreadable to it today: it has no document, and its answers are counted apart. Every
   scope's digest sums, every tree's `open` matches its `reach`, and a second run changes nothing.
   What browsers hold is not proven by it.
-- Writes resume when the server starts serving roadmap's scopes. A failure before then restores the backup and
-  returns the site as it was; after it the move goes forward only.
+- Writes resume once the cutover writes the switch that serves roadmap's scopes and starts the server on it. A
+  failure before then restores the backup and returns the site as it was; after it the move goes forward only.
 
 ### §8.2 What a browser holds
 

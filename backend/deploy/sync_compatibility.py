@@ -53,14 +53,17 @@ def sync_reply(schema, path="hello"):
     return int(status), json.loads(body)
 
 
-# Whether the server serves roadmap's scopes, as the host's own roadmap-engine.env says (README.md, "Roadmap's cutover
-# onto the sync engine"): the roadmap room a web build may read through the replica.
+# Whether the running server serves roadmap's scopes (README.md, "Roadmap's cutover onto the sync engine"): the roadmap
+# room a web build may read through the replica.
+ROADMAP_ROOM = ["docker", "compose", "exec", "-T", "server", "sh", "-c",
+                "if grep -Fzxq ROADMAP_ENGINE_ENABLED=1 /proc/1/environ; then echo on; else echo off; fi"]
+
+
 def roadmap_room():
-    switch = Path("roadmap-engine.env")
-    text = switch.read_text().strip() if switch.exists() else ""
-    if text not in ("", "ROADMAP_ENGINE_ENABLED=1"):
+    room = capture(ROADMAP_ROOM)
+    if room not in ("on", "off"):
         raise ValueError("unreadable roadmap switch")
-    return "on" if text else "off"
+    return room
 
 
 def web_preflight(schema, minimum, room):
@@ -71,9 +74,10 @@ def web_preflight(schema, minimum, room):
     current = compatibility(hello)
     if current["schema"] < client["minSchema"] or current["minSchema"] > client["schema"]:
         raise SystemExit("HOLD web deployment: live backend and candidate client are incompatible")
-    if room != roadmap_room():
+    serving = roadmap_room()
+    if room != serving:
         raise SystemExit("HOLD web deployment: the candidate's roadmap room is " + room +
-                         " and the server's ROADMAP_ENGINE_ENABLED says " + roadmap_room())
+                         " and the running server's is " + serving)
     print("PASS web deployment: live backend accepts the candidate sync client, roadmap's room " + room)
 
 

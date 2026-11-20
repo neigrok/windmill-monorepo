@@ -67,9 +67,9 @@ jobs:
         uses: ./.github/actions/browser-system-libraries
 
       # The roadmap room reads the device's copy only where the server serves roadmap's scopes, so a build that can
-      # reach the host takes the switch the host keeps (backend/deploy/README.md, "Roadmap's cutover onto the sync
-      # engine"); the preflight below holds a release whose room the server's switch no longer says. A pull request's
-      # build reaches no host and builds the room off.
+      # reach the host takes the room from the running server (backend/deploy/README.md, "Roadmap's cutover onto the sync
+      # engine"); the preflight below holds a release whose room the running server's is not. A pull request's build
+      # reaches no host and builds the room off.
       - name: Read roadmap's switch on the host
         id: roadmap
         if: github.event_name != 'pull_request'
@@ -84,13 +84,13 @@ jobs:
           trap 'rm -f "$key"' EXIT
           printf '%s\n' "$SSH_KEY" > "$key"
           chmod 600 "$key"
-          switch=$(ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" \
-            'cat ~/windmill/roadmap-engine.env 2> /dev/null || true' < /dev/null)
-          case "$switch" in
-            ROADMAP_ENGINE_ENABLED=1) room=on ;;
-            '') room=off ;;
-            *) echo "FAIL roadmap-engine.env on the host holds something other than ROADMAP_ENGINE_ENABLED=1" >&2; exit 1 ;;
-          esac
+          room=$(ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" \
+            'cd ~/windmill && docker compose exec -T server sh -c "if grep -Fzxq ROADMAP_ENGINE_ENABLED=1 /proc/1/environ; then echo on; else echo off; fi"' \
+            < /dev/null 2> /dev/null || true)
+          if [ "$room" != on ] && [ "$room" != off ]; then
+            echo "FAIL the running server's roadmap switch could not be read" >&2
+            exit 1
+          fi
           echo "Roadmap's room: $room"
           echo "room=$room" >> "$GITHUB_OUTPUT"
 

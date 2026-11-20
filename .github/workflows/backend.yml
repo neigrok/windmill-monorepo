@@ -32,7 +32,7 @@ on:
       - '!services/ai/**/*.md'
       - '!packages/api-contract/ai/**/*.md'
   # A pull request runs here too when it changes the web sync engine, which the restore proof drives, or the roadmap
-  # copy, the roadmap cutover or the maintenance door, whose tests run here.
+  # copy, the roadmap cutover or its doors, whose tests run here.
   pull_request:
     paths:
       - 'backend/**'
@@ -56,6 +56,7 @@ on:
       - '.github/workflows/ops-roadmap-copy.yml'
       - '.github/workflows/roadmap-cutover.yml'
       - '.github/workflows/ops-maintenance.yml'
+      - '.github/workflows/ops-roadmap-restore.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/subscriptions.yml'
       - '.github/workflows/ai.yml'

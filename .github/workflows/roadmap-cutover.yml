@@ -35,6 +35,10 @@ jobs:
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           set -euo pipefail
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo 'Refusing the cutover: it runs from main alone.' >&2
+            exit 1
+          fi
           if [ "$CONFIRMATION" != "back up, restore on failure" ]; then
             echo 'Refusing the cutover: the backup input must read "back up, restore on failure".' >&2
             exit 1
@@ -79,12 +83,13 @@ jobs:
       - name: Keep the web for the cutover
         uses: actions/upload-artifact@v4
         with:
-          name: roadmap-cutover-web-${{ github.run_id }}-${{ github.run_attempt }}
+          name: roadmap-cutover-web-${{ github.run_id }}
           path: |
             web/dist/
             web/web-sync-compatibility.json
           include-hidden-files: true
           if-no-files-found: error
+          overwrite: true
           retention-days: 14
 
   # A run waiting for the deploy-vps lock is cancelled by the next one to wait, so the cutover queues for the lock only
@@ -121,15 +126,17 @@ jobs:
             done
           done
 
+  # Cancelling the run does not cut this job short: a cancel re-evaluates a running job's condition, and always() holds
+  # it, so every step runs on within its own deadline.
   cutover:
     needs: guard
+    if: always() && needs.guard.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 300
     concurrency:
       group: deploy-vps
       cancel-in-progress: false
     env:
-      SSH_KEY: ${{ secrets.SSH_KEY }}
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
@@ -146,12 +153,14 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: roadmap-cutover-web-${{ github.run_id }}-${{ github.run_attempt }}
+          name: roadmap-cutover-web-${{ github.run_id }}
           path: ${{ runner.temp }}/web
 
       # `host` runs one command on the host; `site` waits up to 30 s for the public site to answer a status on its page
       # and its API, through Cloudflare as a person reaches it.
       - name: Reach the host
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
           umask 077
@@ -222,33 +231,7 @@ jobs:
             "umask 077 && mkdir -p ~/windmill/roadmap-cutover/$RUN && cat > ~/windmill/roadmap-cutover/$RUN/expected-ownerless"
           "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh adopt $RUN" < /dev/null
 
-      # The run's own key encrypts the record as it arrives from ssh, and only that key is sealed to the owner's
-      # certificate, so no plaintext reaches the runner's disk or the log. A record that cannot be sealed is left on the
-      # host and turns nothing back.
-      - name: Seal the private record
-        id: seal
-        if: always() && steps.adopt.outcome != 'skipped'
-        continue-on-error: true
-        timeout-minutes: 10
-        run: |
-          set -euo pipefail
-          umask 077
-          sealed="$RUNNER_TEMP/roadmap-cutover-record"
-          mkdir "$sealed"
-          run_key=$(openssl rand -hex 32)
-          printf '%s' "$run_key" \
-            | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed/key.pem" .github/ops/inventory-recipient.pem
-          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh record $RUN" < /dev/null \
-            | ROADMAP_CUTOVER_KEY="$run_key" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:ROADMAP_CUTOVER_KEY \
-              -out "$sealed/record.tar.enc"
-          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh forget $RUN" < /dev/null
-          cd "$sealed"
-          for file in key.pem record.tar.enc; do
-            printf '%s: %s bytes\n' "$file" "$(wc -c < "$file" | tr -d ' ')"
-          done
-          sha256sum key.pem record.tar.enc
-
-      # Writes resume here: from this step on, the cutover goes forward only.
+      # Writes resume once this step writes roadmap's switch: from then on the cutover goes forward only.
       - name: Start the server on the sync engine
         id: start
         timeout-minutes: 10
@@ -284,9 +267,11 @@ jobs:
           "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh lift $RUN" < /dev/null
           "$RUNNER_TEMP/site" 200
 
-      # A failure before writes resume puts the database back as the backup holds it and the site as it was.
+      # A failure before writes resume puts the database back as the backup holds it and the site as it was. A start that
+      # did not succeed may have written the switch already; the host's restore refuses where it has, which is where
+      # writes resume.
       - name: Restore the backup
-        if: (failure() || cancelled()) && steps.backup.outcome == 'success' && steps.start.outcome == 'skipped'
+        if: (failure() || cancelled()) && steps.backup.outcome == 'success' && steps.start.outcome != 'success'
         timeout-minutes: 60
         run: |
           set -euo pipefail
@@ -301,7 +286,33 @@ jobs:
           "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh undo $RUN" < /dev/null
           "$RUNNER_TEMP/site" 200
 
+      # The run's folder on the host, its private record and what Postgres said of a restore, sealed as it arrives from
+      # ssh under the run's own key, and only that key sealed to the owner's certificate, so no plaintext reaches the
+      # runner's disk or the log. A folder that cannot be sealed stays on the host and turns nothing back.
+      - name: Seal what the run kept on the host
+        id: seal
+        if: always() && steps.backup.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          umask 077
+          sealed="$RUNNER_TEMP/roadmap-cutover-record"
+          mkdir "$sealed"
+          run_key=$(openssl rand -hex 32)
+          printf '%s' "$run_key" \
+            | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed/key.pem" .github/ops/inventory-recipient.pem
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh record $RUN" < /dev/null \
+            | ROADMAP_CUTOVER_KEY="$run_key" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:ROADMAP_CUTOVER_KEY \
+              -out "$sealed/record.tar.enc"
+          cd "$sealed"
+          for file in key.pem record.tar.enc; do
+            printf '%s: %s bytes\n' "$file" "$(wc -c < "$file" | tr -d ' ')"
+          done
+          sha256sum key.pem record.tar.enc
+
       - name: Keep the sealed record for a day
+        id: upload
         if: always() && steps.seal.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
@@ -310,6 +321,11 @@ jobs:
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
+
+      - name: Forget what the run kept on the host
+        if: always() && steps.upload.outcome == 'success'
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh forget $RUN" < /dev/null'
 
       - name: Forget the deploy key
         if: always()

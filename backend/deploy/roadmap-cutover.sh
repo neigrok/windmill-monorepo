@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Roadmap's cutover onto the sync engine on the host, one stage a call, run from ~/windmill by roadmap-cutover.yml
-# (README.md, "Roadmap's cutover onto the sync engine"). Every line a stage prints is a count or a verdict. What the
-# move read and wrote stays in the run's private record, which only `record` writes out, for the runner to seal; what
-# Postgres says of a failed restore stays in the run's folder on this host.
+# Roadmap's cutover onto the sync engine on the host, one stage a call, run from ~/windmill by roadmap-cutover.yml and
+# ops-roadmap-restore.yml (README.md, "Roadmap's cutover onto the sync engine"). Every line a stage prints is a count or
+# a verdict. What the move read and wrote, and what Postgres says of a failed restore, stay in the run's folder, which
+# only `record` writes out, for the runner to seal.
 set -euo pipefail
 
 stage=${1:-}
@@ -13,6 +13,8 @@ if [[ ! "$run" =~ ^[0-9]{1,20}-[0-9]{1,5}$ ]]; then
 fi
 work="roadmap-cutover/$run"
 tool="windmill-roadmap-adopt-$run"
+probe="windmill-roadmap-probe-$run"
+moved="windmill_cutover_${run//-/_}"
 demo=t_9e407a96b5330ebe
 
 fail() {
@@ -24,9 +26,10 @@ sql() {
   docker compose exec -T db psql --username=windmill --dbname="$1" -XAtq -v ON_ERROR_STOP=1 -c "$2"
 }
 
-# The server's answer from inside its container, its status on the last line.
+# A server's answer from inside its container, its status on the last line: the live server's, or the probe's in check.
+asking=(docker compose exec -T server)
 ask() {
-  docker compose exec -T server curl --silent --max-time 5 --write-out '\n%{http_code}' -X "$1" \
+  "${asking[@]}" curl --silent --max-time 5 --write-out '\n%{http_code}' -X "$1" \
     -H 'Sync-Schema: 2147483647' "http://127.0.0.1:8080$2"
 }
 
@@ -40,8 +43,8 @@ serving() {
   return 1
 }
 
-# One check of the stack: the method and path, the status it must answer and, for a refusal, its JSON code.
-smoked=0
+# One check of a server: the method and path, the status it must answer and, for a refusal, its JSON code.
+unexpected=0
 expect() {
   local answer status code=""
   answer=$(ask "$1" "$2" 2> /dev/null) || answer=$'\n000'
@@ -55,10 +58,10 @@ except (ValueError, AttributeError):
     code=${code//[^a-z-]/}
   fi
   if [[ "$status" == "$3" && "$code" == "${4:-}" ]]; then
-    printf 'PASS smoke: %s %s answers %s%s\n' "$1" "$2" "$status" "${code:+ $code}"
+    printf 'PASS %s: %s %s answers %s%s\n' "$stage" "$1" "$2" "$status" "${code:+ $code}"
   else
-    printf 'FAIL smoke: %s %s answers %s%s, not %s%s\n' "$1" "$2" "$status" "${code:+ $code}" "$3" "${4:+ $4}" >&2
-    smoked=1
+    printf 'FAIL %s: %s %s answers %s%s, not %s%s\n' "$stage" "$1" "$2" "$status" "${code:+ $code}" "$3" "${4:+ $4}" >&2
+    unexpected=1
   fi
 }
 
@@ -68,8 +71,9 @@ case "$stage" in
     [[ "$image" =~ ^[a-f0-9]{40}$ ]] || fail "the image commit must be a full SHA"
     [[ -f .env ]] || fail "no deployment lives here"
     [[ "$(sed -n 's/^IMAGE_TAG=//p' .env)" == "$image" ]] || fail "the live deployment runs another commit than $image"
+    pinned=$(sed -n 's/^SERVER_IMAGE=//p' .env)
     container=$(docker compose ps -q server)
-    [[ -n "$container" && "$(docker inspect --format '{{.Image}}' "$container")" == "$(sed -n 's/^SERVER_IMAGE=//p' .env)" ]] ||
+    [[ -n "$container" && "$(docker inspect --format '{{.Image}}' "$container")" == "$pinned" ]] ||
       fail "the server is not running its pinned image"
     docker compose exec -T server sh -c 'command -v windmill_roadmap_adopt' > /dev/null ||
       fail "the live image does not carry windmill_roadmap_adopt"
@@ -86,6 +90,24 @@ case "$stage" in
     printf 'disk: the database %s MB; free %s MB beside the backups and %s MB beside the database; %s MB needed\n' \
       "$((database / 1048576))" "$((beside_backups / 1024))" "$((beside_database / 1024))" "$((needed / 1024))"
     ((beside_backups >= needed && beside_database >= needed)) || fail "too little free disk for a backup and its restore"
+    # The pinned image, serving roadmap's scopes over a throwaway database of its own schema, on no setting of the live
+    # server's but its port: what §8.3 asks of it after the move, proven before anything pauses.
+    probe_settings=$(mktemp)
+    trap 'docker rm -f "$probe" > /dev/null 2>&1 || true; rm -f "$probe_settings"
+          sql postgres "drop database if exists windmill_roadmap_probe" > /dev/null 2>&1 || true' EXIT
+    sql postgres "drop database if exists windmill_roadmap_probe" > /dev/null 2>&1 || fail "a probe database left behind could not be dropped"
+    docker compose exec -T db createdb --username=windmill --owner=windmill windmill_roadmap_probe
+    docker run --rm --entrypoint cat "$pinned" /app/db/schema.sql |
+      docker compose exec -T db psql --username=windmill --dbname=windmill_roadmap_probe -Xq -v ON_ERROR_STOP=1 > /dev/null 2>&1 ||
+      fail "the image's schema did not apply to a throwaway database"
+    printf 'DATABASE_URL=postgresql://windmill:%s@db:5432/windmill_roadmap_probe\nPORT=8080\nROADMAP_ENGINE_ENABLED=1\n' \
+      "$(sed -n 's/^POSTGRES_PASSWORD=//p' .env)" > "$probe_settings"
+    docker run -d --rm --name "$probe" --network windmill_default --env-file "$probe_settings" "$pinned" > /dev/null
+    asking=(docker exec "$probe")
+    serving || fail "the image did not answer hello within 60 s while serving roadmap's scopes"
+    expect GET /v1/socket 410 client-update-required
+    expect POST /v1/trees 410 client-update-required
+    ((unexpected == 0)) || fail "the image does not retire roadmap's own routes when it serves roadmap's scopes"
     printf 'PASS check: the server runs %s and carries windmill_roadmap_adopt; roadmap is off the engine; the pause is mounted\n' \
       "$image"
     ;;
@@ -142,7 +164,7 @@ case "$stage" in
     rm -f "$work/expected-ownerless"
     # Only a stage's own line reaches the log, and only in its own shape: a stage, a verdict, a time and counts named by
     # the code's words. Anything else the tool wrote is counted and left out.
-    python3 - "$work/stages.jsonl" <<'PY'
+    answered=$(python3 - "$work/stages.jsonl" <<'PY'
 import json
 import re
 import sys
@@ -172,25 +194,33 @@ for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
 if withheld:
     print(f"WITHHELD adopt: {withheld} lines of the tool's output were not a stage's counts")
 PY
+)
     rm -f "$work/stages.jsonl"
+    [[ -z "$answered" ]] || printf '%s\n' "$answered"
     case "$outcome" in
       0) printf 'PASS adopt: every stage passed\n' ;;
       3)
         printf 'STOP adopt: a stage did not pass, and nothing after it ran\n' >&2
         exit 3 ;;
-      *) fail "windmill_roadmap_adopt exited $outcome" ;;
+      *)
+        grep -q '^{' <<< "$answered" ||
+          fail "windmill_roadmap_adopt exited $outcome before any stage answered; what it said is in the sealed record"
+        fail "windmill_roadmap_adopt exited $outcome" ;;
     esac
     ;;
   record)
-    [[ -d "$work/record" ]] || fail "this run keeps no private record"
-    tar -C "$work/record" -cf - .
+    [[ -d "$work" ]] || fail "this run keeps nothing on the host"
+    docker rm -f "$tool" > /dev/null 2>&1 || true
+    tar -C "$work" -cf - .
     ;;
   forget)
-    rm -rf "$work/record"
-    printf 'PASS forget: the private record is gone from the host\n'
+    rm -rf "$work/record" "$work/expected-ownerless" "$work/stages.jsonl" "$work/restore.log" "$work/migrate.log"
+    printf 'PASS forget: what the run kept on the host is gone, but for its backup\n'
     ;;
   start)
     [[ ! -s roadmap-engine.env ]] || fail "roadmap is on the sync engine here already"
+    printf '%s\n' "$(sed -n 's/^IMAGE_TAG=//p' .env)" > roadmap-engine.floor.next
+    mv roadmap-engine.floor.next roadmap-engine.floor
     printf 'ROADMAP_ENGINE_ENABLED=1\n' > roadmap-engine.env.next
     mv roadmap-engine.env.next roadmap-engine.env
     docker compose up -d --no-deps --pull never server
@@ -213,40 +243,45 @@ print(int(hello["schema"]), int(hello["minSchema"]))')
     expect GET "/v1/trees/$demo/activity" 200
     expect GET "/t/$demo" 200
     expect GET /gallery 200
-    exit "$smoked"
+    exit "$unexpected"
     ;;
   lift)
     rm -f maintenance/on
     printf 'PASS lift: maintenance/on is gone\n'
     ;;
+  # Run again where it stopped: once windmill holds the backup and the moved database is kept, only the start is left.
   restore)
     [[ -s "$work/backup" ]] || fail "this run holds no verified backup"
-    [[ ! -s roadmap-engine.env ]] || fail "the server has started on the engine, so the cutover goes forward only"
+    [[ ! -s roadmap-engine.env ]] || fail "roadmap's switch is written, so the cutover goes forward only"
     backup=$(cat "$work/backup")
-    moved="windmill_cutover_${run//-/_}"
     docker rm -f "$tool" > /dev/null 2>&1 || true
-    sha256sum --check --status "$backup.sha256" || fail "the backup no longer matches its sha256"
-    contents=$(docker compose exec -T db pg_restore --list < "$backup")
-    grep -qxF ';     dbname: windmill' <<< "$contents" || fail "the backup does not read back as a dump of windmill"
-    sql postgres "drop database if exists windmill_restore" > /dev/null
-    docker compose exec -T db createdb --username=windmill --owner=windmill windmill_restore
-    docker compose exec -T db pg_restore --username=windmill --dbname=windmill_restore --single-transaction \
-      --exit-on-error --no-owner --no-acl < "$backup" 2> "$work/restore.log" ||
-      fail "pg_restore did not restore the backup; windmill is as the move left it, and Postgres' words are in $work/restore.log"
-    sql postgres "select count(pg_terminate_backend(pid)) from pg_stat_activity
-                  where datname = 'windmill' and pid <> pg_backend_pid()" > /dev/null
-    sql postgres "alter database windmill rename to $moved; alter database windmill_restore rename to windmill" ||
-      fail "the restored database could not take windmill's name"
+    if [[ "$(sql postgres "select count(*) from pg_database where datname = '$moved'")" == 0 ]]; then
+      sha256sum --check --status "$backup.sha256" || fail "the backup no longer matches its sha256"
+      contents=$(docker compose exec -T db pg_restore --list < "$backup")
+      grep -qxF ';     dbname: windmill' <<< "$contents" || fail "the backup does not read back as a dump of windmill"
+      sql postgres "drop database if exists windmill_restore" > /dev/null 2>&1 ||
+        fail "a restored database an earlier attempt left could not be dropped"
+      docker compose exec -T db createdb --username=windmill --owner=windmill windmill_restore
+      docker compose exec -T db pg_restore --username=windmill --dbname=windmill_restore --single-transaction \
+        --exit-on-error --no-owner --no-acl < "$backup" 2> "$work/restore.log" ||
+        fail "pg_restore did not restore the backup; windmill is as the move left it, and Postgres' words go to the sealed record"
+      sql postgres "select count(pg_terminate_backend(pid)) from pg_stat_activity
+                    where datname = 'windmill' and pid <> pg_backend_pid()" > /dev/null
+      sql postgres "alter database windmill rename to $moved; alter database windmill_restore rename to windmill" ||
+        fail "the restored database could not take windmill's name"
+    else
+      printf 'NOTE restore: windmill holds the backup already and the moved database is kept, so only the start is left\n'
+    fi
     docker compose run --rm --no-deps -T migrate > "$work/migrate.log" 2>&1 ||
-      fail "the schema did not apply to the restored database; its words are in $work/migrate.log"
-    docker compose start server
+      fail "the schema did not apply to the restored database; its words go to the sealed record"
+    docker compose up -d --no-deps --no-recreate --pull never server
     serving || fail "the server did not answer on the restored database within 60 s, and the site stays paused"
     rm -f maintenance/on
     printf 'PASS restore: windmill is %s again, its sha256 matched; the moved database is kept as %s\n' "$backup" "$moved"
     printf 'PASS restore: the server serves as before the cutover, roadmap off the engine, and the site is lifted\n'
     ;;
   undo)
-    docker compose start server
+    docker compose up -d --no-deps --no-recreate --pull never server
     serving || fail "the server did not answer within 60 s, and the site stays paused"
     rm -f maintenance/on
     printf 'PASS undo: the database was never changed; the server serves as before and the site is lifted\n'
