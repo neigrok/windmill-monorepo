@@ -19,6 +19,7 @@ import { AddStepLink, AddSubtask } from '../../../../src/products/roadmap/domain
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { FIRST_COPY_MS, ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
 import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
+import { stagedMarks } from '../../../../src/products/roadmap/demo/demoStage.js';
 
 const committed = (outcome) => {
   assert.equal(outcome.kind, 'committed', JSON.stringify(outcome));
@@ -249,6 +250,45 @@ test('a reader’s step that owns a subtree stands on what the server says the s
     await until(() => followed.length >= 1);
     const renamed = { 'Learn to sail': ['open', 1, 2], 'Cross the sound': ['empty', 0, 0], 'Write the book': ['unread', 0, 0] };
     assert.deepEqual(followed, followed.map(() => renamed), 'every picture the room follows keeps what the server said');
+    reading.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('the demo is a reader’s room even in the list of the account that owns it: its staged marks, how far each subtree is as the server reads it, no write door, and none of its owner’s marks or workspace followed', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [
+      { key: 'rig', label: 'Rig the boat yourself' }, { key: 'tack', label: 'Tacking' }, { key: 'dock', label: 'Docking under sail' },
+    ], links: [['rig', 'tack'], ['tack', 'dock']] })));
+    const knots = committed(await a.runner.runAct(new CreateSubtree(tree, steps.rig))).subtree;
+    committed(await a.runner.runAct(Complete(tree, steps.tack)));
+    committed(await a.runner.runAct(AddSubtask(tree, steps.tack, 'Check the forecast')));
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree), RoadmapScopes.tree(knots)]) a.observe(scope);
+    await a.sync();
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const room = { sessionRef: { current: null } };
+    const subtrees = new Map([[steps.rig, Opening.owned({ id: knots, done: 1, total: 3, state: 'open' })]]);
+    const reading = new ReplicaReading({ treeId: tree, demo: true, room, timers: a.env.timers,
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => ({ completed: new Set([steps.tack]), completedAt: {}, server: true, subtrees }), loadActivity: async () => [] } });
+    const read = await reading.read({ signal: new AbortController().signal });
+    const pills = (seed) => Object.fromEntries(seed.nodes.map(({ label, opening }) => [label, opening ? [opening.face, opening.done, opening.total] : null]));
+    assert.deepEqual({ mine: read.seed.mine, pills: pills(read.seed), overlay: read.overlay, workspace: read.workspace, ready: reading.ready }, {
+      mine: true, pills: { 'Rig the boat yourself': ['open', 1, 3], Tacking: null, 'Docking under sail': null }, overlay: stagedMarks(), workspace: null,
+      ready: false,
+    });
+
+    const followed = [];
+    reading.follow({ onTree: (seed) => followed.push(pills(seed)), onProgress: () => assert.fail('the demo shows its staged marks, not its owner’s'),
+      onWorkspace: () => assert.fail('the demo shows no owner’s workspace'), onGuides: () => {}, onLanding: (lines) => assert.deepEqual(lines, []), onActivity: () => {} });
+    committed(await a.runner.runAct(new ChangeStep(tree, steps.tack, { label: 'Tack upwind' })));
+    committed(await a.runner.runAct(Complete(tree, steps.dock)));
+    await a.sync();
+    await until(() => followed.length >= 1);
+    assert.deepEqual({ followed: followed.at(-1), session: room.sessionRef.current },
+      { followed: { 'Rig the boat yourself': ['open', 1, 3], 'Tack upwind': null, 'Docking under sail': null }, session: null });
     reading.close();
   } finally {
     a.close();

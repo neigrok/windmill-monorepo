@@ -2,7 +2,7 @@
 // the device's copy where the server has none to give, then roadmap's own session for every change after. It works out
 // what the trees a step opens come to: the server's read, or the device's own rule for a tree that lives only here.
 
-import { DEMO_STAGED_COMPLETED } from '../demo/demoStage.js';
+import { stagedMarks } from '../demo/demoStage.js';
 import { Openings } from '../model/Opening.js';
 import { OpenedTrees } from '../model/OpenedTrees.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
@@ -27,9 +27,7 @@ async function readRoadmap({ treeId, demo, signal }) {
   const fromDevice = !seed;
   if (fromDevice) seed = await loadDeviceTree(treeId, { ownerResolved: true });
   if (!seed) return { unknown: true };
-  const overlay = demo
-    ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
-    : await (fromDevice ? loadDeviceMarks(seed) : repo.loadProgress(seed, { signal }));
+  const overlay = demo ? stagedMarks() : await (fromDevice ? loadDeviceMarks(seed) : repo.loadProgress(seed, { signal }));
   const serverActivity = await repo.loadActivity({ limit: 200, signal });
   return { seed, overlay, serverActivity };
 }
