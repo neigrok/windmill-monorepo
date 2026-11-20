@@ -190,7 +190,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims, replica: load.readsReplica });
+  const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims, replica });
   const treeVisit = useTreeVisit({ room, arrival, holder, heldCard: load.card, visitor: !demo && !owner, place: treePlace, route: shared ? '#/t/' : '#/app/', role: loading ? null : who.role, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
@@ -232,7 +232,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const [boardOverall, setBoardOverall] = useState(null);
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
-  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef, replica: load.readsReplica, held: load.guides });
+  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef, replica, held: load.guides });
   const guideView = boardActive ? 'board' : 'graph';
   const guideEntry = guide && !boardAwaitsRoadmap ? (
     <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>
@@ -249,7 +249,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     const currentSession = !loading && session?.treeId === treeId && !session.closed ? session : null;
     const ready = Boolean(currentSession?.ready);
     const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.treeData()).tree) : null;
-    const onDevice = holder?.place === 'device' && (load.readsReplica || new LocalTreeRegistry().onDevice(treeId) !== null);
+    const onDevice = holder?.place === 'device' && (replica || new LocalTreeRegistry().onDevice(treeId) !== null);
     const editable = owner && sharedWritesAllowed() && (onDevice || session?.reach !== 'reader') && !session?.closed;
     return { tree: currentTree, ready, editable, session, savingBlocked: !ready || Boolean(session?.rebaselining || session?.discardPending) };
   };
@@ -459,7 +459,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     if (breakpoint !== 'tablet' || !boardActive || !loadError || shared || demo) return null;
     if (status === 'signed-in' && account?.id) return { place: 'account' };
     if (status !== 'ghost') return null;
-    if (load.readsReplica) return load.card(treeId) ? { place: 'device' } : null;
+    if (replica) return load.card(treeId) ? { place: 'device' } : null;
     try {
       return new LocalTreeRegistry().readList(null).some((row) => row.id === treeId && !row.claimed) ? { place: 'device' } : null;
     } catch (error) {
@@ -486,7 +486,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
         style={boardActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
       />
 
-      {desktopEditor && !load.readsReplica && (
+      {desktopEditor && !replica && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} sessionRef={sessionRef} selection={selectedId} />
       )}
 
@@ -781,7 +781,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
         title={tree?.title ?? ''}
         subtrees={tree?.nodes.some((step) => step.opening?.owned) ?? false}
         onStanceChange={setTreeVisibility}
-        writeVisibility={load.readsReplica ? (id, visibility) => sessionRef.current.setVisibility(visibility) : undefined}
+        writeVisibility={replica ? (id, visibility) => sessionRef.current.setVisibility(visibility) : undefined}
       />
 
       {loading && !loadError && !boardActive && <div className="st-loading"><span className="st-loading-msg">{GRAPH_LOAD.planting}</span></div>}

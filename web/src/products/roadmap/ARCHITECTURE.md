@@ -104,8 +104,8 @@ runs layout and installs the render model in `SkillTreeScene` when one is availa
 change. Without WebGL2 it installs the tree and model with null scene bounds, seeds activity and starts following without
 any scene or camera calls. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
 engines, labels. The reading is `room/LatticeReading.js` (`HttpTreeRepository` or the account's device fallback, then
-`SyncSession`) everywhere a build does not turn the replica on, and for the demo; where it does, it is
-`room/ReplicaReading.js` (Reading the device's copy, below).
+`SyncSession`) everywhere a build does not turn the replica on; where it does, it is `room/ReplicaReading.js` (Reading
+the device's copy, below).
 
 The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A tree whose pointers the server
 could not follow (`503 opens-unavailable`) reports `roadmap-opens-load` and falls to the device's copy like any failed read. A server tree whose marks can't be
@@ -155,7 +155,7 @@ have no Board presentation and are absent; their undrawn states are in the
 A build that sets `VITE_ROADMAP_REPLICA_ROOM=on`, read in one place (`replicaRoom.js`), has the route table hand the room
 `replica`, and Settings' export reads the device's copy too (`settings/YourDataSection.jsx`); production's build sets
 nothing (`test/products/roadmap/routes.test.js` holds every workflow to that), so its room and export read as above.
-With the switch on, every room but the demo reads through `ReplicaReading`:
+With the switch on, every room reads through `ReplicaReading`, the demo's among them:
 
 - **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
   it, E-3), observes the account's list `self/roadmap` and every scope the domain reads the roadmap through: every roadmap
@@ -264,6 +264,12 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   signed-in reader's own overlay of the roadmap comes with its tree scope (E-3), where their own marks live; the room
   shows the owner's, and offers a reader no mark. A roadmap the person may not read, a private one a stranger opens among
   them, is in no address: the load error.
+- **The demo.** The sample at `#/demo` is a public roadmap of the house account (§7, §8.1), and its room opens as a
+  reader's does, whoever's list holds it: its tree scope subscribed as the room opens and dropped as it leaves, each
+  subtree its steps own standing on what `GET /v1/trees/{id}/progress` says, and the server's activity feed. Its marks
+  are the demo's stage (`stagedMarks` in `demo/demoStage.js`) in place of its owner's, as with the switch off, so its
+  coach finds Rig the boat yourself the one step up next, and a visitor's marks live in the room alone. It asks nothing
+  of a route §7 retires.
 - **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`, `UNSHOWN`), once
   a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
   (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
