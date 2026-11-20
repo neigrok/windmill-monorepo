@@ -24,12 +24,16 @@ const ready = (async () => {
     resolveId(id, importer) {
       if (id === '/device-test-fixture.js') return id;
       const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
+      if (file.endsWith('/roadmap/replicaRoom.js')) return '\0device-switch';
       if (file.endsWith('/scene/SkillTreeScene.js')) return '\0device-scene';
       if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0device-signin';
       if (file.endsWith('/telemetry/beacon.js')) return '\0device-events';
       if (file.endsWith('/telemetry/sentry.js')) return '\0device-issues';
     },
     load(id) {
+      // These rooms read roadmap's own sync, its socket, store and device index, as a build with the switch off does; the
+      // device's copy at an account change is test/products/roadmap/sync/accountChange.test.js's.
+      if (id === '\0device-switch') return 'export const ROOM_READS_REPLICA = false;';
       if (id === '\0device-scene') return scene;
       if (id === '\0device-signin') return 'const open = () => {}; export const useSignInDoor = () => open; export const useSignInDoorHost = () => () => {};';
       if (id === '\0device-events') return beacon;
@@ -142,7 +146,7 @@ const ready = (async () => {
 after(async () => { try { await ready; } finally { await browser?.close(); await server?.close(); } });
 
 for (const reload of [false, true]) for (const returning of ['A', 'B']) {
-  test(`device copy: lapse${reload ? ' + reload' : ''} + ${returning === 'A' ? 'same' : 'different'} account`, async () => {
+  test(`with the switch off, roadmap's own device copy: lapse${reload ? ' + reload' : ''} + ${returning === 'A' ? 'same' : 'different'} account`, async () => {
     await ready;
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     try {
@@ -255,7 +259,7 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
 
 
 for (const interruption of ['question', 'handshake', 'signout']) {
-  test(`device cleanup survives a reload after the replica transition during ${interruption}`, async () => {
+  test(`with the switch off, roadmap's own device cleanup survives a reload after the replica transition during ${interruption}`, async () => {
     await ready;
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     try {
