@@ -1045,7 +1045,9 @@ the tree's owner alone and names only their trees; a refused delete edits nothin
 `GET /v1/trees/{id}/progress` answers the owner's overlay, `{marks: [{node, status, at, markedAt,
 outOfOrder?}]}`, to anyone who can read the tree: the stored marks to a caller who can write it, whose
 view derives completion again from the tree's `opens`, and `readerView` of them (Model) to every other
-reader. It answers `200` whether or not the trees could be followed.
+reader. Where the engine serves roadmaps (`ROADMAP_ENGINE_ENABLED`), it also answers `subtrees: [{node, tree, done,
+total}]`, what each standing subtree of the roadmap has come to. It answers `200` whether or not the trees could be
+followed.
 
 `/v1/gallery` and `/gallery` are anonymous-allowed; a session only adds the two facts a row wears
 about its reader and never changes which trees are listed, the public roots alone. A card's `done` counts the owner's marks
