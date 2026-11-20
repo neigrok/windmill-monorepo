@@ -76,9 +76,20 @@ state.
 The document holds what a person and a reader see of a roadmap — its owner, title, guide, place, steps with their
 fields and life, links, kinds, every account's marks with when the server received them, its visibility, who may read
 it and whether it stands — and never a stamp or an order key, which the move may give: the order is the documents'
-order of steps and kinds. The read models' answers leave out what §8.1 names as changed by design (`ReadModels.h`). A
-roadmap the old server cannot read today, which throws on its stamps (`roadmapStamp`), has no document; it and its
-answers are counted as `unreadableToday`.
+order of steps and kinds. A roadmap the old server cannot read today, which throws on its stamps (`roadmapStamp`), has
+no document; it and its answers are counted as `unreadableToday`.
+
+The read models' answers are held to the old server's but for what §8.1 names as changed by design, and for the order of
+lists whose order says nothing (`ReadModels.h`):
+
+- MCP's `seq` continues above the old one: it is left out of the answer, kept beside it, and counted
+  (`mcp.seqContinuedAboveTheOld`) where it did.
+- A step's order key, which the move may give, is left out; MCP's steps are compared without their order, since the
+  engine's tools list them in the roadmap's order and the rooms' by id.
+- A mark's stamp, which the move gives where roadmap held none, is left out; its time is compared.
+- What each subtree has come to, which the engine's progress answer adds, is left out.
+- MCP `get_tree`'s edges and each step's prerequisites are compared without their order, as each server lists them as it
+  holds them. An edge, a prerequisite or a step only one side holds, or holds twice, still differs.
 
 ## Tests
 
@@ -87,5 +98,7 @@ own built from `db/schema.sql` and `roadmap_adopt_fixture.sql`, one §8.1 case a
 a run killed between stages and in the middle of `adopt`, a client connected beside it and a row changed after the plan,
 a scope already in the engine and a store that refuses a row, a value outside its field's domain, an id repeated in a
 whole document, a roadmap of more steps than a page, and that nothing printed names a record. `test/products/roadmap/adoption/AdoptionTest.cpp` holds the rules (`windmill_domain_tests`), and reads a plan's
-rows back through `recordsOf` and the read domain over fakes. `test/e2e/roadmap_adoption.mjs` serves an adopted fixture
+rows back through `recordsOf` and the read domain over fakes. `ReadModelsTest.cpp` beside it holds the comparison of two
+servers' answers: `get_tree` in another order is the same, and an edge or a prerequisite missing, extra or repeated
+differs. `test/e2e/roadmap_adoption.mjs` serves an adopted fixture
 with `ROADMAP_ENGINE_ENABLED=1` and reads it back through the browser engine (`test/e2e/README.md`).

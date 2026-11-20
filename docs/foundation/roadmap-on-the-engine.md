@@ -334,9 +334,9 @@ What a device tells a person when a change of theirs met one made elsewhere.
 | `POST /v1/trees/{id}/fork` | stays, through the door |
 | `GET /v1/trees/{id}/activity`, `GET /v1/trees/{id}/progress` | stay as reads |
 | The share page, the gallery, the cards and their uploads, compose, reminders, tending | stay |
-| `GET /v1/trees`, `GET /v1/trees/{id}`, `/guides`, `/diagnostics` | retire: a device computes each from its copy |
-| `POST /v1/trees`, `PATCH /v1/trees/{id}`, `DELETE /v1/trees/{id}`, `PUT …/subtree` | answer `410` (§8.3); MCP reaches the same acts through the door |
-| `/v1/socket` | refuses every connection (§8.3) |
+| `GET /v1/trees`, `GET /v1/trees/{id}`, `GET /v1/trees/{id}/guides`, `GET /v1/trees/{id}/diagnostics` | answer `410` (§8.3): a device computes each from its copy, and the old tables stop changing at the move |
+| `POST /v1/trees`, `PATCH /v1/trees/{id}`, `DELETE /v1/trees/{id}`, `PUT /v1/trees/{tree}/steps/{step}/subtree` | answer `410` (§8.3); MCP reaches the same acts through the door |
+| `/v1/socket` | answers its upgrade and a plain `GET` `410` (§8.3) |
 
 ## §8 The move
 
@@ -480,9 +480,11 @@ items it carried, and each record it set aside for §6's one list.
   what it holds and reload when it is. It ships long enough before the cutover for open tabs to
   take it.
 - After the cutover, `/v1/socket` answers both its upgrade and a plain `GET` with `410` and the JSON
-  body code `client-update-required`, and so do the write routes of §7's table, all before
+  body code `client-update-required`, and so do the reads and writes §7's table retires, all before
   authentication or parsing. A browser cannot read why an upgrade failed, so a room whose socket
-  never opens reads the plain `GET`: that answer is how it learns its build is retired.
+  never opens reads the plain `GET`: that answer is how it learns its build is retired. The server
+  answers so wherever `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, and logs each refusal as one
+  line under the route's static operation, never as an Issue.
 - A tab older than that release stays offline and keeps what it writes in the old store, which the
   next load of the new bundle carries over (§8.2).
 

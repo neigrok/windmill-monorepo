@@ -41,10 +41,11 @@ void declareWriteRoute(WriteRoute route);
 std::vector<WriteRoute> registeredWriteRoutes();
 // A route WriteRoutes registers for a read: no observation, but its static operation still names it (httpOperation).
 void declareReadRoute(WriteRoute route);
-// Whether the request matched a retired write path: its tombstone answers it, and no rate limit counts it.
+std::vector<WriteRoute> registeredReadRoutes();
+// Whether the request matched a retired path: its tombstone answers it, and no rate limit counts it.
 bool retiredRoute(const drogon::HttpRequestPtr& request);
-// What a retired write path answers: 410 `client-update-required`, with the sentence an old client shows.
-drogon::HttpResponsePtr retiredWriteResponse();
+// What a retired path answers: 410 `client-update-required`, with the sentence an old client shows.
+drogon::HttpResponsePtr retiredRouteResponse();
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request);
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route);
@@ -139,27 +140,32 @@ public:
     registerRoute({path, operation, product_, door_, methods, false, std::move(policy)}, std::move(handler));
   }
 
-  // A write path an installed client still calls after its writes moved elsewhere: it answers
-  // retiredWriteResponse() before auth with nothing behind it, and is observed like any write.
+  // A path an installed client still calls after what it served moved elsewhere, a read or a write: it answers
+  // retiredRouteResponse() before auth with nothing behind it, and is observed like any write.
   void retire(drogon::HttpMethod method, const std::string& path) {
     const WriteRoute route{path, routeOperation(product_, path, {method}), product_, door_, {method}, true};
     switch (std::count(path.begin(), path.end(), '{')) {
       case 0:
-        registerRoute(route, [](const drogon::HttpRequestPtr&, WriteHttpCallback&& cb) { cb(retiredWriteResponse()); });
+        registerRoute(route, [](const drogon::HttpRequestPtr&, WriteHttpCallback&& cb) { cb(retiredRouteResponse()); });
         return;
       case 1:
         registerRoute(route, [](const drogon::HttpRequestPtr&, WriteHttpCallback&& cb, const std::string&) {
-          cb(retiredWriteResponse());
+          cb(retiredRouteResponse());
         });
         return;
       case 2:
         registerRoute(route, [](const drogon::HttpRequestPtr&, WriteHttpCallback&& cb, const std::string&,
-                                const std::string&) { cb(retiredWriteResponse()); });
+                                const std::string&) { cb(retiredRouteResponse()); });
         return;
       default:
         throw std::logic_error("a retired path names at most two parameters: " + path);
     }
   }
+
+  // A WebSocket path an installed client still opens after what it served moved elsewhere. Its upgrade and a plain GET
+  // of it both answer retiredRouteResponse() before auth, observed as the path's retired GET: a browser cannot read why
+  // an upgrade failed, so it reads the plain GET.
+  void retireSocket(const std::string& path);
 
 private:
   template <typename Handler>

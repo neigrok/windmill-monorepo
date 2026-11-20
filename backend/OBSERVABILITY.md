@@ -60,10 +60,12 @@ account-mismatch, clock-ahead, unauthenticated and unavailable results create no
 retention is counted in `platform.retention`. No account/operation id, proof, digest or deadline
 enters these observations. OAuth admission races return the existing `login_required` or
 `invalid_grant` refusal on their existing route completion, without an Issue.
-`WriteRoutes::retire` registers the 20 retired gym write paths listed in `products/gym/routes.cpp`:
-each answers 410 `client-update-required` before authentication with nothing behind it and emits one
-WARN completion with outcome `client-update-required`, without an Issue, and the rate limiter skips
-it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
+`WriteRoutes::retire` registers the 20 retired gym write paths listed in `products/gym/routes.cpp`,
+and, where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, the rooms' four writes and four reads listed in
+`products/roadmap/routes.cpp`; `WriteRoutes::retireSocket` retires `/v1/socket` there, its upgrade refused by a gate and a
+plain GET of it answered as a retired read, both under `roadmap.GET.v1.socket`. Each answers 410
+`client-update-required` before authentication with nothing behind it and emits one WARN completion with outcome
+`client-update-required`, without an Issue, and the rate limiter skips it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
 dispatch by their access declarations; `ScopedToolHost` refuses the tools it withholds from a run
 (`create_tree`, `list_trees`, `delete_tree`, `update_tree`) before it opens any observation, so a run
 emits only the roadmap operations listed below; an argument it withholds (`opens`) completes the tool's own
@@ -186,8 +188,9 @@ retries stays in Postgres, its key on the row, and is not sent again. A sandbox 
 nothing; it is recorded with `environment: sandbox`, and analysis of subscribers excludes it by that
 property.
 
-The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym 33 (20 of them
-retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
+The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13 (four of them the rooms' writes, retired
+paths where the engine serves roadmap's scopes), gym 33 (20 of them retired paths), journal 11, probe 2; sync 3; MCP
+transport 4. Excluding the two dev routes and two
 standalone transport duplicates leaves 89 production HTTP operations. MCP has one write operation
 per write tool in the tables below, and a compatibility alias shares its canonical operation. Coach
 has ask's operations and one per gym ability and per roadmap ability a tend is offered, each in the
@@ -195,11 +198,15 @@ tables below. The catalogs have eleven production commands
 (gym 9, journal 2), plus four probe commands. Background coverage includes 25 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (28 background
 operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh,
-signup fork and the erasure of an account a sign-in finds past its grace. The roadmap socket has two write frame kinds plus rate refusal.
+signup fork and the erasure of an account a sign-in finds past its grace. Where the rooms serve roadmap, the roadmap socket
+has two write frame kinds plus rate refusal.
 
 The HTTP coverage test enumerates every source registration, rejects alternate registration APIs,
 and requires the shared registrar, including handlers in headers and computed method lists; a second
-case requires the registered retired paths to equal the Retire rows of gym's route ledger. MCP,
+case requires the registered retired paths to equal the Retire rows of gym's route ledger, and roadmap's routes case
+(`test/products/roadmap/RoutesTest.cpp`) every route its registration declares under each state of
+`ROADMAP_ENGINE_ENABLED`, with its static operation. `roadmap_routes` asks the real server each of them, and reads its
+refusal lines back. MCP,
 Coach and command tests enumerate the real catalogs and exercise each write through the dispatcher
 or admission. Failure, refusal, asynchronous correlation, exact JSON preservation and callback
 exception cases use capture sinks. Every test source is listed in `CMakeLists.txt`. Process-level
@@ -233,10 +240,11 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/journal/echoes/{triggerDay}/{matchDay}/opened` (journal; rest) | `journal.POST.v1.journal.echoes.triggerday.matchday.opened` | completion; bounded refusal or result | unexpected |
 | `POST /v1/admin/journal/echo/sweep` (journal; rest) | `journal.POST.v1.admin.journal.echo.sweep` | completion; bounded refusal or result | unexpected |
 | `POST /v1/journal/transcribe` (journal; rest) | `journal.POST.v1.journal.transcribe` | completion; bounded refusal or result | unexpected |
-| `POST /v1/trees` (roadmap; rest) | `roadmap.POST.v1.trees` | completion; bounded refusal or result; `not-a-root` for a subtree's id | unexpected |
-| `PATCH /v1/trees/{id}` (roadmap; rest) | `roadmap.PATCH.v1.trees.id` | completion; bounded refusal or result | unexpected |
-| `DELETE /v1/trees/{id}` (roadmap; rest) | `roadmap.DELETE.v1.trees.id` | completion; bounded refusal or result; `not-a-root` for a subtree's id | unexpected |
-| `PUT /v1/trees/{tree}/steps/{step}/subtree` (roadmap; rest) | `roadmap.PUT.v1.trees.tree.steps.step.subtree` | completion beside the create's own `roadmap.subtree.create` line; `ok` for a `201`, and `unchanged`, at INFO like `ok`, for a `200` that answers the subtree the step already owned and wrote nothing; the refusal's code: `kinds-refused`, `no-such-tree`, `step-gone`, `depth-limit`, `step-opens-a-tree`, `save-pending` (WARN, no Issue), and `http_403` for `not-yours` or `nobodys-tree`, as `PATCH` logs them; `http_400` for a body the door cannot read and `http_401` with no session, neither of which reaches the create | unexpected |
+| `POST /v1/trees` (roadmap; rest) | `roadmap.POST.v1.trees` | completion; bounded refusal or result; `not-a-root` for a subtree's id; `client-update-required` where the engine serves roadmap's scopes | unexpected |
+| `PATCH /v1/trees/{id}` (roadmap; rest) | `roadmap.PATCH.v1.trees.id` | completion; bounded refusal or result; `client-update-required` where the engine serves roadmap's scopes | unexpected |
+| `DELETE /v1/trees/{id}` (roadmap; rest) | `roadmap.DELETE.v1.trees.id` | completion; bounded refusal or result; `not-a-root` for a subtree's id; `client-update-required` where the engine serves roadmap's scopes | unexpected |
+| `PUT /v1/trees/{tree}/steps/{step}/subtree` (roadmap; rest) | `roadmap.PUT.v1.trees.tree.steps.step.subtree` | completion beside the create's own `roadmap.subtree.create` line; `ok` for a `201`, and `unchanged`, at INFO like `ok`, for a `200` that answers the subtree the step already owned and wrote nothing; the refusal's code: `kinds-refused`, `no-such-tree`, `step-gone`, `depth-limit`, `step-opens-a-tree`, `save-pending` (WARN, no Issue), and `http_403` for `not-yours` or `nobodys-tree`, as `PATCH` logs them; `http_400` for a body the door cannot read and `http_401` with no session, neither of which reaches the create; `client-update-required` where the engine serves roadmap's scopes | unexpected |
+| `GET /v1/trees`, `GET /v1/trees/{id}`, `GET /v1/trees/{id}/guides`, `GET /v1/trees/{id}/diagnostics`, and `/v1/socket`'s upgrade and plain GET (roadmap; rest; retired where the engine serves roadmap's scopes) | `roadmap.GET.v1.trees`, `roadmap.GET.v1.trees.id`, `roadmap.GET.v1.trees.id.guides`, `roadmap.GET.v1.trees.id.diagnostics`, `roadmap.GET.v1.socket` | completion; `client-update-required` | none: expected refusal |
 | `POST /v1/trees/{id}/fork` (roadmap; rest) | `roadmap.POST.v1.trees.id.fork` | completion; bounded refusal or result; `not-a-root` for a subtree's id; `bad-request-id` for a request key that could name a part or runs past 128 characters; through the door, `busy` (503) for a fork the engine could not take now and `request-conflict` (409) for a key sent before with another fork | unexpected |
 | `PUT /v1/trees/{id}/og-image` (roadmap; rest) | `roadmap.PUT.v1.trees.id.og.image` | completion; bounded refusal or result | unexpected |
 | `PUT /v1/trees/{id}/og-video` (roadmap; rest) | `roadmap.PUT.v1.trees.id.og.video` | completion; bounded refusal or result | unexpected |

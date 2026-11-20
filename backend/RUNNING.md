@@ -93,7 +93,10 @@ Everything else is optional and each feature stays dark without its key — copy
 
 `ROADMAP_ENGINE_ENABLED=1` serves roadmap's scopes through the sync engine (`products/roadmap/sync/`), on the
 `roadmap_*` tables `db/schema.sql` builds, and feeds roadmap's read models from them: the activity feed, the owner's
-progress, the share page with its card and video, the gallery and reminders' readiness (`application/EngineReadModels`). Without it the server
+progress, the share page with its card and video, the gallery and reminders' readiness (`application/EngineReadModels`).
+It also retires the rooms' socket and routes (`products/roadmap/routes.cpp`): `/v1/socket`, `GET`/`POST /v1/trees`,
+`GET`/`PATCH`/`DELETE /v1/trees/{id}`, its `/guides` and `/diagnostics` and `PUT …/subtree` answer 410
+`client-update-required` before authentication. Without it the server
 composes and binds roadmap but withholds its scopes, as production does until roadmap's cutover: hello says roadmap
 holds nothing, `self/roadmap` pulls empty, its trees are not found, every roadmap intent is refused, and the read
 models read the rooms and roadmap's own tables.
@@ -413,7 +416,7 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and twelve script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and thirteen script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
@@ -433,7 +436,12 @@ checks committed rotation, concurrent retries, rollback and lock timeouts using 
 `DATABASE_URL` and tells it to stop — with a room it cannot save, with a request still running, in
 the middle of a burst of socket frames, with a second request read behind one being served and with
 a sync pull a worker answers late — and checks its exit code, the deadline it exits by, what landed
-after the signal and its log. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
+after the signal and its log. `roadmap_routes` runs only under `WM_PG_TEST`: it starts `windmill_server` over
+`DATABASE_URL` with `ROADMAP_ENGINE_ENABLED` unset and set, and asks every route of roadmap's rooms, `/v1/socket`'s upgrade
+and a plain GET of it, and the routes the move keeps, signed out and signed in, with a body none can parse: unset, each
+answers through its handler as before the move; set, each of the rooms' answers 410 `client-update-required` with the
+CORS headers an allow-listed origin reads, logged once under its static operation in a line that names no tree, session
+or body, and the kept routes answer as they do unset. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
 databases of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
 counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
 it counts a chain of 200,001 trees to its end. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
@@ -464,7 +472,7 @@ psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|roadmap_adopt|server_stop)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|roadmap_adopt|server_stop|roadmap_routes)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product

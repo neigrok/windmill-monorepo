@@ -324,6 +324,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/SubtreeTest.cpp
   test/products/roadmap/domain/TreeSummaryTest.cpp
   test/products/roadmap/adoption/AdoptionTest.cpp
+  test/products/roadmap/adoption/ReadModelsTest.cpp
   test/products/roadmap/domain/GalleryTest.cpp
   test/products/roadmap/domain/TendingTest.cpp
   test/products/roadmap/domain/TreeTest.cpp
@@ -607,6 +608,11 @@ set_tests_properties(roadmap_adopt PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)
 add_test(NAME server_stop COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/server_stop_test.py $<TARGET_FILE:windmill_server>)
 set_tests_properties(server_stop PROPERTIES TIMEOUT 900 RUN_SERIAL TRUE)
+# The real server under each state of ROADMAP_ENGINE_ENABLED, under WM_PG_TEST: the rooms' routes and socket answer through
+# their handlers, or 410 `client-update-required` where the engine serves roadmap's scopes (roadmap-on-the-engine.md §8.3).
+add_test(NAME roadmap_routes COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/platform/infra/roadmap_routes_test.py $<TARGET_FILE:windmill_server>)
+set_tests_properties(roadmap_routes PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
 add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}
@@ -758,6 +764,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/http/TreeRegistryApiTest.cpp
   test/products/roadmap/adapters/http/RemindersApiTest.cpp
   test/products/roadmap/adapters/ws/CollabTest.cpp
+  test/products/roadmap/RoutesTest.cpp
   test/platform/adapters/llm/AiCallBudgetTest.cpp
   test/platform/adapters/llm/AgentLoopTest.cpp
   test/platform/adapters/llm/AnthropicStreamTest.cpp

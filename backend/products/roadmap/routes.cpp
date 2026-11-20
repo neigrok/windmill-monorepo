@@ -25,13 +25,6 @@ namespace wm {
 // Mount the roadmap HTTP and WebSocket routes with the collaborators built in main.cpp.
 void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
   WriteRoutes routes(app, "roadmap");
-  // The socket authenticates each connection at its upgrade and writes progress as that
-  // user; anonymous connections may view but not edit.
-  setCollab(std::make_shared<Collab>(*deps.registry, *deps.trees, *deps.oplog, *deps.bus, *deps.progressService,
-                                     *deps.authService, *deps.presence, *deps.clock,
-                                     deps.allowedOrigins));
-  linkTreeSocket();
-
   auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.ownerProgress, deps.oplog, deps.authService,
                                        deps.forkService, deps.engineReads, nullptr);
   auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.registry, deps.authService, deps.engineReads);
@@ -46,51 +39,63 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
                                                      deps.tokens, deps.clock, deps.remindersAdminToken);
   auto composeApi = std::make_shared<ComposeApi>(deps.composer);
 
-  // Presence coalescing: flush buffered cursors/selections to subscribers at 20 Hz (§12),
-  // once the event loop is up. One timer drains every tree, latest-wins per actor. A second judges every open
-  // tree-socket connection for one that has stopped taking what it is sent.
-  auto presence = deps.presence;
-  auto bus = deps.bus;
-  app.registerBeginningAdvice([presence, bus]() {
-    drogon::app().getLoop()->runEvery(0.05, [presence]() { presence->flush(); });
-    drogon::app().getLoop()->runEvery(WsPresenceBus::kJudgeEverySeconds, [bus]() { bus->dropStalled(); });
-  });
+  // The rooms' doors: the collab socket and the routes that read or write a roadmap through its room. Where the engine
+  // serves roadmap's scopes each is retired, answering 410 `client-update-required` before authentication or parsing, so
+  // a build from before the move learns it is (roadmap-on-the-engine.md §7, §8.3).
+  const bool roomsRetired = deps.engineReads != nullptr;
+  const auto roomRoute = [&routes, roomsRetired](drogon::HttpMethod method, const std::string& path, auto handler) {
+    if (roomsRetired) return routes.retire(method, path);
+    routes.registerHandler(path, std::move(handler), {method});
+  };
+  if (roomsRetired) {
+    routes.retireSocket("/v1/socket");
+  } else {
+    // The socket authenticates each connection at its upgrade and writes progress as that
+    // user; anonymous connections may view but not edit.
+    setCollab(std::make_shared<Collab>(*deps.registry, *deps.trees, *deps.oplog, *deps.bus, *deps.progressService,
+                                       *deps.authService, *deps.presence, *deps.clock,
+                                       deps.allowedOrigins));
+    installTreeSocket();
+    // Presence coalescing: flush buffered cursors/selections to subscribers at 20 Hz (§12),
+    // once the event loop is up. One timer drains every tree, latest-wins per actor. A second judges every open
+    // tree-socket connection for one that has stopped taking what it is sent.
+    auto presence = deps.presence;
+    auto bus = deps.bus;
+    app.registerBeginningAdvice([presence, bus]() {
+      drogon::app().getLoop()->runEvery(0.05, [presence]() { presence->flush(); });
+      drogon::app().getLoop()->runEvery(WsPresenceBus::kJudgeEverySeconds, [bus]() { bus->dropStalled(); });
+    });
+  }
 
-  routes.registerHandler(
-      "/v1/trees",
-      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        registryApi->createTree(req, std::move(cb));
-      },
-      {drogon::Post});
-  routes.registerHandler(
-      "/v1/trees",
-      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        registryApi->listTrees(req, std::move(cb));
-      },
-      {drogon::Get});
-  routes.registerHandler(
-      "/v1/trees/{id}",
-      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        registryApi->patchTree(req, std::move(cb), id);
-      },
-      {drogon::Patch});
-  routes.registerHandler(
-      "/v1/trees/{id}",
-      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        registryApi->deleteTree(req, std::move(cb), id);
-      },
-      {drogon::Delete});
-  routes.registerHandler(
-      "/v1/trees/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->getTree(req, std::move(cb), id);
-      },
-      {drogon::Get});
-  routes.registerHandler(
-      "/v1/trees/{tree}/steps/{step}/subtree",
-      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& tree,
-                    const std::string& step) { registryApi->createSubtree(req, std::move(cb), tree, step); },
-      {drogon::Put});
+  roomRoute(drogon::Post, "/v1/trees", [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+    registryApi->createTree(req, std::move(cb));
+  });
+  roomRoute(drogon::Get, "/v1/trees", [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+    registryApi->listTrees(req, std::move(cb));
+  });
+  roomRoute(drogon::Patch, "/v1/trees/{id}",
+            [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+              registryApi->patchTree(req, std::move(cb), id);
+            });
+  roomRoute(drogon::Delete, "/v1/trees/{id}",
+            [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+              registryApi->deleteTree(req, std::move(cb), id);
+            });
+  roomRoute(drogon::Get, "/v1/trees/{id}", [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+    api->getTree(req, std::move(cb), id);
+  });
+  roomRoute(drogon::Put, "/v1/trees/{tree}/steps/{step}/subtree",
+            [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& tree,
+                          const std::string& step) { registryApi->createSubtree(req, std::move(cb), tree, step); });
+  roomRoute(drogon::Get, "/v1/trees/{id}/guides",
+            [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+              api->getGuides(req, std::move(cb), id);
+            });
+  roomRoute(drogon::Get, "/v1/trees/{id}/diagnostics",
+            [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+              api->getDiagnostics(req, std::move(cb), id);
+            });
+
   routes.registerHandler(
       "/v1/trees/{id}/fork",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
@@ -125,18 +130,6 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
       "/v1/trees/{id}/og-video",
       [ogVideoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         ogVideoApi->getVideo(req, std::move(cb), id);
-      },
-      {drogon::Get});
-  routes.registerHandler(
-      "/v1/trees/{id}/guides",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->getGuides(req, std::move(cb), id);
-      },
-      {drogon::Get});
-  routes.registerHandler(
-      "/v1/trees/{id}/diagnostics",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->getDiagnostics(req, std::move(cb), id);
       },
       {drogon::Get});
   routes.registerHandler(

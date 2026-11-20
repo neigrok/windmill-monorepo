@@ -72,7 +72,7 @@ receipts and retained journal revisions stay in place.
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:15)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and twelve script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and thirteen script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
@@ -120,7 +120,10 @@ Coach threads. Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, every roa
 roadmap tools (`RoadmapDoorTools`), tending through them, `POST /v1/trees/{id}/fork` and the fork at sign-up (`DoorForks`)
 — is a call of `RoadmapDoor`, on the engine's store and clock, its intents built under their scope's lock; MCP's roadmap
 reads read the typed tables through the read domain (`products/roadmap/domain/read/`), which claims the shared read
-vectors. Elsewhere they keep roadmap's rooms. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
+vectors. There the rooms' socket and routes are retired (`products/roadmap/routes.cpp`): `/v1/socket`'s upgrade and a plain
+GET of it, `POST`/`GET /v1/trees`, `GET`/`PATCH`/`DELETE /v1/trees/{id}`, its `/guides` and `/diagnostics` and
+`PUT …/subtree` answer 410 `client-update-required` before authentication (`WriteRoutes::retire`, `retireSocket`).
+Elsewhere they keep roadmap's rooms. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
 `PageWatcher` (echo derivation) after the live feed, reporting a failure of either after the commit.
 
 The admission corpus of gym, journal and roadmap runs over fakes and over Postgres, and so do journal's
