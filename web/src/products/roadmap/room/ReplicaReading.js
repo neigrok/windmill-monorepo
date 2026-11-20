@@ -28,6 +28,11 @@ const same = (a, b) => a.length === b.length && a.every((item, index) => item ==
 // The person's own zone, as the device keeps it, for the moments the domain's actions read.
 export const DEVICE_ZONE = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
 
+// Why a room's roadmap cannot be shown, as the room tells it once a visit (`roadmap_load`): the device's copy could not
+// open, or did not open within the bound; the device, having its answer, holds no roadmap the person may read at the
+// address; or no answer came.
+export const UNSHOWN = Object.freeze(['unkept', 'unopened', 'missing', 'unanswered']);
+
 // The engine the shell opens for this document, once it stands: `{ engine }`, or `{ unshown }` saying why there is none to
 // read or write through: `unkept` where it could not open, as in a browser that keeps nothing (no replica held in memory
 // stands in for one yet, E-5), and `unopened` where it did not stand within the bound or the caller stopped waiting.
@@ -53,10 +58,11 @@ export function standingEngine(session, signal, timers = globalThis) {
 }
 
 export class ReplicaReading {
-  // `room` holds the handles the room's writes reach for; `say` shows the room's toast. A reading of no roadmap
-  // (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
+  // `room` holds the handles the room's writes reach for; `say` shows the room's toast; `toldRef` is the visit's note that
+  // it has told why its roadmap cannot be shown, which every reading a sign-in or Try again runs in it shares. A reading of
+  // no roadmap (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
   constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure, track = beacon,
-    repository = treeId === null ? null : new HttpTreeRepository({ treeId }) }) {
+    toldRef = { current: false }, repository = treeId === null ? null : new HttpTreeRepository({ treeId }) }) {
     this.treeId = treeId;
     this.scope = treeId === null ? null : RoadmapScopes.tree(treeId);
     this.room = room;
@@ -65,6 +71,7 @@ export class ReplicaReading {
     this.timers = timers;
     this.report = report;
     this.track = track;
+    this.toldRef = toldRef;
     this.repository = repository;
     // The room's status line reads this reading as it reads roadmap's own session; `ready` says a write can be taken.
     this.ready = false;
@@ -91,22 +98,29 @@ export class ReplicaReading {
   // The roadmap as the device holds it once it can be shown, and null where it cannot be, which the room says with its
   // load error and the reading tells (`roadmap_load`): the engine could not open or did not stand within the bound, the
   // person may read no such roadmap here, or no answer came within the bound. A roadmap someone else owns shows its
-  // owner's marks, as the server reads them.
+  // owner's marks, as the server reads them. The roadmap's scope is the reading's to drop from the moment it asks for it,
+  // so a room that leaves while the engine takes the subscription leaves it unfollowed.
   async read({ signal }) {
     const opened = await standingEngine(this.session, signal, this.timers);
     if (signal.aborted) return null;
     if (!opened.engine) return this.unshown(opened.unshown);
     this.engine = opened.engine;
     this.unwatch = this.engine.observeEngine(this.changed);
-    if (await this.engine.subscribe(this.scope) === 'gone') {
+    this.subscribed.add(this.scope);
+    const subscription = await this.engine.subscribe(this.scope);
+    if (this.closed) this.engine.unsubscribe(this.scope).catch(() => {});
+    if (signal.aborted || this.closed) return null;
+    if (subscription === 'gone') {
       this.forgetLanding();
       return this.unshown('missing');
     }
-    this.subscribed.add(this.scope);
     const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting');
     if (signal.aborted) return null;
-    if (roadmap.state === 'missing') this.forgetLanding();
-    if (roadmap.state !== 'open') return this.unshown(roadmap.state === 'missing' ? 'missing' : 'unanswered');
+    if (roadmap.state === 'missing') {
+      this.forgetLanding();
+      return this.unshown('missing');
+    }
+    if (roadmap.state !== 'open') return this.unshown('unanswered');
     this.opened = roadmap;
     this.openWrites(roadmap.mine);
     const seed = roadmap.seed;
@@ -114,10 +128,11 @@ export class ReplicaReading {
     return { seed, overlay, workspace: roadmap.mine ? roadmap.workspace : null, guides: roadmap.guides };
   }
 
-  // Why the room's roadmap cannot be shown, told once as the reading gives up on it: `unkept`, `unopened`, `missing` or
-  // `unanswered` (`read`).
+  // Why the room's roadmap cannot be shown (`UNSHOWN`), told as the reading gives up on it, once a visit.
   unshown(outcome) {
-    this.track('roadmap_load', { outcome });
+    if (!UNSHOWN.includes(outcome)) throw new TypeError('a roadmap is unshown for a reason UNSHOWN names');
+    if (!this.toldRef.current) this.track('roadmap_load', { outcome });
+    this.toldRef.current = true;
     return null;
   }
 
@@ -197,10 +212,13 @@ export class ReplicaReading {
   }
 
   // The person's roadmaps as the switcher lists them, once the device has read their list, for a door that goes to one of
-  // them (`#/app`, to the newest); none where the engine did not stand within the bound.
+  // them (`#/app`, to the newest); null where the engine did not stand within the bound, which the reading tells as a room
+  // does (`roadmap_load`).
   async readList({ signal }) {
-    this.engine = (await standingEngine(this.session, signal, this.timers)).engine ?? null;
-    if (!this.engine || signal.aborted) return [];
+    const opened = await standingEngine(this.session, signal, this.timers);
+    if (signal.aborted) return null;
+    if (!opened.engine) return this.unshown(opened.unshown);
+    this.engine = opened.engine;
     this.unwatch = this.engine.observeEngine(this.changed);
     await this.whenRead(signal, (roadmaps) => roadmaps.listRead);
     return this.list();
@@ -216,16 +234,17 @@ export class ReplicaReading {
     return this.whenRead(signal, (roadmaps) => roadmaps.everyRoadmapRead);
   }
 
-  // The account's roadmaps as the switcher lists them, where the replica keeps them; none before the engine stands.
+  // The account's roadmaps as the switcher lists them, where the replica keeps them; null before the engine stands, when
+  // the device cannot say which roadmaps are the person's.
   list() {
-    if (!this.engine) return [];
+    if (!this.engine) return null;
     return this.roadmap().list(this.engine.getSnapshot().state === 'bound' ? 'account' : 'device');
   }
 
   // An address of one of the person's roadmaps, as the tree picker reads one: null where the replica keeps no such roadmap
   // of theirs.
   card(id) {
-    const row = this.list().find((each) => each.id === id);
+    const row = this.list()?.find((each) => each.id === id);
     return row ? { id, title: row.title, author: null, steps: row.total ?? null, mine: true } : null;
   }
 
@@ -318,14 +337,16 @@ export class ReplicaReading {
 
   // A scope the reading comes to read, subscribed once, so the server's copy of it arrives. Until the engine has taken the
   // subscription it is not read: the engine reads a scope it does not pull as pulled and holding nothing, so a roadmap
-  // above the open one would read as empty, and the open one as hidden.
+  // above the open one would read as empty, and the open one as hidden. A reading that closed while the engine took it
+  // drops it again.
   subscribeTo(scope) {
     if (this.subscribed.has(scope)) return;
     this.subscribed.add(scope);
     this.subscribing.add(scope);
     this.engine.subscribe(scope).catch(() => {}).finally(() => {
       this.subscribing.delete(scope);
-      this.changed();
+      if (this.closed) this.engine.unsubscribe(scope).catch(() => {});
+      else this.changed();
     });
   }
 

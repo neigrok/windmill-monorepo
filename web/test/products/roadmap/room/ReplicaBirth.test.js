@@ -1,6 +1,7 @@
 // A roadmap's birth on the device's copy (roadmap-on-the-engine.md §5 Create a roadmap, Signed out): the domain's creation
 // on the replica the engine holds active, the browser's anon replica signed out and the account's signed in, with a
-// plan's legend and the marks of the steps it brings done.
+// plan's legend and the marks of the steps it brings done; and what a birth that did not stand whole came to, and how its
+// door reports it.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,12 +17,13 @@ import { StepMark } from '../../../../src/products/roadmap/domain/progress.js';
 import { Roadmap, RoadmapMeta } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { RoadmapLink, RoadmapStep } from '../../../../src/products/roadmap/domain/steps.js';
-import { ReplicaBirth } from '../../../../src/products/roadmap/room/ReplicaBirth.js';
-import { environment } from '../../../platform/sync/fakes.js';
+import { BirthFailure, ReplicaBirth } from '../../../../src/products/roadmap/room/ReplicaBirth.js';
+import { FIRST_COPY_MS } from '../../../../src/products/roadmap/room/ReplicaReading.js';
+import { FakeTimers, environment, until } from '../../../platform/sync/fakes.js';
 import { browserWith } from '../../gym/harness.mjs';
 
 // A browser's engine on the composed registry, signed out until `signIn`, whose server answers only a hello, as A, an
-// account that holds no roadmaps; and the session the shell publishes for it.
+// account that holds no roadmaps; the session the shell publishes for it; and the failures its births report.
 async function browser(t) {
   browserWith();
   const env = environment();
@@ -34,7 +36,25 @@ async function browser(t) {
   t.after(() => engine.close());
   const session = { getSnapshot: () => ({ engine, ready: true, online: true, error: false }), subscribe: () => () => {} };
   const runner = new ActionRunner(new EngineReplica(engine), registry, new FixedZone(0));
-  return { engine, session, runner, birth: new ReplicaBirth({ session, timers: env.timers }) };
+  const reported = [];
+  const report = (operation, error, tags) => reported.push([operation, error instanceof BirthFailure ? error.reason : error.message, tags]);
+  return { engine, session, runner, reported, birth: new ReplicaBirth({ session, timers: env.timers, report }) };
+}
+
+const sail = (status) => ({ title: 'Learn to sail', nodes: [{ id: 'rig', label: 'Rig the boat', icon: 'sparkles', color: 'terracotta', prerequisites: [], status }] });
+
+// The engine's commits, with `between` run once the first of them, the birth's creation, has committed.
+function afterCreation(engine, between) {
+  const commitAct = engine.commitAct.bind(engine);
+  let first = true;
+  engine.commitAct = async (...args) => {
+    const answer = await commitAct(...args);
+    if (first) {
+      first = false;
+      await between();
+    }
+    return answer;
+  };
 }
 
 // What the replica holds of one roadmap: whether the person's list holds it, its title, its kinds in their order, its
@@ -106,14 +126,53 @@ test('signed in, a birth is the account’s, which the engine sends', async (t) 
   assert.deepEqual({ local, listed: held(runner, treeId).listed, state: engine.getSnapshot().state }, { local: false, listed: true, state: 'bound' });
 });
 
-test('a browser whose copy could not open plants nothing, and says so with no words of the person’s', async () => {
-  const birth = new ReplicaBirth({ session: { getSnapshot: () => ({ engine: null, ready: false, online: true, error: true }), subscribe: () => () => {} } });
-  await assert.rejects(birth.plant({ title: 'Learn to sail', nodes: [] }), { message: 'the device’s copy did not open' });
+test('a browser whose copy could not open plants nothing, and one whose copy did not open within the bound plants nothing after it: each says why with no words of the person’s', async () => {
+  const timers = new FakeTimers();
+  const opening = (error) => new ReplicaBirth({ timers, session: { getSnapshot: () => ({ engine: null, ready: false, online: true, error }), subscribe: () => () => {} } });
+  await assert.rejects(opening(true).plant(sail()), { name: 'BirthFailure', reason: 'unkept', message: 'the birth on the device’s copy did not stand whole' });
+  let answered = 'pending';
+  opening(false).plant(sail()).catch((error) => { answered = error.reason; });
+  timers.advance(FIRST_COPY_MS - 1);
+  await until(() => true);
+  assert.equal(answered, 'pending');
+  timers.advance(1);
+  await until(() => answered !== 'pending');
+  assert.equal(answered, 'unopened');
 });
 
-test('a plan the domain refuses is not born', async (t) => {
-  const { runner, birth } = await browser(t);
+test('a plan the domain refuses is not born: two kinds of one hue, and a name past its bound', async (t) => {
+  const { runner, birth, reported } = await browser(t);
   await assert.rejects(birth.plant({ title: 'Learn to sail', nodes: [], kinds: [{ hue: 'sky', label: 'Weather' }, { hue: 'sky', label: 'Tides' }] }),
-    { message: 'the birth was refused' });
-  assert.deepEqual(runner.read(RoadmapScopes.account, (read) => read.repository(Roadmap).all('drawn')), []);
+    { name: 'BirthFailure', reason: 'refused' });
+  await assert.rejects(birth.plant({ title: 'a'.repeat(210), nodes: [] }), { name: 'BirthFailure', reason: 'refused' });
+  assert.deepEqual({ listed: runner.read(RoadmapScopes.account, (read) => read.repository(Roadmap).all('drawn')), reported }, { listed: [], reported: [] });
+});
+
+test('a roadmap whose creation committed is born, though its done steps cannot be marked: the birth answers it once, and the marks report alone', async (t) => {
+  const { engine, birth, reported } = await browser(t);
+  await engine.signIn('A');
+  afterCreation(engine, () => engine.finishSignOut({ choice: 'keep' }));
+  const { treeId, local } = await birth.plant(sail('complete'));
+  assert.deepEqual({ local, reported, replicas: engine.device.replicas.map((replica) => [replica.meta.state, replica.entries().some((entry) => entry.scope === RoadmapScopes.tree(treeId))]) }, {
+    local: false, reported: [['roadmap-plant', 'marks', { reason: 'marks' }]], replicas: [['anon', false], ['dormant', true]],
+  });
+});
+
+test('a birth begun signed out is told as the anon replica’s, though a sign-in completes before its marks', async (t) => {
+  const { engine, runner, birth, reported } = await browser(t);
+  afterCreation(engine, () => engine.signIn('A'));
+  const { treeId, local } = await birth.plant(sail('complete'));
+  assert.deepEqual({ local, reported, state: engine.getSnapshot().state, marked: held(runner, treeId).marked }, { local: true, reported: [], state: 'bound', marked: ['Rig the boat'] });
+});
+
+test('a door reports a failed birth as ours only where it is, with its reason, and any other failure as unexpected', () => {
+  const reported = [];
+  const report = (operation, error, tags) => reported.push([operation, error.reason ?? error.message, tags]);
+  for (const reason of BirthFailure.REASONS) BirthFailure.reportFailed(new BirthFailure(reason), report);
+  BirthFailure.reportFailed(new Error('the server is down'), report);
+  assert.deepEqual({ reported, reasons: [...BirthFailure.REASONS, null].map((reason) => BirthFailure.reasonOf(reason ? new BirthFailure(reason) : new Error('x'))) }, {
+    reported: [['roadmap-plant', 'unopened', { reason: 'unopened' }], ['roadmap-plant', 'marks', { reason: 'marks' }], ['roadmap-plant', 'the server is down', undefined]],
+    reasons: ['unkept', 'unopened', 'refused', 'marks', undefined],
+  });
+  assert.throws(() => new BirthFailure('tired'), TypeError);
 });

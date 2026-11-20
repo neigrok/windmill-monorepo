@@ -273,6 +273,6 @@ export function runRead(input) {
   if (input.operation === 'graph') return graph.result(input.subjects);
   if (input.operation === 'board') return new BoardRead(graph, input.query).result();
   if (input.operation === 'diagnostics') return diagnose(graph);
-  if (input.operation === 'landing') return landingFacts(graph, input.own);
+  if (input.operation === 'landing') return landingFacts(graph, input.edges);
   throw new Error(`Unclaimed roadmap read operation: ${input.operation}`);
 }

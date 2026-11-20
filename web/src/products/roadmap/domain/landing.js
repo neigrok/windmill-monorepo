@@ -31,7 +31,7 @@ export function landingOf(tree, read) {
   const note = LandingNote.of(read.device(RoadmapScopes.landing(tree)));
   const roadmap = readTree(tree, read);
   const name = (/** @type {string} */ id) => roadmap.nodesById.get(id)?.label ?? note.nameOf(id);
-  const facts = landingFacts(new FollowGraph(roadmap), { nodes: [], edges: note.saying(roadmap, landingOrder(read)) });
+  const facts = landingFacts(new FollowGraph(roadmap), note.saying(roadmap, landingOrder(read)));
   return {
     follows: facts.map(({ node, incoming, followed }) => ({
       node, incoming,

@@ -1,6 +1,6 @@
 [
   {
-    "name": "Landing keeps only own new node or immediate incoming edge identities that now bridge absence",
+    "name": "Landing keeps only the device’s own link identities that now bridge absence",
     "input": {
       "operation": "landing",
       "tree": {
@@ -26,12 +26,12 @@
         "marks": [],
         "pointers": []
       },
-      "own": {"nodes": [], "edges": [["x", "z"]]}
+      "edges": [["x", "z"]]
     },
     "expect": [{"node": "z", "followed": [{"id": "a", "incoming": [["x", "z"]], "throughAbsent": true}], "incoming": [["x", "z"]]}]
   },
   {
-    "name": "An unrelated own edge does not acknowledge someone else’s bridge",
+    "name": "An unrelated own link does not acknowledge someone else’s bridge",
     "input": {
       "operation": "landing",
       "tree": {
@@ -57,7 +57,7 @@
         "marks": [],
         "pointers": []
       },
-      "own": {"nodes": [], "edges": [["a", "x"]]}
+      "edges": [["a", "x"]]
     },
     "expect": []
   },
@@ -80,7 +80,7 @@
         "marks": [],
         "pointers": []
       },
-      "own": {"nodes": [], "edges": [["gone", "z"]]}
+      "edges": [["gone", "z"]]
     },
     "expect": [{"node": "z", "incoming": [["gone", "z"]], "followed": []}]
   },
@@ -104,12 +104,12 @@
         "marks": [],
         "pointers": []
       },
-      "own": {"nodes": [], "edges": [["x", "z"]]}
+      "edges": [["x", "z"]]
     },
     "expect": [{"node": "z", "incoming": [["x", "z"]], "followed": []}]
   },
   {
-    "name": "An own new node reports every bridged incoming edge but leaves direct ones alone",
+    "name": "Each own link into a step reports the absence it bridges, and an own link from a present step is direct and says nothing",
     "input": {
       "operation": "landing",
       "tree": {
@@ -135,7 +135,7 @@
         "marks": [],
         "pointers": []
       },
-      "own": {"nodes": ["z"], "edges": []}
+      "edges": [["a", "z"], ["x", "z"], ["y", "z"]]
     },
     "expect": [
       {
@@ -146,7 +146,7 @@
     ]
   },
   {
-    "name": "A step deleted elsewhere that the device keeps no record of is read through by its links alone: an own new step and an own link behind it bridge its absence",
+    "name": "A step deleted elsewhere that the device keeps no record of is read through by its links alone: two own links from it bridge its absence",
     "input": {
       "operation": "landing",
       "tree": {
@@ -169,7 +169,7 @@
         "marks": [],
         "pointers": []
       },
-      "own": {"nodes": ["z"], "edges": [["x", "w"]]}
+      "edges": [["x", "z"], ["x", "w"]]
     },
     "expect": [
       {"node": "w", "incoming": [["x", "w"]], "followed": [{"id": "a", "incoming": [["x", "w"]], "throughAbsent": true}]},
