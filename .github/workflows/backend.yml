@@ -32,7 +32,7 @@ on:
       - '!services/ai/**/*.md'
       - '!packages/api-contract/ai/**/*.md'
   # A pull request runs here too when it changes the web sync engine, which the restore proof drives, or the roadmap
-  # copy, whose test runs here.
+  # copy, the roadmap cutover or the maintenance door, whose tests run here.
   pull_request:
     paths:
       - 'backend/**'
@@ -54,6 +54,8 @@ on:
       - 'web/src/platform/sync/**'
       - '.github/workflows/backend.yml'
       - '.github/workflows/ops-roadmap-copy.yml'
+      - '.github/workflows/roadmap-cutover.yml'
+      - '.github/workflows/ops-maintenance.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/subscriptions.yml'
       - '.github/workflows/ai.yml'
@@ -96,6 +98,9 @@ jobs:
       - name: The production Caddyfile sends each path to its service
         timeout-minutes: 5
         run: python3 backend/test/deploy/caddyfile_routes_test.py -v
+      - name: Roadmap's cutover runs its stages in order, restores before writes resume and prints only counts
+        timeout-minutes: 10
+        run: python3 backend/test/deploy/roadmap_cutover_test.py -v
       - uses: docker/setup-buildx-action@v4
       - name: Build + test (builder stage)
         uses: docker/build-push-action@v7

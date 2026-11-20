@@ -26,13 +26,14 @@ SUBSCRIPTIONS_UP = ["compose", "up", "-d", "--no-deps", "--pull", "never", "subs
 
 def server_config(environment=".env"):
     env = dict(line.split("=", 1) for line in Path(environment).read_text().splitlines() if "=" in line)
+    switch = dict(line.split("=", 1) for line in Path("roadmap-engine.env").read_text().splitlines() if "=" in line)
     return {"image": env.get("SERVER_IMAGE", "ghcr.io/neigrok/windmill-monorepo:" + env["IMAGE_TAG"]), "environment": {
         "AI_ALLOWANCES_ENABLED": env.get("AI_ALLOWANCES_ENABLED", "false"),
         "COACH_MAX_OUTPUT_TOKENS": env.get("COACH_MAX_OUTPUT_TOKENS", "2000"),
         "AI_INSTALLATIONS_ENABLED": env.get("AI_INSTALLATIONS_ENABLED", "false"),
         "AI_INSTALLATION_PROXY_MODE": env.get("AI_INSTALLATION_PROXY_MODE", "cloudflare"),
         "AI_INSTALLATION_IP_HMAC_KEY": env.get("AI_INSTALLATION_IP_HMAC_KEY", ""),
-        "POSTGRES_PASSWORD": env["POSTGRES_PASSWORD"]}}
+        "POSTGRES_PASSWORD": env["POSTGRES_PASSWORD"], **switch}}
 
 
 def compose(state, arguments):
@@ -121,6 +122,10 @@ def compose(state, arguments):
             return 0, json.dumps({"epoch": "test-epoch", "error": error, "serverTime": 1}) + "\n" + str(status)
         return 0, json.dumps(current) + "\n200"
     if server and server[:3] == ["sh", "-eu", "-c"]:
+        if server[-1] == "roadmap-switch":
+            intended = server_config()["environment"].get("ROADMAP_ENGINE_ENABLED", "")
+            actual = state.get("serverEnvironment", {}).get("ROADMAP_ENGINE_ENABLED", intended)
+            return (0, "") if actual == server[-2] else (1, "PRIVATE_DEPLOY_SECRET")
         if server[-1] == "installation-key-present":
             key = state.get("serverEnvironment", {}).get("AI_INSTALLATION_IP_HMAC_KEY", server_config()["environment"]["AI_INSTALLATION_IP_HMAC_KEY"])
             return (0, "") if 32 <= len(key) <= 1024 else (1, "PRIVATE_DEPLOY_SECRET")
@@ -192,6 +197,8 @@ class DeployProductionTest(unittest.TestCase):
         (self.work / "subscriptions-db/provision.sh").write_text("# live provisioning\n")
         (self.work / "ai-db").mkdir()
         (self.work / "ai-db/provision.sh").write_text("# live AI provisioning\n")
+        (self.work / "roadmap-engine.env").write_text("")
+        (self.work / "maintenance").mkdir()
         self.ai_env = ("AI_DB_PASSWORD=" + "c" * 64 + "\nAI_PASS_KEYS={}\nAI_CARRY_KEY=" + "A" * 43 +
                        "\nAI_FUNDING_SECRET=" + "f" * 32 + "\nAI_OPERATOR_SECRET=" + "o" * 32 + "\n")
         self.upload_candidate()
@@ -247,7 +254,7 @@ class DeployProductionTest(unittest.TestCase):
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
-                                        "Caddyfile": "# candidate Caddyfile\n"})
+                                        "Caddyfile": "# candidate Caddyfile\n", "roadmap-engine.env": "", "maintenance": {}})
         state = self.state()
         self.assertEqual([command for command in state.pop("commands") if command[:2] == ["compose", "up"]], [
             BACKEND_UP,
@@ -434,7 +441,7 @@ class DeployProductionTest(unittest.TestCase):
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
-                                        "Caddyfile": "# live Caddyfile\n"})
+                                        "Caddyfile": "# live Caddyfile\n", "roadmap-engine.env": "", "maintenance": {}})
         self.assertNotIn("--force-recreate", [argument for command in self.state()["commands"] for argument in command])
 
     def assert_rejected_candidate_changes_nothing_live(self, failing, commands):
@@ -485,7 +492,7 @@ class DeployProductionTest(unittest.TestCase):
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
-                                        "Caddyfile": "# candidate Caddyfile\n"})
+                                        "Caddyfile": "# candidate Caddyfile\n", "roadmap-engine.env": "", "maintenance": {}})
         self.assertEqual(self.state()["caddyMount"], "# live Caddyfile\n")
         self.upload_candidate()
         self.state(commands=[])
@@ -496,7 +503,7 @@ class DeployProductionTest(unittest.TestCase):
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
-                                        "Caddyfile": "# candidate Caddyfile\n"})
+                                        "Caddyfile": "# candidate Caddyfile\n", "roadmap-engine.env": "", "maintenance": {}})
         state = self.state()
         self.assertIn(["compose", "up", "-d", "--no-deps", "--force-recreate", "--pull", "never", "caddy"], state["commands"])
         self.assertEqual((state["caddyMount"], state["caddyActive"]),
@@ -514,7 +521,7 @@ class DeployProductionTest(unittest.TestCase):
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
-                                        "Caddyfile": "# candidate Caddyfile\n"})
+                                        "Caddyfile": "# candidate Caddyfile\n", "roadmap-engine.env": "", "maintenance": {}})
         self.assertIn(BACKEND_UP, self.state()["commands"])
         self.assertNotIn(SUBSCRIPTIONS_UP, self.state()["commands"])
 
@@ -553,7 +560,7 @@ class DeployProductionTest(unittest.TestCase):
                                                 "docker-compose.yml": "# candidate compose\n",
                                                 "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
-                                                "Caddyfile": "# candidate Caddyfile\n"})
+                                                "Caddyfile": "# candidate Caddyfile\n", "roadmap-engine.env": "", "maintenance": {}})
                 commands = self.state()["commands"]
                 self.assertIn(BACKEND_UP, commands)
                 self.assertEqual({command[0] if command[0] == "inspect" else " ".join(command)
@@ -575,7 +582,7 @@ class DeployProductionTest(unittest.TestCase):
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
-                                        "Caddyfile": "# candidate Caddyfile\n"})
+                                        "Caddyfile": "# candidate Caddyfile\n", "roadmap-engine.env": "", "maintenance": {}})
         commands = self.state()["commands"]
         found = commands.index(["compose", "ps", "-q", "subscriptions"])
         self.assertEqual(commands[found + 1], ["inspect", "--format", "{{.Image}}", "subscriptions-container"])
@@ -681,6 +688,39 @@ class DeployProductionTest(unittest.TestCase):
                 result = self.deploy()
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", "FAIL " + failure + "\n"))
 
+    def test_roadmap_s_switch_is_the_host_s_own_and_every_deploy_keeps_it_and_proves_it_on_the_running_server(self):
+        (self.work / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n")
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, "PASS roadmap: the server runs with ROADMAP_ENGINE_ENABLED=1, kept from roadmap-engine.env\n" +
+                          PROVISIONED + "\n" + DEPLOYED, ""))
+        self.assertEqual(self.files()["roadmap-engine.env"], "ROADMAP_ENGINE_ENABLED=1\n")
+        self.assertNotIn("ROADMAP_ENGINE_ENABLED", self.files()[".env"])
+        self.assertEqual([command[-2:] for command in self.state()["commands"] if command[-1] == "roadmap-switch"], [["1", "roadmap-switch"]])
+        for switch, running in (("ROADMAP_ENGINE_ENABLED=1\n", ""), ("", "1")):
+            with self.subTest(switch=switch):
+                self.upload_candidate()
+                (self.work / "roadmap-engine.env").write_text(switch)
+                self.state(commands=[], serverEnvironment={"ROADMAP_ENGINE_ENABLED": running})
+                result = self.deploy()
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (1, "", "FAIL running server ROADMAP_ENGINE_ENABLED differs from roadmap-engine.env\n"))
+                self.assertEqual(self.files()["roadmap-engine.env"], switch)
+
+    def test_a_host_without_roadmap_s_switch_gets_it_empty_and_one_holding_anything_else_is_refused_before_any_change(self):
+        (self.work / "roadmap-engine.env").unlink()
+        (self.work / "maintenance").rmdir()
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, PROVISIONED + "\n" + DEPLOYED, ""))
+        self.assertEqual((self.files()["roadmap-engine.env"], self.files()["maintenance"]), ("", {}))
+        self.assertEqual([command[-2:] for command in self.state()["commands"] if command[-1] == "roadmap-switch"], [["", "roadmap-switch"]])
+        for switch in ("ROADMAP_ENGINE_ENABLED=0\n", "ROADMAP_ENGINE_ENABLED=true\n", "ROADMAP_ENGINE_ENABLED=1\nPRIVATE_DEPLOY_SECRET=1\n"):
+            with self.subTest(switch=switch):
+                self.upload_candidate()
+                (self.work / "roadmap-engine.env").write_text(switch)
+                self.state(commands=[])
+                self.assert_preflight_refusal("roadmap-engine.env holds something other than ROADMAP_ENGINE_ENABLED=1")
+
     def test_runtime_mismatches_fail_without_exposing_configuration_or_command_output(self):
         for state, failure in [
             ({"serverImage": "PRIVATE_DEPLOY_SECRET"}, "running server image differs from intended image"),
@@ -723,6 +763,10 @@ def web_shim(kind, arguments):
         if command.startswith("cd ~/windmill && python3 - web-preflight "):
             return subprocess.run([sys.executable, "-", *shlex.split(command.split("python3 - ", 1)[1])],
                                   input=sys.stdin.read(), text=True, cwd=remote).returncode
+        if command == "cat ~/windmill/roadmap-engine.env 2> /dev/null || true":
+            switch = remote / "roadmap-engine.env"
+            print(switch.read_text() if switch.exists() else "", end="")
+            return 0
         if command == "mkdir -p ~/windmill/web":
             (remote / "web").mkdir(exist_ok=True)
             return 0
@@ -763,7 +807,7 @@ class WebCompatibilityTest(unittest.TestCase):
         self.environment = {**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
                             "WM_WEB_STATE": str(self.state), "WM_WEB_REMOTE": str(self.remote),
                             "SSH_KEY": "PRIVATE_WEB_CANARY", "SSH_HOST": "host", "SSH_USER": "fixture", "SSH_PORT": "22",
-                            "GITHUB_SHA": "b" * 40}
+                            "GITHUB_SHA": "b" * 40, "ROADMAP_ROOM": "off"}
 
     def block(self, name):
         text = (SCRIPT.parents[2] / ".github/workflows/web.yml").read_text()
@@ -797,7 +841,7 @@ class WebCompatibilityTest(unittest.TestCase):
             with self.subTest(hello=hello):
                 result = self.promote(hello, schema, minimum)
                 self.assertEqual((result.returncode, result.stdout, result.stderr),
-                                 (0, "PASS web deployment: live backend accepts the candidate sync client\n", ""))
+                                 (0, "PASS web deployment: live backend accepts the candidate sync client, roadmap's room off\n", ""))
                 self.assertEqual([command[0] for command in json.loads(self.state.read_text())["commands"]],
                                  ["ssh", "docker", "ssh", "rsync"])
                 self.assertEqual((self.remote / "web/index.html").read_text(), "candidate web")
@@ -821,6 +865,46 @@ class WebCompatibilityTest(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
                 self.assertEqual(self.live_files(), before)
                 self.assertEqual([command[0] for command in json.loads(self.state.read_text())["commands"]], ["ssh", "docker"])
+
+    def test_a_build_takes_roadmap_s_room_from_the_host_switch_and_the_preflight_holds_one_the_switch_no_longer_says(self):
+        text = (SCRIPT.parents[2] / ".github/workflows/web.yml").read_text()
+        reading = text.split("      - name: Read roadmap's switch on the host\n", 1)[1].split("\n      - ", 1)[0]
+        self.assertTrue(reading.startswith("        id: roadmap\n        if: github.event_name != 'pull_request'\n"))
+        self.assertLess(text.index("name: Read roadmap's switch on the host"), text.index("      - name: Build\n"))
+        self.assertIn("          VITE_ROADMAP_REPLICA_ROOM: ${{ steps.roadmap.outputs.room || 'off' }}\n        run: npm run build\n", text)
+        self.assertIn("          ROADMAP_ROOM: ${{ steps.roadmap.outputs.room }}\n", text.split("      - name: Rsync dist to the VPS\n", 1)[1])
+        output = self.root / "github-output"
+        for switch, outcome in ((None, (0, "Roadmap's room: off\n", "room=off\n")), ("", (0, "Roadmap's room: off\n", "room=off\n")),
+                                ("ROADMAP_ENGINE_ENABLED=1\n", (0, "Roadmap's room: on\n", "room=on\n")),
+                                ("PRIVATE_WEB_CANARY\n", (1, "FAIL roadmap-engine.env on the host holds something other than "
+                                                           "ROADMAP_ENGINE_ENABLED=1\n", ""))):
+            with self.subTest(switch=switch):
+                (self.remote / "roadmap-engine.env").unlink(missing_ok=True)
+                if switch is not None:
+                    (self.remote / "roadmap-engine.env").write_text(switch)
+                output.write_text("")
+                self.state.write_text(json.dumps({"commands": []}))
+                result = subprocess.run(["bash", "-euc", self.block("Read roadmap's switch on the host")], cwd=self.web,
+                                        env={**self.environment, "GITHUB_OUTPUT": str(output)}, capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout + result.stderr, output.read_text()), outcome)
+        before = self.live_files()
+        for switch, room, outcome in (("ROADMAP_ENGINE_ENABLED=1\n", "off", "HOLD web deployment: the candidate's roadmap room is off and "
+                                       "the server's ROADMAP_ENGINE_ENABLED says on\n"),
+                                      ("", "on", "HOLD web deployment: the candidate's roadmap room is on and the server's "
+                                       "ROADMAP_ENGINE_ENABLED says off\n"),
+                                      ("PRIVATE_WEB_CANARY\n", "on", "HOLD web deployment: sync compatibility could not be verified\n")):
+            with self.subTest(switch=switch, room=room):
+                (self.remote / "roadmap-engine.env").write_text(switch)
+                before = self.live_files()
+                self.environment["ROADMAP_ROOM"] = room
+                result = self.promote({"schema": 10, "minSchema": 10})
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", outcome))
+                self.assertEqual(self.live_files(), before)
+        (self.remote / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n")
+        result = self.promote({"schema": 10, "minSchema": 10})
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, "PASS web deployment: live backend accepts the candidate sync client, roadmap's room on\n", ""))
+        self.assertEqual((self.remote / "web/index.html").read_text(), "candidate web")
 
     def test_invalid_candidate_interval_never_reaches_the_host(self):
         before = self.live_files()
@@ -900,7 +984,7 @@ class WebCompatibilityTest(unittest.TestCase):
 
 
 class DeployWorkflowTest(unittest.TestCase):
-    def test_the_shipped_composition_names_roadmap_at_its_interval_and_production_never_serves_it(self):
+    def test_the_shipped_composition_names_roadmap_at_its_interval(self):
         root = SCRIPT.parents[2]
         contract = root / "packages/api-contract/sync"
         work = Path(tempfile.mkdtemp())
@@ -914,10 +998,36 @@ class DeployWorkflowTest(unittest.TestCase):
         # Roadmap joins additively: the composed version rises and the minimum a released gym or journal client meets
         # does not.
         self.assertEqual(json.loads(output.read_text()), {"schema": 13, "minSchema": 11})
-        # The server serves roadmap's scopes only where ROADMAP_ENGINE_ENABLED reaches it; production's compose file and
-        # deploy workflow pass no such variable, so production withholds them until roadmap's cutover.
-        for path in ("backend/deploy/docker-compose.yml", ".github/workflows/deploy.yml"):
-            self.assertNotIn("ROADMAP_ENGINE_ENABLED", (root / path).read_text(), path)
+
+    def test_the_server_takes_roadmap_s_switch_from_the_host_file_alone_which_no_deploy_renders_or_ships(self):
+        root = SCRIPT.parents[2]
+        compose = (root / "backend/deploy/docker-compose.yml").read_text()
+        server = compose.split("\n  server:\n", 1)[1].split("\n  embedder:\n", 1)[0]
+        self.assertIn("\n    env_file:\n      - roadmap-engine.env\n    environment:\n", server)
+        self.assertEqual(compose.count("env_file:"), 1)
+        self.assertNotRegex(compose, r"\n +ROADMAP_ENGINE_ENABLED:")
+        workflow = (root / ".github/workflows/deploy.yml").read_text()
+        for name in ("ROADMAP_ENGINE_ENABLED", "roadmap-engine.env"):
+            self.assertNotIn(name, workflow)
+        script = SCRIPT.read_text()
+        self.assertEqual([line.strip() for line in script.splitlines() if "roadmap-engine.env" in line and not line.lstrip().startswith("#")],
+                         ["[[ -e roadmap-engine.env ]] || : > roadmap-engine.env", "roadmap_switch=$(cat roadmap-engine.env)",
+                          "printf 'FAIL roadmap-engine.env holds something other than ROADMAP_ENGINE_ENABLED=1\\n' >&2",
+                          "raise SystemExit(\"FAIL running server ROADMAP_ENGINE_ENABLED differs from roadmap-engine.env\")",
+                          "printf 'PASS roadmap: the server runs with ROADMAP_ENGINE_ENABLED=1, kept from roadmap-engine.env\\n'"])
+        if not shutil.which("docker") or subprocess.run(["docker", "compose", "version"], capture_output=True).returncode:
+            self.skipTest("compose's reading of the file needs docker compose")
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work)
+        shutil.copyfile(root / "backend/deploy/docker-compose.yml", work / "docker-compose.yml")
+        (work / ".env").write_text("POSTGRES_PASSWORD=p\nDOMAIN_APP=app.localhost\nDOMAIN_API=api.localhost\nACME_EMAIL=ops@example.invalid\n"
+                                   "ROADMAP_ENGINE_ENABLED=1\n")
+        for switch, served in (("", None), ("ROADMAP_ENGINE_ENABLED=1\n", "1")):
+            with self.subTest(switch=switch):
+                (work / "roadmap-engine.env").write_text(switch)
+                result = subprocess.run(["docker", "compose", "config", "--format", "json"], cwd=work, capture_output=True,
+                                        text=True, timeout=60, check=True)
+                self.assertEqual(json.loads(result.stdout)["services"]["server"]["environment"].get("ROADMAP_ENGINE_ENABLED"), served)
 
     def test_the_deploy_lock_is_taken_under_the_condition_the_job_runs_under(self):
         text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()

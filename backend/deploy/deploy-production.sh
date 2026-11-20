@@ -20,6 +20,18 @@ if [[ ! -d ai-db.next ]]; then
   printf 'FAIL candidate ai-db folder is missing\n' >&2
   exit 1
 fi
+# Roadmap's switch onto the sync engine is the host's own (README.md, "Roadmap's cutover onto the sync engine"): no
+# deploy renders or changes roadmap-engine.env, so none can turn roadmap back to its own sync. Compose reads it into
+# the server; where it is missing it is created empty, which keeps roadmap's scopes withheld.
+[[ -e roadmap-engine.env ]] || : > roadmap-engine.env
+roadmap_switch=$(cat roadmap-engine.env)
+if [[ -n "$roadmap_switch" && "$roadmap_switch" != ROADMAP_ENGINE_ENABLED=1 ]]; then
+  printf 'FAIL roadmap-engine.env holds something other than ROADMAP_ENGINE_ENABLED=1\n' >&2
+  exit 1
+fi
+# The site's pause, which Caddy mounts and only roadmap's cutover and Ops · maintenance set and lift (README.md,
+# "Pause the site"); a deploy keeps it as it is.
+mkdir -p maintenance
 # Validate before pruning, pulling, changing HBA, or promoting any live file.
 python3 - rendered.env <<'PYAI'
 import base64
@@ -231,11 +243,23 @@ try:
             capture_output=True, timeout=5)
         if check.returncode:
             raise SystemExit("FAIL running server installation network key is unavailable")
+    roadmap = server["environment"].get("ROADMAP_ENGINE_ENABLED", "")
+    if roadmap not in ("", "1"):
+        raise SystemExit("FAIL invalid intended roadmap switch")
+    check = subprocess.run(["docker", "compose", "exec", "-T", "server", "sh", "-eu", "-c",
+        'if [ -n "$1" ]; then grep -Fzxq -- "ROADMAP_ENGINE_ENABLED=$1" /proc/1/environ; '
+        'else ! grep -Ezq -- "^ROADMAP_ENGINE_ENABLED=" /proc/1/environ; fi', "sh", roadmap, "roadmap-switch"],
+        capture_output=True, timeout=5)
+    if check.returncode:
+        raise SystemExit("FAIL running server ROADMAP_ENGINE_ENABLED differs from roadmap-engine.env")
 except Exception:
     raise SystemExit("FAIL server runtime verification could not complete")
 PY
 python3 "$(dirname "$0")/sync_compatibility.py" verify "$verification/sync.json"
 rm -f .env.bak rendered.env sync-cutover.json
+if [[ -n "$roadmap_switch" ]]; then
+  printf 'PASS roadmap: the server runs with ROADMAP_ENGINE_ENABLED=1, kept from roadmap-engine.env\n'
+fi
 # The subscription database's one-shot ran with `up`, and nothing there waits on it, so its outcome is read
 # here, once the backend is verified. A FAIL turns this run red while the backend stays deployed and serving,
 # and leaves the subscription service as it was.

@@ -345,7 +345,10 @@ What a device tells a person when a change of theirs met one made elsewhere.
 The data moves in one planned cutover, rehearsed against a copy of production, with the site in
 maintenance for its length and a verified backup to return to. (R-5) `windmill_roadmap_adopt` runs it
 stage by stage, printing counts and verdicts alone
-([its README](../../backend/products/roadmap/adoption/README.md)). The server is stopped for the move,
+([its README](../../backend/products/roadmap/adoption/README.md)), inside the Roadmap cutover workflow
+([the deploy runbook](../../backend/deploy/README.md#roadmaps-cutover-onto-the-sync-engine)), which pauses the site,
+stops the server, takes and verifies the backup, runs the move, starts the server serving roadmap's scopes,
+promotes the web whose room reads the replica (§8.4), walks the stack and lifts the pause. The server is stopped for the move,
 and the tool checks it: a stage refuses to start while any other client is connected to the database,
 and each owner's adoption reads their rows again under a lock that holds every writer off roadmap's
 tables, stopping where they differ from those it planned from.
@@ -413,7 +416,8 @@ tables, stopping where they differ from those it planned from.
   parse is unreadable to it today: it has no document, and its answers are counted apart. Every
   scope's digest sums, every tree's `open` matches its `reach`, and a second run changes nothing.
   What browsers hold is not proven by it.
-- A failure before writes resume restores the backup. After that the move goes forward only.
+- Writes resume when the server starts serving roadmap's scopes. A failure before then restores the backup and
+  returns the site as it was; after it the move goes forward only.
 
 ### §8.2 What a browser holds
 

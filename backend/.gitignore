@@ -3,3 +3,5 @@
 /.idea/
 .env
 __pycache__/
+# A host's own switch, beside a local run of the production compose (deploy/README.md).
+deploy/roadmap-engine.env

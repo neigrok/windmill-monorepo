@@ -22,6 +22,8 @@ class SubscriptionsDbTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.project = Path(directory.name)
         shutil.copy(DEPLOY / "docker-compose.yml", self.project)
+        # A host's own file, which compose reads into the server (README.md, "Roadmap's cutover onto the sync engine").
+        (self.project / "roadmap-engine.env").write_text("")
         shutil.copytree(DEPLOY / "subscriptions-db", self.project / "subscriptions-db")
         self.name = "subscriptions-db-test-" + secrets.token_hex(4)
         self.superuser_password = secrets.token_hex(16)
