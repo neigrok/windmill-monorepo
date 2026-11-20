@@ -34,17 +34,20 @@ refusal text never enter telemetry properties.
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
 | `sync-signin`, `sync-signout`, `sync-auth-paused` | Lineage decisions and authentication transitions |
-| `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
+| `sync-upgrade` | Sync stopping for an upgrade: `paused` at a `426` or a hello's `minSchema` above the registry; `superseded` when a bundle of a newer store version opens the device store, closing it under this tab (engine.md §7.8), which releases its locks at once (`sync-leader` `released` when it led); `reloaded` as that tab reloads itself, only when that loses nothing on its screen |
+| `sync-persist`, `sync-leader` | Persistence request result and lock ownership |
 | `sync-refused`, `sync-push-malformed` | Terminal refusals and malformed push responses |
 | `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency |
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
 
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
 integer `seq`, `durationMs` and `queueMs` (capped at 60,000), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `paused`, `failed`, `acquired`,
-`released`). Failures use only the static operations `storage`, `transport`, `live`, `leadership`,
+`released`, `superseded`, `reloaded`). Failures use only the static operations `storage`, `transport`, `live`, `leadership`,
 `observer` and `auth`. Storage denial is explicit; no volatile fallback replaces durable work. A write
 the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
-kind `store`; an error a caller's read-and-commit function throws passes through unreported.
+kind `store`; an error a caller's read-and-commit function throws passes through unreported. A store a newer store
+version's upgrade closed reports nothing: that is `sync-upgrade` `superseded`, and a write the tab tries afterwards reaches
+its caller as a `CommitError` of kind `store`.
 
 The shell reports cookie cleanup, session transition and auth-hint storage failures under static
 `auth` operations. Opening and warming the offline shell reports `offline-shell` to Sentry.

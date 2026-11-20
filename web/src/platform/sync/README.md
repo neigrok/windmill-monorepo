@@ -68,7 +68,9 @@ A version-one database upgrades in one atomic IndexedDB version-change transacti
 confirmed, spent and staged rows move to their cache generations; controls, outboxes, notices and device
 work survive unchanged. An aborted upgrade closes its connection and retains the complete version-one
 store for retry. A blocked open rejects and abandons its request: a later upgrade aborts before migration,
-and a late successful connection closes. Open stores close on `versionchange`. Native Chromium
+and a late successful connection closes. Open stores close on `versionchange`, and their engine steps aside
+(engine.md §7.8): it releases its tab locks and channel, publishes `upgradeRequired` and `superseded` for the
+shell's update prompt and reloads only when nothing on the screen would be lost. Native Chromium
 regressions verify every row after upgrade, abort, blocked-open retry and reopen, and exercise real
 version changes. Fixture reads wait for transaction completion before closing their connections.
 

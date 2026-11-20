@@ -60,7 +60,8 @@ export class IndexedDBStore {
   constructor(database) {
     this.database = database;
     this.closed = false;
-    database.onversionchange = () => this.close();
+    // Settles when a bundle of a newer store version opens the database: this connection closes so its upgrade runs.
+    this.superseded = new Promise((resolve) => { database.onversionchange = () => { this.close(); resolve(); }; });
   }
 
   static async open({ indexedDB = globalThis.indexedDB, name = 'wm-sync', newReplicaId }) {

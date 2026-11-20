@@ -85,6 +85,27 @@ test('only a 200 hello says the app is too old by its minSchema', async () => {
   engine.close();
 });
 
+// A bundle of a newer store version opening the device store closes it under this tab, which can keep nothing more.
+test('a newer store version opening the device store makes the engine let go of its locks and stop', async () => {
+  const env = environment(), engine = await open(env);
+  await engine.commit('self/probe', card());
+  const newer = engine.store.database.version + 1;
+  await new Promise((resolve, reject) => {
+    const request = env.indexedDB.open('wm-sync', newer);
+    request.onsuccess = () => { request.result.close(); resolve(); };
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('the older tab kept the store open'));
+  });
+  await until(() => engine.closed);
+  assert.deepEqual((await env.locks.query()).held, []);
+  assert.deepEqual([engine.getSnapshot().upgradeRequired, engine.getSnapshot().superseded], [true, true]);
+  assert.deepEqual(env.events.filter(({ name }) => ['sync-upgrade', 'sync-leader'].includes(name)).map(({ name, props }) => `${name}:${props.outcome}`),
+    ['sync-leader:acquired', 'sync-upgrade:superseded', 'sync-leader:released']);
+  assert.equal(env.channels.messages.at(-1).data.type, 'bye');
+  await assert.rejects(engine.commit('self/probe', card('card0002')), (error) => error instanceof CommitError && error.kind === 'store');
+  assert.deepEqual(env.failures, []);
+});
+
 test('a delayed hello cannot number work after the account credential generation changes', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
