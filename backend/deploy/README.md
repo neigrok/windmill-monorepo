@@ -790,16 +790,16 @@ last **Deploy to VPS** run), and `backup` typed as `back up, restore on failure`
 | --- | --- | --- | --- |
 | `web` · Confirm the backup, Build | — | Refuses a run from anything but `main`, another `backup` text or a short `image_tag`; builds the web as Web Deploy does, with `VITE_ROADMAP_REPLICA_ROOM=on`, before anything pauses; keeps it as the run's artifact | the build's own output |
 | `guard` | — | Refuses while any workflow naming the `deploy-vps` lock, another cutover and the restore door among them, has a run queued or running | which one is busy |
-| `cutover` · Check the host is ready | `check` | Refuses unless `.env` names `image_tag`, the server runs its pinned image carrying the tool, `roadmap-engine.env` is empty, compose reads it, Caddy mounts the pause, the site is not paused and the disk holds three times the database and a GiB more; then starts the pinned image once outside compose, with no setting but a throwaway database of its own schema, its port and `ROADMAP_ENGINE_ENABLED=1`, and refuses unless it answers `GET /v1/socket` and `POST /v1/trees` `410 client-update-required` | the database's size and the free disk in MB; the probe's two answers; `PASS check` |
+| `cutover` · Check the host is ready | `check` | Refuses unless `.env` names `image_tag`, the server runs its pinned image carrying the tool, `roadmap-engine.env` is empty, compose reads it, Caddy mounts the pause, the site is not paused and the disk holds three times the database and a GiB more; then starts the pinned image once outside compose, with no setting but a throwaway database of its own schema, its port and `ROADMAP_ENGINE_ENABLED=1`, and refuses unless it answers `GET /v1/socket` and `POST /v1/trees` `410 client-update-required`, keeping a probe that does not answer so its last 200 log lines go to the run's folder | the database's size and the free disk in MB; the probe's two answers; `PASS check`, or the probe's container state |
 | Pause the site | `pause` | Writes `maintenance/on`, then waits for the public page and API to answer `503` | `PASS pause`, `PASS site … 503` |
 | Stop the server | `stop` | `docker compose stop server`, then waits up to 30 s for no client session on `windmill` | `PASS stop`, or the sessions by application name |
 | Back up the database | `backup` | A custom-format `pg_dump` of `windmill` to `backups/roadmap-cutover-<run>-<attempt>-<stamp>.dump`, read back by `pg_restore --list`, with its sha256 | the file, its bytes and sha256 |
 | Adopt roadmap's rows and check every digest | `adopt` | `windmill_roadmap_adopt all` in a one-off container of the live image, its private record in the run's folder; `all` ends in its `digests` stage | the count of expected ownerless roadmaps; each stage's line, only in its own shape; `PASS adopt`, `STOP adopt` (exit 3), or that the tool exited before any stage answered |
-| Start the server on the sync engine | `start` | Writes the image's commit to `roadmap-engine.floor` and `ROADMAP_ENGINE_ENABLED=1` to `roadmap-engine.env`, and recreates the server; writes resume here | `PASS start` with hello's schema and minimum |
+| Start the server on the sync engine | `start` | Writes `ROADMAP_ENGINE_ENABLED=1` to `roadmap-engine.env`, then the image's commit to `roadmap-engine.floor`, and recreates the server; writes resume here | `PASS start` with hello's schema and minimum, or the server's container state |
 | Promote the web whose room reads the replica | — | The web preflight, which also holds a release whose room the running server's is not, then the rsync, the IndexNow proof kept | the preflight's verdict; the count of files |
-| Walk the stack | `smoke` | Inside the server's container: hello `200`, `GET /v1/socket` and `POST /v1/trees` `410 client-update-required`, the public demo's progress and activity, its share page and the gallery `200` | one line a check |
+| Walk the stack | `smoke` | Inside the server's container: hello `200`, `GET /v1/socket` and `POST /v1/trees` `410 client-update-required`, the public demo's progress and activity, its share page and the gallery `200` | one line a check, and after a failed one the server's container state |
 | Lift the pause | `lift` | Removes `maintenance/on`, then waits for the public page and API to answer `200` | `PASS lift`, `PASS site … 200` |
-| Seal what the run kept on the host | `record` | Removes a tool container still running, then streams the run's folder into an encryption under a run key sealed to the owner; after a failure too | the two files' sizes and sha256 |
+| Seal what the run kept on the host | `record` | Removes a tool container still running, then streams the run's folder into an encryption under a run key sealed to the owner; after a failure too, from a failed check on | the two files' sizes and sha256 |
 | Keep the sealed record for a day, Forget what the run kept | `forget` | The artifact `roadmap-cutover-record-<run>-<attempt>`; once it is kept, the run's folder is emptied but for the backup's path | `PASS forget` |
 | `walk` | — | Web Smoke's read-only walk of the live site | its checks |
 
@@ -813,9 +813,11 @@ dispatch again; never **Re-run failed jobs**, which skips the guard.
 backup was verified, **Restore the backup** (`restore`) removes a tool container left running, checks the backup's
 sha256 and listing, restores it into `windmill_restore`, renames `windmill` to `windmill_cutover_<run>_<attempt>` and the
 restored database to `windmill` in one transaction, applies the schema, starts the server, roadmap off the engine, and
-lifts the pause; it removes a `roadmap-engine.floor` a start cut short wrote, and marks the run `restored`. The server stopped before the dump and starts only after the restore, so no client holds anything newer
-than the backup, and the epoch stands. A start that failed before it wrote the switch, a lost connection among them,
-takes the same path; one that wrote it is refused by the host's restore, and goes forward. Where no backup was taken
+lifts the pause, and marks the run `restored`. The server stopped before the dump and starts only after the restore, so
+no client holds anything newer than the backup, and the epoch stands. A start that failed before it wrote the floor, a
+lost connection among them, takes the same path: one cut short between the switch and the floor never started the server
+on the engine, which its container shows, and the restore empties the switch. One that wrote the floor is refused by the
+host's restore, and goes forward, and so is a switch the server's container holds. Where no backup was taken
 yet, **Return the site as it was** (`undo`) starts the server and lifts the pause: the database was never changed.
 
 A restore that fails leaves the pause on, the server stopped and `windmill` as the move left it; what Postgres said goes
@@ -828,9 +830,11 @@ a cutover leaves them before writes resume, so the door never puts a backup over
 seals what the run keeps on the host as the cutover does, which also makes it the door for a seal that failed. Where **Return the site as it was** fails, the
 database is as it was: **Deploy to VPS** starts the server, then **Ops · maintenance** lifts the pause.
 
-**From the moment the start stage writes the switch, the cutover goes forward only.** A failure there leaves the site
-paused. Fix it forward — **Deploy to VPS** and **Web Deploy** keep roadmap on the engine (below) — then dispatch
-**Ops · maintenance** with `lift`.
+**From the moment the start stage writes the floor, the cutover goes forward only.** A failure there leaves the site
+paused. Where the start or the walk failed, the step printed the server's container state (its status, exit code and
+restarts) and kept its last 200 log lines for the sealed record: open the record (below) and read `server.log`, then fix
+it forward — **Deploy to VPS** and **Web Deploy** keep roadmap on the engine (below) — and dispatch **Ops · maintenance**
+with `lift`.
 
 **A stop** is a stage whose verdict does not pass: its line names the verdict and counts, and the sealed record names the
 roadmaps. `othersConnected`, counted as `sessions.otherClients`, means a client reached the database after **Stop the
@@ -848,8 +852,11 @@ openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ROADMAP_CUTOVER_KEY -in record.tar
 unset ROADMAP_CUTOVER_KEY
 ```
 
-It holds `record/`, the tool's files (`products/roadmap/adoption/README.md`) and its `tool.stderr`, and after a restore
-`restore.log` and `migrate.log`. On the host, once the record is kept, the run's folder holds the backup's path alone;
+It holds `record/`, the tool's files (`products/roadmap/adoption/README.md`) and its `tool.stderr`, after a restore
+`restore.log` and `migrate.log`, and the last 200 lines of a server that did not serve: `probe.log` from a failed check,
+`server.log` from a failed start, walk or restore. Its access lines name the accounts it served, which is why they are
+sealed and never printed. On the host, once the record is kept, the run's folder holds the backup's path alone, and is gone where no backup was
+taken;
 where the seal failed, it keeps the record and the logs until a run of the restore door seals them. The backup and its
 sha256 stay under `backups/`, and after a restore so does the database `windmill_cutover_<run>_<attempt>`: private data
 the owner removes once the cutover is settled (`docker compose exec -T db dropdb -U windmill
@@ -872,9 +879,10 @@ windmill_cutover_<run>_<attempt>`).
 
 No GitHub variable names the switch, and `deploy.yml` never renders or ships either file. `test/deploy/deploy_production_test.py`
 pins all three, and `test/deploy/roadmap_cutover_test.py` the cutover: the order of its stages, the probe of the image,
-the restore before writes resume and the forward-only path after, a connection lost mid-move and at the start, the
-restore door, that only a stage's own line in its own shape reaches the log, and that what the run kept reaches the
-artifact only encrypted.
+the restore before writes resume and the forward-only path after, a connection lost mid-move and at the start, a start
+cut short between the switch and the floor, the restore door beside a floor or a switch the server holds, a server that
+does not serve, whose log reaches the record alone, that only a stage's own line in its own shape reaches the log, and
+that what the run kept reaches the artifact only encrypted.
 
 ### Run it locally
 

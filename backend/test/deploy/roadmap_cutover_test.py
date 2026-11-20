@@ -292,7 +292,7 @@ class WorkflowShapeTest(unittest.TestCase):
         self.assertEqual({step_label(step): step.get("if") for step in steps if step.get("if")}, {
             "Restore the backup": "(failure() || cancelled()) && steps.backup.outcome == 'success' && steps.start.outcome != 'success'",
             "Return the site as it was": "(failure() || cancelled()) && steps.pause.outcome != 'skipped' && steps.backup.outcome != 'success'",
-            "Seal what the run kept on the host": "always() && steps.backup.outcome == 'success'",
+            "Seal what the run kept on the host": "always() && (steps.backup.outcome == 'success' || steps.check.outcome == 'failure')",
             "Keep the sealed record for a day": "always() && steps.seal.outcome == 'success'",
             "Forget what the run kept on the host": "always() && steps.upload.outcome == 'success'",
             "Forget the deploy key": "always()"})
@@ -345,12 +345,15 @@ class WorkflowShapeTest(unittest.TestCase):
 
 # The VPS as roadmap-cutover.sh meets it, kept in a JSON state beside the host: the server's container, the probe of
 # the image check starts, Postgres' databases and answers, and the tool's output.
+# Two of them run at once in a pipe, so the state is replaced whole and never read half written.
 def model_docker(arguments):
     path = Path(os.environ["WM_HOST_HOME"]) / "state.json"
     state = json.loads(path.read_text())
     state["commands"].append(arguments)
     code, output, error = model_answer(state, arguments)
-    path.write_text(json.dumps(state))
+    written = path.with_name(f"state.{os.getpid()}.json")
+    written.write_text(json.dumps(state))
+    os.replace(written, path)
     sys.stdout.write(output)
     sys.stderr.write(error)
     return code
@@ -371,8 +374,21 @@ def model_answer(state, arguments):
     server, probe = state["server"], state["probe"]
     if arguments == ["compose", "ps", "-q", "server"]:
         return 0, "server-container\n" if server["running"] else "", ""
+    if arguments == ["compose", "ps", "-aq", "server"]:
+        return 0, "server-container\n", ""
     if arguments == ["inspect", "--format", "{{.Image}}", "server-container"]:
         return 0, state["imageId"] + "\n", ""
+    if arguments == ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "server-container"]:
+        return 0, "DATABASE_URL=postgresql://windmill:PRIVATE_SSH_KEY_CANARY@db:5432/windmill\n" + "".join(
+            f"{key}={value}\n" for key, value in server["env"].items()), ""
+    if arguments == ["logs", "--tail", "200", "server-container"]:
+        return 0, state["serverLog"], ""
+    if arguments == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}", "server-container"]:
+        return 0, ("running 0 0" if server["running"] else state["serverExit"]) + "\n", ""
+    if arguments == ["logs", "--tail", "200", PROBE]:
+        return 0, state["probeLog"], ""
+    if arguments == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}", PROBE]:
+        return 0, "running 0 0\n" if probe["running"] else "exited 1 0\n", ""
     if arguments == ["rm", "-f", PROBE]:
         probe["running"] = False
         return 0, "", ""
@@ -382,9 +398,9 @@ def model_answer(state, arguments):
         return 0, "", ""
     if arguments == ["run", "--rm", "--entrypoint", "cat", PINNED, "/app/db/schema.sql"]:
         return 0, "create table if not exists probed ();\n", ""
-    if arguments[:5] == ["run", "-d", "--rm", "--name", PROBE]:
+    if arguments[:4] == ["run", "-d", "--name", PROBE]:
         settings = dict(line.split("=", 1) for line in Path(arguments[arguments.index("--env-file") + 1]).read_text().splitlines())
-        probe.update(running=True, network=arguments[arguments.index("--network") + 1], image=arguments[-1],
+        probe.update(running=not state.get("probeBootFails"), network=arguments[arguments.index("--network") + 1], image=arguments[-1],
                      settings=sorted(settings), database=settings["DATABASE_URL"].rsplit("/", 1)[1],
                      engine=settings["ROADMAP_ENGINE_ENABLED"])
         return 0, "probe-container\n", ""
@@ -395,6 +411,7 @@ def model_answer(state, arguments):
         server["running"] = arguments[1] != "stop"
         if "--no-recreate" not in arguments and arguments[1] == "up":
             server["env"] = dict(line.split("=", 1) for line in Path("roadmap-engine.env").read_text().splitlines() if line)
+            server["running"] = not state.get("serverBootFails")
         return 0, "", ""
     if arguments == ["compose", "run", "--rm", "--no-deps", "-T", "migrate"]:
         if state.get("migrateFails"):
@@ -481,6 +498,9 @@ STOPPED = (stage_line("unfold", "unfolded", {"roadmaps": {"lastChangeKept": 1}})
 RETIRED = {"GET /v1/socket": [410, {"error": "update", "code": "client-update-required"}],
            "POST /v1/trees": [410, {"error": "update", "code": "client-update-required"}]}
 SITE = "PASS site: https://app.localhost answers {} on its page and its API\n"
+# What a server logs: its access lines name the account each request came from.
+SERVER_LOG = "INFO http GET /v1/trees 200 caller=aaaaaaaa-0000-4000-8000-00000000000a PRIVATE_ROW_CANARY\n"
+FORWARD_ONLY = "FAIL restore: roadmap's floor is written, so the server may have served on the engine and the cutover goes forward only\n"
 RESTORED = ("PASS restore: windmill is {} again, its sha256 matched; the moved database is kept as windmill_cutover_4242_1\n"
             "PASS restore: the server serves as before the cutover, roadmap off the engine, and the site is lifted\n")
 
@@ -500,7 +520,8 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
         state = json.loads(path.read_text()) if path.exists() else {
             "commands": [], "server": {"running": True, "env": {}}, "probe": {"running": False}, "imageId": PINNED,
             "toolCarried": True, "pauseMounted": True, "databaseBytes": 50 * 1048576, "otherSessions": [], "databases": ["windmill"],
-            "answers": RETIRED, "probeAnswers": RETIRED}
+            "answers": RETIRED, "probeAnswers": RETIRED, "serverLog": SERVER_LOG, "serverExit": "exited 0 0",
+            "probeLog": "probe: PRIVATE_SSH_KEY_CANARY\n"}
         state.update(changes)
         path.write_text(json.dumps(state))
         return state
@@ -640,11 +661,59 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
         outcomes, log = self.stage.job().run()
         self.assertEqual((outcomes["start"], outcomes["Restore the backup"], outcomes["web"], outcomes["seal"]),
                          ("failure", "failure", "skipped", "success"))
-        self.assertEqual(printed(log, "Restore the backup"),
-                         "FAIL restore: roadmap's switch is written, so the cutover goes forward only\n")
+        self.assertEqual(printed(log, "Restore the backup"), FORWARD_ONLY)
         files = self.files()
         self.assertEqual((files["roadmap-engine.env"], files["maintenance/on"]), (b"ROADMAP_ENGINE_ENABLED=1\n", f"roadmap cutover {RUN}\n".encode()))
         self.assertEqual(self.model()["databases"], ["windmill"])
+
+    def test_a_start_cut_short_between_the_switch_and_the_floor_restores_the_backup_and_empties_the_switch(self):
+        executable(self.stage.root / "host/bin/mv",
+                   '#!/bin/sh\n[ "$2" != roadmap-engine.floor ] || { kill -KILL "$PPID"; exit 1; }\nexec /bin/mv "$@"\n')
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["start"], outcomes["Restore the backup"], outcomes["web"]), ("failure", "success", "skipped"))
+        self.assertEqual(printed(log, "Restore the backup"),
+                         "NOTE restore: the start wrote roadmap's switch, not its floor, and never started the server on it; the switch "
+                         "is emptied\n" + RESTORED.format(self.backup()) + SITE.format(200))
+        files = self.files()
+        self.assertEqual((files["roadmap-engine.env"], "roadmap-engine.floor" in files, "maintenance/on" in files), (b"", False, False))
+        state = self.model()
+        self.assertEqual((state["databases"], state["server"]), (["windmill", "windmill_cutover_4242_1"], {"running": True, "env": {}}))
+        self.stage.assert_nothing_private(self, log)
+
+    def test_the_restore_door_refuses_wherever_the_start_may_have_served_on_the_engine(self):
+        self.stage.environment["WM_SSH_DROP"] = "start:after"
+        self.assertEqual(self.stage.job().run()[0]["Restore the backup"], "failure")
+        floor = self.stage.windmill / "roadmap-engine.floor"
+        for attempt, lost, reason in (
+                ("1", lambda: (self.stage.windmill / "roadmap-engine.env").write_text(""), FORWARD_ONLY),
+                ("2", lambda: (floor.unlink(), (self.stage.windmill / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n")),
+                 "FAIL restore: roadmap's switch is written and the server's container holds it, so the cutover goes forward only\n")):
+            with self.subTest(reason=reason):
+                lost()
+                self.model(server={"running": False, "env": {"ROADMAP_ENGINE_ENABLED": "1"}}, commands=[])
+                before = self.files()
+                outcomes, log = self.door(attempt)
+                self.assertEqual((outcomes["restore"], printed(log, "Restore the backup")), ("failure", reason))
+                self.assertEqual({name: text for name, text in self.files().items() if not name.startswith("roadmap-cutover/")},
+                                 {name: text for name, text in before.items() if not name.startswith("roadmap-cutover/")})
+                state = self.model()
+                self.assertEqual((state["databases"], state["server"]["running"]), (["windmill"], False))
+                self.assertFalse(any(command[:4] == ["compose", "exec", "-T", "db"] and command[4] in ("pg_restore", "createdb")
+                                     for command in state["commands"]))
+                self.stage.assert_nothing_private(self, log)
+
+    def test_a_server_that_does_not_serve_on_the_engine_prints_its_state_and_seals_its_log(self):
+        self.model(serverBootFails=True, serverExit="restarting 1 3")
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["start"], outcomes["Restore the backup"], outcomes["seal"], outcomes["upload"]),
+                         ("failure", "failure", "success", "success"))
+        self.assertEqual(printed(log, "Start the server on the sync engine"),
+                         "NOTE start: the container is restarting, exit code 1, 3 restarts; its last 200 lines are in the sealed record "
+                         "as server.log\nFAIL start: the server did not answer hello within 60 s\n")
+        self.assertEqual(printed(log, "Restore the backup"), FORWARD_ONLY)
+        self.assertEqual(self.stage.sealed()[1]["server.log"], SERVER_LOG)
+        self.assertEqual(sorted(name for name in self.files() if name.startswith("roadmap-cutover/")), [f"roadmap-cutover/{RUN}/backup"])
+        self.stage.assert_nothing_private(self, log, [*CANARIES, "aaaaaaaa-0000-4000-8000-00000000000a"])
 
     def test_a_probe_a_killed_check_left_behind_is_removed_before_the_next_check_starts_its_own(self):
         self.model(probe={"running": True}, databases=["windmill", "windmill_roadmap_probe"])
@@ -656,18 +725,30 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
         self.assertEqual((state["probe"]["running"], state["databases"], (self.stage.windmill / "roadmap-cutover/probe.env").exists()),
                          (False, ["windmill"], False))
         self.assertLess(state["commands"].index(["rm", "-f", PROBE]),
-                        next(index for index, command in enumerate(state["commands"]) if command[:5] == ["run", "-d", "--rm", "--name", PROBE]))
+                        next(index for index, command in enumerate(state["commands"]) if command[:4] == ["run", "-d", "--name", PROBE]))
 
     def test_a_failure_before_the_backup_leaves_the_database_untouched_and_returns_the_site_as_it_was(self):
-        for failure, stages, last in (({"otherSessions": [1] * 30}, ["check", "pause", "stop", "undo"], None),
-                                      ({"pauseMounted": False}, ["check"], "FAIL check: Caddy does not mount the maintenance folder"),
-                                      ({"probeAnswers": {**RETIRED, "GET /v1/socket": [404, {"error": "PRIVATE_ROW_CANARY"}]}}, ["check"],
-                                       "FAIL check: the image does not retire roadmap's own routes when it serves roadmap's scopes")):
+        sealed = ["check", "record", "forget"]
+        for failure, stages, last, kept in (
+                ({"otherSessions": [1] * 30}, ["check", "pause", "stop", "undo"], None, None),
+                ({"pauseMounted": False}, sealed, "FAIL check: Caddy does not mount the maintenance folder", {}),
+                ({"probeBootFails": True}, sealed, "FAIL check: the image did not answer hello within 60 s while serving roadmap's scopes",
+                 {"probe.log": "probe: PRIVATE_SSH_KEY_CANARY\n"}),
+                ({"probeAnswers": {**RETIRED, "GET /v1/socket": [404, {"error": "PRIVATE_ROW_CANARY"}]}}, sealed,
+                 "FAIL check: the image does not retire roadmap's own routes when it serves roadmap's scopes",
+                 {"probe.log": "probe: PRIVATE_SSH_KEY_CANARY\n"})):
             with self.subTest(failure=failure):
                 self.host(tool={"stdout": PASSED, "stderr": "", "exit": 0, "record": {}}, **failure)
                 outcomes, log = self.stage.job().run()
                 self.assertEqual(self.stage.host_stages(), stages)
-                self.assertEqual((outcomes["Restore the backup"], outcomes["seal"]), ("skipped", "skipped"))
+                self.assertEqual((outcomes["Restore the backup"], outcomes["seal"]), ("skipped", "skipped" if kept is None else "success"))
+                if kept is not None:
+                    self.assertEqual(self.stage.sealed()[1], kept)
+                    self.assertEqual(sorted(name for name in self.files() if name.startswith("roadmap-cutover/")), [])
+                if kept:
+                    commands = self.model()["commands"]
+                    self.assertLess(commands.index(["logs", "--tail", "200", PROBE]), commands.index(["rm", "-f", PROBE]))
+                    self.assertIn("NOTE check: the container is ", printed(log, "Check the host is ready"))
                 state = self.model()
                 self.assertEqual((state["databases"], state["server"]["running"], state["probe"]["running"], "maintenance/on" in self.files()),
                                  (["windmill"], True, False, False))
@@ -685,6 +766,9 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
                          {"start": "success", "web": "success", "smoke": "failure", "lift": "skipped", "Restore the backup": "skipped",
                           "Return the site as it was": "skipped"})
         self.assertIn("FAIL smoke: GET /v1/socket answers 404, not 410 client-update-required\n", printed(log, "Walk the stack"))
+        self.assertTrue(printed(log, "Walk the stack").endswith(
+            "NOTE smoke: the container is running, exit code 0, 0 restarts; its last 200 lines are in the sealed record as server.log\n"))
+        self.assertEqual(self.stage.sealed()[1]["server.log"], SERVER_LOG)
         files = self.files()
         self.assertEqual((files["roadmap-engine.env"], files["maintenance/on"]), (b"ROADMAP_ENGINE_ENABLED=1\n", f"roadmap cutover {RUN}\n".encode()))
         self.stage.assert_nothing_private(self, log)
@@ -756,7 +840,7 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
                 change()
                 before = {name: text for name, text in self.files().items() if name != "roadmap-cutover.sh"}
                 outcomes, log = self.stage.job().run()
-                self.assertEqual((outcomes["check"], self.stage.host_stages()), ("failure", ["check"]))
+                self.assertEqual((outcomes["check"], self.stage.host_stages()), ("failure", ["check", "record", "forget"]))
                 self.assertEqual(printed(log, "Check the host is ready").splitlines()[-1], f"FAIL check: {reason}")
                 self.assertEqual({name: text for name, text in self.files().items() if name != "roadmap-cutover.sh"}, before)
 
@@ -864,10 +948,26 @@ def stack_docker(arguments):
     if arguments == ["run", "--rm", "--entrypoint", "cat", PINNED, "/app/db/schema.sql"]:
         sys.stdout.write((REPOSITORY / "backend/db/schema.sql").read_text())
         return 0
-    if arguments[:5] == ["run", "-d", "--rm", "--name", f"windmill-roadmap-probe-{RUN}"]:
+    if arguments[:4] == ["run", "-d", "--name", f"windmill-roadmap-probe-{RUN}"]:
         settings = dict(line.split("=", 1) for line in Path(arguments[arguments.index("--env-file") + 1]).read_text().splitlines())
         database = settings["DATABASE_URL"].rsplit("/", 1)[1]
-        remember(probePid=stack_server({**settings, "DATABASE_URL": stack_url(database), "PORT": str(PROBE_PORT)}, state["serverLog"]))
+        remember(probePid=stack_server({**settings, "DATABASE_URL": stack_url(database), "PORT": str(PROBE_PORT)}, state["probeLog"]))
+        return 0
+    # A container outlives its process here as in Docker; a process that ended reads as exit code 1, which the stack
+    # cannot read once the shim that started it is gone.
+    containers = {"windmill-server": (server, state["serverLog"]), f"windmill-roadmap-probe-{RUN}": (state.get("probePid"), state["probeLog"])}
+    if arguments[:3] == ["logs", "--tail", "200"] and arguments[3] in containers:
+        log = Path(containers[arguments[3]][1])
+        sys.stdout.write("".join(log.read_text(errors="replace").splitlines(keepends=True)[-200:]) if log.exists() else "")
+        return 0
+    if arguments[:3] == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}"] and arguments[3] in containers:
+        print("running 0 0" if stack_alive(containers[arguments[3]][0]) else "exited 1 0")
+        return 0
+    if arguments == ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "windmill-server"]:
+        print("".join(f"{key}={value}\n" for key, value in state.get("serverEnv", {}).items()))
+        return 0
+    if arguments == ["compose", "ps", "-aq", "server"]:
+        print("windmill-server")
         return 0
     if arguments[:3] == ["exec", f"windmill-roadmap-probe-{RUN}", "curl"]:
         return subprocess.run([os.environ["WM_CURL"], *[argument.replace("127.0.0.1:8080", f"127.0.0.1:{PROBE_PORT}")
@@ -984,7 +1084,8 @@ class CutoverOnALocalStackTest(unittest.TestCase):
         self.addCleanup(subprocess.run, ["docker", "rm", "-f", edge], capture_output=True)
         self.stage.environment["WM_EDGE_PORT"] = subprocess.run(["docker", "port", edge, "443/tcp"], check=True, capture_output=True,
                                                                 text=True).stdout.splitlines()[0].rsplit(":", 1)[1]
-        (self.stage.home / "stack.json").write_text(json.dumps({"edge": edge, "serverLog": str(self.stage.root / "server.log")}))
+        (self.stage.home / "stack.json").write_text(json.dumps({"edge": edge, "serverLog": str(self.stage.root / "server.log"),
+                                                                "probeLog": str(self.stage.root / "probe.log")}))
         self.addCleanup(self.stop_server)
         for name in ("windmill", "windmill_restore", "windmill_roadmap_probe", f"windmill_cutover_{RUN.replace('-', '_')}"):
             self.addCleanup(self.psql, os.environ["DATABASE_URL"], f'drop database if exists "{stack_database(name)}" with (force)')
