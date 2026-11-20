@@ -1,0 +1,72 @@
+# By hand only, from main: pause the whole site for a planned maintenance, or lift the pause (backend/deploy/README.md,
+# "Pause the site"). Roadmap's cutover pauses and lifts the site itself; this is the door to lift the pause a cutover
+# leaves when it fails after writes resumed, once what failed is fixed. It refuses while a cutover or its restore runs.
+name: Ops · maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      switch:
+        description: Pause or lift the site
+        required: true
+        type: choice
+        options: [lift, pause]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse beside a cutover or its restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "Refusing: the pause is switched from main alone." >&2
+            exit 1
+          fi
+          for workflow in roadmap-cutover.yml ops-roadmap-restore.yml; do
+            for status in queued in_progress waiting requested pending; do
+              runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --status "$status" --json databaseId --jq length)
+              if [ "$runs" -ne 0 ]; then
+                echo "Not now: $workflow has a run $status, and it pauses and lifts the site itself." >&2
+                exit 1
+              fi
+            done
+          done
+
+      - name: Pause or lift the site
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SWITCH: ${{ inputs.switch }}
+          SITE: https://${{ vars.DOMAIN_APP }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          case "$SWITCH" in
+            pause) command='mkdir -p ~/windmill/maintenance && printf "paused by hand\n" > ~/windmill/maintenance/on'; state=paused ;;
+            lift) command='rm -f ~/windmill/maintenance/on'; state=lifted ;;
+            *) echo "The switch is pause or lift." >&2; exit 1 ;;
+          esac
+          ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" "$command" < /dev/null
+          for ((attempt = 0; attempt < 30; attempt++)); do
+            status=$(curl --silent --output /dev/null --max-time 10 --write-out '%{http_code}' "$SITE/" || true)
+            if { [ "$state" = paused ] && [ "$status" = 503 ]; } || { [ "$state" = lifted ] && [ "$status" != 503 ]; }; then
+              echo "PASS maintenance: the site is $state; $SITE answers $status on its page"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FAIL maintenance: $SITE still answers $status" >&2
+          exit 1

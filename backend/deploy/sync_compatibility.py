@@ -53,7 +53,20 @@ def sync_reply(schema, path="hello"):
     return int(status), json.loads(body)
 
 
-def web_preflight(schema, minimum):
+# Whether the running server serves roadmap's scopes (README.md, "Roadmap's cutover onto the sync engine"): the roadmap
+# room a web build may read through the replica.
+ROADMAP_ROOM = ["docker", "compose", "exec", "-T", "server", "sh", "-c",
+                "if grep -Fzxq ROADMAP_ENGINE_ENABLED=1 /proc/1/environ; then echo on; else echo off; fi"]
+
+
+def roadmap_room():
+    room = capture(ROADMAP_ROOM)
+    if room not in ("on", "off"):
+        raise ValueError("unreadable roadmap switch")
+    return room
+
+
+def web_preflight(schema, minimum, room):
     client = compatibility({"schema": schema, "minSchema": minimum})
     status, hello = sync_reply(2147483647)
     if status != 200:
@@ -61,7 +74,11 @@ def web_preflight(schema, minimum):
     current = compatibility(hello)
     if current["schema"] < client["minSchema"] or current["minSchema"] > client["schema"]:
         raise SystemExit("HOLD web deployment: live backend and candidate client are incompatible")
-    print("PASS web deployment: live backend accepts the candidate sync client")
+    serving = roadmap_room()
+    if room != serving:
+        raise SystemExit("HOLD web deployment: the candidate's roadmap room is " + room +
+                         " and the running server's is " + serving)
+    print("PASS web deployment: live backend accepts the candidate sync client, roadmap's room " + room)
 
 
 def preflight(environment, acknowledgement, receipt):
@@ -141,6 +158,7 @@ def main():
     web = commands.add_parser("web-preflight")
     web.add_argument("schema", type=int)
     web.add_argument("minimum", type=int)
+    web.add_argument("room", choices=("on", "off"))
     args = parser.parse_args()
     try:
         if args.command == "metadata":
@@ -148,7 +166,7 @@ def main():
         elif args.command == "preflight":
             preflight(args.environment, args.acknowledgement, args.receipt)
         elif args.command == "web-preflight":
-            web_preflight(args.schema, args.minimum)
+            web_preflight(args.schema, args.minimum, args.room)
         else:
             verify(args.receipt)
     except Exception:
