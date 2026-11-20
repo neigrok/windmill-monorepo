@@ -187,6 +187,10 @@ npm run build    # fetch model weights, run tests, build Vite and static landing
 Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `public/models`;
 `vite build` alone skips that step, tests and static-page generation.
 
+Web Deploy runs a pull request's suite a second time with `VITE_ROADMAP_REPLICA_ROOM=on` (its `room-on-tests` job), as
+roadmap's cutover builds; `VITE_ROADMAP_REPLICA_ROOM=on npm test` runs it locally. Only Vite-served tests read the switch,
+so a browser test about one reading pins `replicaRoom.js` in its fixture and says which in its name.
+
 When Roadmap events or failure boundaries change, run the existing cheap observability audit before
 browser tests and include it in the final verification gates:
 `node --test --test-concurrency=1 --test-timeout=120000 test/products/roadmap/observability.test.mjs`.

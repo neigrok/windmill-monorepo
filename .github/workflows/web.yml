@@ -40,6 +40,32 @@ defaults:
     working-directory: web
 
 jobs:
+  # A pull request's suite again with roadmap's room reading the device's copy, as the cutover builds it, so a change that
+  # breaks the room on fails before it merges. It runs the tests alone: the build below builds the room off and is what
+  # ships.
+  room-on-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
+
+      - name: Test with roadmap's room on
+        env:
+          VITE_ROADMAP_REPLICA_ROOM: on
+        run: npm test
+
   build-and-deploy:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -69,7 +95,7 @@ jobs:
       # The roadmap room reads the device's copy only where the server serves roadmap's scopes, so a build that can
       # reach the host takes the room from the running server (backend/deploy/README.md, "Roadmap's cutover onto the sync
       # engine"); the preflight below holds a release whose room the running server's is not. A pull request's build
-      # reaches no host and builds the room off.
+      # reaches no host and builds the room off, and room-on-tests runs its suite with the room on.
       - name: Read roadmap's switch on the host
         id: roadmap
         if: github.event_name != 'pull_request'
