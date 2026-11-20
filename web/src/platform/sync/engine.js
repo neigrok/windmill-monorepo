@@ -1324,28 +1324,28 @@ export class BrowserSyncEngine {
 
   // The store closed for a newer bundle's upgrade, so this tab can keep nothing more (engine.md §7.8). It lets go of its
   // locks and its channel at once, for the newer tabs to lead; the shell shows its update prompt, and the tab reloads
-  // into the newer bundle at the first moment that loses nothing on the screen.
+  // into the newer bundle only when that loses nothing on the screen.
   supersede() {
     if (this.superseded) return;
     this.superseded = true;
     this.telemetry.event('sync-upgrade', { outcome: 'superseded' });
     this.upgradeRequired = true;
     if (this.snapshot) {
-      this.snapshot = frozen({ ...this.snapshot, upgradeRequired: true });
+      this.snapshot = frozen({ ...this.snapshot, upgradeRequired: true, superseded: true });
       this.notify(this.listeners);
     }
     this.close();
     this.reloadWhenClear();
   }
 
-  // Nothing on the screen would be lost once no write was refused since the store closed and nothing was typed since the
-  // last save (either's words stand on the screen alone), no text field holds the focus and no dialog is open; the reload
-  // then waits for the page to be hidden or idle. Until then, and for good once words stand unsaved, the prompt stands.
+  // A reload loses nothing on the screen while the person has given no input since the tab's last commit, no write was
+  // refused since the store closed, no text field holds the focus and no dialog is open; it then waits for the page to
+  // be hidden or idle. Once input or a refused write stands unsaved, the update prompt stands until the person reloads.
   reloadWhenClear() {
     const { document, window } = this;
     if (!document || !window) return;
     const check = () => {
-      if (this.refusedSinceSuperseded || (this.typedAt ?? -Infinity) > (this.savedAt ?? -Infinity)) return;
+      if (this.refusedSinceSuperseded || (this.inputAt ?? -Infinity) > (this.savedAt ?? -Infinity)) return;
       const focused = document.activeElement;
       const holding = focused?.isContentEditable || focused?.tagName === 'TEXTAREA'
         || (focused?.tagName === 'INPUT' && TEXT_FIELDS.has(focused.type))
@@ -1371,12 +1371,9 @@ export class BrowserSyncEngine {
     this.pageShown ??= (event) => {
       if (event.persisted && this.suspended) this.resume().catch(() => {});
     };
-    // The person's last input and last keystroke, which outlive a close: a superseded tab's reload reads them.
-    this.inputSeen ??= ({ type }) => {
-      this.inputAt = this.monotonic();
-      if (type === 'keydown') this.typedAt = this.inputAt;
-    };
-    for (const type of ['pointerdown', 'keydown', 'wheel']) this.window?.addEventListener(type, this.inputSeen, { capture: true, passive: true });
+    // The person's last input outlives a close: a superseded tab reads it before it reloads.
+    this.inputSeen ??= () => { this.inputAt = this.monotonic(); };
+    for (const type of ['pointerdown', 'touchstart', 'wheel', 'keydown']) this.window?.addEventListener(type, this.inputSeen, { capture: true, passive: true });
     this.document?.addEventListener('visibilitychange', this.visibilityChanged);
     this.window?.addEventListener('online', this.connectivityChanged);
     this.window?.addEventListener('offline', this.connectivityChanged);

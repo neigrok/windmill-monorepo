@@ -634,17 +634,18 @@ test('Chromium: a durable commit resolves when versionchange closes IndexedDB be
 });
 
 // A build of a newer store version opens the device store under three tabs of this one: one holds a text field in focus,
-// one tries a write after its store closed, and one was typed in after its last save. Each lets go of its locks at once.
-// The first reloads once its field is left; the others never reload by themselves, for their words stand on the screen alone.
+// one tries a write after its store closed, and one was clicked after its last commit. Each lets go of its locks at once.
+// The first reloads once its field is left; the others never reload by themselves, for what they hold may stand on the
+// screen alone.
 test('Chromium: a newer store version leads at once over older tabs, which reload once their screen loses nothing', async () => {
   const context = await freshContext();
   try {
-    const focused = await open(context, 'superseded'), refused = await open(context, 'superseded'), typed = await open(context, 'superseded');
-    const older = [focused, refused, typed];
+    const focused = await open(context, 'superseded'), refused = await open(context, 'superseded'), touched = await open(context, 'superseded');
+    const older = [focused, refused, touched];
     await leader(older);
     await gesture(refused, 'card0001');
     await focused.evaluate(() => { document.body.appendChild(document.createElement('textarea')).focus(); });
-    await typed.keyboard.press('a');
+    await touched.mouse.click(10, 10);
     const loads = new Map(older.map((page) => [page, 0]));
     for (const page of older) page.on('load', () => loads.set(page, loads.get(page) + 1));
     const newer = await open(context, 'superseded', { newer: true });
@@ -654,9 +655,11 @@ test('Chromium: a newer store version leads at once over older tabs, which reloa
     assert.deepEqual(locks, [`wm-sync@${store}:${replica}`, `wm-tab@${store}`]);
     assert.deepEqual(await newer.evaluate(() => observation.getSnapshot().drawn.map(({ id }) => id)), ['card0001']);
     const stepped = await Promise.all(older.map((page) => page.evaluate(() => ({ closed: engine.closed,
-      upgradeRequired: engine.getSnapshot().upgradeRequired, superseded: steps.filter((step) => step === 'sync-upgrade:superseded').length,
+      upgradeRequired: engine.getSnapshot().upgradeRequired, superseded: engine.getSnapshot().superseded,
+      steps: steps.filter((step) => step === 'sync-upgrade:superseded').length,
       released: steps.filter((step) => step === 'sync-leader:released').length, failures }))));
-    assert.deepEqual(stepped.map(({ released, ...rest }) => rest), older.map(() => ({ closed: true, upgradeRequired: true, superseded: 1, failures: [] })));
+    assert.deepEqual(stepped.map(({ released, ...rest }) => rest),
+      older.map(() => ({ closed: true, upgradeRequired: true, superseded: true, steps: 1, failures: [] })));
     assert.deepEqual(stepped.map(({ released }) => released).sort(), [0, 0, 1]);
     assert.equal(await refused.evaluate(() => engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'private' } }])
       .then(() => 'committed', (error) => error.kind)), 'store');
@@ -667,7 +670,7 @@ test('Chromium: a newer store version leads at once over older tabs, which reloa
     await left;
     await newer.waitForTimeout(3000);
     assert.deepEqual([...loads.values()], [1, 0, 0]);
-    for (const page of [refused, typed]) assert.equal(await page.evaluate(() => engine.getSnapshot().upgradeRequired), true);
+    for (const page of [refused, touched]) assert.equal(await page.evaluate(() => engine.getSnapshot().upgradeRequired), true);
     assert.equal((await gesture(newer, 'card0003')).localIds.length, 1);
   } finally { await context.close(); }
 });

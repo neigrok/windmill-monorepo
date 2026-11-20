@@ -18,6 +18,7 @@
   "shell.auth.unreachable": "Can't reach windmill.works",
   "shell.auth.updateFailed": "Couldn’t fetch the update. Your work is still here. Try again when connected.",
   "shell.auth.updateRequired": "Update required. Reload Windmill to reconnect your account. Your pending work stays on this device.",
+  "shell.auth.updateSuperseded": "Update required. Reload Windmill to reconnect your account. Work saved before the update stays on this device. Anything typed since won’t save until you reload, so copy it first.",
   "shell.brandLanding.open": "Open Windmill",
   "shell.brandLanding.seeProduct": "See {product} ↓",
   "shell.common.cancel": "Cancel",
