@@ -72,7 +72,7 @@ receipts and retained journal revisions stay in place.
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:15)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and thirteen script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and fourteen script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx

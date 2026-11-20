@@ -82,10 +82,10 @@ std::string privacySafeLogBody(const std::string& body, const std::string& sourc
       "OpenAiTranscriber.cpp", "ReminderSweep.cpp", "Collab.cpp", "SyncSocket.cpp", "AuthService.cpp",
       "RetentionSweep.h", "ClosedAccountSweep.h", "ResendWebhookApi.cpp", "PgSweepMutex.h", "EventsApi.cpp",
       "FeedbackApi.cpp", "OAuthApi.cpp", "BillingApi.cpp", "ForkSignup.cpp", "EchoSweep.cpp", "NudgeSweep.cpp",
-      "EchoDerivations.cpp", "AppleOAuthClient.cpp", "AnthropicStream.cpp", "AnthropicClient.cpp",
-      "AnthropicAsk.cpp", "AnthropicAgent.cpp", "AiCallBudget.cpp", "PgAiUsageRepository.cpp",
-      "TurnService.cpp", "PhoneToolHost.cpp", "OwnerProgress.cpp", "GalleryApi.cpp", "TreeRegistry.cpp",
-      "WsPresenceBus.cpp", "ForkService.cpp", "FeedFollower.cpp", "AiBudgetService.cpp", "UnbindSweep.cpp"};
+      "EchoDerivations.cpp", "AppleOAuthClient.cpp", "AnthropicStream.cpp", "AnthropicAgent.cpp", "AiCallBudget.cpp",
+      "TurnService.cpp", "PhoneToolHost.cpp", "OwnerFollows.cpp", "GalleryApi.cpp", "TreeRegistry.cpp",
+      "WsPresenceBus.cpp", "ForkService.cpp", "DoorForks.cpp", "FeedFollower.cpp", "AiBudgetService.cpp",
+      "UnbindSweep.cpp"};
   const std::string safeSource = privacySafeLogSource(source);
   const auto colon = safeSource.rfind(':');
   const std::string filename = safeSource.substr(0, colon);

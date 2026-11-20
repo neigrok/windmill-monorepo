@@ -32,7 +32,8 @@ roadmap's own tables in SHARE mode in each owner's transaction, reads that owner
 from those its plan was made from.
 
 Each stage prints one JSON line on stdout — `{"stage", "verdict", "ms", "counts"}` — and logs one write line on stderr
-(`roadmap.adoption.<stage>`, door `tool`, the verdict as its outcome). Neither names a roadmap, a step, an account or a
+(`roadmap.adoption.<stage>`, door `tool`, the verdict as its outcome, at INFO when the stage passed, WARN when it did not
+and ERROR on a failure). Neither names a roadmap, a step, an account or a
 text: the counts' names are the code's words. Everything finer goes to the private record, the directory
 `ROADMAP_ADOPTION_PRIVATE_DIR` names, one JSON value a line, files readable by their owner alone, meant to be encrypted
 before they leave the machine; without it nothing finer is kept, and the two read-model stages cannot run. The tool exits

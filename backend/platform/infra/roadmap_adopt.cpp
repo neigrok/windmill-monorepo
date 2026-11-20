@@ -239,8 +239,11 @@ int main(int argc, char** argv) {
       const StageReport report = cutover.run(stage);
       std::printf("%s\n", dump(report.toJson()).c_str());
       std::fflush(stdout);
-      observation.finish(report.verdict);
-      if (!report.passed) return 3;
+      if (!report.passed) {
+        observation.finish(report.verdict);
+        return 3;
+      }
+      observation.succeed(report.verdict);
     } catch (const StageFailure& failure) {
       StageReport report = failure.report;
       report.stage = stage;
