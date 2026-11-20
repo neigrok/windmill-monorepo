@@ -259,7 +259,7 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
 
 
 for (const interruption of ['question', 'handshake', 'signout']) {
-  test(`with the switch off, roadmap's own device cleanup survives a reload after the replica transition during ${interruption}`, async () => {
+  test(`with the switch off, device cleanup survives a reload after the replica transition during ${interruption}`, async () => {
     await ready;
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     try {
