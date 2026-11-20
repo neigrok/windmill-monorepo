@@ -280,7 +280,7 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
 - **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`, `UNSHOWN`), once
   a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
   (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
-  no answer came (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
+  no answer came before the device held a whole copy (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
   engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
   the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
   reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
@@ -352,7 +352,8 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   Settings' export (`readReplicaRoadmaps` in `settings/exportArchive.js`) opens a reading of no roadmap, which subscribes and
   holds what it reads as any reading does and lets go when the export ends, and asks nothing of the server itself:
   `readEveryRoadmap` waits until the device has read the person's list and every roadmap in it, or, where the engine
-  cannot reach the server, until the device's stored rows are loaded, within `FIRST_COPY_MS`. Each root of the list is
+  cannot reach the server, until the device's stored rows are loaded, while the server answers within `FIRST_COPY_MS` of
+  its last answer. Each root of the list is
   then a file from `ReplicaRoadmap.seedOf` and `marksOf`, the reads the room opens a roadmap from; one the device has not
   read stays out, and a copy that does not open is the export's error. For the same records the file is the one today's
   export makes, but where the replica reads them otherwise: steps in their authored order (`ord`, born, id) where today's

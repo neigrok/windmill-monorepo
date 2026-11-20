@@ -280,8 +280,8 @@ export class ReplicaReading {
   }
 
   // The person's roadmaps whole, for a reading that takes every one of them (Settings' export; a reading of no roadmap):
-  // once the device can say what each is, from the copy it holds or the server's first answer. Null where the engine did
-  // not stand within the bound.
+  // once the device can say what each is, from the whole copy it holds or the server's. Null where the engine did not
+  // stand within the bound.
   async readEveryRoadmap({ signal }) {
     this.engine = (await standingEngine(this.session, signal, this.timers)).engine ?? null;
     if (!this.engine || signal.aborted) return null;
