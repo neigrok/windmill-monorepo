@@ -729,3 +729,53 @@ test('a reader’s room whose reads of the owner’s marks and of the activity f
     a.close();
   }
 });
+
+test('a room asks the server for its roadmap’s activity only where the server holds the roadmap: the account’s own reports a lost read, and the browser’s own signed out is asked nothing', async (t) => {
+  globalThis.document = { visibilityState: 'visible' };
+  t.after(() => { delete globalThis.document; });
+  const asked = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    asked.push(String(url).split('/').at(-1));
+    throw new TypeError('Failed to fetch');
+  });
+  // The room's activity, as it follows a roadmap of `engine`'s, through the reading's own server reads.
+  const activity = async (engine, tree) => {
+    const reports = [];
+    const snapshot = { engine, ready: true, online: true, error: false };
+    const reading = new ReplicaReading({ treeId: tree, session: { getSnapshot: () => snapshot, subscribe: () => () => {} }, report: (operation) => reports.push(operation) });
+    const { seed } = await reading.read({ signal: new AbortController().signal });
+    const from = asked.length;
+    reading.follow({ onTree() {}, onProgress() {}, onWorkspace() {}, onGuides() {}, onLanding() {}, onActivity: () => assert.fail('a lost read brings no feed') });
+    await until(() => reports.length === asked.length - from).catch(() => {});
+    reading.close();
+    return { state: engine.getSnapshot().state, mine: seed.mine, asked: asked.slice(from), reports };
+  };
+
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  let account;
+  try {
+    const { tree } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree)]) a.observe(scope);
+    await a.sync();
+    account = await activity(a.engine, tree);
+  } finally {
+    a.close();
+  }
+
+  const locks = new FakeLocks();
+  const offline = { request: async () => { throw Object.assign(new TypeError('the server does not answer'), { kind: 'network' }); },
+    openLive: () => ({ readyState: 0, send() {}, close() { this.readyState = 3; } }) };
+  const browser = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), keyRange: IDBKeyRange, registry: roadmapRegistry, transport: offline, timers: globalThis,
+    now: Date.now, monotonic: () => Math.floor(performance.now()), navigator: { onLine: true, locks, storage: { persist: async () => true } },
+    document: null, window: null, leadership: { locks, channel: new FakeChannels().open }, telemetry: { event() {}, failure() {} } });
+  t.after(() => browser.close());
+  await browser.start();
+  const runner = new ActionRunner(new EngineReplica(browser), roadmapRegistry, new FixedZone(0));
+  const { tree } = committed(await runner.runAct(new CreateRoadmap('Learn to swim', { steps: [{ key: 'float', label: 'Float' }], links: [] })));
+  const signedOut = await activity(browser, tree);
+
+  assert.deepEqual({ account, signedOut }, {
+    account: { state: 'bound', mine: true, asked: ['activity?since=0&limit=200'], reports: ['roadmap-activity-load'] },
+    signedOut: { state: 'anon', mine: true, asked: [], reports: [] },
+  });
+});

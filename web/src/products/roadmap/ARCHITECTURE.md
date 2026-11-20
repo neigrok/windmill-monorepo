@@ -185,6 +185,10 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   records did not change answers the reading it answered before. A changed one stands through the room's `onTreeChanged`;
   the owner's marks go to `RoomProgress.adoptRemote`, as another device's do, and the workspace and guides are seated
   again. A roadmap that stops standing while the room is open keeps its last picture; the next load says it is not there.
+  The room's activity feed is the server's (`GET /v1/trees/{id}/activity`), asked only where the server holds the
+  roadmap (`served`): a reader's, or one of the account's, whose failed read reports once a visit
+  (`roadmap-activity-load`). A browser's own roadmap signed out, which the server never held, asks nothing and shows no
+  feed.
 - **Landing.** On the person's own roadmap the reading reads what the device tells of their changes that met another
   device's (§6), the domain's `landingOf`, as the room opens and after each change; `ReplicaReading.landing` puts each in
   the room's names, a line a step: the step their edit brought back, or the step they made or linked that now follows
@@ -250,7 +254,7 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
 - **Readers.** A roadmap not in the account's list is someone else's: the room reads it as a reader, with its owner's
   marks from `GET /v1/trees/{id}/progress` (§7, a read that stays) or the steps' seeds where that read fails, the failure
   reported once a visit (`roadmap-progress-load`, through a repository that knows the server keeps the roadmap, `served`,
-  so the room's activity read reports its failures once a visit too, `roadmap-activity-load`). The replica holds none of
+  as the activity read's does, Following above). The replica holds none of
   the owner's marks of a subtree, so a step that owns one stands on what that read's `subtrees` says the subtree has come
   to (`HttpTreeRepository.loadProgress`, then `ReplicaRoadmap.seedOf`), the pill and its words as today's room shows
   them, through every change the room follows until its next load; one the read says nothing of, or whose read fails,

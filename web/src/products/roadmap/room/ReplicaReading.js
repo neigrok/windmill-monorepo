@@ -62,7 +62,9 @@ export class ReplicaReading {
   // `room` holds the handles the room's writes reach for; `say` shows the room's toast; `toldRef` is the visit's note that
   // it has told why its roadmap cannot be shown, and `reported` the static names of the server's reads of the roadmap that
   // failed and reported in the visit, which every reading a sign-in or Try again runs in it shares, so each reports once a
-  // visit. A reading of no roadmap (`treeId` null) reads the person's roadmaps alone, and asks the server nothing.
+  // visit. The server is asked of a roadmap only where it holds it (`served`, as `read` learns it), so each such read
+  // reports as a server tree's does. A reading of no roadmap (`treeId` null) reads the person's roadmaps alone, and asks
+  // the server nothing.
   constructor({ treeId, room = null, say = () => {}, session = syncSession, timers = globalThis, report = reportRoadmapFailure, track = beacon,
     toldRef = { current: false }, reported = new Set(), repository = treeId === null ? null : new HttpTreeRepository({ treeId, served: true,
       reportFailure: (operation, ...details) => {
@@ -96,6 +98,8 @@ export class ReplicaReading {
     // What the server's read of the owner's progress said, as a reader's room opened, each subtree its roadmap's steps
     // own has come to, by step (§7): the device holds none of the owner's marks of them.
     this.subtrees = new Map();
+    // Whether the server holds the roadmap, as `read` finds it: a reader's, or one of the account's.
+    this.served = false;
     this.last = null;
     this.stopped = new AbortController();
     this.closed = false;
@@ -119,6 +123,7 @@ export class ReplicaReading {
     if (answer.unshown) return this.unshown(answer.unshown);
     const { roadmap } = answer;
     this.opened = roadmap;
+    this.served = !roadmap.mine || this.engine.getSnapshot().state === 'bound';
     this.openWrites(roadmap.mine);
     if (roadmap.mine) return { seed: roadmap.seed, overlay: roadmap.marks, workspace: roadmap.workspace, guides: roadmap.guides };
     const { subtrees, ...overlay } = await this.ownerMarks(roadmap.seed);
@@ -176,7 +181,8 @@ export class ReplicaReading {
   }
 
   // Each change the replica draws after the room opened, handed on in the room's shapes; what the device tells of the
-  // person's own changes as it opens and after each change; the server's tail of the roadmap's activity once it answers.
+  // person's own changes as it opens and after each change; the server's tail of the roadmap's activity once it answers,
+  // where the server holds the roadmap: a reader's, or one of the account's, never the browser's own signed out.
   follow({ onTree, onProgress, onWorkspace, onGuides, onLanding, onActivity }) {
     if (this.ready && this.room) this.room.sessionRef.current = this.writes;
     let shown = this.opened;
@@ -196,7 +202,7 @@ export class ReplicaReading {
       }
       onGuides(roadmap.guides);
     });
-    this.repository.loadActivity({ limit: 200, signal: this.stopped.signal })
+    if (this.served) this.repository.loadActivity({ limit: 200, signal: this.stopped.signal })
       .then((events) => { if (!this.closed && events.length) onActivity(events); });
   }
 
