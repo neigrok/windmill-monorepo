@@ -650,8 +650,16 @@ test('Chromium: a newer store version leads at once over older tabs, which reloa
     for (const page of older) page.on('load', () => loads.set(page, loads.get(page) + 1));
     const newer = await open(context, 'superseded', { newer: true });
     await newer.waitForFunction(() => engine.leader, null, { timeout: 10_000 });
-    const { store, replica, locks } = await newer.evaluate(async () => ({ store: engine.store.version, replica: engine.activeReplica(),
-      locks: (await navigator.locks.query()).held.map(({ name }) => name).filter((name) => name.startsWith('wm-')).sort() }));
+    // The older tabs let go of their locks as their stores close, each in its own task: wait out that turn, not longer.
+    const { store, replica, locks } = await newer.evaluate(async () => {
+      const store = engine.store.version, replica = engine.activeReplica();
+      const expected = [`wm-sync@${store}:${replica}`, `wm-tab@${store}`].join();
+      const held = async () => (await navigator.locks.query()).held.map(({ name }) => name).filter((name) => name.startsWith('wm-')).sort();
+      for (const deadline = performance.now() + 2000; (await held()).join() !== expected && performance.now() < deadline;) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      return { store, replica, locks: await held() };
+    });
     assert.deepEqual(locks, [`wm-sync@${store}:${replica}`, `wm-tab@${store}`]);
     assert.deepEqual(await newer.evaluate(() => observation.getSnapshot().drawn.map(({ id }) => id)), ['card0001']);
     const stepped = await Promise.all(older.map((page) => page.evaluate(() => ({ closed: engine.closed,
