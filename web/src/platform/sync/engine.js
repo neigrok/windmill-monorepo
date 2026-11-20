@@ -71,6 +71,7 @@ export class BrowserSyncEngine {
     this.views = new Map();
     this.noticeViews = new Map();
     this.openScopes = new Set();
+    // Each tree a product of this tab holds open with `subscribe`: the opening its holders share, and how many they are.
     this.openings = new Map();
     this.peerScopes = new Map();
     this.doubts = new Doubts();
@@ -405,12 +406,15 @@ export class BrowserSyncEngine {
     return scopes;
   }
 
-  // A scope opens only under the opening its subscribe began in: an unsubscribe called before the subscribe resolves ends
-  // that opening, so the scope stays closed, neither pulled nor followed.
+  // Each subscribe holds the tree open, and each unsubscribe lets one holder go: the tree stays open until its last
+  // holder leaves. The holders share one opening, which ends with the last of them, and a scope opens only under the
+  // opening its subscribe began in: when every holder leaves before the subscribe resolves, the scope stays closed,
+  // neither pulled nor followed.
   async subscribe(scope) {
     if (this.registry.scopeKindOf(scope) !== 'tree') throw new CommitError('only readable trees may be opened');
-    if (!this.openings.has(scope)) this.openings.set(scope, Symbol(scope));
-    const opening = this.openings.get(scope);
+    const opening = this.openings.get(scope) ?? { holders: 0 };
+    opening.holders += 1;
+    this.openings.set(scope, opening);
     const result = await this.write(null, (device) => subscribe(device.activeReplica, scope));
     if (result !== 'gone' && this.openings.get(scope) === opening) this.openScopes.add(scope);
     this.announceScopes();
@@ -420,12 +424,15 @@ export class BrowserSyncEngine {
     return result;
   }
 
-  unsubscribe(scope) {
+  async unsubscribe(scope) {
+    const opening = this.openings.get(scope);
+    if (opening) opening.holders -= 1;
+    if (opening?.holders > 0) return;
     this.openings.delete(scope);
     this.openScopes.delete(scope);
     this.announceScopes();
     this.kickPull();
-    return this.write(null, (device, ctx) => { this.reconcileSet(device.activeReplica, ctx); });
+    await this.write(null, (device, ctx) => { this.reconcileSet(device.activeReplica, ctx); });
   }
 
   // A caller that must know its gesture id before the commit (the domain kit's runner) mints it here and

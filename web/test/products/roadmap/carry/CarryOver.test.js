@@ -206,14 +206,14 @@ const SAILED = {
   workspace: { wind: { subtasks: [['Check the forecast', true], ['Watch the flags', false]], links: [['https://www.example.org/wind', 'example.org']], note: 'Gusts come in from the left.' } },
 };
 
-test('a roadmap made signed out is carried into the anon replica under its id, with its marks, its workspace and the mark left undrained, and its old stores stay until the server takes its creation', async (t) => {
+test('a roadmap made signed out is carried into the anon replica under its id, with its marks, its workspace and the mark left undrained, and its old stores stay until the server takes its creation; the question to the server holds its tree open no longer than it asks', async (t) => {
   const disk = browser(t);
   const server = new Server();
   const id = await plantedSignedOut();
   const engine = await tab(t, disk, server);
   const { carry, reported, tracked } = carryOver(disk);
   await carry.run(engine);
-  assert.deepEqual(holding(engine, id), SAILED);
+  assert.deepEqual({ held: holding(engine, id), open: [...engine.openScopes], holders: [...engine.openings.keys()] }, { held: SAILED, open: [], holders: [] });
   const ledger = runner(engine).read(RoadmapScopes.account, (read) => carryLedgerOf(read, id));
   assert.deepEqual({ to: ledger.to, created: ledger.created }, { to: id, created: true });
   assert.deepEqual(ledger.kept.map((each) => [each.reason, each.subject.t, each.values.label]), [['pastBound', 'subtask', 'x'.repeat(300)]]);
@@ -753,7 +753,8 @@ test('signed out, another tab signs in to an account that holds roadmaps while a
   const { carry, reported, tracked } = started(t, disk, engine);
   await settled(carry, engine);
   assert.deepEqual({ state: engine.getSnapshot().state, queued: queued(engine), listed: holding(engine, id).listed, old: (await oldStores()).sync, reported,
-    stages: tracked.map(({ stage }) => stage) }, { state: 'bound', queued: 0, listed: false, old: [id], reported: [], stages: ['found', 'waiting'] });
+    stages: tracked.map(({ stage }) => stage), holders: [...engine.openings.keys()] },
+  { state: 'bound', queued: 0, listed: false, old: [id], reported: [], stages: ['found', 'waiting'], holders: [] });
 });
 
 test('signed out, a sign-in that adds the anon replica to an account, keeping the replica, while a carry asks the server: nothing the carry decided reaches the account', async (t) => {

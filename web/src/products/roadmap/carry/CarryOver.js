@@ -299,24 +299,29 @@ export class CarryOver {
   }
 
   // Whether the server holds a roadmap under `id`, as the engine's pull of its tree answers: `held` where it serves its
-  // records, `spent` where the roadmap is gone, `none` where it serves nothing of it, or null with no answer. The tree is
-  // let go only from the replica that took it up: once another stands, the engine keeps it for the page.
+  // records, `spent` where the roadmap is gone, `none` where it serves nothing of it, or null with no answer. Each
+  // subscription the question takes, the one that pulls the tree and the one that asks whether the pull found it gone,
+  // it lets go, whichever replica stands by then: a page that holds the tree open holds a subscription of its own.
   async ask(engine, id) {
     const scope = RoadmapScopes.tree(id);
-    const binding = engine.activeBinding();
+    let taken = 0;
+    const gone = async () => {
+      taken += 1;
+      return await engine.subscribe(scope) === 'gone';
+    };
     try {
-      if (await engine.subscribe(scope) === 'gone') return 'spent';
+      if (await gone()) return 'spent';
       if (!await this.pulled(engine, [scope])) return null;
       const hold = engine.observe(scope);
       const served = hold.getSnapshot().drawn.length > 0;
       hold.release();
       if (served) return 'held';
-      return await engine.subscribe(scope) === 'gone' ? 'spent' : 'none';
+      return await gone() ? 'spent' : 'none';
     } catch (error) {
       this.report('roadmap-carry-read', error, { store: 'server', ...failureTags(error) });
       return null;
     } finally {
-      if (engine.activeBinding() === binding) await engine.unsubscribe(scope).catch(() => {});
+      for (; taken > 0; taken -= 1) await engine.unsubscribe(scope).catch(() => {});
     }
   }
 
@@ -378,7 +383,7 @@ export class CarryOver {
       const parts = [...roadmap.changes(fate.to, ledger, knows, opened), ...workspace.parts];
       return { ...await this.write(engine, runner, binding, roadmap.id, parts, { ...entry, frontier: roadmap.frontier(ledger), kept: workspace.kept }), awaiting: fate.awaiting === true };
     } finally {
-      if (signedIn && engine.activeBinding() === binding) await engine.unsubscribe(scope).catch(() => {});
+      if (signedIn) await engine.unsubscribe(scope).catch(() => {});
     }
   }
 

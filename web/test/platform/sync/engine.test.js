@@ -1668,6 +1668,33 @@ test('a tree unsubscribed before its subscribe resolves stays closed, neither pu
   } finally { engine.close(); }
 });
 
+test('a tree two products hold open stays pulled until the last of them lets it go, and an unsubscribe before its subscribe resolves closes that holder alone', async () => {
+  const env = environment(), tree = 'tree/b_00000001';
+  env.state = new ServerState(serverState({
+    scopes: { 'acct:A/probe': productScope('A'), 'tree:b_00000001': treeScope('A', 'b_00000001') },
+    rows: { 'acct:A/probe': [row({ t: 'board', id: 'b_00000001', life: ['alive', st(1)], born: st(1), seq: 1 })],
+      'tree:b_00000001': [row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(1)] }, seq: 1 })] },
+  }));
+  const engine = await open(env);
+  const reading = () => ({ open: engine.openScopes.has(tree), scopes: engine.scopes() });
+  try {
+    await Promise.all([engine.subscribe(tree), engine.subscribe(tree)]);
+    await engine.unsubscribe(tree);
+    const afterFirst = reading();
+    await Promise.all([engine.subscribe(tree), engine.unsubscribe(tree)]);
+    const afterRaced = reading();
+    await engine.unsubscribe(tree);
+    const afterLast = reading();
+    await engine.unsubscribe(tree);
+    const afterUnpaired = reading();
+    await engine.subscribe(tree);
+    assert.deepEqual({ afterFirst, afterRaced, afterLast, afterUnpaired, reopened: reading() }, {
+      afterFirst: { open: true, scopes: [tree] }, afterRaced: { open: true, scopes: [tree] }, afterLast: { open: false, scopes: [] },
+      afterUnpaired: { open: false, scopes: [] }, reopened: { open: true, scopes: [tree] },
+    });
+  } finally { engine.close(); }
+});
+
 test('an anon replica whose last tree is unsubscribed has nothing to pull, and its puller run still ends following it on the live socket', async () => {
   const env = environment(), tree = 'tree/b_00000001';
   env.state = new ServerState(serverState({

@@ -214,25 +214,31 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   // and the person's roadmaps as the recovery switcher and the tree picker read a list, as the server's is read
   // (`listServerTrees`): not authoritative before the device's copy opens, when it cannot say which are theirs, the copy's
   // failure already told. An address of one of them is read there, and any other from the copy too, by a reading of its
-  // own that subscribes the roadmap while it reads it, as a reader's room does.
+  // own that subscribes the roadmap while it reads it, as a reader's room does: one reading an address at a time, whose
+  // answer every read of that address asks while it is out shares.
   const listTrees = useCallback(async () => readingRef.current?.list() ?? [], []);
   const card = useCallback((id) => readingRef.current?.card(id) ?? null, []);
-  const heldTrees = useMemo(() => ({
-    list: async () => {
-      const rows = readingRef.current?.list() ?? null;
-      return rows === null ? { rows: [], authoritative: false, status: 0, reported: true } : { rows, authoritative: true };
-    },
-    read: async (id) => {
-      const held = readingRef.current?.card(id) ?? null;
-      if (held) return held;
-      const address = new ReplicaReading({ treeId: id });
-      try {
-        return await address.readCard();
-      } finally {
-        address.close();
-      }
-    },
-  }), []);
+  const heldTrees = useMemo(() => {
+    const asked = new Map();
+    return {
+      list: async () => {
+        const rows = readingRef.current?.list() ?? null;
+        return rows === null ? { rows: [], authoritative: false, status: 0, reported: true } : { rows, authoritative: true };
+      },
+      read: async (id) => {
+        const held = readingRef.current?.card(id) ?? null;
+        if (held) return held;
+        if (!asked.has(id)) {
+          const address = new ReplicaReading({ treeId: id });
+          asked.set(id, address.readCard().finally(() => {
+            asked.delete(id);
+            address.close();
+          }));
+        }
+        return asked.get(id);
+      },
+    };
+  }, []);
 
   return {
     loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree, guides,

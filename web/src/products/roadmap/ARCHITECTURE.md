@@ -162,7 +162,8 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
   of the account where the open one is in the list, else the open one and each roadmap above it (by its `meta.parent`),
   each subscribed as it comes to be read, and read only once the engine has taken that subscription (it reads a scope it
   does not pull as pulled and empty, which would hide a subtree whose roadmap above it is not subscribed yet). It keeps one hold on each scope it observes. The room drops every scope it
-  subscribed, and releases every hold, when it leaves. It reads the engine only through its public API
+  subscribed, once each, and releases every hold, when it leaves; the engine counts a tree's holders, so another reading
+  that holds the same roadmap keeps it followed. It reads the engine only through its public API
   (`test/products/roadmap/room/engineBoundary.test.js` holds every `room/` file to that).
 - **Opening.** It opens from what the device holds, asking nothing of the network first: the copy, once the engine
   stands and the scope's stored rows are `loaded`. A roadmap the device holds nothing of waits for the server's first
@@ -262,8 +263,8 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
 - **When it cannot be shown.** The room shows its load error, and the reading tells why (`roadmap_load`, `UNSHOWN`), once
   a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
   (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
-  no answer came (`unanswered`). A room that leaves while the engine takes a subscription drops it once the engine
-  answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
+  no answer came (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
+  engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
   the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
   reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
 - **Births.** A roadmap is born through the domain on the replica the engine holds active (`room/ReplicaBirth.js`): the
@@ -312,7 +313,8 @@ With the switch on, every room but the demo reads through `ReplicaReading`:
     `CreateKind`, `ChangeKind`, `RecolourKind` and `DeleteKind`; the tree a step opens `SetPointer` or `ClearPointer`,
     its picker listing the person's roadmaps as the replica keeps them and reading an address there too: one of theirs
     from the room's reading, and any other by a reading of its own (`ReplicaReading.readCard`), which subscribes the
-    roadmap while it reads it, as a reader's room does, where today's picker asks `GET /v1/trees/{id}` (§7 retires it).
+    roadmap while it reads it, as a reader's room does, where today's picker asks `GET /v1/trees/{id}` (§7 retires it);
+    reads of one address while its reading is out share that reading (`heldTrees.read` in `room/useRoomLoad.js`).
     The copy names no author, so a roadmap the person can only read is said as readable, without whose.
   - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
     ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A
@@ -511,7 +513,8 @@ on screen. Only this app's address (`pastedTreeId`: `<origin>/t/<id>` or `<origi
 optional) or a bare tree id (`t_` and sixteen lowercase hex characters, the id the server mints) names a roadmap; any
 other text only filters and sends nothing. One of theirs selects its row. Any other is read once it was pasted or the
 field has been still for 300 ms, and once per id (`readTreeCard`; where the room reads the device's copy, from the copy, Reading the
-device's copy): a roadmap they can only read is the one blocked row
+device's copy): a read that answered stands for its id, and where the room reads the device's copy, an id asked again
+before its read answers shares that one reading. A roadmap they can only read is the one blocked row
 and Fork tree is the only commit, and one they cannot read says so. Fork runs `ForkDoor`, which hands the copy back
 instead of opening it; the list is read again and the copy is a row to choose, so attaching stays its own act. A list
 that cannot be read says *Couldn’t load your trees* with Try again; an address whose read failed says *Couldn’t load

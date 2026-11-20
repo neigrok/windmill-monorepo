@@ -2516,9 +2516,13 @@ subscription on a bound replica adds both the tree and that replica's own `self/
 when another account owns the readable tree. It never adds the owner's overlay. An anonymous
 replica adds only the tree. The same resolved set drives pulls, live subscriptions, readers'
 `firstPullComplete`, peers and account changes; a tree subscribe schedules both bound scopes' first
-pulls. Web accepts only tree scopes at this public entry, and an `unsubscribe` called before the
-`subscribe` of the same tree resolves closes that opening: the tree stays out of the set, neither pulled
-nor followed, until the next `subscribe`. Native clients also retain their explicit overlay
+pulls. Web accepts only tree scopes at this public entry, and counts them per tab: each `subscribe` of a
+tree adds a holder and each `unsubscribe` removes one, so a tree that two products, or two readings of
+one product, hold open stays in the set, pulled and followed, until the last of them lets it go; an
+`unsubscribe` with no holder left changes nothing. A tree's holders share one opening, which ends with
+its last holder: where every holder leaves before a `subscribe` of the tree resolves, the tree stays out
+of the set, neither pulled nor followed, until the next `subscribe`. Native clients hold one entry per
+explicitly subscribed scope, which one `unsubscribe` releases, and also retain their explicit overlay
 subscription entry.
 
 The last explicit tree release (across web tabs) releases its paired overlay too, unless the tree's

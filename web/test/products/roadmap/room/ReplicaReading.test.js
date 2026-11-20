@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
+import { hello, pull } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
+import { push } from '../../../../../packages/api-contract/sync/reference/server/push.js';
+import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
-import { FakeTimers, until } from '../../../platform/sync/fakes.js';
+import { FakeChannels, FakeLocks, FakeTimers, until } from '../../../platform/sync/fakes.js';
 import { roadmapRegistry } from '../domain/vectors.js';
-import { CreateRoadmap, CreateSubtree, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { ActionRunner, EngineReplica } from '../../../../src/platform/domain-kit/runner.js';
+import { FixedZone } from '../../../../src/platform/domain-kit/time.js';
+import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
+import { CreateRoadmap, CreateSubtree, SetVisibility, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { ChangeStep, CreateStep, DeleteStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { Complete, SetPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { AddStepLink, AddSubtask } from '../../../../src/products/roadmap/domain/workspace.js';
@@ -316,7 +323,8 @@ test('a reader who leaves a subtree while the roadmap above it is being subscrib
     for (const id of [tree, subtree]) for (const scope of [RoadmapScopes.tree(id), RoadmapScopes.overlay(id)]) a.observe(scope);
     await a.sync();
     // A stranger's browser: no roadmap of theirs in the list, so the subtree is read with the roadmap above it, which it
-    // holds nothing of until the engine takes its subscription, once `above` lets it.
+    // holds nothing of until the engine answers its subscription, once `above` lets it; the engine holds the roadmap
+    // open from the moment it is asked.
     let above = null;
     let taken = false;
     const nothing = { drawn: [], stored: [], pending: [], outbox: { held: 0, ready: 0, sent: 0, acked: 0 }, loaded: true, firstPullComplete: true };
@@ -330,9 +338,11 @@ test('a reader who leaves a subtree while the roadmap above it is being subscrib
         if (scope === RoadmapScopes.tree(tree)) return seen(scope, () => taken);
         return a.engine.observe(scope);
       } },
-      subscribe: { value: (scope) => (scope === RoadmapScopes.tree(tree)
-        ? new Promise((resolve) => { above = () => a.engine.subscribe(scope).then((answer) => { taken = true; resolve(answer); }); })
-        : a.engine.subscribe(scope)) },
+      subscribe: { value: (scope) => {
+        if (scope !== RoadmapScopes.tree(tree)) return a.engine.subscribe(scope);
+        const answer = a.engine.subscribe(scope);
+        return new Promise((resolve) => { above = () => answer.then((said) => { taken = true; resolve(said); }); });
+      } },
     });
     const snapshot = { engine, ready: true, online: true, error: false };
     const reading = new ReplicaReading({ treeId: subtree, timers: a.env.timers, session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
@@ -350,6 +360,64 @@ test('a reader who leaves a subtree while the roadmap above it is being subscrib
   } finally {
     a.close();
   }
+});
+
+// Two readings of one address at once, as the tree picker reads one while the room holds it: each holds the roadmap's
+// subscription, so the one that leaves first takes only its own.
+test('two readings of a roadmap someone else owns hold it each: the first to leave leaves the other following it, and the last lets it go', async (t) => {
+  let state = ServerState.empty({ epoch: 'ep-readers', accounts: { A: { name: 'A' }, B: { name: 'B' } } });
+  const product = new RoadmapProduct();
+  const tab = async (account) => {
+    const transport = {
+      request: async (endpoint, request) => {
+        const timing = { send: engine.reading(), recv: engine.reading() };
+        if (endpoint === 'hello') return { response: hello({ state, registry: roadmapRegistry, account, serverTime: Date.now() }), timing };
+        const out = (endpoint === 'push' ? push : pull)({ state, registry: roadmapRegistry, product, account, request, serverNow: Date.now() });
+        state = out.state;
+        return { response: out.response, timing };
+      },
+      openLive: () => ({ readyState: 0, send() {}, close() { this.readyState = 3; } }),
+    };
+    const locks = new FakeLocks();
+    const engine = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), keyRange: IDBKeyRange, registry: roadmapRegistry, transport, timers: globalThis,
+      now: Date.now, monotonic: () => Math.floor(performance.now()), navigator: { onLine: true, locks, storage: { persist: async () => true } },
+      document: null, window: null, leadership: { locks, channel: new FakeChannels().open }, telemetry: { event() {}, failure() {} } });
+    t.after(() => engine.close());
+    assert.equal((await engine.signIn(account)).complete, true);
+    await engine.start();
+    return engine;
+  };
+  // Whether `seen` came within five seconds, each engine pulling and sending as it waits.
+  const settled = async (engines, seen) => {
+    for (let turn = 0; turn < 250 && !seen(); turn += 1) {
+      for (const engine of engines) {
+        engine.kick();
+        engine.kickPull();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return seen();
+  };
+  const owner = await tab('A');
+  const runner = new ActionRunner(new EngineReplica(owner), roadmapRegistry, new FixedZone(0));
+  const { tree } = committed(await runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+  committed(await runner.runAct(new SetVisibility(tree, 'public')));
+  assert.ok(await settled([owner], () => owner.device.activeReplica.outbox.every((entry) => entry.state === 'acked')), 'the owner’s roadmap reaches the server');
+  const stranger = await tab('B');
+  const snapshot = { engine: stranger, ready: true, online: true, error: false };
+  const address = () => new ReplicaReading({ treeId: tree, session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+    repository: { loadProgress: async () => assert.fail('an address reads no marks'), loadActivity: async () => assert.fail('an address reads no activity') } });
+  const first = address(), second = address();
+  const cards = await Promise.all([first.readCard(), second.readCard()]);
+  first.close();
+  committed(await runner.runAct(new WriteRoadmap(tree, { title: 'Learn to sail far' })));
+  const title = () => (second.roadmap().state === 'open' ? second.roadmap().seed.title : second.roadmap().state);
+  await settled([owner, stranger], () => title() === 'Learn to sail far');
+  const afterFirstClosed = { followed: stranger.scopes().includes(RoadmapScopes.tree(tree)), title: title() };
+  second.close();
+  const card = { id: tree, title: 'Learn to sail', author: null, steps: 1, mine: false };
+  assert.deepEqual({ cards, afterFirstClosed, letGo: await settled([stranger], () => !stranger.scopes().includes(RoadmapScopes.tree(tree))) },
+    { cards: [card, card], afterFirstClosed: { followed: true, title: 'Learn to sail far' }, letGo: true });
 });
 
 test('a browser whose copy could not open, as one that keeps nothing, is told at once that the roadmap cannot be shown; one whose copy does not open within the bound, after it', async () => {

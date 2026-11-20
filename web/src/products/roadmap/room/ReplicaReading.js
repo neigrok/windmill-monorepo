@@ -83,7 +83,8 @@ export class ReplicaReading {
     this.ready = false;
     this.writes = null;
     this.engine = null;
-    this.subscribed = new Set();
+    // Each scope the reading subscribed, by the engine's answer, and those whose answer has not come.
+    this.subscriptions = new Map();
     this.subscribing = new Set();
     this.holds = new Map();
     this.listeners = new Set([() => this.emitStatus(), () => this.writes?.followInverses()]);
@@ -108,7 +109,8 @@ export class ReplicaReading {
   // load error and the reading tells (`roadmap_load`): the engine could not open or did not stand within the bound, the
   // person may read no such roadmap here, or no answer came within the bound. A roadmap someone else owns shows its
   // owner's marks and how far each of its subtrees is, as the server reads them. The roadmap's scope is the reading's to
-  // drop from the moment it asks for it, so a room that leaves while the engine takes the subscription leaves it unfollowed.
+  // drop from the moment it asks for it, and the engine leaves a holder that left before its subscription was taken
+  // closed, so a room that leaves while the engine takes the subscription leaves it unfollowed.
   async read({ signal }) {
     const answer = await this.open(signal);
     if (answer === null) return null;
@@ -150,13 +152,11 @@ export class ReplicaReading {
   // why it cannot be shown (`UNSHOWN`); null where the caller stopped waiting or the reading closed.
   async open(signal) {
     const opened = await standingEngine(this.session, signal, this.timers);
-    if (signal.aborted) return null;
+    if (signal.aborted || this.closed) return null;
     if (!opened.engine) return { unshown: opened.unshown };
     this.engine = opened.engine;
     this.unwatch = this.engine.observeEngine(this.changed);
-    this.subscribed.add(this.scope);
-    const subscription = await this.engine.subscribe(this.scope);
-    if (this.closed) this.engine.unsubscribe(this.scope).catch(() => {});
+    const subscription = await this.subscribeTo(this.scope);
     if (signal.aborted || this.closed) return null;
     if (subscription === 'gone') return { unshown: 'missing' };
     const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting');
@@ -317,7 +317,7 @@ export class ReplicaReading {
     }
     this.listeners.clear();
     this.statusHandlers.clear();
-    for (const scope of this.subscribed) this.engine?.unsubscribe(scope).catch(() => {});
+    for (const scope of this.subscriptions.keys()) this.engine.unsubscribe(scope).catch(() => {});
   }
 
   // The roadmaps once `read` says the device can say what they are: from the copy it holds, or the server's first answer.
@@ -383,19 +383,22 @@ export class ReplicaReading {
     return ids;
   }
 
-  // A scope the reading comes to read, subscribed once, so the server's copy of it arrives. Until the engine has taken the
-  // subscription it is not read: the engine reads a scope it does not pull as pulled and holding nothing, so a roadmap
-  // above the open one would read as empty, and the open one as hidden. A reading that closed while the engine took it
-  // drops it again.
+  // The engine's answer to the reading's one subscription of a scope it comes to read, taken while the reading is open,
+  // so the server's copy of it arrives; the reading lets each go once, as it closes. Until the engine has taken the
+  // subscription the scope is not read: the engine reads a scope it does not pull as pulled and holding nothing, so a
+  // roadmap above the open one would read as empty, and the open one as hidden.
   subscribeTo(scope) {
-    if (this.subscribed.has(scope)) return;
-    this.subscribed.add(scope);
-    this.subscribing.add(scope);
-    this.engine.subscribe(scope).catch(() => {}).finally(() => {
-      this.subscribing.delete(scope);
-      if (this.closed) this.engine.unsubscribe(scope).catch(() => {});
-      else this.changed();
-    });
+    if (this.closed) return null;
+    if (!this.subscriptions.has(scope)) {
+      const answer = this.engine.subscribe(scope);
+      this.subscriptions.set(scope, answer);
+      this.subscribing.add(scope);
+      answer.catch(() => {}).finally(() => {
+        this.subscribing.delete(scope);
+        this.changed();
+      });
+    }
+    return this.subscriptions.get(scope);
   }
 
   // What the replica holds of one roadmap, its tree scope subscribed, the same holding while its records are the same.
