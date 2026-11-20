@@ -5,7 +5,8 @@ const EVENTS = new Set(['sync-start', 'sync-commit', 'sync-release', 'sync-undo'
   'sync-signout', 'sync-auth-paused', 'sync-upgrade', 'sync-persist', 'sync-leader',
   'sync-digest-mismatch', 'sync-push-malformed', 'sync-refused', 'sync-writer']);
 const OPERATIONS = new Set(['storage', 'transport', 'live', 'leadership', 'observer', 'auth']);
-const OUTCOMES = new Set(['ok', 'denied', 'unavailable', 'pending', 'paused', 'failed', 'acquired', 'released']);
+const OUTCOMES = new Set(['ok', 'denied', 'unavailable', 'pending', 'paused', 'failed', 'acquired', 'released',
+  'superseded', 'reloaded']);
 
 export function syncTelemetry({ event = (name, props) => track(name.replaceAll('-', '_'), props), failure = (operation) => captureError('sync', `sync-${operation}`, '', '/sync'),
   now = Date.now, limit = 30 } = {}) {

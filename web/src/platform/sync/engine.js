@@ -27,6 +27,11 @@ function secureDraw(bound) {
 
 const replicaId = () => `rp_${crypto.randomUUID().replace(/-/g, '')}`;
 const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[secureDraw(62)]).join('')}`;
+
+// A tab whose store a newer bundle's upgrade closed reloads only between gestures: the page hidden, or no input this long.
+const RELOAD_IDLE_MS = 3000;
+// The fields whose words a reload would lose while they hold the focus.
+const TEXT_FIELDS = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number']);
 const freeze = (value) => {
   if (value && typeof value === 'object') {
     for (const item of Object.values(value)) freeze(item);
@@ -41,8 +46,9 @@ export class BrowserSyncEngine {
     monotonic = () => Math.floor(performance.now()), newReplicaId = replicaId, newActor = actorId,
     draw = secureDraw, limits = CONSTANTS, appVersion = import.meta.env?.VITE_RELEASE ?? '1', liveHint = () => false,
     pendingDeviceWork = () => [], adoptDeviceRows = () => undefined, onPushResult = () => {}, credentials, base }) {
-    Object.assign(this, { store, registry, navigator, document, window, timers, now, monotonic,
+    Object.assign(this, { registry, navigator, document, window, timers, now, monotonic,
       newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, adoptDeviceRows, onPushResult, credentials });
+    this.attach(store);
     this.limits = { ...CONSTANTS, ...limits };
     this.telemetry = syncTelemetry(telemetry);
     this.actor = newActor();
@@ -113,6 +119,7 @@ export class BrowserSyncEngine {
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
       if (error !== thrown) {
+        if (this.superseded) this.refusedSinceSuperseded = true;
         if (!this.closed) this.telemetry.failure('storage');
         throw new CommitError('the device store did not commit', 'store', { cause: error });
       }
@@ -120,6 +127,7 @@ export class BrowserSyncEngine {
       throw error;
     }
     this.actor = context.actor;
+    if (operation === 'sync-commit') this.savedAt = this.monotonic();
     try {
       for (const event of context.events) {
         this.coordination?.post({ type: 'activeReplicaChanged', previous: event.previous,
@@ -1006,6 +1014,50 @@ export class BrowserSyncEngine {
     this.telemetry.event('sync-upgrade', { outcome: 'paused' });
   }
 
+  // The store this engine reads and writes. A bundle of a newer store version opening it closes it under this tab.
+  attach(store) {
+    this.store = store;
+    store.superseded?.then(() => { if (this.store === store) this.supersede(); });
+  }
+
+  // The store closed for a newer bundle's upgrade, so this tab can keep nothing more (engine.md §7.8). It lets go of its
+  // locks and its channel at once, for the newer tabs to lead; the shell shows its update prompt, and the tab reloads
+  // into the newer bundle only when that loses nothing on the screen.
+  supersede() {
+    if (this.superseded) return;
+    this.superseded = true;
+    this.telemetry.event('sync-upgrade', { outcome: 'superseded' });
+    this.upgradeRequired = true;
+    if (this.snapshot) {
+      this.snapshot = freeze({ ...this.snapshot, upgradeRequired: true, superseded: true });
+      this.notify(this.listeners);
+    }
+    this.close();
+    this.reloadWhenClear();
+  }
+
+  // A reload loses nothing on the screen while the person has given no input since the tab's last commit, no write was
+  // refused since the store closed, no text field holds the focus and no dialog is open; it then waits for the page to
+  // be hidden or idle. Once input or a refused write stands unsaved, the update prompt stands until the person reloads.
+  reloadWhenClear() {
+    const { document, window } = this;
+    if (!document || !window) return;
+    const check = () => {
+      if (this.refusedSinceSuperseded || (this.inputAt ?? -Infinity) > (this.savedAt ?? -Infinity)) return;
+      const focused = document.activeElement;
+      const holding = focused?.isContentEditable || focused?.tagName === 'TEXTAREA'
+        || (focused?.tagName === 'INPUT' && TEXT_FIELDS.has(focused.type))
+        || document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open]') !== null;
+      if (holding || (document.visibilityState !== 'hidden' && this.monotonic() - (this.inputAt ?? -Infinity) < RELOAD_IDLE_MS)) {
+        this.timers.setTimeout(check, 1000);
+        return;
+      }
+      this.telemetry.event('sync-upgrade', { outcome: 'reloaded' });
+      window.location.reload();
+    };
+    this.timers.setTimeout(check, 1000);
+  }
+
   installLifecycle() {
     this.visibilityChanged = () => this.setVisible(this.document.visibilityState !== 'hidden');
     this.connectivityChanged = () => this.setOnline(this.navigator.onLine !== false);
@@ -1017,6 +1069,9 @@ export class BrowserSyncEngine {
     this.pageShown ??= (event) => {
       if (event.persisted && this.suspended) this.resume().catch(() => {});
     };
+    // The person's last input outlives a close: a superseded tab reads it before it reloads.
+    this.inputSeen ??= () => { this.inputAt = this.monotonic(); };
+    for (const type of ['pointerdown', 'touchstart', 'wheel', 'keydown']) this.window?.addEventListener(type, this.inputSeen, { capture: true, passive: true });
     this.document?.addEventListener('visibilitychange', this.visibilityChanged);
     this.window?.addEventListener('online', this.connectivityChanged);
     this.window?.addEventListener('offline', this.connectivityChanged);
@@ -1031,7 +1086,7 @@ export class BrowserSyncEngine {
       try {
         const store = await this.store.reopen();
         if (!this.suspended || generation !== this.lifecycleGeneration) { store.close(); return; }
-        this.store = store;
+        this.attach(store);
         this.closed = false;
         this.suspended = false;
         this.started = false;

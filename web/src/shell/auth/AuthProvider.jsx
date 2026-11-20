@@ -42,11 +42,10 @@ export default function AuthProvider({ children }) {
   const [deviceLineHolders, setDeviceLineHolders] = useState(0);
   const roomStatus = useRoomStatus();
   const session = useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot, syncSession.getSnapshot);
-  const upgradeRequired = useSyncExternalStore(
-    useCallback((listener) => session.engine?.observeEngine(listener) ?? (() => {}), [session.engine]),
-    () => session.engine?.getSnapshot().upgradeRequired ?? false,
-    () => false,
-  );
+  const observeEngine = useCallback((listener) => session.engine?.observeEngine(listener) ?? (() => {}), [session.engine]);
+  const upgradeRequired = useSyncExternalStore(observeEngine, () => session.engine?.getSnapshot().upgradeRequired ?? false, () => false);
+  // A newer bundle's upgrade closed this tab's store: what is typed now stays on the screen alone.
+  const superseded = useSyncExternalStore(observeEngine, () => session.engine?.getSnapshot().superseded ?? false, () => false);
   const [seat] = useState(() => new DeviceSeat(PRODUCTS));
   const [dataScope] = useState(() => new DocumentDataScope({
     invalidate: () => {
@@ -436,7 +435,7 @@ export default function AuthProvider({ children }) {
     )}
     {session.error && !deviceLineHolders && <div role="alert">{t('shell.auth.deviceOpenFailed')}</div>}
     {upgradeRequired && <div role="alert" style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 90, padding: '12px 16px', background: 'var(--surface-card)', color: 'var(--text-primary)', borderRadius: 8 }}>
-      <p>{t('shell.auth.updateRequired')}</p>
+      <p>{superseded ? t('shell.auth.updateSuperseded') : t('shell.auth.updateRequired')}</p>
       <button type="button" onClick={reloadLatest} disabled={updating}>{updating ? t('shell.auth.fetchingUpdate') : t('shell.auth.reloadLatest')}</button>
       {updateError && <p>{t('shell.auth.updateFailed')}</p>}
     </div>}

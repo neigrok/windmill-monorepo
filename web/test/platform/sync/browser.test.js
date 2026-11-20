@@ -76,10 +76,10 @@ async function open(context, name) {
     const { BrowserSyncEngine } = await import('/src/platform/sync/engine.js');
     const { Registry } = await import(`/@fs${referencePath}core/registry.js`);
     const probe = await (await fetch(`/@fs${registryPath}`)).json();
-    window.requests = 0; window.failures = []; window.events = [];
+    window.requests = 0; window.failures = []; window.events = []; window.steps = [];
     window.engine = await BrowserSyncEngine.open({ name, registry: new Registry(probe),
       transport: { request() { window.requests++; throw new Error('offline'); }, openLive() { throw new Error('offline'); } },
-      telemetry: { failure: (name) => window.failures.push(name), event: () => {} } });
+      telemetry: { failure: (name) => window.failures.push(name), event: (name, { outcome }) => window.steps.push(`${name}:${outcome}`) } });
     engine.onEvent((event) => events.push(event));
     window.observation = engine.observe('self/probe');
     await engine.start();
@@ -576,6 +576,7 @@ test('Chromium: a durable commit resolves when versionchange closes IndexedDB be
   const context = await freshContext();
   try {
     const writer = await open(context, 'commit-versionchange');
+    const reloaded = writer.waitForEvent('load', { timeout: 15_000 });
     const result = await writer.evaluate(async () => {
       const refresh = engine.refresh.bind(engine);
       engine.refresh = async (...args) => {
@@ -585,11 +586,58 @@ test('Chromium: a durable commit resolves when versionchange closes IndexedDB be
       return engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'private' } }], { hold: true });
     });
     assert.equal(result.localIds.length, 1);
-    assert.equal(await writer.evaluate(() => failures.includes('storage')), true);
-    await writer.evaluate(() => engine.close());
+    assert.deepEqual(await writer.evaluate(() => ({ failures, upgradeRequired: engine.getSnapshot().upgradeRequired })), { failures: [], upgradeRequired: true });
+    await reloaded;
     const reader = await open(context, 'commit-versionchange');
     assert.equal(await reader.evaluate(() => observation.getSnapshot().drawn[0].id), 'card0001');
     assert.equal(await reader.evaluate(() => engine.device.activeReplica.outbox[0].localId), result.localIds[0]);
+  } finally { await context.close(); }
+});
+
+// A bundle of the next store version opens the device store under three tabs of this one: one holds a text field in
+// focus, one tries a write after its store closed, and one was clicked after its last commit. Each lets go of its locks
+// at once. The first reloads once its field is left; the others never reload by themselves, for what they hold may stand
+// on the screen alone.
+test('Chromium: a newer store version cuts older tabs off; they let go of their locks and reload once their screen loses nothing', async () => {
+  const context = await freshContext();
+  try {
+    const focused = await open(context, 'superseded'), refused = await open(context, 'superseded'), touched = await open(context, 'superseded');
+    const older = [focused, refused, touched];
+    await leader(older);
+    await gesture(refused, 'card0001');
+    await focused.evaluate(() => { document.body.appendChild(document.createElement('textarea')).focus(); });
+    await touched.mouse.click(10, 10);
+    const loads = new Map(older.map((page) => [page, 0]));
+    for (const page of older) page.on('load', () => loads.set(page, loads.get(page) + 1));
+    const newer = await context.newPage();
+    await newer.goto(`${origin}/sync-test`);
+    const held = await newer.evaluate(async (version) => {
+      window.database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('superseded', version);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('an older tab kept the store open'));
+      });
+      return (await navigator.locks.query()).held.map(({ name }) => name).filter((name) => name.startsWith('wm-'));
+    }, await refused.evaluate(() => engine.store.database.version + 1));
+    assert.deepEqual(held, []);
+    const stepped = await Promise.all(older.map((page) => page.evaluate(() => ({ closed: engine.closed,
+      upgradeRequired: engine.getSnapshot().upgradeRequired, superseded: engine.getSnapshot().superseded,
+      steps: steps.filter((step) => step === 'sync-upgrade:superseded').length,
+      released: steps.filter((step) => step === 'sync-leader:released').length, failures }))));
+    assert.deepEqual(stepped.map(({ released, ...rest }) => rest),
+      older.map(() => ({ closed: true, upgradeRequired: true, superseded: true, steps: 1, failures: [] })));
+    assert.deepEqual(stepped.map(({ released }) => released).sort(), [0, 0, 1]);
+    assert.equal(await refused.evaluate(() => engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'private' } }])
+      .then(() => 'committed', (error) => error.kind)), 'store');
+    await newer.waitForTimeout(6000);
+    assert.deepEqual([...loads.values()], [0, 0, 0]);
+    const left = focused.waitForEvent('load', { timeout: 10_000 });
+    await focused.evaluate(() => document.activeElement.blur());
+    await left;
+    await newer.waitForTimeout(3000);
+    assert.deepEqual([...loads.values()], [1, 0, 0]);
+    for (const page of [refused, touched]) assert.equal(await page.evaluate(() => engine.getSnapshot().upgradeRequired), true);
   } finally { await context.close(); }
 });
 
