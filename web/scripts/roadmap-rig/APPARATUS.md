@@ -24,39 +24,42 @@ origins on ports 5173–5178. It refuses to start while port 8088 is occupied. L
 
 The cookie must belong to that same user. `seed.mjs` defaults to the committed fixture in
 `web/test/products/roadmap/fixtures/dogfood-tree.json`; `--snapshot <file>` accepts a raw MCP
-`get_tree` reply and `--tree <id>` selects a different tree id. The default MCP bearer is `devtoken`;
-`--mcpToken` overrides it.
+`get_tree` reply. The default MCP bearer is `devtoken`; `--mcpToken` overrides it.
 
-Seeding creates the document through `POST /v1/trees`, writes private progress through MCP, then
-reads the result back and checks structure and progress counts. The default tree id is
-`t_9362d9bc883e0a1e`. `dogfoodTree.js` beside the fixture builds the model used by tests and
-`web/scripts/benchmark-roadmap.mjs` for offline layout measurements.
+Seeding plants the roadmap through MCP (`planter.mjs`, which `web/scripts/benchmark-board.mjs` plants with too): MCP is
+the door every server write for a person takes on both sides of roadmap's move onto the engine, so the seed runs against
+a backend with or without `ROADMAP_ENGINE_ENABLED`. `create_tree` makes it with the fixture's legend, `import_subgraph`
+plants its steps under their own ids, so `--select` names a fixture step, and `update_nodes` writes the private progress.
+The server mints the roadmap's id, which the seed prints; capture takes it as `--tree`. The seed then reads the copy back,
+its steps, links and legend through MCP `get_tree` and its marks through `GET /v1/trees/{id}/progress`, and checks the
+counts. `dogfoodTree.js` beside the fixture builds the model used by tests and `web/scripts/benchmark-roadmap.mjs` for
+offline layout measurements.
 
 ## Capture
 
 ```sh
 node --experimental-websocket capture.mjs --origin http://localhost:5175 \
   --api http://localhost:8088 \
-  --tree t_9362d9bc883e0a1e --cookie "$WM_RIG_COOKIE" --out /tmp/roadmap-desktop \
+  --tree <the id seed.mjs printed> --cookie "$WM_RIG_COOKIE" --out /tmp/roadmap-desktop \
   --port 9222 --layout bubble --focus --caption-mode fixed
 node --experimental-websocket capture.mjs --origin http://localhost:5175 \
   --api http://localhost:8088 \
-  --tree t_9362d9bc883e0a1e --cookie "$WM_RIG_COOKIE" --out /tmp/roadmap-phone \
+  --tree <the id seed.mjs printed> --cookie "$WM_RIG_COOKIE" --out /tmp/roadmap-phone \
   --phone --port 9223 --layout bubble --focus --caption-mode fixed
 ```
 
 Each run creates a fresh Chrome profile, supplies the session, sets device dimensions and opens
-the app in tree view. It confirms the requested view and optional theme, waits for the real
-subscription baseline, then waits for a populated canvas, no active ceremony/settle/glide and a
-camera stable for 600 ms. Each shot also loads visible text's computed fonts, waits for finite
-animations and awaits two animation frames.
+the app in tree view. It confirms the requested view and optional theme, waits for the server's
+real answer to the room's session, then waits for a populated canvas, no active
+ceremony/settle/glide and a camera stable for 600 ms. Each shot also loads visible text's computed
+fonts, waits for finite animations and awaits two animation frames.
 Pass the API origin compiled into the frontend: Vite defaults to `http://localhost:8088`.
 For a same-origin built stack, omit `--api` or supply the same origin as `--origin`. Both options
 accept only HTTP(S) origins without credentials, paths, queries or fragments.
 
 | Option | Effect |
 |---|---|
-| `--api <origin>` | Observes the roadmap socket on this API origin as well as the frontend origin; defaults to `--origin`. |
+| `--api <origin>` | Observes the room's session on this API origin as well as the frontend origin; defaults to `--origin`. |
 | `--width`, `--height`, `--dpr` | Defaults to 1440×900 at DPR 1. |
 | `--phone` | 390×844 at DPR 3 with mobile and touch emulation. |
 | `--select <nodeId>` | Node used for focus and selection checks; default `skilltree-scene`. |

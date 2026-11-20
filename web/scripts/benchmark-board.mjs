@@ -6,23 +6,25 @@
 //   node scripts/benchmark-board.mjs --base http://localhost:<port> --api http://localhost:<backend> --cookie <wm_session> \
 //     [--rates 4,6] [--json <path>]
 //
-// --cookie is a session of a throwaway account; it owns the two roadmaps this script plants. Layout shares need names, so
-// they read n/a unless --base serves an unminified build, which needs the offline shell's precache budget off too.
+// --cookie is a session of a throwaway account; it owns the two roadmaps this script plants through MCP (roadmap-rig/
+// planter.mjs) with a key it makes, once a database: a roadmap of the fixture's title is planted already. Layout shares
+// need names, so they read n/a unless --base serves an unminified build, which needs the offline shell's precache budget off too.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { chromium } from 'playwright';
 import { largeRoadmap } from '../test/products/roadmap/fixtures/largeRoadmap.js';
+import { RoadmapPlanter } from './roadmap-rig/planter.mjs';
 
 const VIEWPORTS = [
   { name: 'phone', width: 390, height: 844, phone: true },
   { name: 'desktop', width: 1440, height: 900, phone: false },
 ];
 const SETTLE_MS = 2500;
-const PROGRESS_CHUNK = 100;
 const SCROLL_PX_PER_FRAME = 60;
 const SCROLL_FRAMES = 300;
 const LAYOUT_FUNCTIONS = /^(layoutTree|layoutPositions)$/;
+const LOCKED_CARD = '[data-column="locked"] .st-board-card, .st-board-phone-pane.is-shown .st-board-card';
 
 function argumentsOf(argv) {
   const named = new Map();
@@ -42,59 +44,22 @@ const quantile = (values, q) => {
 const round = (value) => Math.round(value);
 const longTaskSummary = (durations) => ({ count: durations.length, p95: round(quantile(durations, 0.95)), max: round(Math.max(0, ...durations)) });
 
-// The two roadmaps: 5,000 synthetic steps and the size of the dogfood tree. Planted once per database.
-function fixtures() {
-  const dogfood = JSON.parse(readFileSync(new URL('../test/products/roadmap/fixtures/dogfood-tree.json', import.meta.url), 'utf8'));
-  const large = largeRoadmap(5000, 'mixed');
-  return [
-    { name: '5,000 steps', id: 't_b0a4d5000000beef', title: 'Five thousand steps', nodes: large.nodes },
-    { name: 'dogfood size', id: 't_b0a4d4760000beef', title: dogfood.title, nodes: dogfood.nodes, kinds: dogfood.kinds },
-  ];
-}
-
-async function callApi(site, method, path, body) {
-  const response = await fetch(`${site.api}${path}`, {
-    method,
-    headers: { 'content-type': 'application/json', Authorization: `Bearer ${site.cookie}`, Origin: site.base },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return { status: response.status, body: await response.json().catch(() => null), headers: response.headers };
-}
-
-async function callTool(site, session, name, args) {
-  const reply = await fetch(`${site.api}/mcp`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: `Bearer ${session.token}`, ...(session.id && { 'Mcp-Session-Id': session.id }) },
-    body: JSON.stringify(name === 'initialize'
-      ? { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'benchmark-board', version: '0' } } }
-      : { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } }),
-  });
-  if (name === 'initialize') return reply.headers.get('mcp-session-id');
-  const { result } = await reply.json();
-  if (result?.isError) throw new Error(`${name}: ${result.content?.[0]?.text}`);
-  return result;
-}
-
+// The two roadmaps: 5,000 synthetic steps and the size of the dogfood tree, each with the id it is planted under.
 async function plant(site) {
-  const planted = fixtures();
-  const key = await callApi(site, 'POST', '/v1/mcp-keys', { name: 'benchmark-board' });
-  const session = { token: key.body.token };
-  session.id = await callTool(site, session, 'initialize');
-  for (const fixture of planted) {
-    if ((await callApi(site, 'GET', `/v1/trees/${fixture.id}`)).status !== 200) {
-      const nodes = fixture.nodes.map(({ id, label, color, prerequisites, icon, order, description, links }) => ({
-        id, label, color, prerequisites: prerequisites ?? [], ...(icon && { icon }), ...(order && { order }), ...(description && { description }), ...(links?.length && { links }),
-      }));
-      const created = await callApi(site, 'POST', '/v1/trees', { id: fixture.id, title: fixture.title, nodes, kinds: fixture.kinds ?? [] });
-      if (created.status !== 200) throw new Error(`planting ${fixture.name} answered ${created.status}`);
-    }
-    const { body } = await callApi(site, 'GET', `/v1/trees/${fixture.id}/progress`);
-    if ((body?.marks ?? []).length > 0) continue;
-    const updates = fixture.nodes.filter((node) => node.status === 'complete').map((node) => ({ nodeId: node.id, status: 'complete' }));
-    for (let start = 0; start < updates.length; start += PROGRESS_CHUNK) {
-      await callTool(site, session, 'roadmap_update_nodes', { treeId: fixture.id, updates: updates.slice(start, start + PROGRESS_CHUNK) });
-    }
-  }
+  const dogfood = JSON.parse(readFileSync(new URL('../test/products/roadmap/fixtures/dogfood-tree.json', import.meta.url), 'utf8'));
+  const fixtures = [
+    { name: '5,000 steps', title: 'Five thousand steps', nodes: largeRoadmap(5000, 'mixed').nodes },
+    { name: 'dogfood size', title: dogfood.title, nodes: dogfood.nodes, kinds: dogfood.kinds },
+  ];
+  const key = await fetch(`${site.api}/v1/mcp-keys`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${site.cookie}`, Origin: site.base },
+    body: JSON.stringify({ name: 'benchmark-board' }),
+  });
+  if (!key.ok) throw new Error(`making an MCP key answered ${key.status}`);
+  const planter = await RoadmapPlanter.connect({ api: site.api, token: (await key.json()).token, client: 'benchmark-board' });
+  const planted = [];
+  for (const fixture of fixtures) planted.push({ ...fixture, id: (await planter.find(fixture.title)) ?? (await planter.plant(fixture)) });
   return planted;
 }
 
@@ -151,8 +116,10 @@ function layoutShare(profile) {
 
 async function scrollLocked(page, phone) {
   if (phone) await page.getByRole('tab', { name: /^Locked,/ }).click();
-  return page.evaluate(async ({ pixels, frames }) => {
-    const card = document.querySelector('[data-column="locked"] .st-board-card, .st-board-phone-pane.is-shown .st-board-card');
+  // The Board can show its first cards before a large roadmap's Locked steps have arrived from the server.
+  await page.locator(LOCKED_CARD).first().waitFor();
+  return page.evaluate(async ({ pixels, frames, locked }) => {
+    const card = document.querySelector(locked);
     let scroller = card;
     while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
     const started = performance.now();
@@ -173,7 +140,7 @@ async function scrollLocked(page, phone) {
       requestAnimationFrame(tick);
     });
     return { started, ended: performance.now(), intervals: intervals.slice(1), maxCards, scrolled: scroller.scrollTop, height: scroller.scrollHeight };
-  }, { pixels: SCROLL_PX_PER_FRAME, frames: SCROLL_FRAMES });
+  }, { pixels: SCROLL_PX_PER_FRAME, frames: SCROLL_FRAMES, locked: LOCKED_CARD });
 }
 
 async function inputToPaint(page, act, type) {
