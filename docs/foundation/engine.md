@@ -2482,20 +2482,37 @@ before its own result is recorded; its resend then carries another digest, the s
 
 ### §7.8 Multi-tab (web)
 
-- The leader holds `navigator.locks` lock `wm-sync:<replica>` and runs the sender, the puller and
-  the live socket.
+- The leader holds `navigator.locks` lock `wm-sync@<store>:<replica>` and runs the sender, the
+  puller and the live socket. `<store>` is the IndexedDB version of the device store (§2.5).
 - A tab requests the lock when it becomes visible. A hidden tab releases it once a peer announces
   it is visible.
 - Tabs post `hello {visible}`, `visible`, `hidden`, `bye`, `changed(scope, ids)`, `upgrade` and
-  `activeReplicaChanged(previous, replica)` on `BroadcastChannel('wm-sync:<replica>')`, and a tab
+  `activeReplicaChanged(previous, replica)` on `BroadcastChannel('wm-sync@<store>:<replica>')`, and a tab
   answers a peer's `hello` with its own. A tab that knows no other live tab is the last tab. A tab
   that receives a `426` posts `upgrade`, and every tab then stops sync until the app is upgraded
   (§7.5). A tab whose transaction changes `activeReplica()` posts `activeReplicaChanged` on the
   channel of the replica it replaced, and every tab delivers the event (§7.12). A tab compares
   `activeReplica()` with its channel's id on every `hello`, `visible` and lock acquisition, and
   rekeys its channel and lock.
-- Every tab holds the lock `wm-tab` in shared mode while it lives. A tab that finds it unheld
+- Every tab holds the lock `wm-tab@<store>` in shared mode while it lives. A tab that finds it unheld
   (`navigator.locks.query()`) when it starts is the first tab.
+- **Store versions.** Every lock and channel name carries the device store's IndexedDB version, and
+  the registry version keys none: two bundles of one store version share the store, so they share one
+  leader. Raising the store version shuts out every older bundle. The upgrade closes an older tab's
+  connection, and an older bundle's open fails, so two versions never hold the store open together. A
+  tab under an older version's names therefore holds no lock a current tab waits on. No current tab
+  counts it as a peer or hears it. A leader pulls only its own registry's scopes, so a bundle whose
+  registry adds a product raises the store version.
+- A tab whose connection an upgrade closes (`versionchange`) can keep nothing more. It releases its
+  locks and its channel at once, and stops sync as a `426` does (§7.5). It reloads only when that
+  loses nothing on its screen: the person has given no input (a key, a pointer, a touch or a wheel)
+  since the tab's last commit, no write has failed since the close, no text field holds the focus
+  and no dialog is open; it then waits until the page is hidden or has had no input for 3 s. Until
+  then it shows the update prompt, which says that work saved before the update stays and that
+  anything typed since will not save. Once input or a failed write stands, the prompt stands until
+  the person reloads.
+  A bundle released before these names (store version 2) keeps its unversioned locks and its
+  channel until its page closes, reading and writing nothing.
 - Every tab reads views from IndexedDB and commits through §7.1. Each publication of a tab's views, at open
   and after every change to the store, its own or a peer's, reads every scope of the active replica whole,
   whether or not anything in the tab observes it, so a read of a scope answers the rows the device stored for

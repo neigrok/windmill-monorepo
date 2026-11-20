@@ -20,13 +20,18 @@ their read barrier. Rejecting a blocked open cannot cancel its native request, s
 later upgrades and closes late successful connections. Native lifecycle regressions also check that
 aborted upgrades close, retries retain every row, and version changes release all open stores.
 
+A store version change closes the older tab's connection but not its Web Locks or its channel: a started engine
+whose store closed keeps leading and answering peers while it can read nothing, and every tab of the newer bundle
+waits on it. Lock and channel names therefore carry the store version (IndexedDB never lets tabs hold the store open
+at two versions at once), and an engine whose store an upgrade closes releases its locks and its channel itself.
+
 The domain kit's nesting guard covers the synchronous execution context across runner instances and
 checks before queueing storage work. Holding it across the outer Promise would mistake independent
 queued actions for nested calls; checking only inside a queued transaction lets an inner write escape
 the outer fault. Persisted run/save regressions wait for both outcomes and reopen the device store.
 
 First-tab detection needs a short registration lock around `locks.query()` and acquisition of the
-shared `wm-tab` lock. Querying independently in simultaneous tab starts can designate two first
+shared `wm-tab@<store>` lock. Querying independently in simultaneous tab starts can designate two first
 tabs and release a current Undo window. Delayed push replies must also match their request's wire
 replica ID, even though storage retains the same replica handle.
 

@@ -126,24 +126,30 @@ function deviceOf(controls, { shared }) {
   return { device, revision: head.revision };
 }
 
+// The device store's IndexedDB version. Raising it shuts out every older bundle: an older tab's connection closes at the
+// upgrade and an older bundle's open fails, so two versions never hold the store open together (engine.md §7.8).
+// Version 3 adds no object store: it shuts out every bundle older than Undo of an act (§7.3), whose writes would drop
+// the journal's control records and number its waiting slots unbound.
+export const STORE_VERSION = 3;
+
 export class IndexedDBStore {
   constructor(database, keyRange) {
     this.database = database;
+    this.version = database.version;
     this.generationRows = (generation) => keyRange.bound([generation], [generation, []]);
     this.closed = false;
     this.controls = null;
     this.generations = new Map();
     this.garbage = new Set();
-    database.onversionchange = () => this.close();
+    // Settles when a bundle of a newer store version opens the database: this connection closes so its upgrade runs.
+    this.superseded = new Promise((resolve) => { database.onversionchange = () => { this.close(); resolve(); }; });
   }
 
-  static async open({ indexedDB = globalThis.indexedDB, keyRange = globalThis.IDBKeyRange, name = 'wm-sync', newReplicaId }) {
+  static async open({ indexedDB = globalThis.indexedDB, keyRange = globalThis.IDBKeyRange, name = 'wm-sync', version = STORE_VERSION,
+    newReplicaId }) {
     if (!indexedDB || !keyRange) throw new Error('sync storage unavailable');
-    // Version 3 adds no object store: it shuts out every bundle older than Undo of an act (engine.md §7.3), whose
-    // writes would drop the journal's control records and number its waiting slots unbound. An older tab closes
-    // at the upgrade, and an older bundle's open fails.
     const database = await new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 3);
+      const request = indexedDB.open(name, version);
       let abandoned = false;
       request.onupgradeneeded = ({ oldVersion }) => {
         const database = request.result, transaction = request.transaction;
@@ -188,7 +194,7 @@ export class IndexedDBStore {
       request.onblocked = () => { abandoned = true; reject(new Error('sync storage blocked')); };
     });
     const store = new IndexedDBStore(database, keyRange);
-    store.reopen = () => IndexedDBStore.open({ indexedDB, keyRange, name, newReplicaId });
+    store.reopen = () => IndexedDBStore.open({ indexedDB, keyRange, name, version, newReplicaId });
     try { await store.transact((device) => device, { initialize: newReplicaId }); return store; }
     catch (error) { store.close(); throw error; }
   }
