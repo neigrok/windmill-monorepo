@@ -618,7 +618,12 @@ test('Chromium: a newer store version cuts older tabs off; they let go of their 
         request.onerror = () => reject(request.error);
         request.onblocked = () => reject(new Error('an older tab kept the store open'));
       });
-      return (await navigator.locks.query()).held.map(({ name }) => name).filter((name) => name.startsWith('wm-'));
+      // The older tabs let go of their locks as their stores close, each in its own task: wait out that turn, not longer.
+      const heldNow = async () => (await navigator.locks.query()).held.map(({ name }) => name).filter((name) => name.startsWith('wm-'));
+      for (const deadline = performance.now() + 2000; (await heldNow()).length && performance.now() < deadline;) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      return heldNow();
     }, await refused.evaluate(() => engine.store.database.version + 1));
     assert.deepEqual(held, []);
     const stepped = await Promise.all(older.map((page) => page.evaluate(() => ({ closed: engine.closed,
