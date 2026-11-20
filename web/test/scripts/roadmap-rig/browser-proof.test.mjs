@@ -5,6 +5,7 @@ import http from 'node:http';
 import test from 'node:test';
 import vm from 'node:vm';
 import { chromium } from 'playwright';
+import { HttpTransport } from '../../../src/platform/sync/transport.js';
 import { socketUrl } from '../../../src/shell/apiBase.js';
 import { evalJson, httpOrigin, installReadOnlyGuard, installRoadmapObserver, settleVisuals, waitForConfirmed } from '../../../scripts/roadmap-rig/browser-proof.mjs';
 
@@ -12,6 +13,14 @@ test('roadmap socket fixtures follow the production client and backend route', {
   const backend = await readFile(new URL('../../../../backend/products/roadmap/adapters/ws/TreeSocket.h', import.meta.url), 'utf8');
   const routes = [...backend.matchAll(/WS_PATH_ADD\("([^"]+)"\)/g)].map((match) => match[1]);
   assert.deepEqual(routes, [new URL(socketUrl()).pathname]);
+});
+
+test('engine fixtures follow the browser engine\'s pull and live routes', { timeout: 2000 }, async () => {
+  const sent = [];
+  const transport = new HttpTransport({ schema: 13, base: 'http://localhost:5317', origin: 'http://localhost:5317', reading: () => 0,
+    socket: (url) => url, fetch: async (url, options) => { sent.push({ path: new URL(url).pathname, method: options.method }); return new Response('{}'); } });
+  await transport.request('pull', { scopes: [] });
+  assert.deepEqual({ sent, live: new URL(transport.openLive()).pathname }, { sent: [{ path: '/v1/sync/pull', method: 'POST' }], live: '/v1/sync/live' });
 });
 
 test('capture validates both frontend and API origins before starting Chrome', { timeout: 2000 }, async () => {
@@ -80,6 +89,7 @@ async function fixture(t) {
   let releaseFont;
   const fontGate = new Promise((resolve) => { releaseFont = resolve; });
   const script = 'window.analyticsScriptExecuted = true;';
+  const pull = { answer: { as: null, pages: [] } };
   const handler = async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -93,6 +103,10 @@ async function fixture(t) {
     if (request.url === '/font.woff2') {
       await fontGate;
       response.writeHead(200, { 'Content-Type': 'font/woff2' }).end(font);
+      return;
+    }
+    if (request.url === '/v1/sync/pull') {
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(pull.answer));
       return;
     }
     if (request.url === '/beacon.js') {
@@ -117,7 +131,7 @@ async function fixture(t) {
     });
   }
   const upgrade = (request, socket) => {
-    if (![new URL(socketUrl()).pathname, '/other'].includes(request.url)) {
+    if (![new URL(socketUrl()).pathname, '/other', '/v1/sync/live'].includes(new URL(request.url, 'http://fixture').pathname)) {
       socket.end('HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n');
       return;
     }
@@ -157,7 +171,7 @@ async function fixture(t) {
   });
   await Promise.all([new Promise((resolve) => server.listen(5317, '127.0.0.1', resolve)),
     new Promise((resolve) => api.listen(8317, '127.0.0.1', resolve))]);
-  return { origin: 'http://site.proof.test:5317', api: 'http://site.proof.test:8317', peers, received, bodies, releaseFont, script };
+  return { origin: 'http://site.proof.test:5317', api: 'http://site.proof.test:8317', peers, received, bodies, releaseFont, script, pull };
 }
 
 test('browser: settlement, subscription and network guards on real local connections', { timeout: 180000 }, async (t) => {
@@ -315,6 +329,53 @@ test('browser: settlement, subscription and network guards on real local connect
     }
   });
 
+  await t.test('engine baselines need the roadmap pulled from the server and followed on an open live socket', { timeout: 15000 }, async () => {
+    const context = await browser.newContext();
+    try {
+      await context.addInitScript(installRoadmapObserver, { origins: [site.origin] });
+      const page = await context.newPage();
+      await page.goto(site.origin);
+      const baseline = (asked = { reach: 'reader' }) => page.evaluate((asked) => window.__roadmapProof.waitForBaseline({ treeId: 'wanted', timeoutMs: 80, ...asked }), asked);
+      const pulled = (answer, origin = site.origin) => {
+        site.pull.answer = answer;
+        return page.evaluate((url) => fetch(url, { method: 'POST', body: '{"scopes":[]}' }).then((reply) => reply.status), `${origin}/v1/sync/pull`);
+      };
+      const peerIndex = site.peers.length;
+      await page.evaluate(async () => {
+        window.live = new WebSocket(new URL('/v1/sync/live?schema=13', location.href).href.replace('http:', 'ws:'));
+        await new Promise((resolve) => window.live.addEventListener('open', resolve, { once: true }));
+      });
+      const follow = (op, scopes) => page.evaluate(({ op, scopes }) => window.live.send(JSON.stringify({ op, scopes })), { op, scopes });
+      const wantedRows = { as: null, pages: [{ scope: 'tree/wanted', kind: 'rows', rows: [{ label: 'PRIVATE_CANARY' }] }] };
+      assert.equal(await pulled(wantedRows, site.api), 200);
+      await follow('sub', ['tree/wanted']);
+      await assert.rejects(baseline(), /Timed out waiting for roadmap subscription baseline/);
+      await follow('unsub', ['tree/wanted']);
+      assert.equal(await pulled(wantedRows), 200);
+      await follow('sub', ['self/overlay/wanted', 'tree/other']);
+      await assert.rejects(baseline(), /Timed out waiting for roadmap subscription baseline/);
+      await follow('sub', ['tree/wanted']);
+      assert.deepEqual(await baseline(), { treeId: 'wanted', reach: 'reader', generation: 3 });
+      site.peers[peerIndex].send({ op: 'not-found', as: null, scope: 'tree/wanted' });
+      await waitForConfirmed(() => baseline().then(() => false, () => true), (refused) => refused, { label: 'live-refusal-observed' });
+      await follow('sub', ['tree/wanted']);
+      assert.deepEqual(await baseline(), { treeId: 'wanted', reach: 'reader', generation: 4 });
+      assert.equal(await pulled({ as: 'account', pages: [{ scope: 'tree/wanted', kind: 'rows', rows: [] }] }), 200);
+      await assert.rejects(baseline(), /Timed out waiting for roadmap subscription baseline/);
+      assert.deepEqual(await baseline({}), { treeId: 'wanted', reach: null, generation: 4 });
+      assert.equal(await pulled({ as: null, pages: [{ scope: 'tree/wanted', kind: 'not-found' }] }), 200);
+      await assert.rejects(baseline({}), /Timed out waiting for roadmap subscription baseline/);
+      assert.equal(await pulled(wantedRows), 200);
+      assert.deepEqual(await baseline(), { treeId: 'wanted', reach: 'reader', generation: 4 });
+      await page.evaluate(async () => {
+        window.live.close();
+        await new Promise((resolve) => window.live.addEventListener('close', resolve, { once: true }));
+      });
+      await assert.rejects(baseline(), /Timed out waiting for roadmap subscription baseline/);
+      assert.deepEqual(await page.evaluate(() => ({ sockets: window.__roadmapProof.sockets, writes: window.__roadmapProof.writes })), { sockets: 0, writes: [] });
+    } finally { await context.close(); }
+  });
+
   await t.test('HTTP mutations abort before receipt; exact origins, Sentry, RUM and SRI scripts keep their contracts', { timeout: 15000 }, async () => {
     const context = await browser.newContext({ serviceWorkers: 'block' });
     try {
@@ -336,9 +397,10 @@ test('browser: settlement, subscription and network guards on real local connect
           send('/v1/trees/PRIVATE_CANARY', 'DELETE'), send(`${api}/v1/trees/PRIVATE_CANARY`),
           send('http://site.proof.test.evil.proof.test:5317/v1/events', 'GET'),
           send('http://sentry.proof.test.evil.proof.test:5317/envelope', 'GET'), send('/v1/trees', 'GET'),
+          send(`${api}/v1/sync/pull`, 'POST', '{"scopes":[]}'), send('/v1/sync/push'), send('http://outside.proof.test:5317/v1/sync/pull'),
         ]);
       }, { api: site.api });
-      assert.deepEqual(statuses, [202, 200, 200, 200, 200, 'blocked', 'blocked', 200, 200, 200]);
+      assert.deepEqual(statuses, [202, 200, 200, 200, 200, 'blocked', 'blocked', 200, 200, 200, 200, 'blocked', 'blocked']);
       const integrity = `sha256-${createHash('sha256').update(site.script).digest('base64')}`;
       await page.evaluate(({ integrity }) => new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -353,10 +415,12 @@ test('browser: settlement, subscription and network guards on real local connect
       assert.deepEqual(site.received.slice(before).sort((a, b) => a.host.localeCompare(b.host)), [
         { method: 'GET', host: 'sentry.proof.test.evil.proof.test:5317', path: '/envelope' },
         { method: 'GET', host: 'site.proof.test:5317', path: '/v1/trees' },
+        { method: 'POST', host: 'site.proof.test:8317', path: '/v1/sync/pull' },
         { method: 'GET', host: 'site.proof.test.evil.proof.test:5317', path: '/v1/events' },
         { method: 'GET', host: 'static.cloudflareinsights.com:5317', path: '/beacon.js' },
       ].sort((a, b) => a.host.localeCompare(b.host)));
-      assert.deepEqual(guard, { blocked: { intake: 1, sentry: 2, analytics: 2 }, writes: [{ kind: 'http-mutation' }, { kind: 'http-mutation' }], clientErrors: 1 });
+      assert.deepEqual({ ...guard, writes: guard.writes.map(({ kind }) => kind).sort() }, { blocked: { intake: 1, sentry: 2, analytics: 2 },
+        writes: ['external-http-mutation', 'http-mutation', 'http-mutation', 'http-mutation'], clientErrors: 1 });
       assert.deepEqual(errors, []);
       await page.evaluate(() => { setTimeout(() => { throw new Error('synthetic-page-error'); }, 0); });
       await waitForConfirmed(() => errors.length, (count) => count === 1, { label: 'page-error-observed' });

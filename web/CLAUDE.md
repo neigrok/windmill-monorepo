@@ -283,11 +283,15 @@ active jobs hides that failure. Confirm the check set belongs to the pushed head
 `.github/workflows/web-smoke.yml` runs `scripts/smoke-roadmap.mjs` from the deployed commit after every successful deploy of
 web or the backend on main, and by hand with a base URL and a public roadmap id. It walks the demo, a public roadmap and the
 landings as a signed-out reader at 390, 744 and 1440, and makes one returning visit through the service worker at 1440,
-read-only, with the event intake and Sentry blocked. It fails on a page error, a console error, a failed same-origin request
-other than the anonymous `/v1/me` 401, a Graph with no painted pixels, a session whose socket never got its reply, any Sentry
-attempt, a `client_error` beacon, a landing the app never mounted over, or a service worker that never took the page and primed
-its shell or answers a returning visit badly. `scripts/benchmark-board.mjs` measures the Board under CPU throttling; it is a
-measuring tool, not a gate.
+read-only, with the event intake and Sentry blocked and the sync engine's pull let through as the read it is. It fails on a page
+error, a console error, a failed same-origin request other than the anonymous `/v1/me` 401, a Graph with no painted pixels, a
+session the server never answered, any Sentry attempt, a `client_error` beacon, a landing the app never mounted over, or a
+service worker that never took the page and primed its shell or answers a returning visit badly. It calls no route roadmap's
+move onto the engine retires, so it walks production on either side of the move: the step link takes its step from the
+reader's Board and the roadmap's visibility from its share page, and a session is answered once today's socket answers its
+subscribe or once the engine has pulled the roadmap and follows it live. Against a local stack (`serve-built.mjs` renders no
+share page), pass the backend as `--api`. `scripts/benchmark-board.mjs` measures the Board under CPU throttling, on roadmaps
+it plants through MCP (`scripts/roadmap-rig/planter.mjs`); it is a measuring tool, not a gate.
 
 ## Offline rooms and browser replicas
 

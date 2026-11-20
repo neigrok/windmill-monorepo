@@ -58,23 +58,59 @@ export async function evalJson(cdp, expression) {
   return value === undefined ? undefined : JSON.parse(value);
 }
 
+// A roadmap's session as the server answers it, on either room: today's on its socket (`/v1/socket`), and the room on the
+// device's copy through the sync engine, which pulls the roadmap's `tree/<id>` scope and follows it on `/v1/sync/live`.
 export function installRoadmapObserver({ origins = [location.origin] } = {}) {
   if (!/^https?:$/.test(location.protocol) || self !== top) return;
   if (window.__roadmapProof) return;
   const allowed = new Set(origins.map((origin) => new URL(origin).origin));
+  const observed = (address, path) => {
+    const url = new URL(address, location.href);
+    if (/^wss?:$/.test(url.protocol)) url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    return allowed.has(url.origin) && url.pathname === path;
+  };
+  const treeOf = (scope) => (typeof scope === 'string' && /^tree\/[^/]+$/.test(scope) ? scope.slice('tree/'.length) : null);
   const current = new Map();
+  const pulled = new Map();
+  const followed = new Map();
   const writes = [];
   let generation = 0;
   let sockets = 0;
+  const NativeFetch = window.fetch;
+  window.fetch = async (resource, options) => {
+    const response = await NativeFetch(resource, options);
+    const request = resource instanceof Request ? resource : null;
+    if ((options?.method ?? request?.method) === 'POST' && observed(request?.url ?? String(resource), '/v1/sync/pull') && response.ok) {
+      response.clone().json().then(({ as, pages }) => {
+        for (const page of Array.isArray(pages) ? pages : []) {
+          const treeId = treeOf(page?.scope);
+          if (treeId === null) continue;
+          if (page.kind === 'rows') pulled.set(treeId, { servedAsNobody: as === null });
+          else pulled.delete(treeId);
+        }
+      }, () => {});
+    }
+    return response;
+  };
   const NativeWebSocket = window.WebSocket;
   window.WebSocket = class extends NativeWebSocket {
     constructor(...args) {
       super(...args);
-      const url = new URL(this.url);
-      url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
       this.proofPending = [];
-      this.proofObserved = allowed.has(url.origin) && url.pathname === '/v1/socket';
-      if (!this.proofObserved) return;
+      this.proofRoom = observed(this.url, '/v1/socket');
+      this.proofLive = observed(this.url, '/v1/sync/live');
+      if (this.proofLive) {
+        this.addEventListener('message', (event) => {
+          let frame;
+          try { frame = JSON.parse(event.data); } catch { return; }
+          const treeId = ['gone', 'not-found'].includes(frame?.op) ? treeOf(frame.scope) : null;
+          if (treeId !== null && followed.get(treeId)?.socket === this) followed.delete(treeId);
+        });
+        this.addEventListener('close', () => {
+          for (const [treeId, follow] of followed) if (follow.socket === this) followed.delete(treeId);
+        });
+      }
+      if (!this.proofRoom) return;
       sockets += 1;
       this.addEventListener('message', (event) => {
         let frame;
@@ -93,9 +129,17 @@ export function installRoadmapObserver({ origins = [location.origin] } = {}) {
 
     send(data) {
       super.send(data);
-      if (!this.proofObserved) return;
+      if (!this.proofRoom && !this.proofLive) return;
       let frame;
       try { frame = JSON.parse(data); } catch { return; }
+      if (this.proofLive) {
+        if (!['sub', 'unsub'].includes(frame?.op) || !Array.isArray(frame.scopes)) return;
+        for (const treeId of frame.scopes.map(treeOf).filter((id) => id !== null)) {
+          if (frame.op === 'sub') followed.set(treeId, { socket: this, generation: ++generation });
+          else if (followed.get(treeId)?.socket === this) followed.delete(treeId);
+        }
+        return;
+      }
       if (frame?.t === 'subgraph' || frame?.t === 'progress') writes.push({ type: frame.t });
       if (frame?.t !== 'subscribe' || typeof frame.treeId !== 'string') return;
       const request = { treeId: frame.treeId, generation: ++generation, socket: this, baseline: null };
@@ -113,6 +157,13 @@ export function installRoadmapObserver({ origins = [location.origin] } = {}) {
         const request = current.get(treeId);
         if (request?.socket.readyState === NativeWebSocket.OPEN && request.baseline
           && (reach === undefined || request.baseline.reach === reach)) return request.baseline;
+        const follow = followed.get(treeId);
+        const copy = pulled.get(treeId);
+        // The engine names no reach: a roadmap served to nobody can only be read, so its reach is a reader's.
+        const engineReach = copy?.servedAsNobody ? 'reader' : null;
+        if (follow?.socket.readyState === NativeWebSocket.OPEN && copy && (reach === undefined || engineReach === reach)) {
+          return { treeId, reach: engineReach, generation: follow.generation };
+        }
         await new Promise((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, end - Date.now()))));
       } while (Date.now() < end);
       throw new Error('Timed out waiting for roadmap subscription baseline');
@@ -156,8 +207,10 @@ export async function installReadOnlyGuard(context, { origins, sentryHosts = [] 
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
       return;
     }
+    // The sync engine's pull is a read that posts the scopes it asks for, so it passes like a GET.
+    const pull = firstParty && request.method() === 'POST' && url.pathname === '/v1/sync/pull';
     // Routing sees the initial request, so an external mutation must not escape through a 307/308 redirect.
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && !pull) {
       evidence.writes.push({ kind: firstParty ? 'http-mutation' : 'external-http-mutation' });
       await route.abort('blockedbyclient');
       return;
