@@ -97,6 +97,8 @@ public:
   WriteObservation(const WriteObservation&) = delete;
   WriteObservation& operator=(const WriteObservation&) = delete;
   void finish(std::string outcome = "ok");
+  // finish() under an outcome of its own in place of `ok`, at the level `ok` takes: a pass a tool names by its verdict.
+  void succeed(std::string outcome);
   void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
   void countRefused(std::uint64_t count) { completion_.refused += count; }
   void code(std::string code) { completion_.code = std::move(code); }
@@ -127,6 +129,7 @@ private:
   std::uint64_t serial_;
   std::atomic<bool> finished_{false};
   std::atomic<bool> failed_{false};
+  bool succeeded_ = false;
   std::string failedOutcome_ = "failed";
   std::string settledOutcome_;
   std::string failureOperation_;

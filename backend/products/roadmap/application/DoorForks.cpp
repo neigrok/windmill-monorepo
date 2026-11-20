@@ -9,6 +9,7 @@
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <set>
 
@@ -158,6 +159,7 @@ DoorForks::DoorForks(roadmap::RoadmapDoor& door, TokenGenerator& tokens) : door_
 // the last admit the copy is listed and opened nowhere, and the resend under the same request key finishes it.
 TreeForks::Result DoorForks::fork(const TreeId& source, const std::string& requestedId, const std::string& requestedTitle,
                                   const UserId& owner, const std::optional<std::string>& requestKey) {
+  const auto started = std::chrono::steady_clock::now();
   const Source origin = door_.read([&](sync::SyncTxn& txn) { return sourceOf(door_.rows(), txn, source, owner); });
   if (origin.refused) return *origin.refused;
   const auto mint = [&](const std::string& tree) {
@@ -275,7 +277,9 @@ TreeForks::Result DoorForks::fork(const TreeId& source, const std::string& reque
     if (answer == sync::code::idTaken || answer == sync::code::idSpent) return Result{Outcome::conflict, {}, std::nullopt};
     throw std::runtime_error("the engine refused a fork's copy");
   }
-  LOG_INFO << "roadmap_tree_fork trees=" << origin.branch.size() << " request_id=" << currentWriteRequestId();
+  LOG_INFO << "roadmap_tree_fork trees=" << origin.branch.size() << " duration_ms="
+           << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()
+           << " request_id=" << currentWriteRequestId();
 
   TreeData data = roadmap::documentOf(rootSource, title);
   data.id = TreeId{rootCopy};

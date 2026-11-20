@@ -231,7 +231,7 @@ jobs:
             "umask 077 && mkdir -p ~/windmill/roadmap-cutover/$RUN && cat > ~/windmill/roadmap-cutover/$RUN/expected-ownerless"
           "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh adopt $RUN" < /dev/null
 
-      # Writes resume once this step writes roadmap's switch: from then on the cutover goes forward only.
+      # Writes the switch, then the floor, then starts the server on them: from the floor on, the cutover goes forward only.
       - name: Start the server on the sync engine
         id: start
         timeout-minutes: 10
@@ -268,8 +268,8 @@ jobs:
           "$RUNNER_TEMP/site" 200
 
       # A failure before writes resume puts the database back as the backup holds it and the site as it was. A start that
-      # did not succeed may have written the switch already; the host's restore refuses where it has, which is where
-      # writes resume.
+      # did not succeed may have written the floor already; the host's restore refuses where it has, or where the server's
+      # container holds the switch, which is where writes may have resumed.
       - name: Restore the backup
         if: (failure() || cancelled()) && steps.backup.outcome == 'success' && steps.start.outcome != 'success'
         timeout-minutes: 60
@@ -286,12 +286,13 @@ jobs:
           "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh undo $RUN" < /dev/null
           "$RUNNER_TEMP/site" 200
 
-      # The run's folder on the host, its private record and what Postgres said of a restore, sealed as it arrives from
-      # ssh under the run's own key, and only that key sealed to the owner's certificate, so no plaintext reaches the
-      # runner's disk or the log. A folder that cannot be sealed stays on the host and turns nothing back.
+      # The run's folder on the host, its private record, what Postgres said of a restore and what a server that did not
+      # serve logged, sealed as it arrives from ssh under the run's own key, and only that key sealed to the owner's
+      # certificate, so no plaintext reaches the runner's disk or the log. A folder that cannot be sealed stays on the
+      # host and turns nothing back. A failed check seals the probe's log, where the probe ran.
       - name: Seal what the run kept on the host
         id: seal
-        if: always() && steps.backup.outcome == 'success'
+        if: always() && (steps.backup.outcome == 'success' || steps.check.outcome == 'failure')
         continue-on-error: true
         timeout-minutes: 10
         run: |

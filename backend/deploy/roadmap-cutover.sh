@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Roadmap's cutover onto the sync engine on the host, one stage a call, run from ~/windmill by roadmap-cutover.yml and
 # ops-roadmap-restore.yml (README.md, "Roadmap's cutover onto the sync engine"). Every line a stage prints is a count or
-# a verdict. What the move read and wrote, and what Postgres says of a failed restore, stay in the run's folder, which
-# only `record` writes out, for the runner to seal.
+# a verdict. What the move read and wrote, what Postgres says of a failed restore, and what a server that did not serve
+# logged stay in the run's folder, which only `record` writes out, for the runner to seal.
 set -euo pipefail
 
 stage=${1:-}
@@ -43,6 +43,20 @@ serving() {
   return 1
 }
 
+# A server that did not serve as it must: its container's state is printed, and its last 200 lines go to the run's folder
+# for the sealed record alone, since its access lines name the accounts it served.
+witness() {
+  local state
+  docker logs --tail 200 "$1" > "$work/$2" 2>&1 || true
+  state=$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' "$1" 2> /dev/null) || state=
+  if [[ "$state" =~ ^([a-z]+)\ (-?[0-9]+)\ ([0-9]+)$ ]]; then
+    printf 'NOTE %s: the container is %s, exit code %s, %s restarts; its last 200 lines are in the sealed record as %s\n' \
+      "$stage" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "$2" >&2
+  else
+    printf 'NOTE %s: no container is left to say what it logged\n' "$stage" >&2
+  fi
+}
+
 # One check of a server: the method and path, the status it must answer and, for a refusal, its JSON code.
 unexpected=0
 expect() {
@@ -69,6 +83,9 @@ case "$stage" in
   check)
     image=${3:-}
     [[ "$image" =~ ^[a-f0-9]{40}$ ]] || fail "the image commit must be a full SHA"
+    [[ ! -e "$work" ]] || fail "this run has been here before"
+    umask 077
+    mkdir -p "$work"
     [[ -f .env ]] || fail "no deployment lives here"
     [[ "$(sed -n 's/^IMAGE_TAG=//p' .env)" == "$image" ]] || fail "the live deployment runs another commit than $image"
     pinned=$(sed -n 's/^SERVER_IMAGE=//p' .env)
@@ -81,7 +98,6 @@ case "$stage" in
     grep -q 'roadmap-engine.env' docker-compose.yml || fail "the live compose file does not read roadmap-engine.env"
     docker compose exec -T caddy test -d /srv/windmill-maintenance || fail "Caddy does not mount the maintenance folder"
     [[ ! -e maintenance/on ]] || fail "the site is paused already"
-    [[ ! -e "$work" ]] || fail "this run has been here before"
     database=$(sql postgres "select pg_database_size('windmill')")
     beside_backups=$(df -Pk . | awk 'NR == 2 { print $4 }')
     beside_database=$(docker compose exec -T db df -Pk /var/lib/postgresql/data | awk 'NR == 2 { print $4 }')
@@ -93,8 +109,6 @@ case "$stage" in
     # The pinned image, serving roadmap's scopes over a throwaway database of its own schema, on no setting of the live
     # server's but its port: what §8.3 asks of it after the move, proven before anything pauses.
     # A probe a killed check left behind goes first: its container, its database and its settings, which name the password.
-    umask 077
-    mkdir -p roadmap-cutover
     probe_settings=roadmap-cutover/probe.env
     leftovers=$(docker ps -aq --filter name=windmill-roadmap-probe-)
     [[ -z "$leftovers" ]] || docker rm -f $leftovers > /dev/null
@@ -108,12 +122,18 @@ case "$stage" in
       fail "the image's schema did not apply to a throwaway database"
     printf 'DATABASE_URL=postgresql://windmill:%s@db:5432/windmill_roadmap_probe\nPORT=8080\nROADMAP_ENGINE_ENABLED=1\n' \
       "$(sed -n 's/^POSTGRES_PASSWORD=//p' .env)" > "$probe_settings"
-    docker run -d --rm --name "$probe" --network windmill_default --env-file "$probe_settings" "$pinned" > /dev/null
+    docker run -d --name "$probe" --network windmill_default --env-file "$probe_settings" "$pinned" > /dev/null
     asking=(docker exec "$probe")
-    serving || fail "the image did not answer hello within 60 s while serving roadmap's scopes"
+    serving || {
+      witness "$probe" probe.log
+      fail "the image did not answer hello within 60 s while serving roadmap's scopes"
+    }
     expect GET /v1/socket 410 client-update-required
     expect POST /v1/trees 410 client-update-required
-    ((unexpected == 0)) || fail "the image does not retire roadmap's own routes when it serves roadmap's scopes"
+    ((unexpected == 0)) || {
+      witness "$probe" probe.log
+      fail "the image does not retire roadmap's own routes when it serves roadmap's scopes"
+    }
     printf 'PASS check: the server runs %s and carries windmill_roadmap_adopt; roadmap is off the engine; the pause is mounted\n' \
       "$image"
     ;;
@@ -220,17 +240,23 @@ PY
     tar -C "$work" -cf - .
     ;;
   forget)
-    rm -rf "$work/record" "$work/expected-ownerless" "$work/stages.jsonl" "$work/restore.log" "$work/migrate.log"
+    rm -rf "$work/record" "$work/expected-ownerless" "$work/stages.jsonl" "$work/restore.log" "$work/migrate.log" \
+      "$work/server.log" "$work/probe.log"
+    rmdir "$work" 2> /dev/null || true
     printf 'PASS forget: what the run kept on the host is gone, but for its backup\n'
     ;;
   start)
     [[ ! -s roadmap-engine.env ]] || fail "roadmap is on the sync engine here already"
-    printf '%s\n' "$(sed -n 's/^IMAGE_TAG=//p' .env)" > roadmap-engine.floor.next
-    mv roadmap-engine.floor.next roadmap-engine.floor
+    # The switch first, then the floor, then the server: a floor says the server may have served on the engine.
     printf 'ROADMAP_ENGINE_ENABLED=1\n' > roadmap-engine.env.next
     mv roadmap-engine.env.next roadmap-engine.env
+    printf '%s\n' "$(sed -n 's/^IMAGE_TAG=//p' .env)" > roadmap-engine.floor.next
+    mv roadmap-engine.floor.next roadmap-engine.floor
     docker compose up -d --no-deps --pull never server
-    serving || fail "the server did not answer hello within 60 s"
+    serving || {
+      witness "$(docker compose ps -aq server)" server.log
+      fail "the server did not answer hello within 60 s"
+    }
     docker compose exec -T server sh -c 'grep -Fzxq ROADMAP_ENGINE_ENABLED=1 /proc/1/environ' ||
       fail "the running server does not hold ROADMAP_ENGINE_ENABLED=1"
     [[ "$(docker inspect --format '{{.Image}}' "$(docker compose ps -q server)")" == "$(sed -n 's/^SERVER_IMAGE=//p' .env)" ]] ||
@@ -249,6 +275,7 @@ print(int(hello["schema"]), int(hello["minSchema"]))')
     expect GET "/v1/trees/$demo/activity" 200
     expect GET "/t/$demo" 200
     expect GET /gallery 200
+    ((unexpected == 0)) || witness "$(docker compose ps -aq server)" server.log
     exit "$unexpected"
     ;;
   lift)
@@ -261,10 +288,24 @@ print(int(hello["schema"]), int(hello["minSchema"]))')
   restore)
     [[ -s "$work/backup" ]] || fail "this run holds no verified backup"
     [[ ! -e "$work/restored" ]] || fail "this run's backup is restored already"
-    [[ ! -s roadmap-engine.env ]] || fail "roadmap's switch is written, so the cutover goes forward only"
+    [[ ! -e roadmap-engine.floor ]] ||
+      fail "roadmap's floor is written, so the server may have served on the engine and the cutover goes forward only"
     [[ -e maintenance/on ]] || fail "the site is not paused, so whatever runs here now is not this run's"
     [[ -z "$(docker compose ps -q server)" ]] || fail "the server is running, so whatever runs here now is not this run's"
-    rm -f roadmap-engine.floor
+    # A switch without its floor is a start cut short before it, which never started the server on the engine, as the
+    # server's container says: it is still the one the stop stopped.
+    if [[ -s roadmap-engine.env ]]; then
+      server=$(docker compose ps -aq server)
+      [[ -n "$server" ]] || fail "roadmap's switch is written and no server container is left to say it never served on it"
+      environment=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$server") ||
+        fail "roadmap's switch is written and the server's container could not be read"
+      ! grep -qx ROADMAP_ENGINE_ENABLED=1 <<< "$environment" ||
+        fail "roadmap's switch is written and the server's container holds it, so the cutover goes forward only"
+      : > roadmap-engine.env
+      rm -f roadmap-engine.floor.next
+      printf "NOTE restore: the start wrote roadmap's switch, not its floor, and never started the server on it; %s\n" \
+        "the switch is emptied"
+    fi
     backup=$(cat "$work/backup")
     docker rm -f "$tool" > /dev/null 2>&1 || true
     if [[ "$(sql postgres "select count(*) from pg_database where datname = '$moved'")" == 0 ]]; then
@@ -287,7 +328,10 @@ print(int(hello["schema"]), int(hello["minSchema"]))')
     docker compose run --rm --no-deps -T migrate > "$work/migrate.log" 2>&1 ||
       fail "the schema did not apply to the restored database; its words go to the sealed record"
     docker compose up -d --no-deps --no-recreate --pull never server
-    serving || fail "the server did not answer on the restored database within 60 s, and the site stays paused"
+    serving || {
+      witness "$(docker compose ps -aq server)" server.log
+      fail "the server did not answer on the restored database within 60 s, and the site stays paused"
+    }
     printf 'restored\n' > "$work/restored"
     rm -f maintenance/on
     printf 'PASS restore: windmill is %s again, its sha256 matched; the moved database is kept as %s\n' "$backup" "$moved"

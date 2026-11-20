@@ -416,13 +416,15 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and thirteen script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and fourteen script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
 `domain`, `mcp`, `sync` and `adapters` are the C++ suites. `one_definition` checks that no two files of
 `platform/` and `products/` define a class or struct under one qualified name: every binary links them all, and the
-linker would keep one copy of the inline code the two share. `sync_composition` checks that the manifest
+linker would keep one copy of the inline code the two share. `log_sources` checks that every file of them that writes a
+`LOG_` line is one `privacySafeLogBody` keeps the lines of, and that it names no other: a line from a file it does not
+name reaches the log and Sentry Logs as `framework diagnostic suppressed`. `sync_composition` checks that the manifest
 and explicit server bindings name the same registries without duplicates. `deploy` checks that the production
 Caddyfile forwards every credential line as received, `deploy_stop_grace` that the time the compose
 file gives the server to stop covers the server's own deadline and exit flush, `deploy_production` runs

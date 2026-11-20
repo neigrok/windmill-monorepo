@@ -32,12 +32,13 @@ roadmap's own tables in SHARE mode in each owner's transaction, reads that owner
 from those its plan was made from.
 
 Each stage prints one JSON line on stdout — `{"stage", "verdict", "ms", "counts"}` — and logs one write line on stderr
-(`roadmap.adoption.<stage>`, door `tool`, the verdict as its outcome). Neither names a roadmap, a step, an account or a
-text: the counts' names are the code's words. Everything finer goes to the private record, the directory
-`ROADMAP_ADOPTION_PRIVATE_DIR` names, one JSON value a line, files readable by their owner alone, meant to be encrypted
-before they leave the machine; without it nothing finer is kept, and the two read-model stages cannot run. The tool exits
-0 when every stage it ran passed, 3 at the first that did not (the run stops there), 2 without its configuration and 1
-on a failure, which it reports to Sentry by the failure's type alone.
+(`roadmap.adoption.<stage>`, door `tool`, the verdict as its outcome, at INFO when the stage passed, WARN when it did
+not and ERROR on a failure). Neither names a roadmap, a step, an account or a text: the counts' names are the code's
+words. Everything finer goes to the private record, the directory `ROADMAP_ADOPTION_PRIVATE_DIR` names, one JSON value a
+line, files readable by their owner alone, meant to be encrypted before they leave the machine; without it nothing finer
+is kept, and the two read-model stages cannot run. The tool exits 0 when every stage it ran passed, 3 at the first that
+did not (the run stops there), 2 without its configuration and 1 on a failure, which it reports to Sentry by the
+failure's type alone.
 
 | Stage | What it does | Verdicts | Private record |
 |---|---|---|---|

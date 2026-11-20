@@ -12,7 +12,7 @@ import unittest
 TOOL = sys.argv.pop(1)
 SCHEMA = sys.argv.pop(1)
 FIXTURE = sys.argv.pop(1)
-WRITE = re.compile(rb'write (\{[^\n]*\}) - ')
+WRITE = re.compile(rb'\b(DEBUG|INFO|WARN|ERROR) +write (\{[^\n]*\}) - ')
 STAGES = ["unfold", "read-models-before", "before", "adopt", "demo", "after", "read-models", "digests"]
 
 OWNER = "aaaaaaaa-0000-4000-8000-00000000000a"
@@ -130,7 +130,8 @@ class ToolTest(unittest.TestCase):
         return subprocess.CompletedProcess(tool.args, tool.returncode, stdout, stderr), reports
 
     def stage_lines(self, result):
-        return [(record["operation"], record["outcome"]) for record in map(json.loads, WRITE.findall(result.stderr))
+        records = [(json.loads(line), level.decode()) for level, line in WRITE.findall(result.stderr)]
+        return [(record["operation"], record["outcome"], level) for record, level in records
                 if record["operation"].startswith("roadmap.adoption.")]
 
     def assert_names_nothing(self, result):
@@ -174,7 +175,7 @@ class AdoptionTest(ToolTest):
         self.assertEqual(counts["after"], {"roadmaps": {"same": 9, "unreadableToday": 2}, "spentIds": {"held": 2}})
         self.assertEqual(counts["read-models"], READ_MODELS)
         self.assertEqual(counts["digests"], {"scopes": {"digestHolds": 20, "summed": 20}})
-        self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", report["verdict"]) for stage, report in zip(STAGES, reports)])
+        self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", report["verdict"], "INFO") for stage, report in zip(STAGES, reports)])
         self.assert_names_nothing(result)
         self.assertEqual(sorted(path.name for path in self.private.iterdir()),
                          ["after.jsonl", "before.jsonl", "differences.jsonl", "digests.jsonl", "read-models-before.jsonl",
@@ -301,7 +302,7 @@ class AdoptionTest(ToolTest):
                 result, reports = self.run_tool(url, stage, beside=1)
                 self.assertEqual(result.returncode, 3, result.stderr.decode())
                 self.assertEqual((reports[0]["verdict"], reports[0]["counts"]), ("othersConnected", {"sessions": {"otherClients": 1}}))
-                self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", "othersConnected")])
+                self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", "othersConnected", "WARN")])
         self.assertEqual(client_sessions(url, "count(pg_terminate_backend(pid))", "wait_event = 'PgSleep'"), "1")
         sleeper.wait(timeout=30)
         self.assertEqual(query(url, "select count(*) from sync_scopes"), "0")
@@ -334,7 +335,7 @@ class AdoptionTest(ToolTest):
                 self.assertEqual(result.returncode, 3, result.stderr.decode())
                 self.assertEqual(reports[0]["verdict"], "stops")
                 self.assertEqual(reports[0]["counts"]["stop"], {"unknownStepStatus": 1})
-                self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", "stops")])
+                self.assertEqual(self.stage_lines(result), [(f"roadmap.adoption.{stage}", "stops", "WARN")])
                 self.assert_names_nothing(result)
         self.assertEqual(query(url, "select (select count(*) from sync_scopes), (select count(*) from roadmap_trees), "
                                     f"(select count(*) from users where id = '{HOUSE}')"), "0|0|0")
@@ -358,7 +359,7 @@ class AdoptionTest(ToolTest):
         self.assertEqual(result.returncode, 1, result.stderr.decode())
         self.assertEqual((reports[0]["verdict"], reports[0]["counts"]["failure"], reports[0]["counts"]["adopted"]),
                          ("failed", {"storeRefusedARow": 1}, {"owners": 3, "roadmaps": 11}))
-        self.assertEqual(self.stage_lines(result), [("roadmap.adoption.adopt", "failed")])
+        self.assertEqual(self.stage_lines(result), [("roadmap.adoption.adopt", "failed", "ERROR")])
         self.assertEqual((self.private / "adopt-failure.jsonl").read_text(),
                          f'{{"owner":"{SCRIBBLER}","reason":"storeRefusedARow","roadmap":"t_e000000000000001"}}\n')
         self.assert_names_nothing(result)
