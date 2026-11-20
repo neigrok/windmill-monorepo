@@ -7,14 +7,17 @@ underscores because `/v1/events` accepts snake_case names. Each engine instance 
 injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
-The beacon sends what it has queued in batches of at most 50: as keepalive requests once 20 events wait,
-five seconds after the first and on reconnect, and through `navigator.sendBeacon` when the page hides (a
-keepalive request where the browser refuses the beacon). Both outlive the page, so a batch already sent
-still lands when the page navigates, reloads or closes. While the browser is offline it keeps up to 200
-newest queued events in memory and sends them on reconnect. It adds no content or properties and stores no
-queue on disk, keeping best-effort delivery independent of browser storage and leaving no behavioral
-history on a possibly shared device. Reloading or closing the page while offline loses that queue; failed
-attempted sends remain fire-and-forget.
+The beacon sends what it has queued in batches of at most 50: as keepalive requests once 20 events wait, five
+seconds after the first and on reconnect, and through `navigator.sendBeacon` when the page hides (a keepalive
+request where the browser refuses the beacon). Both outlive the page, so a batch sent before or as the page
+leaves still lands when it navigates, reloads or closes (`test/telemetry/beacon.browser.test.js` and
+`test/sw-browser.test.mjs` prove it in Chromium and WebKit). Where the browser takes service worker routes
+(Chromium), `public/sw.js` routes `/v1/` straight to the network: the worker's fetch handler would hand a
+request sent as the page hides back to the network only after the page was gone. While the browser is offline
+it keeps up to 200 newest queued events in memory and sends them on reconnect. It adds no content or
+properties and stores no queue on disk, keeping best-effort delivery independent of browser storage and
+leaving no behavioral history on a possibly shared device. Reloading or closing the page while offline loses
+that queue; failed attempted sends remain fire-and-forget.
 
 Only a deployed build reports as `environment: production`. `scripts/test.mjs` drops the build's DSN, so a test run never reaches
 Sentry, though a branch that predates that rule can still report from CI as `development`: read production's failures under
