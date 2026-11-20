@@ -1345,8 +1345,9 @@ async function run(mode, browser) {
     await scenarios(mode, browser, { secret, second, session, empty, carrier, stranger, climber }, account, check);
     const events = Number(sql("select count(*) from events where name like 'roadmap_%'").toString().match(/\d+/)?.[0] ?? 0);
     assert.ok(events > 0, 'the room’s events reached the local intake');
-    const kept = Number(sql("select count(distinct name) from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')").toString().match(/\d+/)?.[0] ?? 0);
-    assert.equal(kept, mode === 'on' ? 2 : 0, 'the kept list’s events reached the local intake only with the switch on');
+    const kept = sql("select coalesce(string_agg(distinct name, ',' order by name), '') as names from events where name in ('roadmap_kept', 'roadmap_write_cannot_land')")
+      .toString().split('\n').map((line) => line.trim()).find((line) => line !== 'names' && /^[a-z_]+(?:,[a-z_]+)*$/.test(line))?.split(',') ?? [];
+    assert.deepEqual(kept, mode === 'on' ? ['roadmap_kept', 'roadmap_write_cannot_land'] : [], 'the kept list’s events reached the local intake only with the switch on');
     const stages = sql("select coalesce(string_agg(distinct props->>'stage', ',' order by props->>'stage'), '') as stages from events where name = 'roadmap_carry'")
       .toString().split('\n').map((line) => line.trim()).find((line) => line !== 'stages' && /^[a-z]+(?:,[a-z]+)*$/.test(line))?.split(',') ?? [];
     assert.deepEqual(['carried', 'cleared', 'discarded', 'found'].filter((stage) => stages.includes(stage)), mode === 'on' ? ['carried', 'cleared', 'found'] : [],
