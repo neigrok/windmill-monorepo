@@ -20,8 +20,8 @@
 // and joining at sign-in an account that holds none. The home card, the landing and the room's switcher list the person's
 // roadmaps: with the switch on from the device's copy, the account's signed in and the browser's own signed out; with it
 // off from today's list, which holds none signed out. With the switch on every page meets the server as the move leaves it
-// (§7, §8.3): each route the move retires answers 410 and the old socket refuses, and the run holds that no page asked for
-// one. Last, every person leaves the app, and the run waits, within its
+// (§7, §8.3): each route the move retires answers 410 and the old socket refuses (`retired-roadmap-routes.mjs`, standing
+// in front of the backend), and the run holds that no page asked for one. Last, every person leaves the app, and the run waits, within its
 // bound, until the local intake holds the room's events, those only the switch emits only with it on. Each run has its
 // own database, server and built app on the given ports, and stops and drops them.
 // It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
@@ -31,12 +31,12 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer, request as forward } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { inspect, isDeepStrictEqual } from 'node:util';
 import { chromium } from 'playwright';
+import { refuseRetiredRoutes } from './retired-roadmap-routes.mjs';
 
 const repo = resolve('..');
 const binaries = resolve(process.argv[2] ?? '../backend/build');
@@ -84,72 +84,6 @@ async function stopped(children) {
 }
 
 const source = (path) => import(pathToFileURL(resolve(path)).href);
-
-// The routes roadmap's move onto the engine retires or answers 410 (roadmap-on-the-engine.md §7, §8.3), each by its method,
-// its path's shape and the name it is counted under. The fork, the activity and progress reads and tending stay.
-const RETIRED = [
-  ['GET', /^\/v1\/trees$/, 'GET /v1/trees'],
-  ['POST', /^\/v1\/trees$/, 'POST /v1/trees'],
-  ['GET', /^\/v1\/trees\/[^/]+$/, 'GET /v1/trees/{id}'],
-  ['PATCH', /^\/v1\/trees\/[^/]+$/, 'PATCH /v1/trees/{id}'],
-  ['DELETE', /^\/v1\/trees\/[^/]+$/, 'DELETE /v1/trees/{id}'],
-  ['GET', /^\/v1\/trees\/[^/]+\/guides$/, 'GET /v1/trees/{id}/guides'],
-  ['GET', /^\/v1\/trees\/[^/]+\/diagnostics$/, 'GET /v1/trees/{id}/diagnostics'],
-  ['PUT', /^\/v1\/trees\/[^/]+\/subtree$/, 'PUT /v1/trees/{id}/subtree'],
-];
-
-// The server as the move leaves it (§7, §8.3), standing between the built app and the backend in a run with the switch
-// on: each route of `RETIRED` answers 410 `client-update-required` and `/v1/socket` refuses its upgrade so, each refusal
-// counted in `refused` under its route's name, never its id. Every other request and upgrade passes to the backend as it
-// came, an upgrade on a connection of its own, as Drogon needs. It listens on a port the system picks.
-async function afterTheMove(refused) {
-  const count = (name) => refused.set(name, (refused.get(name) ?? 0) + 1);
-  const gone = JSON.stringify({ code: 'client-update-required' });
-  const toBackend = (request, agent) => forward({ host: '127.0.0.1', port: backendPort, method: request.method, path: request.url, headers: request.headers, agent });
-  const statusLine = (answer) => `HTTP/1.1 ${answer.statusCode} ${answer.statusMessage}\r\n${answer.rawHeaders
-    .flatMap((value, index) => (index % 2 ? [] : [`${value}: ${answer.rawHeaders[index + 1]}`])).join('\r\n')}\r\n\r\n`;
-  const server = createServer((request, response) => {
-    const retired = RETIRED.find(([method, path]) => method === request.method && path.test(request.url.split('?')[0]));
-    if (retired) {
-      count(retired[2]);
-      request.resume();
-      response.writeHead(410, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(gone) }).end(gone);
-      return;
-    }
-    const passed = toBackend(request);
-    passed.once('response', (answer) => {
-      response.writeHead(answer.statusCode, answer.headers);
-      answer.pipe(response);
-    });
-    passed.once('error', () => response.destroy());
-    request.pipe(passed);
-  });
-  server.on('upgrade', (request, socket, head) => {
-    socket.once('error', () => socket.destroy());
-    if (request.url.split('?')[0] === '/v1/socket') {
-      count('WS /v1/socket');
-      socket.end(`HTTP/1.1 410 Gone\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(gone)}\r\nconnection: close\r\n\r\n${gone}`);
-      return;
-    }
-    const passed = toBackend(request, false);
-    passed.once('upgrade', (answer, peer, tail) => {
-      socket.write(statusLine(answer));
-      if (tail.length) socket.write(tail);
-      if (head.length) peer.write(head);
-      peer.once('error', () => socket.destroy());
-      socket.once('close', () => peer.destroy());
-      peer.pipe(socket).pipe(peer);
-    });
-    passed.once('response', (answer) => {
-      socket.write(statusLine(answer));
-      answer.pipe(socket);
-    });
-    passed.once('error', () => socket.destroy());
-    passed.end();
-  });
-  await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
-  return server;
-}
 
 // Two roadmaps of the owner's: three steps in a line, and one of a single step. With the engine on they are planted
 // through roadmap's domain actions on a device of the owner's; with it off, through today's routes.
@@ -1256,7 +1190,7 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
 }
 
 // §7, §8.4 The person's roadmaps where the home card, the landing and the room's switcher list them. With the switch on,
-// every page of the run meeting the server as the move leaves it (`afterTheMove`), they are the device's copy's: the
+// every page of the run meeting the server as the move leaves it (`refuseRetiredRoutes`), they are the device's copy's: the
 // account's signed in and the browser's own signed out. With it off they are today's list signed in, and signed out it
 // holds none. An account holds two roadmaps, the newer planted last; a browser signed out holds one.
 async function yourRoadmaps(mode, browser, { session, lister }, check, devices) {
@@ -1558,7 +1492,7 @@ async function run(mode, browser) {
       PORT: String(backendPort), WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin,
       ROADMAP_ENGINE_ENABLED: mode === 'on' ? '1' : '',
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
-    moved = mode === 'on' ? await afterTheMove(refused) : null;
+    moved = mode === 'on' ? await refuseRetiredRoutes({ backendPort, refused }) : null;
     const served = moved ? `http://127.0.0.1:${moved.address().port}` : backend;
     web = launch(process.execPath, ['scripts/serve-built.mjs', '--root', dist, '--port', String(webPort), '--backend', served, '--duration', '1200'], { cwd: process.cwd() });
     await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, web)]);
