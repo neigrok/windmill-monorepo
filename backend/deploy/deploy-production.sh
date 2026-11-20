@@ -35,7 +35,15 @@ if [[ -z "$roadmap_switch" && -s roadmap-engine.floor ]]; then
   printf 'FAIL roadmap-engine.floor says roadmap is on the sync engine here, and roadmap-engine.env does not say ROADMAP_ENGINE_ENABLED=1\n' >&2
   exit 1
 fi
-if [[ -z "$roadmap_switch" && -f .env && -n "$(docker compose ps -q db 2> /dev/null)" ]]; then
+if [[ -z "$roadmap_switch" && -f .env ]]; then
+  # A database that is down is started as it stands, as the deploy would start it anyway, so that it can answer.
+  if [[ -z "$(docker compose ps -q db 2> /dev/null)" ]]; then
+    docker compose up -d --no-deps --no-recreate db > /dev/null 2>&1 || true
+    for ((attempt = 0; attempt < 120; attempt++)); do
+      docker compose exec -T db pg_isready --username=windmill --dbname=windmill > /dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
   on_engine=$(docker compose exec -T db psql --username=windmill --dbname=windmill -XAtq -v ON_ERROR_STOP=1 \
     -c "select to_regclass('public.sync_scopes') is not null" 2> /dev/null) || on_engine=unread
   if [[ "$on_engine" == t ]]; then

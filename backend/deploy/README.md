@@ -867,7 +867,8 @@ windmill_cutover_<run>_<attempt>`).
 - **The server**: `~/windmill/roadmap-engine.env`, which compose reads into the server alone (`env_file`). The cutover
   writes `ROADMAP_ENGINE_ENABLED=1` there; no deploy renders, ships or changes it. `deploy-production.sh` creates it
   empty where it is missing and refuses any other content before anything changes. While `roadmap-engine.floor` names a
-  commit, or the database holds any of roadmap's scopes on the engine, it refuses the file empty or missing too, so a
+  commit, or the database holds any of roadmap's scopes on the engine (a database that is down is started, as it stands,
+  to be asked), it refuses the file empty or missing too, so a
   switch lost on the host stops a deploy rather than turning roadmap back to its own sync. After the server starts, it checks the running server holds exactly
   what the file says and, while it is on, that the server answers `GET /v1/socket` `410`; it prints `PASS roadmap: …`.
 - **The image**: the cutover writes the commit it ran from to `~/windmill/roadmap-engine.floor`. While that file names a

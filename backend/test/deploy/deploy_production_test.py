@@ -30,6 +30,8 @@ ROADMAP_READS = [["compose", "ps", "-q", "db"],
                  ["compose", "exec", "-T", "db", "psql", "--username=windmill", "--dbname=windmill", "-XAtq", "-v", "ON_ERROR_STOP=1",
                   "-c", "select exists (select 1 from sync_scopes where kind <> 'product' or key like 'acct:%/roadmap')"]]
 SUBSCRIPTIONS_UP = ["compose", "up", "-d", "--no-deps", "--pull", "never", "subscriptions"]
+DATABASE_START = [["compose", "up", "-d", "--no-deps", "--no-recreate", "db"],
+                  ["compose", "exec", "-T", "db", "pg_isready", "--username=windmill", "--dbname=windmill"]]
 
 
 def server_config(environment=".env", state=None):
@@ -74,7 +76,14 @@ def compose(state, arguments):
         return 0, "server-container"
     if command == ["ps", "-q", "db"]:
         return 0, "db-container" if state.get("dbRunning", True) else ""
+    if command == DATABASE_START[0][1:]:
+        state["dbRunning"] = True
+        return 0, ""
     database = command[3:] if command[:3] == ["exec", "-T", "db"] else None
+    if database and not state.get("dbRunning", True):
+        return 1, "service \"db\" is not running"
+    if database == DATABASE_START[1][4:]:
+        return 0, "/var/run/postgresql:5432 - accepting connections\n"
     if database and database[0] == "psql" and database[-1] == "select to_regclass('public.sync_scopes') is not null":
         return (1, "PRIVATE_DEPLOY_SECRET") if state.get("databaseUnreadable") else (0, "t\n" if state.get("syncScopes", True) else "f\n")
     if database and database[0] == "psql" and "from sync_scopes where kind <> 'product' or key like 'acct:%/roadmap'" in database[-1]:
@@ -751,7 +760,18 @@ class DeployProductionTest(unittest.TestCase):
                 self.assert_preflight_refusal("roadmap-engine.floor says roadmap is on the sync engine here, and roadmap-engine.env "
                                               "does not say ROADMAP_ENGINE_ENABLED=1")
                 (self.work / "roadmap-engine.floor").unlink()
-        for state in ({"dbRunning": False, "roadmapOnEngine": True}, {"syncScopes": False}):
+        # A database that is down is started as it stands and asked; the deploy's own start comes after.
+        self.upload_candidate()
+        (self.work / "roadmap-engine.env").write_text("")
+        uploaded = self.files()
+        self.state(commands=[], roadmapOnEngine=True, databaseUnreadable=False, dbRunning=False, syncScopes=True)
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (1, "", "FAIL the database holds roadmap on the sync engine, and roadmap-engine.env does not say "
+                                 "ROADMAP_ENGINE_ENABLED=1\n"))
+        self.assertEqual(self.files(), uploaded)
+        self.assertEqual(self.state()["commands"][1:], [ROADMAP_READS[0], *DATABASE_START, *ROADMAP_READS[1:]])
+        for state in ({"dbRunning": False}, {"syncScopes": False}):
             with self.subTest(state=state):
                 self.upload_candidate()
                 (self.work / "roadmap-engine.env").write_text("")
@@ -759,6 +779,9 @@ class DeployProductionTest(unittest.TestCase):
                               "syncScopes": True, **state})
                 result = self.deploy()
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (0, PROVISIONED + "\n" + DEPLOYED, ""))
+                started = DATABASE_START if state.get("dbRunning") is False else []
+                self.assertEqual(self.state()["commands"][1:len(started) + 3],
+                                 [ROADMAP_READS[0], *started, ROADMAP_READS[1]])
         (self.work / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n")
         self.upload_candidate()
         self.state(commands=[], roadmapOnEngine=True, dbRunning=True, syncScopes=True)
