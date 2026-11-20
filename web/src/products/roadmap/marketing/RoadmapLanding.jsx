@@ -2,11 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../../../design-system';
 import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
-import { listTrees } from '../persistence/TreeRegistry.js';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS } from '../theme.js';
 import { mountHero, mountBeat, mountThumb } from './treeScenes.js';
-import { resumeOf, resumeSummary } from '../resume.js';
+import { resumeOf, resumeSummary, useYourRoadmaps } from '../resume.js';
 import { t } from '../i18n/landing/index.js';
 import './roadmapLanding.css';
 
@@ -239,7 +238,8 @@ function CtaBand({ planted }) {
   );
 }
 
-// Cached per email so one device never shows another account's trees; never trusted, always refreshed.
+// The person's roadmaps cached per email, so one device never shows another account's trees, for the first paint while
+// they are read; never trusted, always refreshed.
 const TREES_CACHE_PREFIX = 'windmill:trees:';
 
 function readTreesCache(email) {
@@ -258,26 +258,28 @@ function writeTreesCache(email, rows) {
 
 export function RoadmapLanding() {
   const { user, status } = useAuth();
-  const [trees, setTrees] = useState(() => readTreesCache(user?.email)); // seeded from cache, corrected by the registry
+  const signedIn = status === 'signed-in';
+  const [cached] = useState(() => readTreesCache(user?.email));
+  const listed = useYourRoadmaps(signedIn);
   const landed = useRef(false);
 
   useEffect(() => {
     if (status === 'loading' || landed.current) return;
     landed.current = true;
-    track('land', { signedIn: status === 'signed-in' });
+    track('land', { signedIn });
   }, [status]);
 
   useEffect(() => {
-    if (status !== 'signed-in') { setTrees(null); return undefined; }
-    let cancelled = false;
-    listTrees().then((rows) => { if (!cancelled) { setTrees(rows); writeTreesCache(user?.email, rows); } });
-    return () => { cancelled = true; };
-  }, [status]);
+    if (signedIn && listed) writeTreesCache(user?.email, listed);
+  }, [signedIn, listed]);
 
-  const newest = status === 'signed-in' && trees?.length ? trees[0] : null;
+  // The cache stands only for a person signed in; where the room reads the device's copy the list is also the browser's
+  // own signed out.
+  const trees = listed ?? (signedIn ? cached : null);
+  const newest = trees?.length ? trees[0] : null;
 
-  // Signed in with the registry still out: the tree count is unknown, so the chrome waits.
-  const resolving = status === 'signed-in' && trees === null;
+  // Signed in with the list still out: the tree count is unknown, so the chrome waits.
+  const resolving = signedIn && trees === null;
 
   const seat = { label: t('roadmap.landing.myTrees'), count: trees?.length ?? null, note: t('roadmap.landing.seatNote') };
 

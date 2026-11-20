@@ -103,12 +103,12 @@ test('a save by someone who is not the owner writes through no door and distingu
 });
 
 // The read of the guides above as written, its collaborators recorded: what was asked, what was held and what reported.
-function readWith({ holder = 'u_olya', claimed = true, held = null, answer = async () => ({ guides: [] }) } = {}) {
+function readWith({ holder = 'u_olya', claimed = true, replica = false, answer = async () => ({ guides: [] }) } = {}) {
   const calls = [];
   const effect = guide.effectWith('readGuides', {
     treeId: 't_sail',
     holder,
-    held,
+    replica,
     LocalTreeRegistry: class { get(id) { return { id, claimed }; } },
     AbortController,
     Error,
@@ -124,8 +124,8 @@ function readWith({ holder = 'u_olya', claimed = true, held = null, answer = asy
 }
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 
-test('a room that reads the replica holds the guides the replica holds and asks the server nothing', async () => {
-  const { effect, calls } = readWith({ held: { guides: [{ treeId: 't_life', title: 'My life', text: 'Health first.' }] } });
+test('a room that reads the replica asks the server nothing, before its roadmap is read or after', async () => {
+  const { effect, calls } = readWith({ replica: true });
   assert.equal(effect(), undefined);
   await turn();
   assert.deepEqual(calls, []);
@@ -246,6 +246,33 @@ test('the room’s guide carries the guides above beside the tree’s own text, 
   assert.equal(hook.tree.text, 'Saved since.');
   assert.deepEqual(hook.tree.above, [{ treeId: 't_year', title: 'My year', text: 'Three things this year.' }]);
   assert.equal(asked.length, 1);
+});
+
+test('a room on the device’s copy shows the guides above its roadmap brings, and asks the server for none while the roadmap is read', async (t) => {
+  const asked = [];
+  const priorFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { asked.push(new URL(url).pathname); return { ok: false, status: 410, json: async () => ({}) }; };
+  t.after(() => { globalThis.fetch = priorFetch; });
+  const room = { tree: null, held: null };
+  const hook = renderHook(t, () => useRoomGuide({
+    treeId: 't_sail',
+    tree: room.tree,
+    who: { owner: true, reader: false, shared: false, demo: false },
+    holder: 'u_olya',
+    deviceLine: null,
+    sessionRef: { current: null },
+    replica: true,
+    held: room.held,
+  }));
+  await turn();
+  assert.equal(hook.tree, null);
+
+  room.tree = new SkillTree({ id: 't_sail', title: 'Learn to sail', guide: 'Sundays on the water.', nodes: [] });
+  room.held = { guides: [{ treeId: 't_year', title: 'My year', text: 'Three things this year.' }, { treeId: 't_sail', title: 'Learn to sail', text: 'Sundays on the water.' }] };
+  hook.redraw();
+  await turn();
+  assert.deepEqual({ ...aboveOf(hook.tree), text: hook.tree.text, asked },
+    { above: [{ treeId: 't_year', title: 'My year', text: 'Three things this year.' }], aboveUnread: false, text: 'Sundays on the water.', asked: [] });
 });
 
 test('a read that answers nothing above is read, and one that fails, by its status or its shape, stays unread with what it held', async (t) => {

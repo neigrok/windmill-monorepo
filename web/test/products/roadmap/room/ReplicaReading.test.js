@@ -472,3 +472,78 @@ test('a reader who goes into a subtree waits for the roadmap above it to be subs
     a.close();
   }
 });
+
+test('the home card and the landing read the person’s roadmaps once the device can say what each is, newest first, and again as they change; with no copy they list nothing and tell nothing', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const sail = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] })));
+    committed(await a.runner.runAct(Complete(sail.tree, sail.steps.wind)));
+    for (const scope of [RoadmapScopes.tree(sail.tree), RoadmapScopes.overlay(sail.tree)]) a.observe(scope);
+    await a.sync();
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const told = [];
+    const reading = new ReplicaReading({ treeId: null, timers: a.env.timers, track: (name, props) => told.push([name, props]),
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} } });
+    const lists = [];
+    const shown = ({ id, title, done, total, origin }) => ({ id, title, done, total, origin });
+    assert.equal(await reading.followRoadmaps({ signal: new AbortController().signal, onList: (list) => lists.push(list.map(shown)) }), true);
+    assert.deepEqual(lists, [[{ id: sail.tree, title: 'Learn to sail', done: 1, total: 1, origin: 'server' }]]);
+
+    await a.advance(1000);
+    const row = committed(await a.runner.runAct(new CreateRoadmap('Learn to row', { steps: [{ key: 'grip', label: 'Grip the oars' }], links: [] })));
+    for (const scope of [RoadmapScopes.tree(row.tree), RoadmapScopes.overlay(row.tree)]) a.observe(scope);
+    await a.sync();
+    await until(() => lists.at(-1).length === 2 && lists.at(-1)[0].total === 1);
+    assert.deepEqual(lists.at(-1), [{ id: row.tree, title: 'Learn to row', done: 0, total: 1, origin: 'server' },
+      { id: sail.tree, title: 'Learn to sail', done: 1, total: 1, origin: 'server' }]);
+    reading.close();
+
+    const unkept = new ReplicaReading({ treeId: null, timers: a.env.timers, track: (name, props) => told.push([name, props]),
+      session: { getSnapshot: () => ({ engine: null, ready: false, online: true, error: true }), subscribe: () => () => {} } });
+    assert.deepEqual({ stood: await unkept.followRoadmaps({ signal: new AbortController().signal, onList: () => assert.fail('nothing is listed') }), told },
+      { stood: false, told: [] });
+    unkept.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('the tree picker reads an address from the device’s copy, its own subscription dropped once read: a subtree by its step’s name, none for a deleted roadmap, and no answer as an unanswered read', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('My year', { steps: [{ key: 'sail', label: 'Learn to sail' }], links: [] })));
+    const { subtree } = committed(await a.runner.runAct(new CreateSubtree(tree, steps.sail)));
+    committed(await a.runner.runAct(new CreateStep(subtree, { label: 'Tie a bowline' }, [])));
+    committed(await a.runner.runAct(new CreateStep(subtree, { label: 'Reef the sail' }, [])));
+    const gone = committed(await a.runner.runAct(new CreateRoadmap('Learn to row', { steps: [], links: [] })));
+    for (const id of [tree, subtree, gone.tree]) for (const scope of [RoadmapScopes.tree(id), RoadmapScopes.overlay(id)]) a.observe(scope);
+    await a.sync();
+    const snapshot = { engine: a.engine, ready: true, online: true, error: false };
+    const told = [];
+    const address = (treeId) => new ReplicaReading({ treeId, timers: a.env.timers, track: (name, props) => told.push([name, props]),
+      session: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      repository: { loadProgress: async () => assert.fail('an address reads no marks'), loadActivity: async () => assert.fail('an address reads no activity') } });
+
+    const inside = address(subtree);
+    assert.deepEqual(await inside.readCard(), { id: subtree, title: 'Learn to sail', author: null, steps: 2, mine: true });
+    inside.close();
+    await until(() => !a.engine.openScopes.has(RoadmapScopes.tree(subtree)));
+
+    const { DeleteRoadmap } = await import('../../../../src/products/roadmap/domain/roadmaps.js');
+    committed(await a.runner.runAct(new DeleteRoadmap(gone.tree)));
+    await a.advance(CONSTANTS.HOLD_MS);
+    await a.sync();
+    const nowhere = address(gone.tree);
+    assert.equal(await nowhere.readCard(), null);
+    nowhere.close();
+
+    a.engine.setOnline(false);
+    snapshot.online = false;
+    const unanswered = address('t_00000000000000ab');
+    await assert.rejects(unanswered.readCard(), (error) => error.status === 0);
+    unanswered.close();
+    assert.deepEqual(told, []);
+  } finally {
+    a.close();
+  }
+});

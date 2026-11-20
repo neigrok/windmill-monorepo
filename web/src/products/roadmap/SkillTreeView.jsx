@@ -118,7 +118,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const { workspaceByNode, hydrateWorkspaces, adoptWorkspaces, pushArcs, ...workspaceActions } = useWorkspace(room);
   const activity = useActivity({ sceneRef, selectedId });
   const { emit, ticker, feedVisible, feedSummonedRef, closeActivity } = activity;
-  const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
+  const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status, replica });
   // What the history entry said of a tree visit as the room opened: a return to it is a step reached by going back.
   const [arrival] = useState(readTreeVisit);
   const stepAddress = useStepAddress(arrival.through === null ? 'link' : 'back');
@@ -232,7 +232,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const [boardOverall, setBoardOverall] = useState(null);
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
-  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef, held: load.guides });
+  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef, replica: load.readsReplica, held: load.guides });
   const guideView = boardActive ? 'board' : 'graph';
   const guideEntry = guide && !boardAwaitsRoadmap ? (
     <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>

@@ -101,31 +101,48 @@ export class ReplicaReading {
   // owner's marks, as the server reads them. The roadmap's scope is the reading's to drop from the moment it asks for it,
   // so a room that leaves while the engine takes the subscription leaves it unfollowed.
   async read({ signal }) {
+    const answer = await this.open(signal);
+    if (answer === null) return null;
+    if (answer.unshown === 'missing') this.forgetLanding();
+    if (answer.unshown) return this.unshown(answer.unshown);
+    const { roadmap } = answer;
+    this.opened = roadmap;
+    this.openWrites(roadmap.mine);
+    const seed = roadmap.seed;
+    const overlay = roadmap.mine ? roadmap.marks : await this.repository.loadProgress(seed, { signal: AbortSignal.timeout(FIRST_COPY_MS) });
+    return { seed, overlay, workspace: roadmap.mine ? roadmap.workspace : null, guides: roadmap.guides };
+  }
+
+  // What an address comes to for the person, for the tree picker, read from the copy as the room reads its roadmap, where
+  // today's server answered `GET /v1/trees/{id}` (§7: a device computes it from its copy): its name, how many steps it
+  // holds and whether it is theirs. The copy names no author. Null where no roadmap they may read stands there; a copy that
+  // did not open, or no answer within the bound, throws as a read the server never answered does (status 0).
+  async readCard() {
+    const answer = await this.open(this.stopped.signal);
+    if (answer?.unshown === 'missing') return null;
+    if (!answer?.roadmap) throw Object.assign(new Error('The roadmap at the address was not read'), { status: 0 });
+    const { seed } = answer.roadmap;
+    return { id: this.treeId, title: seed.title, author: null, steps: seed.nodes.length, mine: seed.mine };
+  }
+
+  // The reading's roadmap once the device can say what it is: `{ roadmap }` where it stands open, else `{ unshown }` saying
+  // why it cannot be shown (`UNSHOWN`); null where the caller stopped waiting or the reading closed.
+  async open(signal) {
     const opened = await standingEngine(this.session, signal, this.timers);
     if (signal.aborted) return null;
-    if (!opened.engine) return this.unshown(opened.unshown);
+    if (!opened.engine) return { unshown: opened.unshown };
     this.engine = opened.engine;
     this.unwatch = this.engine.observeEngine(this.changed);
     this.subscribed.add(this.scope);
     const subscription = await this.engine.subscribe(this.scope);
     if (this.closed) this.engine.unsubscribe(this.scope).catch(() => {});
     if (signal.aborted || this.closed) return null;
-    if (subscription === 'gone') {
-      this.forgetLanding();
-      return this.unshown('missing');
-    }
+    if (subscription === 'gone') return { unshown: 'missing' };
     const roadmap = await this.whenRead(signal, (read) => read.state !== 'waiting');
     if (signal.aborted) return null;
-    if (roadmap.state === 'missing') {
-      this.forgetLanding();
-      return this.unshown('missing');
-    }
-    if (roadmap.state !== 'open') return this.unshown('unanswered');
-    this.opened = roadmap;
-    this.openWrites(roadmap.mine);
-    const seed = roadmap.seed;
-    const overlay = roadmap.mine ? roadmap.marks : await this.repository.loadProgress(seed, { signal: AbortSignal.timeout(FIRST_COPY_MS) });
-    return { seed, overlay, workspace: roadmap.mine ? roadmap.workspace : null, guides: roadmap.guides };
+    if (roadmap.state === 'missing') return { unshown: 'missing' };
+    if (roadmap.state !== 'open') return { unshown: 'unanswered' };
+    return { roadmap };
   }
 
   // Why the room's roadmap cannot be shown (`UNSHOWN`), told as the reading gives up on it, once a visit.
@@ -232,6 +249,16 @@ export class ReplicaReading {
     if (!this.engine || signal.aborted) return null;
     this.unwatch = this.engine.observeEngine(this.changed);
     return this.whenRead(signal, (roadmaps) => roadmaps.everyRoadmapRead);
+  }
+
+  // The person's roadmaps as the switcher lists them, for a surface that offers the newest back (the home card, the
+  // landing; a reading of no roadmap): once the device can say what each is, as `readEveryRoadmap` waits, and again after
+  // each change, the account's or, signed out, the browser's own. False where the engine did not stand within the bound.
+  async followRoadmaps({ signal, onList }) {
+    if (await this.readEveryRoadmap({ signal }) === null || signal.aborted) return false;
+    this.listeners.add(() => onList(this.list()));
+    onList(this.list());
+    return true;
   }
 
   // The account's roadmaps as the switcher lists them, where the replica keeps them; null before the engine stands, when

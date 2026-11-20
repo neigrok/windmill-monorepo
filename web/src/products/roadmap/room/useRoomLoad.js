@@ -7,7 +7,6 @@ import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { deviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
-import { readTreeCard } from '../persistence/TreeRegistry.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { peekBorn, takePlantNote } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -213,8 +212,8 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   // Where the room reads the replica: the open room's switcher's list, the account's roadmaps as the replica keeps them;
   // and the person's roadmaps as the recovery switcher and the tree picker read a list, as the server's is read
   // (`listServerTrees`): not authoritative before the device's copy opens, when it cannot say which are theirs, the copy's
-  // failure already told. An address of one of them is read there, and any other from the server, which keeps other
-  // people's.
+  // failure already told. An address of one of them is read there, and any other from the copy too, by a reading of its
+  // own that subscribes the roadmap while it reads it, as a reader's room does.
   const listTrees = useCallback(async () => readingRef.current?.list() ?? [], []);
   const card = useCallback((id) => readingRef.current?.card(id) ?? null, []);
   const heldTrees = useMemo(() => ({
@@ -222,7 +221,16 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
       const rows = readingRef.current?.list() ?? null;
       return rows === null ? { rows: [], authoritative: false, status: 0, reported: true } : { rows, authoritative: true };
     },
-    read: async (id) => readingRef.current?.card(id) ?? readTreeCard(id),
+    read: async (id) => {
+      const held = readingRef.current?.card(id) ?? null;
+      if (held) return held;
+      const address = new ReplicaReading({ treeId: id });
+      try {
+        return await address.readCard();
+      } finally {
+        address.close();
+      }
+    },
   }), []);
 
   return {
