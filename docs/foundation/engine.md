@@ -2505,9 +2505,10 @@ before its own result is recorded; its resend then carries another digest, the s
   registry adds a product raises the store version.
 - A tab whose connection an upgrade closes (`versionchange`) can keep nothing more. It releases its
   locks and its channel at once, and stops sync as a `426` does (§7.5). It reloads at the first
-  moment that loses nothing on its screen: no write has failed since the close, no text field holds
-  the focus, no dialog is open, and the page is hidden or has had no input for 3 s. Until then it
-  shows the update prompt, and after a failed write it shows that prompt until the person reloads.
+  moment that loses nothing on its screen: no write has failed since the close, nothing was typed
+  since the tab's last commit, no text field holds the focus, no dialog is open, and the page is
+  hidden or has had no input for 3 s. Until then it shows the update prompt. Once a write has failed
+  or typed words wait unsaved, the prompt stands until the person reloads.
   A bundle released before these names (store version 2) keeps its unversioned locks and its
   channel until its page closes, reading and writing nothing.
 - Every tab reads views from IndexedDB and commits through §7.1. Each publication of a tab's views, at open

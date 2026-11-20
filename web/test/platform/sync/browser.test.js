@@ -633,39 +633,41 @@ test('Chromium: a durable commit resolves when versionchange closes IndexedDB be
   } finally { await context.close(); }
 });
 
-// A build of a newer store version opens the device store under two tabs of this one: one holds a text field in focus,
-// the other tries a write after its store closed. Each lets go of its locks at once; the first reloads once its field is
-// left, the second never reloads by itself, for its write's words stand only on its screen.
+// A build of a newer store version opens the device store under three tabs of this one: one holds a text field in focus,
+// one tries a write after its store closed, and one was typed in after its last save. Each lets go of its locks at once.
+// The first reloads once its field is left; the others never reload by themselves, for their words stand on the screen alone.
 test('Chromium: a newer store version leads at once over older tabs, which reload once their screen loses nothing', async () => {
   const context = await freshContext();
   try {
-    const focused = await open(context, 'superseded'), refused = await open(context, 'superseded');
-    await leader([focused, refused]);
+    const focused = await open(context, 'superseded'), refused = await open(context, 'superseded'), typed = await open(context, 'superseded');
+    const older = [focused, refused, typed];
+    await leader(older);
     await gesture(refused, 'card0001');
     await focused.evaluate(() => { document.body.appendChild(document.createElement('textarea')).focus(); });
-    const loads = new Map([focused, refused].map((page) => [page, 0]));
-    for (const page of loads.keys()) page.on('load', () => loads.set(page, loads.get(page) + 1));
+    await typed.keyboard.press('a');
+    const loads = new Map(older.map((page) => [page, 0]));
+    for (const page of older) page.on('load', () => loads.set(page, loads.get(page) + 1));
     const newer = await open(context, 'superseded', { newer: true });
     await newer.waitForFunction(() => engine.leader, null, { timeout: 10_000 });
     const { store, replica, locks } = await newer.evaluate(async () => ({ store: engine.store.version, replica: engine.activeReplica(),
       locks: (await navigator.locks.query()).held.map(({ name }) => name).filter((name) => name.startsWith('wm-')).sort() }));
     assert.deepEqual(locks, [`wm-sync@${store}:${replica}`, `wm-tab@${store}`]);
     assert.deepEqual(await newer.evaluate(() => observation.getSnapshot().drawn.map(({ id }) => id)), ['card0001']);
-    const older = await Promise.all([focused, refused].map((page) => page.evaluate(() => ({ closed: engine.closed,
+    const stepped = await Promise.all(older.map((page) => page.evaluate(() => ({ closed: engine.closed,
       upgradeRequired: engine.getSnapshot().upgradeRequired, superseded: steps.filter((step) => step === 'sync-upgrade:superseded').length,
       released: steps.filter((step) => step === 'sync-leader:released').length, failures }))));
-    assert.deepEqual(older.map(({ released, ...rest }) => rest), [0, 1].map(() => ({ closed: true, upgradeRequired: true, superseded: 1, failures: [] })));
-    assert.deepEqual(older.map(({ released }) => released).sort(), [0, 1]);
+    assert.deepEqual(stepped.map(({ released, ...rest }) => rest), older.map(() => ({ closed: true, upgradeRequired: true, superseded: 1, failures: [] })));
+    assert.deepEqual(stepped.map(({ released }) => released).sort(), [0, 0, 1]);
     assert.equal(await refused.evaluate(() => engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'private' } }])
       .then(() => 'committed', (error) => error.kind)), 'store');
     await newer.waitForTimeout(6000);
-    assert.deepEqual([...loads.values()], [0, 0]);
+    assert.deepEqual([...loads.values()], [0, 0, 0]);
     const left = focused.waitForEvent('load', { timeout: 10_000 });
     await focused.evaluate(() => document.activeElement.blur());
     await left;
     await newer.waitForTimeout(3000);
-    assert.deepEqual([...loads.values()], [1, 0]);
-    assert.equal(await refused.evaluate(() => engine.getSnapshot().upgradeRequired), true);
+    assert.deepEqual([...loads.values()], [1, 0, 0]);
+    for (const page of [refused, typed]) assert.equal(await page.evaluate(() => engine.getSnapshot().upgradeRequired), true);
     assert.equal((await gesture(newer, 'card0003')).localIds.length, 1);
   } finally { await context.close(); }
 });

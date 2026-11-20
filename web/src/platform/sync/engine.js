@@ -158,6 +158,7 @@ export class BrowserSyncEngine {
     }
     this.actor = context.actor;
     this.lastWrite = answer.measurement;
+    if (operation === 'sync-commit') this.savedAt = this.monotonic();
     try {
       for (const event of context.events) {
         this.coordination?.post({ type: 'activeReplicaChanged', previous: event.previous,
@@ -1337,22 +1338,19 @@ export class BrowserSyncEngine {
     this.reloadWhenClear();
   }
 
-  // Nothing on the screen would be lost once no write was refused since the store closed (its words stand on the screen
-  // alone), no text field holds the focus and no dialog is open; the reload then waits for the page to be hidden or idle.
-  // Until then, and for good once a write was refused, the update prompt stands.
+  // Nothing on the screen would be lost once no write was refused since the store closed and nothing was typed since the
+  // last save (either's words stand on the screen alone), no text field holds the focus and no dialog is open; the reload
+  // then waits for the page to be hidden or idle. Until then, and for good once words stand unsaved, the prompt stands.
   reloadWhenClear() {
     const { document, window } = this;
     if (!document || !window) return;
-    let inputAt = this.monotonic();
-    for (const type of ['pointerdown', 'keydown', 'wheel'])
-      window.addEventListener(type, () => { inputAt = this.monotonic(); }, { capture: true, passive: true });
     const check = () => {
-      if (this.refusedSinceSuperseded) return;
+      if (this.refusedSinceSuperseded || (this.typedAt ?? -Infinity) > (this.savedAt ?? -Infinity)) return;
       const focused = document.activeElement;
       const holding = focused?.isContentEditable || focused?.tagName === 'TEXTAREA'
         || (focused?.tagName === 'INPUT' && TEXT_FIELDS.has(focused.type))
         || document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open]') !== null;
-      if (holding || (document.visibilityState !== 'hidden' && this.monotonic() - inputAt < RELOAD_IDLE_MS)) {
+      if (holding || (document.visibilityState !== 'hidden' && this.monotonic() - (this.inputAt ?? -Infinity) < RELOAD_IDLE_MS)) {
         this.timers.setTimeout(check, 1000);
         return;
       }
@@ -1373,6 +1371,12 @@ export class BrowserSyncEngine {
     this.pageShown ??= (event) => {
       if (event.persisted && this.suspended) this.resume().catch(() => {});
     };
+    // The person's last input and last keystroke, which outlive a close: a superseded tab's reload reads them.
+    this.inputSeen ??= ({ type }) => {
+      this.inputAt = this.monotonic();
+      if (type === 'keydown') this.typedAt = this.inputAt;
+    };
+    for (const type of ['pointerdown', 'keydown', 'wheel']) this.window?.addEventListener(type, this.inputSeen, { capture: true, passive: true });
     this.document?.addEventListener('visibilitychange', this.visibilityChanged);
     this.window?.addEventListener('online', this.connectivityChanged);
     this.window?.addEventListener('offline', this.connectivityChanged);
