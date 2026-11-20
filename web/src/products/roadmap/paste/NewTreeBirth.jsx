@@ -16,6 +16,7 @@ import { prefersReducedMotion } from '../theme.js';
 import { DEVICE_REFUSED } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { countBucket } from '../board/acts.js';
+import { buildRetirement } from '../sync/retirement.js';
 import { track } from '../../../telemetry/beacon.js';
 
 
@@ -58,6 +59,10 @@ export function NewTreeBirth({ replica = false } = {}) {
   const deviceRefused = replica ? copyRefused : storeRefused;
 
   useEffect(() => (deviceRefused ? holdDeviceLine() : undefined), [deviceRefused, holdDeviceLine]);
+
+  // A name or a plan typed here lives in this page's state alone, a plan set aside by Esc too: a retired build's reload waits.
+  const typed = name.trim() !== '' || draft.trim() !== '';
+  useEffect(() => (typed ? buildRetirement.hold() : undefined), [typed]);
 
   const parse = useMemo(
     () => (composerOpen ? parsePlan(draft, draftKinds) : null),

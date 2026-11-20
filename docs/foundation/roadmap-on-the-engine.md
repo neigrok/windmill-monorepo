@@ -6,9 +6,9 @@ so reviews, code and roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Approved by the owner on 2026-11-17. Engine prerequisites, roadmap's registry and the
-rest of this build are under development in
-[draft PR #290](https://github.com/neigrok/windmill-monorepo/pull/290), kept unmerged for review:
+**Status:** Approved by the owner on 2026-11-17. The release that teaches the roadmap room what a
+retired build is told (§8.3) is live. Engine prerequisites, roadmap's registry and the rest of this
+build are under development in [draft PR #290](https://github.com/neigrok/windmill-monorepo/pull/290):
 there the registry is pinned (`packages/api-contract/sync/roadmap.registry.json`, composed beside
 gym's and journal's) and the engine's JavaScript reference model server carries its rules
 ([engine](engine.md) Appendix A.1). Roadmap syncs through a sync of its own:
@@ -479,8 +479,10 @@ items it carried, and each record it set aside for §6's one list.
 - A release before the cutover teaches the roadmap room what a retired build is told, and to save
   what it holds and reload when it is. It ships long enough before the cutover for open tabs to
   take it.
-- After the cutover, `/v1/socket` answers the upgrade `410` `client-update-required`, and so do the
-  write routes of §7's table, before authentication or parsing.
+- After the cutover, `/v1/socket` answers both its upgrade and a plain `GET` with `410` and the JSON
+  body code `client-update-required`, and so do the write routes of §7's table, all before
+  authentication or parsing. A browser cannot read why an upgrade failed, so a room whose socket
+  never opens reads the plain `GET`: that answer is how it learns its build is retired.
 - A tab older than that release stays offline and keeps what it writes in the old store, which the
   next load of the new bundle carries over (§8.2).
 

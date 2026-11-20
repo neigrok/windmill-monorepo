@@ -52,3 +52,27 @@ test('a browser that keeps its plans, and a signed-in account the server keeps t
     view.unmount();
   }
 });
+
+test('a name or a plan typed here, a plan set aside by Esc among them, holds a retired build’s reload until it is gone', async (t) => {
+  const context = door(t, { status: 'signed-in', indexedDB: refused });
+  const { NewTreeBirth } = await loadScreen('products/roadmap/paste/NewTreeBirth.jsx');
+  const { buildRetirement } = await loadScreen('products/roadmap/sync/retirement.js');
+  const view = renderHook(t, () => NewTreeBirth(), { context });
+  await new Promise((resolve) => setImmediate(resolve));
+  const held = () => buildRetirement.holds.size;
+  const named = (name) => elementsOf(view.tree).find((node) => node.type === 'input').props.onChange({ target: { value: name } });
+  assert.equal(held(), 0);
+  named('Learn to sail');
+  assert.equal(held(), 1);
+  named('  ');
+  assert.equal(held(), 0);
+  elementsOf(view.tree).find((node) => node.props.className === 'birth-paste-door').props.onClick();
+  const composer = () => elementsOf(view.tree).find((node) => node.props.onTextChange);
+  composer().props.onTextChange('Learn to sail\n- Rig the boat');
+  assert.equal(held(), 1);
+  composer().props.onClose();
+  assert.equal(composer(), undefined);
+  assert.equal(held(), 1, 'a plan set aside still holds');
+  view.unmount();
+  assert.equal(held(), 0);
+});

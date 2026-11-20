@@ -1,0 +1,125 @@
+# By hand only, each time the owner approves it: roadmap's rows for a cutover rehearsal, read-only and encrypted on arrival.
+# What it copies, why, and how to open it: backend/deploy/README.md, "Copy production's roadmaps for a rehearsal".
+name: Ops · roadmap copy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # A run waiting for the deploy-vps lock is cancelled by the next one to wait, so the copy only queues for the lock
+  # once no deploy holds it or waits for it.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Refuse while a deploy runs or waits to run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A deploy is a run of a workflow whose concurrency takes the deploy-vps lock, read from the workflows
+          # themselves; a pull request's run takes no lock and reaches no server, so it is not one.
+          deploys=$(awk '/^concurrency:/ { inside = 1; next } /^[^ ]/ { inside = 0 } inside && /deploy-vps/ { print FILENAME }' \
+            .github/workflows/*.yml | sort -u)
+          if ! printf '%s\n' "$deploys" | grep -qx '.github/workflows/deploy.yml'; then
+            echo "Deploy to VPS no longer names the deploy-vps lock where this looks, so a deploy cannot be told apart: refusing to run." >&2
+            exit 1
+          fi
+          for workflow in $deploys; do
+            for status in queued in_progress waiting requested pending; do
+              runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$(basename "$workflow")" --status "$status" \
+                --json event --jq '[.[] | select(.event != "pull_request")] | length')
+              if [ "$runs" -ne 0 ]; then
+                echo "Not during a deploy: $(basename "$workflow") has a run $status. Dispatch the copy again once it has finished." >&2
+                exit 1
+              fi
+            done
+          done
+
+  copy:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Copy roadmap's rows, encrypted as they arrive
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key=$(mktemp "$RUNNER_TEMP/ssh-key.XXXXXX")
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          copy="$RUNNER_TEMP/roadmap-copy"
+          mkdir "$copy"
+          # The run's own key encrypts the rows, and only that key is sealed to the owner's certificate. It reaches each
+          # openssl through its environment alone, never an argument.
+          run_key=$(openssl rand -hex 32)
+          printf '%s' "$run_key" \
+            | openssl smime -encrypt -aes256 -binary -outform PEM -out "$copy/key.pem" .github/ops/inventory-recipient.pem
+          vps() {
+            ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail'
+          }
+          seal() {
+            ROADMAP_COPY_KEY="$run_key" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:ROADMAP_COPY_KEY -out "$copy/$1"
+          }
+          vps <<'REMOTE' | seal tables.dump.enc
+          # The whole script is read before it runs, and nothing it starts can read the rest of it from stdin.
+          main() {
+            cd ~/windmill
+            docker compose exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db sh -ec \
+              'exec pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom --lock-wait-timeout=10s \
+                --strict-names --table=public.trees --table=public.tree_nodes --table=public.tree_edges \
+                --table=public.tree_kinds --table=public.node_progress --table=public.tree_ops'
+          }
+          main < /dev/null
+          REMOTE
+          # Of the accounts that own a roadmap or a mark, and of the share cards, the move reads only that they exist,
+          # so only their ids leave the host.
+          vps <<'REMOTE' | seal ids.tsv.enc
+          # The whole script is read before it runs, and nothing it starts can read the rest of it from stdin.
+          main() {
+            cd ~/windmill
+            docker compose exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on -c lock_timeout=10s' db sh -ec \
+              'exec psql -XAtq -v ON_ERROR_STOP=1 --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' <<'SQL'
+          copy (select 'account', id::text from users
+                where id in (select owner_id from trees) or id::text in (select user_id from node_progress)
+                   or id in (select owner from sync_scopes where kind <> 'product' or key like 'acct:%/roadmap')
+                union all select 'shareCard', tree_id from tree_og_images
+                union all select 'shareVideo', tree_id from tree_og_videos
+                union all select 'roadmapScope', key from sync_scopes where kind <> 'product' or key like 'acct:%/roadmap') to stdout;
+          SQL
+          }
+          main < /dev/null
+          REMOTE
+          cd "$copy"
+          for file in key.pem tables.dump.enc ids.tsv.enc; do
+            printf '%s: %s bytes\n' "$file" "$(wc -c < "$file" | tr -d ' ')"
+          done
+          sha256sum key.pem tables.dump.enc ids.tsv.enc
+      - name: Keep the encrypted copy for a day
+        uses: actions/upload-artifact@v4
+        with:
+          name: roadmap-copy-${{ github.run_id }}
+          path: ${{ runner.temp }}/roadmap-copy/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error

@@ -1333,6 +1333,20 @@ A closed socket clears both lanes' in-flight bookkeeping without dropping their 
 Progress rejections also clear their in-flight entry. Events from superseded sockets do nothing, reconnect
 timers are deduplicated, and closing a session sets its phase offline.
 
+**A retired build.** The server retires this build with one exact answer, `410` with the body code `client-update-required`,
+from a roadmap write route (`TreeRegistry`'s create, patch and delete) or from the socket's path; any other answer is not
+retirement. A browser cannot read why an upgrade failed, so a socket that never opened is followed by one plain `GET` of its
+path, never offline and at most once a minute for the page (`sync/retirement.js`). From then on, one fact for the page
+(`buildRetirement`), every session lets its socket go and never reconnects, keeps every unsent write in its store and saves
+each new one there, and stands offline; every write door fails as a request that never arrived, so a plant falls back to a
+device roadmap, a claim stops, and no Issue reports it. The next build carries the store over. The page reloads for it
+while a roadmap session is enlisted, once a window (ten minutes, a `sessionStorage` mark), when nothing a reload would lose
+is open — no step draft, active or retained, no text field in focus, no dialog, no held delete or Discard, no surface's
+hold (the new-roadmap page holds while it keeps a typed name or plan) — and the person is between gestures or the page is
+hidden. It first saves every session, and stays offline unless each save succeeded in a store kept on the device. A page
+that comes back to the same retired build stays offline until its window ends, then tries once more; a page that cannot
+keep the mark stays offline.
+
 **Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require a server
 answer or the shell's restored active bound replica. A remembered face does not authorize a store read. On a
 cold 401 or offline read, the registry bounds its wait for the engine's holder answer to two seconds, so a
