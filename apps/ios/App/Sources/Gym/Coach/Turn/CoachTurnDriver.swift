@@ -478,6 +478,8 @@ nonisolated struct TurnInterrupted: Error {
   }
 
   // A refusal before the stream started never reached Coach: the turn's records go and the question returns to the field.
+  // A cap the notice says is a refusal this phone expects, told by its capped outcome alone; every other one is a failed
+  // request too.
   func withdraw(_ running: Running, refusal: TurnRefusal, started: ContinuousClock.Instant) {
     do { _ = try runner.run(WithdrawTurn(turn: running.turn)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
@@ -487,7 +489,9 @@ nonisolated struct TurnInterrupted: Error {
     var ended = ["screen": "coach", "outcome": refused.askOutcome.outcome]
     if let cap = refused.askOutcome.cap { ended["cap"] = cap }
     if ended["outcome"] == "refused", refusal.status >= 500 { ended["outcome"] = "failed"; report("http", refusal) }
-    telemetry.event("api_request_failed", properties: ["operation": "gym_coach_turn", "route": "/v1/gym", "method": "POST", "failure_kind": "http", "status": String(refusal.status)])
+    if refused.askOutcome.outcome != "capped" {
+      telemetry.event("api_request_failed", properties: ["operation": "gym_coach_turn", "route": "/v1/gym", "method": "POST", "failure_kind": "http", "status": String(refusal.status)])
+    }
     telemetry.event("gym_ask_outcome", properties: ended, durationMs: Int64(started.duration(to: .now).components.seconds * 1_000))
   }
 

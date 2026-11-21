@@ -177,8 +177,9 @@ request fails. Closing the sheet dismisses no echo.
 
 Coach archive migration and read failures report under `gym_read`; save, selection and removal
 failures use `gym_action`. A turn's failures at the wire or the store report under `gym_coach_turn`
-with kinds transport, timeout, http (a 5xx), decode and storage; expected refusals (allowance,
-installation, rate, update-required, a lost turn, any 4xx) are `api_request_failed` metrics.
+with kinds transport, timeout, http (a 5xx), decode and storage; expected refusals (installation,
+update-required, a lost turn, any other 4xx) are `api_request_failed` metrics, and an allowance or the
+daily cap is told by `gym_ask_outcome` `capped` alone.
 Conversation content, draft text, photo data, archive paths and thread, message, turn or call
 identifiers stay out of these reports.
 

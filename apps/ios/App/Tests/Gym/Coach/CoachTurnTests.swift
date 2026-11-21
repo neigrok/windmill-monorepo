@@ -308,6 +308,28 @@ import SyncTesting
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
   }
 
+  // A cap at the open, the allowance or the daily one, is a refusal this phone expects: its notice and its capped outcome say
+  // it, and nothing reads it as a failed request.
+  @Test(arguments: [("subject_exhausted", "allowance"), ("coach-rate-limited", "daily")])
+  func aCappedOpenTellsOnlyItsOutcome(code: String, cap: String) async throws {
+    let phone = try await phone(seat: "anon")
+    defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
+    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (429, ["error": "capped", "code": .string(code)]) }
+    try await send(phone, "Private question")
+    try await settle { phone.coach.saved.text == "Private question" }
+    let told = phone.telemetry.entries.withLock { $0.map { [$0.name: $0.properties] } }
+    #expect(told == [
+      ["gym_action": ["screen": "gym", "outcome": "ok"]],
+      ["gym_action": ["screen": "gym", "outcome": "ok"]],
+      ["gym_ask_started": ["screen": "coach"]],
+      ["coach_ability": ["name": "list_sessions", "outcome": "ok"]],
+      ["coach_ability": ["name": "list_notes", "outcome": "ok"]],
+      ["coach_ability": ["name": "list_exercises", "outcome": "ok"]],
+      ["coach_ability": ["name": "list_routines", "outcome": "ok"]],
+      ["gym_ask_outcome": ["screen": "coach", "outcome": "capped", "cap": cap]],
+    ])
+  }
+
   // A `subject_exhausted` refusal says what holds the request, as the allowance beside it shows, whether it refused the open
   // or ended the turn: nothing left, earlier requests whose cost is not yet confirmed, a request larger than what is left, and
   // only what is always true where it carries none. The notice and the closed composer's hint say the same sentence.
