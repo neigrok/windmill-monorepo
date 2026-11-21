@@ -2,8 +2,46 @@ import Foundation
 import DomainKit
 import RoadmapDomain
 
-// The roadmap the Roadmap room's simulator fixtures and tests plant.
+// Simulator boards: roadmap-empty, roadmap-learn-to-sail (an account's roadmap, arriving by sync) and roadmap-unreadable.
 enum RoadmapFixture {
+  // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
+  static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
+    #if DEBUG && targetEnvironment(simulator)
+    if runtime.settings.board == "roadmap-unreadable" { return { _, _ in throw AppFailure(message: "The board's views cannot be made.") } }
+    #endif
+    return { scope, type in try runtime.engine.records(scope, type, .drawn, visibleOnly: false) }
+  }
+
+  static func prepare(_ board: String, model: AppModel) async -> Bool {
+    #if DEBUG && targetEnvironment(simulator)
+    guard board.hasPrefix("roadmap-") else { return false }
+    model.openRoom(.roadmap)
+    guard board == "roadmap-learn-to-sail" else { return true }
+    do {
+      guard let server = model.runtime?.auth.fake else { throw AppFailure(message: "no model server") }
+      let identity = server.identity(email: "roadmap-fixture@example.com")
+      let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
+                                  directory: directory, service: UUID().uuidString, syncTransport: server)
+      defer { try? remote.tokens.delete(for: identity.account) }
+      _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
+      try plantLearnToSail(remote.roadmapRunner)
+      try remote.engine.leave()
+      for _ in 0..<40 where try remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
+        await remote.engine.flushOnLeave()
+      }
+      try await model.signIn(identity)
+    } catch {
+      NSLog("Roadmap fixture failed: %@", String(describing: error))
+      model.error = "The roadmap fixture could not be prepared."
+    }
+    return true
+    #else
+    return false
+    #endif
+  }
+
   #if DEBUG && targetEnvironment(simulator)
   // The boards' *Learn to sail*, as `packages/api-contract/roadmap/layout/learn-to-sail.json` links it, its first three steps done.
   @discardableResult

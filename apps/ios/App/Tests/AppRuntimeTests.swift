@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import DomainKit
+import JournalDomain
 import RoadmapDomain
 import SyncCore
 import SyncEngine
@@ -37,5 +38,49 @@ import SyncSchema
     #expect(try !runtime.runner.cancelHeld(gone.gestureId))
     #expect(try runtime.roadmapRunner.cancelHeld(held.gestureId))
     #expect(try present() == ["Basics", "Ownership"])
+  }
+
+  // No migration: the store holds the registry's every type, and the products a build carries only choose the scopes it pulls.
+  @Test(.timeLimit(.minutes(1))) func aStoreABuildWithoutTheRoomFilledOpensUnderOneWithItAndPullsTheAccountsRoadmap() async throws {
+    let server = JournalModelTransport(), identity = server.identity(email: "roadmap-upgrade@example.com")
+    let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.roadmap-tests.\(UUID())"
+    let suite = "roadmap-upgrade-\(UUID().uuidString)", preferences = UserDefaults(suiteName: suite)!
+    defer { preferences.removePersistentDomain(forName: suite) }
+
+    let other = try AppRuntime(settings: debug, directory: URL.temporaryDirectory.appending(path: UUID().uuidString),
+                               service: "works.windmill.roadmap-tests.\(UUID())", syncTransport: server)
+    defer { try? other.tokens.delete(for: identity.account) }
+    _ = try await other.engine.signIn(account: identity.account, token: identity.token)
+    let tree = try RoadmapFixture.plantLearnToSail(other.roadmapRunner)
+    try other.engine.leave()
+    for _ in 0..<40 where try other.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
+      await other.engine.flushOnLeave()
+    }
+
+    var installed: AppRuntime? = try AppRuntime(settings: shipped, directory: directory, service: service, syncTransport: server)
+    defer { try? installed?.tokens.delete(for: identity.account) }
+    _ = try await installed!.engine.signIn(account: identity.account, token: identity.token)
+    await installed!.engine.start()
+    for _ in 0..<400 where try !installed!.runner.read(Journal.scope, { try $0.firstPullComplete() }) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(try installed!.runner.read(Journal.scope) { try $0.firstPullComplete() })
+    #expect(try installed!.runner.read(RoadmapEntry.scope) { try $0.repository(RoadmapEntry.self).all(in: .drawn) }.isEmpty)
+    installed = nil
+
+    let upgraded = try AppRuntime(settings: debug, directory: directory, service: service, syncTransport: server)
+    defer { try? upgraded.tokens.delete(for: identity.account) }
+    let model = try AppModel(runner: upgraded.runner, preferences: preferences, runtime: upgraded)
+    let roadmap = try #require(model.roadmap)
+    await upgraded.engine.start()
+    roadmap.roomOpened()
+    var opened: RoadmapModel.OpenRoadmap?
+    for _ in 0..<800 where opened == nil {
+      if case .open(let open) = roadmap.phase { opened = open }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let open = try #require(opened)
+    #expect(open.listed.id == tree.description && open.listed.title == "Learn to sail")
+    #expect(open.board.overall.done == 3 && open.board.overall.total == 8)
   }
 }
