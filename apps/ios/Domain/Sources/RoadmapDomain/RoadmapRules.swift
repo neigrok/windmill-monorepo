@@ -129,11 +129,19 @@ extension ActDecision {
   }
 }
 
+extension Valid {
+  // The checked fields whose value differs from the one `before` holds.
+  func changed(from before: E) -> [String] {
+    let (held, written) = (before.fields, value.fields)
+    return checked.filter { held[$0] != written[$0] }
+  }
+}
+
 extension UndoTarget {
   // K-3 a field an Undo writes back to its value before the act. A field unset then takes the value the registry reads an
   // unset register as; `ord` has none, as every create writes it.
-  static func restored<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> (target: UndoTarget, default: JSON?) {
-    (.field(id, name, in: scope), SyncSchema.registry.type(E.type)?.field(name)?.defaultValue)
+  static func restored<E: Entity>(_ id: ID<E>, _ name: String) -> (target: UndoTarget, default: JSON?) {
+    (.field(id, name), SyncSchema.registry.type(E.type)?.field(name)?.defaultValue)
   }
 }
 
@@ -175,9 +183,7 @@ public struct HeldRecord<E: Writable>: Sendable {
   // The fields a change writes: each it names whose value differs from the record's, or each it names where the device
   // holds no values to compare.
   func changed(by valid: Valid<E>) -> [String] {
-    guard holdsValues else { return valid.checked }
-    let (before, after) = (value.fields, valid.value.fields)
-    return valid.checked.filter { before[$0] != after[$0] }
+    holdsValues ? valid.changed(from: value) : valid.checked
   }
 
   // The revival a change plans: the record's life under the gesture's stamp and the fields it writes, and its Undo, which

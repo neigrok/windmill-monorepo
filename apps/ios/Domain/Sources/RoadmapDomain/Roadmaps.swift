@@ -220,18 +220,19 @@ public struct CreateRoadmap: ActAction {
     let words = try Valid(RoadmapMeta(title: title), fields: ["title"], at: moment)
     let tree = ids.mint(RoadmapEntry.self)
     var legend: [Valid<RoadmapKind>] = []
-    for (place, kind) in (kinds ?? []).enumerated() {
-      let id = ids.mint(RoadmapKind.self, inScope: tree.tree)
-      if (kinds ?? [])[..<place].contains(where: { $0.hue.utf8.elementsEqual(kind.hue.utf8) }) {
-        throw Violation(rule: RoadmapChecks.wornHue, path: Path("kinds") + place + "hue", reason: .custom("worn"))
+    if let kinds {
+      for (place, kind) in kinds.enumerated() {
+        let id = ids.mint(RoadmapKind.self, inScope: tree.tree)
+        if kinds[..<place].contains(where: { $0.hue.utf8.elementsEqual(kind.hue.utf8) }) {
+          throw Violation(rule: RoadmapChecks.wornHue, path: Path("kinds") + place + "hue", reason: .custom("worn"))
+        }
+        do throws(Violation) {
+          legend.append(try Valid(RoadmapKind(id: id, hue: kind.hue, label: kind.label, description: kind.description, ord: "a\(place)"), at: moment))
+        } catch {
+          throw error.at(Path("kinds") + place)
+        }
       }
-      do throws(Violation) {
-        legend.append(try Valid(RoadmapKind(id: id, hue: kind.hue, label: kind.label, description: kind.description, ord: "a\(place)"), at: moment))
-      } catch {
-        throw error.at(Path("kinds") + place)
-      }
-    }
-    if kinds == nil {
+    } else {
       for kind in RoadmapRules.genesisKinds { legend.append(try Valid(kind, at: moment)) }
     }
     let imported = try StepsImport(steps, in: tree.tree, at: moment, ids: ids)
@@ -320,8 +321,7 @@ public struct WriteRoadmap: ActAction {
       named.append("guide")
     }
     let valid = try Valid(meta, fields: named, at: loaded.moment)
-    let (before, after) = (loaded.meta.fields, valid.value.fields)
-    let changed = valid.checked.filter { before[$0] != after[$0] }
+    let changed = valid.changed(from: loaded.meta)
     guard !changed.isEmpty else { return .unchanged(()) }
     var plan = Plan()
     plan.update(valid, fields: changed)
@@ -330,10 +330,10 @@ public struct WriteRoadmap: ActAction {
   }
 }
 
-// One root's entry as the device holds it, and the subtrees of its branch that stand: each step that owns a roadmap on the
-// way down from the root is present (D-3).
+// A roadmap's entry as the device holds it, and the subtrees under it that stand: each step that owns a roadmap on the way
+// down from it is present (D-3).
 struct Branch {
-  let root: RoadmapEntry?
+  let entry: RoadmapEntry?
   let standing: [ID<RoadmapEntry>]
 
   init(of root: ID<RoadmapEntry>, in read: ActReader) throws {
@@ -365,7 +365,7 @@ struct Branch {
       guard let place = entries[id]?.parent, owned.contains(id) else { return false }
       return place.tree == root || stands(place.tree)
     }
-    self.root = entries[root]
+    entry = entries[root]
     standing = members.map(\.id).filter(stands).sorted()
   }
 }
@@ -396,7 +396,7 @@ public struct SetVisibility: ActAction {
     let meta = try read.inScope(tree.tree) { (scope: Reader) throws -> RoadmapMeta in
       try scope.repository(RoadmapMeta.self).find(RoadmapMeta.singleton, in: .drawn) ?? RoadmapMeta()
     }
-    return (branch.root, branch.standing, meta, read.moment)
+    return (branch.entry, branch.standing, meta, read.moment)
   }
 
   public func decide(_ loaded: Loaded, ids: ActIDSource) throws(Violation) -> ActDecision<Void, RoadmapRefusal> {

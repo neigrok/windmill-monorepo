@@ -177,6 +177,7 @@ struct StepsImport {
     var lastOrd: [ID<RoadmapStep>?: FractionalKey] = [:]
     var units: [ImportUnit] = []
     while units.count < keys.count {
+      // The first step that waits for no step before it is placed, and counted no more.
       guard let index = waiting.firstIndex(of: 0) else { preconditionFailure("an import without a loop orders every step") }
       waiting[index] = -1
       for link in links where link.from == index { waiting[link.to] -= 1 }
