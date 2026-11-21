@@ -22,7 +22,7 @@ The proposed operating scenario is **eight founder hours per week and $0 increme
 - **Nothing that frightens or belittles.** No "AI will replace you", no "don't fall behind", no "fix yourself".
 - **Publish only when there is something to say.** There is no posting cadence, and nothing is made to keep activity. Every piece shows real work or a real idea.
 - **Work follows readiness.** No campaign is timed to a season or a launch date. Observation windows are measurement, not deadlines.
-- **Brand-led, with at most one founder note.** Publishing it is the owner's choice. If it is published, it is written in the first person under a pseudonym, tells why Windmill exists and what the name means, appears once, and is posted only where disclosed self-posts are allowed. Public creative and posts do not name or show the founder; a post still discloses that its author builds Windmill.
+- **Brand-led, with at most one founder note.** Writing and publishing it are the owner's alone, and no agent drafts it. If it is published, it is in the first person under a pseudonym, tells why Windmill exists and what the name means, appears once, and is posted only where disclosed self-posts are allowed. Public creative and posts do not name or show the founder; a post still discloses that its author builds Windmill.
 - **A master is paid for their time, never their verdict.** [Masters](reports/09-creator-campaign.md)
 - **The honesty rules hold in every channel.** [Honesty](../design/brand-foundations.md#honesty)
 
