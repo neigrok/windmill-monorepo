@@ -21,6 +21,8 @@ final class AppModel {
   let authRetryNow: () -> Date
   let journal: JournalModel
   let gym: GymModel
+  // The Roadmap room's model; none where the build does not carry the room (`AppSettings.roadmapRoom`).
+  let roadmap: RoadmapModel?
   // The room in front is the room the next launch opens, whichever door brought it forward.
   var selectedRoom: Room { didSet { preferences.set(selectedRoom.rawValue, forKey: "lastRoom") } }
   var welcome: Bool
@@ -95,10 +97,24 @@ final class AppModel {
   @ObservationIgnored var recoveryDelayMs = Constants.backoffBaseMs
 
   enum Room: String, CaseIterable {
-    case journal, gym
-    var title: String { self == .journal ? String(localized: "Journal") : String(localized: "Gym") }
-    var symbol: String { self == .journal ? "book.closed" : "dumbbell" }
+    case journal, gym, roadmap
+    var title: String {
+      switch self {
+      case .journal: String(localized: "Journal")
+      case .gym: String(localized: "Gym")
+      case .roadmap: String(localized: "Roadmap")
+      }
+    }
+    var symbol: String {
+      switch self {
+      case .journal: "book.closed"
+      case .gym: "dumbbell"
+      case .roadmap: "map"
+      }
+    }
   }
+  // The rooms this build carries, in the order the room menu and Where to start? list them.
+  var rooms: [Room] { Room.allCases.filter { $0 != .roadmap || roadmap != nil } }
   enum Appearance: String, CaseIterable {
     case light, dark, system
     var title: LocalizedStringResource {
@@ -136,7 +152,12 @@ final class AppModel {
     self.runner = runner; self.preferences = preferences; self.runtime = runtime; self.telemetry = telemetry; self.authRetryNow = authRetryNow
     journal = try JournalModel(runner: runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
     gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry, phone: preferences)
-    selectedRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
+    roadmap = runtime.flatMap { (runtime: AppRuntime) -> RoadmapModel? in
+      guard runtime.settings.roadmapRoom else { return nil }
+      return RoadmapModel(records: RoadmapFixture.records(runtime), phone: preferences, telemetry: telemetry)
+    }
+    let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
+    selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
     welcome = preferences.string(forKey: "lastRoom") == nil && (!preferences.bool(forKey: "journalOpened") || preferences.bool(forKey: "roomWelcomeRequired"))
     keepDismissed = preferences.bool(forKey: "keepDismissed")
     appearance = Appearance(preferences: preferences)
@@ -258,7 +279,7 @@ final class AppModel {
     if !welcome, selectedRoom == .journal { journal.liftInk() }
     journal.done()
     selectedRoom = room; welcome = false; preferences.set(false, forKey: "roomWelcomeRequired")
-    choose(room == .journal ? "open_journal" : "open_gym", screen: "welcome")
+    choose("open_" + room.rawValue, screen: "welcome")
     if room == .journal { journal.openJournal() }
     refresh()
   }

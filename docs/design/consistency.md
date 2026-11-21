@@ -646,6 +646,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   sentence for several deeds of one gesture says *nodes*; a reader's History, which has no board and whose deeds are
   the owner's, not *You*; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the
   roster 17) and whose estimates lack the roster's *~*.
+- **Roadmap · iOS · two states of the room have no board.** A read of the phone's own copy that fails shows
+  *Couldn’t load this roadmap* and *Try Again* in the room, under the room menu: the one board with those words
+  (10.9) is a shared roadmap's cover, and its sentence, *It may have moved, or the server is unreachable.*, is
+  false of a read that asks no server, so the room says no sentence. While the phone's first read of the
+  person's roadmaps runs, the room is its bare canvas. To draw, with the build tree's step
+  `m0-redraw-what-the-reads-cannot-serve`: the room's failed read with a true sentence, and the room before its
+  first read.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no

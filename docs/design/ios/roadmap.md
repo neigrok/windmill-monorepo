@@ -1,7 +1,9 @@
 # Roadmap — iOS
 
-Status: ✅ Ready for dev. The owner approved every board on 2026-11-21; none is built. The boards are on
-the Roadmap file's
+Status: ✅ Ready for dev. The owner approved every board on 2026-11-21. Built, in Debug builds alone: the room's
+row in the room menu, its door on *Where to start?*, the Board at rest without its gestures, *No roadmaps yet*
+and the room's failed read; [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The
+boards are on the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its
 differences from the web and the rules it keeps.

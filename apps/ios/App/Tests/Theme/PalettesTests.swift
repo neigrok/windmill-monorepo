@@ -61,16 +61,60 @@ import Testing
       """)
   }
 
+  // Roadmap · iOS, Colour roles (docs/design/ios/roadmap.md), role by role, Dark then Light, and each hue's kind colour.
+  @Test func roadmapRolesResolveToTheirHexInBothAppearances() {
+    let roles: [(String, Color)] = [
+      ("canvas", RoadmapPalette.canvas), ("card", RoadmapPalette.card), ("raised", RoadmapPalette.raised), ("sunken", RoadmapPalette.sunken),
+      ("line", RoadmapPalette.line), ("line-strong", RoadmapPalette.lineStrong), ("overlay", RoadmapPalette.overlay),
+      ("overlay-soft", RoadmapPalette.overlaySoft), ("ink", RoadmapPalette.ink), ("ink-dim", RoadmapPalette.inkDim),
+      ("ink-faint", RoadmapPalette.inkFaint), ("accent", RoadmapPalette.accent), ("accent-soft", RoadmapPalette.accentSoft),
+      ("on-accent", RoadmapPalette.onAccent), ("act", RoadmapPalette.act), ("on-act", RoadmapPalette.onAct),
+      ("kind-build", RoadmapPalette.kind("terracotta")), ("kind-learn", RoadmapPalette.kind("olive")),
+      ("kind-milestone", RoadmapPalette.kind("gold")), ("kind-brick", RoadmapPalette.kind("brick")), ("kind-sky", RoadmapPalette.kind("sky")),
+      ("kind-plum", RoadmapPalette.kind("plum")), ("connector", RoadmapPalette.connector), ("connector-lit", RoadmapPalette.connectorLit),
+      ("a hue unknown", RoadmapPalette.kind("indigo")),
+    ]
+    let table = roles.map { "roadmap/\($0.0) \(hex($0.1, .dark)) \(hex($0.1, .light))" }.joined(separator: "\n")
+    #expect(table == """
+      roadmap/canvas #0B0B0C #F9F5EB
+      roadmap/card #171719 #FFFFFF
+      roadmap/raised #222224 #FDFBF6
+      roadmap/sunken #050506 #F2ECDD
+      roadmap/line #222224 #E5D9C0
+      roadmap/line-strong #2E2E32 #D3C2A0
+      roadmap/overlay #030304@72% #211B13@45%
+      roadmap/overlay-soft #030304@40% #211B13@22%
+      roadmap/ink #F2F0EB #211B13
+      roadmap/ink-dim #B4B2AC #6F5F45
+      roadmap/ink-faint #7E7C77 #92805F
+      roadmap/accent #D08A5E #9D5330
+      roadmap/accent-soft #D08A5E@20% #9D5330@12%
+      roadmap/on-accent #1B1408 #FFFFFF
+      roadmap/act #9D5330 #9D5330
+      roadmap/on-act #FFFFFF #FFFFFF
+      roadmap/kind-build #D98B5F #BC6C42
+      roadmap/kind-learn #9DAF5C #7D8C43
+      roadmap/kind-milestone #D9AE45 #A17822
+      roadmap/kind-brick #C86B50 #A84E35
+      roadmap/kind-sky #7BA6B8 #5F8494
+      roadmap/kind-plum #B06FA6 #8D4F83
+      roadmap/connector #2E2E32 #D3C2A0
+      roadmap/connector-lit #7E7C77 #9C6B44
+      roadmap/a hue unknown #B4B2AC #6F5F45
+      """)
+  }
+
   // A room's primary — the band's button, a sheet's checkmark — draws on-accent on the accent fill, which reads at 4.5:1 or
   // more in both appearances.
   @Test @MainActor func primaryLabelsReadOnTheirFillInBothAppearances() {
-    let rooms: [(String, RoomColors)] = [("gym", .gym), ("shell", .shell), ("journal", .journal)]
+    let rooms: [(String, RoomColors)] = [("gym", .gym), ("shell", .shell), ("journal", .journal), ("roadmap", .roadmap)]
     let table = rooms.flatMap { name, room in
       [("dark", UIUserInterfaceStyle.dark), ("light", .light)].map { look, style in
         "\(name) \(look) \(String(format: "%.1f", contrast(room.onAccent, on: room.accent, style)))"
       }
     }
-    #expect(table == ["gym dark 9.5", "gym light 6.4", "shell dark 6.5", "shell light 5.2", "journal dark 10.4", "journal light 4.8"])
+    #expect(table == ["gym dark 9.5", "gym light 6.4", "shell dark 6.5", "shell light 5.2", "journal dark 10.4", "journal light 4.8",
+                      "roadmap dark 6.5", "roadmap light 5.7"])
     #expect(rooms.allSatisfy { _, room in [.dark, .light].allSatisfy { contrast(room.onAccent, on: room.accent, $0) >= 4.5 } })
   }
 }

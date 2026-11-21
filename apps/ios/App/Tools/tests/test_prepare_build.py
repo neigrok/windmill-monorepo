@@ -116,6 +116,17 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertEqual("production", self.read()["WMTelemetryEnvironment"])
 
 
+class RoadmapRoomSwitchTests(unittest.TestCase):
+    # The Roadmap room ships dark: the app's setting is NO, Debug alone turns it on, and the Info.plist carries it.
+    def test_the_roadmap_room_is_on_in_debug_alone(self):
+        app = (Path(__file__).parents[2] / "project.yml").read_text().split("  WindmillWorkoutActivity:\n", 1)[0]
+        debug, release = app.split("        Debug:\n", 1)[1].split("    preBuildScripts:\n", 1)[0].split("        Release:\n", 1)
+        self.assertIn('        WM_ROADMAP_ROOM_ENABLED: "NO"\n', app)
+        self.assertIn('          WM_ROADMAP_ROOM_ENABLED: "YES"\n', debug)
+        self.assertNotIn("WM_ROADMAP_ROOM_ENABLED", release)
+        self.assertIn("        WMRoadmapRoomEnabled: $(WM_ROADMAP_ROOM_ENABLED)\n", app)
+
+
 class ReleaseProjectTests(unittest.TestCase):
     def setUp(self):
         self.spec = {"targets": {"Windmill": {"settings": {

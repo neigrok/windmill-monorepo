@@ -210,7 +210,6 @@ final class ViewHub {
         }
         switch view.refresh(of: shown, owing: owed, firstPullComplete: firstPulls[key.scope]) {
         case .none: view.land(nil)
-        case .show(let next): view.land(next)
         case .read(let read): view.land(try await load { [core] tx in try Self.loadRecords(tx, key, read, core: core) })
         }
       } catch {
@@ -306,8 +305,8 @@ final class ViewHub {
     case .whole(let shown):
       let loaded = RecordsView.Snapshot(records: try reader.records(key.listing), firstPullComplete: try reader.firstPullComplete())
       return loaded == shown ? nil : loaded
-    case .records(let touched, let shown, let firstPullComplete):
-      return shown.updating(touched, to: try reader.records(touched, in: key.listing), firstPullComplete: firstPullComplete)
+    case .records(let touched, let shown):
+      return shown.updating(touched, to: try reader.records(touched, in: key.listing))
     }
   }
 
@@ -398,9 +397,8 @@ public final class RecordsView {
 
     // The snapshot once the records `touched` were read again: each one `held`, which the list still holds, in its place
     // as read, the other touched ones gone, and the records between them as they were; nil when nothing shown changes.
-    func updating(_ touched: Set<RecordKey>, to held: [RecordKey: Record], firstPullComplete: Bool) -> Snapshot? {
-      let unchanged = firstPullComplete == self.firstPullComplete && touched.allSatisfy { record($0.id) == held[$0] }
-      guard !unchanged else { return nil }
+    func updating(_ touched: Set<RecordKey>, to held: [RecordKey: Record]) -> Snapshot? {
+      guard !touched.allSatisfy({ record($0.id) == held[$0] }) else { return nil }
       var next: [Record] = []
       next.reserveCapacity(records.count + held.count)
       var kept = 0
@@ -415,17 +413,16 @@ public final class RecordsView {
     }
   }
 
-  // A read a view needs: the records of its type some changes touched, the others kept as `shown` has them, beside its
-  // scope's first pull; or every record and the first pull, to replace what it shows, nil before its first load.
-  enum Read: Sendable {
-    case records(Set<RecordKey>, shown: Snapshot, firstPullComplete: Bool)
+  // A read a view needs: the records of its type some changes touched, the others and its scope's first pull kept as
+  // `shown` has them; or every record and the first pull in one read, to replace what it shows, nil before its first load.
+  enum Read: Sendable, Equatable {
+    case records(Set<RecordKey>, shown: Snapshot)
     case whole(shown: Snapshot?)
   }
 
-  // What the changes a view owes ask of it: nothing, a snapshot shown at once, or a read.
-  enum Refresh: Sendable {
+  // What the changes a view owes ask of it: nothing, or a read.
+  enum Refresh: Sendable, Equatable {
     case none
-    case show(Snapshot)
     case read(Read)
   }
 
@@ -451,16 +448,16 @@ public final class RecordsView {
   }
 
   // What the changes `owed` ask of the view showing `shown`, `firstPullComplete` being its scope's first pull read again
-  // in this turn: every record read again after a change to its whole scope or to the replicas; else the records of its
-  // type the changes touched; else the first pull alone, shown at once when it moved; else nothing.
+  // in this turn: every record read again after a change to its whole scope or to the replicas, and when the first pull
+  // moved; else the records of its type the changes touched; else nothing. The store may hold more than the changes
+  // owed, among it the pull that moved the first pull, so the first pull is never shown beside records read before it:
+  // one read answers both.
   func refresh(of shown: Snapshot, owing owed: StoreChange, firstPullComplete: Bool?) -> Refresh {
     if owed.replicas || owed.scopes.contains(key.scope) { return .read(.whole(shown: shown)) }
+    if let firstPullComplete, firstPullComplete != shown.firstPullComplete { return .read(.whole(shown: shown)) }
     let type = key.listing.type
     let touched: Set<RecordKey> = owed.records[key.scope]?.filter { $0.type.utf8.elementsEqual(type.utf8) } ?? []
-    let firstPull = firstPullComplete ?? shown.firstPullComplete
-    if !touched.isEmpty { return .read(.records(touched, shown: shown, firstPullComplete: firstPull)) }
-    guard firstPull != shown.firstPullComplete else { return .none }
-    return .show(Snapshot(records: shown.records, firstPullComplete: firstPull))
+    return touched.isEmpty ? .none : .read(.records(touched, shown: shown))
   }
 
   // A read begins: it takes what the view owes, and the view owes afresh what is applied while it runs.
