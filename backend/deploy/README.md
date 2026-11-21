@@ -293,7 +293,7 @@ so the deploy decides what to replace from what each image is built from. Three 
 
 | Unit | Its images | Built from |
 | --- | --- | --- |
-| backend | the server's, which `migrate` runs too, and `embedder-<sha>`; the stack's `postgres:16` and `caddy:2` are pulled only with it | `backend/` but `deploy/` and `test/deploy/`, though `deploy/sync_compatibility.py` counts; `services/embedder/`; the contract files `backend/Dockerfile` copies |
+| backend | the server's, which `migrate` runs too, and `embedder-<sha>`; the stack's `postgres:16` and `caddy:2` are pulled only with it | `backend/` but `deploy/` and `test/deploy/`, though `deploy/sync_compatibility.py` counts; `services/embedder/`; `packages/api-contract/`, which `backend/Dockerfile` copies whole |
 | subscription service | `subscriptions-<sha>` | `services/subscriptions/` |
 | AI service | `ai-<sha>` | `services/ai/` |
 

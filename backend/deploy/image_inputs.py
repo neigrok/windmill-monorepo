@@ -11,20 +11,14 @@ import sys
 RECIPE = ".github/workflows/backend.yml"
 UNITS = {
     # The server and its migration, one image, and the embedder. Of deploy/ and its tests, only the generator of the
-    # image's compatibility manifest is built into it; of the contract, what backend/Dockerfile copies from it.
+    # image's compatibility manifest is built into it; backend/Dockerfile copies the whole contract.
     "BACKEND_INPUTS": {
         "backend/": True,
         "backend/deploy/": False,
         "backend/deploy/sync_compatibility.py": True,
         "backend/test/deploy/": False,
         "services/embedder/": True,
-        "packages/api-contract/sync/": True,
-        "packages/api-contract/sync/reference/": False,
-        "packages/api-contract/gym/": True,
-        "packages/api-contract/roadmap-addresses.json": True,
-        "packages/api-contract/roadmap-link-urls.json": True,
-        "packages/api-contract/roadmap-socket.json": True,
-        "packages/api-contract/subscriptions/": True,
+        "packages/api-contract/": True,
         RECIPE: True,
     },
     "SUBSCRIPTIONS_INPUTS": {"services/subscriptions/": True, RECIPE: True},

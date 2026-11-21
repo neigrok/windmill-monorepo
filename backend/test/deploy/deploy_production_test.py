@@ -878,6 +878,34 @@ class DeployProductionTest(unittest.TestCase):
                 result = self.deploy()
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", "FAIL " + reason + "\n"))
 
+    def test_a_deploy_that_keeps_the_backend_runs_every_roadmap_guard_as_one_that_replaces_it(self):
+        kept = ("NOTE backend: nothing it is built from changed, so it keeps its image, built at " + "1" * 40 + "\n" +
+                "NOTE subscription service: nothing it is built from changed, so it keeps its image, sha256:" + "c" * 64 + "\n")
+        for switch in ("", None):
+            with self.subTest(floor=True, switch=switch):
+                self.upload_candidate()
+                self.fingerprinted_deployment({"AI"})
+                path = self.work / "roadmap-engine.env"
+                path.unlink(missing_ok=True)
+                if switch is not None:
+                    path.write_text(switch)
+                (self.work / "roadmap-engine.floor").write_text("c" * 40 + "\n")
+                self.assert_preflight_refusal("roadmap-engine.floor says roadmap is on the sync engine here, and roadmap-engine.env "
+                                              "does not say ROADMAP_ENGINE_ENABLED=1")
+        (self.work / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n")
+        for state, outcome in (({"socketStatus": "404"}, (1, kept, "FAIL the running server does not retire roadmap's socket "
+                                                                    "while roadmap is on the sync engine\n")),
+                               ({"composeIgnoresSwitch": True}, (1, kept, "FAIL compose does not read roadmap-engine.env into "
+                                                                          "the server\n")),
+                               ({}, (0, kept + "PASS roadmap: the server runs with ROADMAP_ENGINE_ENABLED=1, kept from "
+                                           "roadmap-engine.env\n" + PROVISIONED + "\n" + DEPLOYED, ""))):
+            with self.subTest(state=state):
+                self.upload_candidate()
+                self.fingerprinted_deployment({"AI"})
+                self.state(**{"composeIgnoresSwitch": False, "socketStatus": "410", **state})
+                result = self.deploy()
+                self.assertEqual((result.returncode, result.stdout, result.stderr), outcome)
+
     def test_a_host_without_roadmap_s_switch_gets_it_empty_and_one_holding_anything_else_is_refused_before_any_change(self):
         (self.work / "roadmap-engine.env").unlink()
         (self.work / "maintenance").rmdir()
@@ -1370,8 +1398,9 @@ class DeployWorkflowTest(unittest.TestCase):
             ("backend/README.md", set()), ("services/subscriptions/ARCHITECTURE.md", set()),
             ("backend/deploy/Caddyfile", set()), ("backend/deploy/docker-compose.yml", set()),
             ("backend/deploy/ai-db/provision.sh", set()), ("backend/test/deploy/ai_db_test.py", set()),
-            ("packages/api-contract/sync/reference/core/merge.js", set()), ("packages/api-contract/ai/wire/call.json", set()),
-            ("packages/api-contract/domain-kit/vector.json", set()), ("web/src/main.js", set()),
+            ("packages/api-contract/sync/reference/core/merge.js", {"BACKEND"}),
+            ("packages/api-contract/ai/wire/call.json", {"BACKEND"}), ("packages/api-contract/domain-kit/vector.json", {"BACKEND"}),
+            ("web/src/main.js", set()),
             (".github/workflows/deploy.yml", set()), (".github/workflows/ai.yml", set()),
             ("services/ai/src/added.rs", {"AI"}))]
         changes += [
@@ -1417,7 +1446,7 @@ class DeployWorkflowTest(unittest.TestCase):
         contract = root / "packages/api-contract"
         sources = [source for line in re.findall(r"^COPY --from=contract (.+)$", instructions, re.M)
                    for source in line.split()[:-1]]
-        copied = [found for source in sources for match in contract.glob(source)
+        copied = [found for source in sources for match in ([contract] if source == "/" else contract.glob(source))
                   for found in ([match] if match.is_file() else match.rglob("*")) if found.is_file()]
         self.assertGreater(len(copied), len(sources))
         self.assertEqual([str(path.relative_to(root)) for path in copied if not path.name.endswith(".md")
