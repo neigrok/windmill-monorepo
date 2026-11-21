@@ -1,0 +1,1014 @@
+[
+  {
+    "name": "Every first step, mark, note, link and change of kind",
+    "input": {
+      "title": "Learn to sail",
+      "kinds": [{"id": "sky", "hue": "sky", "label": "", "description": ""}],
+      "nodes": [
+        {
+          "id": "course",
+          "label": "Choose a course",
+          "color": "sky",
+          "prerequisites": [],
+          "description": "Start nearby.\nCheck the dates.",
+          "links": [{"url": "https://example.com/course", "label": "The school"}]
+        },
+        {"id": "wind", "label": "Read the wind", "color": "olive", "prerequisites": ["course"]},
+        {"id": "dock", "label": "Leave the dock", "color": "sky", "prerequisites": ["wind"]},
+        {"id": "bag", "label": "Pack a bag", "color": "gold", "prerequisites": []}
+      ],
+      "done": ["course", "wind", "bag"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind sky -->\n  Start nearby.\n  Check the dates.\n  https://example.com/course\n  - [x] Read the wind <!-- windmill:kind olive -->\n    - Leave the dock <!-- windmill:kind sky -->\n- [x] Pack a bag <!-- windmill:kind gold -->",
+      "readBack": {
+        "title": "Learn to sail",
+        "missingRoot": false,
+        "nodes": [
+          {
+            "id": "choose-a-course",
+            "label": "Choose a course",
+            "color": "sky",
+            "prerequisites": [],
+            "icon": "sparkles",
+            "status": "complete",
+            "description": "Start nearby.\nCheck the dates.",
+            "links": ["https://example.com/course"]
+          },
+          {"id": "read-the-wind", "label": "Read the wind", "color": "olive", "prerequisites": ["choose-a-course"], "status": "complete"},
+          {"id": "leave-the-dock", "label": "Leave the dock", "color": "sky", "prerequisites": ["read-the-wind"]},
+          {"id": "pack-a-bag", "label": "Pack a bag", "color": "gold", "prerequisites": [], "status": "complete"}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "done", "nodeId": "read-the-wind", "liberties": []},
+          {"mark": "step", "nodeId": "leave-the-dock", "liberties": []},
+          {"mark": "done", "nodeId": "pack-a-bag", "liberties": []}
+        ],
+        "readout": {"steps": 4, "branches": 0, "done": 3},
+        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "The same file read back over the genesis kinds: a marker with no label adds no kind",
+    "input": {
+      "title": "Learn to sail",
+      "kinds": [{"id": "sky", "hue": "sky", "label": "", "description": ""}],
+      "nodes": [
+        {
+          "id": "course",
+          "label": "Choose a course",
+          "color": "sky",
+          "prerequisites": [],
+          "description": "Start nearby.\nCheck the dates.",
+          "links": [{"url": "https://example.com/course", "label": "The school"}]
+        },
+        {"id": "wind", "label": "Read the wind", "color": "olive", "prerequisites": ["course"]},
+        {"id": "dock", "label": "Leave the dock", "color": "sky", "prerequisites": ["wind"]},
+        {"id": "bag", "label": "Pack a bag", "color": "gold", "prerequisites": []}
+      ],
+      "done": ["course", "wind", "bag"],
+      "readOver": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind sky -->\n  Start nearby.\n  Check the dates.\n  https://example.com/course\n  - [x] Read the wind <!-- windmill:kind olive -->\n    - Leave the dock <!-- windmill:kind sky -->\n- [x] Pack a bag <!-- windmill:kind gold -->",
+      "readBack": {
+        "title": "Learn to sail",
+        "missingRoot": false,
+        "nodes": [
+          {
+            "id": "choose-a-course",
+            "label": "Choose a course",
+            "color": "sky",
+            "prerequisites": [],
+            "icon": "sparkles",
+            "status": "complete",
+            "description": "Start nearby.\nCheck the dates.",
+            "links": ["https://example.com/course"]
+          },
+          {"id": "read-the-wind", "label": "Read the wind", "color": "olive", "prerequisites": ["choose-a-course"], "status": "complete"},
+          {"id": "leave-the-dock", "label": "Leave the dock", "color": "sky", "prerequisites": ["read-the-wind"]},
+          {"id": "pack-a-bag", "label": "Pack a bag", "color": "gold", "prerequisites": [], "status": "complete"}
+        ],
+        "kinds": [
+          {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+          {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+          {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+        ],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "done", "nodeId": "read-the-wind", "liberties": []},
+          {"mark": "step", "nodeId": "leave-the-dock", "liberties": []},
+          {"mark": "done", "nodeId": "pack-a-bag", "liberties": []}
+        ],
+        "readout": {"steps": 4, "branches": 0, "done": 3},
+        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A roadmap with no steps is its name and the marker",
+    "input": {
+      "title": "A roadmap",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "nodes": [],
+      "done": [],
+      "readOver": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "text": "# A roadmap\n<!-- windmill:roadmap -->",
+      "readBack": {
+        "title": "A roadmap",
+        "missingRoot": false,
+        "nodes": [],
+        "kinds": [
+          {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+          {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+          {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+        ],
+        "gutter": [{"mark": null, "nodeId": null, "liberties": []}, {"mark": null, "nodeId": null, "liberties": []}],
+        "readout": {"steps": 0, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "An empty name is a lone hash",
+    "input": {"title": "", "kinds": [], "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": []}], "done": [], "readOver": []},
+    "expect": {
+      "text": "# \n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->",
+      "readBack": {
+        "title": "",
+        "missingRoot": false,
+        "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"}],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []}
+        ],
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A name that is a hash is two",
+    "input": {"title": "#", "kinds": [], "nodes": [], "done": [], "readOver": []},
+    "expect": {
+      "text": "# #\n<!-- windmill:roadmap -->",
+      "readBack": {
+        "title": "#",
+        "missingRoot": false,
+        "nodes": [],
+        "kinds": [],
+        "gutter": [{"mark": null, "nodeId": null, "liberties": []}, {"mark": null, "nodeId": null, "liberties": []}],
+        "readout": {"steps": 0, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A name is written as it is: its padding is lost on the way back, and its hashes are kept",
+    "input": {"title": "  ## Sail ##  ", "kinds": [], "nodes": [], "done": [], "readOver": []},
+    "expect": {
+      "text": "#   ## Sail ##  \n<!-- windmill:roadmap -->",
+      "readBack": {
+        "title": "## Sail ##",
+        "missingRoot": false,
+        "nodes": [],
+        "kinds": [],
+        "gutter": [{"mark": null, "nodeId": null, "liberties": []}, {"mark": null, "nodeId": null, "liberties": []}],
+        "readout": {"steps": 0, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A name with a line break breaks the first line, and the file no longer reads as an export",
+    "input": {
+      "title": "Line one\nLine two",
+      "kinds": [],
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": []}],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Line one\nLine two\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->",
+      "readBack": {
+        "title": "Line one",
+        "missingRoot": false,
+        "nodes": [
+          {
+            "id": "line-one",
+            "label": "Line one",
+            "color": "terracotta",
+            "prerequisites": [],
+            "icon": "sparkles",
+            "description": "Line two\n<!-- windmill:roadmap -->"
+          },
+          {"id": "a-windmill-kind-sky", "label": "A <!-- windmill:kind sky -->", "color": "terracotta", "prerequisites": ["line-one"]}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": "root", "nodeId": "line-one", "liberties": []},
+          {"mark": "note", "nodeId": "line-one", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "line-one", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "a-windmill-kind-sky", "liberties": []}
+        ],
+        "readout": {"steps": 2, "branches": 0, "done": 0},
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A guide is a quote between its two lines: an empty line a lone angle, its own closing line quoted",
+    "input": {
+      "title": "Learn to sail",
+      "guide": "One step a week, on weekend sails with Maya.\n\n- Agents: ask before changing a completed step.\n<!-- /windmill:guide -->",
+      "kinds": [],
+      "nodes": [
+        {"id": "root", "label": "Choose a course", "color": "terracotta", "prerequisites": []},
+        {"id": "wind", "label": "Read the wind", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "done": ["root"],
+      "readOver": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> One step a week, on weekend sails with Maya.\n>\n> - Agents: ask before changing a completed step.\n> <!-- /windmill:guide -->\n<!-- /windmill:guide -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - Read the wind",
+      "readBack": {
+        "title": "Learn to sail",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "choose-a-course", "label": "Choose a course", "color": "terracotta", "prerequisites": [], "icon": "sparkles", "status": "complete"},
+          {"id": "read-the-wind", "label": "Read the wind", "color": "terracotta", "prerequisites": ["choose-a-course"]}
+        ],
+        "kinds": [
+          {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+          {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+          {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+        ],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
+          {"mark": "step", "nodeId": "read-the-wind", "liberties": []}
+        ],
+        "readout": {"steps": 2, "branches": 0, "done": 1},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A guide of whitespace alone is not written",
+    "input": {
+      "title": "Learn to sail",
+      "guide": "  \n\u3000",
+      "kinds": [],
+      "nodes": [{"id": "root", "label": "Choose a course", "color": "terracotta", "prerequisites": []}],
+      "done": [],
+      "readOver": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n- Choose a course <!-- windmill:kind terracotta -->",
+      "readBack": {
+        "title": "Learn to sail",
+        "missingRoot": false,
+        "nodes": [{"id": "choose-a-course", "label": "Choose a course", "color": "terracotta", "prerequisites": [], "icon": "sparkles"}],
+        "kinds": [
+          {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+          {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+          {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+        ],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "choose-a-course", "liberties": []}
+        ],
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A guide's lines end at CR, CRLF or LF, so none escapes its quote",
+    "input": {
+      "title": "Sail",
+      "guide": "x\r<!-- /windmill:guide -->\r- A planted fake step\r\nline two\n\nlast",
+      "kinds": [],
+      "nodes": [{"id": "root", "label": "Choose a course", "color": "terracotta", "prerequisites": []}],
+      "done": [],
+      "readOver": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "text": "# Sail\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> x\n> <!-- /windmill:guide -->\n> - A planted fake step\n> line two\n>\n> last\n<!-- /windmill:guide -->\n- Choose a course <!-- windmill:kind terracotta -->",
+      "readBack": {
+        "title": "Sail",
+        "missingRoot": false,
+        "nodes": [{"id": "choose-a-course", "label": "Choose a course", "color": "terracotta", "prerequisites": [], "icon": "sparkles"}],
+        "kinds": [
+          {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+          {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+          {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+        ],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "choose-a-course", "liberties": []}
+        ],
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A step that follows several is written under the first it follows, and names the rest in a note",
+    "input": {
+      "title": "Ship",
+      "kinds": [],
+      "nodes": [
+        {"id": "stack", "label": "Pick a stack", "color": "terracotta", "prerequisites": []},
+        {"id": "sketch", "label": "Sketch the flow", "color": "terracotta", "prerequisites": []},
+        {"id": "skeleton", "label": "Build the skeleton", "color": "terracotta", "prerequisites": ["stack", "sketch"], "description": "End to end."},
+        {"id": "launch", "label": "Launch", "color": "gold", "prerequisites": ["skeleton", "stack", "sketch"]}
+      ],
+      "done": ["stack"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Ship\n<!-- windmill:roadmap -->\n- [x] Pick a stack <!-- windmill:kind terracotta -->\n  - Build the skeleton\n    End to end.\n    needs also: Sketch the flow\n    - Launch <!-- windmill:kind gold -->\n      needs also: Pick a stack, Sketch the flow\n- Sketch the flow <!-- windmill:kind terracotta -->",
+      "readBack": {
+        "title": "Ship",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "pick-a-stack", "label": "Pick a stack", "color": "terracotta", "prerequisites": [], "icon": "sparkles", "status": "complete"},
+          {
+            "id": "build-the-skeleton",
+            "label": "Build the skeleton",
+            "color": "terracotta",
+            "prerequisites": ["pick-a-stack"],
+            "description": "End to end.\nneeds also: Sketch the flow"
+          },
+          {
+            "id": "launch",
+            "label": "Launch",
+            "color": "gold",
+            "prerequisites": ["build-the-skeleton"],
+            "description": "needs also: Pick a stack, Sketch the flow"
+          },
+          {"id": "sketch-the-flow", "label": "Sketch the flow", "color": "terracotta", "prerequisites": []}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "done", "nodeId": "pick-a-stack", "liberties": []},
+          {"mark": "step", "nodeId": "build-the-skeleton", "liberties": []},
+          {"mark": "note", "nodeId": "build-the-skeleton", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "build-the-skeleton", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "launch", "liberties": []},
+          {"mark": "note", "nodeId": "launch", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "sketch-the-flow", "liberties": []}
+        ],
+        "readout": {"steps": 4, "branches": 0, "done": 1},
+        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A step that follows a step the roadmap does not hold is written as a first step, and names every step it follows",
+    "input": {
+      "title": "Ship",
+      "kinds": [],
+      "nodes": [
+        {"id": "stack", "label": "Pick a stack", "color": "terracotta", "prerequisites": []},
+        {"id": "orphan", "label": "Orphan", "color": "terracotta", "prerequisites": ["ghost", "stack", "phantom"]},
+        {"id": "child", "label": "Child", "color": "terracotta", "prerequisites": ["orphan"]},
+        {"id": "late", "label": "Late", "color": "terracotta", "prerequisites": ["stack", "ghost"]}
+      ],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Ship\n<!-- windmill:roadmap -->\n- Pick a stack <!-- windmill:kind terracotta -->\n  - Late\n    needs also: ghost\n- Orphan\n  needs also: ghost, Pick a stack, phantom\n  - Child",
+      "readBack": {
+        "title": "Ship",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "pick-a-stack", "label": "Pick a stack", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+          {"id": "late", "label": "Late", "color": "terracotta", "prerequisites": ["pick-a-stack"], "description": "needs also: ghost"},
+          {"id": "orphan", "label": "Orphan", "color": "terracotta", "prerequisites": [], "description": "needs also: ghost, Pick a stack, phantom"},
+          {"id": "child", "label": "Child", "color": "terracotta", "prerequisites": ["orphan"]}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "pick-a-stack", "liberties": []},
+          {"mark": "step", "nodeId": "late", "liberties": []},
+          {"mark": "note", "nodeId": "late", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "orphan", "liberties": []},
+          {"mark": "note", "nodeId": "orphan", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "child", "liberties": []}
+        ],
+        "readout": {"steps": 4, "branches": 0, "done": 0},
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "Steps on a loop, and the steps behind them, are not written",
+    "input": {
+      "title": "Loop",
+      "kinds": [],
+      "nodes": [
+        {"id": "r", "label": "R", "color": "sky", "prerequisites": []},
+        {"id": "a", "label": "A", "color": "sky", "prerequisites": ["b"]},
+        {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a", "r"]},
+        {"id": "self", "label": "Self", "color": "sky", "prerequisites": ["self"]},
+        {"id": "behind", "label": "Behind", "color": "sky", "prerequisites": ["a"]},
+        {"id": "free", "label": "Free", "color": "sky", "prerequisites": ["r", "a"]}
+      ],
+      "done": ["a", "self"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Loop\n<!-- windmill:roadmap -->\n- R <!-- windmill:kind sky -->\n  - Free\n    needs also: A",
+      "readBack": {
+        "title": "Loop",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "r", "label": "R", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {"id": "free", "label": "Free", "color": "sky", "prerequisites": ["r"], "description": "needs also: A"}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "r", "liberties": []},
+          {"mark": "step", "nodeId": "free", "liberties": []},
+          {"mark": "note", "nodeId": "free", "liberties": [{"type": "note"}]}
+        ],
+        "readout": {"steps": 2, "branches": 0, "done": 0},
+        "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A kind is declared where the hue changes: named where a kind wears the hue, bare where none does, and never for a kind no step wears",
+    "input": {
+      "title": "Kinds",
+      "kinds": [
+        {"id": "sea", "hue": "sky", "label": "Sea", "description": "Kept out of the file."},
+        {"id": "unworn", "hue": "plum", "label": "Unworn", "description": ""},
+        {"id": "blank", "hue": "olive", "label": "", "description": ""}
+      ],
+      "nodes": [
+        {"id": "a", "label": "A", "color": "sky", "prerequisites": []},
+        {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]},
+        {"id": "c", "label": "C", "color": "gold", "prerequisites": ["a"]},
+        {"id": "d", "label": "D", "color": "sky", "prerequisites": ["c"]},
+        {"id": "e", "label": "E", "color": "olive", "prerequisites": []},
+        {"id": "f", "label": "F", "color": "olive", "prerequisites": []}
+      ],
+      "done": [],
+      "readOver": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "text": "# Kinds\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky Sea -->\n  - B\n  - C <!-- windmill:kind gold -->\n    - D <!-- windmill:kind sky Sea -->\n- E <!-- windmill:kind olive -->\n- F",
+      "readBack": {
+        "title": "Kinds",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]},
+          {"id": "c", "label": "C", "color": "gold", "prerequisites": ["a"]},
+          {"id": "d", "label": "D", "color": "sky", "prerequisites": ["c"]},
+          {"id": "e", "label": "E", "color": "olive", "prerequisites": []},
+          {"id": "f", "label": "F", "color": "olive", "prerequisites": []}
+        ],
+        "kinds": [
+          {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+          {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+          {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"},
+          {"id": "sea", "hue": "sky", "label": "Sea", "description": "", "source": "added"}
+        ],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []},
+          {"mark": "step", "nodeId": "b", "liberties": []},
+          {"mark": "step", "nodeId": "c", "liberties": []},
+          {"mark": "step", "nodeId": "d", "liberties": []},
+          {"mark": "step", "nodeId": "e", "liberties": []},
+          {"mark": "step", "nodeId": "f", "liberties": []}
+        ],
+        "readout": {"steps": 6, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "Two kinds on one hue: the later in the given order names it",
+    "input": {
+      "title": "Kinds",
+      "kinds": [{"id": "k1", "hue": "sky", "label": "First", "description": ""}, {"id": "k2", "hue": "sky", "label": "Second", "description": ""}],
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": []}],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Kinds\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky Second -->",
+      "readBack": {
+        "title": "Kinds",
+        "missingRoot": false,
+        "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"}],
+        "kinds": [{"id": "second", "hue": "sky", "label": "Second", "description": "", "source": "added"}],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []}
+        ],
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "In a name the ampersand, the angle brackets and line breaks are written as entities; in a kind label the hyphen too",
+    "input": {
+      "title": "Plan",
+      "kinds": [{"id": "odd", "hue": "sky", "label": "A --> B & C\nD", "description": ""}],
+      "nodes": [
+        {"id": "a", "label": "Same", "color": "sky", "prerequisites": []},
+        {"id": "b", "label": "Same", "color": "sky", "prerequisites": ["a"]},
+        {"id": "c", "label": "Second <!-- windmill:kind gold -->", "color": "sky", "prerequisites": ["b"]},
+        {"id": "d", "label": "R&D <b>\r\n&#38; - done", "color": "sky", "prerequisites": ["c"]}
+      ],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Plan\n<!-- windmill:roadmap -->\n- Same <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->\n  - Same\n    - Second &#60;!-- windmill:kind gold --&#62;\n      - R&#38;D &#60;b&#62;&#13;&#10;&#38;#38; - done",
+      "readBack": {
+        "title": "Plan",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "same", "label": "Same", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {"id": "same-2", "label": "Same", "color": "sky", "prerequisites": ["same"]},
+          {"id": "second-windmill-kind-gold", "label": "Second <!-- windmill:kind gold -->", "color": "sky", "prerequisites": ["same-2"]},
+          {"id": "r-d-b-38-done", "label": "R&D <b>\r\n&#38; - done", "color": "sky", "prerequisites": ["second-windmill-kind-gold"]}
+        ],
+        "kinds": [{"id": "a-b-c-d", "hue": "sky", "label": "A --> B & C\nD", "description": "", "source": "added"}],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "same", "liberties": []},
+          {"mark": "step", "nodeId": "same-2", "liberties": []},
+          {"mark": "step", "nodeId": "second-windmill-kind-gold", "liberties": []},
+          {"mark": "step", "nodeId": "r-d-b-38-done", "liberties": []}
+        ],
+        "readout": {"steps": 4, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A name that begins like a checkbox reads back as a mark",
+    "input": {
+      "title": "Boxes",
+      "kinds": [],
+      "nodes": [
+        {"id": "a", "label": "[x] marks the spot", "color": "sky", "prerequisites": []},
+        {"id": "b", "label": "[ ] open box", "color": "sky", "prerequisites": []},
+        {"id": "c", "label": "[ ] done box", "color": "sky", "prerequisites": []}
+      ],
+      "done": ["c"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Boxes\n<!-- windmill:roadmap -->\n- [x] marks the spot <!-- windmill:kind sky -->\n- [ ] open box\n- [x] [ ] done box",
+      "readBack": {
+        "title": "Boxes",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "marks-the-spot", "label": "marks the spot", "color": "sky", "prerequisites": [], "icon": "sparkles", "status": "complete"},
+          {"id": "open-box", "label": "open box", "color": "sky", "prerequisites": []},
+          {"id": "done-box", "label": "[ ] done box", "color": "sky", "prerequisites": [], "status": "complete"}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "done", "nodeId": "marks-the-spot", "liberties": []},
+          {"mark": "step", "nodeId": "open-box", "liberties": []},
+          {"mark": "done", "nodeId": "done-box", "liberties": []}
+        ],
+        "readout": {"steps": 3, "branches": 0, "done": 2},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A note is written line for line as it is, so a list line in it reads back as a step, a heading as a kind, an address as a link, and a blank line is lost",
+    "input": {
+      "title": "Notes",
+      "kinds": [],
+      "nodes": [
+        {
+          "id": "a",
+          "label": "A",
+          "color": "sky",
+          "prerequisites": [],
+          "description": "Things:\n- one\n- two\n\n## heading\nhttps://x.example/y\n  padded"
+        },
+        {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}
+      ],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Notes\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  Things:\n  - one\n  - two\n  \n  ## heading\n  https://x.example/y\n    padded\n  - B",
+      "readBack": {
+        "title": "Notes",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "Things:"},
+          {"id": "one", "label": "one", "color": "sky", "prerequisites": ["a"]},
+          {"id": "two", "label": "two", "color": "sky", "prerequisites": ["a"], "description": "padded", "links": ["https://x.example/y"]},
+          {"id": "b", "label": "B", "color": "terracotta", "prerequisites": ["a"]}
+        ],
+        "kinds": [{"id": "heading", "hue": "terracotta", "label": "heading", "description": "", "source": "added"}],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "one", "liberties": []},
+          {"mark": "step", "nodeId": "two", "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "note", "nodeId": "two", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "two", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "b", "liberties": []}
+        ],
+        "readout": {"steps": 4, "branches": 0, "done": 0},
+        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "An unnamed step is a marker and a space, done or not; at a change of kind the kind marker reads back as its name",
+    "input": {
+      "title": "Blank",
+      "kinds": [{"id": "sea", "hue": "sky", "label": "Sea", "description": ""}],
+      "nodes": [
+        {"id": "a", "label": "", "color": "sky", "prerequisites": []},
+        {"id": "b", "label": "", "color": "sky", "prerequisites": ["a"]},
+        {"id": "c", "label": "  padded  ", "color": "gold", "prerequisites": ["a"]}
+      ],
+      "done": ["b"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Blank\n<!-- windmill:roadmap -->\n-  <!-- windmill:kind sky Sea -->\n  - [x] \n  -   padded   <!-- windmill:kind gold -->",
+      "readBack": {
+        "title": "Blank",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "windmill-kind-sky-sea", "label": "<!-- windmill:kind sky Sea -->", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+          {"id": "step", "label": "", "color": "terracotta", "prerequisites": ["windmill-kind-sky-sea"], "status": "complete"},
+          {"id": "padded", "label": "padded  ", "color": "gold", "prerequisites": ["windmill-kind-sky-sea"]}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "windmill-kind-sky-sea", "liberties": []},
+          {"mark": "done", "nodeId": "step", "liberties": []},
+          {"mark": "step", "nodeId": "padded", "liberties": []}
+        ],
+        "readout": {"steps": 3, "branches": 0, "done": 1},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A description is cut at LF alone: a CR in it is written as it is, and ends a line on the way back",
+    "input": {
+      "title": "Notes",
+      "kinds": [],
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "description": "one\r\ntwo\rthree\n\nfour"}],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Notes\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  one\r\n  two\rthree\n  \n  four",
+      "readBack": {
+        "title": "Notes",
+        "missingRoot": false,
+        "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "one\ntwo\nthree\nfour"}],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+        ],
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A link is written by its address whatever its scheme; one with no address is not written; only http and https read back as links",
+    "input": {
+      "title": "Links",
+      "kinds": [],
+      "nodes": [
+        {
+          "id": "a",
+          "label": "A",
+          "color": "sky",
+          "prerequisites": [],
+          "links": [
+            {"url": "https://example.com/a", "label": "Docs"},
+            {"url": "", "label": "Nothing"},
+            {"url": "mailto:a@b.example", "label": ""},
+            {"url": "www.example.com", "label": ""},
+            {"url": "https://example.com/with space", "label": ""}
+          ]
+        }
+      ],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Links\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  https://example.com/a\n  mailto:a@b.example\n  www.example.com\n  https://example.com/with space",
+      "readBack": {
+        "title": "Links",
+        "missingRoot": false,
+        "nodes": [
+          {
+            "id": "a",
+            "label": "A",
+            "color": "sky",
+            "prerequisites": [],
+            "icon": "sparkles",
+            "description": "mailto:a@b.example\nwww.example.com\nhttps://example.com/with space",
+            "links": ["https://example.com/a"]
+          }
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+        ],
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "A step is done by the marks given: an id the roadmap does not hold marks nothing",
+    "input": {
+      "title": "Marks",
+      "kinds": [],
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": []}, {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}],
+      "done": ["b", "ghost"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Marks\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  - [x] B",
+      "readBack": {
+        "title": "Marks",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"], "status": "complete"}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []},
+          {"mark": "done", "nodeId": "b", "liberties": []}
+        ],
+        "readout": {"steps": 2, "branches": 0, "done": 1},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "Steps are written in the order given, each under the first step it follows, wherever that step stands in the order",
+    "input": {
+      "title": "Order",
+      "kinds": [],
+      "nodes": [
+        {"id": "child", "label": "Child", "color": "sky", "prerequisites": ["parent"]},
+        {"id": "z", "label": "Z first", "color": "sky", "prerequisites": []},
+        {"id": "parent", "label": "Parent", "color": "sky", "prerequisites": []},
+        {"id": "second", "label": "Second child", "color": "sky", "prerequisites": ["parent"]},
+        {"id": "a", "label": "A last", "color": "sky", "prerequisites": []}
+      ],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Order\n<!-- windmill:roadmap -->\n- Z first <!-- windmill:kind sky -->\n- Parent\n  - Child\n  - Second child\n- A last",
+      "readBack": {
+        "title": "Order",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "z-first", "label": "Z first", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {"id": "parent", "label": "Parent", "color": "sky", "prerequisites": []},
+          {"id": "child", "label": "Child", "color": "sky", "prerequisites": ["parent"]},
+          {"id": "second-child", "label": "Second child", "color": "sky", "prerequisites": ["parent"]},
+          {"id": "a-last", "label": "A last", "color": "sky", "prerequisites": []}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "z-first", "liberties": []},
+          {"mark": "step", "nodeId": "parent", "liberties": []},
+          {"mark": "step", "nodeId": "child", "liberties": []},
+          {"mark": "step", "nodeId": "second-child", "liberties": []},
+          {"mark": "step", "nodeId": "a-last", "liberties": []}
+        ],
+        "readout": {"steps": 5, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "Twelve steps in a chain indent two spaces a level, and read back as a chain",
+    "input": {
+      "title": "Deep",
+      "kinds": [],
+      "nodes": [
+        {"id": "s0", "label": "Level 0", "color": "sky", "prerequisites": []},
+        {"id": "s1", "label": "Level 1", "color": "sky", "prerequisites": ["s0"]},
+        {"id": "s2", "label": "Level 2", "color": "sky", "prerequisites": ["s1"]},
+        {"id": "s3", "label": "Level 3", "color": "sky", "prerequisites": ["s2"]},
+        {"id": "s4", "label": "Level 4", "color": "sky", "prerequisites": ["s3"]},
+        {"id": "s5", "label": "Level 5", "color": "sky", "prerequisites": ["s4"]},
+        {"id": "s6", "label": "Level 6", "color": "sky", "prerequisites": ["s5"]},
+        {"id": "s7", "label": "Level 7", "color": "sky", "prerequisites": ["s6"]},
+        {"id": "s8", "label": "Level 8", "color": "sky", "prerequisites": ["s7"]},
+        {"id": "s9", "label": "Level 9", "color": "sky", "prerequisites": ["s8"]},
+        {"id": "s10", "label": "Level 10", "color": "sky", "prerequisites": ["s9"]},
+        {"id": "s11", "label": "Level 11", "color": "sky", "prerequisites": ["s10"]}
+      ],
+      "done": ["s0", "s1"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Deep\n<!-- windmill:roadmap -->\n- [x] Level 0 <!-- windmill:kind sky -->\n  - [x] Level 1\n    - Level 2\n      - Level 3\n        - Level 4\n          - Level 5\n            - Level 6\n              - Level 7\n                - Level 8\n                  - Level 9\n                    - Level 10\n                      - Level 11",
+      "readBack": {
+        "title": "Deep",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "level-0", "label": "Level 0", "color": "sky", "prerequisites": [], "icon": "sparkles", "status": "complete"},
+          {"id": "level-1", "label": "Level 1", "color": "sky", "prerequisites": ["level-0"], "status": "complete"},
+          {"id": "level-2", "label": "Level 2", "color": "sky", "prerequisites": ["level-1"]},
+          {"id": "level-3", "label": "Level 3", "color": "sky", "prerequisites": ["level-2"]},
+          {"id": "level-4", "label": "Level 4", "color": "sky", "prerequisites": ["level-3"]},
+          {"id": "level-5", "label": "Level 5", "color": "sky", "prerequisites": ["level-4"]},
+          {"id": "level-6", "label": "Level 6", "color": "sky", "prerequisites": ["level-5"]},
+          {"id": "level-7", "label": "Level 7", "color": "sky", "prerequisites": ["level-6"]},
+          {"id": "level-8", "label": "Level 8", "color": "sky", "prerequisites": ["level-7"]},
+          {"id": "level-9", "label": "Level 9", "color": "sky", "prerequisites": ["level-8"]},
+          {"id": "level-10", "label": "Level 10", "color": "sky", "prerequisites": ["level-9"]},
+          {"id": "level-11", "label": "Level 11", "color": "sky", "prerequisites": ["level-10"]}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "done", "nodeId": "level-0", "liberties": []},
+          {"mark": "done", "nodeId": "level-1", "liberties": []},
+          {"mark": "step", "nodeId": "level-2", "liberties": []},
+          {"mark": "step", "nodeId": "level-3", "liberties": []},
+          {"mark": "step", "nodeId": "level-4", "liberties": []},
+          {"mark": "step", "nodeId": "level-5", "liberties": []},
+          {"mark": "step", "nodeId": "level-6", "liberties": []},
+          {"mark": "step", "nodeId": "level-7", "liberties": []},
+          {"mark": "step", "nodeId": "level-8", "liberties": []},
+          {"mark": "step", "nodeId": "level-9", "liberties": []},
+          {"mark": "step", "nodeId": "level-10", "liberties": []},
+          {"mark": "step", "nodeId": "level-11", "liberties": []}
+        ],
+        "readout": {"steps": 12, "branches": 0, "done": 2},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      }
+    }
+  },
+  {
+    "name": "Names in several scripts, combining marks and emoji are written as they are",
+    "input": {
+      "title": "Учить языки 🚀",
+      "guide": "Каждый день по шагу.\n毎日一歩。",
+      "kinds": [{"id": "k", "hue": "plum", "label": "Слова e\u0301 👍🏽", "description": ""}],
+      "nodes": [
+        {"id": "a", "label": "Привет, мир", "color": "plum", "prerequisites": [], "description": "مرحبا بالعالم\nשלום עולם"},
+        {"id": "b", "label": "你好，世界", "color": "plum", "prerequisites": ["a"]},
+        {"id": "c", "label": "👨\u200d👩\u200d👧 e\u0301 Z\u0351a\u0306", "color": "plum", "prerequisites": ["a"]}
+      ],
+      "done": ["b"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Учить языки 🚀\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> Каждый день по шагу.\n> 毎日一歩。\n<!-- /windmill:guide -->\n- Привет, мир <!-- windmill:kind plum Слова e\u0301 👍🏽 -->\n  مرحبا بالعالم\n  שלום עולם\n  - [x] 你好，世界\n  - 👨\u200d👩\u200d👧 e\u0301 Z\u0351a\u0306",
+      "readBack": {
+        "title": "Учить языки 🚀",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "root", "label": "Привет, мир", "color": "plum", "prerequisites": [], "icon": "sparkles", "description": "مرحبا بالعالم\nשלום עולם"},
+          {"id": "step", "label": "你好，世界", "color": "plum", "prerequisites": ["root"], "status": "complete"},
+          {"id": "e-z-a", "label": "👨\u200d👩\u200d👧 e\u0301 Z\u0351a\u0306", "color": "plum", "prerequisites": ["root"]}
+        ],
+        "kinds": [{"id": "e", "hue": "plum", "label": "Слова e\u0301 👍🏽", "description": "", "source": "added"}],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "root", "liberties": []},
+          {"mark": "note", "nodeId": "root", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "root", "liberties": [{"type": "note"}]},
+          {"mark": "done", "nodeId": "step", "liberties": []},
+          {"mark": "step", "nodeId": "e-z-a", "liberties": []}
+        ],
+        "readout": {"steps": 3, "branches": 0, "done": 1},
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+      }
+    }
+  }
+]

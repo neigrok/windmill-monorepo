@@ -1,4 +1,4 @@
-# A deploy replaces the server's container: Docker sends SIGTERM, waits the service's stop_grace_period, then kills it. The
+# When a deploy replaces the server's container, Docker sends SIGTERM, waits the service's stop_grace_period, then kills it. The
 # server stops by its own deadline for everything still running at the signal, and takes no longer than its exit flush
 # limit to write out its log and reports after it, so the grace period must be longer than both together with a second
 # to spare (deploy/README.md).

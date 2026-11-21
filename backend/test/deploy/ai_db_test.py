@@ -192,6 +192,51 @@ class AiDbTest(unittest.TestCase):
         self.assertEqual((hba.count("# BEGIN windmill_ai"), hba.count("# BEGIN windmill_subscriptions")), (1, 1))
         self.assertLess(hba.index("# BEGIN windmill_ai"), hba.index("# BEGIN windmill_subscriptions"))
 
+    def test_both_ledgers_written_again_in_either_order_change_nothing(self):
+        self.write_env(self.password)
+        first = [self.compose("run", "--rm", "-T", "subscriptions-db", check=False), self.provision()]
+        written = self.hba()
+
+        again = [self.compose("run", "--rm", "-T", "subscriptions-db", check=False), self.provision(),
+                 self.provision(), self.compose("run", "--rm", "-T", "subscriptions-db", check=False)]
+
+        subscriptions = "PASS subscriptions database: windmill_subscriptions provisioned, refused to the backend role"
+        ai = "PASS AI database: windmill_ai provisioned, refused to other roles"
+        self.assertEqual([(result.returncode, result.stdout) for result in first + again], [
+            (0, subscriptions + " (rules unchanged)\n"), (0, ai + " (rules installed)\n"),
+            (0, subscriptions + " (rules unchanged)\n"), (0, ai + " (rules unchanged)\n"),
+            (0, ai + " (rules unchanged)\n"), (0, subscriptions + " (rules unchanged)\n")])
+        self.assertEqual(self.hba(), written)
+        self.assertTrue(written.startswith("# BEGIN windmill_ai: "))
+        self.assertLess(written.index("# END windmill_ai\n"), written.index("# BEGIN windmill_subscriptions: "))
+        self.assertEqual([
+            self.reach("windmill", "windmill_ai", self.superuser_password),
+            self.reach("windmill", "windmill_subscriptions", self.superuser_password),
+            self.reach("windmill_subscriptions", "windmill_ai", "a" * 64),
+            self.reach("windmill_ai", "windmill_subscriptions", self.password),
+            self.reach("windmill_ai", "windmill", self.password),
+            self.reach("windmill_subscriptions", "windmill", "a" * 64),
+            self.reach("windmill_ai", "windmill_ai", self.password, "select current_user"),
+            self.reach("windmill_subscriptions", "windmill_subscriptions", "a" * 64, "select current_user"),
+            self.backend(),
+        ], [("rejected", "rejected"), ("rejected", "rejected"), ("rejected", "rejected"), ("rejected", "rejected"),
+            ("rejected", "rejected"), ("rejected", "rejected"), ("windmill_ai", "windmill_ai"),
+            ("windmill_subscriptions", "windmill_subscriptions"), ("3", "3")])
+
+    def test_a_block_marked_as_another_ledger_stops_the_run_and_changes_nothing(self):
+        self.compose("exec", "-T", "-u", "postgres", "db", "sed", "-i",
+                     "1i # BEGIN windmill_aa: written by hand\\nlocal all all trust # reject\\n# END windmill_aa", HBA)
+        before = self.hba()
+        self.write_env(self.password)
+
+        result = self.provision()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("FAIL AI database: pg_hba.conf holds a block marked as a ledger other than windmill_ai and"
+                      " windmill_subscriptions, so it is left as it was", result.stderr.splitlines())
+        self.assertEqual(self.hba(), before)
+        self.assertEqual(self.backend(), ("3", "3"))
+
     def test_own_role_can_dump_and_restore_the_ledger(self):
         self.write_env(self.password)
         self.assertEqual(self.provision().returncode, 0)
