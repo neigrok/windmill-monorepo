@@ -7,8 +7,9 @@ and first-run boards and the Journal file's Echoes boards — and their behaviou
 Figma uses Inter for editable specimens where its SF Pro renderer supplies no glyph metrics; the app
 uses the system text styles. Native chrome is a structural drawing: SwiftUI owns its appearance.
 
-`apps/ios/App/Tools/tests/test_theme_assets.py` reads the role tables in §2 and checks every colour set against
-them, so a role row keeps its form: `` | `room/role` | dark | light | ``.
+`apps/ios/App/Tools/tests/test_theme_assets.py` reads the role tables in §2 and roadmap's in
+[Roadmap · iOS](roadmap.md), and checks every colour set against them, so a role row keeps its form:
+`` | `room/role` | dark | light | ``.
 
 ---
 
@@ -54,9 +55,10 @@ them, so a role row keeps its form: `` | `room/role` | dark | light | ``.
 
 ## 2. Colour roles
 
-Three palettes, one role vocabulary. Every role is a colour set in `Sources/Theme/Theme.xcassets`
+Four palettes, one role vocabulary: gym's, journal's and the shell's below, and roadmap's in
+[Roadmap · iOS](roadmap.md). Every role is a colour set in `Sources/Theme/Theme.xcassets`
 (light and dark appearance values, named `gym/accent`, `shell/canvas`, …) read through one enum
-per palette — `GymPalette`, `JournalPalette`, `ShellPalette` — in `Sources/Theme/Palettes.swift`,
+per palette — `GymPalette`, `JournalPalette`, `ShellPalette`, `RoadmapPalette` — in `Sources/Theme/Palettes.swift`,
 the folder `project.yml` compiles into both the app and the `WindmillWorkoutActivity` target. No
 other palette exists: no feature, screen or the Live Activity declares colours of its own, and no
 view chooses a colour by appearance. `python3 Tools/check_theme_literals.py` rejects colour
