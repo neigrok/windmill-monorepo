@@ -22,7 +22,13 @@ Bing verified the property independently. Its Sitemaps report showed **Success**
 
 IndexNow received the changed `/connect.html` URL with HTTP **202** after the deployed proof returned HTTP 200 with its expected content. The protocol treats 202 as acceptance pending key validation. [IndexNow responses](https://www.indexnow.org/documentation)
 
-These are the last recorded provider results, not current coverage. Reinspect these six URLs on **November 19** and **December 10**, the seven- and 28-day evidence checks from submission. Record actual inspection dates, index coverage and exclusion reasons. This provider schedule is independent of launch timing.
+## Coverage read on November 21, 2026
+
+Google's Page indexing report, last updated November 16, lists **6 indexed pages**: `/`, `/roadmap`, `/gym`, `/journal`, `/gallery` and `/connect.html`, each last crawled on November 12. It lists **5 pages as discovered and not indexed**, never crawled: the changelog, pricing, privacy, refunds and terms. The overview shows no web search click from November 11 to 19. Google's chosen canonical for each page was not read.
+
+Bing's Site Explorer shows no indexed page for the site. Its Sitemaps report shows `/sitemap.xml` submitted and crawled on November 12 with **Success** and **11 URLs discovered**. Its home report shows no click and no impression from November 14 to 19. Bing's per-page URL Inspection was not rerun.
+
+Both consoles were read through the owner's signed-in browser. Reinspect on **December 10**, the 28-day check from submission, and record actual inspection dates, index coverage and exclusion reasons. This provider schedule is independent of launch timing.
 
 ## Submit and verify
 

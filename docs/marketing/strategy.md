@@ -35,11 +35,11 @@ The scale is **eight owner hours a week**. Eight hours is a ceiling on the owner
 | Android | Gym only, as a signed APK a person installs by hand. It is not on Google Play. | [Access checks](reports/01-store-readiness.md) |
 | Windmill One | It cannot be bought on any surface. The pricing page names $12 a month and says nothing is on sale yet. | [Paid line](../../AGENTS.md) · [Pricing page](../../web/public/pricing.html) |
 | A person's own assistant | It connects to Roadmap and Gym. Journal has no such door. | [The idea](../design/brand-foundations.md#the-idea) · [Connect](https://windmill.works/connect.html) |
-| Search | Last recorded on November 12, 2026: Google had indexed the homepage and not yet Roadmap, Gym, Journal, the gallery or Connect; Bing had indexed none of the six. The record holds no later inspection, so today's coverage is unknown. | [Search record](reports/06-brand-search-identity.md) |
+| Search | Read on November 21, 2026: Google has indexed the six main pages (the homepage, Roadmap, Gym, Journal, the gallery and Connect), last crawled on November 12, and has not yet crawled the changelog, pricing, privacy, refunds and terms. Bing's Site Explorer shows no indexed page. Neither engine shows a click. | [Search record](reports/06-brand-search-identity.md) |
 | Public examples | The gallery lists one tree, “Learn to sail”. On November 17, 2026 its page still carried the homepage's heading and description in the HTML a search engine reads first. | [Search record](reports/06-brand-search-identity.md) |
 | Guides | None is published. The pages that would hold them are neither designed nor built. | [Topic inventory](reports/17-distribution-and-editorial.md#six-topic-inventory) |
-| People | By the owner's account on November 21, 2026, one person outside the build uses Windmill regularly, on Android. There is no list of people to invite. | [Finding the first people](#finding-the-first-people) |
-| Marketing work done | The sitemap is submitted to Google and Bing, and the six main pages were inspected on November 12, 2026. The marketing tree records no finished task: no group is recruited, no guide is placed and no message is sent. | [Search record](reports/06-brand-search-identity.md) · [Marketing tree](https://windmill.works/#/app/t_970fc0a989207ce2) |
+| People | By the owner's account on November 21, 2026, one person outside the build uses Windmill regularly, on Android, and one more intends to install the iPhone app once it is public. There is no one else to invite, so the first people come from research. | [Finding the first people](#finding-the-first-people) |
+| Marketing work done | The sitemap is submitted to Google and Bing, and both consoles were read on November 21, 2026. No group is recruited, no guide is placed and no message is sent. | [Search record](reports/06-brand-search-identity.md) · [Marketing tree](https://windmill.works/#/app/t_970fc0a989207ce2) |
 
 ## Launch contract
 
@@ -173,7 +173,7 @@ Ruled:
 - **Scale and spending.** Eight owner hours a week. No standing marketing budget: each spend is its own proposal, with its amount and what it would teach.
 - **The pricing page states where the $12 goes, in dollars**, from the day the page is rebuilt: the AI allowance, the store's fee, running Windmill and the work. It waits on the release's final AI allowance amount. The page states none of this today.
 - **A master's fee.** There is no standing ceiling: each fee is its own spending proposal. Whether it is owed when the master publishes nothing is agreed in writing with each master before they start. No fee benchmark is recorded in [the evidence](benchmarks.md).
-- **A person's own provider key or token.** The owner intends to accept one. It is not scheduled, and Windmill takes none today.
+- **A person's own provider key or token.** Windmill accepts one for Gym and Roadmap once Windmill One has 1,000 subscribers. It takes none today.
 - **The public pages.** Their main heading, structure and look are ruled in [the marketing site proposal](../design/marketing-site-proposal.md#owner-rulings-and-open-decisions).
 - **App Store countries.** Every country, the EU included, with one check still open. [Access and release checks](reports/01-store-readiness.md)
 
@@ -182,4 +182,3 @@ Open:
 - Whether the EU stays in the first release, after the check of what Apple publishes about an individual seller on EU listings.
 - Approval of the drawn front page and of the night version of the mark.
 - The founder note, which is the owner's to write.
-- When a person's own provider key is accepted, and for which rooms.
