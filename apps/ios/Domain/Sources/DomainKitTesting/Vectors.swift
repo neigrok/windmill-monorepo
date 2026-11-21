@@ -120,7 +120,9 @@ extension Moment {
 
 // The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, the
 // server's copy of them as the device pulled it (`confirmed`, by default `stored`), the device keys it lists, each key's
-// value, and the scope's spent ids it lists, `{t, id, born, seq?}`, each id's born and the `seq` it keeps.
+// value, and the scope's spent ids it lists, `{t, id, born, seq?}`, each id's born and the `seq` it keeps. A view's record
+// is as the engine's readers hand it over: it carries its confirmed row's `seq`, none where the server's copy holds no row
+// of it, and it is pending where it is not that row, as a record a queued entry still changes is.
 package struct VectorRecords: Sendable {
   package var drawn: [Record]
   package var stored: [Record]
@@ -129,9 +131,22 @@ package struct VectorRecords: Sendable {
   package var spent: [RecordKey: (born: Stamp, seq: Int64?)]
 
   package init(drawn: JSON?, stored: JSON?, confirmed: JSON? = nil, device: JSON? = nil, spent: JSON? = nil, registry: Registry) throws {
-    self.drawn = try VectorRecords.records(drawn, registry: registry)
-    self.stored = try VectorRecords.records(stored, registry: registry)
-    self.confirmed = try confirmed.map { try VectorRecords.records($0, registry: registry) } ?? self.stored
+    let stored = try VectorRecords.records(stored, registry: registry)
+    let taken = try confirmed.map { try VectorRecords.records($0, registry: registry) } ?? stored
+    let rows = Dictionary(taken.map { (RecordKey($0.type, $0.id), $0) }) { (first: Record, _: Record) -> Record in first }
+    let viewed = { (record: Record) -> Record in
+      let row = rows[RecordKey(record.type, record.id)]
+      let isRow = row.map { (row: Record) -> Bool in
+        row.life == record.life && row.born == record.born && row.values == record.values && row.stamps == record.stamps
+          && row.texts == record.texts && row.serials == record.serials
+      }
+      return Record(type: record.type, id: record.id, life: record.life, born: record.born, values: record.values, stamps: record.stamps,
+                    texts: record.texts, serials: record.serials, seq: row?.seq, rc: record.rc, ru: record.ru, isVisible: record.isVisible,
+                    isPending: isRow != true, isHeld: false)
+    }
+    self.drawn = try VectorRecords.records(drawn, registry: registry).map(viewed)
+    self.stored = stored.map(viewed)
+    self.confirmed = taken
     self.device = try device?.asObject() ?? [:]
     self.spent = Dictionary(uniqueKeysWithValues: try (spent?.asArray() ?? []).map { (spentID: JSON) throws -> (RecordKey, (born: Stamp, seq: Int64?)) in
       let seq = try spentID["seq"].map { (seq: JSON) throws -> Int64 in try seq.asInteger() }
@@ -153,8 +168,8 @@ package struct VectorRecords: Sendable {
                   spent: rows["spent"], registry: registry)
   }
 
-  // Each row as the engine's readers hand it to a product. A row that states no `seq` is a record the device wrote that
-  // the server has not yet taken, so it reads with none; a text that states no `merged` is not merged.
+  // Each row as a record. A row that states no `seq` is a record the device wrote that the server has not yet taken, so
+  // it reads with none; a text that states no `merged` is not merged.
   static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
     try (rows?.asArray() ?? []).map { (json: JSON) throws -> Record in
       var row = try json.asObject()

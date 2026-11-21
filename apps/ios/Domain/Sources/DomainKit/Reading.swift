@@ -152,7 +152,7 @@ public struct Repository<E: Entity> {
 }
 
 extension Repository where E: Ordered {
-  // §7.5 the member a new one placed so lands below, resolved in the load phase.
+  // §7.5 the member a new one lands below at a placement, resolved in the load phase.
   public func anchor(_ placement: Placement) throws -> RecordID? {
     try anchor(placement, orderField: E.orderField)
   }

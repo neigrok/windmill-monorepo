@@ -1921,7 +1921,8 @@ confirmed?, spent?}}, device?, ids?, now, offsetSeconds}`, decided as `{write: {
 result}}`, `{unchanged: {result}}` or `{refuse}`: `confirmed` is the server's copy of the scope as the device pulled
 it, by default `stored`, `spent` its spent ids (`{t, id, born, seq?}`), and `undo` a segment's Undo recipes where its
 plan opts in. Swift's `ProductCorpus` reads `confirmed`, each row with its `seq`, and each spent id's born and `seq` (§7.2),
-a row that states no `seq` as a record with none and a text that states no `merged` as not merged, and gives `undo`; the web kit's act form reads `drawn`, `stored` and `spent` and gives `{scope, gesture}`, a product's
+a row that states no `seq` as a record with none and a text that states no `merged` as not merged, gives each view's
+record its confirmed row's `seq` and reads it pending where it is not that row, as the engine's readers do, and gives `undo`; the web kit's act form reads `drawn`, `stored` and `spent` and gives `{scope, gesture}`, a product's
 runner there adding `confirmed` and `undo`. `Vector.withRecordsReversed` is a case with its `drawn`, `stored` and
 `spent` rows in reverse, which a decision that follows row order fails. `vectors`, `file` and `Contract.vectors` take
 paths under `packages/api-contract/`. A feature's actions test maps each case's `action` to the
