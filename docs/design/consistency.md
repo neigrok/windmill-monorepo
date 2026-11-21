@@ -1206,9 +1206,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   01.14 and 01.15 draw Apply and Reject; allowance used is 11j.
 - **11j · The allowance-used copy.** Boards 01.10–01.12 say *You have used all of your AI
   allowance.*, a sentence no server sends (the nearest is *Your AI allowance is fully used or
-  reserved.*, 10v); Android says it for `subject_exhausted` when the server's allowance read shows the
-  balance gone, and *Coach’s AI allowance is unavailable right now.*, which no board draws, on a balance
-  that refused a round without being gone (`coach/turn/CoachTurnRefusal.kt`). It says when Coach
+  reserved.*, 10v); Android says it for `subject_exhausted` when the allowance the refusal carries shows
+  nothing left or held, and otherwise says what holds the request, as iOS does, in sentences no board draws
+  (6aa, `coach/turn/CoachTurnRefusal.kt`). It says when Coach
   comes back only of a paused pool (`free_month_exhausted`, `free_day_exhausted`), not of the seat's own
   allowance (01.11). Windmill One (01.12) ships only with checkout open.
 - **11k · Proposals decided on a sheet.** The owner keeps Android's action cards, review route and outcome wording.
@@ -1685,8 +1685,7 @@ Android. It and the product differ in these places.
   `allowance.budgetResetsAtMs` on the turn route's refusal before the stream, and follows the phone's
   locale (*Nov 1* in en_US). The backend code sends it under dogfood node
   `gym-coach-turn-allowance-reset`; production sends it once that node is done, and until then the line
-  ends at *this month*. A refusal mid-turn names the same moment on its `error` frame, where iOS reads
-  only `code`, so that line always ends at *this month*.
+  ends at *this month*. A refusal mid-turn reads the same moment from its `error` frame.
 - **6x · The iOS sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
   they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). Android names them
   (`PhoneSignInCopy`, 07.15 `1902:35369`, 07.16 `1902:35444`). iOS `AdoptionQuestion.named` lists workouts, routines,
@@ -1732,14 +1731,13 @@ Android. It and the product differ in these places.
   *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
   specimens *I made 3 routines.* and *I made Incline Dumbbell Press, then*. 08.45 says Android's *Get the update*, not iOS's
   *Update*. 08.68 offers *Use your own AI agent* on a shared free day, which iOS code does not (`CoachTurnRefusal.recovery`).
-  A spent signed-out allowance says *You have used all of your AI allowance.* over *Sign in to continue.* on both phones; one
-  with too little left for a round says *Coach’s AI allowance is unavailable right now.* on Android and *This request needs
-  more AI capacity than your remaining allowance.* on iOS over the same line, and one whose rest earlier requests hold says
-  Android's same unavailable line and iOS's *Your earlier AI requests hold the rest of your AI allowance until their cost is
-  confirmed, at most 10 minutes after each began.* No board draws iOS's two lines or its *Your AI allowance has no room for
-  this request.*, said where a refusal carries no allowance. That
-  allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about $0.25 is left
-  after signing in and the line holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
+  A `subject_exhausted` refusal says on both phones what the allowance it carries shows holds the request, over *Sign in to
+  continue.* signed out: *You have used all of your AI allowance.* with nothing left or held, *Your earlier AI requests hold
+  the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.* with nothing left but
+  something held, *This request needs more AI capacity than your remaining allowance.* with something left, and *Your AI
+  allowance has no room for this request.* where the refusal carries none. No board draws the last three. A signed-out
+  phone's allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about
+  $0.25 is left after signing in and *Sign in to continue.* holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
   08.44's words, on Android; iOS's signed-in notice names no date.
 
 ### Native and web differences

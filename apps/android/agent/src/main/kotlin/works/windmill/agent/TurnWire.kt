@@ -13,7 +13,7 @@ sealed interface TurnEvent {
     data class Text(val delta: String) : TurnEvent
     data class Calls(val batch: TurnBatch) : TurnEvent
     data class Done(val state: TurnState, val truncated: Boolean) : TurnEvent
-    data class Error(val code: String, val budgetResetsAtMs: Long?, val spent: Boolean = false) : TurnEvent
+    data class Error(val code: String, val budgetResetsAtMs: Long?, val shortfall: AllowanceShortfall? = null) : TurnEvent
 
     // The frame after which the server closes this stream. A terminal snapshot is not one: the closing frame that names how the turn ended follows it.
     val closing: Boolean get() = this is Done || this is Error
@@ -25,7 +25,7 @@ sealed interface TurnEvent {
                 "text" -> Text(data.member("delta").str())
                 "calls" -> Calls(batch(data))
                 "done" -> Done(terminalState(data), (data["truncated"] as? Json.Bool)?.value ?: false)
-                "error" -> Error(data.member("code").str(), moment(data["budgetResetsAtMs"]), spent(data["allowance"]))
+                "error" -> Error(data.member("code").str(), moment(data["budgetResetsAtMs"]), shortfall(data["allowance"]))
                 else -> throw TurnWireFault(TurnWireFault.unknownEvent)
             }
         }
@@ -43,8 +43,8 @@ sealed interface TurnEvent {
     }
 }
 
-// A refusal the server answered a turn request with, by §6.5 code: the moment a shared free pool refills when its body says, and whether its allowance read says the balance is gone.
-data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: Long?, val spent: Boolean = false) : Exception(code) {
+// A refusal the server answered a turn request with, by §6.5 code: the moment a shared free pool refills when its body says, and what the allowance its body carries shows holds the request.
+data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: Long?, val shortfall: AllowanceShortfall? = null) : Exception(code) {
     // A cap the server refills, which is expected however it is answered.
     val capped: Boolean get() = code == rateLimited || code in allowanceCodes && code !in installationCodes
 
@@ -68,10 +68,6 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
         val codes = allowanceCodes + setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown, turnOrder,
             "coach-turn-volume", rateLimited, "coach-replica-syncing", busy, vendorError, streamReplaced, turnStopped, anonymousUnavailable)
 
-        // §7.1: an allowance read says the balance is gone when nothing remains and no unresolved call holds any of it. A read that is absent or cannot be read says nothing of the balance.
-        fun spent(remaining: String?, reserved: String?): Boolean =
-            remaining?.toBigDecimalOrNull()?.signum() == 0 && reserved?.toBigDecimalOrNull()?.signum() == 0
-
         // No server said this: no attempt to open the turn reached one this phone could read, so it names no status, and the turn never began.
         val unreached: TurnRefusal get() = TurnRefusal(0, unreachable, null)
         // The same when every answer was a page that is no stream, a captive portal's or a proxy's, which the phone counts apart.
@@ -81,7 +77,27 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
             val json = try { Json.parse(body) } catch (unreadable: JsonError) { null }
             val code = (json?.get("code") as? Json.Str)?.value.orEmpty()
             val allowance = json?.get("allowance")
-            return TurnRefusal(status, code.ifEmpty { vendorError }, moment(allowance?.get("budgetResetsAtMs")), spent(allowance))
+            return TurnRefusal(status, code.ifEmpty { vendorError }, moment(allowance?.get("budgetResetsAtMs")), shortfall(allowance))
+        }
+    }
+}
+
+// §7.1: what holds back a request the allowance refused `subject_exhausted`, as the allowance's amounts show. `subject_exhausted` alone says none of these: a positive balance refuses a round that does not fit.
+enum class AllowanceShortfall {
+    // Nothing is left, and no earlier request whose cost is unconfirmed holds any of it.
+    spent,
+    // Nothing is left, and earlier requests whose cost is not yet confirmed hold the rest.
+    held,
+    // Something is left, less than the request needs.
+    tooLarge;
+
+    companion object {
+        // An allowance that is absent, or whose amounts cannot be read, shows nothing.
+        fun of(remaining: String?, reserved: String?): AllowanceShortfall? {
+            val left = remaining?.toBigDecimalOrNull() ?: return null
+            val holding = reserved?.toBigDecimalOrNull() ?: return null
+            if (left.signum() > 0) return tooLarge
+            return if (holding.signum() > 0) held else spent
         }
     }
 }
@@ -183,9 +199,9 @@ private inline fun <T> readable(read: () -> T): T = try {
     throw TurnWireFault(TurnWireFault.unreadable)
 }
 
-private fun spent(allowance: Json?): Boolean {
+private fun shortfall(allowance: Json?): AllowanceShortfall? {
     fun usd(name: String) = (allowance?.get(name) as? Json.Str)?.value
-    return TurnRefusal.spent(usd("remaining"), usd("reserved"))
+    return AllowanceShortfall.of(usd("remaining"), usd("reserved"))
 }
 
 // A moment the server names is a courtesy: one that cannot be read is no moment, and the refusal stands.

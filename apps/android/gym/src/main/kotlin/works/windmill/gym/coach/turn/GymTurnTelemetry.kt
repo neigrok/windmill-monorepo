@@ -43,15 +43,17 @@ class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: La
         })
     }
 
+    // A cap the notice says is a refusal this phone expects, told by its capped outcome alone; every other withdrawal is a failed request too.
     override fun withdrawn(status: Int, code: TurnLabel, durationMs: Long) {
         val refusal = CoachTurnRefusal.of(code.value, status)
         val (outcome, cap) = refusal.askOutcome
         val failed = when {
+            outcome == "capped" -> null
             code.value == TurnLabel.notAStream -> mapOf("failure_kind" to "malformed")
             refusal == CoachTurnRefusal.Offline -> mapOf("failure_kind" to "offline")
             else -> mapOf("failure_kind" to "http", "status" to status.toString())
         }
-        telemetry.event("api_request_failed", mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST") + failed)
+        failed?.let { telemetry.event("api_request_failed", mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST") + it) }
         asked(if (outcome == "refused" && TurnRefusal(status, code.value, null).serverFault) "failed" else outcome, cap, durationMs)
     }
 

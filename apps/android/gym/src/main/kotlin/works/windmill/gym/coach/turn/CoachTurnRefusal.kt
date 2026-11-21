@@ -5,6 +5,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import works.windmill.agent.AllowanceShortfall
 import works.windmill.agent.TurnLabel
 import works.windmill.agent.TurnRefusal
 import works.windmill.gym.R
@@ -24,8 +25,10 @@ sealed interface CoachTurnRefusal {
             }
         }
     }
-    // `spent`: the server's read says the balance is gone. `subject_exhausted` alone does not: a positive balance refuses a round that does not fit (§7.1).
-    data class Allowance(val allowance: String, val resetsAtMs: Long? = null, val spent: Boolean = false) : CoachTurnRefusal
+    // `subject_exhausted`, by what holds the request where the refusal carried the allowance (§7.1), and the moment the seat's period ends.
+    data class Shortfall(val shortfall: AllowanceShortfall?, val resetsAtMs: Long? = null) : CoachTurnRefusal
+    // Every other allowance code.
+    data class Allowance(val allowance: String, val resetsAtMs: Long? = null) : CoachTurnRefusal
     data class FreeMonthExhausted(val resetsAtMs: Long?) : CoachTurnRefusal
     data object RateLimited : CoachTurnRefusal
     data object UpdateRequired : CoachTurnRefusal
@@ -41,10 +44,16 @@ sealed interface CoachTurnRefusal {
         Offline -> Words.Message(R.string.gym_coach_offline)
         LogArriving -> Words.Message(R.string.gym_coach_log_arriving)
         is TooLong -> Words.Counted(R.plurals.gym_coach_too_long, overBytes, listOf(count(overBytes), count(Ask.maxQuestionBytes)))
-        is Allowance -> when {
-            allowance == "subject_exhausted" && spent -> Words.Message(R.string.gym_coach_allowance_spent)
-            allowance == "free_day_exhausted" -> Words.Message(R.string.gym_coach_free_day_exhausted)
-            allowance == "concurrency_exhausted" -> Words.Message(R.string.gym_coach_concurrency_exhausted)
+        is Shortfall -> when (shortfall) {
+            AllowanceShortfall.spent -> Words.Message(R.string.gym_coach_allowance_spent)
+            AllowanceShortfall.held -> Words.Message(R.string.gym_coach_allowance_held)
+            AllowanceShortfall.tooLarge -> Words.Message(R.string.gym_coach_allowance_too_large)
+            // No allowance came with the refusal: only what is always true.
+            null -> Words.Message(R.string.gym_coach_allowance_no_room)
+        }
+        is Allowance -> when (allowance) {
+            "free_day_exhausted" -> Words.Message(R.string.gym_coach_free_day_exhausted)
+            "concurrency_exhausted" -> Words.Message(R.string.gym_coach_concurrency_exhausted)
             else -> Words.Message(R.string.gym_coach_allowance_unavailable)
         }
         is FreeMonthExhausted -> Words.Message(R.string.gym_coach_free_month_exhausted)
@@ -59,12 +68,13 @@ sealed interface CoachTurnRefusal {
 
     // The moment a cap the server named is over.
     val endsAtMs: Long? get() = when (this) {
+        is Shortfall -> resetsAtMs
         is Allowance -> resetsAtMs
         is FreeMonthExhausted -> resetsAtMs
         else -> null
     }
 
-    // The words the notice draws: the refusal, when what refused comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
+    // The words the notice draws: the refusal, when what refused comes back where the server named it, in the phone's zone and clock, and the sign-in an allowance that refused the send offers. A reset brings back a spent allowance, never a request too large or what earlier requests hold.
     fun said(anonymous: Boolean, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): Words {
         val day = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
         val time = DateTimeFormatter.ofPattern(if (clock24) "H:mm" else "h:mm a", Locale.getDefault())
@@ -73,24 +83,21 @@ sealed interface CoachTurnRefusal {
             this is FreeMonthExhausted && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, day)))
             this is Allowance && allowance == "free_day_exhausted" && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_use_again,
                 listOf(words, moment(resetsAtMs, day), moment(resetsAtMs, time)))
-            this is Allowance && recovery(anonymous) == CoachRecovery.signIn -> Words.Message(R.string.gym_coach_notice_sign_in, listOf(words))
-            this is Allowance && allowance == "subject_exhausted" && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, day)))
+            this is Shortfall && recovery(anonymous) == CoachRecovery.signIn -> Words.Message(R.string.gym_coach_notice_sign_in, listOf(words))
+            this is Shortfall && shortfall == AllowanceShortfall.spent && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, day)))
             else -> words
         }
     }
 
     // A cap the server refills and a deployment without Coach stand on every chat; everything else on the chat that met it.
-    val capped: Boolean get() = this is Allowance || this is FreeMonthExhausted || this == RateLimited || this == Absent
+    val capped: Boolean get() = this is Shortfall || this is Allowance || this is FreeMonthExhausted || this == RateLimited || this == Absent
 
     // The one door the notice offers: sign-in where the phone's own AI allowance refused the send or belongs to an account, the lifter's own agent where Coach's shared capacity is paused, the update, or Send again. Signed in, an allowance that refused the send offers nothing while paid plans are closed.
     fun recovery(anonymous: Boolean): CoachRecovery? = when (this) {
         Offline -> CoachRecovery.tryAgain
         LogArriving, is TooLong, Absent, Unanswered -> null
-        is Allowance -> when {
-            allowance == "free_day_exhausted" -> CoachRecovery.ownAgent
-            anonymous && allowance == "subject_exhausted" -> CoachRecovery.signIn
-            else -> null
-        }
+        is Shortfall -> if (anonymous) CoachRecovery.signIn else null
+        is Allowance -> if (allowance == "free_day_exhausted") CoachRecovery.ownAgent else null
         is FreeMonthExhausted, RateLimited -> CoachRecovery.ownAgent
         UpdateRequired -> CoachRecovery.update
         is Installation -> if (anonymous) CoachRecovery.signIn else null
@@ -100,19 +107,20 @@ sealed interface CoachTurnRefusal {
     // The `gym_ask_outcome` this refusal ends with, and the cap it names.
     val askOutcome: Pair<String, String?> get() = when (this) {
         Offline -> "offline" to null
-        is Allowance, is FreeMonthExhausted -> "capped" to "allowance"
+        is Shortfall, is Allowance, is FreeMonthExhausted -> "capped" to "allowance"
         RateLimited -> "capped" to "daily"
         Absent -> "absent" to null
         LogArriving, is TooLong, UpdateRequired, is Installation, SessionLapsed, AnonymousUnavailable, Unanswered -> "refused" to null
     }
 
     companion object {
-        fun of(code: String, status: Int? = null, resetsAtMs: Long? = null, spent: Boolean = false): CoachTurnRefusal = when {
+        fun of(code: String, status: Int? = null, resetsAtMs: Long? = null, shortfall: AllowanceShortfall? = null): CoachTurnRefusal = when {
             code == TurnRefusal.unreachable || code == TurnLabel.notAStream -> Offline
             code == TurnRefusal.anonymousUnavailable -> AnonymousUnavailable
+            code == "subject_exhausted" -> Shortfall(shortfall, resetsAtMs)
             code == "free_month_exhausted" -> FreeMonthExhausted(resetsAtMs)
             code == "invalid_installation" || code == "installation_bound" || code == "device_bound" -> Installation(code)
-            code in TurnRefusal.allowanceCodes -> Allowance(code, resetsAtMs, spent)
+            code in TurnRefusal.allowanceCodes -> Allowance(code, resetsAtMs)
             code == TurnRefusal.rateLimited -> RateLimited
             code == "coach-update-required" || code == "client-update-required" -> UpdateRequired
             status == 401 -> SessionLapsed

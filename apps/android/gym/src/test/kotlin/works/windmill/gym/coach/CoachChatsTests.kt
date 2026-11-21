@@ -195,7 +195,7 @@ class CoachChatsTests {
             advanceUntilIdle()
             assertTrue(coach.send(chat, "Ask this", photo))
             advanceUntilIdle()
-            assertEquals(CoachTurnRefusal.Allowance("subject_exhausted"), coach.refusal(chat))
+            assertEquals(CoachTurnRefusal.Shortfall(null), coach.refusal(chat))
             assertEquals(CoachDraft("Ask this", photo), coach.draft(chat))
             assertEquals(CoachDraft("Ask this", photo), LocalCoach(file).draft(LocalCoach(file).anonymousOwner(), chat))
             assertArrayEquals(bytes, coach.photo(photo.id))
@@ -929,7 +929,7 @@ class CoachChatsTests {
             assertTrue(coach.send(chat, "Question"))
             advanceUntilIdle()
             room.now += 86_400_000
-            assertEquals(CoachTurnRefusal.Allowance("subject_exhausted"), coach.refusal(chat))
+            assertEquals(CoachTurnRefusal.Shortfall(null), coach.refusal(chat))
         }
     }
 
@@ -968,17 +968,15 @@ class CoachChatsTests {
         scope.cancel()
     }
 
-    // A refused answer says the balance is gone only where its own allowance read says so, and a file holding no read says nothing of the balance. The line outlives the settle that rewrites the file.
-    @Test fun aRetainedRefusalSaysSpentOnlyWhereItsOwnReadSaysSo() = runTest {
-        val gone = "You have used all of your AI allowance."
-        val unavailable = "Coach’s AI allowance is unavailable right now."
+    // A refused answer says what held it back, as its own allowance read shows, and a file holding no read only what is always true. The line outlives the settle that rewrites the file.
+    @Test fun aRetainedRefusalSaysWhatItsOwnReadShowsHeldItBack() = runTest {
         fun read(remaining: String, reserved: String) = ""","allowance":{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.250000000","used":"0.250000000","reserved":"$reserved","remaining":"$remaining"}"""
         for ((allowance, said) in listOf(
-            read("0.000000000", "0.000000000") to gone,
-            read("0.010000000", "0.000000000") to unavailable,
-            read("0.000000000", "0.010000000") to unavailable,
-            ""","allowance":{"remaining":"0.000000000"}""" to unavailable,
-            "" to unavailable,
+            read("0.000000000", "0.000000000") to "You have used all of your AI allowance.",
+            read("0.010000000", "0.000000000") to "This request needs more AI capacity than your remaining allowance.",
+            read("0.000000000", "0.010000000") to "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.",
+            ""","allowance":{"remaining":"0.000000000"}""" to "Your AI allowance has no room for this request.",
+            "" to "Your AI allowance has no room for this request.",
         )) {
             val file = File(folder.newFolder(), LocalCoach.fileName)
             file.writeText("""{"anonymousId":"anonymous:phone","selected":{"anonymous:phone":"c"},"chats":{},"onboarding":{"anonymous:phone":{"r":{"owner":"anonymous:phone","chat":"c","replica":"x","requestId":"r","body":"{\"text\":\"Again\"}","createdAtMs":1,
