@@ -61,27 +61,41 @@ Rules for every string on these pages:
 
 ### Front page `/`
 
-| Part | Proposed |
+| Part | Wording |
 |---|---|
 | Title | Windmill — a skill tree, a training log and a journal |
-| Description | Windmill is where you keep growing in body, skill and mind, with the machine working for you. Free to use by hand. Bring your own AI assistant or use ours. |
-| Main heading | Keep growing, with the machine working for you. |
-| Line under it | A skill tree for what you are learning, a log for how you train, and a page for what you notice. Free to use by hand. |
-| Under the three pictures | Start a tree · Open the log · Write tonight |
-| Statement | Machines can now do much of the work people do. Windmill puts them to work for you instead. They help you train, learn and reflect, and the growing stays yours. |
-| Principle 1 | **The machine serves.** In Gym, Coach proposes a change and you apply it. After its first greeting it waits to be asked. |
-| Principle 2 | **Yours and open.** Bring your own assistant. It connects to Roadmap and Gym and asks for the access it needs. Journal has no door for one. |
-| Principle 3 | **Never graded.** No streaks, no scores, no countdowns. A day you skip is not coloured as a failure. |
-| Roadmap section | Map what you’re learning as a skill tree. / Real prerequisites, one step at a time. Your first tree needs no account: it lives in your browser. |
-| Gym section | Log the set. The rest is remembered. / Two taps between sets, and the next session opens with last time’s numbers. On the web your log lives on a free account. |
-| Journal section | One page a night, in your own words. / Yesterday sits one line above tonight. Search finds a feeling, not only a word, and runs on your device. |
-| Your own assistant | Use the assistant you already have. / Connect Claude, Cursor or Codex to Roadmap and Gym. It asks for the access it needs and you approve it. → How to connect |
+| Description | Windmill is where a person keeps growing in body, skill and mind. Free to use by hand. Bring your own AI assistant or use ours. |
+| Main heading | Windmill is where a person keeps growing in body, skill and mind. |
+| Body · Windmill Gym | Log the set. The rest is remembered. → Open the log |
+| Skill · Windmill Roadmap | Map what you’re learning as a skill tree. → Start a tree |
+| Mind · Windmill Journal | One page a night, in your own words. → Write tonight |
+| Your AI, or ours. · Yours | Connect the assistant you already have to Roadmap and Gym. It asks for the access it needs, and you approve it. → How to connect |
+| Your AI, or ours. · Ours | Windmill's own AI is built in, with a free allowance. Windmill One raises the ceiling for one price. It is not on sale yet. → Pricing |
 | Where it runs | Web: Roadmap, Gym and Journal. Android: Gym. iPhone: Journal and Gym, in beta. |
-| Closing | A mill takes its time and grinds the grain into flour anyway. |
 
-The three section headings are today's band titles and stay. Before build, check: how a visitor gets
-the Android app and the iPhone beta, so "Where it runs" can link to something that works; and that an
-assistant can be disconnected in the product, before the page says so.
+The page runs in that order and ends in the footer, which is the sitemap. The heading says nothing about
+the machine. The page carries no price number. Windmill One's line reads "It is not on sale yet" until
+One can be bought, and becomes the offer on that day. The room lines are today's band titles.
+
+Before build, check: how a visitor gets the Android app and the iPhone beta, so "Where it runs" can link
+to something that works; and that "built in, with a free allowance" matches the allowance enabled on each
+surface named.
+
+### About page `/about`
+
+| Part | Wording |
+|---|---|
+| Title | About Windmill — why it exists and what the name means |
+| Main heading | Why Windmill exists |
+| Statement | Machines can now do much of the work people do. Windmill puts them to work for you instead. They help you train, learn and reflect, and the growing stays yours. |
+| The machine serves | In Gym, Coach proposes a change and you apply it. After its first greeting it waits to be asked. |
+| Yours and open | Bring your own assistant. It connects to Roadmap and Gym and asks for the access it needs. Journal has no door for one. |
+| Never graded | No streaks, no scores, no countdowns. A day you skip is not coloured as a failure. |
+| The name | A mill takes its time and grinds the grain into flour anyway. |
+
+The page also holds what Windmill will not do, a public list drawn from the honesty rules, and how
+Windmill is paid for. It has no section on who makes Windmill. A founder note appears only if the owner
+writes one.
 
 ### Room pages
 
@@ -101,8 +115,7 @@ log for barbell programs. Two taps between sets, and the next session opens with
 | Page | Proposed |
 |---|---|
 | `/connect` | Title keeps "Windmill Roadmap & Gym MCP server". Main heading "Bring your own assistant", replacing "Build Windmill with your AI tools". One exchange shown end to end: the request, the access asked for, the result, how to disconnect. Linked from the header's rooms, the front page and `/gym`. |
-| `/pricing` | Main heading stays "Windmill is free." Sections: Everything you do by hand is free · Bring your own assistant and pay us nothing · Windmill One: our AI, one price · Where the money goes · The fine print. A visible list of questions, with the matching structured data, lives here and nowhere else. |
-| `/about` | Title "About Windmill — why it exists and what the name means". Main heading "Why Windmill exists". Sections: The idea · The name · What Windmill will not do, a public list drawn from the honesty rules · How Windmill is paid for · Who makes it. A founder note appears only if the owner writes one. |
+| `/pricing` | Main heading stays "Windmill is free." Sections: Everything you do by hand is free · Bring your own assistant and pay us nothing · Windmill One: our AI, one price · Where the $12 goes, in dollars: the AI allowance, the store's fee, running Windmill and the work · The fine print. The dollar split waits on the release's final AI allowance amount. A visible list of questions, with the matching structured data, lives here and nowhere else. |
 | `/changelog` | Covers all three rooms. The front page shows the three latest entries, and shows the strip only while the newest entry is under 60 days old. |
 | `/t/<id>` | Title "<tree title> — a skill tree on Windmill Roadmap". The tree's own heading, summary and first steps are in the first HTML. |
 
@@ -172,37 +185,51 @@ colour choices, professional and artisanal. Measured on that page and on ours on
 picture. Hairlines in place of shadows and card outlines. A four-step ink scale. Few type sizes and
 tight display type. One job per section. Small, quiet controls. A footer that is the sitemap.
 
-**What stays Windmill.** The windmill mark. Warm paper by day and near-black by night, never Linear's
-cold grey. Terracotta as the one accent. The live scenes built from the product's own vocabulary, and
-their "composed" labels. Every honesty rule.
+**The look is Instrument.** One typeface, Inter, for all page type, with few sizes and tight display
+type. Day and night are both drawn, and a first visit follows the visitor's device. The header carries
+the approved mark, unchanged, with the word "Windmill" set in Inter; the full rounded logo stays for the
+app icon and social cards. A night version of the mark, with the same shapes and a lighter hub and door,
+is drawn for the owner's approval and is not used before it. The product pictures keep the product's own
+typefaces, because they show the product as it is.
 
-**What is open: the typeface.** Brand foundations call Baloo 2 and Nunito stand-ins. Baloo 2 is the
-furthest thing on the page from thin, professional and artisanal. The designer draws the front page's
-first screen three ways, by day and by night, on desktop and phone, and the owner chooses by eye:
+**What stays Windmill.** Warm paper by day and near-black by night, never Linear's cold grey. Terracotta
+as the one accent. The pictures built from the product's own vocabulary, and their "composed" labels.
+Every honesty rule.
 
-- **A · Refined canon.** Baloo 2 and Nunito stay. Everything else above is applied.
-- **B · Workshop.** A display serif with thin strokes for headings and a quiet sans for text. Ink on
-  warm paper. Line drawings for the three principles.
-- **C · Instrument.** One precise sans for everything, closest to the reference, night first.
+**What it changes from brand foundations.** Inter in place of Baloo 2 and Nunito on the public pages.
+The word "Windmill" in Inter beside the mark. A night mark. Hairlines and one ground in place of card
+outlines, shadows and a ground per room. A first screen with no live scene. Brand foundations still
+describe the pages as built; the [ledger](consistency.md#marketing-and-email) holds the difference until
+the flow is marked Ready for dev.
 
-The approved logo is not redrawn in any direction. If the chosen type sits badly beside the wordmark,
-that is recorded for the owner and not solved by the designer.
+**The drawings** are 🧪 proposal boards on the Marketing file's page
+[Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
 
-After the choice, the designer draws every page in the sitemap in that direction, in both auth states.
+## Owner rulings and open decisions
 
-## Owner decisions
+Ruled:
 
-- The main heading of the front page. Recommended: "Keep growing, with the machine working for you."
-- The visual direction, chosen from the three drawings.
-- Whether `/about` says who makes Windmill, and in which words.
-- Whether `/pricing` states where the $12 goes ([strategy](../marketing/strategy.md#owner-decisions-the-positioning-opens)).
-- Whether marketing pages open by day or by night for a first visitor.
+- The front page's main heading: "Windmill is where a person keeps growing in body, skill and mind."
+- The front page's order: the heading, the three rooms, "Your AI, or ours.", where it runs, the footer.
+- Windmill One on the front page is a plain statement that it is not on sale yet, with a link to pricing
+  and no price number.
+- `/about` has no section on who makes Windmill.
+- `/pricing` states where the $12 goes, in dollars.
+- The look is Instrument, and a first visit follows the visitor's device.
+- The header carries the mark with the word "Windmill" in Inter.
+
+Open:
+
+- Approval of the drawn front page.
+- Approval of the night version of the mark.
 
 ## Order of work
 
 1. Correct the false strings. They do not wait for the design.
 2. Search repairs that change no layout: structured data, the tree page's first HTML and its 404,
    one description per page, short addresses.
-3. The designer draws the three first screens. The owner chooses.
-4. The designer draws all pages. The owner marks them.
-5. Build from the marked flow, with the landings rendered at build time.
+3. The designer draws the front page in the Instrument look, with the ruled structure and the night
+   mark. The owner reviews it.
+4. After that approval the designer draws the other pages, and the owner marks the flow.
+5. Build from the marked flow, with the landings rendered at build time. Brand foundations' Fonts, Logo
+   and Landings sections are updated when the flow is marked Ready for dev.
