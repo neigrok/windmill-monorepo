@@ -126,9 +126,9 @@ class TelemetryTests {
                 listOf(started) + abilities + listOf(asked("failed"), ended("failed", code = "coach-vendor-error")),
             script("""[{"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},{"await":"timeout"}]""") to
                 listOf(started) + abilities + listOf("coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"), asked("failed"), ended("interrupted", code = TurnRefusal.turnOrder, calls = 5)),
-            refusing(429, "subject_exhausted") to listOf(started) + abilities + listOf(request(429), asked("capped", "allowance")),
-            refusing(429, "free_month_exhausted") to listOf(started) + abilities + listOf(request(429), asked("capped", "allowance")),
-            refusing(429, TurnRefusal.rateLimited) to listOf(started) + abilities + listOf(request(429), asked("capped", "daily")),
+            refusing(429, "subject_exhausted") to listOf(started) + abilities + listOf(asked("capped", "allowance")),
+            refusing(429, "free_month_exhausted") to listOf(started) + abilities + listOf(asked("capped", "allowance")),
+            refusing(429, TurnRefusal.rateLimited) to listOf(started) + abilities + listOf(asked("capped", "daily")),
             refusing(404, "not-found") to listOf(started) + abilities + listOf(request(404), asked("absent")),
             refusing(400, "coach-bad-request") to listOf(started) + abilities + listOf(request(400), asked("refused")),
         )
