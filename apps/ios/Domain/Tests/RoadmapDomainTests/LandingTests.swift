@@ -146,10 +146,10 @@ struct LandingTests {
     #expect(try StepsTests.note(of: tree, on: phone) == newest(last, previous, "Next"))
   }
 
-  // The note of steps planted whole is settled from one read of the roadmap's steps: a call of the engine's reader costs
-  // the device's journal, so a read for each noted record would grow with the square of what was planted. Once 120 steps
-  // and their links have landed, the next write lets go of all of them in under 80 reads of the roadmap's steps, timed in
-  // the same run: it takes about 8, where a read for each noted record takes about 370.
+  // The note of steps planted whole is settled from one read of the roadmap's steps, not from a read for each record it
+  // notes, each a call of the engine's reader. Once 120 steps and their links have landed, the next write lets go of all
+  // of them in under 25 reads of the roadmap's steps, timed in the same run: it takes about 9, where a read for each
+  // noted record takes about 46.
   @Test func aLargeNoteThatLandedIsLetGoOfInsideItsCeiling() throws {
     let phone = RoadmapsTests.phone()
     let (tree, basics) = try RoadmapsTests.rooted(on: phone)
@@ -176,7 +176,7 @@ struct LandingTests {
                         "names": [["id": planted[0].id.json, "name": "Step 0"]]]
     #expect(try StepsTests.note(of: tree, on: phone) == newest)
     print("roadmap note of 120 landed steps and their links let go of: \(took), \(took / read) reads of its steps")
-    #expect(took < read * 80)
+    #expect(took < read * 25)
   }
 
   // The kit corpus's notice form, `{id, scope, code, detail?, content: {d, cmd?, dependents?}, at}`. The case states a
