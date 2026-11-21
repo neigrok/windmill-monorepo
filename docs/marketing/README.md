@@ -1,8 +1,8 @@
 # Running Windmill marketing
 
-Start with [the iOS-first strategy](strategy.md), its [positioning](strategy.md#positioning) and its [launch contract](strategy.md#launch-contract). The proposed direction is a useful guide passed on by a trusted host, pages that answer a precise question, and iPhone store pages matched to one room's job. The strategy also says [how the first people are found](strategy.md#finding-the-first-people) and [what the owner does and what agents do](strategy.md#what-the-owner-does-and-what-agents-do). The [24-route growth portfolio](reports/18-growth-options.md) compares these with wider options using Ansoff, Blue Ocean and a Balanced Scorecard. Launch timing follows readiness. Eight founder hours a week and zero incremental campaign spend is the proposed operating scenario; only two behavioral cohorts run at once.
+Start with [the iOS-first strategy](strategy.md), its [positioning](strategy.md#positioning) and its [launch contract](strategy.md#launch-contract). The proposed direction is a useful guide passed on by a trusted host, pages that answer a precise question, and iPhone store pages matched to one room's job. The strategy also says [how the first people are found](strategy.md#finding-the-first-people) and [what the owner does and what agents do](strategy.md#what-the-owner-does-and-what-agents-do). The [24-route growth portfolio](reports/18-growth-options.md) compares these with wider options using Ansoff, Blue Ocean and a Balanced Scorecard. Launch timing follows readiness. The scale is eight owner hours a week with no standing marketing budget: each spend is its own proposal to the owner. Only two behavioral cohorts run at once.
 
-The positioning, the voice, and the stance on masters, the founder note, timing and what agents may write are the owner's rulings.
+The positioning, the voice, the scale and spending rule, and the stance on masters, the founder note, timing and what agents may write are the owner's rulings.
 
 | When you need to… | Open |
 |---|---|

@@ -2,7 +2,7 @@
 
 **This is the plan for how people find Windmill, try it once and come back.** It is written for the owner. It says where Windmill stands, who is invited first, which ways of being found are allowed, how the first people are found, and which work is the owner's and which is an agent's. It records no work done. Work is recorded on the [marketing tree](https://windmill.works/#/app/t_970fc0a989207ce2) when it happens.
 
-The proposed scale is **eight owner hours a week and $0 of campaign spending**. Eight hours is a ceiling on the owner's own time; agent work is not counted in it. Both numbers are the owner's to change. The [growth options report](reports/18-growth-options.md) compares 24 routes, larger ones included, and says what each would cost. Writing this plan sends nothing, publishes nothing, opens no account, builds nothing and spends nothing.
+The scale is **eight owner hours a week**. Eight hours is a ceiling on the owner's own time; agent work is not counted in it. There is no standing marketing budget: each spend comes to the owner as its own proposal, with its amount and what it would teach. The [growth options report](reports/18-growth-options.md) compares 24 routes, larger ones included, and says what each would cost. Writing this plan sends nothing, publishes nothing, opens no account, builds nothing and spends nothing.
 
 ## Positioning
 
@@ -15,7 +15,7 @@ The proposed scale is **eight owner hours a week and $0 of campaign spending**. 
 | The machine serves | Coach changes an existing routine only as a proposal the lifter applies, and after its first greeting it waits to be asked. [Gym principles](../design/brand-foundations.md#gym) |
 | Yours and open | Everything done by hand works signed out. A person's own assistant reaches Roadmap and Gym through MCP; Journal has no MCP door, and Windmill takes no provider key or token from a person. [Accounts and sign-in](../design/brand-foundations.md#accounts-and-sign-in) · [Connect](https://windmill.works/connect.html) |
 | Never graded | Journal has no streaks or scores and praises no value. Gym has no grades or streaks. The honesty rules allow no urgency on any surface. [Journal principles](../design/brand-foundations.md#journal) · [Numbers and money](../design/brand-foundations.md#numbers-and-money) |
-| A fair price, shown | Not shown yet. The [pricing page](../../web/public/pricing.html) names $12 a month and no allowance amount, so it does not say where the money goes. [Owner decisions](#owner-decisions-the-positioning-opens) |
+| A fair price, shown | Not shown yet. The [pricing page](../../web/public/pricing.html) names $12 a month and no allowance amount, so it does not say where the money goes. When the page is rebuilt it states the split in dollars. [Owner rulings](#owner-rulings-and-open-decisions) |
 
 ## What every channel keeps
 
@@ -93,9 +93,9 @@ Every route below passes the rules in [What every channel keeps](#what-every-cha
 | **The App Store listing, once the app is public.** [Store brief](reports/05-aso-and-featuring.md) | The release, and screenshots and words that match the released build. | Page views and first downloads, read beside first actions and returns. |
 | **Editors and directories, on merit.** [Earned editorial](reports/17-distribution-and-editorial.md#earned-editorial-and-directories) | A small press kit, a working destination, and each outlet's rules checked. | A live listing or piece we can open, and actions that came from it. |
 | **Someone shows their own tree to a friend.** [Share path](reports/07-sharing-surfaces.md) | The existing share link checked from end to end, and people who already return. | The friend makes their own copy and uses it. |
-| **A master's own opinion.** [Masters](reports/09-creator-campaign.md) | One on sale, lifters who return, and an owner-approved ceiling. Deferred until then. | Read as [the money section](#when-money-enters-the-plan) sets out. |
+| **A master's own opinion.** [Masters](reports/09-creator-campaign.md) | One on sale, lifters who return, and a fee the owner has approved as its own proposal. Deferred until then. | Read as [the money section](#when-money-enters-the-plan) sets out. |
 
-One tutorial video of the first guide is a proposal; no Windmill channel is confirmed. Paid search is a priced option behind the money gates, with no spending approved. [Video route](reports/17-distribution-and-editorial.md#proposed-channel-choices) · [Apple Ads brief](reports/14-apple-ads-test.md)
+One tutorial video of the first guide is a proposal. Whether Windmill gets a video channel is decided when that tutorial exists. Paid search is a priced option behind the money gates, with no spending approved. [Video route](reports/17-distribution-and-editorial.md#proposed-channel-choices) · [Apple Ads brief](reports/14-apple-ads-test.md)
 
 [Report 17](reports/17-distribution-and-editorial.md) holds the working order for the first two weeks, counted from the day work starts, and how the owner's weekly hours divide. [Report 19](reports/19-product-generated-content.md) assesses small useful things the product could make from a person's own action. [Report 20](reports/20-competitive-presence.md) compares what each room competes with. New page layouts and changes to public screens need an approved design. The public pages' structure, wording, search repairs and look are proposed in [the marketing site proposal](../design/marketing-site-proposal.md). No route adds a requirement to the [launch contract](#launch-contract).
 
@@ -144,6 +144,8 @@ People who accept join one of the [two groups](#two-behavior-experiments-at-a-ti
 
 Agents write and speak on behalf of the product. They never write, send or publish the owner's own story, or anything signed as the owner.
 
+The product speaks from `hello@windmill.works`, the contact address the public pages give. A Reddit product account is opened only when an approved place allows a product to answer. There is no X or Bluesky account.
+
 Every action is one of three kinds, by whom it needs:
 
 | Mark | What it means |
@@ -160,12 +162,24 @@ Windmill One is the fair price for Windmill-funded AI and for the work of making
 
 Windmill One is sold first as a monthly App Store subscription inside the iOS app and goes on sale with the public iOS release. The web sells nothing; a Paddle checkout on the web and Google Play come later, by a future owner ruling, with no date. The paid line is currently closed, and manual work is free. Prepare the offer before release and measure genuine demand from the first day customers can buy in the App Store. A request for an invite, use of an external assistant, a free hosted Coach turn or a hypothetical price answer is evidence of interest. **A paid-demand test starts only when a customer can really buy**, the owner opens the paid line and approves funding, billing and refund behavior is verified, and hosted AI costs are measured. Customer-facing claims about AI must match the enabled allowance. [Billing and usage contract](../AI_USAGE_REVIEW.md) · [One offer](reports/04-gym-demo-and-checkout.md)
 
-For the separate 50-lifter demand test, quote One's App Store price for the participant's storefront in invitations. Start that experiment once an eligible returning cohort and a test slot are available. Proposed learning gate: five genuine non-refunded buyers and at least half of those buyers performing a second useful Coach task in a later week. Keep an unobserved payer window pending. If this gate passes, price one master's placement under [the masters rules](reports/09-creator-campaign.md): a flat disclosed fee, a cash ceiling and a working store destination. Each commercial commitment is an owner decision.
+For the separate 50-lifter demand test, quote One's App Store price for the participant's storefront in invitations. Start that experiment once an eligible returning cohort and a test slot are available. Proposed learning gate: five genuine non-refunded buyers and at least half of those buyers performing a second useful Coach task in a later week. Keep an unobserved payer window pending. If this gate passes, price one master's placement under [the masters rules](reports/09-creator-campaign.md): a flat disclosed fee, put to the owner as its own proposal, and a working store destination. Each commercial commitment is an owner decision.
 
 For scale, retain the stricter gate: 50 unique non-refunded payers across successive cohorts from the same repeatable channel, at least 70% of eligible first renewals kept, and fully loaded acquisition cost at or below realised 90-day contribution. Include founder time, content and allocated free AI use. Any bounded learning spend before those cohorts mature needs its own owner-approved cap. [Economics](benchmarks.md) · [Masters](reports/09-creator-campaign.md)
 
-## Owner decisions the positioning opens
+## Owner rulings and open decisions
 
-- Whether the pricing page states where the $12 goes: the AI allowance, the store's fee, running Windmill and the work. It states none of this today.
-- The cash ceiling for a master's fee, and whether the fee is owed when the master publishes nothing. No fee benchmark is recorded in [the evidence](benchmarks.md), and no ceiling is approved.
-- Whether Windmill will take a person's own provider key or token. It takes none today.
+Ruled:
+
+- **Scale and spending.** Eight owner hours a week. No standing marketing budget: each spend is its own proposal, with its amount and what it would teach.
+- **The pricing page states where the $12 goes, in dollars**, from the day the page is rebuilt: the AI allowance, the store's fee, running Windmill and the work. It waits on the release's final AI allowance amount. The page states none of this today.
+- **A master's fee.** There is no standing ceiling: each fee is its own spending proposal. Whether it is owed when the master publishes nothing is agreed in writing with each master before they start. No fee benchmark is recorded in [the evidence](benchmarks.md).
+- **A person's own provider key or token.** The owner intends to accept one. It is not scheduled, and Windmill takes none today.
+- **The public pages.** Their main heading, structure and look are ruled in [the marketing site proposal](../design/marketing-site-proposal.md#owner-rulings-and-open-decisions).
+- **App Store countries.** Every country, the EU included, with one check still open. [Access and release checks](reports/01-store-readiness.md)
+
+Open:
+
+- Whether the EU stays in the first release, after the check of what Apple publishes about an individual seller on EU listings.
+- Approval of the drawn front page and of the night version of the mark.
+- The founder note, which is the owner's to write.
+- When a person's own provider key is accepted, and for which rooms.

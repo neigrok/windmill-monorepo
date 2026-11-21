@@ -54,6 +54,6 @@ wording out of public creative until One is on sale. [Product principles](../../
 Invite 50 qualified lifters to the working offer as a separate cohort. Five genuine non-refunded buyers
 and a second useful Coach task in a later week for at least half those buyers are the proposed learning
 thresholds. Report eligible renewals when observed. The ten free testers and general launch sales
-have their own denominators. Quote One's App Store price for each participant's storefront and keep
-incremental campaign spend at $0 under this plan.
+have their own denominators. Quote One's App Store price for each participant's storefront and spend
+nothing on the campaign without an approved proposal.
 [Demand and economics](../strategy.md) · [Cohort definitions](../funnels.md)

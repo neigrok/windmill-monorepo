@@ -1892,6 +1892,11 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
 
 ## Marketing and email
 
+- **Marketing site proposal against brand foundations.** The [proposal](marketing-site-proposal.md)
+  sets Inter in place of Baloo 2 and Nunito on the public pages, the word “Windmill” in Inter beside the
+  unchanged mark, a night version of the mark, hairlines and one ground in place of card outlines,
+  shadows and a ground per room, and a first screen with no live scene. Brand foundations' Fonts, Logo
+  and Landings sections describe the pages as built. Update them when the flow is marked ✅ Ready for dev.
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
 - **0i · Brand-root anatomy.** Reconcile the common landing roles with the root's product-band
