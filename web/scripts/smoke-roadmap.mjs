@@ -8,6 +8,7 @@
 // Exit code 0 means every check passed. Results go to stdout, one line per check.
 
 import { chromium } from 'playwright';
+import { ASSOCIATION_PATH, associationBody } from './appSiteAssociation.js';
 import { installReadOnlyGuard, installRoadmapObserver, settleVisuals, waitForConfirmed } from './roadmap-rig/browser-proof.mjs';
 
 const DEFAULT_PUBLIC_ROADMAP = 't_9e407a96b5330ebe';
@@ -308,6 +309,19 @@ async function returningVisitWalk(page, { site, visit }) {
   await visit.sessionAnswered(site.roadmap);
 }
 
+// The answer is held to what this commit's build writes for the team the answer names, so the smoke carries no team of its own.
+async function associationWalk(page, { site, visit }) {
+  visit.stage = 'association-answer';
+  const answer = await page.request.get(`${site.base}/${ASSOCIATION_PATH}`, { maxRedirects: 0 });
+  if (answer.status() !== 200) throw new Error(`the association file answered ${answer.status()}`);
+  visit.stage = 'association-type';
+  if (answer.headers()['content-type'] !== 'application/json') throw new Error('the association file is not served as JSON');
+  visit.stage = 'association-body';
+  const body = await answer.text();
+  const team = JSON.parse(body).applinks.details[0].appIDs[0].split('.')[0];
+  if (body !== associationBody(team)) throw new Error('the association file is not the one this build writes');
+}
+
 // In this order on each band: the step link lands on the step the public roadmap's Board opened (`found`).
 const WALKS = [
   ['the demo lands on the Graph, its Board opens a step, Back returns, Fork opens and closes', demoWalk],
@@ -348,6 +362,13 @@ async function main() {
       browser, band: BANDS.at(-1), site, walk: returningVisitWalk, serviceWorkers: 'allow',
       label: 'a returning visit through the service worker reaches the landing and a room',
     }));
+    // iOS asks the site itself for the association file, so a preview build or a local stack, whose API lives elsewhere, is not held to it.
+    if (site.api === site.base) {
+      results.push(await runWalk({
+        browser, band: BANDS.at(-1), site, walk: associationWalk,
+        label: "the association file answers as JSON with no redirect, claiming a roadmap's addresses for the iPhone app",
+      }));
+    }
   } finally {
     await browser.close();
   }

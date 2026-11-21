@@ -1,0 +1,1435 @@
+[
+  {
+    "id": "frontend-path",
+    "group": "dev",
+    "estimate": "~4-6 months",
+    "source": "roadmap.sh (CC BY-SA)",
+    "plants": {
+      "title": "Frontend path",
+      "kinds": [
+        { "hue": "terracotta", "label": "Build", "description": "Projects you make with your own hands" },
+        { "hue": "olive", "label": "Learn", "description": "Concepts and tools you pick up along the way" },
+        { "hue": "gold", "label": "Ship", "description": "Real work, live on the internet, in front of people" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "hand-write-a-page",
+            "label": "Hand-write a page in plain HTML",
+            "icon": "sparkles",
+            "color": "terracotta",
+            "description": "Open a text editor, write an index.html with headings, paragraphs, and a link, and open it in your browser. Done when you see your own words rendered on a page you made.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development", "label": "" }]
+          },
+          {
+            "key": "how-the-web-works",
+            "label": "Learn how the web serves a page",
+            "icon": "",
+            "color": "olive",
+            "description": "Follow a URL from address bar to rendered page: DNS, HTTP requests and responses, and what the browser does with the answer. Done when you can narrate that round trip from memory.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Getting_started/Web_standards/How_the_web_works", "label": "" }]
+          },
+          {
+            "key": "semantic-html",
+            "label": "Structure pages with semantic HTML",
+            "icon": "",
+            "color": "olive",
+            "description": "Go past divs: headings, nav, main, forms, images, and tables — the tags that say what content is. Done when you can mark up an article so it reads cleanly with CSS turned off.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Structuring_content", "label": "" }]
+          },
+          {
+            "key": "css-fundamentals",
+            "label": "Learn CSS selectors and the box model",
+            "icon": "",
+            "color": "olive",
+            "description": "Selectors, the cascade, specificity, and the box model — how the browser decides what every element looks like. Done when padding versus margin holds no surprises.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Styling_basics", "label": "" }]
+          },
+          {
+            "key": "js-fundamentals",
+            "label": "Learn JavaScript fundamentals",
+            "icon": "",
+            "color": "olive",
+            "description": "Variables, functions, arrays, objects, loops, and conditionals, practiced in the browser console. Done when you can solve small problems without copying code you don't understand.",
+            "links": [{ "url": "https://javascript.info", "label": "" }]
+          },
+          {
+            "key": "git-basics",
+            "label": "Put your work under git",
+            "icon": "",
+            "color": "olive",
+            "description": "Install git, make a repository for your pages, and get comfortable with add, commit, branch, and push to GitHub. Done when committing is a reflex, not a ceremony.",
+            "links": [{ "url": "https://git-scm.com/book/en/v2", "label": "" }]
+          },
+          {
+            "key": "style-a-page",
+            "label": "Style a real page from scratch",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Pick a simple site you admire and rebuild its look over your own HTML — type, color, spacing. Done when a screenshot of yours could pass for the original at a glance."
+          },
+          {
+            "key": "flexbox-and-grid",
+            "label": "Lay out pages with flexbox and grid",
+            "icon": "",
+            "color": "olive",
+            "description": "The two layout systems that ended the era of float hacks. Done when you can center anything on purpose and build a card grid without peeking at references.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout", "label": "" }]
+          },
+          {
+            "key": "responsive-design",
+            "label": "Make layouts respond to any screen",
+            "icon": "",
+            "color": "olive",
+            "description": "Mobile-first thinking, relative units, and media queries. Done when your page reads comfortably at phone, tablet, and desktop widths without horizontal scroll.",
+            "links": [{ "url": "https://web.dev/learn/design", "label": "" }]
+          },
+          {
+            "key": "personal-site",
+            "label": "Build your personal site",
+            "icon": "",
+            "color": "terracotta",
+            "description": "A small site about you: who you are, what you are building, and how to reach you. Done when it looks intentional on both a phone and a laptop."
+          },
+          {
+            "key": "ship-first-site",
+            "label": "Put your site on the internet",
+            "icon": "",
+            "color": "gold",
+            "description": "Deploy the site straight from your repository with GitHub Pages or Netlify. Done when a friend can open your URL on their phone."
+          },
+          {
+            "key": "dom-manipulation",
+            "label": "Script the page with the DOM",
+            "icon": "",
+            "color": "olive",
+            "description": "Select elements, listen for events, and change the page in response. Done when you can make a button do something interesting without a framework.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting", "label": "" }]
+          },
+          {
+            "key": "interactive-widget",
+            "label": "Build an interactive widget",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Tabs, a modal, an image carousel, or a to-do list in plain HTML, CSS, and JavaScript. Done when it works, looks decent, and survives fast clicking."
+          },
+          {
+            "key": "async-and-fetch",
+            "label": "Fetch data with async JavaScript",
+            "icon": "",
+            "color": "olive",
+            "description": "Promises, async/await, and the fetch API — asking a server for JSON and handling the wait. Done when loading and error states are as deliberate as the happy path.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Async_JS", "label": "" }]
+          },
+          {
+            "key": "api-app",
+            "label": "Build an app on a public API",
+            "icon": "",
+            "color": "terracotta",
+            "description": "A weather app, a movie finder — anything that fetches real data and renders it. Done when it handles a slow network and a bad search without falling over."
+          },
+          {
+            "key": "accessibility",
+            "label": "Make your pages accessible",
+            "icon": "",
+            "color": "olive",
+            "description": "Alt text, labels, contrast, focus order, and keyboard navigation. Done when you can drive your own site without touching the mouse.",
+            "links": [{ "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Accessibility", "label": "" }]
+          },
+          {
+            "key": "npm-and-tooling",
+            "label": "Set up Node, npm, and a bundler",
+            "icon": "",
+            "color": "olive",
+            "description": "Install Node, understand package.json, and scaffold a project with Vite. Done when you can add a dependency and explain what npm actually did."
+          },
+          {
+            "key": "react-fundamentals",
+            "label": "Learn React components and state",
+            "icon": "",
+            "color": "olive",
+            "description": "Components, props, state, and rendering lists — the mental model behind most frontend work today. Done when you can explain what a re-render is and what triggers one.",
+            "links": [{ "url": "https://react.dev/learn", "label": "" }]
+          },
+          {
+            "key": "react-app",
+            "label": "Build a small React app",
+            "icon": "",
+            "color": "terracotta",
+            "description": "A multi-page app with routing, fetched data, and shared state — a recipe box, a habit tracker. Done when adding a feature no longer means rethinking the structure."
+          },
+          {
+            "key": "testing-basics",
+            "label": "Learn to write automated tests",
+            "icon": "",
+            "color": "olive",
+            "description": "Unit tests with Vitest: arrange, act, assert, and run them on every change. Done when a test catches a bug for you before the browser does."
+          },
+          {
+            "key": "open-source-pr",
+            "label": "Send your first open source PR",
+            "icon": "",
+            "color": "gold",
+            "description": "Find a small issue on a project you use, fix it, open the pull request, and stay with the review that comes back. Done when it is submitted and every review comment has an answer or a commit — whether it merges is the maintainer's call, not yours."
+          },
+          {
+            "key": "test-your-app",
+            "label": "Put your React app under test",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Add component and logic tests around the riskiest behavior in your app. Done when you can refactor with the suite green and your pulse steady."
+          },
+          {
+            "key": "portfolio",
+            "label": "Assemble your portfolio",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Curate your three best projects with short write-ups: what it is, what was hard, what you would change. Done when each project has a live link and a readable README."
+          },
+          {
+            "key": "ship-portfolio",
+            "label": "Ship your portfolio for real",
+            "icon": "",
+            "color": "gold",
+            "description": "Deploy the portfolio, run an accessibility and performance pass over it, and share it where developers will see it. Done when it is the link in your bio."
+          }
+        ],
+        "links": [
+          ["hand-write-a-page", "how-the-web-works"],
+          ["hand-write-a-page", "semantic-html"],
+          ["hand-write-a-page", "css-fundamentals"],
+          ["hand-write-a-page", "js-fundamentals"],
+          ["hand-write-a-page", "git-basics"],
+          ["semantic-html", "style-a-page"],
+          ["css-fundamentals", "style-a-page"],
+          ["css-fundamentals", "flexbox-and-grid"],
+          ["flexbox-and-grid", "responsive-design"],
+          ["style-a-page", "personal-site"],
+          ["responsive-design", "personal-site"],
+          ["personal-site", "ship-first-site"],
+          ["git-basics", "ship-first-site"],
+          ["js-fundamentals", "dom-manipulation"],
+          ["semantic-html", "dom-manipulation"],
+          ["dom-manipulation", "interactive-widget"],
+          ["css-fundamentals", "interactive-widget"],
+          ["js-fundamentals", "async-and-fetch"],
+          ["how-the-web-works", "async-and-fetch"],
+          ["async-and-fetch", "api-app"],
+          ["dom-manipulation", "api-app"],
+          ["semantic-html", "accessibility"],
+          ["js-fundamentals", "npm-and-tooling"],
+          ["npm-and-tooling", "react-fundamentals"],
+          ["dom-manipulation", "react-fundamentals"],
+          ["react-fundamentals", "react-app"],
+          ["async-and-fetch", "react-app"],
+          ["npm-and-tooling", "testing-basics"],
+          ["git-basics", "open-source-pr"],
+          ["dom-manipulation", "open-source-pr"],
+          ["react-app", "test-your-app"],
+          ["testing-basics", "test-your-app"],
+          ["react-app", "portfolio"],
+          ["api-app", "portfolio"],
+          ["portfolio", "ship-portfolio"],
+          ["accessibility", "ship-portfolio"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "rust-from-zero",
+    "group": "dev",
+    "estimate": "~3 months",
+    "source": "roadmap.sh (CC BY-SA)",
+    "plants": {
+      "title": "Rust from zero",
+      "kinds": [
+        { "hue": "brick", "label": "Core", "description": "The language itself, one concept at a time" },
+        { "hue": "olive", "label": "Practice", "description": "Programs you write to make the concepts stick" },
+        { "hue": "gold", "label": "Ship", "description": "Work you release for other people to use" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "install-rust",
+            "label": "Install Rust and run hello, cargo",
+            "icon": "sparkles",
+            "color": "brick",
+            "description": "Install rustup, create a project with cargo new, and run it. Done when cargo run prints your greeting and you know where the code lives.",
+            "links": [{ "url": "https://www.rust-lang.org/learn/get-started", "label": "" }]
+          },
+          {
+            "key": "basic-syntax",
+            "label": "Learn variables, types, and flow",
+            "icon": "",
+            "color": "brick",
+            "description": "Variables and mutability, scalar and compound types, functions, if, and loops — chapter 3 of the Book. Done when you can write fizzbuzz without looking anything up.",
+            "links": [{ "url": "https://doc.rust-lang.org/book/", "label": "" }]
+          },
+          {
+            "key": "guessing-game",
+            "label": "Build the guessing game",
+            "icon": "",
+            "color": "olive",
+            "description": "Follow the Book's guided project: read input, parse numbers, and loop until the guess lands. Done when it compiles, runs, and you can say what match is doing.",
+            "links": [{ "url": "https://doc.rust-lang.org/book/ch02-00-guessing-game-tutorial.html", "label": "" }]
+          },
+          {
+            "key": "ownership",
+            "label": "Understand ownership and borrowing",
+            "icon": "",
+            "color": "brick",
+            "description": "Moves, borrows, mutable references, and slices — the rules everything else in Rust stands on. Done when you can predict what the borrow checker will say before it says it.",
+            "links": [{ "url": "https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html", "label": "" }]
+          },
+          {
+            "key": "structs-and-enums",
+            "label": "Model data with structs and enums",
+            "icon": "",
+            "color": "brick",
+            "description": "Define your own types, add methods with impl, and take values apart with match. Done when Option feels like a friend instead of a speed bump."
+          },
+          {
+            "key": "collections-and-strings",
+            "label": "Use vectors, strings, and hash maps",
+            "icon": "",
+            "color": "brick",
+            "description": "The workhorse collections, and why String and &str are different things. Done when you can build a word counter without fighting the compiler."
+          },
+          {
+            "key": "error-handling",
+            "label": "Handle errors with Result",
+            "icon": "",
+            "color": "brick",
+            "description": "Panicking versus returning Result, propagating with the question mark operator, and designing functions that can fail honestly. Done when your code has no unwrap you cannot defend."
+          },
+          {
+            "key": "rustlings",
+            "label": "Work through rustlings",
+            "icon": "",
+            "color": "olive",
+            "description": "Small exercises that drill each concept as you meet it in the Book. Done when the ownership and error-handling sets pass without hints.",
+            "links": [{ "url": "https://github.com/rust-lang/rustlings", "label": "" }]
+          },
+          {
+            "key": "modules-and-cargo",
+            "label": "Organize code with modules",
+            "icon": "",
+            "color": "brick",
+            "description": "Split a growing program into modules, understand use paths, and lean on cargo and crates.io. Done when your project has more than one file and no giant main.rs."
+          },
+          {
+            "key": "cli-tool",
+            "label": "Build a grep-style CLI tool",
+            "icon": "",
+            "color": "olive",
+            "description": "The Book's minigrep: arguments, file reading, search, and real error messages, split across lib.rs and main.rs. Done when it finds text in a file and fails politely when the file is missing.",
+            "links": [{ "url": "https://doc.rust-lang.org/book/ch12-00-an-io-project.html", "label": "" }]
+          },
+          {
+            "key": "traits-and-generics",
+            "label": "Abstract with traits and generics",
+            "icon": "",
+            "color": "brick",
+            "description": "Write functions and types that work over many types, and define shared behavior with traits. Done when you can explain what impl Trait means in a signature."
+          },
+          {
+            "key": "lifetimes",
+            "label": "Read and write lifetimes",
+            "icon": "",
+            "color": "brick",
+            "description": "Why references need lifetimes, the elision rules, and the annotations that make borrowed data safe to return. Done when a lifetime error reads like information, not punishment."
+          },
+          {
+            "key": "testing",
+            "label": "Write tests with cargo test",
+            "icon": "",
+            "color": "olive",
+            "description": "Unit tests next to the code, integration tests in the tests directory, and the assert macros. Done when a red test has saved you at least once."
+          },
+          {
+            "key": "iterators-and-closures",
+            "label": "Think in iterators and closures",
+            "icon": "",
+            "color": "brick",
+            "description": "Closures that capture their environment, and iterator chains that replace index loops. Done when map, filter, and collect are your first instinct."
+          },
+          {
+            "key": "refactor-cli",
+            "label": "Refactor your CLI with iterators",
+            "icon": "",
+            "color": "olive",
+            "description": "Rework minigrep the way the Book does: replace clone-heavy loops with iterator chains. Done when the code got shorter and the tests still pass."
+          },
+          {
+            "key": "smart-pointers",
+            "label": "Reach for Box, Rc, and RefCell",
+            "icon": "",
+            "color": "brick",
+            "description": "Heap allocation, shared ownership, and interior mutability — and the cost each one buys. Done when you know which pointer a linked structure needs and why."
+          },
+          {
+            "key": "concurrency",
+            "label": "Share work across threads",
+            "icon": "",
+            "color": "brick",
+            "description": "Spawn threads, pass messages over channels, and share state with Arc and Mutex. Done when you can explain how Send and Sync make data races a compile error."
+          },
+          {
+            "key": "web-server",
+            "label": "Build a multithreaded web server",
+            "icon": "",
+            "color": "olive",
+            "description": "The Book's final project: a thread pool serving real HTTP requests from scratch. Done when your browser gets a page from code you wrote top to bottom.",
+            "links": [{ "url": "https://doc.rust-lang.org/book/ch21-00-final-project-a-web-server.html", "label": "" }]
+          },
+          {
+            "key": "publish-crate",
+            "label": "Publish a crate to crates.io",
+            "icon": "",
+            "color": "gold",
+            "description": "Extract your search logic into a library crate, document it, and publish. Choose the name carefully — crates.io names are permanent, and a published version can never be replaced. Done when cargo add finds your crate from any machine."
+          },
+          {
+            "key": "contribute",
+            "label": "Send a PR to a Rust project",
+            "icon": "",
+            "color": "gold",
+            "description": "Pick a crate you use, find a good first issue, and send the fix as a pull request. Done when it is submitted and you have answered the review in someone else's codebase — the merge is the maintainer's call, not yours."
+          },
+          {
+            "key": "ship-project",
+            "label": "Put a Rust project in real hands",
+            "icon": "",
+            "color": "gold",
+            "description": "Release something real: a hosted service or a CLI with binaries on GitHub Releases. Done when a stranger runs your code without your help."
+          }
+        ],
+        "links": [
+          ["install-rust", "basic-syntax"],
+          ["install-rust", "guessing-game"],
+          ["basic-syntax", "ownership"],
+          ["ownership", "structs-and-enums"],
+          ["ownership", "collections-and-strings"],
+          ["structs-and-enums", "error-handling"],
+          ["basic-syntax", "rustlings"],
+          ["basic-syntax", "modules-and-cargo"],
+          ["collections-and-strings", "cli-tool"],
+          ["error-handling", "cli-tool"],
+          ["modules-and-cargo", "cli-tool"],
+          ["structs-and-enums", "traits-and-generics"],
+          ["traits-and-generics", "lifetimes"],
+          ["modules-and-cargo", "testing"],
+          ["traits-and-generics", "iterators-and-closures"],
+          ["cli-tool", "refactor-cli"],
+          ["iterators-and-closures", "refactor-cli"],
+          ["testing", "refactor-cli"],
+          ["lifetimes", "smart-pointers"],
+          ["smart-pointers", "concurrency"],
+          ["concurrency", "web-server"],
+          ["refactor-cli", "publish-crate"],
+          ["refactor-cli", "contribute"],
+          ["web-server", "ship-project"],
+          ["publish-crate", "ship-project"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "ml-foundations",
+    "group": "dev",
+    "estimate": "~6 months",
+    "source": "roadmap.sh (CC BY-SA)",
+    "plants": {
+      "title": "ML foundations",
+      "kinds": [
+        { "hue": "plum", "label": "Theory", "description": "The ideas and math under every model" },
+        { "hue": "sky", "label": "Data", "description": "Finding, cleaning, and understanding real data" },
+        { "hue": "terracotta", "label": "Practice", "description": "Models you build, train, and evaluate yourself" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "what-a-model-is",
+            "label": "Learn what a model really is",
+            "icon": "sparkles",
+            "color": "plum",
+            "description": "Supervised versus unsupervised learning, features and labels, loss, and the train/test split — the frame everything else hangs on. Done when you have written a paragraph explaining to a friend how a spam filter learns.",
+            "links": [{ "url": "https://developers.google.com/machine-learning/crash-course", "label": "" }]
+          },
+          {
+            "key": "python-and-notebooks",
+            "label": "Set up Python and notebooks",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Install Python, get a Jupyter notebook running, and learn your way around the cells. Done when you can load a file, loop over it, and plot something rough."
+          },
+          {
+            "key": "linear-algebra",
+            "label": "Refresh vectors and matrices",
+            "icon": "",
+            "color": "plum",
+            "description": "Vectors, matrices, dot products, and matrix multiplication as transformation. Done when you can say what a dot product measures without reciting a formula.",
+            "links": [{ "url": "https://www.3blue1brown.com/topics/linear-algebra", "label": "" }]
+          },
+          {
+            "key": "probability-and-stats",
+            "label": "Refresh probability and statistics",
+            "icon": "",
+            "color": "plum",
+            "description": "Distributions, expectation and variance, and conditional probability. Done when Bayes' rule feels like common sense written down.",
+            "links": [{ "url": "https://www.khanacademy.org/math/statistics-probability", "label": "" }]
+          },
+          {
+            "key": "calculus-gradients",
+            "label": "Understand derivatives and gradients",
+            "icon": "",
+            "color": "plum",
+            "description": "Derivatives as sensitivity, the chain rule, and the gradient as the direction of steepest ascent. Done when you can explain why models learn by walking downhill.",
+            "links": [{ "url": "https://www.3blue1brown.com/topics/calculus", "label": "" }]
+          },
+          {
+            "key": "numpy",
+            "label": "Compute with NumPy arrays",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Arrays as vectors and matrices, broadcasting, and vectorized math. Done when you can replace a nested loop with one array expression."
+          },
+          {
+            "key": "pandas",
+            "label": "Wrangle tables with pandas",
+            "icon": "",
+            "color": "sky",
+            "description": "DataFrames, filtering, joins, and groupby on real CSV files. Done when a question about a dataset turns into three lines, not thirty.",
+            "links": [{ "url": "https://pandas.pydata.org/docs/user_guide/10min.html", "label": "" }]
+          },
+          {
+            "key": "visualization",
+            "label": "See your data before you model it",
+            "icon": "",
+            "color": "sky",
+            "description": "Histograms, scatter plots, and box plots with matplotlib or seaborn. Done when your first move with new data is to draw it."
+          },
+          {
+            "key": "data-cleaning",
+            "label": "Clean a messy dataset",
+            "icon": "",
+            "color": "sky",
+            "description": "Missing values, duplicates, wrong dtypes, and outliers — with your decisions written down. Done when someone could rerun your cleaning and get the same table."
+          },
+          {
+            "key": "exploratory-analysis",
+            "label": "Run a full exploratory analysis",
+            "icon": "",
+            "color": "sky",
+            "description": "Take one real dataset from raw to understood: distributions, relationships, oddities, and open questions. Done when your notebook tells a story a colleague could follow."
+          },
+          {
+            "key": "linear-regression",
+            "label": "Learn linear regression deeply",
+            "icon": "",
+            "color": "plum",
+            "description": "The model, mean squared error, and how gradient descent finds the weights. Done when you can derive the update step for one weight by hand."
+          },
+          {
+            "key": "regression-from-scratch",
+            "label": "Code linear regression from scratch",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Implement the loss and gradient descent in NumPy, no libraries, and fit a real dataset. Done when your loss curve falls and your line matches the data."
+          },
+          {
+            "key": "classification",
+            "label": "Learn logistic regression",
+            "icon": "",
+            "color": "plum",
+            "description": "From predicting numbers to predicting classes: sigmoid, decision boundaries, and cross-entropy loss. Done when you can say why squared error is the wrong loss here."
+          },
+          {
+            "key": "evaluation-metrics",
+            "label": "Judge models with honest metrics",
+            "icon": "",
+            "color": "plum",
+            "description": "Accuracy and its failure modes, precision, recall, confusion matrices, and validation splits. Done when 99 percent accuracy makes you suspicious, not satisfied."
+          },
+          {
+            "key": "overfitting",
+            "label": "Understand overfitting and bias",
+            "icon": "",
+            "color": "plum",
+            "description": "Bias versus variance, why models memorize, and regularization as the cure. Done when you can diagnose overfitting from a pair of learning curves."
+          },
+          {
+            "key": "sklearn-workflow",
+            "label": "Train models with scikit-learn",
+            "icon": "",
+            "color": "terracotta",
+            "description": "The fit/predict workflow, pipelines, and proper train/validation discipline on a real dataset. Done when trying a new model type takes minutes, not days.",
+            "links": [{ "url": "https://scikit-learn.org/stable/getting_started.html", "label": "" }]
+          },
+          {
+            "key": "feature-engineering",
+            "label": "Engineer features that help",
+            "icon": "",
+            "color": "sky",
+            "description": "Encode categoricals, scale numbers, and create features from domain sense. Done when one engineered feature measurably beats the raw baseline."
+          },
+          {
+            "key": "trees-and-ensembles",
+            "label": "Learn trees and ensembles",
+            "icon": "",
+            "color": "plum",
+            "description": "Decision trees, then random forests and gradient boosting — why averaging many weak models tames variance. Done when you can explain what makes boosting different from bagging."
+          },
+          {
+            "key": "kaggle-entry",
+            "label": "Enter a beginner Kaggle contest",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Pick a starter competition, build a clean pipeline, and climb from your first score. Done when you have made three submissions that each beat the last.",
+            "links": [{ "url": "https://www.kaggle.com/competitions", "label": "" }]
+          },
+          {
+            "key": "neural-networks",
+            "label": "Learn how neural networks work",
+            "icon": "",
+            "color": "plum",
+            "description": "Stack logistic units into layers: activations, forward passes, and backpropagation as the chain rule at scale. Done when backprop on a tiny net is arithmetic you can do on paper.",
+            "links": [{ "url": "https://www.3blue1brown.com/topics/neural-networks", "label": "" }]
+          },
+          {
+            "key": "nn-from-scratch",
+            "label": "Build a neural net from scratch",
+            "icon": "",
+            "color": "terracotta",
+            "description": "A small multilayer network in NumPy with hand-written backprop. Done when it learns XOR or a digit subset and you trust every line."
+          },
+          {
+            "key": "pytorch",
+            "label": "Move to PyTorch",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Tensors, autograd, and the training loop — rebuild your scratch network in a real framework. Done when autograd feels like a tool you understand, not magic you rent.",
+            "links": [{ "url": "https://pytorch.org/tutorials/beginner/basics/intro.html", "label": "" }]
+          },
+          {
+            "key": "image-classifier",
+            "label": "Train a real image classifier",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Train on MNIST or CIFAR-10 with proper splits, track validation metrics, and beat a sane baseline. Done when you can show your accuracy claim is honest."
+          },
+          {
+            "key": "own-dataset",
+            "label": "Assemble a dataset of your own",
+            "icon": "",
+            "color": "sky",
+            "description": "Collect data about a question you actually care about — scrape it, export it, or log it — and document where it came from. Done when it is clean enough to model."
+          },
+          {
+            "key": "capstone",
+            "label": "Run an end-to-end capstone",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Your dataset, your question: clean, explore, model, evaluate, and write up what you found. Done when the write-up states what worked, what did not, and why."
+          },
+          {
+            "key": "unsupervised",
+            "label": "Learn clustering and PCA",
+            "icon": "",
+            "color": "plum",
+            "description": "Finding structure without labels: k-means, and PCA as finding the directions that matter. Done when you can say what the first principal component of a dataset means."
+          }
+        ],
+        "links": [
+          ["what-a-model-is", "python-and-notebooks"],
+          ["what-a-model-is", "linear-algebra"],
+          ["what-a-model-is", "probability-and-stats"],
+          ["linear-algebra", "calculus-gradients"],
+          ["python-and-notebooks", "numpy"],
+          ["linear-algebra", "numpy"],
+          ["python-and-notebooks", "pandas"],
+          ["pandas", "visualization"],
+          ["pandas", "data-cleaning"],
+          ["visualization", "exploratory-analysis"],
+          ["data-cleaning", "exploratory-analysis"],
+          ["calculus-gradients", "linear-regression"],
+          ["linear-regression", "regression-from-scratch"],
+          ["numpy", "regression-from-scratch"],
+          ["linear-regression", "classification"],
+          ["probability-and-stats", "classification"],
+          ["classification", "evaluation-metrics"],
+          ["evaluation-metrics", "overfitting"],
+          ["regression-from-scratch", "sklearn-workflow"],
+          ["data-cleaning", "sklearn-workflow"],
+          ["sklearn-workflow", "feature-engineering"],
+          ["overfitting", "trees-and-ensembles"],
+          ["feature-engineering", "kaggle-entry"],
+          ["trees-and-ensembles", "kaggle-entry"],
+          ["classification", "neural-networks"],
+          ["neural-networks", "nn-from-scratch"],
+          ["regression-from-scratch", "nn-from-scratch"],
+          ["nn-from-scratch", "pytorch"],
+          ["pytorch", "image-classifier"],
+          ["evaluation-metrics", "image-classifier"],
+          ["exploratory-analysis", "own-dataset"],
+          ["own-dataset", "capstone"],
+          ["kaggle-entry", "capstone"],
+          ["image-classifier", "capstone"],
+          ["linear-algebra", "unsupervised"],
+          ["probability-and-stats", "unsupervised"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "ship-v1",
+    "group": "dev",
+    "estimate": "~6 weeks",
+    "source": null,
+    "plants": {
+      "title": "Ship v1",
+      "kinds": [
+        { "hue": "terracotta", "label": "Build", "description": "Scoping and building the product itself" },
+        { "hue": "sky", "label": "Polish", "description": "The pass that makes it feel finished" },
+        { "hue": "gold", "label": "Launch", "description": "Getting it in front of real people" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "write-the-promise",
+            "label": "Write the one-sentence promise",
+            "icon": "sparkles",
+            "color": "terracotta",
+            "description": "Name who this is for and what it does for them, in one sentence you could say out loud without flinching. Done when a stranger hears it and knows whether they would want it."
+          },
+          {
+            "key": "cut-the-scope",
+            "label": "Cut scope to one core flow",
+            "icon": "",
+            "color": "terracotta",
+            "description": "List everything v1 could be, then cut until a single flow delivers the promise. Done when the spec fits on one page and the cuts are written down too."
+          },
+          {
+            "key": "pick-a-boring-stack",
+            "label": "Pick a boring stack and deploy it",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Choose tools you already know, wire up the repository, and deploy a hello-world skeleton to production on day one. Done when a URL serves your empty app."
+          },
+          {
+            "key": "sketch-the-flow",
+            "label": "Sketch the core flow on paper",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Wireframe every screen of the one flow, from arrival to the moment of value. Done when you can walk someone through the paper version and they never get lost."
+          },
+          {
+            "key": "walking-skeleton",
+            "label": "Build the walking skeleton",
+            "icon": "",
+            "color": "terracotta",
+            "description": "The thinnest end-to-end slice of the real flow, deployed: real navigation, real screens, hard-coded edges. Done when you can click from start to value, even if the value is fake."
+          },
+          {
+            "key": "core-feature",
+            "label": "Make the core feature real",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Replace the fake middle with the real thing the promise depends on. Done when the product does the job for real data, start to finish."
+          },
+          {
+            "key": "dogfood",
+            "label": "Dogfood it for a week",
+            "icon": "",
+            "color": "sky",
+            "description": "Use your product for its real purpose every day and keep a list of what made you wince. Done after seven honest days and a prioritized fix list."
+          },
+          {
+            "key": "onboarding-pass",
+            "label": "Smooth the first-run experience",
+            "icon": "",
+            "color": "sky",
+            "description": "Empty states, sign-up friction, and the path to first value for someone with zero context. Done when a friend reaches the payoff without you saying a word."
+          },
+          {
+            "key": "failure-pass",
+            "label": "Handle failure gracefully",
+            "icon": "",
+            "color": "sky",
+            "description": "Bad input, slow networks, and broken sessions — decide what each failure looks like on purpose. Done when nothing dead-ends without an explanation and a way back."
+          },
+          {
+            "key": "landing-page",
+            "label": "Make the landing page",
+            "icon": "",
+            "color": "gold",
+            "description": "One page: the promise, a real screenshot, and one obvious call to action. Done when it loads fast and someone can sign up from their phone."
+          },
+          {
+            "key": "instrument",
+            "label": "Wire up analytics and feedback",
+            "icon": "",
+            "color": "sky",
+            "description": "Track the handful of events that trace your core flow, and give users one obvious way to reach you. Done when you can see the funnel and hear the complaints."
+          },
+          {
+            "key": "friendly-beta",
+            "label": "Run a friendly beta",
+            "icon": "",
+            "color": "gold",
+            "description": "Put it in the hands of five people who fit the promise and watch them use it. Done when the top three stumbles are found and fixed."
+          },
+          {
+            "key": "launch-day",
+            "label": "Launch it where your people are",
+            "icon": "",
+            "color": "gold",
+            "description": "Post to the communities your promise serves — Show HN, Product Hunt, a subreddit — and answer everyone all day. Done when the posts are up and every comment has an answer before you go to bed."
+          },
+          {
+            "key": "first-fix-release",
+            "label": "Ship the first fix release",
+            "icon": "",
+            "color": "gold",
+            "description": "Sort the launch feedback, fix the sharpest edges, and ship within the week — v1 is a conversation, not a monument. Done when changes born from real users are live."
+          }
+        ],
+        "links": [
+          ["write-the-promise", "cut-the-scope"],
+          ["write-the-promise", "pick-a-boring-stack"],
+          ["cut-the-scope", "sketch-the-flow"],
+          ["pick-a-boring-stack", "walking-skeleton"],
+          ["sketch-the-flow", "walking-skeleton"],
+          ["walking-skeleton", "core-feature"],
+          ["core-feature", "dogfood"],
+          ["dogfood", "onboarding-pass"],
+          ["dogfood", "failure-pass"],
+          ["core-feature", "landing-page"],
+          ["core-feature", "instrument"],
+          ["onboarding-pass", "friendly-beta"],
+          ["failure-pass", "friendly-beta"],
+          ["friendly-beta", "launch-day"],
+          ["landing-page", "launch-day"],
+          ["instrument", "launch-day"],
+          ["launch-day", "first-fix-release"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "learn-to-sail",
+    "group": "life",
+    "estimate": "a season",
+    "source": null,
+    "plants": {
+      "title": "Learn to sail",
+      "kinds": [
+        { "hue": "terracotta", "label": "Seamanship", "description": "Handling the boat under sail" },
+        { "hue": "olive", "label": "Knots", "description": "The ropework every sail depends on" },
+        { "hue": "sky", "label": "Weather", "description": "Reading wind, forecasts, and tides" },
+        { "hue": "brick", "label": "Safety", "description": "Drills that keep small trouble small" },
+        { "hue": "gold", "label": "Harbor", "description": "Getting off the dock and back again" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "rig-the-boat",
+            "label": "Rig the boat and name its parts",
+            "icon": "sparkles",
+            "color": "terracotta",
+            "description": "Take a dinghy from bare hull to ready: attach the sails, run the lines, and learn the name of every rope you touch. Your buoyancy aid goes on last, before the boat touches the water — it is part of rigging, not a separate decision. Done when you can rig without asking which line is which."
+          },
+          {
+            "key": "tie-the-working-knots",
+            "label": "Tie the working knots",
+            "icon": "",
+            "color": "olive",
+            "description": "Learn the figure eight, bowline, cleat hitch, and round turn with two half hitches. Done when you can tie all four without looking.",
+            "links": [{ "url": "https://www.animatedknots.com/", "label": "" }]
+          },
+          {
+            "key": "steer-on-a-reach",
+            "label": "Steer on a reach",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Take the tiller with an instructor aboard and hold a straight line across the wind. Done when the boat goes where you point it and the sail stays quietly full."
+          },
+          {
+            "key": "read-the-wind-on-the-water",
+            "label": "Read the wind on the water",
+            "icon": "",
+            "color": "sky",
+            "description": "Learn to spot gusts as dark ripples, watch the telltales, and always know where the wind is coming from. Done when you can point at the wind without checking a flag."
+          },
+          {
+            "key": "coil-and-heave-a-line",
+            "label": "Coil and heave a line",
+            "icon": "",
+            "color": "olive",
+            "description": "Coil a line so it runs free and throw it cleanly to a dock or a swimmer. Done when it lands within reach of a helper on most throws."
+          },
+          {
+            "key": "tack-through-the-wind",
+            "label": "Tack through the wind",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Turn the bow through the wind and settle onto the new tack without stalling. Done when you can chain a dozen tacks upwind without losing speed."
+          },
+          {
+            "key": "find-the-points-of-sail",
+            "label": "Find the points of sail",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Sail every angle from close-hauled to a run and trim the sail to match. Done when you can set the sail right for any course without being told."
+          },
+          {
+            "key": "capsize-and-recover",
+            "label": "Capsize on purpose and recover",
+            "icon": "",
+            "color": "brick",
+            "description": "Tip the boat over in warm water, buoyancy aid on and an instructor alongside, then right it and climb back in. Done when going over feels like a routine instead of an emergency — this is what makes sailing alone sane."
+          },
+          {
+            "key": "pick-a-weather-window",
+            "label": "Pick a weather window",
+            "icon": "",
+            "color": "sky",
+            "description": "Read a marine forecast the night before and decide whether tomorrow is a sailing day. Done when you have called it right a handful of times, including the days you chose to stay ashore."
+          },
+          {
+            "key": "gybe-with-control",
+            "label": "Gybe with control",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Bring the stern through the wind on purpose, with the boom crossing when you choose. Done when a gybe feels like a decision, not a surprise."
+          },
+          {
+            "key": "run-a-man-overboard-drill",
+            "label": "Run a crew-overboard drill",
+            "icon": "",
+            "color": "brick",
+            "description": "Practice the figure-eight return: sail away, come back on a controlled reach, and stop beside a floating cushion. Done when you can pick it up on the first pass, three times in a row."
+          },
+          {
+            "key": "learn-the-right-of-way-rules",
+            "label": "Learn the right-of-way rules",
+            "icon": "",
+            "color": "brick",
+            "description": "Learn who gives way: port tack to starboard, windward boat to leeward, and everyone to whoever they overtake. Done when you can name the give-way boat in any crossing without pausing to think."
+          },
+          {
+            "key": "read-the-local-tides",
+            "label": "Read the local tides",
+            "icon": "",
+            "color": "sky",
+            "description": "Look up tide times and heights for your home water and learn how the current runs through the day. Done when you know, before leaving home, which way the water will be moving."
+          },
+          {
+            "key": "leave-the-dock-under-sail",
+            "label": "Leave the dock under sail",
+            "icon": "",
+            "color": "gold",
+            "description": "Cast off your own lines, fend off, and sail cleanly away from the dock. Done when you can pick your moment and slip out on the first try."
+          },
+          {
+            "key": "come-alongside-and-dock",
+            "label": "Come alongside and dock",
+            "icon": "",
+            "color": "gold",
+            "description": "Approach into the wind, ease the sail to slow down, and arrive at the dock at walking pace. Done when your landings are gentle enough that nobody reaches out to fend you off."
+          },
+          {
+            "key": "sail-a-triangle-course",
+            "label": "Sail a triangle course",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Sail a full triangle — a beat upwind, a reach, and a run home — rounding each mark cleanly. Done when you can lap the course twice without an instructor saying a word."
+          },
+          {
+            "key": "take-your-first-solo-sail",
+            "label": "Take your first solo sail",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Choose a gentle, well-forecast day, tell someone ashore your plan and return time, and take the boat out alone. Done when you are back at the dock with the boat put away, grinning."
+          }
+        ],
+        "links": [
+          ["rig-the-boat", "tie-the-working-knots"],
+          ["rig-the-boat", "steer-on-a-reach"],
+          ["rig-the-boat", "read-the-wind-on-the-water"],
+          ["tie-the-working-knots", "coil-and-heave-a-line"],
+          ["steer-on-a-reach", "tack-through-the-wind"],
+          ["steer-on-a-reach", "find-the-points-of-sail"],
+          ["steer-on-a-reach", "capsize-and-recover"],
+          ["read-the-wind-on-the-water", "pick-a-weather-window"],
+          ["tack-through-the-wind", "gybe-with-control"],
+          ["tack-through-the-wind", "run-a-man-overboard-drill"],
+          ["find-the-points-of-sail", "learn-the-right-of-way-rules"],
+          ["pick-a-weather-window", "read-the-local-tides"],
+          ["steer-on-a-reach", "leave-the-dock-under-sail"],
+          ["tie-the-working-knots", "leave-the-dock-under-sail"],
+          ["leave-the-dock-under-sail", "come-alongside-and-dock"],
+          ["find-the-points-of-sail", "come-alongside-and-dock"],
+          ["coil-and-heave-a-line", "come-alongside-and-dock"],
+          ["tack-through-the-wind", "sail-a-triangle-course"],
+          ["gybe-with-control", "sail-a-triangle-course"],
+          ["find-the-points-of-sail", "sail-a-triangle-course"],
+          ["sail-a-triangle-course", "take-your-first-solo-sail"],
+          ["capsize-and-recover", "take-your-first-solo-sail"],
+          ["run-a-man-overboard-drill", "take-your-first-solo-sail"],
+          ["come-alongside-and-dock", "take-your-first-solo-sail"],
+          ["pick-a-weather-window", "take-your-first-solo-sail"],
+          ["read-the-local-tides", "take-your-first-solo-sail"],
+          ["learn-the-right-of-way-rules", "take-your-first-solo-sail"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "run-a-10k",
+    "group": "life",
+    "estimate": "~12 weeks",
+    "source": null,
+    "plants": {
+      "title": "Run a 10k",
+      "kinds": [
+        { "hue": "olive", "label": "Training", "description": "The runs that build the engine" },
+        { "hue": "gold", "label": "Race prep", "description": "Everything that makes race day go smoothly" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "run-your-baseline-mile",
+            "label": "Run your baseline mile",
+            "icon": "sparkles",
+            "color": "olive",
+            "description": "This quest assumes you can already run about 3 km without stopping — if you are not there yet, take a few gentle weeks to get there and the rest of this will be waiting. Run one easy mile and note your time and how it felt: this is your starting line, not a test. Done when the number is written down somewhere you will see it in twelve weeks."
+          },
+          {
+            "key": "get-fitted-for-running-shoes",
+            "label": "Get fitted for running shoes",
+            "icon": "",
+            "color": "gold",
+            "description": "Visit a running store, have your gait watched, and leave with shoes that fit your feet rather than the sale rack. Done when a thirty-minute run leaves no new blisters or hot spots."
+          },
+          {
+            "key": "settle-into-three-runs-a-week",
+            "label": "Settle into three runs a week",
+            "icon": "",
+            "color": "olive",
+            "description": "Run three times a week for two weeks — two short, one slightly longer — on days you can actually keep. Done when the runs feel like a habit instead of a negotiation."
+          },
+          {
+            "key": "keep-easy-runs-conversational",
+            "label": "Keep easy runs conversational",
+            "icon": "",
+            "color": "olive",
+            "description": "Slow your easy runs until you could chat through them; walking breaks count as running here. Done when you finish a run feeling like you had a little more to give."
+          },
+          {
+            "key": "take-rest-days-on-purpose",
+            "label": "Take rest days on purpose",
+            "icon": "",
+            "color": "olive",
+            "description": "Put at least two non-running days in every week and treat them as part of the plan, not a lapse. Aches that fade once you warm up are ordinary; a sharp pain is a stop sign, not a rest day. Done when your legs feel fresher at the start of each week, not more worn down."
+          },
+          {
+            "key": "stretch-the-long-run-to-5k",
+            "label": "Stretch the long run to 5 km",
+            "icon": "",
+            "color": "olive",
+            "description": "Once a week, take the longer run out to 5 km at your conversational pace. Done when you finish 5 km tired but able to imagine going farther."
+          },
+          {
+            "key": "pick-a-race-and-enter-it",
+            "label": "Pick a race and enter it",
+            "icon": "",
+            "color": "gold",
+            "description": "Find a 10k roughly two months out, enter it, and put the date where the whole household can see it. Done when the confirmation email exists and the morning is blocked off."
+          },
+          {
+            "key": "stretch-the-long-run-to-7k",
+            "label": "Stretch the long run to 7 km",
+            "icon": "",
+            "color": "olive",
+            "description": "Take the weekly long run out to 7 km, keeping the pace honest and easy. Done when the distance feels long but no longer scary."
+          },
+          {
+            "key": "stretch-the-long-run-to-9k",
+            "label": "Stretch the long run to 9 km",
+            "icon": "",
+            "color": "olive",
+            "description": "Run 9 km about two weeks before the race — close enough to trust the distance, short enough to recover from. Done when you finish believing the last kilometer will come from the crowd."
+          },
+          {
+            "key": "rehearse-race-morning",
+            "label": "Rehearse race morning",
+            "icon": "",
+            "color": "gold",
+            "description": "Do one run that copies race day: same wake-up time, same breakfast, same kit, a few kilometers at your hoped-for pace. Done when nothing about the morning would surprise you."
+          },
+          {
+            "key": "ease-off-for-taper-week",
+            "label": "Ease off for taper week",
+            "icon": "",
+            "color": "gold",
+            "description": "In the final week, cut your distances roughly in half and keep every run gentle. Done when race day arrives and your legs feel springy instead of stale."
+          },
+          {
+            "key": "run-the-race",
+            "label": "Run the race",
+            "icon": "",
+            "color": "gold",
+            "description": "Start slower than feels right, settle in, and let the second half be the faster half. Done when you cross the line and go compare notes with that baseline mile."
+          }
+        ],
+        "links": [
+          ["run-your-baseline-mile", "get-fitted-for-running-shoes"],
+          ["run-your-baseline-mile", "settle-into-three-runs-a-week"],
+          ["run-your-baseline-mile", "keep-easy-runs-conversational"],
+          ["settle-into-three-runs-a-week", "take-rest-days-on-purpose"],
+          ["settle-into-three-runs-a-week", "stretch-the-long-run-to-5k"],
+          ["keep-easy-runs-conversational", "stretch-the-long-run-to-5k"],
+          ["get-fitted-for-running-shoes", "stretch-the-long-run-to-5k"],
+          ["settle-into-three-runs-a-week", "pick-a-race-and-enter-it"],
+          ["stretch-the-long-run-to-5k", "stretch-the-long-run-to-7k"],
+          ["take-rest-days-on-purpose", "stretch-the-long-run-to-7k"],
+          ["stretch-the-long-run-to-7k", "stretch-the-long-run-to-9k"],
+          ["stretch-the-long-run-to-7k", "rehearse-race-morning"],
+          ["pick-a-race-and-enter-it", "rehearse-race-morning"],
+          ["stretch-the-long-run-to-9k", "ease-off-for-taper-week"],
+          ["ease-off-for-taper-week", "run-the-race"],
+          ["rehearse-race-morning", "run-the-race"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "room-makeover",
+    "group": "life",
+    "estimate": "two weekends",
+    "source": null,
+    "plants": {
+      "title": "Room makeover",
+      "kinds": [
+        { "hue": "terracotta", "label": "Make", "description": "Color, texture, and the finishing touches" },
+        { "hue": "sky", "label": "Build", "description": "The clearing, fixing, and assembling" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "sketch-the-plan-and-pick-the-palette",
+            "label": "Sketch the plan and pick the palette",
+            "icon": "sparkles",
+            "color": "terracotta",
+            "description": "Measure the room, sketch where everything will go, and pick a shortlist of two or three colors — surfaces for weekend one, furniture and styling for weekend two. Done when the whole plan fits on one page."
+          },
+          {
+            "key": "clear-the-room-to-bare-walls",
+            "label": "Clear the room to bare walls",
+            "icon": "",
+            "color": "sky",
+            "description": "Move everything out or into the middle under an old sheet, sorting as you go into keep, donate, and toss. Done when every wall is reachable and the donate pile is bagged by the door."
+          },
+          {
+            "key": "swatch-test-then-buy-the-paint",
+            "label": "Swatch-test, then buy the paint",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Paint big swatches of your shortlist on the wall and look at them in morning and evening light before committing. Done when paint for two coats, rollers, tape, filler, and sandpaper are all in the room."
+          },
+          {
+            "key": "patch-sand-and-wash-the-walls",
+            "label": "Patch, sand, and wash the walls",
+            "icon": "",
+            "color": "sky",
+            "description": "Fill the old holes, sand them flush, and wash the walls down so the paint has something clean to grip. Done when a raking light across the wall shows no dents, bumps, or dust."
+          },
+          {
+            "key": "cut-in-and-roll-the-walls",
+            "label": "Cut in and roll the walls",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Tape the trim, cut in the edges with a brush, then roll two coats, letting the first dry fully. Done when the color reads even in daylight and the tape comes off in one clean pull."
+          },
+          {
+            "key": "assemble-the-new-furniture",
+            "label": "Assemble the new furniture",
+            "icon": "",
+            "color": "sky",
+            "description": "Build the flat-pack pieces in the room they will live in, with the hardware sorted before you start. Done when everything stands square and no mystery screws are left in the bag."
+          },
+          {
+            "key": "mount-the-shelves-and-curtain-rod",
+            "label": "Mount the shelves and curtain rod",
+            "icon": "",
+            "color": "sky",
+            "description": "Find the studs or use proper anchors, level everything twice, and drill once. Done when the shelves hold your heaviest books without a wobble."
+          },
+          {
+            "key": "move-everything-back-with-intent",
+            "label": "Move everything back with intent",
+            "icon": "",
+            "color": "sky",
+            "description": "Bring back only what earned its place in the plan, arranged the way you sketched it. Done when the room works — doors clear, outlets reachable, floor visible."
+          },
+          {
+            "key": "style-the-shelves-and-hang-the-art",
+            "label": "Style the shelves and hang the art",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Hang the art at eye level, dress the shelves, and add the lamp, plant, or throw that makes it yours. Done when you catch yourself pausing in the doorway to look at the room."
+          }
+        ],
+        "links": [
+          ["sketch-the-plan-and-pick-the-palette", "clear-the-room-to-bare-walls"],
+          ["sketch-the-plan-and-pick-the-palette", "swatch-test-then-buy-the-paint"],
+          ["clear-the-room-to-bare-walls", "patch-sand-and-wash-the-walls"],
+          ["swatch-test-then-buy-the-paint", "patch-sand-and-wash-the-walls"],
+          ["patch-sand-and-wash-the-walls", "cut-in-and-roll-the-walls"],
+          ["cut-in-and-roll-the-walls", "assemble-the-new-furniture"],
+          ["cut-in-and-roll-the-walls", "mount-the-shelves-and-curtain-rod"],
+          ["assemble-the-new-furniture", "move-everything-back-with-intent"],
+          ["mount-the-shelves-and-curtain-rod", "move-everything-back-with-intent"],
+          ["move-everything-back-with-intent", "style-the-shelves-and-hang-the-art"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "personal-finance-reset",
+    "group": "life",
+    "estimate": "~1 month",
+    "source": null,
+    "plants": {
+      "title": "Personal finance reset",
+      "kinds": [
+        { "hue": "olive", "label": "Habits", "description": "Small money rituals you repeat until they hold" },
+        { "hue": "sky", "label": "Systems", "description": "One-time setups that keep working after you stop" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "balance-page",
+            "label": "Write down every balance you have",
+            "icon": "sparkles",
+            "color": "olive",
+            "description": "Log into every account you have — checking, savings, cards, anything with money in it — and write today's balance for each on one page. Done is a dated page with no account missing."
+          },
+          {
+            "key": "pull-statements",
+            "label": "Pull one full month of statements",
+            "icon": "",
+            "color": "sky",
+            "description": "Collect last month's statement from every account on your balance page into one folder. Done when every account has its month in there."
+          },
+          {
+            "key": "weekly-half-hour",
+            "label": "Book a weekly money half-hour",
+            "icon": "",
+            "color": "olive",
+            "description": "Put a recurring thirty minutes on your calendar to redo the balance page and skim the week's spending. Done when it's booked and you've kept the first one."
+          },
+          {
+            "key": "list-last-month",
+            "label": "List where last month actually went",
+            "icon": "",
+            "color": "sky",
+            "description": "Go through the statements line by line and write every outflow into one list, no matter how small. Done when the list adds up to what actually left your accounts."
+          },
+          {
+            "key": "recurring-charges",
+            "label": "List every recurring charge",
+            "icon": "",
+            "color": "sky",
+            "description": "Comb the statements for anything that charges on repeat — subscriptions, memberships, auto-renewals. Done is one list with each amount and its renewal date."
+          },
+          {
+            "key": "honest-buckets",
+            "label": "Sort the month into honest buckets",
+            "icon": "",
+            "color": "sky",
+            "description": "Group the list into six to eight categories named after how you actually live, not how a textbook says you should. Done when every line has a bucket and none of them is called misc."
+          },
+          {
+            "key": "keep-or-cut",
+            "label": "Mark each recurring charge keep or cut",
+            "icon": "",
+            "color": "sky",
+            "description": "Go down the recurring list and decide each one: keep it or cut it, then actually cancel the cuts. Done when every line is marked and the cancellations are confirmed."
+          },
+          {
+            "key": "bucket-numbers",
+            "label": "Give every bucket next month's number",
+            "icon": "",
+            "color": "sky",
+            "description": "Using what each bucket really got last month, decide what it gets next month — some go up, some go down. Done when every bucket has a number you believe."
+          },
+          {
+            "key": "automate-payday",
+            "label": "Automate one payday move you chose",
+            "icon": "",
+            "color": "sky",
+            "description": "Pick the one transfer from your plan that matters most — into savings, toward a debt, into the bills account — and schedule it to happen on payday without you. Done when the first run has a date."
+          },
+          {
+            "key": "week-on-the-numbers",
+            "label": "Live one week on the numbers",
+            "icon": "",
+            "color": "olive",
+            "description": "Spend a normal week keeping each bucket inside its number, noting where it pinches. Done when the week is over and the notes exist, whatever the score."
+          },
+          {
+            "key": "close-the-month",
+            "label": "Close the month and reset the numbers",
+            "icon": "",
+            "color": "olive",
+            "description": "In the last money half-hour of the month, redo the balance page, compare each bucket to its number, and write next month's numbers. Done when next month starts with a plan you've already adjusted once."
+          }
+        ],
+        "links": [
+          ["balance-page", "pull-statements"],
+          ["balance-page", "weekly-half-hour"],
+          ["pull-statements", "list-last-month"],
+          ["pull-statements", "recurring-charges"],
+          ["list-last-month", "honest-buckets"],
+          ["recurring-charges", "keep-or-cut"],
+          ["honest-buckets", "bucket-numbers"],
+          ["keep-or-cut", "bucket-numbers"],
+          ["bucket-numbers", "automate-payday"],
+          ["bucket-numbers", "week-on-the-numbers"],
+          ["week-on-the-numbers", "close-the-month"],
+          ["weekly-half-hour", "close-the-month"]
+        ]
+      }
+    }
+  },
+  {
+    "id": "learn-watercolor",
+    "group": "life",
+    "estimate": "~2 months",
+    "source": null,
+    "plants": {
+      "title": "Learn watercolor",
+      "kinds": [
+        { "hue": "sky", "label": "Technique", "description": "Exercises that train one skill at a time" },
+        { "hue": "terracotta", "label": "Studies", "description": "Small real paintings that put the skills together" }
+      ],
+      "steps": {
+        "steps": [
+          {
+            "key": "swatch-chart",
+            "label": "Swatch every paint you own",
+            "icon": "sparkles",
+            "color": "sky",
+            "description": "With whatever brush and paper you have, paint a small labelled square of every color you own. Done is one chart you can pin up and refer to."
+          },
+          {
+            "key": "flat-wash",
+            "label": "Lay a flat wash",
+            "icon": "",
+            "color": "sky",
+            "description": "Fill a rectangle with one color in steady side-to-side strokes, keeping a wet bead moving down the paper. Done when a dry wash comes out one even tone, no stripes or blooms."
+          },
+          {
+            "key": "mixing-chart",
+            "label": "Chart your two-color mixes",
+            "icon": "",
+            "color": "sky",
+            "description": "Mix each pair of your colors in a grid and paint the result. Done is a chart that shows which pairs make the greens, greys, and darks you'll reach for."
+          },
+          {
+            "key": "graded-wash",
+            "label": "Pull a graded wash",
+            "icon": "",
+            "color": "sky",
+            "description": "Start dark at the top and add water with each stroke so the color fades smoothly to almost nothing. Done when the fade reads as one motion with no hard bands."
+          },
+          {
+            "key": "wet-in-wet",
+            "label": "Let two colors meet wet-in-wet",
+            "icon": "",
+            "color": "sky",
+            "description": "Wet the paper, drop in one color, then another, and let them bloom into each other. Done when you can roughly steer where the colors wander by how wet the paper is."
+          },
+          {
+            "key": "saved-whites",
+            "label": "Save your whites on purpose",
+            "icon": "",
+            "color": "sky",
+            "description": "Sketch a few simple shapes and wash around them, leaving the bare paper as your brightest white. Done when the saved shapes have clean deliberate edges, not accidents."
+          },
+          {
+            "key": "hard-soft-edges",
+            "label": "Practice hard and soft edges",
+            "icon": "",
+            "color": "sky",
+            "description": "On one sheet, paint shapes with crisp edges on dry paper, then soften one side of each with a clean damp brush. Done when you can choose which edge you'll get before the brush lands."
+          },
+          {
+            "key": "glazing",
+            "label": "Glaze three transparent layers",
+            "icon": "",
+            "color": "sky",
+            "description": "Paint a pale wash, let it dry completely, then lay two more over it so the color quietly deepens. Done when you can still see all three layers through each other."
+          },
+          {
+            "key": "value-study",
+            "label": "Paint a three-value study",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Pick one color and a plain object — a mug works — and paint it in only light, middle, and dark. Done when the object reads as solid from across the room."
+          },
+          {
+            "key": "sky-study",
+            "label": "Paint a graded sky",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Paint a sky that fades from deep at the top to pale at the horizon, dropping in soft clouds while it's still wet. Done when it dries looking like air, not like paint."
+          },
+          {
+            "key": "leaf-study",
+            "label": "Paint one leaf from life",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Put a real leaf in front of you, mix its green from your chart, and paint it with hard edges where it curls and soft edges where it turns away. Done when it's recognizably that leaf."
+          },
+          {
+            "key": "white-cup-study",
+            "label": "Paint a white cup and its shadow",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Paint a white cup by saving the paper for its lit side and glazing the shadow in slow layers. Done when the cup looks white even though you never used white paint."
+          },
+          {
+            "key": "postcard-landscape",
+            "label": "Paint a postcard landscape",
+            "icon": "",
+            "color": "terracotta",
+            "description": "Paint a small landscape in one sitting — a graded sky, a far tree line, one detailed thing up front. Done when it's signed and drying, whatever you think of it."
+          }
+        ],
+        "links": [
+          ["swatch-chart", "flat-wash"],
+          ["swatch-chart", "mixing-chart"],
+          ["flat-wash", "graded-wash"],
+          ["flat-wash", "wet-in-wet"],
+          ["flat-wash", "saved-whites"],
+          ["wet-in-wet", "hard-soft-edges"],
+          ["flat-wash", "glazing"],
+          ["mixing-chart", "glazing"],
+          ["graded-wash", "value-study"],
+          ["graded-wash", "sky-study"],
+          ["wet-in-wet", "sky-study"],
+          ["hard-soft-edges", "leaf-study"],
+          ["mixing-chart", "leaf-study"],
+          ["saved-whites", "white-cup-study"],
+          ["glazing", "white-cup-study"],
+          ["value-study", "white-cup-study"],
+          ["sky-study", "postcard-landscape"],
+          ["leaf-study", "postcard-landscape"]
+        ]
+      }
+    }
+  }
+]

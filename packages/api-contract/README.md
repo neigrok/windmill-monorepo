@@ -99,6 +99,13 @@ A locally-born tree's first sync converges with the server's empty tree only whi
 byte-equal to the backend's (`Legend::seededDefaults` + `Hlc{1,0,"genesis"}`). Read by
 `web/vite.config.js`, which fails the build on drift; pinned backend-side by `TreeRegistryTest`.
 
+## `roadmap/plan/`
+
+The plan grammar's cases ([roadmap-ios.md](../../docs/foundation/roadmap-ios.md) §7.1): a pasted text read to a plan,
+a plan as the input of the domain's `CreateRoadmap` and `ImportSteps`, and a roadmap written as Markdown and read back.
+[roadmap/plan/README.md](roadmap/plan/README.md) states the grammar and each file's shapes. Read as a test by
+`web/test/products/roadmap/paste/corpus.test.js`, which claims every file by name.
+
 ## `roadmap-addresses.json`
 
 Where a roadmap and its steps open on the web, as what follows the app's origin: `/#/app/<treeId>` and
@@ -128,6 +135,14 @@ set on the framework in `backend/platform/infra/main.cpp`, which drops the conne
 message; `WriteRoutesTest` holds that line. `maxFrameBytes` is the most the web client sends in one
 structure frame, but for a single entry that alone is larger: `MAX_FRAME_BYTES` (`web/src/products/roadmap/sync/frames.js`, held to the file and
 under `maxInboundBytes` by `web/test/products/roadmap/sync/SyncSession.test.js`).
+
+## `roadmap/quests/`
+
+The roster of quests ([roadmap-ios.md](../../docs/foundation/roadmap-ios.md) §7.1): `roster.json`, the nine
+ready-made roadmaps in their order, each with the input of the domain's `CreateRoadmap` it plants. The file
+is the source: the web's shelf reads it, and `web/test/products/roadmap/quests/roster.test.js` holds what the
+web plants to it. [roadmap/quests/README.md](roadmap/quests/README.md) has the shape, the rules every quest
+keeps and how its words are shown.
 
 ## `gym-ladder.json`
 

@@ -1,0 +1,3124 @@
+[
+  {
+    "name": "A first-level heading on the first line names the plan, and every rule reads at once",
+    "input": {
+      "text": "# Learn WebGL\n## Basics\n- [x] Read the spec\n- [ ] Draw a triangle\n  - Understand shaders\n## Projects\n1. Particle system\n2. Terrain renderer\nJust a stray thought",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Learn WebGL",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "learn-webgl", "label": "Learn WebGL", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "basics", "label": "Basics", "color": "terracotta", "prerequisites": ["learn-webgl"]},
+        {"id": "read-the-spec", "label": "Read the spec", "color": "terracotta", "prerequisites": ["basics"], "status": "complete"},
+        {"id": "draw-a-triangle", "label": "Draw a triangle", "color": "terracotta", "prerequisites": ["basics"]},
+        {"id": "understand-shaders", "label": "Understand shaders", "color": "terracotta", "prerequisites": ["draw-a-triangle"]},
+        {"id": "projects", "label": "Projects", "color": "olive", "prerequisites": ["learn-webgl"]},
+        {"id": "particle-system", "label": "Particle system", "color": "olive", "prerequisites": ["projects"]},
+        {
+          "id": "terrain-renderer",
+          "label": "Terrain renderer",
+          "color": "olive",
+          "prerequisites": ["particle-system"],
+          "description": "Just a stray thought"
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Basics", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Projects", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "learn-webgl", "liberties": []},
+        {"mark": "branch", "nodeId": "basics", "liberties": []},
+        {"mark": "done", "nodeId": "read-the-spec", "liberties": []},
+        {"mark": "step", "nodeId": "draw-a-triangle", "liberties": []},
+        {"mark": "step", "nodeId": "understand-shaders", "liberties": []},
+        {"mark": "branch", "nodeId": "projects", "liberties": []},
+        {"mark": "step", "nodeId": "particle-system", "liberties": []},
+        {"mark": "step", "nodeId": "terrain-renderer", "liberties": []},
+        {"mark": "note", "nodeId": "terrain-renderer", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 8, "branches": 2, "done": 1},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A first plain line names the plan",
+    "input": {
+      "text": "Ship the beta\n- write changelog",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Ship the beta",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "ship-the-beta", "label": "Ship the beta", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "write-changelog", "label": "write changelog", "color": "terracotta", "prerequisites": ["ship-the-beta"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [{"mark": "root", "nodeId": "ship-the-beta", "liberties": []}, {"mark": "step", "nodeId": "write-changelog", "liberties": []}],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A list with no line above it has no name, and its first step is unnamed",
+    "input": {
+      "text": "- one\n- two",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "one", "label": "one", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "two", "label": "two", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [{"mark": "step", "nodeId": "one", "liberties": []}, {"mark": "step", "nodeId": "two", "liberties": []}],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A plan that opens with a second-level heading has no name, and the heading is a branch",
+    "input": {
+      "text": "## Section\n- a",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "section", "label": "Section", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["section"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Section", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [{"mark": "branch", "nodeId": "section", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
+      "readout": {"steps": 3, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Blank and whitespace-only lines before the name are passed over",
+    "input": {
+      "text": "\n   \n\t\n# Sail\n\n- Rig the boat\n\n\n- Read the wind",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "sail", "label": "Sail", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "rig-the-boat", "label": "Rig the boat", "color": "terracotta", "prerequisites": ["sail"]},
+        {"id": "read-the-wind", "label": "Read the wind", "color": "terracotta", "prerequisites": ["sail"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "root", "nodeId": "sail", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "rig-the-boat", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "read-the-wind", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A first-level heading after the first line is a branch like any other",
+    "input": {
+      "text": "# One\n- a\n# Two\n- b\n### Three\n- c",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "One",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "one", "label": "One", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["one"]},
+        {"id": "two", "label": "Two", "color": "terracotta", "prerequisites": ["one"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["two"]},
+        {"id": "three", "label": "Three", "color": "olive", "prerequisites": ["one"]},
+        {"id": "c", "label": "c", "color": "olive", "prerequisites": ["three"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Two", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Three", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "one", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "two", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "three", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []}
+      ],
+      "readout": {"steps": 6, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A name is clipped at 200 UTF-16 units, and its id at 40",
+    "input": {
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- a",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles"
+        },
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [{"mark": "root", "nodeId": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A name is never clipped inside a surrogate pair: it keeps one unit fewer",
+    "input": {
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀tail\n- a",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles"
+        },
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [{"mark": "root", "nodeId": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "The clip counts UTF-16 units, so 150 emoji keep 100",
+    "input": {
+      "text": "# 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n- a",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "root",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles"
+        },
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [{"mark": "root", "nodeId": "root", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Empty text is one unnamed step",
+    "input": {
+      "text": "",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [{"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"}],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [{"mark": null, "nodeId": null, "liberties": []}],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Empty text over no kinds is one unnamed step in the palette's first hue",
+    "input": {"text": "", "kinds": []},
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [{"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"}],
+      "kinds": [],
+      "gutter": [{"mark": null, "nodeId": null, "liberties": []}],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Whitespace-only text is one unnamed step, a line of the gutter for each line",
+    "input": {
+      "text": " \n\t\n\u00a0\u3000\n\ufeff",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [{"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"}],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A hyphen, an asterisk, a bullet, a number with a dot or a bracket, and both checkboxes",
+    "input": {
+      "text": "Root\n* alpha\n• beta\n- gamma\n1. one\n2) two\n- [X] done thing\n- [ ] open thing",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "alpha", "label": "alpha", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "beta", "label": "beta", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "gamma", "label": "gamma", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "one", "label": "one", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "two", "label": "two", "color": "terracotta", "prerequisites": ["one"]},
+        {"id": "done-thing", "label": "done thing", "color": "terracotta", "prerequisites": ["root"], "status": "complete"},
+        {"id": "open-thing", "label": "open thing", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "alpha", "liberties": []},
+        {"mark": "step", "nodeId": "beta", "liberties": []},
+        {"mark": "step", "nodeId": "gamma", "liberties": []},
+        {"mark": "step", "nodeId": "one", "liberties": []},
+        {"mark": "step", "nodeId": "two", "liberties": []},
+        {"mark": "done", "nodeId": "done-thing", "liberties": []},
+        {"mark": "step", "nodeId": "open-thing", "liberties": []}
+      ],
+      "readout": {"steps": 8, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "What is not a marker is text: a plus, a dash, a letter, a bracketed number, a marker with no space after it",
+    "input": {
+      "text": "Root\n- step\n+ plus\n– en dash\na. letter\n(1) bracketed\n-nospace\n1.nospace\n1.) both",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "step",
+          "label": "step",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "+ plus\n– en dash\na. letter\n(1) bracketed\n-nospace\n1.nospace\n1.) both"
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "step", "liberties": []},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 7, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Only the ten ASCII digits number a line",
+    "input": {
+      "text": "Root\n- step\n١. arabic-indic one\n１. fullwidth one\n२) devanagari two\n3. ascii three",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "step",
+          "label": "step",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "١. arabic-indic one\n１. fullwidth one\n२) devanagari two"
+        },
+        {"id": "ascii-three", "label": "ascii three", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "step", "liberties": []},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "ascii-three", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A checkbox is an opening bracket, one space or x or X, and a closing bracket, with or without a space after it",
+    "input": {
+      "text": "Root\n- [x]tight\n- [X]   wide\n- [] no space\n- [  ] two spaces\n- [✓] a tick\n- [x ] trailing\n- x] half",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "tight", "label": "tight", "color": "terracotta", "prerequisites": ["root"], "status": "complete"},
+        {"id": "wide", "label": "wide", "color": "terracotta", "prerequisites": ["root"], "status": "complete"},
+        {"id": "no-space", "label": "[] no space", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "two-spaces", "label": "[  ] two spaces", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a-tick", "label": "[✓] a tick", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "x-trailing", "label": "[x ] trailing", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "x-half", "label": "x] half", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "done", "nodeId": "tight", "liberties": []},
+        {"mark": "done", "nodeId": "wide", "liberties": []},
+        {"mark": "step", "nodeId": "no-space", "liberties": []},
+        {"mark": "step", "nodeId": "two-spaces", "liberties": []},
+        {"mark": "step", "nodeId": "a-tick", "liberties": []},
+        {"mark": "step", "nodeId": "x-trailing", "liberties": []},
+        {"mark": "step", "nodeId": "x-half", "liberties": []}
+      ],
+      "readout": {"steps": 8, "branches": 0, "done": 2},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A marker with nothing after its space is a step with an empty name, never renamed, and a checkbox alone is one too",
+    "input": {
+      "text": "- \n- [ ]\n- [x] \n* \n1. ",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "step", "label": "", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-2", "label": "", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-3", "label": "", "color": "terracotta", "prerequisites": ["root"], "status": "complete"},
+        {"id": "step-4", "label": "", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-5", "label": "", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "step", "nodeId": "step", "liberties": []},
+        {"mark": "step", "nodeId": "step-2", "liberties": []},
+        {"mark": "done", "nodeId": "step-3", "liberties": []},
+        {"mark": "step", "nodeId": "step-4", "liberties": []},
+        {"mark": "step", "nodeId": "step-5", "liberties": []}
+      ],
+      "readout": {"steps": 6, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Numbered lines chain, bulleted lines fan, and a chain holds across nesting and blank lines",
+    "input": {
+      "text": "Root\n1. a\n  1. a1\n  2. a2\n\n2. b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a1", "label": "a1", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "a2", "label": "a2", "color": "terracotta", "prerequisites": ["a1"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "a1", "liberties": []},
+        {"mark": "step", "nodeId": "a2", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A bullet between two numbers breaks the chain",
+    "input": {
+      "text": "Root\n1. a\n- x\n2. b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "x", "label": "x", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "x", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A number is never read as a number: any digits chain, in the order of the lines",
+    "input": {
+      "text": "Root\n5. a\n5. b\n007) c\n12345678901234567890123. d",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["b"]},
+        {"id": "d", "label": "d", "color": "terracotta", "prerequisites": ["c"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "step", "nodeId": "d", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A numbered line chains only to a numbered line under the same step",
+    "input": {
+      "text": "Root\n1. a\n  1. x\n2. b\n  1. y\n  2. z\n- c\n  1. w",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "x", "label": "x", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "y", "label": "y", "color": "terracotta", "prerequisites": ["b"]},
+        {"id": "z", "label": "z", "color": "terracotta", "prerequisites": ["y"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "w", "label": "w", "color": "terracotta", "prerequisites": ["c"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "x", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "y", "liberties": []},
+        {"mark": "step", "nodeId": "z", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "step", "nodeId": "w", "liberties": []}
+      ],
+      "readout": {"steps": 8, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A tab is one level",
+    "input": {
+      "text": "Root\n- a\n\t- b\n\t\t- c",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["b"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Four spaces are one level where the first indented line has four",
+    "input": {
+      "text": "Root\n- a\n    - b\n        - c",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["b"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An indent off the grid of the first indented line is clamped down and said",
+    "input": {
+      "text": "Root\n- a\n    - b\n  - c",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": [{"type": "clamp", "indent": "ragged"}]}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+    }
+  },
+  {
+    "name": "An indent more than one level past the step above is clamped to its child and said",
+    "input": {
+      "text": "Root\n- a\n  - b\n        - deep",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "deep", "label": "deep", "color": "terracotta", "prerequisites": ["b"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "deep", "liberties": [{"type": "clamp", "indent": "jump"}]}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+    }
+  },
+  {
+    "name": "A line off the grid, too deep and a duplicate takes all three liberties in that order",
+    "input": {
+      "text": "Root\n- a\n  - b\n       - [x] a\nhalf a thought\nhttps://example.com/docs",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {
+          "id": "a-2",
+          "label": "a (2)",
+          "color": "terracotta",
+          "prerequisites": ["b"],
+          "status": "complete",
+          "description": "half a thought",
+          "links": ["https://example.com/docs"]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {
+          "mark": "done",
+          "nodeId": "a-2",
+          "liberties": [{"type": "clamp", "indent": "ragged"}, {"type": "clamp", "indent": "jump"}, {"type": "rename", "label": "a (2)"}]
+        },
+        {"mark": "note", "nodeId": "a-2", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a-2", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 1},
+      "imperfections": {"notes": 2, "clamps": 2, "renames": 1}
+    }
+  },
+  {
+    "name": "A tab counts two columns, so tabs and spaces mix on one grid",
+    "input": {
+      "text": "- a\n\t- b\n  - c\n\t\t- d\n \t- e\n\t - f",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "d", "label": "d", "color": "terracotta", "prerequisites": ["c"]},
+        {"id": "e", "label": "e", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "f", "label": "f", "color": "terracotta", "prerequisites": ["a"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "step", "nodeId": "d", "liberties": []},
+        {"mark": "step", "nodeId": "e", "liberties": [{"type": "clamp", "indent": "ragged"}]},
+        {"mark": "step", "nodeId": "f", "liberties": [{"type": "clamp", "indent": "ragged"}]}
+      ],
+      "readout": {"steps": 7, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 2, "renames": 0}
+    }
+  },
+  {
+    "name": "Twelve levels deep, then back to the third",
+    "input": {
+      "text": "- level 0\n  - level 1\n    - level 2\n      - level 3\n        - level 4\n          - level 5\n            - level 6\n              - level 7\n                - level 8\n                  - level 9\n                    - level 10\n                      - level 11\n    - back at level 2\n- back at level 0",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "level-0", "label": "level 0", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "level-1", "label": "level 1", "color": "terracotta", "prerequisites": ["level-0"]},
+        {"id": "level-2", "label": "level 2", "color": "terracotta", "prerequisites": ["level-1"]},
+        {"id": "level-3", "label": "level 3", "color": "terracotta", "prerequisites": ["level-2"]},
+        {"id": "level-4", "label": "level 4", "color": "terracotta", "prerequisites": ["level-3"]},
+        {"id": "level-5", "label": "level 5", "color": "terracotta", "prerequisites": ["level-4"]},
+        {"id": "level-6", "label": "level 6", "color": "terracotta", "prerequisites": ["level-5"]},
+        {"id": "level-7", "label": "level 7", "color": "terracotta", "prerequisites": ["level-6"]},
+        {"id": "level-8", "label": "level 8", "color": "terracotta", "prerequisites": ["level-7"]},
+        {"id": "level-9", "label": "level 9", "color": "terracotta", "prerequisites": ["level-8"]},
+        {"id": "level-10", "label": "level 10", "color": "terracotta", "prerequisites": ["level-9"]},
+        {"id": "level-11", "label": "level 11", "color": "terracotta", "prerequisites": ["level-10"]},
+        {"id": "back-at-level-2", "label": "back at level 2", "color": "terracotta", "prerequisites": ["level-1"]},
+        {"id": "back-at-level-0", "label": "back at level 0", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "step", "nodeId": "level-0", "liberties": []},
+        {"mark": "step", "nodeId": "level-1", "liberties": []},
+        {"mark": "step", "nodeId": "level-2", "liberties": []},
+        {"mark": "step", "nodeId": "level-3", "liberties": []},
+        {"mark": "step", "nodeId": "level-4", "liberties": []},
+        {"mark": "step", "nodeId": "level-5", "liberties": []},
+        {"mark": "step", "nodeId": "level-6", "liberties": []},
+        {"mark": "step", "nodeId": "level-7", "liberties": []},
+        {"mark": "step", "nodeId": "level-8", "liberties": []},
+        {"mark": "step", "nodeId": "level-9", "liberties": []},
+        {"mark": "step", "nodeId": "level-10", "liberties": []},
+        {"mark": "step", "nodeId": "level-11", "liberties": []},
+        {"mark": "step", "nodeId": "back-at-level-2", "liberties": []},
+        {"mark": "step", "nodeId": "back-at-level-0", "liberties": []}
+      ],
+      "readout": {"steps": 15, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An indented note sets the grid when it is the first indented line",
+    "input": {
+      "text": "Root\n- a\n    a note indented four\n  - b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"], "description": "a note indented four"},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "b", "liberties": [{"type": "clamp", "indent": "ragged"}]}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 1, "renames": 0}
+    }
+  },
+  {
+    "name": "An indented name sets the grid too",
+    "input": {
+      "text": "   Sail\n- a\n  - b\n   - c",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "sail", "label": "Sail", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["sail"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["sail"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["b"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "sail", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": [{"type": "clamp", "indent": "ragged"}]},
+        {"mark": "step", "nodeId": "c", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+    }
+  },
+  {
+    "name": "A heading ignores its own indent and closes every open step",
+    "input": {
+      "text": "# Root\n- a\n  - b\n   ## Heading\n    - c\n- d",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "heading", "label": "Heading", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["heading"]},
+        {"id": "d", "label": "d", "color": "terracotta", "prerequisites": ["heading"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Heading", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "heading", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": [{"type": "clamp", "indent": "jump"}]},
+        {"mark": "step", "nodeId": "d", "liberties": []}
+      ],
+      "readout": {"steps": 6, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+    }
+  },
+  {
+    "name": "A heading that names a kind binds it, whatever its case, and renames nothing",
+    "input": {
+      "text": "Plan\n## build\n- thing\n## MILESTONE\n- moment",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "build", "label": "build", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "thing", "label": "thing", "color": "terracotta", "prerequisites": ["build"]},
+        {"id": "milestone", "label": "MILESTONE", "color": "gold", "prerequisites": ["plan"]},
+        {"id": "moment", "label": "moment", "color": "gold", "prerequisites": ["milestone"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "build", "liberties": []},
+        {"mark": "step", "nodeId": "thing", "liberties": []},
+        {"mark": "branch", "nodeId": "milestone", "liberties": []},
+        {"mark": "step", "nodeId": "moment", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A heading no kind is named for takes over the first kind not yet claimed, and its description goes",
+    "input": {
+      "text": "Plan\n## Deploy\n- ship",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "deploy", "label": "Deploy", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "ship", "label": "ship", "color": "terracotta", "prerequisites": ["deploy"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Deploy", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "deploy", "liberties": []},
+        {"mark": "step", "nodeId": "ship", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Eight headings over three kinds: three taken over, three added in the free hues, then round the kinds in their order",
+    "input": {
+      "text": "Root\n## B1\n- s1\n## B2\n- s2\n## B3\n- s3\n## B4\n- s4\n## B5\n- s5\n## B6\n- s6\n## B7\n- s7\n## B8\n- s8",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "b1", "label": "B1", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "s1", "label": "s1", "color": "terracotta", "prerequisites": ["b1"]},
+        {"id": "b2", "label": "B2", "color": "olive", "prerequisites": ["root"]},
+        {"id": "s2", "label": "s2", "color": "olive", "prerequisites": ["b2"]},
+        {"id": "b3", "label": "B3", "color": "gold", "prerequisites": ["root"]},
+        {"id": "s3", "label": "s3", "color": "gold", "prerequisites": ["b3"]},
+        {"id": "b4", "label": "B4", "color": "brick", "prerequisites": ["root"]},
+        {"id": "s4", "label": "s4", "color": "brick", "prerequisites": ["b4"]},
+        {"id": "b5", "label": "B5", "color": "sky", "prerequisites": ["root"]},
+        {"id": "s5", "label": "s5", "color": "sky", "prerequisites": ["b5"]},
+        {"id": "b6", "label": "B6", "color": "plum", "prerequisites": ["root"]},
+        {"id": "s6", "label": "s6", "color": "plum", "prerequisites": ["b6"]},
+        {"id": "b7", "label": "B7", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "s7", "label": "s7", "color": "terracotta", "prerequisites": ["b7"]},
+        {"id": "b8", "label": "B8", "color": "olive", "prerequisites": ["root"]},
+        {"id": "s8", "label": "s8", "color": "olive", "prerequisites": ["b8"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "B1", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "B2", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "B3", "description": "", "source": "relabeled"},
+        {"id": "b4", "hue": "brick", "label": "B4", "description": "", "source": "added"},
+        {"id": "b5", "hue": "sky", "label": "B5", "description": "", "source": "added"},
+        {"id": "b6", "hue": "plum", "label": "B6", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "branch", "nodeId": "b1", "liberties": []},
+        {"mark": "step", "nodeId": "s1", "liberties": []},
+        {"mark": "branch", "nodeId": "b2", "liberties": []},
+        {"mark": "step", "nodeId": "s2", "liberties": []},
+        {"mark": "branch", "nodeId": "b3", "liberties": []},
+        {"mark": "step", "nodeId": "s3", "liberties": []},
+        {"mark": "branch", "nodeId": "b4", "liberties": []},
+        {"mark": "step", "nodeId": "s4", "liberties": []},
+        {"mark": "branch", "nodeId": "b5", "liberties": []},
+        {"mark": "step", "nodeId": "s5", "liberties": []},
+        {"mark": "branch", "nodeId": "b6", "liberties": []},
+        {"mark": "step", "nodeId": "s6", "liberties": []},
+        {"mark": "branch", "nodeId": "b7", "liberties": []},
+        {"mark": "step", "nodeId": "s7", "liberties": []},
+        {"mark": "branch", "nodeId": "b8", "liberties": []},
+        {"mark": "step", "nodeId": "s8", "liberties": []}
+      ],
+      "readout": {"steps": 17, "branches": 8, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "With no kinds every heading adds one, in the palette order",
+    "input": {"text": "Root\n## One\n- a\n## Two\n- b", "kinds": []},
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "one", "label": "One", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["one"]},
+        {"id": "two", "label": "Two", "color": "olive", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": ["two"]}
+      ],
+      "kinds": [
+        {"id": "one", "hue": "terracotta", "label": "One", "description": "", "source": "added"},
+        {"id": "two", "hue": "olive", "label": "Two", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "branch", "nodeId": "one", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "two", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A heading used twice binds the kind it made the first time",
+    "input": {
+      "text": "Root\n## Deploy\n- a\n## Other\n- b\n## DEPLOY\n- c",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "deploy", "label": "Deploy", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["deploy"]},
+        {"id": "other", "label": "Other", "color": "olive", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": ["other"]},
+        {"id": "deploy-2", "label": "DEPLOY", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["deploy-2"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Deploy", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Other", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "branch", "nodeId": "deploy", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "other", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "deploy-2", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []}
+      ],
+      "readout": {"steps": 7, "branches": 3, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A kind takes 24 units of a longer heading, so the same heading again does not bind it",
+    "input": {
+      "text": "P\n## A very long heading that goes past the cap\n- a\n## A very long heading that goes past the cap\n- b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "P",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "p", "label": "P", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "a-very-long-heading-that-goes-past-the-c",
+          "label": "A very long heading that goes past the cap",
+          "color": "terracotta",
+          "prerequisites": ["p"]
+        },
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["a-very-long-heading-that-goes-past-the-c"]},
+        {
+          "id": "a-very-long-heading-that-goes-past-the-c-2",
+          "label": "A very long heading that goes past the cap (2)",
+          "color": "olive",
+          "prerequisites": ["p"]
+        },
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": ["a-very-long-heading-that-goes-past-the-c-2"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "A very long heading that", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "A very long heading that", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "p", "liberties": []},
+        {"mark": "branch", "nodeId": "a-very-long-heading-that-goes-past-the-c", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {
+          "mark": "branch",
+          "nodeId": "a-very-long-heading-that-goes-past-the-c-2",
+          "liberties": [{"type": "rename", "label": "A very long heading that goes past the cap (2)"}]
+        },
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+    }
+  },
+  {
+    "name": "A kind label is never clipped inside a surrogate pair",
+    "input": {
+      "text": "P\n## kkkkkkkkkkkkkkkkkkkkkkk😀 and more\n- a",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "P",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "p", "label": "P", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "kkkkkkkkkkkkkkkkkkkkkkk-and-more", "label": "kkkkkkkkkkkkkkkkkkkkkkk😀 and more", "color": "terracotta", "prerequisites": ["p"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["kkkkkkkkkkkkkkkkkkkkkkk-and-more"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "kkkkkkkkkkkkkkkkkkkkkkk", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "p", "liberties": []},
+        {"mark": "branch", "nodeId": "kkkkkkkkkkkkkkkkkkkkkkk-and-more", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Closing hashes are part of a heading, seven hashes and a hash with no space are text, and any whitespace follows the hashes",
+    "input": {
+      "text": "Root\n## Closing ##\n- a\n####### seven\n#nospace\n###\tTabbed\n- b\n##\u3000Ideographic\n- c\n##\n## \n",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "closing", "label": "Closing ##", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["closing"], "description": "####### seven\n#nospace"},
+        {"id": "tabbed", "label": "Tabbed", "color": "olive", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": ["tabbed"]},
+        {"id": "ideographic", "label": "Ideographic", "color": "gold", "prerequisites": ["root"]},
+        {"id": "c", "label": "c", "color": "gold", "prerequisites": ["ideographic"], "description": "##\n##"}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Closing ##", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Tabbed", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Ideographic", "description": "", "source": "relabeled"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "branch", "nodeId": "closing", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "branch", "nodeId": "tabbed", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "ideographic", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "note", "nodeId": "c", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "c", "liberties": [{"type": "note"}]},
+        {"mark": null, "nodeId": null, "liberties": []}
+      ],
+      "readout": {"steps": 7, "branches": 3, "done": 0},
+      "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A kind bound by an earlier heading is not taken over by a later one",
+    "input": {
+      "text": "Root\n## Learn\n- a\n## Fresh\n- b\n## Newer\n- c",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "learn", "label": "Learn", "color": "olive", "prerequisites": ["root"]},
+        {"id": "a", "label": "a", "color": "olive", "prerequisites": ["learn"]},
+        {"id": "fresh", "label": "Fresh", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["fresh"]},
+        {"id": "newer", "label": "Newer", "color": "gold", "prerequisites": ["root"]},
+        {"id": "c", "label": "c", "color": "gold", "prerequisites": ["newer"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Fresh", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Newer", "description": "", "source": "relabeled"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "branch", "nodeId": "learn", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "fresh", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "newer", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []}
+      ],
+      "readout": {"steps": 7, "branches": 3, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A heading named for a kind an earlier heading took over no longer finds it, and takes over the next",
+    "input": {
+      "text": "Root\n## Deploy\n- a\n## Build\n- b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "deploy", "label": "Deploy", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["deploy"]},
+        {"id": "build", "label": "Build", "color": "olive", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": ["build"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Deploy", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Build", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "branch", "nodeId": "deploy", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "build", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Text is a note on the step above it, and a bare address is a link",
+    "input": {
+      "text": "Root\n- step\nhalf a sentence\nhttps://example.com/docs\nanother aside",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "step",
+          "label": "step",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "half a sentence\nanother aside",
+          "links": ["https://example.com/docs"]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "step", "liberties": []},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Text alone is one step and its notes",
+    "input": {
+      "text": "This is just prose.\nMore prose here.\nEven more prose.",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "This is just prose.",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "this-is-just-prose",
+          "label": "This is just prose.",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "More prose here.\nEven more prose."
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "this-is-just-prose", "liberties": []},
+        {"mark": "note", "nodeId": "this-is-just-prose", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "this-is-just-prose", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An address is http or https in lower case, then anything with no whitespace, alone on its line",
+    "input": {
+      "text": "Root\n- s\nhttp://a.example\nhttps://b.example/path?q=1#frag\n  https://indented.example  \nHTTPS://UPPER.example\nhttps://\nhttps://has space.example\nsee https://inline.example\nftp://x.example\nwww.example.com\nmailto:a@b.example",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "s",
+          "label": "s",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "HTTPS://UPPER.example\nhttps://\nhttps://has space.example\nsee https://inline.example\nftp://x.example\nwww.example.com\nmailto:a@b.example",
+          "links": ["http://a.example", "https://b.example/path?q=1#frag", "https://indented.example"]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "s", "liberties": []},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 10, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A note before any step lands on the name, and one under a heading on the branch",
+    "input": {
+      "text": "Title\nabout the whole plan\n## Branch\nabout the branch\nhttps://example.com/branch\n- a\nabout a",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Title",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "title", "label": "Title", "color": "terracotta", "prerequisites": [], "icon": "sparkles", "description": "about the whole plan"},
+        {
+          "id": "branch",
+          "label": "Branch",
+          "color": "terracotta",
+          "prerequisites": ["title"],
+          "description": "about the branch",
+          "links": ["https://example.com/branch"]
+        },
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["branch"], "description": "about a"}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Branch", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "title", "liberties": []},
+        {"mark": "note", "nodeId": "title", "liberties": [{"type": "note"}]},
+        {"mark": "branch", "nodeId": "branch", "liberties": []},
+        {"mark": "note", "nodeId": "branch", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "branch", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 3, "branches": 1, "done": 0},
+      "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An HTML comment is text, and the export marker counts only on the first line after the name",
+    "input": {
+      "text": "# Plan\n<!-- a comment -->\n- A <!-- windmill:kind sky Learning -->\n## B <!-- windmill:kind sky -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles", "description": "<!-- a comment -->"},
+        {"id": "a-windmill-kind-sky-learning", "label": "A <!-- windmill:kind sky Learning -->", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "b-windmill-kind-sky", "label": "B <!-- windmill:kind sky -->", "color": "terracotta", "prerequisites": ["plan"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "B <!-- windmill:kind sky", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "note", "nodeId": "plan", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "a-windmill-kind-sky-learning", "liberties": []},
+        {"mark": "branch", "nodeId": "b-windmill-kind-sky", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 1, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A quote, a table row, a rule and a code fence are text",
+    "input": {
+      "text": "Root\n- a\n> quoted\n| a | b |\n---\n```\ncode\n```\n**bold**",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "a",
+          "label": "a",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "> quoted\n| a | b |\n---\n```\ncode\n```\n**bold**"
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 7, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A duplicate name takes (2), then (3), and a name already ending (2) takes (2) again",
+    "input": {
+      "text": "Plan\n- Foo\n- Foo\n- Foo (2)\n- Foo",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "foo", "label": "Foo", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "foo-2", "label": "Foo (2)", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "foo-2-2", "label": "Foo (2) (2)", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "foo-3", "label": "Foo (3)", "color": "terracotta", "prerequisites": ["plan"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "step", "nodeId": "foo", "liberties": []},
+        {"mark": "step", "nodeId": "foo-2", "liberties": [{"type": "rename", "label": "Foo (2)"}]},
+        {"mark": "step", "nodeId": "foo-2-2", "liberties": [{"type": "rename", "label": "Foo (2) (2)"}]},
+        {"mark": "step", "nodeId": "foo-3", "liberties": [{"type": "rename", "label": "Foo (3)"}]}
+      ],
+      "readout": {"steps": 5, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 3}
+    }
+  },
+  {
+    "name": "A step named as the plan, and a branch named as a step, are duplicates",
+    "input": {
+      "text": "# Plan\n- Plan\n## Plan\n- Foo\n## Foo",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "plan-2", "label": "Plan (2)", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "plan-3", "label": "Plan (3)", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "foo", "label": "Foo", "color": "terracotta", "prerequisites": ["plan-3"]},
+        {"id": "foo-2", "label": "Foo (2)", "color": "olive", "prerequisites": ["plan"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Plan", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Foo", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "step", "nodeId": "plan-2", "liberties": [{"type": "rename", "label": "Plan (2)"}]},
+        {"mark": "branch", "nodeId": "plan-3", "liberties": [{"type": "rename", "label": "Plan (3)"}]},
+        {"mark": "step", "nodeId": "foo", "liberties": []},
+        {"mark": "branch", "nodeId": "foo-2", "liberties": [{"type": "rename", "label": "Foo (2)"}]}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 3}
+    }
+  },
+  {
+    "name": "Names that differ in case, or in how an accent is composed, are different names",
+    "input": {
+      "text": "Plan\n- Café\n- Cafe\u0301\n- café\n- CAFÉ\n- Café",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "caf", "label": "Café", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "cafe", "label": "Cafe\u0301", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "caf-2", "label": "café", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "caf-3", "label": "CAFÉ", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "caf-2-2", "label": "Café (2)", "color": "terracotta", "prerequisites": ["plan"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "step", "nodeId": "caf", "liberties": []},
+        {"mark": "step", "nodeId": "cafe", "liberties": []},
+        {"mark": "step", "nodeId": "caf-2", "liberties": []},
+        {"mark": "step", "nodeId": "caf-3", "liberties": []},
+        {"mark": "step", "nodeId": "caf-2-2", "liberties": [{"type": "rename", "label": "Café (2)"}]}
+      ],
+      "readout": {"steps": 6, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+    }
+  },
+  {
+    "name": "Different names that make the same id get distinct ids, and no rename",
+    "input": {
+      "text": "Plan\n- Foo!\n- Foo?\n- foo\n- root\n- step\n- Привет\n- 日本語",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "foo", "label": "Foo!", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "foo-2", "label": "Foo?", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "foo-3", "label": "foo", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "root", "label": "root", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "step", "label": "step", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "step-2", "label": "Привет", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "step-3", "label": "日本語", "color": "terracotta", "prerequisites": ["plan"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "step", "nodeId": "foo", "liberties": []},
+        {"mark": "step", "nodeId": "foo-2", "liberties": []},
+        {"mark": "step", "nodeId": "foo-3", "liberties": []},
+        {"mark": "step", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "step", "liberties": []},
+        {"mark": "step", "nodeId": "step-2", "liberties": []},
+        {"mark": "step", "nodeId": "step-3", "liberties": []}
+      ],
+      "readout": {"steps": 8, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A duplicate branch is renamed and still binds the kind of its heading",
+    "input": {
+      "text": "# P\n## Build\n- a\n## Build\n- b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "P",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "p", "label": "P", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "build", "label": "Build", "color": "terracotta", "prerequisites": ["p"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["build"]},
+        {"id": "build-2", "label": "Build (2)", "color": "terracotta", "prerequisites": ["p"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["build-2"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "p", "liberties": []},
+        {"mark": "branch", "nodeId": "build", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "build-2", "liberties": [{"type": "rename", "label": "Build (2)"}]},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+    }
+  },
+  {
+    "name": "Names in Cyrillic, Greek, Arabic, Hebrew, Devanagari, Thai, Han, kana and Hangul",
+    "input": {
+      "text": "Учить языки\n- Привет, мир\n- Γειά σου Κόσμε\n- مرحبا بالعالم\n- שלום עולם\n- नमस\u094dत\u0947 द\u0941न\u093fय\u093e\n- สว\u0e31สด\u0e35ชาวโลก\n- 你好，世界\n- こんにちは世界\n- 안녕하세요 세계\n- Latin 2 mixed Кириллица",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Учить языки",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Учить языки", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "step", "label": "Привет, мир", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-2", "label": "Γειά σου Κόσμε", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-3", "label": "مرحبا بالعالم", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-4", "label": "שלום עולם", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-5", "label": "नमस\u094dत\u0947 द\u0941न\u093fय\u093e", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-6", "label": "สว\u0e31สด\u0e35ชาวโลก", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-7", "label": "你好，世界", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-8", "label": "こんにちは世界", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "step-9", "label": "안녕하세요 세계", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "latin-2-mixed", "label": "Latin 2 mixed Кириллица", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "step", "liberties": []},
+        {"mark": "step", "nodeId": "step-2", "liberties": []},
+        {"mark": "step", "nodeId": "step-3", "liberties": []},
+        {"mark": "step", "nodeId": "step-4", "liberties": []},
+        {"mark": "step", "nodeId": "step-5", "liberties": []},
+        {"mark": "step", "nodeId": "step-6", "liberties": []},
+        {"mark": "step", "nodeId": "step-7", "liberties": []},
+        {"mark": "step", "nodeId": "step-8", "liberties": []},
+        {"mark": "step", "nodeId": "step-9", "liberties": []},
+        {"mark": "step", "nodeId": "latin-2-mixed", "liberties": []}
+      ],
+      "readout": {"steps": 11, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Combining marks, joined emoji, flags, skin tones and variation selectors pass through whole",
+    "input": {
+      "text": "🚀 Launch\n- e\u0301 with a combining acute\n- Z\u0351\u036b\u0343a\u0306l\u0338g\u0349o\n- 👨\u200d👩\u200d👧 family\n- 🇺🇦 flag\n- 👍🏽 thumb\n- ❤\ufe0f heart\n- [x] ✅ done",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "🚀 Launch",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "launch", "label": "🚀 Launch", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "e-with-a-combining-acute", "label": "e\u0301 with a combining acute", "color": "terracotta", "prerequisites": ["launch"]},
+        {"id": "z-a-l-g-o", "label": "Z\u0351\u036b\u0343a\u0306l\u0338g\u0349o", "color": "terracotta", "prerequisites": ["launch"]},
+        {"id": "family", "label": "👨\u200d👩\u200d👧 family", "color": "terracotta", "prerequisites": ["launch"]},
+        {"id": "flag", "label": "🇺🇦 flag", "color": "terracotta", "prerequisites": ["launch"]},
+        {"id": "thumb", "label": "👍🏽 thumb", "color": "terracotta", "prerequisites": ["launch"]},
+        {"id": "heart", "label": "❤\ufe0f heart", "color": "terracotta", "prerequisites": ["launch"]},
+        {"id": "done", "label": "✅ done", "color": "terracotta", "prerequisites": ["launch"], "status": "complete"}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "launch", "liberties": []},
+        {"mark": "step", "nodeId": "e-with-a-combining-acute", "liberties": []},
+        {"mark": "step", "nodeId": "z-a-l-g-o", "liberties": []},
+        {"mark": "step", "nodeId": "family", "liberties": []},
+        {"mark": "step", "nodeId": "flag", "liberties": []},
+        {"mark": "step", "nodeId": "thumb", "liberties": []},
+        {"mark": "step", "nodeId": "heart", "liberties": []},
+        {"mark": "done", "nodeId": "done", "liberties": []}
+      ],
+      "readout": {"steps": 8, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An id is the name lowercased by Unicode, with every run outside a to z and 0 to 9 made one hyphen",
+    "input": {
+      "text": "Ids\n- İstanbul\n- \u212a2 Kelvin sign\n- Ångström units\n- \ufb01ne ligature\n- SCREAMING_snake-Case 42\n- --dashes--\n- naïve café",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Ids",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "ids", "label": "Ids", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "i-stanbul", "label": "İstanbul", "color": "terracotta", "prerequisites": ["ids"]},
+        {"id": "k2-kelvin-sign", "label": "\u212a2 Kelvin sign", "color": "terracotta", "prerequisites": ["ids"]},
+        {"id": "ngstr-m-units", "label": "Ångström units", "color": "terracotta", "prerequisites": ["ids"]},
+        {"id": "ne-ligature", "label": "\ufb01ne ligature", "color": "terracotta", "prerequisites": ["ids"]},
+        {"id": "screaming-snake-case-42", "label": "SCREAMING_snake-Case 42", "color": "terracotta", "prerequisites": ["ids"]},
+        {"id": "dashes", "label": "--dashes--", "color": "terracotta", "prerequisites": ["ids"]},
+        {"id": "na-ve-caf", "label": "naïve café", "color": "terracotta", "prerequisites": ["ids"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "ids", "liberties": []},
+        {"mark": "step", "nodeId": "i-stanbul", "liberties": []},
+        {"mark": "step", "nodeId": "k2-kelvin-sign", "liberties": []},
+        {"mark": "step", "nodeId": "ngstr-m-units", "liberties": []},
+        {"mark": "step", "nodeId": "ne-ligature", "liberties": []},
+        {"mark": "step", "nodeId": "screaming-snake-case-42", "liberties": []},
+        {"mark": "step", "nodeId": "dashes", "liberties": []},
+        {"mark": "step", "nodeId": "na-ve-caf", "liberties": []}
+      ],
+      "readout": {"steps": 8, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An id is cut at 40 and never ends in a hyphen",
+    "input": {
+      "text": "Ids\n- aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa b c\n- bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb!",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Ids",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "ids", "label": "Ids", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa b c",
+          "color": "terracotta",
+          "prerequisites": ["ids"]
+        },
+        {
+          "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "label": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb!",
+          "color": "terracotta",
+          "prerequisites": ["ids"]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "ids", "liberties": []},
+        {"mark": "step", "nodeId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "liberties": []},
+        {"mark": "step", "nodeId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A no-break space and an ideographic space are whitespace: after a marker, after hashes, around a name",
+    "input": {
+      "text": "\u00a0\u3000Sail\u3000\n-\u00a0Rig the boat\n*\u3000Read the wind\n#\u00a0Heading\n-\u2003em space\n\u3000\u00a0\n1.\u202fnarrow",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "sail", "label": "Sail", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "rig-the-boat", "label": "Rig the boat", "color": "terracotta", "prerequisites": ["sail"]},
+        {"id": "read-the-wind", "label": "Read the wind", "color": "terracotta", "prerequisites": ["sail"]},
+        {"id": "heading", "label": "Heading", "color": "terracotta", "prerequisites": ["sail"]},
+        {"id": "em-space", "label": "em space", "color": "terracotta", "prerequisites": ["heading"]},
+        {"id": "narrow", "label": "narrow", "color": "terracotta", "prerequisites": ["heading"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Heading", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "sail", "liberties": []},
+        {"mark": "step", "nodeId": "rig-the-boat", "liberties": []},
+        {"mark": "step", "nodeId": "read-the-wind", "liberties": []},
+        {"mark": "branch", "nodeId": "heading", "liberties": []},
+        {"mark": "step", "nodeId": "em-space", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "narrow", "liberties": []}
+      ],
+      "readout": {"steps": 6, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A byte order mark is whitespace: it is trimmed from a name, and before a hash it leaves the line text",
+    "input": {
+      "text": "\ufeff# Title\n- a\n\ufeff- b\n\ufeff",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "# Title",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "title", "label": "# Title", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["title"], "description": "- b"}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "title", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": null, "nodeId": null, "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "U+2028 and U+2029 end no line and are whitespace: one after an item's first character, or inside a heading's text, makes the line text",
+    "input": {
+      "text": "Root\n- a\n- item\u2028tail\n- trailing\u2028\n-\u2028leading\n## Head\u2029ing\n## Trailing\u2029\n\u2028\nplain\u2028note",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"], "description": "- item\u2028tail\n- trailing"},
+        {"id": "leading", "label": "leading", "color": "terracotta", "prerequisites": ["root"], "description": "## Head\u2029ing"},
+        {"id": "trailing", "label": "Trailing", "color": "terracotta", "prerequisites": ["root"], "description": "plain\u2028note"}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Trailing", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "leading", "liberties": []},
+        {"mark": "note", "nodeId": "leading", "liberties": [{"type": "note"}]},
+        {"mark": "branch", "nodeId": "trailing", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "note", "nodeId": "trailing", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 4, "branches": 1, "done": 0},
+      "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "U+0085, U+200B and U+180E are not whitespace",
+    "input": {
+      "text": "Root\n- a\n\u0085\n-\u200bzero width\n\u180e\n- padded\u200b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"], "description": "\u0085\n-\u200bzero width\n\u180e"},
+        {"id": "padded", "label": "padded\u200b", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "padded", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A vertical tab and a form feed are whitespace around text and part of the text inside it",
+    "input": {
+      "text": "Root\n-\u000bvt after the marker\n- a\u000bb\n\f\n- c\f\n#\fFeed",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "vt-after-the-marker", "label": "vt after the marker", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "a-b", "label": "a\u000bb", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "feed", "label": "Feed", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Feed", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "vt-after-the-marker", "liberties": []},
+        {"mark": "step", "nodeId": "a-b", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "branch", "nodeId": "feed", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "LF, CRLF and CR each end a line, and LF then CR ends two",
+    "input": {
+      "text": "Root\r\n- a\r- b\n- c\n\r- d",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "d", "label": "d", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "d", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A text that ends with a line break has an empty last line",
+    "input": {
+      "text": "- x\r\n- y\r\n",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "x", "label": "x", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "y", "label": "y", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "step", "nodeId": "x", "liberties": []},
+        {"mark": "step", "nodeId": "y", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "The same plan with CRLF line endings reads the same",
+    "input": {
+      "text": "# Learn WebGL\r\n## Basics\r\n- [x] Read the spec\r\n- [ ] Draw a triangle\r\n  - Understand shaders\r\n## Projects\r\n1. Particle system\r\n2. Terrain renderer\r\nJust a stray thought",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Learn WebGL",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "learn-webgl", "label": "Learn WebGL", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "basics", "label": "Basics", "color": "terracotta", "prerequisites": ["learn-webgl"]},
+        {"id": "read-the-spec", "label": "Read the spec", "color": "terracotta", "prerequisites": ["basics"], "status": "complete"},
+        {"id": "draw-a-triangle", "label": "Draw a triangle", "color": "terracotta", "prerequisites": ["basics"]},
+        {"id": "understand-shaders", "label": "Understand shaders", "color": "terracotta", "prerequisites": ["draw-a-triangle"]},
+        {"id": "projects", "label": "Projects", "color": "olive", "prerequisites": ["learn-webgl"]},
+        {"id": "particle-system", "label": "Particle system", "color": "olive", "prerequisites": ["projects"]},
+        {
+          "id": "terrain-renderer",
+          "label": "Terrain renderer",
+          "color": "olive",
+          "prerequisites": ["particle-system"],
+          "description": "Just a stray thought"
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Basics", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Projects", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "learn-webgl", "liberties": []},
+        {"mark": "branch", "nodeId": "basics", "liberties": []},
+        {"mark": "done", "nodeId": "read-the-spec", "liberties": []},
+        {"mark": "step", "nodeId": "draw-a-triangle", "liberties": []},
+        {"mark": "step", "nodeId": "understand-shaders", "liberties": []},
+        {"mark": "branch", "nodeId": "projects", "liberties": []},
+        {"mark": "step", "nodeId": "particle-system", "liberties": []},
+        {"mark": "step", "nodeId": "terrain-renderer", "liberties": []},
+        {"mark": "note", "nodeId": "terrain-renderer", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 8, "branches": 2, "done": 1},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A step name is not clipped, whatever its length",
+    "input": {
+      "text": "Root\n- yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n## hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+          "label": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+          "color": "terracotta",
+          "prerequisites": ["root"]
+        },
+        {
+          "id": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+          "label": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+          "color": "terracotta",
+          "prerequisites": ["root"]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "hhhhhhhhhhhhhhhhhhhhhhhh", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", "liberties": []},
+        {"mark": "branch", "nodeId": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A long note and a long address are kept whole",
+    "input": {
+      "text": "Root\n- a\nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\nhttps://example.com/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "a",
+          "label": "a",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+          "links": [
+            "https://example.com/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+          ]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A file with the export marker plants no step for its name, keeps duplicate names, and reads each kind marker",
+    "input": {
+      "text": "# Plan\n<!-- windmill:roadmap -->\n- Same <!-- windmill:kind sky Sailing -->\n  - Same\n    - [x] Other <!-- windmill:kind gold -->\n- Same",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "same", "label": "Same", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+        {"id": "same-2", "label": "Same", "color": "sky", "prerequisites": ["same"]},
+        {"id": "other", "label": "Other", "color": "gold", "prerequisites": ["same-2"], "status": "complete"},
+        {"id": "same-3", "label": "Same", "color": "gold", "prerequisites": []}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"},
+        {"id": "sailing", "hue": "sky", "label": "Sailing", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "same", "liberties": []},
+        {"mark": "step", "nodeId": "same-2", "liberties": []},
+        {"mark": "done", "nodeId": "other", "liberties": []},
+        {"mark": "step", "nodeId": "same-3", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "In a marked file a heading with a kind marker changes the kind and plants no branch",
+    "input": {
+      "text": "# Sail\n<!-- windmill:roadmap -->\n## Sailing <!-- windmill:kind sky -->\n- [x] Choose a course\n## Practice <!-- windmill:kind olive -->\n  - Read the wind\n## <!-- windmill:kind plum -->\n- Rest",
+      "kinds": []
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "choose-a-course", "label": "Choose a course", "color": "sky", "prerequisites": [], "icon": "sparkles", "status": "complete"},
+        {"id": "read-the-wind", "label": "Read the wind", "color": "olive", "prerequisites": ["choose-a-course"]},
+        {"id": "rest", "label": "Rest", "color": "plum", "prerequisites": []}
+      ],
+      "kinds": [
+        {"id": "sailing", "hue": "sky", "label": "Sailing", "description": "", "source": "added"},
+        {"id": "practice", "hue": "olive", "label": "Practice", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "read-the-wind", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "rest", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "In a marked file a plain heading claims a kind and plants nothing",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n## Phase one\n- a\n## Build\n- b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": []}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Phase one", "description": "", "source": "relabeled"},
+        {"id": "learn", "hue": "olive", "label": "Build", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "In a marked file text before the first step is dropped",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\nstray prose\nhttps://a.example\n- A <!-- windmill:kind sky -->\nkept on A",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "kept on A"}],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A guide between its two lines is read past, list lines and blank quotes included",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n\n<!-- windmill:guide -->\n> One step a week.\n>\n- not a step\n> <!-- /windmill:guide -->\n<!-- /windmill:guide -->\n- A <!-- windmill:kind sky -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"}],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A guide that never closes is not a guide: its lines are read",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> One step a week.\n- a step after all\n> said of it",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "a-step-after-all",
+          "label": "a step after all",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "> said of it"
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a-step-after-all", "liberties": []},
+        {"mark": "note", "nodeId": "a-step-after-all", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A guide counts only as the first lines after the marker",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n<!-- windmill:guide -->\n> late\n<!-- /windmill:guide -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "a",
+          "label": "A",
+          "color": "sky",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "<!-- windmill:guide -->\n> late\n<!-- /windmill:guide -->"
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "In a marked file six entities are read back, in names and in kind labels alike, and no other",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n- A &#38; B &#60;tag&#62; line&#10;break&#13; &#45; <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->\n  - &#39; &#x26; &amp; &#038; stay",
+      "kinds": []
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "a-b-tag-line-break", "label": "A & B <tag> line\nbreak\r -", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+        {"id": "39-x26-amp-038-stay", "label": "&#39; &#x26; &amp; &#038; stay", "color": "sky", "prerequisites": ["a-b-tag-line-break"]}
+      ],
+      "kinds": [{"id": "a-b-c-d", "hue": "sky", "label": "A --> B & C\nD", "description": "", "source": "added"}],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a-b-tag-line-break", "liberties": []},
+        {"mark": "step", "nodeId": "39-x26-amp-038-stay", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "In a marked file a kind marker takes over the kind wearing its hue, one an earlier marker added included",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind olive Sailing -->\n- B <!-- windmill:kind sky Tides -->\n- C <!-- windmill:kind sky Weather -->\n- D <!-- windmill:kind olive sailing -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "a", "label": "A", "color": "olive", "prerequisites": [], "icon": "sparkles"},
+        {"id": "b", "label": "B", "color": "sky", "prerequisites": []},
+        {"id": "c", "label": "C", "color": "sky", "prerequisites": []},
+        {"id": "d", "label": "D", "color": "olive", "prerequisites": []}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Sailing", "description": "", "source": "relabeled"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"},
+        {"id": "tides", "hue": "sky", "label": "Weather", "description": "", "source": "relabeled"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "step", "nodeId": "d", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A kind marker names one of the six hues: any other is part of the name",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind pink -->\n- B <!-- windmill:kind Sky -->\n- C <!-- windmill:kind  sky -->\n- D<!-- windmill:kind sky -->",
+      "kinds": []
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "a-windmill-kind-pink", "label": "A <!-- windmill:kind pink -->", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "b-windmill-kind-sky", "label": "B <!-- windmill:kind Sky -->", "color": "terracotta", "prerequisites": []},
+        {"id": "c-windmill-kind-sky", "label": "C <!-- windmill:kind  sky -->", "color": "terracotta", "prerequisites": []},
+        {"id": "d-windmill-kind-sky", "label": "D<!-- windmill:kind sky -->", "color": "terracotta", "prerequisites": []}
+      ],
+      "kinds": [],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a-windmill-kind-pink", "liberties": []},
+        {"mark": "step", "nodeId": "b-windmill-kind-sky", "liberties": []},
+        {"mark": "step", "nodeId": "c-windmill-kind-sky", "liberties": []},
+        {"mark": "step", "nodeId": "d-windmill-kind-sky", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "The first kind marker on a line is the one read, and what follows it is the kind label",
+    "input": {"text": "# T\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky --> <!-- windmill:kind gold -->", "kinds": []},
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"}],
+      "kinds": [{"id": "windmill-kind-gold", "hue": "sky", "label": "--> <!-- windmill:kind g", "description": "", "source": "added"}],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A marked file whose name line is a lone hash has an empty name",
+    "input": {"text": "# \n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->", "kinds": []},
+    "expect": {
+      "title": "",
+      "missingRoot": false,
+      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"}],
+      "kinds": [],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Outside a marked file an entity and a kind marker are text",
+    "input": {"text": "Plan\n- A &#38; B <!-- windmill:kind sky Sailing -->", "kinds": []},
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "a-38-b-windmill-kind-sky-sailing",
+          "label": "A &#38; B <!-- windmill:kind sky Sailing -->",
+          "color": "terracotta",
+          "prerequisites": ["plan"]
+        }
+      ],
+      "kinds": [],
+      "gutter": [{"mark": "root", "nodeId": "plan", "liberties": []}, {"mark": "step", "nodeId": "a-38-b-windmill-kind-sky-sailing", "liberties": []}],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An export written before the marker reads as an ordinary plan",
+    "input": {
+      "text": "# Ship v1\nName who this is for and what it does for them, in one sentence you could say out loud without flinching. Done when a stranger hears it and knows whether they would want it.\n- Cut scope to one core flow\n  List everything v1 could be, then cut until a single flow delivers the promise. Done when the spec fits on one page and the cuts are written down too.\n  - Sketch the core flow on paper\n    Wireframe every screen of the one flow, from arrival to the moment of value. Done when you can walk someone through the paper version and they never get lost.\n- Pick a boring stack and deploy it\n  Choose tools you already know, wire up the repository, and deploy a hello-world skeleton to production on day one. Done when a URL serves your empty app.\n  - Build the walking skeleton\n    The thinnest end-to-end slice of the real flow, deployed: real navigation, real screens, hard-coded edges. Done when you can click from start to value, even if the value is fake.\n    needs also: Sketch the core flow on paper\n    - Make the core feature real\n      Replace the fake middle with the real thing the promise depends on. Done when the product does the job for real data, start to finish.\n## Polish\n- Dogfood it for a week\n  Use your product for its real purpose every day and keep a list of what made you wince. Done after seven honest days and a prioritized fix list.\n  needs also: Make the core feature real\n  - Smooth the first-run experience\n    Empty states, sign-up friction, and the path to first value for someone with zero context. Done when a friend reaches the payoff without you saying a word.\n  - Handle failure gracefully\n    Bad input, slow networks, and broken sessions — decide what each failure looks like on purpose. Done when nothing dead-ends without an explanation and a way back.\n- Wire up analytics and feedback\n  Track the handful of events that trace your core flow, and give users one obvious way to reach you. Done when you can see the funnel and hear the complaints.\n  needs also: Make the core feature real\n## Launch\n- Make the landing page\n  One page: the promise, a real screenshot, and one obvious call to action. Done when it loads fast and someone can sign up from their phone.\n  needs also: Make the core feature real\n- Run a friendly beta\n  Put it in the hands of five people who fit the promise and watch them use it. Done when the top three stumbles are found and fixed.\n  needs also: Smooth the first-run experience, Handle failure gracefully\n  - Launch it where your people are\n    Post to the communities your promise serves — Show HN, Product Hunt, a subreddit — and answer everyone all day. Done when the posts are up and every comment has an answer before you go to bed.\n    needs also: Make the landing page, Wire up analytics and feedback\n    - Ship the first fix release\n      Sort the launch feedback, fix the sharpest edges, and ship within the week — v1 is a conversation, not a monument. Done when changes born from real users are live.",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Scoping and building the product itself"},
+        {"id": "polish", "hue": "sky", "label": "Polish", "description": "The pass that makes it feel finished"},
+        {"id": "launch", "hue": "gold", "label": "Launch", "description": "Getting it in front of real people"}
+      ]
+    },
+    "expect": {
+      "title": "Ship v1",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "ship-v1",
+          "label": "Ship v1",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "Name who this is for and what it does for them, in one sentence you could say out loud without flinching. Done when a stranger hears it and knows whether they would want it."
+        },
+        {
+          "id": "cut-scope-to-one-core-flow",
+          "label": "Cut scope to one core flow",
+          "color": "terracotta",
+          "prerequisites": ["ship-v1"],
+          "description": "List everything v1 could be, then cut until a single flow delivers the promise. Done when the spec fits on one page and the cuts are written down too."
+        },
+        {
+          "id": "sketch-the-core-flow-on-paper",
+          "label": "Sketch the core flow on paper",
+          "color": "terracotta",
+          "prerequisites": ["cut-scope-to-one-core-flow"],
+          "description": "Wireframe every screen of the one flow, from arrival to the moment of value. Done when you can walk someone through the paper version and they never get lost."
+        },
+        {
+          "id": "pick-a-boring-stack-and-deploy-it",
+          "label": "Pick a boring stack and deploy it",
+          "color": "terracotta",
+          "prerequisites": ["ship-v1"],
+          "description": "Choose tools you already know, wire up the repository, and deploy a hello-world skeleton to production on day one. Done when a URL serves your empty app."
+        },
+        {
+          "id": "build-the-walking-skeleton",
+          "label": "Build the walking skeleton",
+          "color": "terracotta",
+          "prerequisites": ["pick-a-boring-stack-and-deploy-it"],
+          "description": "The thinnest end-to-end slice of the real flow, deployed: real navigation, real screens, hard-coded edges. Done when you can click from start to value, even if the value is fake.\nneeds also: Sketch the core flow on paper"
+        },
+        {
+          "id": "make-the-core-feature-real",
+          "label": "Make the core feature real",
+          "color": "terracotta",
+          "prerequisites": ["build-the-walking-skeleton"],
+          "description": "Replace the fake middle with the real thing the promise depends on. Done when the product does the job for real data, start to finish."
+        },
+        {"id": "polish", "label": "Polish", "color": "sky", "prerequisites": ["ship-v1"]},
+        {
+          "id": "dogfood-it-for-a-week",
+          "label": "Dogfood it for a week",
+          "color": "sky",
+          "prerequisites": ["polish"],
+          "description": "Use your product for its real purpose every day and keep a list of what made you wince. Done after seven honest days and a prioritized fix list.\nneeds also: Make the core feature real"
+        },
+        {
+          "id": "smooth-the-first-run-experience",
+          "label": "Smooth the first-run experience",
+          "color": "sky",
+          "prerequisites": ["dogfood-it-for-a-week"],
+          "description": "Empty states, sign-up friction, and the path to first value for someone with zero context. Done when a friend reaches the payoff without you saying a word."
+        },
+        {
+          "id": "handle-failure-gracefully",
+          "label": "Handle failure gracefully",
+          "color": "sky",
+          "prerequisites": ["dogfood-it-for-a-week"],
+          "description": "Bad input, slow networks, and broken sessions — decide what each failure looks like on purpose. Done when nothing dead-ends without an explanation and a way back."
+        },
+        {
+          "id": "wire-up-analytics-and-feedback",
+          "label": "Wire up analytics and feedback",
+          "color": "sky",
+          "prerequisites": ["polish"],
+          "description": "Track the handful of events that trace your core flow, and give users one obvious way to reach you. Done when you can see the funnel and hear the complaints.\nneeds also: Make the core feature real"
+        },
+        {"id": "launch", "label": "Launch", "color": "gold", "prerequisites": ["ship-v1"]},
+        {
+          "id": "make-the-landing-page",
+          "label": "Make the landing page",
+          "color": "gold",
+          "prerequisites": ["launch"],
+          "description": "One page: the promise, a real screenshot, and one obvious call to action. Done when it loads fast and someone can sign up from their phone.\nneeds also: Make the core feature real"
+        },
+        {
+          "id": "run-a-friendly-beta",
+          "label": "Run a friendly beta",
+          "color": "gold",
+          "prerequisites": ["launch"],
+          "description": "Put it in the hands of five people who fit the promise and watch them use it. Done when the top three stumbles are found and fixed.\nneeds also: Smooth the first-run experience, Handle failure gracefully"
+        },
+        {
+          "id": "launch-it-where-your-people-are",
+          "label": "Launch it where your people are",
+          "color": "gold",
+          "prerequisites": ["run-a-friendly-beta"],
+          "description": "Post to the communities your promise serves — Show HN, Product Hunt, a subreddit — and answer everyone all day. Done when the posts are up and every comment has an answer before you go to bed.\nneeds also: Make the landing page, Wire up analytics and feedback"
+        },
+        {
+          "id": "ship-the-first-fix-release",
+          "label": "Ship the first fix release",
+          "color": "gold",
+          "prerequisites": ["launch-it-where-your-people-are"],
+          "description": "Sort the launch feedback, fix the sharpest edges, and ship within the week — v1 is a conversation, not a monument. Done when changes born from real users are live."
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Scoping and building the product itself", "source": "existing"},
+        {"id": "polish", "hue": "sky", "label": "Polish", "description": "The pass that makes it feel finished", "source": "existing"},
+        {"id": "launch", "hue": "gold", "label": "Launch", "description": "Getting it in front of real people", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "ship-v1", "liberties": []},
+        {"mark": "note", "nodeId": "ship-v1", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "cut-scope-to-one-core-flow", "liberties": []},
+        {"mark": "note", "nodeId": "cut-scope-to-one-core-flow", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "sketch-the-core-flow-on-paper", "liberties": []},
+        {"mark": "note", "nodeId": "sketch-the-core-flow-on-paper", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "pick-a-boring-stack-and-deploy-it", "liberties": []},
+        {"mark": "note", "nodeId": "pick-a-boring-stack-and-deploy-it", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "build-the-walking-skeleton", "liberties": []},
+        {"mark": "note", "nodeId": "build-the-walking-skeleton", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "build-the-walking-skeleton", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "make-the-core-feature-real", "liberties": []},
+        {"mark": "note", "nodeId": "make-the-core-feature-real", "liberties": [{"type": "note"}]},
+        {"mark": "branch", "nodeId": "polish", "liberties": []},
+        {"mark": "step", "nodeId": "dogfood-it-for-a-week", "liberties": []},
+        {"mark": "note", "nodeId": "dogfood-it-for-a-week", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "dogfood-it-for-a-week", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "smooth-the-first-run-experience", "liberties": []},
+        {"mark": "note", "nodeId": "smooth-the-first-run-experience", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "handle-failure-gracefully", "liberties": []},
+        {"mark": "note", "nodeId": "handle-failure-gracefully", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "wire-up-analytics-and-feedback", "liberties": []},
+        {"mark": "note", "nodeId": "wire-up-analytics-and-feedback", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "wire-up-analytics-and-feedback", "liberties": [{"type": "note"}]},
+        {"mark": "branch", "nodeId": "launch", "liberties": []},
+        {"mark": "step", "nodeId": "make-the-landing-page", "liberties": []},
+        {"mark": "note", "nodeId": "make-the-landing-page", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "make-the-landing-page", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "run-a-friendly-beta", "liberties": []},
+        {"mark": "note", "nodeId": "run-a-friendly-beta", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "run-a-friendly-beta", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "launch-it-where-your-people-are", "liberties": []},
+        {"mark": "note", "nodeId": "launch-it-where-your-people-are", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "launch-it-where-your-people-are", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "ship-the-first-fix-release", "liberties": []},
+        {"mark": "note", "nodeId": "ship-the-first-fix-release", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 16, "branches": 2, "done": 0},
+      "imperfections": {"notes": 20, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A plan of headings, a checkbox, numbers, a duplicate, a jump, a note and an address",
+    "input": {
+      "text": "# A plan\n## Build\n- [x] a\n  - b\n1. c\n2. d\n## New kind\n- a\n    - jump\nA note\nhttps://example.com",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"}
+      ]
+    },
+    "expect": {
+      "title": "A plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "a-plan", "label": "A plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "build", "label": "Build", "color": "terracotta", "prerequisites": ["a-plan"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["build"], "status": "complete"},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"]},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["build"]},
+        {"id": "d", "label": "d", "color": "terracotta", "prerequisites": ["c"]},
+        {"id": "new-kind", "label": "New kind", "color": "olive", "prerequisites": ["a-plan"]},
+        {"id": "a-2", "label": "a (2)", "color": "olive", "prerequisites": ["new-kind"]},
+        {"id": "jump", "label": "jump", "color": "olive", "prerequisites": ["a-2"], "description": "A note", "links": ["https://example.com"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "New kind", "description": "", "source": "relabeled"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "a-plan", "liberties": []},
+        {"mark": "branch", "nodeId": "build", "liberties": []},
+        {"mark": "done", "nodeId": "a", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "step", "nodeId": "d", "liberties": []},
+        {"mark": "branch", "nodeId": "new-kind", "liberties": []},
+        {"mark": "step", "nodeId": "a-2", "liberties": [{"type": "rename", "label": "a (2)"}]},
+        {"mark": "step", "nodeId": "jump", "liberties": [{"type": "clamp", "indent": "jump"}]},
+        {"mark": "note", "nodeId": "jump", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "jump", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 9, "branches": 2, "done": 1},
+      "imperfections": {"notes": 2, "clamps": 1, "renames": 1}
+    }
+  },
+  {
+    "name": "A list with a tab level, a four-space level and a duplicate, over no kinds",
+    "input": {"text": "- a\n\t- [X] b\n    - c\n- a", "kinds": []},
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [
+        {"id": "root", "label": "", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["root"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["a"], "status": "complete"},
+        {"id": "c", "label": "c", "color": "terracotta", "prerequisites": ["b"]},
+        {"id": "a-2", "label": "a (2)", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [],
+      "gutter": [
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "done", "nodeId": "b", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "step", "nodeId": "a-2", "liberties": [{"type": "rename", "label": "a (2)"}]}
+      ],
+      "readout": {"steps": 5, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+    }
+  }
+]

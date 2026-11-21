@@ -5,7 +5,6 @@ import { PlaceStore } from './persistence/PlaceStore.js';
 import { noteForked } from './persistence/ViewPrefs.js';
 import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
-import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
 import { t } from './i18n/entry/index.js';
 import { YOUR_ROADMAPS } from './identity/HeldDeletion.js';
@@ -28,7 +27,6 @@ const importRoadmapLanding = () => import('./marketing/RoadmapLanding.jsx').then
 const RoadmapLanding = lazy(importRoadmapLanding);
 
 const ReminderSection = lazy(() => import('./settings/ReminderSection.jsx').then((m) => ({ default: m.ReminderSection })));
-const PlanSection = lazy(() => import('./settings/PlanSection.jsx').then((m) => ({ default: m.PlanSection })));
 const TendingSection = lazy(() => import('./settings/TendingSection.jsx').then((m) => ({ default: m.TendingSection })));
 const YourDataSection = lazy(() => import('./settings/YourDataSection.jsx').then((m) => ({ default: m.YourDataSection })));
 
@@ -115,7 +113,7 @@ export const roadmapRoutes = {
   forgetDevice,
   preloadApp: importSkillTreeApp,
   settingsSections: {
-    main: paidPlansOpen() ? [ReminderSection, PlanSection, TendingSection] : [ReminderSection, TendingSection],
+    main: [ReminderSection, TendingSection],
     data: [YourDataSection],
   },
   landing: {

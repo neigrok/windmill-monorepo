@@ -127,14 +127,14 @@ test('export and Settings zip preserve a distinct root label and its completion 
     ],
     kinds: [],
     gutter: [
-      { glyph: null, nodeId: null, liberty: null },
-      { glyph: null, nodeId: null, liberty: null },
-      { glyph: '✓', nodeId: 'choose-a-course', liberty: null },
-      { glyph: '✓', nodeId: 'read-the-wind', liberty: null },
-      { glyph: '·', nodeId: 'leave-the-dock', liberty: null },
+      { mark: null, nodeId: null, liberties: [] },
+      { mark: null, nodeId: null, liberties: [] },
+      { mark: 'done', nodeId: 'choose-a-course', liberties: [] },
+      { mark: 'done', nodeId: 'read-the-wind', liberties: [] },
+      { mark: 'step', nodeId: 'leave-the-dock', liberties: [] },
     ],
     readout: { steps: 3, branches: 0, done: 2 },
-    imperfections: [],
+    imperfections: { notes: 0, clamps: 0, renames: 0 },
   });
   assert.equal(serializePlan(replanted, replanted.kinds), file.text);
   const archive = bytes([file]);
@@ -166,7 +166,7 @@ test('an export carries the roadmap\'s guide as a quote under its title, and a r
   const { gutter: plainGutter, ...plain } = parsePlan(withoutGuide.text);
   assert.deepEqual(planted, plain);
   assert.equal(gutter.length, plainGutter.length + 6);
-  assert.deepEqual(replanted.imperfections, []);
+  assert.deepEqual(replanted.imperfections, { notes: 0, clamps: 0, renames: 0 });
 });
 
 test('a guide whose lines end in CR or CRLF stays in its quote, so a replant plants no step from it', async () => {

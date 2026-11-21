@@ -70,6 +70,9 @@ class CaddyfileRoutesTest(unittest.TestCase):
         maintenance = tempfile.TemporaryDirectory(prefix="caddy-maintenance-")
         self.addCleanup(maintenance.cleanup)
         self.maintenance = Path(maintenance.name)
+        web = tempfile.TemporaryDirectory(prefix="caddy-web-")
+        self.addCleanup(web.cleanup)
+        self.web = Path(web.name)
 
     def docker(self, *arguments):
         result = subprocess.run(["docker", *arguments], capture_output=True, text=True, timeout=120, check=True)
@@ -85,7 +88,8 @@ class CaddyfileRoutesTest(unittest.TestCase):
                                 "-e", "DOMAIN_APP=app.localhost", "-e", "DOMAIN_API=api.localhost",
                                 "-e", "ACME_EMAIL=ops@example.invalid", "-e", "CF_IPS=" + cloudflare_ranges,
                                 "-v", str(CADDYFILE) + ":/etc/caddy/Caddyfile:ro",
-                                "-v", str(self.maintenance) + ":/srv/windmill-maintenance:ro", "caddy:2")
+                                "-v", str(self.maintenance) + ":/srv/windmill-maintenance:ro",
+                                "-v", str(self.web) + ":/srv/windmill-web:ro", "caddy:2")
         self.addCleanup(self.docker, "rm", "-f", container)
         port = self.docker("port", container, "443/tcp").splitlines()[0].rsplit(":", 1)[1]
         for attempt in range(60):
@@ -163,6 +167,55 @@ class CaddyfileRoutesTest(unittest.TestCase):
 
         (self.maintenance / "on").unlink()
         self.assertEqual(self.routes(port), routes)
+
+    def test_the_association_file_answers_as_json_from_the_web_root_paused_or_not_and_its_neighbours_answer_as_before(self):
+        association = '{"applinks": {"details": [{"appIDs": ["ABCDE12345.works.windmill.app"]}]}}\n'
+        (self.web / ".well-known").mkdir()
+        (self.web / ".well-known/apple-app-site-association").write_text(association)
+        (self.web / "404.html").write_text("not found\n")
+        served = (200, "application/json", association)
+        missing = (404, "text/html; charset=utf-8", "not found\n")
+        paused = (503, "text/plain; charset=utf-8", "Windmill is down for a planned update and will be back shortly.")
+        proxied = (200, "text/plain; charset=utf-8", "server:8080")
+
+        def answers(port):
+            typed = {}
+            for host, path in (("app.localhost", "/.well-known/apple-app-site-association"), ("app.localhost", "/.well-known/"),
+                               ("app.localhost", "/.well-known/assetlinks.json"),
+                               ("app.localhost", "/.well-known/oauth-protected-resource"),
+                               ("api.localhost", "/.well-known/apple-app-site-association")):
+                result = subprocess.run(["curl", "-sk", "--max-time", "5", "--resolve", f"{host}:{port}:127.0.0.1",
+                                         "-H", "CF-Connecting-IP: 17.58.0.1", "-w", "\n%{http_code}\n%{content_type}",
+                                         f"https://{host}:{port}{path}"], capture_output=True, text=True, timeout=30)
+                body, status, content_type = result.stdout.rsplit("\n", 2)
+                typed[host, path] = (int(status), content_type, body)
+            return typed
+
+        port = self.edge("0.0.0.0/0 ::/0")
+        self.assertEqual(answers(port), {
+            ("app.localhost", "/.well-known/apple-app-site-association"): served,
+            ("app.localhost", "/.well-known/"): missing,
+            ("app.localhost", "/.well-known/assetlinks.json"): missing,
+            ("app.localhost", "/.well-known/oauth-protected-resource"): proxied,
+            ("api.localhost", "/.well-known/apple-app-site-association"): proxied})
+
+        (self.maintenance / "on").write_text("planned\n")
+        self.assertEqual(answers(port), {
+            ("app.localhost", "/.well-known/apple-app-site-association"): served,
+            ("app.localhost", "/.well-known/"): paused,
+            ("app.localhost", "/.well-known/assetlinks.json"): paused,
+            ("app.localhost", "/.well-known/oauth-protected-resource"): paused,
+            ("api.localhost", "/.well-known/apple-app-site-association"): proxied})
+        self.assertEqual(set(answers(self.edge("192.0.2.0/24")).values()), {(403, "", "")})
+
+        (self.maintenance / "on").unlink()
+        (self.web / ".well-known/apple-app-site-association").unlink()
+        self.assertEqual(answers(port), {
+            ("app.localhost", "/.well-known/apple-app-site-association"): missing,
+            ("app.localhost", "/.well-known/"): missing,
+            ("app.localhost", "/.well-known/assetlinks.json"): missing,
+            ("app.localhost", "/.well-known/oauth-protected-resource"): proxied,
+            ("api.localhost", "/.well-known/apple-app-site-association"): proxied})
 
     def test_the_app_store_door_answers_apple_s_subnet_alone(self):
         port = self.edge("0.0.0.0/0 ::/0")

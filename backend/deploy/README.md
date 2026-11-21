@@ -116,6 +116,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `AI_CARRY_KEY` | 32 random bytes encoded as unpadded base64url |
 | `AI_FUNDING_SECRET`, `AI_OPERATOR_SECRET` | Distinct 32–256 character bearer secrets; ASCII letters, digits, `_`, `-` |
 | `SUBSCRIPTIONS_DB_PASSWORD` | The subscription database role's password, 64 lowercase hex characters ([below](#the-subscription-database)) |
+| `APPLE_TEAM_ID` | The ten-character Apple team identifier, which the web build writes into the iPhone app's association file ([below](#frontend)) |
 
 **Variables** — same page → Variables:
 
@@ -813,9 +814,12 @@ deleted when the rehearsal ends.
 
 ## Pause the site
 
-While `~/windmill/maintenance/on` exists, Caddy answers every request on both hosts, but an ACME challenge, with `503`,
-`Retry-After: 600`, `Cache-Control: no-store` and one sentence of plain text: *Windmill is down for a planned update and
-will be back shortly.* The Cloudflare gate still answers first, so a request from outside Cloudflare is refused `403`.
+While `~/windmill/maintenance/on` exists, Caddy answers every request on both hosts, but an ACME challenge and
+`/.well-known/apple-app-site-association`, with `503`, `Retry-After: 600`, `Cache-Control: no-store` and one sentence of
+plain text: *Windmill is down for a planned update and will be back shortly.* The association file is still served from
+the web directory, since Apple fetches it on its own schedule and a refused fetch shows only as a roadmap's link opening
+the browser; the API host holds no such file, and that path reaches `server` there. The Cloudflare gate still answers
+first, so a request from outside Cloudflare is refused `403`.
 Caddy mounts `~/windmill/maintenance` read-only and looks for the file on each request, so pausing and lifting need no
 reload, and a deploy that recreates Caddy finds the pause as it was. `deploy-production.sh` creates the folder and never
 the file. `test/deploy/caddyfile_routes_test.py` drives both states.
@@ -977,9 +981,9 @@ that name; the page still applies.
 Two GitHub variables, both empty by default, decide what the copy is read against. `WINDMILL_SANDBOX_EMAILS`
 names the accounts whose sandbox purchases count (the team's testers and the App Review account); every
 other sandbox purchase entitles no one (§6.2). `SUBSCRIPTIONS_PURCHASABLE_STORES` names the stores the paid
-line is open on (`app_store`, `play_store`, `paddle`), the one switch that lets a surface offer a buy
+line is open on (`app_store`, `play_store`), the one switch that lets a surface offer a buy
 control (INV-12); empty keeps it closed on every store. The deploy refuses to render a value that names anything but
-those three, before anything reaches the host; a server given one all the same keeps that name closed, serves, and
+those two, `paddle` included, before anything reaches the host; a server given one all the same keeps that name closed, serves, and
 logs and reports it at start (`subscription.paid_line`).
 
 In production both come from one GitHub secret, `SUBSCRIPTIONS_INTERNAL_TOKEN`: 64 lowercase hex
@@ -1033,6 +1037,11 @@ The frontend is the `web/` half of this monorepo — a static Vite SPA, no conta
 `.github/workflows/web.yml` tests, builds, and rsyncs `dist/` into `~/windmill/web/` on a push to
 `main`; Caddy serves it at `DOMAIN_APP`, path-routes `/v1/stores/*` to `subscriptions` and the rest of
 `/v1`, `/mcp` and `/oauth` to `server`. One origin, so the build bakes in no API host.
+
+The build writes `.well-known/apple-app-site-association`, the file iOS reads before it opens a roadmap's link in the
+iPhone app ([Roadmap on iOS](../../docs/foundation/roadmap-ios.md) §4), from the secret `APPLE_TEAM_ID`, and the workflow
+holds a release that carries none before it reaches the host. Caddy serves the file as `application/json` with no
+redirect, through a pause too ([above](#pause-the-site)), and Web Smoke holds the live answer to what the build writes.
 
 `server` mounts that directory read-only as `WINDMILL_WEB_ROOT` to splice unfurl meta into the
 `/t/:id` share pages, and `embedder` mounts `web/models` for its weights. **On a fresh host, run the
