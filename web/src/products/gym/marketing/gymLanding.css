@@ -2,8 +2,7 @@
 @import './gymIslands.css';
 
 /* What the landing adds to the island parts: the hero moat, the loop stages, the movement shelf and
-   the arrivals that play inside them. The brand root's scenes are gymRootScenes.css and are not
-   imported here — nothing on this page draws them. */
+   the arrivals that play inside them. */
 
 .gyMoat {
   width: min(720px, 100%);

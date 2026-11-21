@@ -94,8 +94,7 @@ const plugin = { name: 'roadmap-resume-host', enforce: 'pre',
     if (id === '\0resume-entry') return entry;
     if (id === '\0resume-switch') return `export const ROOM_READS_REPLICA = new URLSearchParams(location.search).get('replica') === 'on';`;
     if (id === '\0resume-scenes') return `export const mountHero = () => ({ setAutoplay() {}, teardown() {} });
-      export const mountBeat = () => () => {}; export const mountThumb = () => () => {};
-      export const mountGlimpse = () => () => {}; export const mountSectionTree = () => () => {};`;
+      export const mountBeat = () => () => {}; export const mountThumb = () => () => {};`;
     if (id === '\0resume-auth') return auth;
     if (id === '\0resume-signin') return 'export const useSignInDoor = () => () => {}; export const useSignInDoorHost = () => () => {};';
     if (id === '\0resume-events') return beacon;

@@ -1,0 +1,33 @@
+@import '../gymTokens.css';
+
+/* Gym's picture on the brand root (RootPicture.jsx): one Coach turn, drawn in the room's measures
+   (coach/coach.css) on the gym ground the shell stamps the frame with. It wears .gym-skin, so every
+   colour is the product's own token. */
+.gyPicture { display: flex; justify-content: center; padding: 48px 16px; background: var(--gym-canvas); color: var(--gym-ink);
+             font-family: var(--font-body); text-align: left; }
+.gyPicture-thread { display: flex; flex-direction: column; gap: 16px; width: 520px; max-width: 100%; }
+:where(.gyPicture p) { margin: 0; }
+.gyPicture-figure { font-family: var(--font-mono); }
+.gyPicture-question { align-self: flex-end; padding: 12px 16px; border-radius: var(--radius-lg); background: var(--gym-raised);
+                      font-size: 15px; line-height: 22px; }
+.gyPicture-receipt { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; line-height: 18px;
+                     color: var(--gym-ink-faint); }
+.gyPicture-steps { flex: none; color: var(--gym-ink-dim); }
+.gyPicture-more { margin-left: 4px; }
+.gyPicture-answer { font-size: 15px; line-height: 24px; }
+.gyPicture-proposal { display: flex; flex-direction: column; padding: 16px; border-radius: var(--radius-md); background: var(--gym-surface);
+                      box-shadow: inset 0 0 0 1px var(--gym-line); }
+.gyPicture-kicker { font-weight: 700; font-size: 13px; line-height: 18px; color: var(--color-brand); }
+.gyPicture-change { display: flex; align-items: baseline; gap: 12px; margin-top: 12px; font-size: 13px; line-height: 20px; }
+.gyPicture-change b { font-weight: 700; font-size: 14px; }
+.gyPicture-next { color: var(--color-brand); }
+.gyPicture-kept { font-size: 13px; line-height: 18px; color: var(--gym-ink-faint); }
+.gyPicture-change + .gyPicture-kept { margin-top: 12px; }
+.gyPicture-apply { display: flex; align-items: center; justify-content: center; height: 44px; margin: 16px 0 8px; border-radius: var(--radius-full);
+                   background: var(--color-brand); color: var(--gym-on-accent); font-weight: 600; font-size: 15px; line-height: 22px; }
+.gyPicture-turnDown { margin-top: 8px; font-weight: 700; font-size: 13px; line-height: 18px; color: var(--alarm-ink); }
+
+@media (max-width: 743px) {
+  .gyPicture { padding: 24px 16px; }
+  .gyPicture-question { max-width: min(282px, 79%); }
+}

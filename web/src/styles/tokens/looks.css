@@ -1,0 +1,33 @@
+/* ============================================================
+   MARKETING LOOKS — what a public page wears over the family palette
+   ------------------------------------------------------------
+   A look is declared on the page's frame as `data-look` and read only by that page's own sheet. It
+   stands on the family ramp, so the frame's `data-theme` turns the whole look to night.
+
+   instrument · the front page: Inter, one ground, hairlines in the ink, quiet controls. Every ink
+   measures at or above 4.5:1 on the ground at both hours.
+   ============================================================ */
+[data-look="instrument"] {
+  --look-font: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --look-ground: var(--neutral-50);
+  --look-panel: #FDFBF5;
+  --look-ink-1: var(--neutral-900);
+  --look-ink-2: #5C5246;
+  --look-ink-3: #766C5E;
+  --look-accent: var(--accent-terracotta-500);
+  --look-pill: var(--accent-terracotta-600);
+  --look-pill-ink: var(--text-on-accent);
+  --look-line-faint: color-mix(in srgb, var(--look-ink-1) 8%, transparent);
+  --look-line: color-mix(in srgb, var(--look-ink-1) 12%, transparent);
+  --look-line-firm: color-mix(in srgb, var(--look-ink-1) 16%, transparent);
+  --look-wash: color-mix(in srgb, var(--look-ink-1) 7%, transparent);
+  --look-radius-frame: 16px;
+  --look-radius-inner: 12px;
+}
+[data-look="instrument"][data-theme="dark"] {
+  --look-panel: #111112;
+  --look-ink-2: var(--neutral-600);
+  --look-ink-3: #86847E;
+  --look-accent: var(--kind-terracotta);
+  --look-pill: var(--kind-terracotta);
+}

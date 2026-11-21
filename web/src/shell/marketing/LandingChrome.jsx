@@ -1,5 +1,6 @@
-// The chrome every landing wears: wordmark, cross-nav, auth cluster, legal shelf and head. Sign in
-// opens the door in place; a landing never navigates to sign in.
+// The chrome the product landings wear: wordmark, cross-nav, auth cluster, legal shelf and head. Sign in
+// opens the door in place; a landing never navigates to sign in. The brand root brings its own header
+// and footer to the same frame.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BrandWordmark, Button } from '../../design-system';
@@ -18,11 +19,11 @@ import { LEGAL_LINKS, SURFACE_LINKS } from './siteIdentity.js';
 import { t } from '../i18n/entry/index.js';
 import './landing.css';
 
-// `anchored` is the brand root's: its product links scroll to that product's section on the same page.
-export function LandingPage({ brand = null, product = null, links = [], cta = null, resume = null, resolving = false, seat = null, anchored = false, children }) {
+// The frame every landing stands in: its own head while mounted, the night stamp on <html>, the skip
+// link and the main landmark. `path` names its row in LANDING_HEADS; `header` and `footer` are its chrome.
+export function LandingFrame({ brand = null, path, look, header, footer, children }) {
   const lendDoorSkin = useSignInDoorHost();
   const { resolved: appearance } = useAppearance();
-  const path = product ? PRODUCTS.find((entry) => entry.id === product).landing.href : '/';
 
   // A landing wears its own head while mounted and hands the brand root's back on the way out.
   useEffect(() => {
@@ -77,33 +78,38 @@ export function LandingPage({ brand = null, product = null, links = [], cta = nu
   // By day the frame carries data-brand alone and takes the hue onto the family cream; at night it adds
   // data-theme, and palettes.css keys the room's ground on the pair.
   return (
-    <PageFrame flow className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined} data-theme={appearance === 'dark' ? 'dark' : undefined} header={<>
+    <PageFrame flow className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined} data-look={look} data-theme={appearance === 'dark' ? 'dark' : undefined} header={<>
       <a href="#content" className="skip-link">{t('shell.landing.skipToContent')}</a>
-      <LandingNav product={product} links={links} cta={cta} resume={resume} resolving={resolving} seat={seat} anchored={anchored} />
+      {header}
       </>}>
       <main id="content">{children}</main>
-      <LandingFooter />
+      {footer}
     </PageFrame>
   );
 }
 
-function LandingNav({ product = null, links = [], cta = null, resume = null, resolving = false, seat = null, anchored = false }) {
+export function LandingPage({ brand = null, product = null, links = [], cta = null, resume = null, resolving = false, seat = null, children }) {
+  return (
+    <LandingFrame
+      brand={brand}
+      path={product ? PRODUCTS.find((entry) => entry.id === product).landing.href : '/'}
+      header={<LandingNav product={product} links={links} cta={cta} resume={resume} resolving={resolving} seat={seat} />}
+      footer={<LandingFooter />}
+    >
+      {children}
+    </LandingFrame>
+  );
+}
+
+function LandingNav({ product = null, links = [], cta = null, resume = null, resolving = false, seat = null }) {
   return (
     <header className="landing-header">
       <a className="landing-wordmark" href="/"><BrandWordmark /></a>
       <nav className="navlinks" aria-label={t('shell.landing.primaryNav')}>
         {links.map((link) => <a key={link.href} className="navlinks-page" href={link.href}>{link.label}</a>)}
         {links.length > 0 && <span className="navlinks-divider" aria-hidden="true" />}
-        {/* The anchored root draws a band only for an open product, so only an open product has an
-            anchor to reach; a closed one keeps its own landing as its destination. */}
         {PRODUCTS.map((entry) => (
-          <a
-            key={entry.id}
-            href={anchored && entry.shell.status === 'open' ? `#${entry.id}` : entry.landing.href}
-            aria-current={entry.id === product ? 'page' : undefined}
-          >
-            {entry.label}
-          </a>
+          <a key={entry.id} href={entry.landing.href} aria-current={entry.id === product ? 'page' : undefined}>{entry.label}</a>
         ))}
         <a href="/pricing.html">{t('shell.site.pricing')}</a>
       </nav>
@@ -112,14 +118,9 @@ function LandingNav({ product = null, links = [], cta = null, resume = null, res
   );
 }
 
-// The Light · Dark toggle opens the cluster in every state — it does not wait on auth — and on a
-// landing it is the one place appearance is chosen, so the seat's pop-up draws no Appearance row
-// here. While auth (or the product's `resolving`) is unanswered the buttons keep their box but stay
-// invisible, so nothing flashes signed-out; only the seat is absent until the answer comes. Signed
-// out, the ghost seat still stands beside the buttons.
-function NavCluster({ cta, resume, resolving, seat }) {
-  const { user, status, signOut } = useAuth();
-  const openSignInDoor = useSignInDoor();
+// The magic link this browser is waiting on, or null: re-read when auth answers and dropped the moment
+// it expires. The second value is what a door's `onSent` calls.
+export function usePendingMagicLink(status) {
   const [pendingLink, setPendingLink] = useState(pendingMagicLink);
 
   useEffect(() => { setPendingLink(pendingMagicLink()); }, [status]);
@@ -130,7 +131,18 @@ function NavCluster({ cta, resume, resolving, seat }) {
     return () => clearTimeout(timer);
   }, [pendingLink]);
 
-  const noteLinkSent = () => setPendingLink(pendingMagicLink());
+  return [pendingLink, () => setPendingLink(pendingMagicLink())];
+}
+
+// The Light · Dark toggle opens the cluster in every state — it does not wait on auth — and on a
+// landing it is the one place appearance is chosen, so the seat's pop-up draws no Appearance row
+// here. While auth (or the product's `resolving`) is unanswered the buttons keep their box but stay
+// invisible, so nothing flashes signed-out; only the seat is absent until the answer comes. Signed
+// out, the ghost seat still stands beside the buttons.
+function NavCluster({ cta, resume, resolving, seat }) {
+  const { user, status, signOut } = useAuth();
+  const openSignInDoor = useSignInDoor();
+  const [pendingLink, noteLinkSent] = usePendingMagicLink(status);
 
   if (status === 'loading' || resolving) {
     return (

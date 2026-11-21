@@ -50,5 +50,10 @@
   "roadmap.landing.verbMark": "mark progress",
   "roadmap.landing.verbPaint": "paint with the legend",
   "roadmap.landing.verbPlant": "plant a roadmap",
-  "roadmap.landing.verbRead": "read roadmaps"
+  "roadmap.landing.verbRead": "read roadmaps",
+  "roadmap.scene.fork": "Fork this tree",
+  "roadmap.scene.hangShelf": "Hang the shelf",
+  "roadmap.scene.paint": "Paint",
+  "roadmap.scene.primeWalls": "Prime the walls",
+  "roadmap.scene.unlockToast": "{step} done · <b>{count} up next</b>"
 }

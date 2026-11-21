@@ -34,7 +34,7 @@ point for the component showcase.
 | `marketing/` | Product landing, metadata and self-playing scenes |
 
 Every string a person sees is a `roadmap.*` message: in `i18n/entry/en.json` when a file the brand root loads shows
-it (the route table, the landing head, the brand root's scenes, `marketing/treeScenes.js` and `resume.js`, which the
+it (the route table, the landing head, the brand root's picture and `resume.js`, which the
 home card and the landing share), in `i18n/app/en.json` when the home card shows it, in `i18n/settings/en.json`
 when a settings section or a module it imports shows it, in `i18n/landing/en.json` when the landing page shows it,
 and in `i18n/en.json` otherwise. A surface's own copy is a `t()` call at

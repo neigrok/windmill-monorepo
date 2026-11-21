@@ -185,6 +185,22 @@ server answers 4xx (400, 401, 404, 409, 422) and `failed` on a 5xx, a network lo
 Only `failed` reports to Sentry, under the static operation `gym-coach-routine-confirm`. No routine name, movement,
 conversation, question, identifier or server text is reported.
 
+## Front page
+
+The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) tells one event for each link and control a person uses, through
+`track` in `src/telemetry/beacon.js`. Properties are allowlisted, bounded labels: no address, link text, account or email
+enters them. `product` is a product's registry id. Nothing inside a picture frame is a control, so a picture tells nothing.
+`test/shell/marketing/BrandLanding.test.js` drives every link and control and holds the events to this table.
+
+| Step | Event | Allowlisted props |
+|---|---|---|
+| The page opened, once per mount, when auth has answered | `front_open` | `signedIn: true/false` |
+| A link followed. `area` is where it stands: the header, the three tools, a room's section, "Your AI, or ours." or the footer's sitemap. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page | `front_link` | `area: header/tools/room/ai/sitemap`, `to: home/landing/room/app/pricing/connect/changelog/gallery/privacy/terms/refunds`, `product?: roadmap/journal/gym` |
+| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch, and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
+
+The page reports no failure of its own: the door, the feedback dialog and the seat it opens keep their reporters, and a render
+crash reaches `client_error` under the route family `/`.
+
 ## Roadmap
 
 The Board is the only path into a roadmap and nothing stands in front of it: every event and Sentry operation below fires

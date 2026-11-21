@@ -1,61 +1,149 @@
-// The brand front door at the bare root: every OPEN product's hero band and section, composed off
-// the registry's `landing.root`, each on that product's own palette. A product still holding itself
-// shut brings no band and no section — the page would otherwise hand it a full pitch and a live
-// door — but keeps its place in the cross-nav and the footer, where it reads as a tool that exists.
+// The brand front door at the bare root, in the instrument look: what Windmill is, its three tools, a
+// section per open product composed off the registry's `landing.root`, the two ways to bring an AI,
+// where it runs, and the footer as the sitemap. A product still holding itself shut brings no row and
+// no section but keeps its place in the header and the footer. Every link and control tells one
+// event, and nothing inside a picture frame is live.
 
-import React, { Suspense, useEffect } from 'react';
-import { BrandWordmark, Button } from '../../design-system';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
+import { Icon, SegmentedControl } from '../../design-system';
+import { useAuth } from '../auth/AuthProvider.jsx';
+import { AccountSeat } from '../auth/AccountSeat.jsx';
+import { useSignInDoor } from '../auth/SignInDoor.jsx';
+import { pendingMagicLink } from '../auth/AuthClient.js';
+import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
 import { PRODUCTS, homeHash } from '../products.js';
 import { useAppearance } from '../useAppearance.js';
-import { LandingPage } from './LandingChrome.jsx';
-import { BRAND_PROMISE, START_FREE } from './landingHeads.js';
+import { track } from '../../telemetry/beacon.js';
+import { LandingFrame, usePendingMagicLink } from './LandingChrome.jsx';
 import { t } from '../i18n/entry/index.js';
-import './landing.css';
+import './brandLanding.css';
 
-function HeroBand({ product, theme }) {
-  const { id, label, landing } = product;
-  const { platforms, band, reserve, Glimpse } = landing.root;
+// The header and the footer name the rooms in the brand's order; the page below keeps the registry's.
+const ROOMS = ['roadmap', 'gym', 'journal'].map((id) => PRODUCTS.find((product) => product.id === id));
+
+const SITEMAP = [
+  { title: t('shell.brandLanding.rooms'), links: ROOMS.map((product) => ({ href: product.landing.href, label: product.label, to: 'landing', product: product.id })) },
+  { title: t('shell.brandLanding.ownAssistant'), links: [{ href: '/connect.html', label: t('shell.site.connect'), to: 'connect' }] },
+  { title: t('shell.brandLanding.windmill'), links: [
+    { href: '/pricing.html', label: t('shell.site.pricing'), to: 'pricing' },
+    { href: '/changelog.html', label: t('shell.site.changelog'), to: 'changelog' },
+    { href: '/gallery', label: t('shell.site.gallery'), to: 'gallery' },
+  ] },
+  { title: t('shell.brandLanding.legal'), links: [
+    { href: '/privacy.html', label: t('shell.site.privacy'), to: 'privacy' },
+    { href: '/terms.html', label: t('shell.site.terms'), to: 'terms' },
+    { href: '/refunds.html', label: t('shell.site.refunds'), to: 'refunds' },
+  ] },
+];
+
+// Auto is the store's `system`: it follows the device and is what a first visit reads.
+const APPEARANCES = [
+  { value: 'system', label: t('shell.brandLanding.auto'), icon: 'monitor' },
+  { value: 'light', label: t('shell.appearance.light'), icon: 'sun' },
+  { value: 'dark', label: t('shell.appearance.dark'), icon: 'moon' },
+];
+const APPEARANCE_LABEL = { system: 'auto', light: 'light', dark: 'dark' };
+
+const followed = (area, to, product) => () => track('front_link', { area, to, ...(product ? { product } : {}) });
+const used = (control, props) => track('front_control', { control, ...props });
+
+function Brand({ night }) {
   return (
-    <section className="rootBand" data-brand={id} data-theme={theme}>
-      <div className="wrap rootBand-grid">
-        <div className="rootBand-words">
-          <div className="rootEyebrow"><i aria-hidden="true" />{label} · {platforms}</div>
-          <h2 className="rootBand-title">{band.title}</h2>
-          <p className="rootBand-sub">{band.sub}</p>
-        </div>
-        <div className="rootBand-scene" style={{ '--rootScene-reserve': reserve?.band }}>
-          <Suspense fallback={null}><Glimpse /></Suspense>
-        </div>
-        <a className="rootBand-link" href={`#${id}`}>{t('shell.brandLanding.seeProduct', { product: label })}</a>
-      </div>
-    </section>
+    <>
+      <img src={night ? '/brand-mark-night.svg' : '/brand-mark.svg'} alt="" width={24} height={24} />
+      <span>Windmill</span>
+    </>
   );
 }
 
-// Scenes alternate sides down the page: the first stands right of its words, the second left.
-function ProductSection({ product, theme, sceneLeft }) {
-  const { id, label, landing } = product;
-  const { platforms, section, reserve, Illustration } = landing.root;
+function ArrowLink({ href, onFollow, children }) {
   return (
-    <section id={id} className={sceneLeft ? 'rootSection rootSection-sceneLeft' : 'rootSection'} data-brand={id} data-theme={theme}>
-      <div className="wrap rootSection-grid">
-        <div className="rootSection-words">
-          <div className="rootEyebrow">{label} · {platforms}</div>
-          <h2 className="rootSection-title">{section.title}</h2>
-          <p className="rootSection-sub">{section.sub}</p>
+    <a className="front-link" href={href} onClick={onFollow}>
+      {children}
+      <Icon name="arrow-right" size={14} strokeWidth={2.4} />
+    </a>
+  );
+}
+
+function Header({ night }) {
+  const { user, status, signOut } = useAuth();
+  const openSignInDoor = useSignInDoor();
+  const [pendingLink, noteLinkSent] = usePendingMagicLink(status);
+  const signedIn = status === 'signed-in' && Boolean(user);
+
+  return (
+    <header className="front-header">
+      <div className="front-wrap front-header-row">
+        <a className="front-brand" href="/" aria-label={t('shell.brandLanding.home')} onClick={followed('header', 'home')}><Brand night={night} /></a>
+        <nav className="front-nav" aria-label={t('shell.landing.primaryNav')}>
+          {ROOMS.map((product) => <a key={product.id} href={product.landing.href} onClick={followed('header', 'landing', product.id)}>{product.label}</a>)}
+          <a href="/pricing.html" onClick={followed('header', 'pricing')}>{t('shell.site.pricing')}</a>
+        </nav>
+        {/* While auth is unanswered the cluster keeps its box and shows nothing, so neither state flashes. */}
+        <div className="front-cluster" style={status === 'loading' ? { visibility: 'hidden' } : undefined}>
+          {signedIn ? (
+            <AccountSeat
+              user={user}
+              status={status}
+              size={28}
+              appearance={false}
+              onSettings={() => { used('settings'); window.location.hash = '#/settings'; }}
+              onSignOut={() => { used('sign_out'); signOut(); }}
+            />
+          ) : pendingLink ? (
+            <button type="button" className="front-signin" onClick={() => { used('link_sent'); openSignInDoor({ resume: pendingMagicLink(), onSent: noteLinkSent }); }}>
+              {t('shell.landing.linkSent')}
+            </button>
+          ) : (
+            <button type="button" className="front-signin" onClick={() => { used('sign_in'); openSignInDoor({ onSent: noteLinkSent }); }}>
+              {t('shell.auth.signIn')}
+            </button>
+          )}
+          <a className="front-pill" href={signedIn ? homeHash() : '/app'} onClick={followed('header', 'app')}>{t('shell.brandLanding.open')}</a>
         </div>
-        <div className="rootSection-scene" style={{ '--rootScene-reserve': reserve?.section }}>
-          <Suspense fallback={null}><Illustration /></Suspense>
+      </div>
+    </header>
+  );
+}
+
+function Tool({ product }) {
+  const { kind, line, link } = product.landing.root;
+  return (
+    <li className="front-tool">
+      <h2 className="front-tool-name">{t('shell.brandLanding.toolName', { product: product.label })}</h2>
+      <p className="front-tool-kind">{kind}</p>
+      <p className="front-tool-line">{line}</p>
+      <ArrowLink href={link.href} onFollow={followed('tools', link.to, product.id)}>{link.label}</ArrowLink>
+    </li>
+  );
+}
+
+function Room({ product, theme }) {
+  const { title, paragraph, link, features, picture } = product.landing.root;
+  const { Picture } = picture;
+  return (
+    <section className="front-room" aria-labelledby={`front-${product.id}`}>
+      <div className="front-wrap front-rule">
+        <div className="front-room-head">
+          <h2 className="front-title" id={`front-${product.id}`}>{title}</h2>
+          <div>
+            <p className="front-text">{paragraph}</p>
+            <ArrowLink href={link.href} onFollow={followed('room', link.to, product.id)}>{link.label}</ArrowLink>
+          </div>
         </div>
-        <div className="rootSection-cta">
-          <Button variant="primary" size="lg" href={section.cta.href}>{section.cta.label}</Button>
-          <div className="rootSection-trust">{section.trust}</div>
-        </div>
-        <ul className="rootProof">
-          {section.proof.map((card) => (
-            <li key={card.title} className="rootProof-card">
-              <h3 className="rootProof-title">{card.title}</h3>
-              <p className="rootProof-copy">{card.copy}</p>
+        <figure className="front-picture">
+          <figcaption className="front-picture-bar">{picture.label}</figcaption>
+          {/* The composed picture is spared a screen reader and the keyboard; its label above is what is said of it. */}
+          <div className="front-picture-body" aria-hidden="true" inert="" data-brand={product.id} data-theme={theme}
+            style={{ '--front-picture-wide': picture.reserve.wide, '--front-picture-narrow': picture.reserve.narrow }}>
+            <Suspense fallback={null}><Picture /></Suspense>
+          </div>
+        </figure>
+        <ul className="front-features">
+          {features.map((feature) => (
+            <li key={feature.title}>
+              <h3 className="front-feature-title">{feature.title}</h3>
+              <p className="front-text">{feature.text}</p>
             </li>
           ))}
         </ul>
@@ -64,48 +152,92 @@ function ProductSection({ product, theme, sceneLeft }) {
   );
 }
 
-export function BrandLanding() {
-  const { resolved: theme } = useAppearance();
-  const open = PRODUCTS.filter((product) => product.shell.status === 'open');
-
-  // The cross-nav mints /#roadmap, /#journal and /#gym into the address bar, so a bookmark, a share
-  // or a reload arrives with the browser's fragment scroll already spent — it fired before this page
-  // had drawn the section it names. Take the visitor there once the sections exist; landing.css
-  // turns the smooth scroll off under reduced motion.
-  useEffect(() => {
-    const named = open.find((product) => window.location.hash === `#${product.id}`);
-    if (named) document.getElementById(named.id).scrollIntoView();
-  }, []);
+function Footer({ night }) {
+  const { choice, set } = useAppearance();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const choose = (next) => { used('appearance', { choice: APPEARANCE_LABEL[next] }); set(next); };
 
   return (
-    <LandingPage
-      brand={null}
-      product={null}
-      links={[]}
-      cta={START_FREE}
-      resume={{ href: homeHash(), label: t('shell.brandLanding.open') }}
-      anchored
-    >
-      {/* The page's one top-level heading, saying what the crawlable shell in web/index.html says.
-          The design gives the front door no visible title — the bands speak for themselves — so
-          this one is read, not seen, and the bands below it stay a level down. */}
-      <h1 className="visually-hidden">{BRAND_PROMISE}</h1>
+    <>
+      <footer className="front-footer">
+        <div className="front-wrap front-sitemap front-rule">
+          <div className="front-brand"><Brand night={night} /></div>
+          <nav className="front-sitemap-columns" aria-label={t('shell.brandLanding.footerNav')}>
+            {SITEMAP.map((column) => (
+              <div key={column.title}>
+                <h2 className="front-sitemap-title">{column.title}</h2>
+                <ul>
+                  {column.links.map((link) => <li key={link.href}><a href={link.href} onClick={followed('sitemap', link.to, link.product)}>{link.label}</a></li>)}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </div>
+        <div className="front-wrap front-foot">
+          <button type="button" className="front-feedback" onClick={() => { used('feedback'); setFeedbackOpen(true); }}>{t('shell.feedback.label')}</button>
+          <div className="front-switch">
+            <SegmentedControl label={t('shell.appearance.label')} options={APPEARANCES} value={choice} onChange={choose} />
+          </div>
+        </div>
+      </footer>
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+    </>
+  );
+}
 
-      {open.map((product) => <HeroBand key={product.id} product={product} theme={theme} />)}
+export function BrandLanding() {
+  const { resolved: theme } = useAppearance();
+  const { status } = useAuth();
+  const opened = useRef(false);
+  const night = theme === 'dark';
+  const open = PRODUCTS.filter((product) => product.shell.status === 'open');
 
-      <div className="rootSeparator" role="presentation">
-        <span className="rootSeparator-rule" />
-        <span className="rootSeparator-beat">
-          <BrandWordmark className="rootSeparator-mark" size={34} />
-          <span className="rootSeparator-dot" />
-          <span className="rootSeparator-phrase">{BRAND_PROMISE}</span>
-        </span>
-        <span className="rootSeparator-rule" />
-      </div>
+  useEffect(() => {
+    if (status === 'loading' || opened.current) return;
+    opened.current = true;
+    track('front_open', { signedIn: status === 'signed-in' });
+  }, [status]);
 
-      {open.map((product, index) => (
-        <ProductSection key={product.id} product={product} theme={theme} sceneLeft={index % 2 === 1} />
-      ))}
-    </LandingPage>
+  return (
+    <LandingFrame path="/" look="instrument" header={<Header night={night} />} footer={<Footer night={night} />}>
+      <section className="front-first">
+        <div className="front-wrap">
+          <h1 className="front-heading">{t('shell.landingHead.heading', { break: <br /> })}</h1>
+          <p className="front-what">{t('shell.landingHead.what')}</p>
+          <p className="front-stance">{t('shell.landingHead.stance')}</p>
+        </div>
+      </section>
+
+      <section className="front-tools" aria-label={t('shell.brandLanding.tools')}>
+        <ul className="front-wrap front-tools-row front-rule">
+          {open.map((product) => <Tool key={product.id} product={product} />)}
+        </ul>
+      </section>
+
+      {open.map((product) => <Room key={product.id} product={product} theme={theme} />)}
+
+      <section className="front-ai" aria-labelledby="front-ai">
+        <div className="front-wrap front-ai-row front-rule">
+          <div>
+            <h2 className="front-title" id="front-ai">{t('shell.brandLanding.aiTitle', { break: <br /> })}</h2>
+            <p className="front-text">{t('shell.brandLanding.aiLine')}</p>
+          </div>
+          <div className="front-ai-way">
+            <h3 className="front-ai-name">{t('shell.brandLanding.yoursTitle')}</h3>
+            <p className="front-text">{t('shell.brandLanding.yoursText')}</p>
+            <ArrowLink href="/connect.html" onFollow={followed('ai', 'connect')}>{t('shell.brandLanding.yoursLink')}</ArrowLink>
+          </div>
+          <div className="front-ai-way">
+            <h3 className="front-ai-name">{t('shell.brandLanding.oursTitle')}</h3>
+            <p className="front-text">{t('shell.brandLanding.oursText')}</p>
+            <ArrowLink href="/pricing.html" onFollow={followed('ai', 'pricing')}>{t('shell.brandLanding.oursLink')}</ArrowLink>
+          </div>
+        </div>
+      </section>
+
+      <section className="front-runs">
+        <p className="front-wrap front-rule">{t('shell.brandLanding.runs')}</p>
+      </section>
+    </LandingFrame>
   );
 }

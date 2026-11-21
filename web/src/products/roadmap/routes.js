@@ -1,4 +1,4 @@
-import { lazy } from 'react';
+import { createElement, lazy } from 'react';
 import { invalidateStepDraftSession } from './step/StepDraftSession.js';
 import { readNavigation, replaceLocation } from '../../shell/navigation.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
@@ -122,34 +122,24 @@ export const roadmapRoutes = {
     Component: RoadmapLanding,
     preload: importRoadmapLanding,
     tagline: t('roadmap.product.tagline'),
+    // What the brand root shows of roadmap: its row among the three tools and its section.
     root: {
-      platforms: t('roadmap.product.platforms'),
-      // Both scenes arrive in this product's chunk, so their own sheet cannot hold the space they
-      // are about to take on the brand root — the shell's does, from the first paint, out of these.
-      // Each is a world zoom-fitted to the frame the shell hands it (--rootScene-frame) with the
-      // caption standing under it: the 560×370 glimpse at .6607 of the frame, the 600×480 section
-      // tree at .8, and a pixel of slack over each so the reserve is never the shorter of the two.
-      reserve: {
-        band: 'calc(0.6607 * var(--rootScene-frame) + 24px)',
-        section: 'calc(0.8 * var(--rootScene-frame) + 31px)',
+      kind: t('roadmap.root.kind'),
+      line: t('roadmap.root.line'),
+      link: { href: '#/app/start', label: t('roadmap.root.link'), to: 'room' },
+      title: t('roadmap.root.title', { break: createElement('br') }),
+      paragraph: t('roadmap.root.paragraph'),
+      features: [
+        { title: t('roadmap.root.unlockTitle'), text: t('roadmap.root.unlockText') },
+        { title: t('roadmap.root.noAccountTitle'), text: t('roadmap.root.noAccountText') },
+        { title: t('roadmap.root.shareTitle'), text: t('roadmap.root.shareText') },
+      ],
+      // The picture arrives in this product's chunk, so the shell holds its height from the first paint.
+      picture: {
+        label: t('roadmap.scene.composed'),
+        reserve: { wide: '500px', narrow: '360px' },
+        Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.RoadmapPicture }))),
       },
-      band: {
-        title: t('roadmap.product.band.title'),
-        sub: t('roadmap.product.band.sub'),
-      },
-      section: {
-        title: t('roadmap.product.section.title'),
-        sub: t('roadmap.product.section.sub'),
-        trust: t('roadmap.product.section.trust'),
-        cta: { href: '#/app/start', label: t('roadmap.product.section.cta') },
-        proof: [
-          { title: t('roadmap.product.proof.prerequisitesTitle'), copy: t('roadmap.product.proof.prerequisitesCopy') },
-          { title: t('roadmap.product.proof.noSignUpTitle'), copy: t('roadmap.product.proof.noSignUpCopy') },
-          { title: t('roadmap.product.proof.shareTitle'), copy: t('roadmap.product.proof.shareCopy') },
-        ],
-      },
-      Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.RoadmapGlimpse }))),
-      Illustration: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.RoadmapIllustration }))),
     },
   },
   shell: {

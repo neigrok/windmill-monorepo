@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRODUCTS } from '../src/shell/products.js';
-import { BRAND_PROMISE, LANDING_HEADS, START_FREE } from '../src/shell/marketing/landingHeads.js';
+import { LANDING_HEADS } from '../src/shell/marketing/landingHeads.js';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src');
 const PRODUCTS_DIR = path.join(SRC, 'products') + path.sep;
@@ -83,8 +83,8 @@ function targetOf(file, specifier) {
   return specifier.startsWith('.') ? path.resolve(path.dirname(file), specifier) : null;
 }
 
-// What the brand root loads before any room or product page: main.jsx and each product's brand-root scenes
-// (marketing/RootScenes.jsx, mounted on the brand root through the registry's landing.root), with every module
+// What the brand root loads before any room or product page: main.jsx and each product's brand-root picture
+// (marketing/RootPicture.jsx, mounted on the brand root through the registry's landing.root), with every module
 // their static imports reach.
 function entryLoaded(starts) {
   const loaded = new Set(starts);
@@ -115,8 +115,8 @@ function productOf(absolutePath) {
 // one a product's landing loads i18n/landing/, and every other module i18n/index.js, which loads with the room.
 // A module two moments load reads the latest catalog both read. Each page then downloads only the copy it shows.
 const PLATFORM_I18N = path.join(SRC, 'platform', 'i18n') + path.sep;
-const BRAND_ROOT_SCENES = PRODUCTS.map((product) => path.join(PRODUCTS_DIR, product.id, 'marketing', 'RootScenes.jsx'));
-const ENTRY_LOADED = entryLoaded([path.join(SRC, 'main.jsx'), ...BRAND_ROOT_SCENES]);
+const BRAND_ROOT_PICTURES = PRODUCTS.map((product) => path.join(PRODUCTS_DIR, product.id, 'marketing', 'RootPicture.jsx'));
+const ENTRY_LOADED = entryLoaded([path.join(SRC, 'main.jsx'), ...BRAND_ROOT_PICTURES]);
 const LANDINGS = PRODUCTS.map((product) => path.resolve(SRC, '..', product.landing.head.module));
 const LANDING_LOADED = new Set([...entryLoaded(LANDINGS)].filter((file) => !ENTRY_LOADED.has(file)));
 // The app's chrome and home: the /app chrome App.jsx loads lazily and each product's home card. The settings page:
@@ -217,7 +217,7 @@ test('every catalog is read only by its owner, through its i18n/index.js', () =>
 });
 
 test('a module reads the catalog of the moment it loads: the brand root\'s, the app\'s, the settings page\'s, its product\'s landing\'s, or its room\'s', () => {
-  assert.deepEqual(BRAND_ROOT_SCENES.filter((scenes) => !fs.existsSync(scenes)).map((scenes) => `${path.relative(SRC, scenes)} is gone; name the brand-root scenes here`), []);
+  assert.deepEqual(BRAND_ROOT_PICTURES.filter((picture) => !fs.existsSync(picture)).map((picture) => `${path.relative(SRC, picture)} is gone; name the brand-root picture here`), []);
   assert.deepEqual(Object.entries(DOOR_ROOTS).flatMap(([moment, roots]) => roots.map((found, door) => (found.length ? null : `${path.relative(SRC, DOORS[moment][door][0])} lazily loads no ${moment} module`))).filter(Boolean), []);
   assert.deepEqual(violations.catalogByLoading, []);
 });
@@ -243,13 +243,11 @@ test('every product answers its landing on one pathname — shell.landingHref is
   assert.deepEqual(landingDrift, []);
 });
 
-// The brand root composes a hero band and a section off `landing.root` alone, for the products that
-// are OPEN — a product still holding itself shut brings no band and no section, and keeps only its
-// place in the cross-nav and the footer. ShellHome reads `landing.tagline` for it instead.
+// The brand root composes a row among the three tools and a section off `landing.root` alone, for the
+// products that are OPEN. A product still holding itself shut brings neither, and keeps only its place in
+// the header and the footer. ShellHome reads `landing.tagline` for it instead.
 //
-// A scene is either a lazy exotic (what every product declares today) or a plain function
-// component. `typeof value === 'object'` said yes to `Glimpse: {}`, which passes here and throws at
-// render, and no to a function component, which fails here and renders fine.
+// A picture is either a lazy exotic (what every product declares today) or a plain function component.
 const isComponent = (value) => typeof value === 'function'
   || (typeof value === 'object' && value !== null && typeof value.$$typeof === 'symbol');
 const isText = (value) => typeof value === 'string' && value.length > 0;
@@ -258,62 +256,50 @@ const OPEN = PRODUCTS.filter((product) => product.shell.status === 'open');
 function rootSeamGaps(product) {
   const root = product.landing?.root;
   if (!root) return ['landing.root'];
-  const section = root.section ?? {};
-  const proof = Array.isArray(section.proof) ? section.proof : [];
+  const features = Array.isArray(root.features) ? root.features : [];
   return [
-    ...(isText(root.platforms) ? [] : ['root.platforms']),
-    ...(isText(root.band?.title) ? [] : ['root.band.title']),
-    ...(isText(root.band?.sub) ? [] : ['root.band.sub']),
-    ...(isText(section.title) ? [] : ['root.section.title']),
-    ...(isText(section.sub) ? [] : ['root.section.sub']),
-    ...(isText(section.trust) ? [] : ['root.section.trust']),
-    ...(isText(section.cta?.href) ? [] : ['root.section.cta.href']),
-    ...(isText(section.cta?.label) ? [] : ['root.section.cta.label']),
-    ...(proof.length === 3 && proof.every((card) => isText(card?.title) && isText(card?.copy)) ? [] : ['root.section.proof (exactly three {title, copy})']),
-    ...(isComponent(root.Glimpse) ? [] : ['root.Glimpse']),
-    ...(isComponent(root.Illustration) ? [] : ['root.Illustration']),
+    ...(isText(root.kind) ? [] : ['root.kind']),
+    ...(isText(root.line) ? [] : ['root.line']),
+    ...(isText(root.link?.href) ? [] : ['root.link.href']),
+    ...(isText(root.link?.label) ? [] : ['root.link.label']),
+    ...(['room', 'landing'].includes(root.link?.to) ? [] : ['root.link.to (room or landing)']),
+    ...(root.title ? [] : ['root.title']),
+    ...(isText(root.paragraph) ? [] : ['root.paragraph']),
+    ...(features.length === 3 && features.every((feature) => isText(feature?.title) && isText(feature?.text)) ? [] : ['root.features (exactly three {title, text})']),
+    ...(isText(root.picture?.label) ? [] : ['root.picture.label']),
+    ...(isText(root.picture?.reserve?.wide) && isText(root.picture?.reserve?.narrow) ? [] : ['root.picture.reserve (wide and narrow)']),
+    ...(isComponent(root.picture?.Picture) ? [] : ['root.picture.Picture']),
   ];
 }
 
-// The gap is not a missing band: BrandLanding destructures `landing.root` as it composes, so one
-// product's gap throws (`Cannot destructure property 'platforms' of 'landing.root'`), the error
-// boundary catches it and the entire front door renders empty — every product's band and section
-// included.
+// The gap is not a missing section: BrandLanding destructures `landing.root` as it composes, so one
+// product's gap throws, the error boundary catches it and the entire front door renders empty.
 const rootSeamMissing = OPEN
   .map((p) => [p, rootSeamGaps(p)])
   .filter(([, gaps]) => gaps.length > 0)
   .map(([p, gaps]) => `product "${p.id}" leaves the brand root short of ${gaps.join(', ')} — BrandLanding destructures landing.root as it composes, so the gap throws through render and the whole front door goes blank`);
 
-test('every open product brings the words and the two scenes its band and section on the brand root are made of', () => {
+test('every open product brings the words and the picture its row and section on the brand root are made of', () => {
   assert.deepEqual(rootSeamMissing, []);
 });
 
-// A closed product used to get the full pitch anyway: HeroBand and ProductSection never read
-// `shell.status`, so a band, a section and a live door were drawn for a product nobody can open.
-// The root reads the open products and composes those; the nav and the footer still name them all.
 const BRAND_LANDING = fs.readFileSync(path.join(SRC, 'shell', 'marketing', 'BrandLanding.jsx'), 'utf8');
 
-// A scene arrives in its product's chunk, so the sheet that draws it cannot hold the space it is
-// about to take — the product states that height as `landing.root.reserve` and the shell's own
-// sheet, which ships with the shell, holds it from the first paint. A product that states none
-// holds nothing and its band jumps the page when its chunk lands.
-const LANDING_CSS = fs.readFileSync(path.join(SRC, 'shell', 'marketing', 'landing.css'), 'utf8');
-const reserveHalved = PRODUCTS
-  .filter((p) => p.landing?.root?.reserve)
-  .filter((p) => !isText(p.landing.root.reserve.band) || !isText(p.landing.root.reserve.section))
-  .map((p) => `product "${p.id}" states landing.root.reserve without both halves — the shell writes it straight into min-height, so half a reserve holds half the space`);
+// A picture arrives in its product's chunk, so the sheet that draws it cannot hold the space it is about
+// to take: the product states that height as `landing.root.picture.reserve` and the shell's own sheet,
+// which ships with the shell, holds it from the first paint.
+const BRAND_LANDING_CSS = fs.readFileSync(path.join(SRC, 'shell', 'marketing', 'brandLanding.css'), 'utf8');
 
-test('the shell holds the space a scene will take out of the height its product states', () => {
-  assert.deepEqual(reserveHalved, []);
-  assert.match(BRAND_LANDING, /className="rootBand-scene" style=\{\{ '--rootScene-reserve': reserve\?\.band \}\}/);
-  assert.match(BRAND_LANDING, /className="rootSection-scene" style=\{\{ '--rootScene-reserve': reserve\?\.section \}\}/);
-  assert.match(LANDING_CSS, /\.rootBand-scene \{[^}]*min-height: var\(--rootScene-reserve, 0px\); \}/);
-  assert.match(LANDING_CSS, /\.rootSection-scene \{[^}]*min-height: var\(--rootScene-reserve, 0px\); \}/);
+test('the shell holds the space a picture will take out of the height its product states', () => {
+  assert.match(BRAND_LANDING, /style=\{\{ '--front-picture-wide': picture\.reserve\.wide, '--front-picture-narrow': picture\.reserve\.narrow \}\}/);
+  assert.match(BRAND_LANDING_CSS, /\.front-picture-body \{ min-height: var\(--front-picture-wide\); \}/);
+  assert.match(BRAND_LANDING_CSS, /\.front-picture-body \{ min-height: var\(--front-picture-narrow\); \}/);
 });
 
-test('the brand root composes a band and a section for the open products only', () => {
+test('the brand root composes a row and a section for the open products only', () => {
   assert.match(BRAND_LANDING, /const open = PRODUCTS\.filter\(\(product\) => product\.shell\.status === 'open'\);/);
-  assert.equal(BRAND_LANDING.includes('PRODUCTS.map('), false, 'a band or a section is still composed off every product, open or shut');
+  assert.equal((BRAND_LANDING.match(/open\.map\(/g) ?? []).length, 2, 'the tools and the sections are not both composed off the open products');
+  assert.equal(BRAND_LANDING.includes('PRODUCTS.map('), false, 'a row or a section is still composed off every product, open or shut');
 });
 
 const taglineMissing = PRODUCTS
@@ -372,52 +358,46 @@ test('every open product names a room module that exists', () => {
   assert.deepEqual(roomModulesMissing, []);
 });
 
-// The front door is three surfaces of two facts — the sentence and the door — and each of the three
-// used to say them itself. They agreed only because someone kept them agreeing, and they stopped:
-// the shell's "Start free" went to /roadmap and the page's button, under the same label, to
-// #/app/start. landingHeads.js says both once now, so these pin the three to each other and to
-// that one expression, never to a string written out again here.
+// The front door is said twice: by the crawlable shell in web/index.html, which the build pins byte for
+// byte to landingHeads.js, and by the running page. These pin both to the catalog's one sentence each.
 const SHELL = fs.readFileSync(path.resolve(SRC, '..', 'index.html'), 'utf8');
 const ROOT_HEAD = LANDING_HEADS.find((head) => head.path === '/');
 
-test('"Start free" opens one door — the app-start door — in the crawlable shell and on the page', () => {
-  const open = PRODUCTS.find((product) => product.shell.status === 'open');
-  assert.deepEqual(START_FREE, { href: open.landing.root.section.cta.href, label: 'Start free' });
-  assert.deepEqual(ROOT_HEAD.fallback.actions, [START_FREE]);
-  assert.equal(SHELL.includes(`<a href="${START_FREE.href}"`), true, 'web/index.html sends the button somewhere else');
-  assert.equal(SHELL.includes(`>${START_FREE.label}</a>`), true, 'web/index.html calls the button something else');
-  const BRAND_LANDING_CTA = /cta=\{START_FREE\}/;
-  assert.match(BRAND_LANDING, BRAND_LANDING_CTA, 'the running page derives its nav door from somewhere else');
-});
-
-// A crawler that renders and a crawler that does not have to see the same heading structure. The
-// shell shipped `<h1>Three tools. One account.</h1>` while the page demoted that same sentence to a
-// span in a presentational div and gave the page no <h1> at all.
-test('the shell and the page carry the same one <h1>, and the bands stay <h2>', () => {
-  assert.equal(ROOT_HEAD.fallback.h1, BRAND_PROMISE);
-  assert.equal(SHELL.includes(`>${BRAND_PROMISE}</h1>`), true, 'web/index.html says something else in its <h1>');
-  assert.match(BRAND_LANDING, /<h1 className="visually-hidden">\{BRAND_PROMISE\}<\/h1>/);
+test('the shell and the page carry the same one <h1>, above everything they compose', () => {
+  assert.equal(ROOT_HEAD.fallback.h1, 'Windmill is where a person keeps growing in body, skill and\u00A0mind.');
+  assert.equal(SHELL.includes('>Windmill is where a person keeps growing in body, skill and&nbsp;mind.</h1>'), true, 'web/index.html says something else in its <h1>');
+  assert.match(BRAND_LANDING, /<h1 className="front-heading">\{t\('shell\.landingHead\.heading', \{ break: <br \/> \}\)\}<\/h1>/);
   assert.equal((BRAND_LANDING.match(/<h1[ >]/g) ?? []).length, 1, 'the page draws more than one <h1>');
-  // and it is the first thing in the page, above the bands it composes, so a screen reader walks
-  // the levels in order rather than meeting an h2 first
-  assert.ok(BRAND_LANDING.indexOf('<h1 ') < BRAND_LANDING.indexOf('open.map('), 'a band is composed above the heading');
+  assert.ok(BRAND_LANDING.indexOf('<h1 ') < BRAND_LANDING.indexOf('{open.map('), 'a tool or a section is composed above the heading');
 });
 
-// The no-JS body says the hero bands' promises; the page draws a band for each open product.
-test('the brand root shell notes are the open products\' hero band promises, in registry order', () => {
-  assert.deepEqual(ROOT_HEAD.fallback.notes, OPEN.map((product) => product.landing.root.band.title));
+test('the shell names the open products\' tools as the page does, in registry order', () => {
+  assert.deepEqual(ROOT_HEAD.fallback.tools, OPEN.map((product) => ({
+    name: `Windmill ${product.label}`,
+    kind: product.landing.root.kind,
+    line: product.landing.root.line,
+    link: { href: product.landing.root.link.href, label: product.landing.root.link.label },
+  })));
+  for (const tool of ROOT_HEAD.fallback.tools) {
+    assert.equal(SHELL.includes(`>${tool.name}</h2>`), true, `web/index.html does not name ${tool.name}`);
+    assert.equal(SHELL.includes(`<a href="${tool.link.href}" style="color: #211B13; font-weight: 500;">${tool.link.label}</a>`), true, `web/index.html sends ${tool.name} somewhere else`);
+  }
 });
 
-// The cost answer is the one place the brand root prices its products, and it is written twice —
-// landingHeads.js and web/index.html — which the build pins to each other byte for byte.
-test('the brand FAQ prices Gym by its true rule: the log, the connected log and Coach are free, a plan only raises the AI ceiling', () => {
-  const root = LANDING_HEADS.find((head) => head.path === '/');
-  const faq = root.schema.find((entry) => entry['@type'] === 'FAQPage');
-  const cost = faq.mainEntity.find((question) => question.name === 'How much does Windmill cost?').acceptedAnswer.text;
-  assert.match(cost, /the log and the connected log are free, and Coach includes a free allowance/);
-  assert.match(cost, /a plan only raises the AI ceiling behind Coach/);
-  assert.doesNotMatch(cost, /Ask chat|Gym is outside/);
-  assert.equal(SHELL.includes(cost), true, 'web/index.html carries the same answer');
+test('the brand root says one title and one description everywhere, and marks up no FAQ', () => {
+  assert.deepEqual(
+    { title: ROOT_HEAD.title, ogTitle: ROOT_HEAD.ogTitle, twitterTitle: ROOT_HEAD.twitterTitle, description: ROOT_HEAD.description, ogDescription: ROOT_HEAD.ogDescription, twitterDescription: ROOT_HEAD.twitterDescription, schema: ROOT_HEAD.schema },
+    {
+      title: 'Windmill — a skill tree, a training log and a journal',
+      ogTitle: 'Windmill — a skill tree, a training log and a journal',
+      twitterTitle: 'Windmill — a skill tree, a training log and a journal',
+      description: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours.',
+      ogDescription: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours.',
+      twitterDescription: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours.',
+      schema: [],
+    },
+  );
+  assert.equal(SHELL.includes('FAQPage'), false, 'web/index.html still marks up an FAQ the page does not draw');
 });
 
 test('nothing imports the retired roadmap List or Board gate', () => {

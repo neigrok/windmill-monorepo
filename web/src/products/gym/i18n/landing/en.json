@@ -65,5 +65,7 @@
   "gym.landing.windmill.accountCopy": "Roadmap, Journal and Gym — one account, one history.",
   "gym.landing.windmill.everywhereTitle": "Everywhere you are",
   "gym.landing.windmill.everywhereCopy": "The phone in the gym, the desk between blocks. Same log.",
-  "gym.landing.cta.title": "Log the next one"
+  "gym.landing.cta.title": "Log the next one",
+  "gym.landing.logSet": "Log set",
+  "gym.landing.lift.squat": "Squat"
 }
