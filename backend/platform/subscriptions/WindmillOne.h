@@ -36,8 +36,9 @@ struct Standing {
 // The paid line as configuration opens it (§5.3): the stores a person may buy through, every one closed by default, and
 // what a month of Windmill One funds.
 struct PaidLine {
-  // `purchasableStores` is SUBSCRIPTIONS_PURCHASABLE_STORES: D-1 store names, comma-separated. A name D-1 does not hold
-  // opens nothing, so a typo leaves that store closed and the server serving; `namesUnknownStore` says one was given.
+  // `purchasableStores` is SUBSCRIPTIONS_PURCHASABLE_STORES: `app_store` and `play_store`, comma-separated. Any other
+  // name, `paddle` included, opens nothing, so a typo leaves that store closed and the server serving;
+  // `namesUnknownStore` says one was given.
   PaidLine(std::string_view purchasableStores, long long aiAllowanceNanos);
 
   std::vector<std::string> openStores;  // in D-1's order

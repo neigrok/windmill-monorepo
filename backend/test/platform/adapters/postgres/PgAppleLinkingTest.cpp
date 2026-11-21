@@ -47,7 +47,6 @@ struct Fixture {
     txn.exec("DELETE FROM feedback WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'pg-apple-%')");
     txn.exec("DELETE FROM tend_runs WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'pg-apple-%')");
     txn.exec("DELETE FROM org_members WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'pg-apple-%')");
-    txn.exec("DELETE FROM paddle_subscriptions WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'pg-apple-%')");
     txn.exec("DELETE FROM orgs WHERE id='00000000-0000-4000-8000-0000000000a9'");
     txn.exec("DELETE FROM users WHERE email LIKE 'pg-apple-%'");
     txn.exec("DELETE FROM magic_links WHERE token_hash LIKE 'pg-apple-%'");

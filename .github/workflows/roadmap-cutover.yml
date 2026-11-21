@@ -72,8 +72,6 @@ jobs:
         env:
           VITE_SENTRY_DSN: https://8ccb99ec79873a1f7ad27fb1939906d0@o4511760691953664.ingest.de.sentry.io/4511760715350096
           VITE_RELEASE: ${{ github.sha }}
-          VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
-          VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           VITE_ROADMAP_REPLICA_ROOM: on
         run: npm run build
 

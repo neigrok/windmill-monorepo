@@ -1573,12 +1573,12 @@ class DeployWorkflowTest(unittest.TestCase):
         text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()
         start = text.index("          stores=")
         guard = textwrap.dedent(text[start:text.index("          # printf so values are written literally", start)])
-        refused = (1, "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store, play_store or paddle,"
+        refused = (1, "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store or play_store,"
                       " comma-separated.\n")
-        for value, outcome in (("", (0, "")), ("app_store", (0, "")), (" app_store , paddle", (0, "")),
-                               ("play_store,paddle,app_store,", (0, "")), ("appstore", refused), ("App_Store", refused),
-                               ("app_store;paddle", refused), ("app_store,,paddle", refused),
-                               ("app_store,google_play", refused)):
+        for value, outcome in (("", (0, "")), ("app_store", (0, "")), (" app_store , play_store", (0, "")),
+                               ("play_store,app_store,", (0, "")), ("paddle", refused), ("app_store,paddle", refused),
+                               ("appstore", refused), ("App_Store", refused), ("app_store;play_store", refused),
+                               ("app_store,,play_store", refused), ("app_store,google_play", refused)):
             with self.subTest(value=value):
                 result = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
                                         env={**os.environ, "SUBSCRIPTIONS_PURCHASABLE_STORES": value})
