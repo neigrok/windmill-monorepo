@@ -10,6 +10,11 @@ extension Dictionary where Key == [UInt8] {
     get { self[Array(text.utf8)] }
     set { self[Array(text.utf8)] = newValue }
   }
+
+  subscript(text: String, default fallback: @autoclosure () -> Value) -> Value {
+    get { self[Array(text.utf8), default: fallback()] }
+    set { self[Array(text.utf8)] = newValue }
+  }
 }
 
 extension Sequence {
@@ -24,19 +29,19 @@ extension Sequence {
 }
 
 // A record its author placed: authored order is `(ord, born, id)`, ords and ids by their bytes, a missing birth unset.
-public protocol Authored {
+protocol Authored {
   var id: String { get }
   var ord: String { get }
   var born: Stamp { get }
 }
 
-public func authoredOrder<Record: Authored>(_ a: Record, _ b: Record) -> Bool {
+func authoredOrder<Record: Authored>(_ a: Record, _ b: Record) -> Bool {
   if !a.ord.utf8.elementsEqual(b.ord.utf8) { return a.ord.utf8.lexicographicallyPrecedes(b.ord.utf8) }
   if a.born != b.born { return a.born < b.born }
   return a.id.utf8.lexicographicallyPrecedes(b.id.utf8)
 }
 
-public func edgeOrder(_ a: RoadmapTree.Edge, _ b: RoadmapTree.Edge) -> Bool {
+func edgeOrder(_ a: RoadmapTree.Edge, _ b: RoadmapTree.Edge) -> Bool {
   if !a.from.utf8.elementsEqual(b.from.utf8) { return a.from.utf8.lexicographicallyPrecedes(b.from.utf8) }
   return a.to.utf8.lexicographicallyPrecedes(b.to.utf8)
 }
@@ -247,7 +252,7 @@ public struct RoadmapTree: Sendable {
   public func pointer(on step: String) -> Pointer? { pointers[step] }
 }
 
-// A tree's records by slot, derived once and shared by every read over it: its present steps in authored order, then every other id a live link names.
+// A tree's records by slot, derived once for every read over it: its present steps in authored order, then every other id a live link names.
 public struct TreeIndex: Sendable {
   public let nodes: [Step]
   public let ids: [String]
@@ -298,8 +303,6 @@ public struct TreeIndex: Sendable {
     self.markedAt = markedAt
     self.vertices = vertices
   }
-
-  public func vertex(of id: String) -> Int? { vertices[id] }
 
   public func slot(of id: String) -> Int? {
     vertices[id].flatMap { $0 < ids.count ? $0 : nil }

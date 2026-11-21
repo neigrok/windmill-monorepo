@@ -1,11 +1,11 @@
 import DomainKit
 
 // The strongly connected components of a graph given as each vertex's parents, every component after the components it reaches.
-public struct Components: Sendable {
-  public let groups: [[Int]]
-  public let componentOf: [Int]
+struct Components: Sendable {
+  let groups: [[Int]]
+  let componentOf: [Int]
 
-  public init(_ adjacency: [[Int]]) {
+  init(_ adjacency: [[Int]]) {
     var reached = [Int](repeating: -1, count: adjacency.count)
     var low = [Int](repeating: 0, count: adjacency.count)
     var active = [Bool](repeating: false, count: adjacency.count)
@@ -107,7 +107,7 @@ struct Closure: Sendable {
 // The present steps' values by id, each read from what is kept at its step's slot.
 public struct BySlot<Value>: Sequence {
   let index: TreeIndex
-  public let values: [Value]
+  let values: [Value]
 
   public subscript(id: String) -> Value? { index.slot(of: id).map { values[$0] } }
 
@@ -141,6 +141,7 @@ public struct FollowGraph: Sendable {
   let stateAt: [StepState]
   let unmetCount: [Int]
   let firstUnmet: [Int?]
+  // How many present steps each step follows, met or not.
   let degree: [Int]
   // The steps finishing each step alone would open.
   let opens: [[Int]]
@@ -149,7 +150,7 @@ public struct FollowGraph: Sendable {
   // The followed prerequisites of a step behind an absent parent; any other step follows its parents.
   let rows: [Int: [UInt32]]
 
-  // A step is complete by the tree's own marks, which sets an opening's mark aside.
+  // By the tree's own marks alone: a step that owns a subtree or opens a roadmap is unresolved, and its mark is set aside.
   public init(_ tree: RoadmapTree) {
     self.init(tree, done: tree.index.markedDone, dateAt: tree.index.markedAt)
   }
@@ -227,8 +228,6 @@ public struct FollowGraph: Sendable {
 
   public var ids: [String] { tree.index.ids }
   public var states: BySlot<StepState> { BySlot(index: tree.index, values: stateAt) }
-  // How many present steps each step follows, met or not.
-  public var inDegree: BySlot<Int> { BySlot(index: tree.index, values: degree) }
   public var counts: Counts { Counts(done: done.count { $0 }, total: done.count) }
 
   // Every present step a step follows, in authored order, with the links that reach each.

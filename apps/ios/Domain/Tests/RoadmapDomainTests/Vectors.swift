@@ -98,3 +98,49 @@ extension FollowGraph {
 extension Followed {
   var form: JSON { ["id": .string(id), "incoming": .array(incoming.map(\.ends)), "throughAbsent": .bool(throughAbsent)] }
 }
+
+extension Counts {
+  var form: JSON { ["done": JSON(done), "total": JSON(total)] }
+}
+
+extension RoadmapAccount {
+  var form: JSON {
+    let trees: [JSON] = self.trees.map { tree in
+      let location = location(of: tree.id)
+      return ["id": .string(tree.id), "standing": .string(location.standing.rawValue), "place": location.place?.form ?? .null,
+              "title": .of(location.title), "read": .string(tree.read.rawValue), "counts": counts(tree.id)?.form ?? .null,
+              "complete": .bool(isComplete(tree.id)), "openings": .array(openings(of: tree.id).map(\.form))]
+    }
+    return ["trees": .array(trees), "loops": .array(loops.map(JSON.strings))]
+  }
+}
+
+extension Location.Place {
+  var form: JSON {
+    let steps: [JSON] = path.map { ["tree": .string($0.tree), "step": .string($0.step), "title": .of($0.title)] }
+    let owner: JSON = parent.map { ["tree": .string($0.tree), "step": .string($0.step)] } ?? .null
+    return ["root": .string(root), "parent": owner, "path": .array(steps), "depth": JSON(depth)]
+  }
+}
+
+extension OpeningRead {
+  var form: JSON {
+    ["node": .string(opening.node), "kind": .string(opening.kind.rawValue), "tree": .string(opening.tree),
+     "status": .string(opening.status.rawValue), "complete": .bool(complete), "counts": counts?.form ?? .null, "loop": .bool(loop)]
+  }
+}
+
+extension Progress {
+  var form: JSON {
+    let dated: [JSON] = dates.map { ["node": .string($0.node), "at": .of($0.at)] }
+    return ["completed": .strings(completed), "dates": .array(dated)]
+  }
+}
+
+extension Guide {
+  var form: JSON { ["tree": .string(tree), "title": .string(title), "text": .string(text), "own": .bool(own)] }
+}
+
+extension ListedRoadmap {
+  var form: JSON { ["id": .string(id), "title": .of(title), "counts": counts?.form ?? .null, "updatedAt": .of(updatedAt)] }
+}
