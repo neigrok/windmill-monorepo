@@ -8,7 +8,7 @@ using namespace wm::sync;
 
 TEST(journal_watcher_runs_after_commit_once_for_the_winning_document) {
   BlockingThread::Mark blocking;
-  sync::test::FakeWorld world(false, true);
+  sync::test::FakeWorld world(sync::test::WorldProduct::journal);
   struct Watcher final : PageWatcher {
     sync::test::FakeWorld& world;
     int calls = 0;

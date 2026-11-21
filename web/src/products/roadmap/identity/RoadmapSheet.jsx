@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Activity, Check, ChevronLeft, ChevronRight, Compass, Download, Plus, Search, Share, Sparkles, Sun, X } from 'lucide-react';
 import { flushSync } from 'react-dom';
+import { requestNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { ActivityRows } from '../activity/ActivityRows.jsx';
@@ -55,8 +56,10 @@ export function RoadmapSheet({ sheet, view, band, guide = null, guideOpen = fals
 
   const openActivityStep = useCallback((id) => {
     if (!activity) return;
-    onClose('act');
-    activity.onOpenStep(id);
+    return requestNavigation({ key: `step:open:${id}`, run: (tx) => {
+      onClose('act');
+      activity.onOpenStep(id, tx);
+    } });
   }, [activity, onClose]);
 
   const close = (via) => {
@@ -73,10 +76,14 @@ export function RoadmapSheet({ sheet, view, band, guide = null, guideOpen = fals
     onClose(via);
   };
 
-  const act = (callback, event) => {
-    onClose('act');
-    track(event.name, event.props);
-    callback();
+  const act = (callback, event, navigationKey = null) => {
+    const run = (tx) => {
+      onClose('act');
+      track(event.name, event.props);
+      return callback(tx);
+    };
+    if (navigationKey) return requestNavigation({ key: navigationKey, run });
+    return run();
   };
 
   const hasStateCounts = current.upNext != null && current.locked != null;
@@ -150,7 +157,7 @@ export function RoadmapSheet({ sheet, view, band, guide = null, guideOpen = fals
                     type="button"
                     onClick={() => act(callback, {
                       name: 'roadmap_verb', props: { verb, door: 'sheet', view: view === 'tree' ? 'graph' : 'board', band },
-                    })}
+                    }, verb === 'settings' ? 'sheet:settings' : null)}
                   >
                     <Icon size={20} strokeWidth={1.7} aria-hidden />
                     <span>{label}</span>
@@ -190,7 +197,7 @@ export function RoadmapSheet({ sheet, view, band, guide = null, guideOpen = fals
                       onClose('act');
                       return;
                     }
-                    act(() => sheet.onPickTree(tree.id), { name: 'roadmap_sheet', props: { step: 'switch' } });
+                    act((tx) => sheet.onPickTree(tree.id, tx), { name: 'roadmap_sheet', props: { step: 'switch' } }, `tree:switch:${tree.id}`);
                   }}
                 >
                   <span className="st-roadmap-sheet-dot" style={{ background: hue }} aria-hidden />
@@ -206,13 +213,13 @@ export function RoadmapSheet({ sheet, view, band, guide = null, guideOpen = fals
             })}
           </div>
           {!searchable && sheet.onNewRoadmap && (
-            <button type="button" className="st-roadmap-sheet-link" onClick={() => act(sheet.onNewRoadmap, { name: 'roadmap_sheet', props: { step: 'new' } })}>
+            <button type="button" className="st-roadmap-sheet-link" onClick={() => act(sheet.onNewRoadmap, { name: 'roadmap_sheet', props: { step: 'new' } }, 'tree:new')}>
               <Plus size={20} strokeWidth={1.7} aria-hidden />
               <span>{ROADMAP_SHEET.newRoadmap}</span>
             </button>
           )}
           {sheet.onBrowse && (
-            <button type="button" className="st-roadmap-sheet-link" onClick={() => act(sheet.onBrowse, { name: 'roadmap_sheet', props: { step: 'browse' } })}>
+            <button type="button" className="st-roadmap-sheet-link" onClick={() => act(sheet.onBrowse, { name: 'roadmap_sheet', props: { step: 'browse' } }, 'tree:browse')}>
               <Compass size={20} strokeWidth={1.7} aria-hidden />
               <span>{ROADMAP_SHEET.plantedInPublic}</span>
               <ChevronRight size={20} strokeWidth={1.7} aria-hidden />
@@ -237,7 +244,7 @@ export function RoadmapSheet({ sheet, view, band, guide = null, guideOpen = fals
               }}><X size={20} strokeWidth={1.7} aria-hidden /></button>}
             </div>
             {sheet.onNewRoadmap && <button type="button" className="st-roadmap-sheet-new" aria-label={ROADMAP_SHEET.newRoadmap}
-              onClick={() => act(sheet.onNewRoadmap, { name: 'roadmap_sheet', props: { step: 'new', door: 'search' } })}>
+              onClick={() => act(sheet.onNewRoadmap, { name: 'roadmap_sheet', props: { step: 'new', door: 'search' } }, 'tree:new')}>
               <Plus size={20} strokeWidth={1.7} aria-hidden />
             </button>}
           </div>

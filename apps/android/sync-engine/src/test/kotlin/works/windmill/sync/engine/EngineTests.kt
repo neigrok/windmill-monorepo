@@ -13,6 +13,300 @@ import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class EngineTests {
+    @Test fun gymDefaultsDoNotSubscribeOrPullAnUnsupportedProductsOwnedTrees() = runBlocking<Unit> {
+        val leaves = listOf("gym", "journal").map { name -> Registry(Json.parse("""{
+            "registry":"$name","version":3,"minVersion":2,"products":{"$name":{}},
+            "types":[{"type":"$name","scope":"product:$name","identity":"singleton","singletonId":"$name",
+            "idPattern":"^$name$","life":false,"origins":["replica"],"fields":{}}],"commands":[]
+        }""")) }
+        val third = Registry(Json.parse("""{
+            "registry":"third","version":3,"minVersion":2,"products":{"third":{}},"commands":[],
+            "types":[{"type":"board","scope":"product:third","identity":"minted","idSpace":"global",
+            "idPattern":"^b[0-9]+$","mint":{"prefix":"b","alphabet":"0123456789","length":4},
+            "life":true,"revivable":false,"deadRows":"spent","governs":"tree","origins":["replica"],"fields":{}},
+            {"type":"meta","scope":"tree","identity":"singleton","singletonId":"meta","idPattern":"^meta$",
+            "life":false,"origins":["replica"],"fields":{}}]
+        }"""))
+        val composed = Registry.compose("three", leaves + third)
+        Engine.memory(composed, identities = identities, actor = "actor").use { engine ->
+            engine.signIn("A", emptyMap())
+            val stamp = Stamp("1:0:a")
+            engine.store.transaction { engine.store.put(engine.device.current().id, ScopeRef.product("third"),
+                Row(RecordKey("board", RecordID("b0001")), Lattice(Life("alive", stamp), stamp), seq = 1)) }
+            assertEquals(setOf(ScopeRef.product("gym")), engine.subscriptions())
+            assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null}]}"""), engine.pullRequest(engine.subscriptions()))
+            val pulled = CompletableDeferred<Json>()
+            val subscribed = CompletableDeferred<Json>()
+            val connection = object : LiveConnection {
+                override suspend fun send(request: Json) { subscribed.complete(request) }
+                override suspend fun receive(): Json? = awaitCancellation()
+                override fun close() {}
+            }
+            val transport = object : SyncTransport {
+                override suspend fun hello(token: String?) = Reply.Answer(SyncResponse(200, Json.parse("""{
+                    "serverTime":5000,"epoch":"ep-1","as":"A","schema":3,"minSchema":2,"holdsRecords":{}}
+                """)))
+                override suspend fun push(request: Json, token: String): Reply<SyncResponse> = Reply.Unreachable
+                override suspend fun pull(request: Json, token: String?): Reply<SyncResponse> {
+                    pulled.complete(request)
+                    awaitCancellation()
+                }
+                override suspend fun openLive(token: String): Reply<LiveConnection> = Reply.Answer(connection)
+            }
+            val tokens = object : SessionTokens {
+                override fun token(account: String) = "token"
+                override fun accounts() = setOf("A")
+                override fun save(account: String, token: String) {}
+                override fun delete(account: String) {}
+            }
+            val sleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() }
+            SyncRuntime(engine, transport, tokens, "1", sleeper).use { runtime ->
+                runtime.enter()
+                assertEquals(Json.parse("""{"op":"sub","scopes":["self/gym"]}"""), withTimeout(2_000) { subscribed.await() })
+                assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null}]}"""), withTimeout(2_000) { pulled.await() })
+            }
+            val tree = ScopeRef.tree("b0001")
+            val overlay = ScopeRef.overlay("b0001")
+            assertEquals(setOf(ScopeRef.product("third"), tree, overlay), engine.subscriptions(listOf("third")))
+            assertNull(engine.subscribe(tree))
+            assertEquals(setOf(ScopeRef.product("gym"), tree, overlay), engine.subscriptions())
+            assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null},{"scope":"self/overlay/b0001","cursor":null},{"scope":"tree/b0001","cursor":null}]}"""),
+                engine.pullRequest(engine.subscriptions().sortedBy { it.text }))
+        }
+    }
+
+    // E-6 over the shipped composition: the account's roadmaps are rows the app holds, never scopes it follows.
+    @Test fun theShippedCompositionSubscribesAndPullsGymOnlyWhileTheAccountHoldsRoadmaps() {
+        Engine.memory(works.windmill.sync.schema.SyncSchema.registry, identities = identities, actor = "actor").use { engine ->
+            engine.signIn("A", emptyMap())
+            val stamp = Stamp("1:0:a")
+            val roadmap = "t_0123456789abcdef"
+            engine.store.transaction { engine.store.put(engine.device.current().id, ScopeRef.product("roadmap"),
+                Row(RecordKey("tree", RecordID(roadmap)), Lattice(Life("alive", stamp), stamp), seq = 1)) }
+            assertEquals(setOf(ScopeRef.product("gym")), engine.subscriptions())
+            assertEquals(Json.parse("""{"scopes":[{"scope":"self/gym","cursor":null}]}"""), engine.pullRequest(engine.subscriptions()))
+            assertEquals(setOf(ScopeRef.product("roadmap"), ScopeRef.tree(roadmap), ScopeRef.overlay(roadmap)), engine.subscriptions(listOf("roadmap")))
+        }
+    }
+
+    @Test fun readerTreesPairTheBoundAccountsOverlayAndReopenBothScopes() {
+        val tree = ScopeRef.tree("b_00000001")
+        val overlay = ScopeRef.overlay("b_00000001")
+        engine().use { engine ->
+            engine.subscribe(tree)
+            assertEquals(setOf(tree), engine.subscriptions(listOf("probe")))
+            assertTrue(engine.read(overlay) { it.firstPullComplete() })
+            engine.signIn("B", emptyMap())
+            assertEquals(setOf(scope, tree, overlay), engine.subscriptions(listOf("probe")))
+            engine.reconcile(engine.subscriptions(listOf("probe")))
+            assertFalse(engine.read(overlay) { it.firstPullComplete() })
+            engine.write { replica ->
+                replica.known[tree.text] = Json.of("not-found")
+                replica.known[overlay.text] = Json.of("not-found")
+            }
+            assertEquals(setOf(scope), engine.subscriptions(listOf("probe")))
+            assertTrue(engine.read(overlay) { it.firstPullComplete() })
+            assertNull(engine.subscribe(tree))
+            assertTrue(engine.device.current().known.isEmpty())
+            assertEquals(setOf(scope, tree, overlay), engine.subscriptions(listOf("probe")))
+            engine.write { replica ->
+                replica.known[tree.text] = Json.of("gone")
+                replica.known[overlay.text] = Json.of("not-found")
+            }
+            assertEquals("gone", engine.subscribe(tree))
+            assertEquals(mapOf(tree.text to Json.of("gone"), overlay.text to Json.of("not-found")), engine.device.current().known)
+        }
+    }
+
+    @Test fun closingATreeRetainsSeparatelyOpenedAndOwnedOverlays() {
+        val tree = ScopeRef.tree("b_00000001")
+        val overlay = ScopeRef.overlay("b_00000001")
+        engine().use { engine ->
+            engine.signIn("B", emptyMap())
+            engine.subscribe(tree); engine.subscribe(overlay)
+            engine.reconcile(engine.subscriptions(listOf("probe")))
+            engine.write { replica -> replica.cursors[overlay.text] = Json.objectOf("booted" to Json.of(true), "cursor" to Json.Null) }
+            engine.unsubscribe(tree)
+            assertEquals(setOf(scope, overlay), engine.subscriptions(listOf("probe")))
+            assertNotNull(engine.device.current().cursors[overlay.text])
+            engine.unsubscribe(overlay)
+            assertEquals(setOf(scope), engine.subscriptions(listOf("probe")))
+            assertNull(engine.device.current().cursors[overlay.text])
+            engine.commit(scope, Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001"))))))
+            engine.subscribe(tree); engine.unsubscribe(tree)
+            engine.reconcile(engine.subscriptions(listOf("probe")))
+            assertEquals(setOf(scope, tree, overlay), engine.subscriptions(listOf("probe")))
+            assertFalse(engine.read(overlay) { it.firstPullComplete() })
+            engine.signOut("keep")
+            assertEquals(emptySet<ScopeRef>(), engine.subscriptions(listOf("probe")))
+        }
+    }
+
+    @Test fun actReadersKeepOneInitialSnapshotAndSegmentsSeeEarlierWrites() {
+        engine().use { engine ->
+            var loads = 0
+            var loan: ScopeReader? = null
+            val result = engine.commitAct({ context ->
+                loads++
+                context.inScope(scope) { reader -> loan = reader; assertTrue(reader.drawn("card").isEmpty()) }
+                ActRequest(listOf(scope, scope), hold = true) to context.now
+            }, { now, index, reader ->
+                assertEquals(now, reader.now)
+                if (index == 0) create("card0001") else {
+                    assertNotNull(reader.drawn("card", RecordID("card0001")))
+                    Gesture(listOf(Change.update("card", RecordID("card0001"), mapOf("title" to Json.of("Next")))))
+                }
+            })
+            val receipt = (result.first as ActCommitOutcome.Committed).receipt
+            assertThrows(CommitFailure::class.java) { loan!!.drawn("card") }
+            assertEquals(1, loads)
+            assertEquals(listOf("${receipt.gestureId}/0", "${receipt.gestureId}/1"), receipt.localIds)
+            assertEquals(listOf(scope, scope), receipt.segments.map { it.scope })
+            assertTrue(receipt.segments[0].stamp!! < receipt.segments[1].stamp!!)
+            assertTrue(engine.cancelHeld(receipt.gestureId))
+            assertTrue(engine.read(scope) { it.drawn("card").isEmpty() })
+        }
+    }
+
+    @Test fun newGovernedScopeMintsBeforeItsEarlierGoverningCreate() {
+        engine().use { engine ->
+            val tree = ScopeRef.tree("b_00000001")
+            val result = engine.commitAct({ context -> ActRequest(listOf(scope, tree)) to context.mintID("tag", tree) },
+                { id, index, _ -> if (index == 0) Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001")))))
+                    else Gesture(listOf(Change.create("tag", NewID.Given(id), mapOf("label" to Json.of("New"))))) })
+            assertTrue(result.first is ActCommitOutcome.Committed)
+            assertEquals(Json.of("New"), engine.read(tree) { it.drawn("tag", result.second) }!!.values["label"])
+        }
+    }
+
+    @Test fun laterActStorageReadFailureKeepsItsBoundaryKindAndRollsBack() {
+        val initial = Json.objectOf("active" to Json.of("replica"), "replicas" to Json.array(freshReplica("replica").json()))
+        val delegate = MemoryStore(registry, initial)
+        val tree = ScopeRef.tree("b_00000001")
+        val store = object : EngineStore by delegate {
+            override fun rows(replica: String, scope: ScopeRef, type: String?): List<Row> {
+                if (scope == tree) throw StoreFailure()
+                return delegate.rows(replica, scope, type)
+            }
+        }
+        Engine(registry, store, object : EngineClock { override fun now() = 5000L }, identities, "actor").use { engine ->
+            val before = engine.snapshot()
+            val failure = assertThrows(CommitFailure::class.java) { engine.commitAct({ ActRequest(listOf(scope, tree)) to Unit },
+                { _, index, reader -> if (index == 0) create("card0001") else { reader.drawn("meta"); Gesture(emptyList()) } }) }
+            assertEquals(CommitFailure.Kind.storeFailure, failure.kind)
+            assertEquals(before, engine.snapshot())
+        }
+    }
+
+    @Test fun partialActReleaseRemovesItsUndoOffer() {
+        engine().use { engine ->
+            val result = engine.commitAct(listOf(
+                ScopedGesture(scope, Gesture(listOf(Change.create("board", NewID.Given(RecordID("b_00000001")))), hold = true)),
+                ScopedGesture(ScopeRef.tree("b_00000001"), Gesture(listOf(Change.write("meta", RecordID("meta"), mapOf("title" to Json.of("First"))))))
+            )) as ActCommitOutcome.Committed
+            assertTrue(engine.release(result.receipt.localIds[0]))
+            assertTrue(engine.undoOffers().isEmpty())
+            assertFalse(engine.cancelHeld(result.receipt.gestureId))
+        }
+    }
+
+    @Test fun caughtActLoadFailureAndLateReadsCannotEnterDecideOrMint() {
+        var draws = 0
+        var decisions = 0
+        Engine.memory(registry, identities = object : IdentitySource {
+            override fun opaqueID() = "phase-act"
+            override fun draw(bound: Int): Int { draws++; return 0 }
+        }, actor = "actor").use { engine ->
+            draws = 0
+            val before = engine.snapshot()
+            assertThrows(CommitFailure::class.java) { engine.commitAct({ context ->
+                context.inScope(scope) { }
+                try { context.inScope(ScopeRef.product("missing")) { } } catch (_: CommitFailure) { }
+                context.mintID("card", scope)
+                decisions++
+                null to Unit
+            }, { _, _, _ -> Gesture(emptyList()) }) }
+            assertEquals(0, decisions)
+            assertEquals(0, draws)
+            assertThrows(CommitFailure::class.java) { engine.commitAct({ context ->
+                context.finishLoad(); context.finishLoad()
+                try { context.inScope(scope) { } } catch (_: CommitFailure) { }
+                ActRequest(listOf(scope)) to Unit
+            }, { _, _, _ -> create("card0001") }) }
+            assertEquals(before, engine.snapshot())
+        }
+    }
+
+    @Test fun actMintingRequiresBorrowBeforeRandomnessAndSharesReservations() {
+        var draws = 0
+        var identities = 0
+        Engine.memory(registry, identities = object : IdentitySource {
+            override fun opaqueID() = "act-${++identities}"
+            override fun draw(bound: Int) = (draws++ / 32) % bound
+        }, actor = "actor").use { engine ->
+            draws = 0
+            val before = engine.snapshot()
+            assertThrows(CommitFailure::class.java) { engine.commitAct({ context ->
+                context.mintID("card", scope); null to Unit
+            }, { _, _, _ -> Gesture(emptyList()) }) }
+            assertEquals(0, draws)
+            assertEquals(before, engine.snapshot())
+            val result = engine.commitAct({ context ->
+                context.inScope(scope) { }
+                null to listOf(context.mintID("card", scope), context.mintID("card", scope))
+            }, { _, _, _ -> Gesture(emptyList()) })
+            assertNotEquals(result.second[0], result.second[1])
+            assertEquals(48, draws)
+        }
+    }
+
+    @Test fun aLaterLoadReadsThroughAStagedSegmentAndTheRequestCommitsEverySegmentAsOneAct() {
+        val card = RecordID("card0001")
+        fun title(reader: ScopeReader) = reader.drawn("card", card)?.values?.get("title")
+        fun titled(title: String, change: (Map<String, Json>) -> Change) = Gesture(listOf(change(mapOf("title" to Json.of(title)))))
+        val create = titled("First") { Change.create("card", NewID.Given(card), it) }
+        val rename = titled("First!") { Change.update("card", card, it) }
+        engine().use { engine ->
+            val reads = mutableListOf<Json?>()
+            val outcome = engine.commitAct({ context ->
+                reads.add(context.inScope(scope, ::title))
+                assertNull(context.stage(scope) { create })
+                context.beginPart()
+                reads.add(context.inScope(scope, ::title))
+                assertNull(context.stage(scope) { reader -> titled("${title(reader)!!.str()}!") { Change.update("card", card, it) } })
+                ActRequest(listOf(scope, scope)) to listOf(create, rename)
+            }, { gestures, index, _ -> gestures[index] }).first as ActCommitOutcome.Committed
+            assertEquals(listOf(null, Json.of("First")), reads)
+            val gestureId = outcome.receipt.gestureId
+            assertEquals(listOf(listOf("$gestureId/0"), listOf("$gestureId/1")), outcome.receipt.segments.map { it.localIds })
+            assertEquals(Json.of("First!"), engine.read(scope, ::title))
+        }
+    }
+
+    @Test fun aStagedLocalRefusalIsAnsweredReportedAndTheActItEndsWritesNothing() = runBlocking<Unit> {
+        val gone = ScopeRef.tree("b_00000005")
+        val replica = freshReplica("replica").json().with("known" to Json.objectOf(gone.text to Json.of("gone")))
+        val store = MemoryStore(registry, Json.objectOf("active" to Json.of("replica"), "replicas" to Json.array(replica)))
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
+        Engine(registry, store, object : EngineClock { override fun now() = 5_000L }, identities, "actor", telemetry = EngineTelemetry { events.send(it) }).use { engine ->
+            val before = engine.snapshot()
+            val outcome = engine.commitAct({ context ->
+                assertNull(context.stage(scope) { create("card0001") })
+                assertEquals(CommitOutcome.Refused(RefusalCode.scopeDead, null),
+                    context.stage(gone) { Gesture(listOf(Change.create("tag", NewID.Given(RecordID("elm")), mapOf("label" to Json.of("Elm"))))) })
+                null to Unit
+            }, { _, _, _ -> throw AssertionError("a refused act reaches no segment") })
+            assertNull(outcome.first)
+            assertEquals(before, engine.snapshot())
+            val reported = withTimeout(2_000) {
+                var event = events.receive()
+                while (event.operation != EngineOperation.commit) event = events.receive()
+                event
+            }
+            assertEquals(EngineEvent(EngineOperation.commit, EngineOutcome.refused, "scope-dead"), reported)
+        }
+    }
+
     private val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
     private val identities = object : IdentitySource {
         var number = 0
@@ -24,6 +318,28 @@ class EngineTests {
     private val scope = ScopeRef.product("probe")
     private fun engine(telemetry: EngineTelemetry = NoEngineTelemetry) = Engine.memory(registry, clock = object : EngineClock { override fun now() = 5_000L }, identities = identities, actor = "actor", telemetry = telemetry)
     private fun create(id: String) = Gesture(listOf(Change.create("card", NewID.Given(RecordID(id)), mapOf("title" to Json.of(id)))))
+    @Test fun derivedCommitsFitTheirIdDomainOrLeaveTheStoreUnchanged() {
+        for (max in listOf(8, 1)) {
+            val custom = Registry(Json.parse("""{
+                "registry":"bounded","version":1,"minVersion":1,"products":{"p":{}},"commands":[],
+                "types":[{"type":"node","scope":"product:p","identity":"derived","idSpace":"scope",
+                "idDomain":{"type":"string","unit":"chars","min":1,"max":$max},
+                "derive":{"fallback":"${"a".repeat(max)}"},"mint":{"prefix":"","alphabet":"ab","length":1},
+                "life":true,"revivable":true,"deadRows":"keep","origins":["replica"],"fields":{}}]
+            }"""))
+            Engine.memory(custom, identities = identities, actor = "actor").use { engine ->
+                val before = engine.snapshot()
+                val gesture = Gesture(listOf("abcdefgh".repeat(25), "", "").map { Change.create("node", NewID.Derived(it)) })
+                if (max == 1) {
+                    assertThrows(CommitFailure::class.java) { engine.commit(ScopeRef.product("p"), gesture) }
+                    assertEquals(before, engine.snapshot())
+                } else {
+                    val outcome = engine.commit(ScopeRef.product("p"), gesture) as CommitOutcome.Committed
+                    assertEquals(listOf("abcdefgh", "aaaaaaaa", "aaaaaa-2"), outcome.receipt.ids.map { it?.string })
+                }
+            }
+        }
+    }
     @Test fun advertisedServerSchemaIsDurableAccountLocalAndPublished() = runBlocking {
         engine().use { engine ->
             assertNull(engine.read(scope) { it.serverSchema() })
@@ -97,6 +413,23 @@ class EngineTests {
             assertEquals(before, engine.snapshot())
         }
     }
+    // §2.5, §7.5: a spent id is all the device keeps of a derived record deleted elsewhere. Both readers answer its born, null for an id the
+    // scope keeps no spent id of, and a revive of the record takes that born (§7.1 step 4).
+    @Test fun bothReadersAnswerTheBornOfASpentIdAndARevivalTakesIt() {
+        val tree = ScopeRef.tree("b_00000001")
+        val born = Stamp("1000:0:r_aaaaaaaaaaaa")
+        val spent = Json.objectOf(tree.text to Json.array(Json.objectOf("t" to Json.of("tag"), "id" to Json.of("oak"), "born" to born.json)))
+        val snapshot = Json.objectOf("active" to Json.of("rp_00000000000000000000000000000001"), "replicas" to Json.array(freshReplica("rp_00000000000000000000000000000001").json().with("spentIds" to spent)))
+        Engine.memory(registry, snapshot, clock = object : EngineClock { override fun now() = 5_000L }, identities = identities, actor = "actor").use { engine ->
+            assertEquals(listOf(born, null), engine.read(tree) { listOf(it.spentBorn("tag", RecordID("oak")), it.spentBorn("tag", RecordID("elm"))) })
+            val read = engine.commit(tree) { context ->
+                Gesture(listOf(Change.revive("tag", RecordID("oak"), mapOf("label" to Json.of("Next"))))) to context.spentBorn("tag", RecordID("oak"))
+            }.second
+            assertEquals(born, read)
+            assertEquals(born, engine.read(tree) { it.drawn("tag", RecordID("oak"))?.born })
+            assertEquals(CommitFailure.Kind.malformed, assertThrows(CommitFailure::class.java) { engine.read(scope) { it.spentBorn("tag", RecordID("oak")) } }.kind)
+        }
+    }
     @Test fun nestedCommitRollsBackAndReadBodiesCanReadTheSameTransaction() {
         engine().use { engine ->
             val before = engine.snapshot()
@@ -122,10 +455,18 @@ class EngineTests {
             assertEquals(listOf("del"), result.receipt.retired)
             assertEquals(Json.of(2), engine.read(scope) { it.drawn("card", id)!!.values["size"] })
             assertEquals(Json.of("Changed"), engine.read(scope) { it.drawn("card", id)!!.values["title"] })
-            assertFalse(engine.undo("del"))
+            assertFalse(engine.cancelHeld("del"))
             engine.commit(scope, Gesture(listOf(Change.delete("card", id)), hold = true, gestureId = "later"))
-            assertTrue(engine.release("later/0")); assertFalse(engine.release("later/0")); assertFalse(engine.undo("later"))
-            assertThrows(CommitFailure::class.java) { engine.dismissNotice("missing") }
+            assertTrue(engine.release("later/0")); assertFalse(engine.release("later/0")); assertFalse(engine.cancelHeld("later"))
+        }
+    }
+    @Test fun dismissingANoticeTheReplicaDoesNotHoldAnswersFalseWritesNothingAndReportsNothing() = runBlocking<Unit> {
+        val dismissals = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
+        engine(EngineTelemetry { if (it.operation == EngineOperation.dismiss) dismissals.send(it) }).use { engine ->
+            val before = engine.snapshot()
+            assertFalse(engine.dismissNotice("notice:missing/0"))
+            assertEquals(before, engine.snapshot())
+            assertNull(withTimeoutOrNull(200) { dismissals.receive() })
         }
     }
     @Test fun referenceReadAndObservationDoNotScanTenThousandUnrelatedRows() = runBlocking {
@@ -256,7 +597,7 @@ class EngineTests {
                         "code" to Json.of("invalid"))))), timing)
             } else {
                 assertNull(engine.nextPush())
-                assertTrue(engine.undo(receipt.gestureId))
+                assertTrue(engine.cancelHeld(receipt.gestureId))
             }
             val remaining = engine.device.current().entries().single()
             assertEquals("later/0", remaining.id); assertEquals("ready", remaining.state)

@@ -210,7 +210,7 @@ extension Row {
 
   // The content admission compares: the row without its seq and receipt times.
   var content: Row {
-    Row(key: key, lattice: lattice, texts: texts, serials: serials, seq: 0)
+    Row(key: key, lattice: lattice, texts: texts.mapValues { TextState(text: $0.text, rev: 0, merged: $0.merged) }, serials: serials, seq: 0)
   }
 }
 
@@ -434,6 +434,18 @@ public struct SpentRow: Sendable, Hashable {
 }
 
 // A superseded text head, kept under its rev (§2.2, §6.11 step 4).
+extension Revision {
+  // One kept revision a text field: revisions sort by record, field and rev, so each field's latest is the last of its run.
+  static func latestOfEachField(_ revisions: [Revision]) -> [Revision] {
+    var latest: [Revision] = []
+    for revision in revisions.sorted() {
+      if let last = latest.last, last.key == revision.key, last.field.isSameID(as: revision.field) { latest.removeLast() }
+      latest.append(revision)
+    }
+    return latest
+  }
+}
+
 public struct Revision: Sendable, Hashable, Comparable {
   public let key: RecordKey
   public let field: String

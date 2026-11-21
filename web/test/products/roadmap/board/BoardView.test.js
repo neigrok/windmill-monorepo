@@ -1011,7 +1011,13 @@ test('Chromium: Back and Escape close kinds before selection, and finished selec
     assert.equal(await page.evaluate(() => history.state?.boardSelection ?? null), null);
     await page.locator('.st-board-card[data-step-id="bowline"]').click();
     await page.waitForFunction(() => window.selectionAddress.id === 'bowline');
-    assert.deepEqual(await page.evaluate(() => history.state), { boardStep: { trail: ['bowline'], pushed: 1 } });
+    const entry = await page.evaluate(() => history.state);
+    const { windmillHistory, windmillNavigation, ...productState } = entry;
+    assert.deepEqual(productState, { boardStep: { trail: ['bowline'], pushed: 1 } });
+    assert.deepEqual(windmillNavigation, { href: '/board-view-test#/t/selection', previous: null });
+    assert.equal(windmillHistory.position, 2);
+    assert.equal(typeof windmillHistory.entryId, 'string');
+    assert.equal(typeof windmillHistory.chain, 'string');
     await page.evaluate(() => window.selectionAddress.close());
     await page.waitForFunction(() => window.selectionAddress.id === null);
     assert.equal(await page.evaluate(() => location.hash), '#/t/selection');
@@ -1302,20 +1308,135 @@ for (const change of ['filter', 'remote delete']) {
   });
 }
 
-test('Chromium: a selection of every root offers Recolor and no Delete, and Delete returns once a root is let go', async () => {
+for (const [width, height, theme, reducedMotion] of [
+  [390, 844, 'light', 'no-preference'],
+  [390, 568, 'dark', 'reduce'],
+  [320, 568, 'light', 'reduce'],
+  [320, 480, 'dark', 'no-preference'],
+]) {
+  test(`Chromium: every-root refusal at ${width}×${height} ${theme} keeps its reason and equal actions, and nudges on pointer and keyboard`, async () => {
+    const page = await openSelectionPage(width, [
+      { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
+      { id: 'knots', label: 'Practise knots', prerequisites: [], color: 'olive' },
+    ], { completed: [] });
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    try {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ reducedMotion });
+      await page.evaluate((theme) => document.documentElement.dataset.theme = theme, theme);
+      await holdStep(page, 'wind');
+      const initialBar = await page.locator('.st-board-bulk').boundingBox();
+      assert.deepEqual(await page.locator('.st-board-bulk-heading, .st-board-bulk-done').evaluateAll((elements) => elements.map((element) => {
+        const style = getComputedStyle(element);
+        return [style.fontSize, style.fontWeight];
+      })), [['14px', '700'], ['14px', '700']]);
+      await touchStep(page, 'knots');
+      const button = page.getByRole('button', { name: 'Delete 2 steps', exact: true });
+      const reason = page.locator('.st-board-bulk-reason');
+      await reason.waitFor();
+      assert.deepEqual(await button.evaluate((button) => ({
+        disabled: button.disabled,
+        ariaDisabled: button.getAttribute('aria-disabled'),
+        description: document.getElementById(button.getAttribute('aria-describedby'))?.textContent,
+        opacity: getComputedStyle(button).opacity,
+      })), {
+        disabled: false, ariaDisabled: 'true', description: 'A roadmap keeps one starting step', opacity: '0.45',
+      });
+      const geometry = await page.locator('.st-board-bulk').evaluate((bar) => {
+        const [recolor, remove] = [...bar.querySelectorAll('.st-board-bulk-actions > button')].map((button) => button.getBoundingClientRect());
+        const reason = bar.querySelector('.st-board-bulk-reason');
+        const summary = reason.parentElement.getBoundingClientRect();
+        const done = bar.querySelector('.st-board-bulk-done').getBoundingClientRect();
+        const bounds = bar.getBoundingClientRect();
+        return {
+          height: bounds.height, bottom: bounds.bottom, width: bounds.width,
+          actions: [recolor.width, remove.width, recolor.height, remove.height, remove.left - recolor.right],
+          reason: [getComputedStyle(reason).fontSize, getComputedStyle(reason).lineHeight],
+          noOverlap: summary.right <= done.left && summary.bottom <= recolor.top,
+          noOverflow: bar.scrollWidth === bar.clientWidth && document.documentElement.scrollWidth === innerWidth,
+        };
+      });
+      assert.deepEqual(geometry, {
+        height: 125, bottom: height, width,
+        actions: [(width - 40) / 2, (width - 40) / 2, 44, 44, 8],
+        reason: ['12px', '16px'], noOverlap: true, noOverflow: true,
+      });
+      assert.equal(initialBar.height, geometry.height);
+      assert.deepEqual(await page.locator('.st-board-bulk-heading, .st-board-bulk-done').evaluateAll((elements) => elements.map((element) => {
+        const style = getComputedStyle(element);
+        return [style.fontSize, style.fontWeight];
+      })), [['15px', '800'], ['15px', '800']]);
+      const bounds = await button.boundingBox();
+      await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      const feedback = await reason.evaluate((reason) => {
+        const [animation] = reason.getAnimations();
+        animation.pause();
+        return {
+          duration: animation.effect.getTiming().duration,
+          frames: animation.effect.getKeyframes().map(({ transform, opacity }) => transform ?? opacity),
+        };
+      });
+      assert.deepEqual(feedback, reducedMotion === 'reduce'
+        ? { duration: 150, frames: ['1', '0.6', '1'] }
+        : { duration: 280, frames: ['translateX(0px)', 'translateX(3px)', 'translateX(0px)'] });
+      await page.getByRole('button', { name: 'Recolor', exact: true }).focus();
+      await page.keyboard.press('Tab');
+      assert.equal(await focused(page), 'Delete 2 steps');
+      for (const key of ['Enter', 'Space']) await page.keyboard.press(key);
+      assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_bulk')), [
+        'roadmap_board_bulk {"step":"delete_refused","reason":"last_root"}',
+        'roadmap_board_bulk {"step":"delete_refused","reason":"last_root"}',
+        'roadmap_board_bulk {"step":"delete_refused","reason":"last_root"}',
+      ]);
+      assert.deepEqual(await page.evaluate(() => [window.writes, window.selectionAttempts, window.selectionHeld, window.reports ?? []]), [[], [], [], []]);
+      assert.equal(await page.locator('.st-board-toast').count(), 0);
+      await page.getByRole('button', { name: 'Recolor', exact: true }).click();
+      await settleKinds(page);
+      assert.equal(await page.getByRole('radio').count(), 6);
+      await page.keyboard.press('Escape');
+      await settleKinds(page, false);
+      await touchStep(page, 'knots');
+      const permitted = page.getByRole('button', { name: 'Delete 1 step', exact: true });
+      assert.deepEqual(await permitted.evaluate((button) => [button.getAttribute('aria-disabled'), button.getAttribute('aria-describedby')]), [null, null]);
+      assert.equal(await reason.count(), 0);
+      assert.equal((await page.locator('.st-board-bulk').boundingBox()).height, initialBar.height);
+      await permitted.click();
+      await page.getByRole('tablist').waitFor();
+      await page.clock.runFor(1000);
+      await page.getByRole('button', { name: 'Undo', exact: true }).click();
+      await page.clock.runFor(300);
+      assert.deepEqual(await page.evaluate(() => [window.selectionHeld, window.writes, window.selectionSteps.map(({ id }) => id)]), [[], [], ['wind', 'knots']]);
+      await holdStep(page, 'wind');
+      await touchStep(page, 'knots');
+      await page.getByRole('button', { name: 'Done', exact: true }).click();
+      await page.getByRole('tablist').waitFor();
+      assert.equal(await page.locator('.st-board-bulk').count(), 0);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: a peer removing the unselected root changes Delete to a reason before any write', async () => {
   const page = await openSelectionPage(390, [
     { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
     { id: 'knots', label: 'Practise knots', prerequisites: [], color: 'olive' },
+    { id: 'spare', label: 'Spare root', prerequisites: [], color: 'gold' },
   ], { completed: [] });
   try {
     await holdStep(page, 'wind');
-    await page.getByRole('button', { name: 'Delete 1 step' }).waitFor();
     await touchStep(page, 'knots');
-    await page.locator('.st-board-bulk-delete').waitFor({ state: 'detached' });
-    assert.equal(await page.locator('.st-board-bulk-recolor').count(), 1);
-    await touchStep(page, 'knots');
-    await page.getByRole('button', { name: 'Delete 1 step' }).waitFor();
-    assert.deepEqual(await page.evaluate(() => window.writes), []);
+    const button = page.getByRole('button', { name: 'Delete 2 steps', exact: true });
+    assert.equal(await button.getAttribute('aria-disabled'), null);
+    await page.evaluate(() => window.removeSelectionStep('spare'));
+    await page.locator('.st-board-bulk-reason').waitFor();
+    await button.focus();
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await page.evaluate(() => [window.selectionSteps.map(({ id }) => id), window.selectionHeld, window.selectionAttempts, window.writes]), [['wind', 'knots'], [], [], []]);
+    await page.evaluate(() => window.setSelectionOwner(false));
+    await page.getByRole('tablist').waitFor();
+    assert.deepEqual(await page.evaluate(() => [window.selectionHeld, window.selectionAttempts, window.writes]), [[], [], []]);
+    assert.equal(await page.locator('.st-board-bulk').count(), 0);
   } finally { await page.close(); }
 });
 

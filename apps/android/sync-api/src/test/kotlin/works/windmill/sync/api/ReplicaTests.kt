@@ -22,6 +22,7 @@ class ReplicaTests {
         override fun stored(type: String): List<Record> = emptyList()
         override fun drawn(type: String, field: String, id: RecordID): List<Record> = emptyList()
         override fun stored(type: String, field: String, id: RecordID): List<Record> = emptyList()
+        override fun spentBorn(type: String, id: RecordID): Stamp? = null
         override fun device(key: String): Json? = null
         override fun firstPullComplete() = true
         override fun confirmed(type: String, id: RecordID): Record? = null
@@ -38,11 +39,16 @@ class ReplicaTests {
             val (gesture, value) = body(context)
             return (if (gesture == null) null else outcome) to value
         }
-        override fun undo(gestureId: String) = true
+            override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+            error("act vectors use the real engine")
+        override fun cancelHeld(gestureId: String) = true
+        override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult = error("inverse vectors use the real engine")
+        override fun readInverseResult(requestId: String): InverseResult = error("inverse vectors use the real engine")
+        override fun releaseReversibleAct(actId: String): Boolean = error("inverse vectors use the real engine")
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = body(context)
         override fun mintID(type: String) = context.mintID(type)
         override fun physNow() = context.now
-        override fun dismissNotice(id: String) = Unit
+        override fun dismissNotice(id: String) = false
     }
 
     @Test fun nullableGestureAndGenericBodyValueAreIndependent() {

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Earliest born owns a hue independently of legend order, with UTF-8 tie and missing birth as zero",
+    "input": {
+      "operation": "legend",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [],
+        "edges": [],
+        "kinds": [
+          {"id": "late", "present": true, "born": "20:0:a", "hue": "olive", "label": "late", "description": "", "ord": "a"},
+          {"id": "unknown", "present": true, "born": null, "hue": "olive", "label": "unknown", "description": "", "ord": "b"},
+          {"id": "😀", "present": true, "born": "2:0:a", "hue": "olive", "label": "😀", "description": "", "ord": "c"},
+          {"id": "", "present": true, "born": "2:0:a", "hue": "olive", "label": "", "description": "", "ord": "c"}
+        ],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "ids": ["late", "unknown", "", "😀"],
+      "owners": [{"hue": "olive", "id": "unknown"}],
+      "collisions": [{"hue": "olive", "owner": "unknown", "others": ["late", "", "😀"]}]
+    }
+  },
+  {
+    "name": "Equal actual birth stamps use UTF-8 IDs to choose a hue owner",
+    "input": {
+      "operation": "legend",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [],
+        "edges": [],
+        "kinds": [
+          {"id": "😀", "present": true, "born": "2:0:a", "hue": "olive", "label": "😀", "description": "", "ord": ""},
+          {"id": "", "present": true, "born": "2:0:a", "hue": "olive", "label": "", "description": "", "ord": ""}
+        ],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {"ids": ["", "😀"], "owners": [{"hue": "olive", "id": ""}], "collisions": [{"hue": "olive", "owner": "", "others": ["😀"]}]}
+  }
+]

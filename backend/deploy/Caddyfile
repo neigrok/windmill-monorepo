@@ -68,6 +68,25 @@
 	}
 }
 
+# The site's pause for a planned maintenance (README.md, "Pause the site"): while the host holds
+# ~/windmill/maintenance/on, mounted here read-only, every request on both hosts but an ACME challenge is answered 503,
+# read again on each request, so pausing and lifting need no reload. Import it right after the gate, so a request
+# outside Cloudflare is still refused first.
+(maintenance) {
+	@paused {
+		file {
+			root /srv/windmill-maintenance
+			try_files /on
+		}
+		not path /.well-known/acme-challenge/*
+	}
+	handle @paused {
+		header Retry-After 600
+		header Cache-Control no-store
+		respond "Windmill is down for a planned update and will be back shortly." 503
+	}
+}
+
 # The store doors: every path under /v1/stores/ belongs to the subscription service, on both hosts,
 # and windmill_server never sees one. Only the public listener, 8082, is named; the internal one,
 # 8083, has no route through this file, so no path rule here can expose a backend door
@@ -94,7 +113,7 @@
 
 # Only public AI routes reach port 8084. Browser passes in the WebSocket subprotocol stay intact.
 (ai_doors) {
-	@ai path /v1/calls/* /v1/allowance
+	@ai path /v1/calls/* /v1/pictures/* /v1/allowance
 	handle @ai {
 		reverse_proxy ai:8084 {
 			header_up -Cookie
@@ -109,6 +128,7 @@
 # the backend paths is reverse-proxied to windmill_server on the same host.
 {$DOMAIN_APP} {
 	import cloudflare_only
+	import maintenance
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -218,6 +238,7 @@
 # gone — MCP lives at /mcp now.)
 {$DOMAIN_API} {
 	import cloudflare_only
+	import maintenance
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"

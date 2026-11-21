@@ -57,6 +57,9 @@ package final class Simulator {
     case pull(SimNetwork.Fate)
     case follow, receiveFrame, frameFault
     case release, undo, foreground
+    // §7.3 Undo of an act: a one-segment act opted into Undo, an inverse of the phone's latest such act, and its release.
+    case optedAct(ScopeRef, Gesture, ActUndo)
+    case requestInverse, releaseAct
     case leave(flushing: Bool)
     case relaunch(reboot: Bool)
     // The process dies once `commits` transactions of a pull's or a push's answer have committed, or its first slice.
@@ -117,6 +120,8 @@ package final class Simulator {
     var digestCorrupted = false
     // The active replica's id as the phone's announcements left it (§7.12); nil before the first is seen.
     var announcedActive: String?
+    // The acts the phone opted into Undo, by their gesture ids, in commit order.
+    var acts: [String] = []
 
     // After each transaction its store commits, the phone's entries are read: what each writes, and its unsourced stamps.
     init(name: String, account: String, device: SteppedEngine) {
@@ -443,6 +448,13 @@ package final class Simulator {
     case .release:
       phone.device.releaseDue()
     case .undo: undo(on: phone)
+    case .optedAct(let scope, let gesture, let undo): optedAct(gesture, in: scope, undo: undo, on: phone)
+    case .requestInverse:
+      guard let act = phone.acts.last, let result = try? phone.engine.requestInverse(act) else { return }
+      count("inverse \(result.kindName)")
+    case .releaseAct:
+      guard let act = phone.acts.last else { return }
+      if (try? phone.engine.releaseReversibleAct(act)) == true { count("reversible act released") }
     case .leave(let flushing): await leave(phone, flushing: flushing)
     case .foreground:
       phone.engine.foreground()
@@ -536,7 +548,7 @@ package final class Simulator {
         phone.committed += receipt.localIds
         count("gesture \(planned.label)")
         if !receipt.retired.isEmpty { count("retired") }
-        if receipt.releaseAt != nil, rng.chance(0.2), (try? engine.undo(receipt.gestureId)) == true { count("undo at once") }
+        if receipt.releaseAt != nil, rng.chance(0.2), (try? engine.cancelHeld(receipt.gestureId)) == true { count("undo at once") }
       case .refused(let code, _, let notice):
         count("commit refused \(code)")
         if code == .tooLarge, notice.map(phone.noticeIDs().subtracting(notices).contains) != true {
@@ -672,9 +684,23 @@ package final class Simulator {
     count("digest corrupted")
   }
 
+  // An act of one segment opted into Undo; its entries join the ledger as a commit's do.
+  func optedAct(_ gesture: Gesture, in scope: ScopeRef, undo: ActUndo, on phone: Phone) {
+    do {
+      let act = try phone.engine.commitAct({ _ in (ActRequest(scopes: [scope], undo: undo), ()) }, segment: { _, _, _ in gesture })
+      guard case .committed(let receipt)? = act.outcome else { return }
+      phone.committed += receipt.localIds
+      phone.acts.append(receipt.gestureId)
+      count("opted act")
+    } catch {
+      guard phone.device.killer?.isDead != true else { return }
+      violations.append("\(phone.name): an opted act in \(scope) failed: \(error)")
+    }
+  }
+
   func undo(on phone: Phone) {
     guard let offers = try? phone.engine.currentUndoOffers(), !offers.isEmpty else { return }
-    if (try? phone.engine.undo(rng.pick(offers).id)) == true { count("undo") }
+    if (try? phone.engine.cancelHeld(rng.pick(offers).id)) == true { count("undo") }
   }
 
   // Leaving the app: holds released, then, when `flushing`, the leave flush over whatever the wire does.
@@ -924,7 +950,7 @@ package final class Simulator {
 
   func dismissNotice(on phone: Phone) {
     guard let notices = try? phone.engine.currentNotices("probe"), !notices.isEmpty else { return }
-    try? phone.engine.dismissNotice(rng.pick(notices).id)
+    _ = try? phone.engine.dismissNotice(rng.pick(notices).id)
     count("notice dismissed")
   }
 
@@ -1293,7 +1319,7 @@ package final class Simulator {
         }
       case .digestMismatch(let kind, let seq):
         if !phone.digestCorrupted { found.append("INV-15 \(phone.name): a digest mismatch in a \(kind) scope at \(seq)") }
-      case .pushMalformed, .activeReplicaChanged:
+      case .pushMalformed, .activeReplicaChanged, .inverseSettled:
         break
       }
     }

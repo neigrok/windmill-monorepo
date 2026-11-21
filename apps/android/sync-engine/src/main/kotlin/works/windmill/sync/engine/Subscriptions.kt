@@ -5,8 +5,8 @@ import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.*
 
 internal fun Engine.subscriptionsOf(replica: ReplicaState, products: List<String> = listOf("gym")): Set<ScopeRef> {
-    if (replica.state != "bound") return emptySet()
-    val scopes = products.filter { it in registry.products }.map { ScopeRef.product(it) }.toMutableSet()
+    val bound = replica.state == "bound"
+    val scopes = if (bound) products.filter { it in registry.products }.map { ScopeRef.product(it) }.toMutableSet() else mutableSetOf()
     val governing = registry.governingType
     if (governing != null) {
         val scope = registry.scopeOfType(governing.name, ScopeRef.product(products.firstOrNull() ?: "gym"))
@@ -17,29 +17,46 @@ internal fun Engine.subscriptionsOf(replica: ReplicaState, products: List<String
             ids.forEach { scopes.add(ScopeRef.tree(it)); scopes.add(ScopeRef.overlay(it)) }
         }
     }
+    for (scope in openedScopes) {
+        val tree = scope.kind as? ScopeRef.Kind.Tree
+        if ((!bound && tree == null) || scope.text in replica.known) continue
+        scopes.add(scope)
+        if (bound && tree != null) scopes.add(ScopeRef.overlay(tree.id))
+    }
+    if (bound) replica.entries().flatMap { it.predictions.orEmpty() }.filter { !it.covered }.forEach { scopes.add(it.scope) }
     return scopes.filter { it.text !in replica.known }.toSet()
 }
-fun Engine.subscriptions(products: List<String> = listOf("gym")): Set<ScopeRef> = lock.withLock { ensureOpen(); subscriptionsOf(device.current(), products) + openedScopes.filter { it.text !in device.current().known } }
+fun Engine.subscriptions(products: List<String> = listOf("gym")): Set<ScopeRef> = lock.withLock { ensureOpen(); subscriptionsOf(device.current(), products) }
 fun Engine.subscribe(scope: ScopeRef): String? = write(EngineOperation.subscription) { replica ->
+    if (replica.known[scope.text] == Json.of("gone")) return@write "gone"
     openedScopes = openedScopes + scope
-    selectedScopes = selectedScopes?.plus(scope)
-    if (replica.known[scope.text] == Json.of("gone")) "gone" else { replica.known.remove(scope.text); null }
+    val scopes = if (replica.state == "bound" && scope.kind is ScopeRef.Kind.Tree) setOf(scope, ScopeRef.overlay(scope.tree!!)) else setOf(scope)
+    scopes.filter { replica.known[it.text] == Json.of("not-found") }.forEach { replica.known.remove(it.text) }
+    selectedScopes = selectedScopes?.plus(scopes.filter { it.text !in replica.known && (replica.state == "bound" || it.kind is ScopeRef.Kind.Tree) })
+    null
 }
 fun Engine.unsubscribe(scope: ScopeRef) { write(EngineOperation.subscription) { replica ->
     openedScopes = openedScopes - scope
-    selectedScopes = selectedScopes?.minus(scope)
-    forgetScope(replica, scope); doubts.left(scope)
+    val candidates = if (scope.kind is ScopeRef.Kind.Tree) setOf(scope, ScopeRef.overlay(scope.tree!!)) else setOf(scope)
+    val removed = candidates - subscriptionsOf(replica, registry.products.keys.toList())
+    selectedScopes = selectedScopes?.minus(removed)
+    removed.forEach { forgetScope(replica, it); doubts.left(it) }
 } }
 internal fun Engine.forgetScope(replica: ReplicaState, scope: ScopeRef) {
     changedScopes.add(scope)
     store.forgetScope(replica.id, scope)
     replica.spent.remove(scope.text); replica.cursors.remove(scope.text); replica.staging.remove(scope.text)
-    replica.entries().filter { it.scope == scope && it.state == "acked" }.forEach { replica.move(it, "resolve", ended) }
+    endScopeProjections(replica, scope)
 }
 fun Engine.reconcile(scopes: Set<ScopeRef>) { write(EngineOperation.subscription) { replica ->
     selectedScopes = scopes.toSet()
     replica.cursors.keys.map(::ScopeRef).filter { it !in scopes }.forEach { forgetScope(replica, it); doubts.left(it) }
-    replica.entries().filter { it.state == "acked" && it.scope !in scopes }.forEach { replica.move(it, "resolve", ended) }
+    for (entry in replica.entries()) {
+        if (entry.state != "acked" || entry !in replica.outbox) continue
+        val predictions = entry.predictions
+        if (predictions == null) { if (entry.scope !in scopes) replica.move(entry, "resolve", ended) }
+        else predictions.map { it.scope }.filter { it !in scopes }.forEach { endScopeProjections(replica, it) }
+    }
 } }
 
 class Doubts {

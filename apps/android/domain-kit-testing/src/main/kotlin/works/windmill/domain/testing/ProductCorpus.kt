@@ -1,6 +1,11 @@
 package works.windmill.domain.testing
 
 import works.windmill.domain.kit.*
+import works.windmill.sync.api.ActContext
+import works.windmill.sync.api.CommitContext
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.ScopeReader
 import works.windmill.sync.core.*
 import works.windmill.sync.testing.Vector
 
@@ -16,7 +21,8 @@ val Saved.form: Json get() = Json.objectOf("values" to Json.Obj(values.toList())
 val Placement.form: Json get() = when (this) { Placement.Top -> Json.of("top"); Placement.Bottom -> Json.of("bottom"); is Placement.Below -> Json.objectOf("below" to id.json) }
 val <E : Writable<E>> Draft<E>.form: Json get() = Json.objectOf("id" to id.json, "base" to Json.Obj(base.fields().toList()), "current" to Json.Obj(current.fields().toList()), "isNew" to Json.of(isNew), "placement" to (placement?.form ?: Json.Null))
 fun <T, R> Decision<T, R>.form(scope: ScopeRef, registry: Registry, result: (T) -> Json, refusal: (R) -> Json): Json = when (this) {
-    is Decision.Write -> Json.objectOf("write" to Json.objectOf("gesture" to plan.gesture(scope, registry).form, "result" to result(this.result)))
+    is Decision.Write -> Json.objectOf("write" to Json.objectOf("gesture" to plan.gesture(scope, registry).form, "result" to result(this.result))
+        .with("undo" to plan.undoSegment(0, scope)?.let { segment -> Json.Arr(segment.recipes.map { it.json }) }))
     is Decision.Unchanged -> Json.objectOf("unchanged" to Json.objectOf("result" to result(this.result)))
     is Decision.Refuse -> Json.objectOf("refuse" to refusal(this.refusal))
 }
@@ -47,19 +53,50 @@ class ProductCorpus(val book: RuleBook) {
         return Json.objectOf("decision" to decider.decision(decider.load(read), IDSource(source)).form(decider.scope, book.registry, result, refusal))
     }
     fun <E : Writable<E>, R> save(type: DraftableType<E>, refusals: Refusals<R>, vector: Vector, blank: E,
+        edit: (E) -> E, result: (Saved) -> Json, refusal: (R) -> Json): Json =
+        save(type, refusals, vector, blank, type.boundScope(), edit, result, refusal)
+
+    fun <E : Writable<E>, R> save(type: DraftableType<E>, refusals: Refusals<R>, vector: Vector, blank: E, scope: ScopeRef,
         edit: (E) -> E, result: (Saved) -> Json, refusal: (R) -> Json): Json {
-        val source = scene(vector, type.scope)
-        val read = Reader(source, type.scope, moment(vector.input), book.registry)
+        val source = scene(vector, type.boundScope(scope))
+        val read = Reader(source, scope, moment(vector.input), book.registry)
         val existing = read.repository(type).find(blank.id, works.windmill.sync.api.ViewMode.drawn)
-        val draft = (existing?.let { Draft.opening(it) } ?: Draft.new(blank)).edit(edit)
+        val draft = (existing?.let { Draft.opening(it, scope) } ?: Draft.new(blank, scope = scope)).edit(edit)
         return decision(SaveDraft.fromDraft(draft, type, refusals), vector, result, refusal)
     }
     fun read(vector: Vector, scope: ScopeRef, body: (Reader) -> Json): Json = Json.objectOf("result" to body(Reader(scene(vector, scope), scope, moment(vector.input), book.registry)))
-    private fun scene(vector: Vector, scope: ScopeRef): VectorReader {
+    // An act's case (§9.5): its load through an act reader over each scope's records, one decision, and each segment translated
+    // in its scope: `{write: {segments: [{scope, gesture}], result}}`, `{unchanged: {result}}` or `{refuse}`.
+    fun <L, T, R> act(action: ActAction<L, T, R>, vector: Vector, result: (T) -> Json, refusal: (R) -> Json): Json {
+        val moment = moment(vector.input)
+        val ids = (vector.input["ids"]?.arr()?.map(::RecordID) ?: emptyList()).toMutableList()
+        val context = object : ActContext {
+            override val now = moment.now.ms
+            override val replica = "rp_00000000000000000000000000000001"
+            override val actor = replica
+            override val isAnonymous = false
+            override fun finishLoad() {}
+            override fun <X> inScope(scope: ScopeRef, body: (ScopeReader) -> X): X =
+                body(VectorReader(records(vector, scope), now, pulled = vector.input["firstPullComplete"]?.bool() ?: true, scope = scope, registry = book.registry))
+            override fun mintID(type: String, scope: ScopeRef): RecordID = if (ids.isEmpty()) throw ContractError("no vector id left for $type") else ids.removeAt(0)
+            override fun opaqueID(): String = throw ContractError("an act case mints no opaque id")
+            override fun stage(scope: ScopeRef, segment: (CommitContext) -> Gesture): CommitOutcome.Refused? = throw ContractError("an act case decides one act, and stages nothing")
+            override fun beginPart() = throw ContractError("an act case decides one act, and has no second part")
+        }
+        return Json.objectOf("decision" to when (val decided = action.decision(context, book.registry, moment)) {
+            is ActDecision.Write -> Json.objectOf("write" to Json.objectOf("segments" to Json.Arr(decided.plan.segments.map {
+                Json.objectOf("scope" to it.scope.json, "gesture" to it.plan.gesture(it.scope, book.registry).form) }), "result" to result(decided.result)))
+            is ActDecision.Unchanged -> Json.objectOf("unchanged" to Json.objectOf("result" to result(decided.result)))
+            is ActDecision.Refuse -> Json.objectOf("refuse" to refusal(decided.refusal))
+        })
+    }
+    private fun scene(vector: Vector, scope: ScopeRef): VectorReader = VectorReader(records(vector, scope), moment(vector.input).now.ms,
+        vector.input["ids"]?.arr()?.map(::RecordID) ?: emptyList(), vector.input["firstPullComplete"]?.bool() ?: true, scope, book.registry)
+    // A case's records in one scope: its `records`, or, in a scene of several scopes, `scopes[scope]`, with the scene's device rows.
+    private fun records(vector: Vector, scope: ScopeRef): VectorRecords {
         val input = vector.input
-        val rows = input.member("records")
-        return VectorReader(VectorRecords(rows["drawn"], rows["stored"] ?: rows["drawn"], book.registry, rows["device"]), moment(input).now.ms,
-            input["ids"]?.arr()?.map(::RecordID) ?: emptyList(), input["firstPullComplete"]?.bool() ?: true, scope, book.registry)
+        val rows = input["scopes"]?.let { it[scope.text] ?: Json.objectOf("drawn" to Json.array()) } ?: input.member("records")
+        return VectorRecords(rows["drawn"], rows["stored"] ?: rows["drawn"], book.registry, rows["device"] ?: input["device"])
     }
 }
 

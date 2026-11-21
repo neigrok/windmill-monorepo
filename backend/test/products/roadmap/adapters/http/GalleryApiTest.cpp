@@ -68,7 +68,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<OwnerProgress> ownerProgress = std::make_shared<OwnerProgress>(*progress, *trees, clock);
-  GalleryApi api{trees, ownerProgress, auth, ""};
+  GalleryApi api{trees, ownerProgress, auth, "", nullptr};
 
   UserId signIn(const std::string& sessionSecret, const std::string& address) {
     User user = authRepo.createUser(Email{address}, "sam");

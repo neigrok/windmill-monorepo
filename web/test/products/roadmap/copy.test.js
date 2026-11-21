@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { Opening } from '../../../src/products/roadmap/model/Opening.js';
 import {
+  landingLine,
+  landingNote,
   openTreeAction,
   openTreeLabel,
   treeBand,
@@ -65,7 +67,6 @@ import {
   sortButtonLabel,
   DELETE_CONFIRM,
   COMPOSER,
-  EDIT_STEP,
   PICKER,
   WORKSPACE,
   NOTE_EDITOR,
@@ -85,6 +86,20 @@ import {
   showMore,
   draftLine,
 } from '../../../src/products/roadmap/copy.js';
+
+test('copy — a landing note says each of a step’s lines, and a line no approved words say is null', () => {
+  const follows = (removed, followed) => ({ rule: 'follows', removed, followed });
+  assert.deepEqual([
+    landingNote([{ rule: 'cameBack' }]),
+    landingNote([follows(['Rig the boat'], ['Name the boat parts'])]),
+    landingNote([follows(['Rig the boat', 'Tie a bowline'], ['Name the boat parts', 'Read the wind']), { rule: 'cameBack' }]),
+  ], [
+    'Your edit brought this step back.',
+    'Rig the boat was removed. This now follows Name the boat parts.',
+    'Rig the boat and Tie a bowline were removed. This now follows Name the boat parts and Read the wind. Your edit brought this step back.',
+  ]);
+  assert.deepEqual([landingLine(follows(['Rig the boat'], [])), landingLine(follows([''], ['Name the boat parts']))], [null, null]);
+});
 
 test('copy — the canon strings the demo speaks verbatim', () => {
   assert.equal(DEMO_COPY.coachSentence, 'This step is up next — mark it done.');
@@ -241,7 +256,6 @@ test('copy — the step page and modal', async () => {
     copyLink: 'Copy link',
     openInGraph: 'Open in Graph',
     deleteStep: 'Delete step',
-    editStep: 'Edit step',
     editNote: 'Edit note',
     viewBranch: 'View branch',
     subtasks: 'Subtasks',
@@ -354,7 +368,6 @@ test('copy — the tablet draft context uses lowercase for without a roadmap cou
 });
 
 test('copy — edit and workspace labels match the wave 5 contract', () => {
-  assert.deepEqual(EDIT_STEP, { title: 'Edit step', save: 'Save' });
   assert.deepEqual(WORKSPACE, {
     subtask: 'Subtask',
     subtasks: 'Subtasks',
@@ -388,7 +401,7 @@ test('copy — edit and workspace labels match the wave 5 contract', () => {
 });
 
 test('copy — bulk selection formats full counts', () => {
-  assert.deepEqual(BULK, { region: 'Selection', done: 'Done', recolor: 'Recolor' });
+  assert.deepEqual(BULK, { region: 'Selection', done: 'Done', recolor: 'Recolor', keepRoot: 'A roadmap keeps one starting step' });
   assert.equal(selectingAnnouncement({ count: 1 }), 'Selecting. 1 selected.');
   assert.deepEqual([0, 1, 3, 1200].map((count) => selectedCount({ count })), [
     '0 selected', '1 selected', '3 selected', '1,200 selected',

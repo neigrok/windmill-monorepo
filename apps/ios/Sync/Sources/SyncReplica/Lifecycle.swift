@@ -18,6 +18,9 @@ public struct EngineStart: Sendable, Hashable {
   public let reidentified: Bool
   public let forkGuard: String?
   public let pendingSignIn: String?
+  // The active replica's inverse requests still waiting or travelling, and the device time the oldest was asked at.
+  public let unsettledInverses: Int
+  public let oldestInverseRequestedAt: Int64?
 }
 
 public enum LineageAnswer: String, Sendable, Hashable {
@@ -148,8 +151,10 @@ public struct ReplicaLifecycle: Sendable {
     if !current.utf8.elementsEqual(epoch.utf8) { try changeEpoch(to: epoch, in: &replica, instance: &instance, identities: identities) }
   }
 
-  // Every cursor null and every staging dropped; acked entries of another epoch back to ready; then re-identify.
+  // Every cursor null and every staging dropped; acked entries of another epoch back to ready, their projections
+  // uncovered for replay; then re-identify.
   public func changeEpoch(to epoch: String, in replica: inout LoadedReplica, instance: inout Instance, identities: IdentitySource) throws {
+    replica.bindReferences(to: replica.meta.serverEpoch)
     replica.update { $0.serverEpoch = epoch }
     for (scope, record) in replica.cursors.sorted(by: { $0.key < $1.key }) where record.cursor != nil {
       var reset = record
@@ -159,17 +164,22 @@ public struct ReplicaLifecycle: Sendable {
     for scope in replica.staging.keys.sorted() { replica.apply(.dropStaging(scope)) }
     for entry in replica.outbox where entry.state == .acked && entry.resultEpoch?.utf8.elementsEqual(epoch.utf8) != true {
       if let command = entry.intent.command, entry.writeTargets == nil {
-        let refs = Dependents.references(of: command, registry: registry)
+        let proposed = registry.references(of: command, in: entry.scope, role: .creation)
+        let named = registry.references(of: command, in: entry.scope)
         replica.update(entry: entry.localId) { stored in
-          stored.writeTargets = entry.predict.compactMap { delta in
-            let sources = refs.filter { $0.key.type == delta.key.type }
+          stored.writeTargets = entry.predict.compactMap { (delta: Delta) -> WriteTarget? in
+            let creations: [ResolvedReference] = proposed.filter { $0.key.type == delta.key.type }
+            let sources: [ResolvedReference] = creations.isEmpty ? named.filter { $0.key.type == delta.key.type } : creations
             guard sources.count == 1, entry.predict.filter({ $0.key.type == delta.key.type }).count == 1 else { return nil }
             return WriteTarget(key: delta.key, from: sources[0].key.id, born: delta.lattice.born)
           }
         }
       }
-      try replica.move(entry.localId, .epoch)
+      try replica.move(entry.localId, .epoch) { entry in
+        entry.predictions = entry.predictions?.map { Projection(scope: $0.scope, deltas: $0.deltas) }
+      }
     }
+    replica.invalidateAttempts(outside: epoch)
     try reidentify(&replica, instance: &instance, identities: identities)
   }
 
@@ -181,11 +191,17 @@ public struct ReplicaLifecycle: Sendable {
     return .launching(ReplicaMeta(replica: try identities.replicaID(), state: .anon))
   }
 
-  // §7.3 and §7.11: every held entry released, a fresh actor; a native store whose forkGuard differs from its copy, or
-  // whose copy is missing, re-identifies every replica under a new forkGuard. A store without one mints its first.
+  // §7.3 and §7.11: every held entry released, the journal keeping only what an unsettled request reads, a fresh actor; a
+  // native store whose forkGuard differs from its copy, or whose copy is missing, re-identifies every replica under a new
+  // forkGuard. A store without one mints its first.
   public func start(_ device: inout LoadedDevice, backup: BackupCopy, instance: inout Instance,
                     identities: IdentitySource) throws -> EngineStart {
-    for replica in device.replicas { try device.modify(replica.id) { try hold.releaseAll(in: &$0) } }
+    for replica in device.replicas {
+      try device.modify(replica.id) { replica in
+        try hold.releaseAll(in: &replica)
+        replica.releaseJournal()
+      }
+    }
     instance.actor = try identities.actor()
     var reidentified = false
     if backup != .notKept {
@@ -199,8 +215,10 @@ public struct ReplicaLifecycle: Sendable {
         device.setMeta(meta, active: device.active)
       }
     }
+    let unsettled: [InverseRequest] = device.activeReplica.journal.inverses.filter { $0.state != .settled }
     return EngineStart(
-      actor: instance.actor, reidentified: reidentified, forkGuard: device.meta.forkGuard, pendingSignIn: device.meta.pendingSignIn)
+      actor: instance.actor, reidentified: reidentified, forkGuard: device.meta.forkGuard, pendingSignIn: device.meta.pendingSignIn,
+      unsettledInverses: unsettled.count, oldestInverseRequestedAt: unsettled.map(\.requestedAt).min())
   }
 
   // MARK: Sign-in
@@ -240,6 +258,7 @@ public struct ReplicaLifecycle: Sendable {
       guard let anon = device.anon else { continue }
       try device.modify(anon.id) { anon in
         for entry in entries(of: decision.product, in: anon) { try anon.move(entry.localId, .discard) }
+        anon.discardJournal(of: decision.product, registry: registry)
         anon.apply(.deleteDeviceRows(product: decision.product))
       }
     }
@@ -250,9 +269,11 @@ public struct ReplicaLifecycle: Sendable {
         for entry in anon.outbox { anon.apply(.deleteEntry(entry.localId)) }
       }
       device.modify(target) { target in
+        var nextOrder = target.nextCommitOrder
         for entry in anon.outbox {
           var moved = entry
-          moved.commitOrder = target.nextCommitOrder
+          moved.commitOrder = nextOrder
+          nextOrder += 1
           target.apply(.putEntry(moved))
         }
         for (product, rows) in anon.deviceRows.sorted(by: { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }) {
@@ -261,13 +282,21 @@ public struct ReplicaLifecycle: Sendable {
           }
         }
         for notice in anon.notices { target.apply(.moveNotice(notice)) }
+        target.updateJournal { journal in
+          journal.acts += anon.journal.acts
+          journal.inverses += anon.journal.inverses
+          journal.cancellations += anon.journal.cancellations
+        }
       }
       _ = try Machines.replica.transition(from: .anon, .signIn, to: .deleted)
       device.remove(anon.id)
     }
     device.modify(target) { target in
-      for entry in target.outbox { target.update(entry: entry.localId) { $0.lineage = account } }
-      let stamps = target.outbox.flatMap { [$0.stamp] + $0.drawnDeltas.flatMap(\.lattice.stamps) }
+      target.updateEntries { $0.lineage = account }
+      let stamps: [Stamp] = target.outbox.flatMap { (entry: OutboxEntry) -> [Stamp] in
+        let written: [Stamp] = entry.effects().flatMap(\.deltas).flatMap(\.lattice.stamps)
+        return [entry.stamp] + written
+      }
       target.update { meta in
         meta.observe(stamps)
         meta.authPaused = false
@@ -352,18 +381,21 @@ public struct ReplicaLifecycle: Sendable {
     }
   }
 
-  // An entry's product is its scope's; a tree or overlay scope's is its governing type's.
+  // An entry's product is its origin scope's; a tree or overlay scope's is its governing type's. One choice owns the whole
+  // entry, every projection included.
   func entries(of product: String, in replica: LoadedReplica) -> [OutboxEntry] {
     replica.outbox.filter { registry.product(of: $0.scope)?.utf8.elementsEqual(product.utf8) == true }
   }
 
-  // The count, by type, of the distinct records (scope, type, id) a product's entries create or change.
+  // The count, by type, of the distinct records (scope, type, id) a product's entries create or change, in every scope.
   public func anonCount(of product: String, in replica: LoadedReplica) -> [String: Int] {
     var records: Set<ScopedKey> = []
     var counts: [String: Int] = [:]
     for entry in entries(of: product, in: replica) {
-      for delta in entry.drawnDeltas where records.insert(ScopedKey(scope: entry.scope, key: delta.key)).inserted {
-        counts[delta.key.type, default: 0] += 1
+      for effect in entry.effects() {
+        for delta in effect.deltas where records.insert(ScopedKey(scope: effect.scope, key: delta.key)).inserted {
+          counts[delta.key.type, default: 0] += 1
+        }
       }
     }
     return counts
@@ -476,15 +508,23 @@ public struct ReplicaLifecycle: Sendable {
 
   // MARK: Subscriptions (§7.9)
 
-  // §7.9 in pull order: products, governed trees, opened scopes (signed out: opened trees); none known gone or not found.
+  // §7.9 in pull order: products, governed trees, opened scopes, and the scopes uncovered projections target (signed out:
+  // opened trees); none known gone or not found.
   public func subscriptionSet(of replica: LoadedReplica, _ set: SubscriptionSet) throws -> [ScopeRef] {
     let scopes: [ScopeRef] = switch set {
     case .given(let given): given
     case .own(let subscriptions) where replica.meta.state != .bound:
       subscriptions.opened.filter { if case .tree = $0.kind { true } else { false } }
     case .own(let subscriptions):
-      subscriptions.products.map(ScopeRef.product) + (try governedTrees(of: replica, carrying: subscriptions.products))
-        + subscriptions.opened
+      Array([
+        subscriptions.products.map(ScopeRef.product),
+        try governedTrees(of: replica, carrying: subscriptions.products),
+        subscriptions.opened.flatMap { (scope: ScopeRef) -> [ScopeRef] in
+          if case .tree(let id) = scope.kind, replica.known[scope] == nil { return [scope, .overlay(id)] }
+          return [scope]
+        },
+        replica.projectionTargets,
+      ].joined())
     }
     var seen: Set<ScopeRef> = []
     return scopes.filter { replica.known[$0] == nil && seen.insert($0).inserted }
@@ -509,30 +549,30 @@ public struct ReplicaLifecycle: Sendable {
     return alive.sorted().compactMap(\.string).flatMap { [ScopeRef.tree($0), .overlay($0)] }
   }
 
-  // A scope the replica knows not found is known no more, so its first pull boots it; one it knows gone stays gone, since
-  // a scope's death is final (INV-13).
+  // Reopening a bound tree clears its own overlay’s not-found too; a gone tree clears neither (INV-13).
   public func subscribe(_ replica: inout LoadedReplica, to scope: ScopeRef) -> SubscribeOutcome {
-    switch replica.known[scope] {
-    case .gone?: return .gone
-    case .notFound?:
-      replica.apply(.deleteKnown(scope))
-      return .subscribed
-    case nil: return .subscribed
+    if replica.known[scope] == .gone { return .gone }
+    var scopes = [scope]
+    if replica.meta.state == .bound, case .tree(let id) = scope.kind { scopes.append(.overlay(id)) }
+    for opened in scopes where replica.known[opened] == .notFound {
+      replica.apply(.deleteKnown(opened))
     }
+    return .subscribed
   }
 
-  // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not. A scope the
-  // replica knows gone or not found is outside it: it was unsubscribed when its page came (§7.5), and no pull brings its
-  // rows until a subscribe clears a not-found. Answers the scopes of the set.
+  // A scope outside `subscribed` is forgotten, and every acked effect outside it ends, pulled or not: a legacy entry
+  // resolves, an opted one's projection is covered. A scope the replica knows gone or not found is outside it: it was
+  // unsubscribed when its page came (§7.5), and no pull brings its rows until a subscribe clears a not-found. Answers the
+  // scopes of the set.
   @discardableResult
   public func reconcile(_ replica: inout LoadedReplica, subscribed: Set<ScopeRef>) throws -> Set<ScopeRef> {
     let followed = subscribed.filter { replica.known[$0] == nil }
     for scope in replica.cursors.keys.sorted() where !followed.contains(scope) {
       replica.apply(.forgetScope(scope))
-      for entry in replica.entries(in: scope) where entry.state == .acked { try replica.move(entry.localId, .resolve) }
+      try replica.endProjections(in: scope)
     }
-    for entry in replica.outbox where entry.state == .acked && !followed.contains(entry.scope) {
-      try replica.move(entry.localId, .resolve)
+    for entry in replica.outbox where entry.state == .acked {
+      for scope in entry.scopes where !followed.contains(scope) { try replica.endProjections(in: scope) }
     }
     return followed
   }

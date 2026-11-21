@@ -78,7 +78,7 @@ struct KillEveryStepTests {
 enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
   case holdUndoRelease, leaveFlush, refusalFold, joiningWriteMap, clockSkew, epochChange, digestMismatch, signInAdd
   case signInDiscard, signInCancel, signOutKeep, signOutDiscard, dormantDiscard, forkGuard, replicaForked, localRefusals, authPause
-  case liveFrame, subscriptions, launch, settling
+  case liveFrame, subscriptions, launch, settling, undoAct
 
   typealias Step = (action: Simulator.Action, phone: Int)
 
@@ -203,6 +203,12 @@ enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
     case .settling:
       return [(Self.card("card0001", "One"), Self.phone), (Self.card("card0002", "Two"), Self.phone), (Self.send, Self.phone),
               (.foreground, Self.phone), (Self.pull, Self.phone)]
+    case .undoAct:
+      let title = Target(RecordAddress(scope: Self.probe, key: RecordKey("card", "card000b")), .field("title"))
+      let undo = ActUndo(segments: [.init(index: 0, recipes: [.fields(restoreCommand: "probe.restore", targets: [RestoreTarget(target: title)])])])
+      return [(.optedAct(Self.probe, Gesture(changes: [.update("card", "card000b", ["title": "Mine"])]), undo), Self.phone),
+              (Self.send, Self.phone), (Self.pull, Self.phone), (.requestInverse, Self.phone), (Self.send, Self.phone),
+              (Self.pull, Self.phone), (.releaseAct, Self.phone)]
     }
   }
 }

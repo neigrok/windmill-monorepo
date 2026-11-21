@@ -1,12 +1,46 @@
 #include "platform/application/sync/SyncCatalog.h"
 
+#include "platform/domain/sync/Restore.h"
+
 #include <algorithm>
 #include <functional>
 #include <set>
 
 namespace wm::sync {
 
-SyncCatalog::SyncCatalog(const Registry& registry) : registry_(registry), opening_(openingOf(registry)) {}
+namespace {
+class Capture final : public SyncCommand {
+public:
+  bool isReplay(CommandCtx&) override { return false; }
+  CommandOutcome run(CommandCtx&) override { return {}; }
+};
+
+// §6.4 restore: each operation holds or skips on its own condition, and those that hold write back their
+// earlier values as the command's own deltas, under the stamp step 9 mints.
+class Restore final : public SyncCommand {
+public:
+  bool isReplay(CommandCtx&) override { return false; }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const RestoreReader read{
+        .stored = [&](const std::string& type, const RecordId& id) { return ctx.read.lock(type, id).stored; },
+        .absent = [&](const std::string& type, const RecordId& id) { return ctx.read.lock(type, id).state.kind == IdState::Kind::none; },
+    };
+    RestoreOutcome restored = evaluateRestore(ctx.registry, read, ctx.args, ctx.epoch);
+    Json::Value detail(Json::objectValue);
+    detail["inverse"]["outcomes"] = std::move(restored.outcomes);
+    return CommandOutcome{.deltas = std::move(restored.deltas), .detail = std::move(detail)};
+  }
+};
+}
+
+SyncCatalog::SyncCatalog(const Registry& registry)
+    : registry_(registry), opening_(openingOf(registry)), capture_(std::make_unique<Capture>()), restore_(std::make_unique<Restore>()) {
+  for (const CommandDef& command : registry.commands()) {
+    if (command.engine == EngineCommand::capture) commands_.emplace(command.name, capture_.get());
+    if (command.engine == EngineCommand::restore) commands_.emplace(command.name, restore_.get());
+  }
+}
 
 void SyncCatalog::bindType(TypeStore& store, TypeRules* rules) {
   if (sealed_) throw CatalogError("a sync type was bound after the catalog was sealed");
@@ -19,6 +53,12 @@ void SyncCatalog::bindCommand(const std::string& name, SyncCommand& command) {
   if (sealed_) throw CatalogError("a sync command was bound after the catalog was sealed");
   if (!registry_.command(name)) throw CatalogError("the registry declares no command " + name);
   if (!commands_.emplace(name, &command).second) throw CatalogError("the command " + name + " is bound twice");
+}
+
+void SyncCatalog::withhold(const std::string& product) {
+  if (sealed_) throw CatalogError("a product was withheld after the catalog was sealed");
+  if (!registry_.products().contains(product)) throw CatalogError("the registry declares no product " + product);
+  withheld_.insert(product);
 }
 
 void SyncCatalog::seal() {
@@ -86,6 +126,16 @@ std::string SyncCatalog::observationProduct(const Json::Value& intent, const Use
   return scope ? observationProduct(scope->registryScope()) : "platform";
 }
 
+bool SyncCatalog::serves(const RegistryScope& scope) const {
+  if (scope.kind == ScopeKind::product) return serves(scope.product);
+  const TypeDef* governing = registry_.governingType();
+  return !governing || serves(governing->scope.product);
+}
+
+bool SyncCatalog::serves(const std::string& product) const {
+  return !withheld_.contains(product);
+}
+
 std::string SyncCatalog::observationOutcome(const Json::Value& result) const {
   if (!result.isObject() || !result["s"].isString()) return "failed";
   if (result["s"].asString() == "ok") return "ok";
@@ -100,6 +150,13 @@ std::string SyncCatalog::observationOutcome(const Json::Value& result) const {
 
 std::timed_mutex& SyncCatalog::scopeMutex(const ScopeKey& scope) const {
   return scopeMutexes_[std::hash<std::string>{}(scope.text()) % scopeMutexes_.size()];
+}
+
+std::timed_mutex& SyncCatalog::ownerMutex(const UserId& owner) const {
+  std::lock_guard lock(ownerMutexesLock_);
+  auto& gate = ownerMutexes_[owner.str()];
+  if (!gate) gate = std::make_unique<std::timed_mutex>();
+  return *gate;
 }
 
 std::vector<const TypeDef*> SyncCatalog::typesIn(const RegistryScope& scope) const {

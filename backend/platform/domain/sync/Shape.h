@@ -26,4 +26,7 @@ struct Shaped {
 // Refusal: invalid, then clock-skew.
 Shaped shapeIntent(const Registry& registry, const Json::Value& wire, const Sender& sender, Ms serverNow, Ms maxSkewMs);
 
+// Internal effects obey the target type's shape and values; commands may also replace text and set serials.
+Json::Value effectWire(const Registry&, const ScopeKey&, const Delta&, bool command);
+
 }

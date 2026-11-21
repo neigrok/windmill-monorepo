@@ -15,19 +15,20 @@ extension Registry {
       switch key {
       case .ref(let target):
         guard let target = self.type(target) else { return false }
-        return isID(id, of: target) && (type.idPattern.map { Registry.matches(id, $0) } ?? true)
+        return isID(id, of: target)
       case .tuple(let parts):
         guard case .array(let items) = id, items.count == parts.count else { return false }
         return zip(items, parts).allSatisfy { item, part in self.type(part.ref).map { isID(item, of: $0) } ?? false }
       }
     }
-    guard let pattern = type.idPattern, Registry.matches(id, pattern) else { return false }
+    guard type.isScalarID(id) else { return false }
     guard type.identity == .singleton, let singleton = type.singletonId else { return true }
     return id == .string(singleton)
   }
 
-  // A field's value: its kind's (a ranked field's rank, a time field's epoch ms), its domain's, its ref's and its bounds'.
-  public func admits(_ value: JSON, for field: FieldDef) -> Bool {
+  // A field of `type`'s value: its kind's (a ranked field's rank, a time field's epoch ms), its domain's, its ref's, its
+  // bounds' and every typed leaf's (E-8).
+  public func admits(_ value: JSON, for field: FieldDef, of type: TypeDef) -> Bool {
     switch field.kind {
     case .ranked(let rank): guard rank.of(value) != nil else { return false }
     case .time: guard Registry.isEpochMs(value) else { return false }
@@ -35,8 +36,23 @@ extension Registry {
     }
     if let domain = field.domain, !domain.admits(value) { return false }
     if value.isNull { return field.domain?.nullable ?? (field.ref == nil) }
-    if let target = field.ref, !(type(target).map { isID(value, of: $0) } ?? false) { return false }
-    return field.bounds?.admits(value) ?? true
+    if let target = field.ref, !(self.type(target).map { isID(value, of: $0) } ?? false) { return false }
+    guard field.bounds?.admits(value) ?? true else { return false }
+    return typedLeafFault(of: value, for: field, of: type) == nil
+  }
+
+  // A command's arguments: every name declared, each required one present, each present one of its argument, and every
+  // typed leaf (E-8) holding.
+  public func admits(arguments: JSON.Object, of command: CommandDef) -> Bool {
+    guard arguments.keys.allSatisfy({ key in command.args.contains { $0.name.utf8.elementsEqual(key.utf8) } }) else { return false }
+    for argument in command.args {
+      guard let value = arguments[argument.name] else {
+        if argument.optional { continue }
+        return false
+      }
+      guard admits(value, for: argument) else { return false }
+    }
+    return typedLeafFault(of: .object(arguments), for: command) == nil
   }
 
   public func admits(_ value: JSON, for argument: ArgumentDef) -> Bool {
@@ -60,13 +76,21 @@ extension Registry {
     return Command(name: command.name, args: .object(JSON.Object(uniqueKeysWithValues: rounded)))
   }
 
-  static func matches(_ id: JSON, _ pattern: Pattern) -> Bool {
-    guard case .string(let text) = id else { return false }
-    return pattern.matches(text)
-  }
-
   static func isEpochMs(_ value: JSON) -> Bool {
     (try? value.asInteger(atLeast: 0)) != nil
+  }
+}
+
+extension TypeDef {
+  public var idMaxChars: Int? {
+    guard case .string(_, _, let bounds)? = idDomain?.shape else { return nil }
+    return bounds?.max
+  }
+
+  public func isScalarID(_ id: JSON) -> Bool {
+    guard case .string(let text) = id else { return false }
+    guard let idDomain else { return idPattern?.matches(text) ?? false }
+    return !text.unicodeScalars.contains("\0") && idDomain.admits(id)
   }
 }
 

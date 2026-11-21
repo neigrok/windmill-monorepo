@@ -74,7 +74,7 @@ class ServerState(json: Json = Json.objectOf("epoch" to Json.of("ep-1"), "clock"
 val Json.recordKey: RecordKey get() = RecordKey(member("t").str(), RecordID(member("id")))
 val Row.thin get() = Row(key, Lattice(lattice.life, lattice.born), seq = seq)
 val Row.pageForm get() = if (isAlive) this else thin
-val Row.content get() = copy(seq = 0, rc = null, ru = null)
+val Row.content get() = copy(texts = texts.mapValues { it.value.copy(rev = 0) }, seq = 0, rc = null, ru = null)
 fun governor(scope: ScopeKey, key: RecordKey) = "${scope.text}#${key.type}#${key.id}"
 
 data class ScopeKey(val text: String) : Comparable<ScopeKey> {
@@ -112,10 +112,16 @@ class Refusal(val code: String, val detail: Json? = null) : Exception(code)
 class AdmissionFault(cause: Throwable? = null) : Exception("admission-fault", cause)
 data class Admitted(val result: Json, val events: List<LiveEvent> = emptyList())
 fun refused(code: String, detail: Json? = null): Json = Json.objectOf("s" to Json.of("refused"), "code" to Json.of(code)).with("detail" to detail)
+// Constants a call may shrink, as a corpus vector's `limits` do; a name the model server cannot configure fails the call.
 class ServerLimits(json: Json? = null) {
+    init { json?.expectKeys(emptyList(), listOf("MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "RECEIPT_MAX_BYTES", "SCOPED_RESPONSE_MAX_BYTES",
+        "EFFECT_MAX_BYTES", "PULL_PAGE_BYTES", "PULL_MAX_BYTES")) }
     val maxRecordBytes = json?.get("MAX_RECORD_BYTES")?.long(1)?.toInt() ?: Constants.MAX_RECORD_BYTES
     val pushMaxIntents = json?.get("PUSH_MAX_INTENTS")?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS
     val pushMaxBytes = json?.get("PUSH_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES
+    val receiptMaxBytes = (json?.get("RECEIPT_MAX_BYTES")?.long(1) ?: Constants.RECEIPT_MAX_BYTES.toLong()).also { require(it <= Constants.RECEIPT_MAX_BYTES) }.toInt()
+    val scopedResponseMaxBytes = (json?.get("SCOPED_RESPONSE_MAX_BYTES")?.long(1) ?: Constants.SCOPED_RESPONSE_MAX_BYTES.toLong()).also { require(it <= Constants.SCOPED_RESPONSE_MAX_BYTES) }.toInt()
+    val effectMaxBytes = (json?.get("EFFECT_MAX_BYTES")?.long(1) ?: Constants.EFFECT_MAX_BYTES.toLong()).also { require(it <= Constants.EFFECT_MAX_BYTES) }.toInt()
     val pullPageBytes = json?.get("PULL_PAGE_BYTES")?.long(1)?.toInt() ?: Constants.PULL_PAGE_BYTES
     val pullMaxBytes = json?.get("PULL_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PULL_MAX_BYTES
     val pullMaxScopes = Constants.PULL_MAX_SCOPES

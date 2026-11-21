@@ -3,6 +3,108 @@ import SyncCore
 import SyncReplica
 import SyncStore
 
+final class TransactionActContext: ActContext {
+  let tx: StoreTransaction
+  let core: EngineCore
+  let instance: Instance
+  let staging: ActStaging
+  let meta: ReplicaMeta
+  var minted: [ScopeRef: TransactionReader] = [:]
+  var borrowed: Set<ScopeRef> = []
+  var loans: [TransactionReader] = []
+  var newMints: Set<ScopeRef> = []
+  var failure: (any Error)?
+  var isOpen = true
+  var loading = true
+  var now: Int64 { meta.physNow(deviceNow: instance.deviceNow) }
+  var replica: String { meta.replica }
+  var actor: String { instance.actor.text }
+  var isAnonymous: Bool { meta.state == .anon }
+
+  init(_ tx: StoreTransaction, core: EngineCore, instance: Instance, staging: ActStaging) throws {
+    self.tx = tx; self.core = core; self.instance = instance; self.staging = staging
+    let active = try tx.activeReplica()
+    guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
+    self.meta = meta
+  }
+
+  func finishLoad() throws {
+    guard isOpen else { throw TransactionReader.ended }
+    if let failure { throw failure }
+    for reader in loans { try reader.finish() }
+    loading = false
+  }
+
+  func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
+    guard isOpen, loading else { failure = failure ?? TransactionReader.ended; throw TransactionReader.ended }
+    let reader: TransactionReader
+    do { reader = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: actor) }
+    catch { failure = failure ?? error; throw error }
+    borrowed.insert(scope)
+    loans.append(reader)
+    defer { reader.end() }
+    do {
+      let value = try body(reader)
+      try reader.finish()
+      return value
+    } catch {
+      failure = failure ?? reader.failure
+      throw error
+    }
+  }
+
+  func mintID(_ type: String, in scope: ScopeRef) throws -> RecordID {
+    try finishLoad()
+    do {
+      if !borrowed.contains(scope) {
+        guard let governing = core.registry.governingRecord(of: scope), !(try tx.holdsScope(scope, in: replica)) else {
+          let error = CommitFailure.malformed("load must borrow an existing scope before minting there")
+          failure = failure ?? error
+          throw error
+        }
+        let reader = try TransactionReader(tx, core: core, scope: governing.scope, deviceNow: instance.deviceNow, actor: actor)
+        defer { reader.end() }
+        guard try reader.drawn(governing.key.type, governing.key.id) == nil else {
+          let error = CommitFailure.malformed("load must borrow an existing scope before minting there")
+          failure = failure ?? error
+          throw error
+        }
+        newMints.insert(scope)
+      }
+      if minted[scope] == nil {
+        minted[scope] = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: actor)
+      }
+      return try minted[scope]!.mintID(type)
+    } catch { failure = failure ?? error; throw error }
+  }
+
+  func opaqueID() throws -> String {
+    try finishLoad()
+    return try core.identities.replicaID()
+  }
+
+  // A part's segment, decided over the act's transaction through every segment staged before it, staged there in turn.
+  func stage(_ scope: ScopeRef, _ segment: (any CommitContext) throws -> Gesture) throws -> StagedRefusal? {
+    try finishLoad()
+    guard core.registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("an act stages a scope of its registry") }
+    let reader = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: actor)
+    defer { reader.end() }
+    let gesture: Gesture
+    do { gesture = try segment(reader) }
+    catch { failure = failure ?? reader.failure; throw error }
+    try reader.finish()
+    return try staging.stage(gesture, in: scope)
+  }
+
+  func beginPart() throws {
+    try finishLoad()
+    loading = true
+  }
+
+  func finish() throws { try finishLoad(); for reader in minted.values { try reader.finish() } }
+  func end() { isOpen = false; for reader in minted.values { reader.end() } }
+}
+
 // What a list read and a `RecordsView` list (§7.6, ER-12): the visible records of one type, drawn or stored, every one or
 // those whose top-level ref field names an id, in id-byte order.
 struct Listing: Hashable, Sendable {
@@ -110,12 +212,28 @@ final class TransactionReader: CommitContext {
     try reading { try records(Listing(type, .stored, where: Listing.Narrowing(field: field, id: id), in: scope, registry: registry)) }
   }
 
+  func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? {
+    try reading {
+      try checkLives(type)
+      let key = RecordKey(type, id)
+      return try load(RowSelection(keys: [key])).spentIDs(scope)[key]?.born
+    }
+  }
+
   // Found by the key's bytes, as the store compares text.
   func device(_ key: String) throws -> JSON? {
     try reading {
       guard isOpen else { throw TransactionReader.ended }
       guard let product = registry.product(of: scope) else { return nil }
       return try tx.deviceRow(meta.replica, product: product, key: key)
+    }
+  }
+
+  func freshness() throws -> SyncFreshness {
+    try reading {
+      guard isOpen else { throw TransactionReader.ended }
+      guard try firstPullComplete() else { return SyncFreshness() }
+      return core.freshness(scope, meta: meta)
     }
   }
 
@@ -159,7 +277,7 @@ final class TransactionReader: CommitContext {
     try reading {
       guard isOpen else { throw TransactionReader.ended }
       guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope])) else { throw StoreError.noReplica(meta.replica) }
-      return replica.entries(in: scope).compactMap { entry in
+      return replica.entries(in: scope).filter { $0.scope == scope }.compactMap { entry in
         entry.intent.command.map { QueuedCommand(gestureId: entry.gestureId, command: $0,
           canSupersede: meta.state == .anon && entry.isQueued && entry.n == nil, isAdmitted: entry.state == .acked) }
       }
@@ -201,9 +319,12 @@ final class TransactionReader: CommitContext {
   func records(_ keys: Set<RecordKey>, _ mode: ViewMode) throws -> [RecordKey: Record] {
     let replica = try load(RowSelection(keys: keys))
     let view = try ScopeView(replica, scope, mode, registry: registry)
+    let pending = pendingMetadata(in: replica, mode: mode)
     var records: [RecordKey: Record] = [:]
     for key in keys {
-      if let record = view.record(key) { records[key] = shaped(record, in: view, of: replica) }
+      if let record = view.record(key) {
+        records[key] = shaped(record, in: view, confirmed: replica.rows(scope).row(key), pending: pending[key, default: PendingMetadata()])
+      }
     }
     return records
   }
@@ -216,16 +337,18 @@ final class TransactionReader: CommitContext {
     guard let narrowing = listing.narrowing else {
       let replica = try load(RowSelection(types: [listing.type]))
       let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+      let pending = pendingMetadata(in: replica, mode: listing.mode)
       return view.records(ofType: listing.type).filter { listing.holds($0, in: view) }
-        .map { shaped($0, in: view, of: replica) }
+        .map { shaped($0, in: view, confirmed: replica.rows(scope).row($0.key), pending: pending[$0.key, default: PendingMetadata()]) }
     }
     let indexed = try tx.referencing(meta.replica, in: scope, type: listing.type, field: narrowing.field, target: narrowing.id)
     let pending = try tx.touched(meta.replica, in: scope, type: listing.type, withHeld: listing.mode == .drawn)
     let candidates = Set(indexed).union(pending)
     let replica = try load(RowSelection(keys: candidates))
     let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+    let metadata = pendingMetadata(in: replica, mode: listing.mode)
     return candidates.sorted().compactMap { view.record($0) }.filter { listing.holds($0, in: view) }
-      .map { shaped($0, in: view, of: replica) }
+      .map { shaped($0, in: view, confirmed: replica.rows(scope).row($0.key), pending: metadata[$0.key, default: PendingMetadata()]) }
   }
 
   // The records of `keys` a list holds, each folded again, as a view refreshes them (design §4.5); a key the list does
@@ -233,9 +356,12 @@ final class TransactionReader: CommitContext {
   func records(_ keys: Set<RecordKey>, in listing: Listing) throws -> [RecordKey: Record] {
     let replica = try load(RowSelection(keys: keys))
     let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+    let pending = pendingMetadata(in: replica, mode: listing.mode)
     var held: [RecordKey: Record] = [:]
     for key in keys {
-      if let record = view.record(key), listing.holds(record, in: view) { held[key] = shaped(record, in: view, of: replica) }
+      if let record = view.record(key), listing.holds(record, in: view) {
+        held[key] = shaped(record, in: view, confirmed: replica.rows(scope).row(key), pending: pending[key, default: PendingMetadata()])
+      }
     }
     return held
   }
@@ -254,22 +380,41 @@ final class TransactionReader: CommitContext {
     guard registry.lives(type, in: scope) else { throw CommitFailure.malformed("\(type) is no type of \(scope)") }
   }
 
-  // A folded record as products read it: its texts marked pending where an entry of the view writes them, its server
-  // times from the confirmed row, and whether the view's entries or a held entry touch it.
-  func shaped(_ record: ViewRecord, in view: ScopeView, of replica: LoadedReplica) -> Record {
-    let touching = replica.entriesTouchingReads.filter { $0.scope == scope && $0.touches(record.key) }
-    let folded = touching.filter { $0.state != .held || view.mode == .drawn }
-    let confirmed = replica.rows(scope).row(record.key)
-    let pendingTexts = Set(folded.flatMap { $0.drawnDeltas.filter { $0.key == record.key }.flatMap(\.texts.keys) })
+  struct PendingMetadata {
+    var isPending = false
+    var isHeld = false
+    var texts: Set<String> = []
+  }
+
+  // Each read batch indexes its pending metadata once, including duplicate delta and prediction touches, an opted entry's
+  // only while its projection into the scope is uncovered.
+  func pendingMetadata(in replica: LoadedReplica, mode: ViewMode) -> [RecordKey: PendingMetadata] {
+    var records: [RecordKey: PendingMetadata] = [:]
+    for entry in replica.entriesTouchingReads {
+      let folded = entry.state != .held || mode == .drawn
+      for delta in entry.deltas(in: scope, active: true) {
+        var pending = records[delta.key, default: PendingMetadata()]
+        pending.isHeld = pending.isHeld || entry.state == .held
+        if folded {
+          pending.isPending = true
+          pending.texts.formUnion(delta.texts.keys)
+        }
+        records[delta.key] = pending
+      }
+    }
+    return records
+  }
+
+  // Shaping receives only this record's metadata, so it cannot rescan the read batch's outbox.
+  func shaped(_ record: ViewRecord, in view: ScopeView, confirmed: Row?, pending: PendingMetadata) -> Record {
     var texts: [String: TextValue] = [:]
     for (name, text) in record.texts {
-      let pending = pendingTexts.contains(name)
-      texts[name] = TextValue(text: text, merged: !pending && confirmed?.texts[name]?.merged == true, pending: pending)
+      let hasPendingText = pending.texts.contains(name)
+      texts[name] = TextValue(text: text, merged: !hasPendingText && confirmed?.texts[name]?.merged == true, pending: hasPendingText)
     }
     return Record(
       type: record.key.type, id: record.key.id, life: record.lattice.life, born: record.lattice.born,
       values: record.lattice.fields.mapValues(\.value), texts: texts, serials: record.serials, rc: confirmed?.rc,
-      ru: confirmed?.ru, isVisible: view.isVisible(record), isPending: !folded.isEmpty,
-      isHeld: touching.contains { $0.state == .held })
+      ru: confirmed?.ru, isVisible: view.isVisible(record), isPending: pending.isPending, isHeld: pending.isHeld)
   }
 }

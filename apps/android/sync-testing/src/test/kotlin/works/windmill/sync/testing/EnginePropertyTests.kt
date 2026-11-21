@@ -10,7 +10,6 @@ import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.Command
 import works.windmill.sync.modelserver.ProbeServerRules
-import works.windmill.sync.modelserver.with
 
 // These are real-engine contracts, never a client algorithm implemented in test support.
 // Every seed must execute the production sender, puller and clock-skew recovery.
@@ -51,12 +50,12 @@ class EnginePropertyTests(private val seed: Long) {
             device.engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(id), mapOf("title" to Json.of("future"))))))
             device.engine.commit(scope, Gesture(listOf(Change.put("day", day, true, mapOf("score" to Json.of(1))))))
             val held = device.engine.commit(scope, Gesture(listOf(Change.put("day", day, false)), hold = true)) as CommitOutcome.Committed
-            if (random.nextBoolean()) device.engine.undo(held.receipt.gestureId)
+            if (random.nextBoolean()) device.engine.cancelHeld(held.receipt.gestureId)
             device.engine.commit(scope, Gesture(listOf(Change.put("day", day, true, mapOf("score" to Json.of(2)))), retire = listOf(RecordRef("day", day))))
             val orphan = RecordID("orphan01")
             val source = device.engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(orphan), mapOf("title" to Json.of("held source")))), hold = true)) as CommitOutcome.Committed
             device.engine.commit(scope, Gesture(listOf(Change.update("card", orphan, mapOf("title" to Json.of("dependent"))))))
-            assertTrue(device.engine.undo(source.receipt.gestureId))
+            assertTrue(device.engine.cancelHeld(source.receipt.gestureId))
             device.engine.commit(scope, Gesture(emptyList(), command = Command("probe.start", Json.objectOf("id" to Json.of("run00001"), "startedAt" to Json.of(device.clock.now()), "join" to Json.of(true))),
                 predict = listOf(Change.create("run", NewID.Given(RecordID("run00001")), mapOf("startedAt" to Json.of(device.clock.now()))))))
             device.engine.commit(scope, Gesture(listOf(Change.update("card", id, mapOf("title" to Json.of("later"))))))

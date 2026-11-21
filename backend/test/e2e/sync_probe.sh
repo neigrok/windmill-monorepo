@@ -55,7 +55,7 @@ card(){ # n id title
 }
 
 # ── a clean engine and a session ───────────────────────────────────────────────────────────────
-for table in probe_marks_revisions probe_start_receipts probe_copy_receipts probe_marks probe_links probe_tags probe_metas probe_facts probe_days \
+for table in probe_marks_revisions probe_start_receipts probe_copy_receipts probe_branch_receipts probe_marks probe_links probe_tags probe_metas probe_facts probe_days \
              probe_laps probe_runs probe_cards probe_boards sync_spent sync_requests sync_replicas sync_scopes; do
   psql "$DB" -q -c "delete from $table"
 done
@@ -73,7 +73,9 @@ curl -s -o /dev/null -X POST "$BASE/v1/auth/logout" -H "Cookie: wm_session=$REVO
 
 echo "hello"
 curl -s -H 'Sync-Schema: 2' "$BASE/v1/sync/hello" > "$BODY"
-check "$(field "['schema']" < "$BODY") $(field "['minSchema']" < "$BODY")" "2 2" "hello names the registry's schema and minSchema"
+REGISTRY="$(cd "$(dirname "$0")/../../.." && pwd)/packages/api-contract/sync/probe.registry.json"
+check "$(field "['schema']" < "$BODY") $(field "['minSchema']" < "$BODY")" "$(python3 -c "import json,sys;r=json.load(open(sys.argv[1]));print(r['version'], r['minVersion'])" "$REGISTRY")" \
+  "hello names the registry's schema and minSchema"
 check "$(field "['as']" < "$BODY")" "null" "a hello with no credential is served as anonymous"
 check "$(field ".get('holdsRecords')" < "$BODY")" "null" "and carries no holdsRecords"
 check "$(field ".get('holdings')" < "$BODY")" "null" "nor holdings"

@@ -13,7 +13,7 @@ on:
         default: https://windmill.works
         required: true
       roadmap_id:
-        # The default is the roadmap the public gallery lists. Any public roadmap with a step will do.
+        # The default is the public demo. Any public roadmap with a step will do.
         description: Public roadmap id
         default: t_9e407a96b5330ebe
         required: true
@@ -23,7 +23,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -42,7 +42,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Install Chromium
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
+
+      - name: Install the browsers
         run: node scripts/install-sync-browser.mjs
 
       - name: Walk the site

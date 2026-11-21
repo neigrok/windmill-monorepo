@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { listTrees } from './persistence/TreeRegistry.js';
-import { resumeOf, resumeSummary } from './resume.js';
+import React, { useState } from 'react';
+import { useAuth } from '../../shell/auth/AuthProvider.jsx';
+import { resumeOf, resumeSummary, useYourRoadmaps } from './resume.js';
 import { t } from './i18n/app/index.js';
 
 const KIND_DOT = {
@@ -12,7 +12,8 @@ const KIND_DOT = {
   plum: 'var(--kind-plum)',
 };
 
-// Reads only the cache keyed by the signed-in email; a ghost or unknown tab reads nothing.
+// The landing's cache of the server's list, keyed by the signed-in email, stands until the person's roadmaps are read; a
+// ghost or unknown tab reads nothing.
 function cachedTrees() {
   try {
     const hint = JSON.parse(localStorage.getItem('windmill:auth-hint') || 'null');
@@ -23,13 +24,9 @@ function cachedTrees() {
 }
 
 export function HomeCard() {
-  const [trees, setTrees] = useState(cachedTrees);
-
-  useEffect(() => {
-    let cancelled = false;
-    listTrees().then((rows) => { if (!cancelled) setTrees(rows); });
-    return () => { cancelled = true; };
-  }, []);
+  const { status } = useAuth();
+  const [cached] = useState(cachedTrees);
+  const trees = useYourRoadmaps(status === 'signed-in').list ?? cached;
 
   const newest = trees?.length ? trees[0] : null;
   const resume = newest ? resumeOf(newest) : null;

@@ -5,7 +5,7 @@ import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
 import { boardKey } from '../shortcuts/shortcutMap.js';
 import {
-  COMPOSER, EDIT_STEP, LABELS, PICKER, backTo, draftLine, formatCount, matchCount,
+  COMPOSER, LABELS, PICKER, backTo, draftLine, formatCount, matchCount,
   leftSelection, noStepsMatch, pickerFor, removeChip, showMore,
 } from '../copy.js';
 import './composer.css';
@@ -130,7 +130,7 @@ export function PrerequisitePicker({ choices, onChoices, draft, layout, headingI
           <button className="st-board-draft-cancel" type="button" onClick={cancel}>{PICKER.cancel}</button>
         )}
         {page && (
-          <button className="st-board-picker-back" type="button" aria-label={backTo({ screen: mode === 'edit' ? EDIT_STEP.title : COMPOSER.title })} onClick={cancel}>
+          <button className="st-board-picker-back" type="button" aria-label={backTo({ screen: COMPOSER.title })} onClick={cancel}>
             <ChevronLeft size={20} aria-hidden />
           </button>
         )}

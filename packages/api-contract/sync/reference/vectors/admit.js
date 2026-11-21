@@ -5,9 +5,11 @@
 import assert from 'node:assert/strict';
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
+import { scopedResponseBytes } from '../core/receipts.js';
 import { admit } from '../server/admit.js';
 import { serverCall } from '../server/requests.js';
 import { ServerState } from '../server/state.js';
+import { EffectPlanProduct } from './effect-plan.js';
 import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
 
 const NOW = 1_000_000;
@@ -25,11 +27,18 @@ const OVERLAY_B = `acct:B/overlay/${BOARD}`;
 const s = (ms, counter = 0, actor) => st(ms, counter, actor);
 const SRV = (ms, counter = 0) => `${ms}:${counter}:srv`;
 
-function admitted(name, { state, origin = A, intent, serverNow = NOW, limits }) {
-  const outcome = admit({ state: new ServerState(state), registry, product, origin, intent, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
+function admitted(name, { state, origin = A, intent, serverNow = NOW, limits, effectPlan }) {
   const input = { state, origin, intent, serverNow };
   if (limits) input.limits = limits;
-  return vector(name, input, { result: outcome.result, state: outcome.state.toJSON() });
+  if (effectPlan) input.effectPlan = effectPlan;
+  try {
+    const outcome = admit({ state: new ServerState(state), registry, product: effectPlan ? new EffectPlanProduct(effectPlan) : product, origin, intent, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
+    if (effectPlan?.fault) throw new Error('the fixture expected a technical contract fault');
+    return vector(name, input, { result: outcome.result, state: outcome.state.toJSON() });
+  } catch (error) {
+    if (!effectPlan?.fault || !['undeclared effect target', 'local check spans multiple scopes', 'an inverse command reports no outcome'].includes(error.message)) throw error;
+    return vector(name, input, { fault: true, state });
+  }
 }
 
 function card(id, { born = s(1000), seq = 1, ...f }) {
@@ -347,6 +356,22 @@ function access() {
     admitted('a server-internal command from a replica is forbidden', { state: baseState(), intent: { scope: 'self/probe', cmd: { name: 'probe.tick', args: {} } } }),
     admitted('a server origin writing a type whose origins exclude it is forbidden', { state: tree, origin: SERVER_A, intent: intent(`self/overlay/${BOARD}`, [{ t: 'mark', id: 'oak', f: { done: [false, null] } }]) }),
     admitted('a server origin writes the owner tree with a minted stamp', { state: tree, origin: SERVER_A, intent: intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { visibility: ['public', null] } }]) }),
+    ...[
+      ['the owner server writes its private tree', tree, SERVER_A, tagWrite(null)],
+      ['the owner server writes its public tree', open, SERVER_A, tagWrite(null)],
+      ['the owner server writes its unlisted tree', unlisted, SERVER_A, tagWrite(null)],
+      ['another account server writing a public tree is forbidden', open, SERVER_B, tagWrite(null)],
+      ['another account server writing an unlisted tree is forbidden', unlisted, SERVER_B, tagWrite(null)],
+      ['another account server writing a private tree is not-found', tree, SERVER_B, tagWrite(null)],
+      ['another account server writing an absent tree is not-found', tree, SERVER_B, intent('tree/b_0000000f', [create('tag', 'oak', null, { label: 'Oak' })])],
+      ['the owner server writing its dead tree is scope-dead', dead, SERVER_A, tagWrite(null)],
+      ['another account server writing a dead tree is not-found', dead, SERVER_B, tagWrite(null)],
+      ['a reader server cannot bypass the overlay type origins', open, SERVER_B, markWrite(null)],
+      ['another account server writing its overlay of a private tree is not-found', tree, SERVER_B, markWrite(null)],
+      ['another account server writing its overlay of a dead tree is not-found', dead, SERVER_B, markWrite(null)],
+      ['the owner server writing its overlay of a dead tree is scope-dead', dead, SERVER_A, markWrite(null)],
+      ['a server cannot address another accounts overlay', open, SERVER_B, intent(`acct:A/overlay/${BOARD}`, [{ t: 'mark', id: 'oak', f: { done: [false, null] } }])],
+    ].map(([name, state, origin, intent]) => admitted(name, { state, origin, intent })),
   ];
 }
 
@@ -849,6 +874,11 @@ function serverStamps() {
       origin: SERVER_A,
       intent: probe([{ t: 'card', id: 'card0009', born: null, life: ['alive', null], f: { title: ['Srv', null], tier: ['draft', null] } }]),
     }),
+    admitted('a server tree edit stamps its new tag and link together and advances only the tree', {
+      state: treeState(),
+      origin: SERVER_A,
+      intent: intent(`tree/${BOARD}`, [create('tag', 'elm', null, { label: 'Elm' }), { t: 'link', id: ['oak', 'elm'], life: ['alive', null] }]),
+    }),
     admitted('a server delta observes a same-intent client delta on its register, so the server delta wins', {
       state: serverState({ clock: { ms: 1300, counter: 0 }, scopes: { [PROBE_A]: productScope('A') }, rows: { [PROBE_A]: [run('run00001', {}), lap('lap00001', {})] } }),
       intent: probe([
@@ -872,6 +902,7 @@ function requests() {
   const base = serverState({ scopes: { [PROBE_A]: productScope('A') } });
   const createCard = (id, title) => probe([{ t: 'card', id, born: null, life: ['alive', null], f: { title: [title, null] } }]);
   const call = (extra) => ({ account: 'A', requestId: 'req-1', tool: 'cards.add', args: { titles: ['One', 'Two'] }, intents: [createCard('card0001', 'One'), createCard('card0002', 'Two')], serverNow: NOW, ...extra });
+  const treeCall = (extra) => ({ account: 'A', requestId: 'req-tree', tool: 'tree.rename', args: { title: 'Next' }, intents: [intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { title: ['Next', null] } }])], serverNow: NOW, ...extra });
   const sequence = (name, state, calls) => {
     let current = new ServerState(state);
     const results = [];
@@ -889,6 +920,9 @@ function requests() {
     ]),
     sequence('a fresh call runs every admit and stores its final result', base, [call({})]),
     sequence('a replay with the same digest answers the stored result', base, [call({}), call({ serverNow: NOW + 5000 })]),
+    sequence('a server tree call replays its result without changing the tree or its overlays', treeState(), [treeCall({}), treeCall({ serverNow: NOW + 5000 })]),
+    sequence('a server tree call resumes its stored part after the lease without another stamp', treeState(), [treeCall({ crashAfter: 1 }), treeCall({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),
+    sequence('a server tree refusal is replayed without changing another accounts tree', treeState({ visibility: 'public' }), [treeCall({ account: 'B' }), treeCall({ account: 'B', serverNow: NOW + 5000 })]),
     sequence('a replay with other arguments is request-conflict', base, [call({}), call({ args: { titles: ['One', 'Three'] }, intents: [createCard('card0001', 'One'), createCard('card0003', 'Three')] })]),
     sequence('a call running within its lease answers request-running', base, [call({ crashAfter: 1 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS - 1 })]),
     sequence('a call running past its lease is taken over and resumes after its stored parts', base, [call({ crashAfter: 1 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),
@@ -962,6 +996,222 @@ function recordBound() {
   ];
 }
 
+function crossScope() {
+  const base = treeState();
+  base.scopes[TREE].seq = 17;
+  base.scopes[OVERLAY_A].seq = 8;
+  const tick = { scope: 'self/probe', cmd: { name: 'probe.tick', args: {} } };
+  const title = (text, stamp = null) => ({ t: 'meta', id: 'meta', f: { title: [text, stamp] } });
+  const memo = { t: 'mark', id: 'oak', x: { memo: { text: 'one two', base: { text: '' } } } };
+  const local = create('card', 'card0009', null, { title: 'Origin' });
+  const plan = { declared: [TREE, OVERLAY_A], command: { [PROBE_A]: [local], [TREE]: [title('Command')], [OVERLAY_A]: [memo] }, check: { [TREE]: [title('Consequence')] } };
+  const changed = structuredClone(base);
+  changed.scopes[TREE].owner = 'B';
+  const dead = structuredClone(base);
+  dead.scopes[TREE].state = 'dead';
+  dead.scopes[TREE].deadAt = 5000;
+  const missing = structuredClone(base);
+  delete missing.scopes[TREE];
+  delete missing.rows[TREE];
+  const copy = { scope: 'self/probe', cmd: { name: 'probe.copy', args: { src: BOARD, dst: 'b_00000002' } } };
+  const full = structuredClone(base);
+  full.rows[PROBE_A].push(...['card0001', 'card0002', 'card0003'].map((id) => card(id, { title: 'Full' })));
+  full.scopes[PROBE_A].counters.card = 3;
+  const capped = serverState({ scopes: full.scopes, rows: full.rows });
+  const memoBase = structuredClone(base);
+  memoBase.rows[OVERLAY_A][0].x = { memo: { text: 'one', rev: 7, merged: false } };
+  const textBase = serverState({ scopes: memoBase.scopes, rows: memoBase.rows });
+  const copied = admit({ state: new ServerState(base), registry, product, origin: SERVER_A, intent: copy, serverNow: NOW }).state.toJSON();
+  const twoTrees = structuredClone(base);
+  twoTrees.scopes['tree:b_00000002'] = { ...treeScope('A', 'b_00000002'), state: 'alive', seq: 0, counters: {}, digest: '0'.repeat(64) };
+  const tag = create('tag', 'cedar', null, { label: 'Cedar' });
+  const replacement = { t: 'mark', id: 'oak', x: { memo: { text: 'one two', replace: true } } };
+  const normalized = structuredClone(replacement);
+  Object.assign(normalized.x.memo, { archiveNonempty: false, archive: {} });
+  // A real account id keeps the byte boundary identical in Postgres, whose fixtures expand short aliases.
+  const budgetOwner = '11111111-1111-4111-8111-111111111111';
+  const budgetScope = `acct:${budgetOwner}/overlay/${BOARD}`;
+  const budgetState = serverState({
+    accounts: { [budgetOwner]: { name: 'Ann' } },
+    scopes: { [`acct:${budgetOwner}/probe`]: productScope(budgetOwner), [TREE]: treeScope(budgetOwner, BOARD), [budgetScope]: overlayScope(budgetOwner, BOARD) },
+    rows: { [`acct:${budgetOwner}/probe`]: base.rows[PROBE_A], [TREE]: base.rows[TREE], [budgetScope]: base.rows[OVERLAY_A] },
+  });
+  const replacementBytes = Buffer.byteLength(jcs({ scope: budgetScope, delta: normalized }));
+  assert.equal(replacementBytes, 188);
+  const generated = [
+    ...[replacement, normalized].flatMap((delta, index) => [151, replacementBytes - 1, replacementBytes].map((bytes) => {
+      const name = `a ${index === 0 ? 'raw' : 'normalized'} replacement counts canonical generated bytes at budget ${bytes}`;
+      const sample = admitted(name, { state: budgetState, origin: { kind: 'server', account: budgetOwner }, intent: tick,
+        effectPlan: { declared: [budgetScope], command: { [budgetScope]: [delta] } }, limits: { EFFECT_MAX_BYTES: bytes } });
+      assert.equal(sample.expect.result.code ?? sample.expect.result.s, bytes < replacementBytes ? 'too-large' : 'ok', name);
+      return sample;
+    })),
+    ...['command', 'check'].flatMap((phase) => [
+      { t: 'mark', id: 'oak', x: { memo: { text: 'a\u0000b', base: { text: '' } } } },
+      { t: 'mark', id: 'oak', x: { memo: { text: 'text', base: { text: 'a\u0000b' } } } },
+    ].map((delta, index) => {
+      const name = `a generated ${phase} rejects NUL in ${index === 0 ? 'text' : 'its text base'} atomically`;
+      const effectPlan = { declared: [OVERLAY_A], command: { [PROBE_A]: [local] } };
+      effectPlan[phase] = { ...effectPlan[phase], [OVERLAY_A]: [delta] };
+      const sample = admitted(name, { state: base, origin: SERVER_A, intent: tick, effectPlan });
+      assert.equal(sample.expect.result.code, 'invalid', name);
+      assert.equal(jcs(sample.expect.state), jcs(base), name);
+      return sample;
+    })),
+  ];
+  return [
+    admitted('one command and its consequence coalesce origin and two owned targets at each own sequence and digest', { state: base, origin: SERVER_A, intent: tick, effectPlan: plan }),
+    admitted('a foreign target rolls back every scope and the command receipt', { state: changed, origin: SERVER_A, intent: copy, effectPlan: plan }),
+    admitted('a dead target rolls back origin and effects', { state: dead, origin: SERVER_A, intent: tick, effectPlan: plan }),
+    admitted('a missing target without its governing create rolls back every scope', { state: missing, origin: SERVER_A, intent: tick, effectPlan: plan }),
+    admitted('a declared scope created by this command accepts a later consequence', { state: base, intent: copy, effectPlan: { declared: ['tree:b_00000002'], check: { 'tree:b_00000002': [title('After copy')] } } }),
+    admitted('a target no-op advances neither the origin nor the target', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title('Plan', s(2000))] } } }),
+    admitted('an undeclared consequence target is a technical contract fault and rolls back the command', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title('Command')] }, check: { [OVERLAY_A]: [memo] }, fault: true } }),
+    admitted('an undeclared command target is a technical contract fault', { state: base, origin: SERVER_A, intent: tick, effectPlan: { command: { [TREE]: [title('Command')] }, fault: true } }),
+    admitted('a target delta must belong to the target scope kind', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [local] } } }),
+    admitted('a target field domain is enforced before any writes', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title(7)] } } }),
+    admitted('generated effects share their byte limit across targets independently of input size', { state: base, origin: SERVER_A, intent: tick, effectPlan: plan, limits: { EFFECT_MAX_BYTES: 150 } }),
+    admitted('a check from a tree uses the target product counter and rolls back the origin at cap', { state: capped, origin: SERVER_A, intent: { scope: `tree/${BOARD}`, d: [title('Changed')] }, effectPlan: { declared: [PROBE_A], check: { [PROBE_A]: [local] } } }),
+    admitted('overlapping command effects join before the later consequence and advance once', { state: base, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE], command: { [TREE]: [title('First'), title('Second')] }, check: { [TREE]: [title('Last')] } } }),
+    admitted('a target text resolves its own revision and keeps its own superseded head', { state: textBase, origin: SERVER_A, intent: tick, effectPlan: { declared: [OVERLAY_A], command: { [OVERLAY_A]: [{ t: 'mark', id: 'oak', x: { memo: { text: 'one two', base: { rev: 7 } } } }] } } }),
+    admitted('a replayed command with a declared existing target advances neither scope', { state: copied, origin: SERVER_A, intent: copy, effectPlan: { declared: ['tree:b_00000002'] } }),
+    admitted('a target parent refusal rolls back a command receipt and every scope', { state: base, origin: SERVER_A, intent: copy, effectPlan: { declared: [PROBE_A], command: { [PROBE_A]: [create('lap', 'lap00009', null, { runId: 'run00009', at: 1000, weight: 10 })] } } }),
+    admitted('a local adapter spanning two relevant scopes is a technical contract fault', { state: twoTrees, origin: SERVER_A, intent: tick, effectPlan: { declared: [TREE, 'tree:b_00000002'], command: { [TREE]: [tag], 'tree:b_00000002': [tag] }, legacyTypes: ['tag'], fault: true } }),
+    ...generated,
+  ];
+}
+
+export function scopedReceipts() {
+  const capture = { name: 'probe.capture', args: {} };
+  const created = admitted('capture owns the complete created row footprint without retaining values', {
+    state: serverState({ scopes: { [PROBE_A]: productScope('A') } }),
+    intent: probe([create('card', 'card0001', s(5000), { title: 'Private' })], { cmd: capture }),
+  });
+  assert.deepEqual(created.expect.result, { s: 'ok', seq: 1, write: [], detail: { windmillKit: { v: 1, effects: [{
+    scope: 'self/probe', beforeSeq: 0, seq: 1, rows: [{ t: 'card', id: 'card0001', beforeRowSeq: null, rowSeq: 1,
+      slots: [
+        { slot: { kind: 'born' }, version: { kind: 'stamp', stamp: s(5000) } },
+        { slot: { kind: 'life' }, version: { kind: 'stamp', stamp: s(5000) } },
+        { slot: { kind: 'field', name: 'title' }, version: { kind: 'stamp', stamp: s(5000) } },
+      ] }],
+  }] } } });
+  const updated = admitted('capture chains beforeRowSeq and includes only the winning field version', {
+    state: created.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }),
+  });
+  assert.deepEqual(updated.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'card', id: 'card0001', beforeRowSeq: 1, rowSeq: 2,
+    slots: [{ slot: { kind: 'field', name: 'title' }, version: { kind: 'stamp', stamp: s(6000) } }] }]);
+  const noop = admitted('capture emits a watermark without an artificial sequence for an unchanged row', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }),
+  });
+  assert.deepEqual(noop.expect.result.detail, { windmillKit: { v: 1, effects: [{ scope: 'self/probe', beforeSeq: 2, seq: 2, rows: [] }] } });
+  const absent = admitted('capture covers an absent declared no-op target without granting creation authority', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }), effectPlan: { declared: ['tree:b_00000009'] },
+  });
+  assert.deepEqual(absent.expect.result.detail.windmillKit.effects[1], { scope: 'tree/b_00000009', beforeSeq: null, seq: null, rows: [] });
+  const invalid = admitted('capture still refuses a write into an absent target without its governing create', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(6000), { title: 'Next' })], { cmd: capture }),
+    effectPlan: { declared: ['tree:b_00000009'], check: { 'tree:b_00000009': [{ t: 'meta', id: 'meta', f: { title: ['Missing', null] } }] } },
+  });
+  assert.equal(invalid.expect.result.code, 'not-found');
+  const emptyTree = admitted('capture includes a newly created empty tree at zero without inventing a write', {
+    state: created.input.state, intent: probe([create('board', 'b_00000009', s(5000))], { cmd: capture }),
+  });
+  assert.deepEqual(emptyTree.expect.result.detail.windmillKit.effects[1], { scope: 'tree/b_00000009', beforeSeq: null, seq: 0, rows: [] });
+  const dying = treeState({ visibility: 'public' });
+  dying.scopes[OVERLAY_B] = { ...dying.scopes[OVERLAY_A], owner: 'B' };
+  dying.rows[OVERLAY_B] = structuredClone(dying.rows[OVERLAY_A]);
+  const death = admitted('capture includes owned lifecycle watermarks and omits a foreign readers overlay', {
+    state: dying, intent: probe([{ t: 'board', id: BOARD, born: s(2000), life: ['dead', s(5000)] }], { cmd: capture }),
+  });
+  assert.deepEqual(death.expect.result.detail.windmillKit.effects.map(({ scope, beforeSeq, seq }) => ({ scope, beforeSeq, seq })), [
+    { scope: 'self/probe', beforeSeq: 1, seq: 2 }, { scope: `self/overlay/${BOARD}`, beforeSeq: 1, seq: 1 }, { scope: `tree/${BOARD}`, beforeSeq: 4, seq: 4 },
+  ]);
+  const texts = treeState();
+  texts.scopes[OVERLAY_A].seq = 7;
+  texts.rows[OVERLAY_A] = [row({ t: 'mark', id: 'oak', f: { done: [true, s(2400)] }, x: { memo: { text: 'one three', rev: 7, merged: false } }, seq: 7 })];
+  Object.assign(texts, serverState(texts));
+  const text = admitted('capture owns the actual forward-merged text revision', { state: texts,
+    intent: { scope: `self/overlay/${BOARD}`, d: [{ t: 'mark', id: 'oak', x: { memo: { text: 'one two', base: { text: 'one' } } } }], cmd: { name: 'probe.captureOverlay', args: {} } },
+  });
+  assert.deepEqual(text.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'mark', id: 'oak', beforeRowSeq: 7, rowSeq: 8,
+    slots: [{ slot: { kind: 'text', name: 'memo' }, version: { kind: 'text', revision: 8 } }] }]);
+  const noText = admitted('capture does not own an unchanged text head', { state: texts,
+    intent: { scope: `self/overlay/${BOARD}`, d: [{ t: 'mark', id: 'oak', x: { memo: { text: 'one three', base: { rev: 7 } } } }], cmd: { name: 'probe.captureOverlay', args: {} } },
+  });
+  assert.deepEqual(noText.expect.result.detail.windmillKit.effects[0].rows, []);
+  const fullText = admitted('capture includes every version on a newly created text record', { state: texts,
+    intent: { scope: `self/overlay/${BOARD}`, d: [{ t: 'mark', id: 'elm', f: { done: [true, s(5000)] }, x: { memo: { text: 'Hello', base: { text: '' } } } }], cmd: { name: 'probe.captureOverlay', args: {} } },
+  });
+  assert.deepEqual(fullText.expect.result.detail.windmillKit.effects[0].rows[0].slots, [
+    { slot: { kind: 'field', name: 'done' }, version: { kind: 'stamp', stamp: s(5000) } },
+    { slot: { kind: 'text', name: 'memo' }, version: { kind: 'text', revision: 8 } },
+  ]);
+  const bytes = Buffer.byteLength(jcs(created.expect.result.detail.windmillKit));
+  assert.equal(bytes, 411);
+  const boundary = [bytes - 1, bytes].map((limit) => {
+    const sample = admitted(`capture receipt byte limit ${limit} is enforced before commit`, { ...created.input, limits: { RECEIPT_MAX_BYTES: limit } });
+    assert.equal(sample.expect.result.s, limit === bytes ? 'ok' : 'refused');
+    if (limit < bytes) {
+      assert.equal(sample.expect.result.code, 'too-large');
+      assert.equal(jcs(sample.expect.state), jcs(created.input.state));
+    }
+    return sample;
+  });
+  const owner = '11111111-1111-4111-8111-111111111111';
+  const branchState = serverState({ accounts: { [owner]: { name: 'Fixture' } },
+    scopes: { [`acct:${owner}/probe`]: productScope(owner), [TREE]: treeScope(owner, BOARD) },
+    rows: { [`acct:${owner}/probe`]: [row({ t: 'board', id: BOARD, born: s(1000), life: ['alive', s(1000)], seq: 1 })] },
+  });
+  const branch = admitted('an opted product command preserves its own detail beside actual three-scope receipt versions', {
+    state: branchState, origin: { kind: 'server', account: owner },
+    intent: { scope: 'self/probe', cmd: { name: 'probe.branch', args: { parent: BOARD, child: 'b_00000002', title: 'Branch' } } },
+  });
+  assert.equal(branch.expect.result.s, 'ok');
+  assert.deepEqual(branch.expect.result.detail.command, { created: true });
+  assert.deepEqual(branch.expect.result.detail.windmillKit.effects.map(({ scope }) => scope), ['self/probe', `tree/${BOARD}`, 'tree/b_00000002']);
+  const resultBytes = scopedResponseBytes(branch.expect.result, branchState.epoch, owner);
+  assert.equal(resultBytes, 1083);
+  const responseBounds = [resultBytes - 1, resultBytes].map((limit) => {
+    const sample = admitted(`complete opted result envelope byte limit ${limit} is enforced before any scope commits`, {
+      ...branch.input, limits: { SCOPED_RESPONSE_MAX_BYTES: limit },
+    });
+    assert.equal(sample.expect.result.code ?? sample.expect.result.s, limit < resultBytes ? 'too-large' : 'ok');
+    if (limit < resultBytes) assert.deepEqual(sample.expect.state, sample.input.state);
+    return sample;
+  });
+  const serialState = serverState({ scopes: { [PROBE_A]: productScope('A') }, rows: { [PROBE_A]: [
+    ...created.expect.state.rows[PROBE_A],
+    row({ t: 'run', id: 'run00001', born: s(1000), life: ['alive', s(1000)], f: { startedAt: [1000, s(1000)] }, seq: 2 }),
+    row({ t: 'lap', id: 'lap00001', born: s(1000), life: ['alive', s(1000)], f: { runId: ['run00001', s(1000)] }, v: { no: 1 }, seq: 3 }),
+  ] } });
+  const serial = admitted('a serial-only consequence advances row sequence with an empty version-slot footprint', {
+    state: serialState, intent: probe([update('card', 'card0001', s(5000), s(5000), { title: 'First' })], { cmd: capture }),
+    effectPlan: { check: { [PROBE_A]: [{ t: 'lap', id: 'lap00001', born: s(1000), v: { no: 2 } }] } },
+  });
+  assert.deepEqual(serial.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'lap', id: 'lap00001', beforeRowSeq: 3, rowSeq: 4, slots: [] }]);
+  const consequence = admitted('capture owns the version a consequence gives a register its ordinary write also wrote', {
+    state: updated.expect.state, intent: probe([update('card', 'card0001', s(5000), s(7000), { title: 'Mine' })], { cmd: capture }),
+    effectPlan: { check: { [PROBE_A]: [{ t: 'card', id: 'card0001', born: s(5000), f: { title: ['Normalized', null] } }] } },
+  });
+  assert.deepEqual(consequence.expect.result.detail.windmillKit.effects[0].rows, [{ t: 'card', id: 'card0001', beforeRowSeq: 2, rowSeq: 3,
+    slots: [{ slot: { kind: 'field', name: 'title' }, version: { kind: 'stamp', stamp: SRV(NOW) } }] }]);
+  const newReplica = { kind: 'replica', account: owner, replica: 'rp_0000000000000000000000000000000c', n: 1 };
+  const replay = admitted('a probe.branch replayed from a new replica resolves by its receipt and changes no row', {
+    state: branch.expect.state, origin: newReplica, intent: branch.input.intent,
+  });
+  const branched = branch.expect.state;
+  assert.deepEqual(replay.expect.result, { s: 'ok', seq: 2, write: [{ t: 'board', id: 'b_00000002', born: SRV(NOW) }], detail: {
+    windmillKit: { v: 1, effects: [['self/probe', 2], [`tree/${BOARD}`, 1], ['tree/b_00000002', 1]].map(([scope, seq]) => ({ scope, beforeSeq: seq, seq, rows: [] })) },
+    command: { created: false } } });
+  assert.deepEqual(replay.expect.state, branched);
+  assert.deepEqual(branched.product.branches, { [`acct:${owner}/probe`]: { b_00000002: { parent: BOARD, title: 'Branch' } } });
+  const retitled = admitted('a probe.branch whose receipt names other arguments answers id-taken', {
+    state: branched, origin: newReplica, intent: { ...branch.input.intent, cmd: { name: 'probe.branch', args: { parent: BOARD, child: 'b_00000002', title: 'Other' } } },
+  });
+  assert.deepEqual(retitled.expect.result, { s: 'refused', code: 'id-taken' });
+  return [created, updated, noop, absent, invalid, emptyTree, death, text, noText, fullText, ...boundary, branch, ...responseBounds, serial, consequence, replay, retitled];
+}
+
 export function files() {
   return {
     'admit/shape.json': shape(),
@@ -977,5 +1227,7 @@ export function files() {
     'admit/server-stamps.json': serverStamps(),
     'admit/requests.json': requests(),
     'admit/record-bound.json': recordBound(),
+    'admit/cross-scope.json': crossScope(),
+    'admit/scoped-receipts.json': scopedReceipts(),
   };
 }

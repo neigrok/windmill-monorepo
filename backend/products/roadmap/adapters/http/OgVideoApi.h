@@ -2,6 +2,7 @@
 
 #include "platform/application/AuthService.h"
 #include "products/roadmap/ports/OgVideoRepository.h"
+#include "products/roadmap/application/EngineReadModels.h"
 #include "products/roadmap/application/RoomRegistry.h"
 
 #include <drogon/HttpRequest.h>
@@ -20,7 +21,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class OgVideoApi {
 public:
   OgVideoApi(std::shared_ptr<OgVideoRepository> videos, std::shared_ptr<RoomRegistry> rooms,
-             std::shared_ptr<AuthService> auth);
+             std::shared_ptr<AuthService> auth, std::shared_ptr<EngineReadModels> engine);
 
   void putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
   void getVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
@@ -29,6 +30,8 @@ private:
   std::shared_ptr<OgVideoRepository> videos_;
   std::shared_ptr<RoomRegistry> rooms_;
   std::shared_ptr<AuthService> auth_;
+  // Set where the engine serves roadmap: the tree's access is read from its records instead of its room.
+  std::shared_ptr<EngineReadModels> engine_;
 };
 
 }

@@ -4,6 +4,8 @@
 import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CloudOff } from 'lucide-react';
 import { BrandMark, Tooltip } from '../../design-system';
+import { PageFrame } from '../PageFrame.jsx';
+import { useOfferedAccountRows } from '../ProductSessions.jsx';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -120,12 +122,13 @@ function RoomContent({ room, location }) {
   return <Suspense fallback={<RoomFallback Ghost={product.shell.Ghost} />}><Component {...props} /></Suspense>;
 }
 
-export function Shell({ location, neutral = null, roomProduct = null }) {
+export function Shell({ location, acceptedPathname = location.pathname, neutral = null, roomProduct = null }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const { resolved: appearance } = useAppearance();
   const roomStatus = useRoomStatus();
+  const offered = useOfferedAccountRows();
   const room = resolveRoom(location.pathname, neutral, roomProduct);
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
@@ -158,7 +161,7 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
   }, [redirect?.href, redirect?.external]);
 
   return (
-    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
+    <PageFrame className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme} contentClassName="wm-room" header={<>
       <header className={`wm-head${sharedShell ? ' wm-head--shared' : ''}${roomStatus ? ' wm-head--status' : ''}`}>
         <a className="wm-head-mark" href="/" title="Windmill" aria-label={t('shell.chrome.homeMark')}><BrandMark size={30} /></a>
         <nav className="wm-switch" aria-label={t('shell.chrome.rooms')}>
@@ -182,14 +185,17 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
               onSettings={() => navigate('/app/settings')}
               onConnect={() => navigate('/app/connect')}
               onSignOut={signOut}
+              offered={offered}
             />
           )}
         </div>
-      </header>
-      <main className="wm-room">
-        <RoomContent room={room} location={location} />
+      </header></>}>
+      <main className="wm-room-content">
+        {/* A room mounted before a legacy door's upgrade lands mounts again on the path the navigation accepts, so
+            nothing it read from the navigation as it mounted predates the path the Shell renders. */}
+        <RoomContent key={acceptedPathname} room={room} location={location} />
       </main>
-    </div>
+    </PageFrame>
   );
 }
 

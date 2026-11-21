@@ -52,7 +52,7 @@ test('a read that resolves null is absent, and a read that lands after a newer o
 
 test('sync invalidation refreshes projections in place and leaves ancillary REST reads alone', async (t) => {
   let records = { replica: 'account', drawn: [], stored: [], notices: [], firstPullComplete: true };
-  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
   const session = { engine: { observe: () => observation }, ready: true, signedIn: false };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const pending = [];

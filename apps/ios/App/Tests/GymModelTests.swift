@@ -86,7 +86,7 @@ import SyncTesting
     #expect(receipt.releaseAt == nil && gym.notes.isEmpty)
     #expect(try harness.stored(Note.self).isEmpty)
     #expect(GymModel(runner: harness.runner).notes.isEmpty)
-    #expect(try !gym.runner.undo(receipt.gestureId))
+    #expect(try !gym.runner.cancelHeld(receipt.gestureId))
   }
 
   @Test func accountTransitionBlocksActionsAndSaves() throws {

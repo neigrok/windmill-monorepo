@@ -52,18 +52,19 @@ public enum Corpus {
     ("identity/table.json", .server), ("admit/", .server), ("text/", .server), ("envelope/credentials.json", .server),
     ("push/serve.json", .server), ("pull/serve.json", .server), ("pull/hello.json", .server), ("live/death.json", .server),
     ("machine/scope.json", .server), ("gym/admit.json", .server),
-    ("journal/admit.json", .server), ("journal/revisions.json", .server),
+    ("journal/admit.json", .server), ("journal/revisions.json", .server), ("roadmap/admit.json", .server),
     ("journal/client.json", .client), ("journal/content-clock.json", .client), ("journal/claim-edit.json", .client),
+    ("roadmap/client.json", .client),
     ("hlc/offset.json", .client), ("hlc/jump.json", .client), ("fracindex/", .client), ("view/", .client), ("commit/", .client),
-    ("hold/", .client), ("refusal/", .client), ("write/", .client), ("lineage/", .client),
+    ("hold/", .client), ("refusal/", .client), ("write/", .client), ("refs/", .client), ("lineage/", .client), ("undo/", .client),
     ("pull/pages.json", .client), ("machine/intent.json", .client), ("machine/replica.json", .client),
   ]
 
   // The client files written in the client-step language (corpus/README.md "Client steps").
   public static let clientStepFiles = [
-    "commit/deltas.json", "commit/grouping.json", "commit/guards.json", "commit/ids.json", "commit/retire.json",
+    "commit/acts.json", "commit/deltas.json", "commit/grouping.json", "commit/guards.json", "commit/ids.json", "commit/retire.json",
     "commit/throws.json", "commit/supersede.json", "hold/release.json", "hold/undo.json", "refusal/base-unknown.json", "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json",
-    "write/map.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
+    "write/map.json", "write/references.json", "write/scoped-predictions.json", "undo/journal.json", "undo/restore.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
   ]
 
   public static func role(of path: String) -> CorpusRole? {

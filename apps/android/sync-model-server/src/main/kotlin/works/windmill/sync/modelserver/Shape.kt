@@ -9,6 +9,16 @@ data class TextReplacement(val text: String, val archiveNonempty: Boolean = fals
 data class PlannedDelta(val key: RecordKey, val op: String, val life: PlannedLife? = null, val born: Stamp? = null,
     val mintsBorn: Boolean = false, val fields: Map<String, PlannedRegister> = emptyMap(), val texts: Map<String, TextWrite> = emptyMap(),
     val serials: Map<String, Json> = emptyMap(), val replacements: Map<String, TextReplacement> = emptyMap()) {
+    val json: Json get() {
+        val text = texts.mapValues { it.value.json }.toMutableMap()
+        for ((name, replacement) in replacements) text[name] = Json.objectOf("text" to Json.of(replacement.text), "replace" to Json.of(true), "archiveNonempty" to Json.of(replacement.archiveNonempty), "archive" to replacement.archive)
+        return Json.objectOf("t" to Json.of(key.type), "id" to key.id.json).with(
+            "life" to life?.let { Json.array(Json.of(it.state), it.stamp?.json ?: Json.Null) },
+            "born" to if (mintsBorn) Json.Null else born?.json,
+            "f" to fields.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.map { (name, register) -> name to Json.array(register.value, register.stamp?.json ?: Json.Null) }) },
+            "x" to text.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.toList()) },
+            "v" to serials.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.toList()) })
+    }
     val serverRegisters: List<String> get() = buildList {
         if (life != null && life.stamp == null) add("life"); if (mintsBorn) add("born")
         addAll(fields.filterValues { it.stamp == null }.keys.sorted())
@@ -27,10 +37,12 @@ data class PlannedDelta(val key: RecordKey, val op: String, val life: PlannedLif
         }
     }
 }
-data class CheckedCommand(val definition: CommandDef, val args: Map<String, Json>) { val name get() = definition.name; fun string(name: String) = (args[name] as? Json.Str)?.value ?: "" }
+// A command as admission reads it: its declared arguments, an engine restore's fixed arguments, or an inverse command's evidence (K-3).
+data class CheckedCommand(val definition: CommandDef, val args: Map<String, Json>, val restore: RestoreArguments? = null, val evidence: Evidence? = null) {
+    val name get() = definition.name
+    fun string(name: String) = (args[name] as? Json.Str)?.value ?: ""
+}
 data class CheckedIntent(val scope: ScopeRef, val deltas: List<PlannedDelta>, val guards: List<Guard>, val command: CheckedCommand?)
-fun Json.with(vararg members: Pair<String, Json?>): Json = Json.Obj(obj().toMutableMap().apply { for ((key, value) in members) if (value == null) remove(key) else put(key, value) }.toList())
-private fun Json.holdsNul(): Boolean = when (this) { is Json.Str -> '\u0000' in value; is Json.Arr -> values.any { it.holdsNul() }; is Json.Obj -> members.any { '\u0000' in it.key || it.value.holdsNul() }; else -> false }
 
 object IdentityRules {
     fun op(type: TypeDef, life: PlannedLife?, born: Stamp?, mintsBorn: Boolean = false): String? = when {
@@ -55,7 +67,7 @@ object IdentityRules {
 }
 object IntentShape {
     fun check(json: Json, replica: Boolean, registry: Registry, now: Long): CheckedIntent = try {
-        json.expectKeys(listOf("scope"), listOf("n", "d", "guard", "cmd", "gestureId")); require(!json.holdsNul())
+        json.expectKeys(listOf("scope"), listOf("n", "d", "guard", "cmd", "gestureId")); require(!json.holdsNul)
         val scope = ScopeRef(json.member("scope")); val kind = registry.scopeKind(scope) ?: throw Refusal("invalid")
         if (scope.tree != null) require(registry.governingType?.let { registry.isId(Json.of(scope.tree!!), it) } == true)
         json["gestureId"]?.str()
@@ -68,13 +80,15 @@ object IntentShape {
         }.orEmpty()
         val command = json["cmd"]?.let { value ->
             value.expectKeys(listOf("args", "name")); val def = registry.command(value.member("name").str()) ?: throw Refusal("invalid")
-            val args = value.member("args").obj(); require(def.scope == kind && args.keys.all { it in def.args })
+            val args = value.member("args").obj(); require(def.scope == kind)
+            if (def.engine == "restore") return@let CheckedCommand(def, args, restore = RestoreArguments.read(registry, def, value.member("args")))
+            require(args.keys.all { it in def.args || def.inverse && it == "evidence" })
             for ((name, arg) in def.args) {
                 val input = args[name]; if (input == null) { require(arg.optional); continue }
-                require(arg.domain?.admits(input) != false)
-                require(when { arg.ref != null -> registry.isId(input, registry.type(arg.ref!!)!!); arg.type in listOf("time", "instant") -> input is Json.Num && input.long(0) >= 0; else -> true })
+                require(registry.admits(input, arg))
             }
-            CheckedCommand(def, args)
+            require(registry.references.checkArguments(def, value.member("args")))
+            CheckedCommand(def, args, evidence = if (def.inverse) Evidence.read(registry, value.member("args").member("evidence")) else null)
         }
         require(deltas.isNotEmpty() || command != null)
         val bound = now + Constants.MAX_SKEW_MS
@@ -83,13 +97,31 @@ object IntentShape {
             if (registry.type(delta.key.type)?.fields?.get(name)?.kind == "time" && reg.value.long() > bound) reg.copy(value = Json.of(now)) else reg
         }) }
         val checkedCommand = command?.let { cmd -> cmd.copy(args = cmd.args.mapValues { (name, value) ->
-            when (cmd.definition.args.getValue(name).type) {
+            when (cmd.definition.args[name]?.type) {
                 "time" -> if (value.long() > bound) Json.of(now) else value
                 "instant" -> { if (value.long() > bound) throw Refusal("invalid"); value }; else -> value
             }
         }) }
         CheckedIntent(scope, clamped, guards, checkedCommand)
     } catch (refusal: Refusal) { throw refusal } catch (_: IllegalArgumentException) { throw Refusal("invalid") }
+    fun effect(json: Json, scope: ScopeKey, source: String, registry: Registry): PlannedDelta = try {
+        require(!json.holdsNul)
+        val kind = registry.scopeKind(scope.ref) ?: throw Refusal("invalid")
+        val serials = json["v"]?.obj().orEmpty()
+        val replacements = mutableMapOf<String, TextReplacement>()
+        val text = json["x"]?.obj()?.mapValues { (name, write) ->
+            if (write["replace"] == Json.of(true) && source == "command") {
+                val value = write.member("text").str(); val archive = write["archive"] ?: Json.objectOf(); archive.obj()
+                replacements[name] = TextReplacement(value, write["archiveNonempty"] == Json.of(true), archive)
+                Json.objectOf("text" to Json.of(value), "base" to Json.objectOf("rev" to Json.of(0)))
+            } else write
+        }
+        val wire = json.with("v" to null, "x" to text?.let { Json.Obj(it.toList()) })
+        val parsed = delta(wire, false, registry, kind)
+        for ((name, value) in serials) require(registry.type(parsed.key.type)?.fields?.get(name)?.kind == "serial" && value.long(1) >= 1)
+        parsed.copy(serials = serials, texts = parsed.texts - replacements.keys, replacements = replacements)
+    } catch (refusal: Refusal) { throw refusal } catch (_: IllegalArgumentException) { throw Refusal("invalid") }
+
     private fun slot(value: Json, replica: Boolean): Stamp? {
         if (value === Json.Null && !replica) return null
         return Stamp(value.str()).also { require(it != Stamp.UNSET) }

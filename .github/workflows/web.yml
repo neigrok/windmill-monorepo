@@ -13,6 +13,7 @@ on:
       - 'backend/test/deploy/deploy_production_test.py'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
+      - '.github/actions/browser-system-libraries/**'
       - '!web/**/*.md'
       - 'web/emails/README.md'
   pull_request:
@@ -23,6 +24,7 @@ on:
       - 'backend/test/deploy/deploy_production_test.py'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
+      - '.github/actions/browser-system-libraries/**'
       - '!web/**/*.md'
       - 'web/emails/README.md'
   workflow_dispatch:
@@ -38,8 +40,34 @@ defaults:
     working-directory: web
 
 jobs:
+  # A pull request's suite again with roadmap's room reading the device's copy, as production's build reads it, so a
+  # change that breaks the room on fails before it merges. It runs the tests alone: a pull request's build below reaches
+  # no host, builds the room off and ships nothing.
+  room-on-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
+
+      - name: Test with roadmap's room on
+        env:
+          VITE_ROADMAP_REPLICA_ROOM: on
+        run: npm test
+
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -61,6 +89,37 @@ jobs:
           path: web/public/models
           key: models-${{ hashFiles('web/scripts/fetch-model.mjs') }}
 
+      - name: Install the browsers' system libraries
+        uses: ./.github/actions/browser-system-libraries
+
+      # The roadmap room reads the device's copy only where the server serves roadmap's scopes, so a build that can
+      # reach the host takes the room from the running server (backend/deploy/README.md, "Roadmap's cutover onto the sync
+      # engine"); the preflight below holds a release whose room the running server's is not. A pull request's build
+      # reaches no host and builds the room off, and room-on-tests runs its suite with the room on.
+      - name: Read roadmap's switch on the host
+        id: roadmap
+        if: github.event_name != 'pull_request'
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          room=$(ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" \
+            'cd ~/windmill && docker compose exec -T server sh -c "if grep -Fzxq ROADMAP_ENGINE_ENABLED=1 /proc/1/environ; then echo on; else echo off; fi"' \
+            < /dev/null 2> /dev/null || true)
+          if [ "$room" != on ] && [ "$room" != off ]; then
+            echo "FAIL the running server's roadmap switch could not be read" >&2
+            exit 1
+          fi
+          echo "Roadmap's room: $room"
+          echo "room=$room" >> "$GITHUB_OUTPUT"
+
       # Single origin: no API host is baked in — apiBase.js resolves the backend as same-origin.
       # Set VITE_API_BASE_URL only for a preview build that must reach a remote backend.
       - name: Build
@@ -74,6 +133,7 @@ jobs:
           # while paidPlansOpen() is false, whatever the token.
           VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
           VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
+          VITE_ROADMAP_REPLICA_ROOM: ${{ steps.roadmap.outputs.room || 'off' }}
         run: npm run build
 
       - name: Prepare pinned web release
@@ -142,13 +202,14 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
+          ROADMAP_ROOM: ${{ steps.roadmap.outputs.room }}
         run: |
           set -euo pipefail
           printf '%s\n' "$SSH_KEY" > deploy_key
           chmod 600 deploy_key
           SSH="ssh -i deploy_key -p ${SSH_PORT:-22} -o StrictHostKeyChecking=accept-new"
           client=$(python3 -c 'import json, sys; sys.path.insert(0, "../backend/deploy"); from sync_compatibility import compatibility; value = compatibility(json.load(open("web-sync-compatibility.json"))); print(value["schema"], value["minSchema"])')
-          $SSH "$SSH_USER@$SSH_HOST" "cd ~/windmill && python3 - web-preflight $client" < ../backend/deploy/sync_compatibility.py
+          $SSH "$SSH_USER@$SSH_HOST" "cd ~/windmill && python3 - web-preflight $client $ROADMAP_ROOM" < ../backend/deploy/sync_compatibility.py
           $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill/web'
           release=(dist/)
           if [[ -n "${RUNNER_TEMP:-}" && -d "$RUNNER_TEMP/indexnow-proof" ]]; then

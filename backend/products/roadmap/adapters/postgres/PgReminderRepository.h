@@ -17,10 +17,15 @@ namespace wm {
 // database, so a slot resolves identically on macOS and on CI's Linux. No mktime, timegm,
 // localtime_r or chrono time zone here, ever.
 //
-// `readinessFor` loads every tree the person owns with their marks; the domain derives what is ready.
+// Where a person's roadmap edits are read from: roadmap's own trees, or the engine's records where the engine serves
+// roadmap (ROADMAP_ENGINE_ENABLED, roadmap-on-the-engine.md §7).
+enum class RoadmapEdits { trees, engine };
+
+// `readinessFor` loads every tree the person owns with their marks; the domain derives what is ready. `lastActiveAtMs`
+// reads the edits `edits` names.
 class PgReminderRepository : public ReminderRepository {
 public:
-  explicit PgReminderRepository(std::shared_ptr<PgPool> pool);
+  PgReminderRepository(std::shared_ptr<PgPool> pool, RoadmapEdits edits);
 
   bool underSweepLock(const std::function<void()>& pass) override;
 
@@ -45,6 +50,7 @@ public:
 private:
   std::shared_ptr<PgPool> pool_;
   PgSweepMutex sweepLock_;
+  RoadmapEdits edits_;
 };
 
 }

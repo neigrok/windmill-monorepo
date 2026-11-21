@@ -7,8 +7,9 @@ import SyncCore
 // MARK: - Dependents (§7.7 step 3)
 
 // Later deltas and commands that touch or name a record a source created, that carry unchanged a life register a
-// source wrote, or that target a scope its governing record creates. Records are keyed by scope, and dependency is
-// transitive through `absorb`.
+// source wrote, or that target a scope its governing record creates; an opted command also by what it predicts in any
+// scope. Records are keyed by scope, a reference naming the record its compiled leaf resolves to (E-8), and a command's
+// proposed creation names none. Dependency is transitive through `absorb`.
 public struct Dependents: Sendable {
   // One later entry's dependent part: its dependent deltas, whether its command is dependent, and, when the sources are
   // being replaced, its guards on what they created.
@@ -54,60 +55,61 @@ public struct Dependents: Sendable {
     }
   }
 
-  // A dependent part joins the sources: what its deltas and a dependent command's prediction create and write.
-  public mutating func absorb(_ part: Part, of entry: OutboxEntry) {
-    absorb(scope: entry.scope, deltas: part.removed + (part.commandGone ? entry.predict : []), stamp: entry.stamp)
+  // A source entry: everything it holds, in every scope it has effects in.
+  public mutating func absorb(_ entry: OutboxEntry) {
+    for effect in entry.effects() { absorb(scope: effect.scope, deltas: effect.deltas, stamp: entry.stamp) }
   }
 
-  // A reference names a record in the scope its type lives in: a product scope, or the tree and overlay scopes of
-  // the referencing scope's tree.
-  func names(_ key: RecordKey, from scope: ScopeRef) -> Bool {
-    guard let target = registry.scope(ofType: key.type, from: scope) else { return false }
-    return created.contains(ScopedKey(scope: target, key: key))
+  // A dependent part joins the sources: what its deltas and a dependent command's predictions create and write.
+  public mutating func absorb(_ part: Part, of entry: OutboxEntry) {
+    absorb(scope: entry.scope, deltas: part.removed, stamp: entry.stamp)
+    guard part.commandGone else { return }
+    for projection in entry.projected { absorb(scope: projection.scope, deltas: projection.deltas, stamp: entry.stamp) }
+  }
+
+  func names(_ references: [ResolvedReference]) -> Bool {
+    references.contains { created.contains($0.record) }
   }
 
   public func part(of entry: OutboxEntry) -> Part {
     let wholeScope = governed.contains(entry.scope)
-    let removed = entry.intent.deltas.filter { delta in
-      let record = ScopedKey(scope: entry.scope, key: delta.key)
-      return wholeScope || created.contains(record)
-        || delta.lattice.life.map { lives.contains(ScopedLife(record: record, life: $0)) } == true
-        || references(of: delta).contains { names($0, from: entry.scope) }
-    }
+    let removed = entry.intent.deltas.filter { wholeScope || depends($0, in: entry.scope) }
     let commandGone = entry.intent.command.map { command in
-      wholeScope || Dependents.references(of: command, registry: registry).contains { names($0.key, from: entry.scope) }
-        || entry.predict.contains { delta in
-          let record = ScopedKey(scope: entry.scope, key: delta.key)
-          return delta.lattice.life.map { lives.contains(ScopedLife(record: record, life: $0)) } == true
+      wholeScope || names(registry.references(of: command, in: entry.scope))
+        || entry.predictions != nil && entry.projected.contains { projection in
+          governed.contains(projection.scope) || projection.deltas.contains { depends($0, in: projection.scope) }
         }
+        || entry.predict.contains { carriesLife($0, in: entry.scope) }
     } ?? false
     let guards = replaced ? entry.intent.guards.filter { created.contains(ScopedKey(scope: entry.scope, key: $0.key)) } : []
     return Part(removed: removed, commandGone: commandGone, guards: guards)
   }
 
-  func references(of delta: Delta) -> [RecordKey] {
-    registry.type(delta.key.type)?.references(of: delta.key.id, values: delta.lattice.fields.mapValues(\.value)) ?? []
+  // A delta in `scope` that touches a record a source created, carries unchanged a life a source wrote, or names a
+  // record a source created.
+  func depends(_ delta: Delta, in scope: ScopeRef) -> Bool {
+    created.contains(ScopedKey(scope: scope, key: delta.key)) || carriesLife(delta, in: scope)
+      || names(registry.references(of: delta, in: scope))
   }
 
-  // A command's `ref<t>` arguments that hold an id, with the argument's name.
-  public static func references(of command: Command, registry: Registry) -> [(key: RecordKey, argument: String)] {
-    guard let def = registry.command(command.name) else { return [] }
-    return def.args.compactMap { arg in
-      guard let type = arg.type.ref, case .string(let id)? = command.args[arg.name] else { return nil }
-      return (RecordKey(type, RecordID(id)), arg.name)
-    }
+  func carriesLife(_ delta: Delta, in scope: ScopeRef) -> Bool {
+    delta.lattice.life.map { lives.contains(ScopedLife(record: ScopedKey(scope: scope, key: delta.key), life: $0)) } == true
   }
 
   // Removes a queued entry's dependent part: its deltas, the guards on their records and those the part names, and a
-  // dependent command with its prediction. Answers the removed content; the entry may be left empty.
+  // dependent command with its predictions and accepted versions. Answers the removed content; the entry may be left
+  // empty.
   public static func remove(_ part: Part, from entry: inout OutboxEntry) -> NoticeContent {
-    let content = NoticeContent(deltas: part.removed, command: part.commandGone ? entry.intent.command : nil)
+    let content = part.commandGone ? NoticeContent(deltas: part.removed, command: entry.intent.command, predictions: entry.content.predictions)
+      : NoticeContent(deltas: part.removed)
     let removedKeys = Set(part.removed.map(\.key))
     entry.intent.deltas.removeAll { part.removed.contains($0) }
     entry.intent.guards.removeAll { removedKeys.contains($0.key) || part.guards.contains($0) }
     if part.commandGone {
       entry.intent.command = nil
       entry.predict = []
+      entry.predictions = nil
+      entry.acceptedEffects = nil
     }
     return content
   }
@@ -164,7 +166,7 @@ public struct Hold: Sendable {
     var parts: [(entry: OutboxEntry, part: Dependents.Part)] = []
     for entry in replica.entriesTouchingReads {
       if ending.contains(where: { $0.entry.commitOrder == entry.commitOrder }) {
-        dependents.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
+        dependents.absorb(entry)
         continue
       }
       let part = dependents.part(of: entry)
@@ -178,5 +180,6 @@ public struct Hold: Sendable {
       replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }
       if replica.entry(entry.localId)!.isEmpty { try replica.move(entry.localId, .silentFold) }
     }
+    replica.settleEnded(code: "undone")
   }
 }

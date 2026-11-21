@@ -72,8 +72,8 @@ NodeStateEntry nodeFromRow(const Row& row) {
 
 }
 
-PgReminderRepository::PgReminderRepository(std::shared_ptr<PgPool> pool)
-    : pool_(pool), sweepLock_(pool, std::string(kSweepLock), "reminders") {}
+PgReminderRepository::PgReminderRepository(std::shared_ptr<PgPool> pool, RoadmapEdits edits)
+    : pool_(pool), sweepLock_(pool, std::string(kSweepLock), "reminders"), edits_(edits) {}
 
 bool PgReminderRepository::underSweepLock(const std::function<void()>& pass) {
   return sweepLock_.underSweepLock(pass);
@@ -169,14 +169,22 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
 }
 
 std::uint64_t PgReminderRepository::lastActiveAtMs(const UserId& user) {
-  // Their freshest session use, or their freshest tree edit.
+  // Their freshest session use, or their freshest tree edit: a tree row's last structural write, or the latest time the
+  // server wrote a record of one of their alive roadmaps on the engine, its marks left out as a tree row leaves them.
+  const std::string roadmaps =
+      "scope_key IN (SELECT 'tree:' || id FROM roadmap_trees WHERE scope_key = 'acct:' || $1::uuid::text || '/roadmap' "
+      "AND life = 'alive')";
+  const std::string edited =
+      edits_ == RoadmapEdits::engine
+          ? "greatest((SELECT max(ru) FROM roadmap_metas WHERE " + roadmaps + "), (SELECT max(ru) FROM roadmap_nodes WHERE " +
+                roadmaps + "), (SELECT max(ru) FROM roadmap_edges WHERE " + roadmaps + "), (SELECT max(ru) FROM roadmap_kinds WHERE " +
+                roadmaps + "))"
+          : "(SELECT (extract(epoch from max(updated_at)) * 1000)::bigint FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL)";
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT greatest("
-      "  coalesce((SELECT max(last_seen_ms) FROM sessions WHERE user_id = $1::uuid), 0), "
-      "  coalesce((SELECT (extract(epoch from max(updated_at)) * 1000)::bigint FROM trees "
-      "            WHERE owner_id = $1::uuid AND deleted_at IS NULL), 0)) AS active_ms",
+      "SELECT greatest(coalesce((SELECT max(last_seen_ms) FROM sessions WHERE user_id = $1::uuid), 0), coalesce(" + edited +
+          ", 0)) AS active_ms",
       user.str());
   return static_cast<std::uint64_t>(rows[0]["active_ms"].as<long long>());
 }

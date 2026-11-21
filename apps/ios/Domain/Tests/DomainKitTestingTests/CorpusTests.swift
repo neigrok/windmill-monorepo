@@ -21,7 +21,12 @@ struct CorpusTests {
     "capacity/count.json": Lists.capacity,
     "plan/translate.json": Plans.translate,
     "run/pipeline.json": Plans.pipeline,
+    "run/acts.json": Plans.act,
+    "run/act-decisions.json": Plans.actDecision,
+    "run/undo.json": Plans.engineAct,
+    "run/composed.json": Plans.engineAct,
     "draft/save.json": Drafts.save,
+    "scope/bindings.json": { try Drafts.script($0, trapping: false) },
     "draft/script.json": { try Drafts.script($0, trapping: false) },
     "refusal/subject.json": Refusals.subject,
   ]
@@ -122,7 +127,7 @@ enum Lists {
     let registry = try vector.registry
     let records = try VectorRecords(drawn: vector.input["records"]?["drawn"], stored: vector.input["records"]?["stored"], registry: registry)
     let source = VectorReader(records: records, now: vector.moment.now.ms)
-    let reader = Reader(source, scope: E.scope, moment: vector.moment, registry: registry)
+    let reader = Reader(source, scope: E.fixtureScope, moment: vector.moment, registry: registry)
     let repository = reader.repository(E.self)
     if let view = vector.input["view"] {
       return ["ids": .array(try repository.all(in: view == "drawn" ? .drawn : .stored).map(\.id.json))]
@@ -145,15 +150,15 @@ enum Lists {
 
   static func move<E: ProbeEntity & Ordered>(_ type: E.Type, _ vector: Vector, reader: Reader, ids: IDSource, registry: Registry) throws -> JSON {
     let move = try vector.input.member("move")
-    let action = Move<E, ProbeRefusal>(ID(try RecordID(json: move.member("id"))), below: try recordID(move["below"]).map { ID($0) })
+    let action = Move<E, ProbeRefusal>(ID(try RecordID(json: move.member("id"))), in: reader.scope, below: try recordID(move["below"]).map { ID($0) })
     let decision = try action.decide(try action.load(reader), ids: ids)
-    return ["decision": try decision.form(in: E.scope, registry: registry, result: { .null }, refusal: \.form)]
+    return ["decision": try decision.form(in: E.fixtureScope, registry: registry, result: { .null }, refusal: \.form)]
   }
 
   static func remove<E: ProbeEntity & Removable>(_ type: E.Type, _ id: RecordID, reader: Reader, ids: IDSource, registry: Registry) throws -> JSON {
-    let action = Remove<E, ProbeRefusal>(ID(id))
+    let action = Remove<E, ProbeRefusal>(ID(id), in: reader.scope)
     let decision = try action.decide(try action.load(reader), ids: ids)
-    return ["decision": try decision.form(in: E.scope, registry: registry, result: { .null }, refusal: \.form)]
+    return ["decision": try decision.form(in: E.fixtureScope, registry: registry, result: { .null }, refusal: \.form)]
   }
 
   static func capacity(_ vector: Vector) throws -> JSON {

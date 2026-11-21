@@ -23,7 +23,7 @@ function errorsOf(schema, value, path = '$', root = schema) {
   const add = (message) => errors.push(`${path}: ${message}`);
   const typeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v);
   const known = new Set(['$schema', '$id', 'title', 'description', '$defs', '$ref', 'type', 'properties', 'required', 'additionalProperties',
-    'propertyNames', 'enum', 'const', 'pattern', 'minimum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'minLength', 'minProperties', 'uniqueItems', 'items', 'oneOf', 'allOf', 'if', 'then', 'not']);
+    'propertyNames', 'enum', 'const', 'pattern', 'minimum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'minLength', 'minProperties', 'maxProperties', 'uniqueItems', 'items', 'oneOf', 'allOf', 'if', 'then', 'not']);
   for (const keyword of Object.keys(schema)) if (!known.has(keyword)) throw new Error(`the test validator lacks ${keyword}`);
   if (schema.$ref) {
     const target = schema.$ref.replace('#/', '').split('/').reduce((node, key) => node[key], root);
@@ -51,6 +51,7 @@ function errorsOf(schema, value, path = '$', root = schema) {
   if (typeOf(value) === 'object') {
     const keys = Object.keys(value);
     if (schema.minProperties !== undefined && keys.length < schema.minProperties) add(`fewer than ${schema.minProperties} properties`);
+    if (schema.maxProperties !== undefined && keys.length > schema.maxProperties) add(`more than ${schema.maxProperties} properties`);
     for (const key of schema.required ?? []) if (!keys.includes(key)) add(`missing ${key}`);
     for (const key of keys) {
       if (schema.propertyNames) errors.push(...errorsOf(schema.propertyNames, key, `${path}{${key}}`, root));
@@ -91,7 +92,7 @@ test('registry.schema.json refuses broken registries', () => {
     'an unknown field kind': broken((r) => { card(r).fields.title.kind = 'counter'; }),
     'a singleton with life': broken((r) => { r.types.find((t) => t.type === 'meta').life = true; }),
     'a tuple key of one part': broken((r) => { r.types.find((t) => t.type === 'link').key.tuple.pop(); }),
-    'a malformed argument type': broken((r) => { r.commands[0].args.id.type = 'ref<Run>'; }),
+    'a malformed argument type': broken((r) => { command(r, 'probe.start').args.id.type = 'ref<Run>'; }),
     'an unknown type property': broken((r) => { card(r).colour = 'red'; }),
     'a parent without a ref': broken((r) => { delete r.types.find((t) => t.type === 'lap').fields.runId.ref; }),
     'a derived type without its rule': broken((r) => { delete r.types.find((t) => t.type === 'tag').derive; }),
@@ -195,8 +196,8 @@ test('the registry exposes the opening field and the before-pull commands', () =
   assert.deepEqual(registry.beforePullCommands('tree'), []);
 });
 
-test('the product registries are gym and journal, each valid against registry.schema.json and the Registry', () => {
-  assert.deepEqual(PRODUCTS.map((registry) => registry.registry), ['gym', 'journal']);
+test('the product registries are gym, journal and roadmap, each valid against registry.schema.json and the Registry', () => {
+  assert.deepEqual(PRODUCTS.map((registry) => registry.registry), ['gym', 'journal', 'roadmap']);
   for (const registry of PRODUCTS) {
     assert.deepEqual(errorsOf(SCHEMA, registry), [], registry.registry);
     assert.doesNotThrow(() => new Registry(registry), registry.registry);
@@ -205,10 +206,10 @@ test('the product registries are gym and journal, each valid against registry.sc
 
 // A deployment composes the registries composition.json names into one registry: one version, the version every
 // request carries (§9.1), and no product, type, command or refusal code a second registry declares again. It names
-// gym and journal (§2.4).
-test('composition.json names the composed registries: gym and journal, each a product registry', () => {
+// gym, journal and roadmap (§2.4).
+test('composition.json names the composed registries: gym, journal and roadmap, each a product registry', () => {
   assert.deepEqual(Object.keys(COMPOSITION).sort(), ['composition', 'registries']);
-  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json']);
+  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json', 'roadmap.registry.json']);
   for (const name of COMPOSITION.registries) assert.ok(PRODUCTS.some((registry) => `${registry.registry}.registry.json` === name), name);
 });
 
@@ -223,14 +224,19 @@ test('the composed registries declare one version, and no product registry decla
   }
 });
 
-// D-8 and A.2: every gym minted type is seeded, and its widest seeded id, a seed at the bound and the largest ordinal, fits
-// its id pattern.
-test('every minted gym type is seeded, its widest seeded id in its pattern', () => {
-  const minted = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.identity === 'minted');
-  const seeded = minted.filter((type) => type.seeded);
-  assert.deepEqual(seeded.map((type) => type.type), minted.map((type) => type.type));
-  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
+// D-8: a type that declares seeded ids fits its widest seeded id, a seed at the bound and the largest ordinal, in its id
+// pattern, in every product registry.
+test('every seeded type of every product fits its widest seeded id in its pattern', () => {
+  const seeded = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.seeded);
   for (const type of seeded) {
     assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
   }
+});
+
+// A.2: every minted gym type is seeded.
+test('every minted gym type is seeded', () => {
+  const gym = new Registry(PRODUCTS.find((json) => json.registry === 'gym'));
+  const minted = [...gym.types.values()].filter((type) => type.identity === 'minted');
+  assert.deepEqual(minted.filter((type) => type.seeded).map((type) => type.type), minted.map((type) => type.type));
+  assert.deepEqual(minted.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
 });

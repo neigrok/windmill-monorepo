@@ -3,6 +3,7 @@ package works.windmill.sync.engine
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.Command
 
 internal class DeltaBuilder(private val engine: Engine, private val replica: ReplicaState, private val scope: ScopeRef,
     private val stamp: Stamp, private val now: Long, private val gone: Set<Delta>) {
@@ -18,7 +19,11 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
         is NewID.Seeded -> RecordID(SeededId.make(new.seed, new.ordinal, type).id)
         is NewID.Derived -> {
             if (type.identity != "derived") malformed("not-derived")
-            RecordID(DerivedId.from(new.label, type.json.member("derive").member("fallback").str(), taken(type)))
+            try {
+                RecordID(DerivedId.from(new.label, type.json.member("derive").member("fallback").str(), taken(type), type.idMaxChars))
+            } catch (_: IdentityError) {
+                malformed("derived-id-bound")
+            }
         }
         NewID.Minted -> {
             val mint = type.mint ?: malformed("not-minted")
@@ -112,7 +117,7 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
         }
         if (op is Change.Operation.Revive) {
             if (!type.hasBorn) malformed("not-revivable")
-            val born = before?.born ?: replica.spent[scope.text]?.arr()?.firstOrNull { it.recordKey == key }?.get("born")?.str()?.let(::Stamp) ?: malformed("revive-without-born")
+            val born = before?.born ?: replica.spentBorn(scope, key) ?: malformed("revive-without-born")
             return Delta(key, Lattice(Life("alive", stamp), born, fields(type, change.values, before)))
         }
         var life: Life? = null
@@ -143,24 +148,27 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
     }
 }
 
-internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, now: Long): CommitOutcome {
+// `capture`, for an act segment opted into Undo with no command of its own, is the scope kind's capture command: it carries the gesture's
+// ordinary deltas when there are any (§7.3 Undo of an act).
+internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, now: Long,
+    actOffset: Int? = null, actFirstOrder: Long? = null, capture: String? = null): CommitOutcome {
     fun malformed(label: String): Nothing = throw CommitFailure.malformed(label)
     val product = registry.product(scope) ?: malformed("scope")
-    if (gesture.gestureId?.let { device.carriesGesture(it) } == true) malformed("gesture-id-taken")
+    if (actOffset == null && gesture.gestureId?.let { device.carriesGesture(it) } == true) malformed("gesture-id-taken")
     if (gesture.hold && gesture.holdMs < 0) malformed("hold-length")
     for (write in gesture.local) if (registry.products[product]?.get("device")?.obj()?.values?.none { Pattern(it.member("keyPattern").str()).matches(write.key) } != false) malformed("device-key")
-    registry.governingRecord(scope)?.let { (key, governingScope) ->
-        if (replica.known.containsKey(scope.text) || replica.known.containsKey("tree/${scope.tree}") || latticeView(replica, governingScope, key, ViewMode.stored)?.life?.isAlive == false)
-            return CommitOutcome.Refused(RefusalCode.scopeDead, null)
-    }
+    if (scopeIsDead(replica, scope)) return CommitOutcome.Refused(RefusalCode.scopeDead, null)
     val clock = Hlc(replica.meta.member("hlc"))
     clock.observe(Stamp(replica.meta.member("hlcHigh").str()))
     val stamp = clock.tick(now, actor)
     val gestures = replica.entries().groupBy { it.gestureId }
     val named = gesture.retire.map { it.key }.toSet()
-    val retiring = gestures.values.filter { entries -> entries.all { entry -> entry.state == "held" && entry.scope == scope && entry.intent.command == null &&
+    // A capture command is the ordinary deltas' own: it does not stop a retire from matching their removal.
+    val commandFree = { entry: Entry -> entry.intent.command?.let { registry.command(it.name)?.engine == "capture" } ?: true }
+    val retiring = gestures.values.filter { entries -> entries.all { entry -> (actOffset == null || entry.gestureId != gesture.gestureId) && entry.state == "held" && entry.scope == scope && commandFree(entry) &&
         entry.intent.deltas.isNotEmpty() && entry.intent.deltas.all { it.removes && it.key in named } } }.flatten()
     if (gesture.supersede.isNotEmpty() && (replica.state != "anon" || gesture.supersede.distinct().size != gesture.supersede.size)) malformed("supersede-anon")
+    if (actOffset != null && gesture.gestureId in gesture.supersede) malformed("act-supersedes-itself")
     val superseding = gesture.supersede.flatMap { id ->
         val entries = gestures[id] ?: malformed("supersede-missing")
         if (entries.any { it.scope != scope || it.state !in setOf("held", "ready") || it.intent.n != null }) malformed("supersede-numbered")
@@ -168,7 +176,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     }.sortedBy { it.order }
     val ending = (retiring + superseding).distinct()
     val folded = silentFold(replica, ending, replaced = superseding.isNotEmpty())
-    val gone = (ending.flatMap { it.deltas } + folded.flatMap { (entry, part) -> part.removed + if (part.commandGone) entry.predict else emptyList() }).toSet()
+    val gone = (ending.flatMap { it.deltas } + folded.flatMap { (entry, part) -> part.removed + if (part.commandGone) entry.predicted.flatMap { it.deltas } else emptyList() }).toSet()
     val builder = DeltaBuilder(this, replica, scope, stamp, now, gone)
     val built = gesture.changes.mapNotNull { change -> builder.build(change)?.let { change to it } }
     val deltas = mutableListOf<Delta>()
@@ -184,24 +192,49 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         val first = deltas[at]
         deltas[at] = Delta(delta.key, Lattice(first.lattice.life, first.lattice.born, first.lattice.fields + delta.lattice.fields), first.texts + delta.texts)
     }
-    val predict = gesture.predict.mapNotNull { builder.build(it, prediction = true) }
+    val given = gesture.command ?: capture?.takeIf { deltas.isNotEmpty() }?.let { Command(it, Json.objectOf()) }
+    val definition = given?.let { registry.command(it.name) }
+    val scopedPredict = gesture.scopedPredict
+    if (scopedPredict != null && definition?.scopedEffects != true) malformed("scoped-prediction-command")
+    val predict = if (definition?.scopedEffects == true) emptyList() else gesture.predict.mapNotNull { builder.build(it, prediction = true) }
+    val predictions = if (definition?.scopedEffects != true) null else {
+        if (gesture.predict.isNotEmpty() && scopedPredict.orEmpty().isNotEmpty()) malformed("ambiguous-predictions")
+        val groups = linkedMapOf(scope to gesture.predict.toMutableList())
+        for (group in scopedPredict.orEmpty()) {
+            val kind = registry.scopeKind(group.scope) ?: malformed("prediction-scope")
+            if (kind in setOf("tree", "overlay") && registry.governingType?.let { registry.isId(Json.of(group.scope.tree!!), it) } != true) malformed("prediction-scope")
+            if (scopeIsDead(replica, group.scope)) return CommitOutcome.Refused(RefusalCode.scopeDead, null)
+            groups.getOrPut(group.scope) { mutableListOf() }.addAll(group.changes)
+        }
+        val projections = EffectReceipt.ordered(scope, groups.keys).map { target ->
+            val changes = groups.getValue(target)
+            if (changes.any { it.type !in definition.predicts }) malformed("prediction-type")
+            val targetBuilder = if (target == scope) builder else DeltaBuilder(this, replica, target, stamp, now, gone)
+            val deltas = changes.mapNotNull { targetBuilder.build(it, prediction = true) }
+            if (deltas.map { it.key }.distinct().size != deltas.size) malformed("duplicate-prediction")
+            Projection(target, deltas)
+        }
+        val written = Json.Arr(projections.map(Projection::json))
+        if (written.holdsNul) malformed("nul")
+        if (written.jcs.encodeToByteArray().size > effectMaxBytes) return CommitOutcome.Refused(RefusalCode.tooLarge, null)
+        projections
+    }
     val guards = gesture.guards.distinct().map { ref ->
         if (!registry.lives(ref.type, scope) || registry.type(ref.type)?.fields?.get(ref.field)?.isLattice != true) malformed("guard-field")
         Guard(ref.key, ref.field, latticeView(replica, scope, ref.key, ViewMode.stored, gone)?.fields?.get(ref.field)?.stamp)
     }
-    val command = gesture.command?.let { cmd ->
+    val command = given?.let { cmd ->
         if (cmd.args !is Json.Obj) cmd else cmd.copy(args = Json.Obj(cmd.args.obj().map { (name, value) -> name to (registry.command(cmd.name)?.args?.get(name)?.domain?.rounded(value) ?: value) }))
     }
-    fun nul(json: Json): Boolean = when (json) {
-        is Json.Str -> '\u0000' in json.value
-        is Json.Obj -> json.members.any { (key, value) -> '\u0000' in key || nul(value) }
-        is Json.Arr -> json.values.any(::nul)
-        else -> false
-    }
+    // E-8: every typed leaf this commit writes holds an id of its type, in every delta, prediction and argument.
+    val references = registry.references
+    val leaves = (deltas + predict + predictions.orEmpty().flatMap { it.deltas }).all { delta -> delta.lattice.fields.all { (name, register) ->
+        registry.type(delta.key.type)?.fields?.get(name)?.let { references.checkValue(it, register.value) } != false } }
+    if (!leaves || definition != null && command != null && !references.checkArguments(definition, command.args)) malformed("typed-reference")
     val written = Intent(scope, deltas = deltas, guards = guards, command = command, gestureId = gesture.gestureId).json
-    if (nul(written)) malformed("nul")
+    if (written.holdsNul) malformed("nul")
     // Opening the store parses every entry and notice under MAX_DEPTH. The deepest of them, a notice's dependent, holds a delta three levels deeper than its intent does.
-    val deepest = maxOf(written.depth, Json.Arr(predict.map { it.json }).depth)
+    val deepest = maxOf(written.depth, Json.Arr(predict.map { it.json }).depth, Json.Arr(predictions.orEmpty().map(Projection::json)).depth)
     if (deepest + 3 > Json.MAX_DEPTH || gesture.local.any { (it.value?.depth ?: 0) > Json.MAX_DEPTH }) malformed("too-deep")
     for (type in deltas.mapNotNull { registry.type(it.key.type) }.distinct()) {
         val cap = type.cap ?: continue
@@ -236,16 +269,18 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     retiring.forEach { replica.move(it, "retire", ended) }
     superseding.filter { it in replica.outbox }.forEach { replica.move(it, "silent-fold", ended) }
     applySilentFold(replica, folded)
+    replica.settleEnded("undone")
     replica.meta = replica.meta.with("hlc" to clock.json, "hlcHigh" to stamp.json)
-    val firstOrder = (replica.outbox.maxOfOrNull { it.order } ?: 0) + 1
+    val firstOrder = actFirstOrder?.plus(actOffset ?: 0) ?: replica.nextCommitOrder()
     val localIds = intents.mapIndexed { index, intent ->
-        val localId = "$gestureId/$index"
+        val localId = "$gestureId/${(actOffset ?: 0) + index}"
         val texts = intent.deltas.flatMap { d -> d.texts.keys.map { name -> Json.array(Json.of(d.key.type), d.key.id.json, Json.of(name)).jcs } }
         replica.outbox.add(Entry(Json.Obj(buildList {
             add("localId" to Json.of(localId)); add("gestureId" to Json.of(gestureId)); add("lineage" to Json.of(replica.account ?: "anon")); add("scope" to scope.json)
             add("state" to Json.of(if (gesture.hold) "held" else "ready")); add("commitOrder" to Json.of(firstOrder + index)); add("releaseAt" to Json.of(if (gesture.hold) now - replica.meta.member("serverOffsetMs").long() + gesture.holdMs else 0))
             add("stamp" to stamp.json); add("intent" to intent.json)
-            if (command != null && predict.isNotEmpty()) add("predict" to Json.Arr(predict.map { it.json }))
+            if (predictions != null) add("predictions" to Json.Arr(predictions.map(Projection::json)))
+            else if (command != null && predict.isNotEmpty()) add("predict" to Json.Arr(predict.map { it.json }))
             if (texts.isNotEmpty()) add("baseTexts" to Json.Obj(texts.map { it to builder.baseTexts.getValue(it) }))
         })))
         localId
@@ -261,6 +296,13 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     return CommitOutcome.Committed(CommitReceipt(gestureId, stamp, localIds, builder.ids,
         if (gesture.hold && intents.isNotEmpty()) now - replica.meta.member("serverOffsetMs").long() + gesture.holdMs else null,
         retiring.map { it.gestureId }.distinct(), superseding.map { it.gestureId }.distinct()))
+}
+
+// §7.1 step 2: a tree or overlay scope its governing record's death ended, as the replica stores it.
+internal fun Engine.scopeIsDead(replica: ReplicaState, scope: ScopeRef): Boolean {
+    val (key, governingScope) = registry.governingRecord(scope) ?: return false
+    return replica.known.containsKey(scope.text) || replica.known.containsKey("tree/${scope.tree}") ||
+        latticeView(replica, governingScope, key, ViewMode.stored)?.life?.isAlive == false
 }
 
 internal fun widestBytes(replica: ReplicaState, intent: Intent): Int = Json.objectOf(

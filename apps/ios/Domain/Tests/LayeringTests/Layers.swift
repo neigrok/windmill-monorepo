@@ -3,6 +3,7 @@ enum Layer: String, Sendable {
   case engineAPI = "engine API"
   case engineRuntime = "engine runtime"
   case engineTestSupport = "engine test support"
+  case agent
   case kit
   case kitTestSupport = "kit test support"
   case productDomain = "product domain"
@@ -26,11 +27,12 @@ enum Layers {
       modules: ["SyncReplica", "SyncStore", "SyncModelServer", "SyncEngine", "SyncIOS", "SyncSchemaGen", "GymCatalogGen", "GRDB"],
       mayDependOn: [.engineAPI, .engineRuntime], mayAlsoDependOn: []),
     LayerRow(layer: .engineTestSupport, modules: ["SyncTesting"], mayDependOn: [.engineAPI, .engineRuntime], mayAlsoDependOn: []),
+    LayerRow(layer: .agent, modules: ["Agent"], mayDependOn: [], mayAlsoDependOn: ["SyncCore"]),
     LayerRow(layer: .kit, modules: ["DomainKit", "DomainKitNFC"], mayDependOn: [.engineAPI, .kit], mayAlsoDependOn: []),
     LayerRow(
       layer: .kitTestSupport, modules: ["DomainKitTesting"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: ["SyncEngine", "SyncTesting"]),
     LayerRow(layer: .productDomain, modules: ["GymDomain", "JournalDomain"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: []),
-    LayerRow(layer: .platform, modules: ["WindmillPlatform"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: ["SyncEngine"]),
+    LayerRow(layer: .platform, modules: ["WindmillPlatform"], mayDependOn: [.kit, .engineAPI, .agent], mayAlsoDependOn: ["SyncEngine"]),
     LayerRow(
       layer: .productUI, modules: ["WindmillGym", "WindmillJournal"], mayDependOn: [.productDomain, .kit, .engineAPI, .platform],
       mayAlsoDependOn: ["SyncEngine"]),

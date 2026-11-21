@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { requestNavigation } from '../../../shell/navigation.js';
 import { stepIsStale } from '../step/stepAddress.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 
@@ -45,49 +46,49 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
   });
 
   // The Board's cards hold on to this one, so it keeps its identity through unrelated renders.
-  const openFromBoard = useCallback((id) => {
+  const openFromBoard = useCallback((id) => requestNavigation({ key: `step:open:${id}`, run: (tx) => {
     setSelectedId(id);
-    address.open(id, 'card');
-  }, [setSelectedId, address.open]);
+    address.open(id, 'card', tx);
+  } }), [setSelectedId, address.open]);
 
   return {
     detailId, focusGraph, focusLayer, graphStepReturnRef, openFromBoard,
-    openFromGraph: (id) => {
+    openFromGraph: (id) => requestNavigation({ key: `step:open:${id}`, run: (tx) => {
       onGraphStepOpen();
       graphStepReturnRef.current = true;
-      address.open(id, 'graph');
-    },
-    close: () => {
+      address.open(id, 'graph', tx);
+    } }),
+    close: () => requestNavigation({ key: 'step:close', run: async (tx) => {
       const origin = address.trail[0];
-      address.close();
+      if (await address.close(tx) === false) return;
       if (origin && tree?.nodesById.has(origin)) setSelectedId(origin);
-    },
-    openInGraph: (id) => {
+    } }),
+    openInGraph: (id) => requestNavigation({ key: `step:graph:${id}`, run: async (tx) => {
       graphStepReturnRef.current = true;
-      address.close();
+      if (await address.close(tx) === false) return;
       setSelectedId(id);
-      switchView('tree');
+      switchView('tree', { transaction: tx });
       sceneRef.current?.revealNode(id);
-    },
-    select: (id) => {
-      address.close();
+    } }),
+    select: (id) => requestNavigation({ key: `step:select:${id}`, run: async (tx) => {
+      if (await address.close(tx) === false) return;
       setSelectedId(id);
       const step = boardTree.nodesById.get(id);
       setBoardQuery((query) => query.revealing(step, boardTree));
       selectKey.current += 1;
       setBoardSelect({ id, key: selectKey.current });
-    },
-    viewBranch: (id) => {
+    } }),
+    viewBranch: (id) => requestNavigation({ key: `step:branch:${id}`, run: async (tx) => {
       graphStepReturnRef.current = false;
-      address.close();
-      switchView('board');
+      if (await address.close(tx) === false) return;
+      switchView('board', { transaction: tx });
       viewBranch(id);
-    },
-    deleteStep: (id) => {
-      address.close();
+    } }),
+    deleteStep: (id) => requestNavigation({ key: `step:delete:${id}`, run: async (tx) => {
+      if (await address.close(tx) === false) return;
       const held = boardActs.delete([id], 'menu');
       if (held && canvasView) setSelectedId(null);
-    },
+    } }),
     crash: (error) => {
       reportRoadmapFailure('roadmap-board-step', error);
       address.close();

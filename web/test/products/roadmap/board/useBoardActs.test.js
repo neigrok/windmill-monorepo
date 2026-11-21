@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
-import { BoardActs, BoardComposer, useBoardActs } from '../../../../src/products/roadmap/board/useBoardActs.js';
+import { BoardActs, useBoardActs } from '../../../../src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
@@ -312,44 +312,6 @@ test('Graph create Undo refuses expired receipts quietly and reports thrown reve
   }
 });
 
-test('Graph composers expose owner create and open-detail edit to the owner alone', () => {
-  for (const owner of [false, true]) {
-    for (const detailId of [null, 'wind']) {
-      const calls = [];
-      const draft = { door: 'verbs', view: 'tree' };
-      const composer = new BoardComposer({ owner, view: 'tree',
-        detailId, composer: draft,
-        acts: { edit: (request) => { calls.push(['edit', request]); return { ok: true }; } },
-        onOpen: (value) => calls.push(['open', value]),
-      });
-      const editable = owner && detailId !== null;
-      assert.equal(composer.shown, owner ? draft : null);
-      composer.openEdit('wind');
-      assert.deepEqual(calls, editable ? [['open', { door: 'detail', editing: 'wind' }]] : []);
-      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-      composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
-      assert.equal(composer.shown, editable ? composer.composer : null);
-      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: editable });
-      assert.deepEqual(composer.saveEdit({ id: 'other' }), { ok: false });
-      assert.deepEqual(calls, editable ? [
-        ['open', { door: 'detail', editing: 'wind' }], ['edit', { id: 'wind' }],
-      ] : []);
-    }
-  }
-});
-
-test('a composer is hidden immediately after switching away from its originating view', () => {
-  for (const origin of ['board', 'tree']) {
-    for (const view of ['board', 'tree']) {
-      const draft = { door: 'verbs', view: origin };
-      const composer = new BoardComposer({ owner: true,
-        view, detailId: null, composer: draft,
-      });
-      assert.equal(composer.shown, origin === view ? draft : null);
-    }
-  }
-});
-
 test('create dispatches one pinned request and Undo reverts its receipt', () => {
   const { acts, c, calls, receipt } = fixture({ query: new BoardQuery({ search: 'invisible', sort: 'oldest' }) });
   assert.deepEqual(acts.create(request), { ok: true });
@@ -498,6 +460,23 @@ test('recolor choosing the shared kind and empty selections are no-ops without t
   assert.deepEqual(acts.recolor([], 'gold'), { ok: true, changed: false });
   assert.deepEqual(calls, []);
   assert.equal(c.toast, undefined);
+});
+
+test('a retained bulk delete callback rechecks roots, selection membership and authority before holding or writing', () => {
+  for (const change of ['roots', 'missing', 'owner', 'active']) {
+    const { acts, c, calls } = fixture();
+    const remove = () => acts.delete(['wind'], 'bulk');
+    const current = { ...c };
+    if (change === 'roots') current.tree = c.tree.without(['spare']);
+    if (change === 'missing') current.tree = c.tree.without(['wind']);
+    if (change === 'owner') current.owner = false;
+    if (change === 'active') current.active = false;
+    acts.update(current);
+    assert.equal(remove(), false, change);
+    assert.deepEqual(calls, [], change);
+    assert.equal(acts.held, null, change);
+    assert.equal(c.toast, undefined, change);
+  }
 });
 
 test('bulk and key deletion use one held entity and reject the sole root', () => {
@@ -814,47 +793,6 @@ test('delete confirmation and cancellation identify the current Graph surface', 
   ]);
 });
 
-test('the edit door belongs to the active owner detail only', () => {
-  for (const [owner, id] of [[false, 'wind'], [true, 'dock'], [true, 'wind']]) {
-    const calls = [];
-    const composer = new BoardComposer({ owner, detailId: 'wind', composer: null,
-      onOpen: (draft) => calls.push(draft) });
-    composer.openEdit(id);
-    assert.deepEqual(calls, owner && id === 'wind' ? [{ door: 'detail', editing: 'wind' }] : []);
-  }
-});
-
-test('closing, removing or replacing an edit detail immediately excludes its composer and rejects writes', () => {
-  for (const detailId of [null, 'dock', 'wind']) {
-    const calls = [];
-    const draft = { door: 'detail', editing: 'wind' };
-    const composer = new BoardComposer({ owner: true, detailId, composer: draft,
-      acts: { edit: (request) => { calls.push(request); return { ok: true }; } } });
-    const request = { id: 'wind', label: 'Read the wind' };
-    assert.equal(composer.shown, detailId === 'wind' ? draft : null);
-    assert.deepEqual(composer.saveEdit(request), { ok: detailId === 'wind' });
-    assert.deepEqual(calls, detailId === 'wind' ? [request] : []);
-  }
-});
-
-test('edit save refuses a lost owner', () => {
-  const composer = new BoardComposer({ owner: false, detailId: 'wind',
-    composer: { door: 'detail', editing: 'wind' },
-    acts: { edit: () => assert.fail('an unavailable edit must not dispatch') } });
-  assert.equal(composer.shown, null);
-  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-});
-
-test('create composers remain visible without a detail but cannot write through the edit door', () => {
-  const draft = { door: 'verbs' };
-  const composer = new BoardComposer({ owner: true, detailId: null, composer: draft,
-    acts: { edit: () => assert.fail('a create draft must not dispatch an edit') },
-    onOpen: () => assert.fail('there is no detail to edit') });
-  assert.equal(composer.shown, draft);
-  composer.openEdit(null);
-  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-});
-
 test('C or a swipe on a card that opens a tree completes nothing: the toast says what completes it and offers the way in', () => {
   const cases = [
     [Opening.fromWire({ treeId: 't_wind', title: 'Wind drills', state: 'open', done: 3, total: 8, loop: false }), 'Completes with its tree', true],
@@ -1031,4 +969,24 @@ test('a refused retained completion Undo reveals nothing and reports no success'
   calls.length = 0;
   c.toast.action.run();
   assert.deepEqual(calls, [['quiet']]);
+});
+
+test('inline save reads current authority and writes only the consented field at the synchronous boundary', async () => {
+  const { InlineStepDraft } = await import('../../../../src/products/roadmap/step/InlineStepDraft.js');
+  const draft = new InlineStepDraft({ editId: 'inline', stepId: 'wind', field: 'label', baselineValue: 'Read the wind' }).withValue('Read gusts');
+  const { acts, c, calls } = fixture();
+  let latest = new SkillTree({ id: 'sail', nodes: [{ id: 'wind', label: 'Read the wind', description: 'Peer text', color: 'plum', prerequisites: [] }] });
+  let editable = true;
+  c.readInlineDraft = () => draft;
+  c.readEditAuthority = () => ({ tree: latest, editable, session: c.session });
+  assert.deepEqual(acts.edit(draft.request()), { ok: true });
+  assert.deepEqual(calls.filter(([action]) => action === 'dispatch'), [['dispatch', { kind: 'EditNode', id: 'wind', label: 'Read gusts' }]]);
+  calls.length = 0;
+  latest = new SkillTree({ id: 'sail', nodes: [{ id: 'wind', label: 'Peer name', color: 'plum', prerequisites: [] }] });
+  assert.deepEqual(acts.edit(draft.request()), { ok: false, reason: 'conflict', currentValue: 'Peer name' });
+  latest = new SkillTree({ id: 'sail', nodes: [{ id: 'wind', label: 'Newer peer name', color: 'plum', prerequisites: [] }] });
+  assert.deepEqual(acts.edit(draft.request('Peer name')), { ok: false, reason: 'conflict', currentValue: 'Newer peer name' });
+  editable = false;
+  assert.deepEqual(acts.edit(draft.request('Newer peer name')), { ok: false, reason: 'unavailable' });
+  assert.deepEqual(calls, []);
 });

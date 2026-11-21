@@ -5,6 +5,9 @@ import { t } from '../i18n/index.js';
 const FLASH_MS = 1400;
 const TICKER_MS = 4500;
 
+// An event of the server's feed as the log holds it.
+const serverEvent = (event) => new ActivityEvent({ ...event, actor: event.actor || null });
+
 export function useActivity({ sceneRef, selectedId }) {
   const [logVersion, setLogVersion] = useState(0);
   const [ticker, setTicker] = useState([]);
@@ -45,13 +48,18 @@ export function useActivity({ sceneRef, selectedId }) {
 
   const seedActivity = useCallback(({ tree, states, completedAt, serverActivity }) => {
     const built = ActivityLog.fromTree(tree, states, completedAt).events;
-    const fromServer = serverActivity.map((event) => new ActivityEvent({ ...event, actor: event.actor || null }));
-    logRef.current = new ActivityLog([...built, ...fromServer]);
+    logRef.current = new ActivityLog([...built, ...serverActivity.map(serverEvent)]);
     feedSummonedRef.current = false;
     setLogVersion((version) => version + 1);
     setTicker([]);
     setNewEventIds(new Set());
     setFeedOpen(false);
+  }, []);
+
+  // The server's tail when it answers after the room has opened: its events join the log, and nothing open closes.
+  const addServerActivity = useCallback((serverActivity) => {
+    logRef.current = new ActivityLog([...logRef.current.events, ...serverActivity.map(serverEvent)]);
+    setLogVersion((version) => version + 1);
   }, []);
 
   const closeActivity = useCallback(() => setFeedOpen(false), []);
@@ -65,6 +73,7 @@ export function useActivity({ sceneRef, selectedId }) {
   return {
     emit,
     seedActivity,
+    addServerActivity,
     ticker,
     newEventIds,
     feedVisible,

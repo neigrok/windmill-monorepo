@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { seededId } from '../../core/derive.js';
+import { mintId, seededId } from '../../core/derive.js';
 import { Registry, RegistryError, isPortablePattern } from '../../core/registry.js';
 
 const CONTRACT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -84,6 +84,15 @@ test('the probe registry is valid against registry.schema.json', () => {
 test('registry.schema.json refuses broken registries', () => {
   const cases = {
     'no types': broken((r) => delete r.types),
+    'capture without scoped effects': broken((r) => delete command(r, 'probe.capture').scopedEffects),
+    'capture with arguments': broken((r) => { command(r, 'probe.capture').args.id = { type: 'ref<card>' }; }),
+    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'replay'; }),
+    'false scoped effects': broken((r) => { command(r, 'probe.capture').scopedEffects = false; }),
+    'a restore without predictions': broken((r) => { delete command(r, 'probe.restore').predicts; }),
+    'a restore with typed references': broken((r) => { command(r, 'probe.restore').refPaths = [{ path: ['x'], type: 'card', scope: { kind: 'origin' } }]; }),
+    'an inverse command without scoped effects': broken((r) => { delete command(r, 'probe.unbranch').scopedEffects; }),
+    'an inverse command with another argument': broken((r) => { command(r, 'probe.unbranch').args.evidence = { type: 'json' }; }),
+    'an inverse engine command': broken((r) => { command(r, 'probe.unbranch').engine = 'restore'; }),
     'an unknown identity class': broken((r) => { card(r).identity = 'random'; }),
     'a ranked field without ranks': broken((r) => { delete card(r).fields.tier.rank; }),
     'a serial field written by clients': broken((r) => { r.types.find((t) => t.type === 'lap').fields.no.writer = 'client'; }),
@@ -91,7 +100,7 @@ test('registry.schema.json refuses broken registries', () => {
     'an unknown field kind': broken((r) => { card(r).fields.title.kind = 'counter'; }),
     'a singleton with life': broken((r) => { r.types.find((t) => t.type === 'meta').life = true; }),
     'a tuple key of one part': broken((r) => { r.types.find((t) => t.type === 'link').key.tuple.pop(); }),
-    'a malformed argument type': broken((r) => { r.commands[0].args.id.type = 'ref<Run>'; }),
+    'a malformed argument type': broken((r) => { command(r, 'probe.start').args.id.type = 'ref<Run>'; }),
     'an unknown type property': broken((r) => { card(r).colour = 'red'; }),
     'a parent without a ref': broken((r) => { delete r.types.find((t) => t.type === 'lap').fields.runId.ref; }),
     'a derived type without its rule': broken((r) => { delete r.types.find((t) => t.type === 'tag').derive; }),
@@ -121,6 +130,14 @@ test('registry.schema.json refuses broken registries', () => {
 
 test('the Registry refuses what the schema cannot express', () => {
   const cases = {
+    'capture without scoped effects': broken((r) => delete command(r, 'probe.capture').scopedEffects),
+    'capture with arguments': broken((r) => { command(r, 'probe.capture').args.id = { type: 'ref<card>' }; }),
+    'unknown engine command': broken((r) => { command(r, 'probe.capture').engine = 'replay'; }),
+    'false scoped effects': broken((r) => { command(r, 'probe.capture').scopedEffects = false; }),
+    'a restore of a governing type': broken((r) => { command(r, 'probe.restore').predicts.push('board'); }),
+    'a restore of a type in another scope': broken((r) => { command(r, 'probe.restore').predicts.push('meta'); }),
+    'an inverse command with an optional input': broken((r) => { command(r, 'probe.unbranch').args.input.optional = true; }),
+    'unknown scoped prediction type': broken((r) => { command(r, 'probe.capture').predicts.push('missing'); }),
     'a ref to an unknown type': broken((r) => { card(r).fields.attachment.ref = 'ghost'; }),
     'origins without replica': broken((r) => { card(r).origins = ['server']; }),
     'a revivable type whose dead rows are spent': broken((r) => { card(r).revivable = true; }),
@@ -195,8 +212,8 @@ test('the registry exposes the opening field and the before-pull commands', () =
   assert.deepEqual(registry.beforePullCommands('tree'), []);
 });
 
-test('the product registries are gym and journal, each valid against registry.schema.json and the Registry', () => {
-  assert.deepEqual(PRODUCTS.map((registry) => registry.registry), ['gym', 'journal']);
+test('the product registries are gym, journal and roadmap, each valid against registry.schema.json and the Registry', () => {
+  assert.deepEqual(PRODUCTS.map((registry) => registry.registry), ['gym', 'journal', 'roadmap']);
   for (const registry of PRODUCTS) {
     assert.deepEqual(errorsOf(SCHEMA, registry), [], registry.registry);
     assert.doesNotThrow(() => new Registry(registry), registry.registry);
@@ -205,17 +222,17 @@ test('the product registries are gym and journal, each valid against registry.sc
 
 // A deployment composes the registries composition.json names into one registry: one version, the version every
 // request carries (§9.1), and no product, type, command or refusal code a second registry declares again. It names
-// gym and journal (§2.4).
-test('composition.json names the composed registries: gym and journal, each a product registry', () => {
+// gym, journal and roadmap (§2.4).
+test('composition.json names the composed registries: gym, journal and roadmap, each a product registry', () => {
   assert.deepEqual(Object.keys(COMPOSITION).sort(), ['composition', 'registries']);
-  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json']);
+  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json', 'journal.registry.json', 'roadmap.registry.json']);
   for (const name of COMPOSITION.registries) assert.ok(PRODUCTS.some((registry) => `${registry.registry}.registry.json` === name), name);
 });
 
 // So a product registry joins the composition without a rename, no two product registries, composed or not, declare a
 // name twice.
 test('the composed registries declare one version, and no product registry declares a name another does', () => {
-  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[12, 11], [12, 11]]);
+  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[13, 11], [13, 11], [13, 11]]);
   const names = (pick) => PRODUCTS.flatMap(pick);
   const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
   for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {
@@ -266,14 +283,39 @@ test('gym creation receipts keep independent string identities and exact server 
   });
 });
 
-// D-8 and A.2: every gym minted type is seeded, and its widest seeded id, a seed at the bound and the largest ordinal, fits
-// its id pattern.
-test('every minted gym type is seeded, its widest seeded id in its pattern', () => {
-  const minted = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.identity === 'minted');
-  const seeded = minted.filter((type) => type.seeded);
-  assert.deepEqual(seeded.map((type) => type.type), minted.map((type) => type.type));
-  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
+// D-8: a type that declares seeded ids fits its widest seeded id, a seed at the bound and the largest ordinal, in its id
+// pattern, in every product registry.
+test('every seeded type of every product fits its widest seeded id in its pattern', () => {
+  const seeded = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.seeded);
   for (const type of seeded) {
     assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
+  }
+});
+
+// A.2: every minted gym type is seeded.
+test('every minted gym type is seeded', () => {
+  const gym = new Registry(PRODUCTS.find((json) => json.registry === 'gym'));
+  const minted = [...gym.types.values()].filter((type) => type.identity === 'minted');
+  assert.deepEqual(minted.filter((type) => type.seeded).map((type) => type.type), minted.map((type) => type.type));
+  assert.deepEqual(minted.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
+});
+
+test('Unicode ID domains round-trip and mint whole scalar values', () => {
+  const document = read('corpus/registry/refusals.json').find((v) => v.name === 'a mint draws Unicode scalars within the id domain').input.registry;
+  assert.deepEqual(errorsOf(SCHEMA, document), []);
+  const registry = new Registry(document);
+  const type = registry.type('node');
+  assert.equal(mintId(type, (size) => { assert.equal(size, 2); return 1; }), '界' + '🚀'.repeat(127));
+  for (const change of [
+    (t) => { t.idDomain.nullable = false; }, (t) => { t.idDomain.unit = 'bytes'; },
+    (t) => { delete t.idDomain.max; }, (t) => { t.idDomain.min = 0; },
+    (t) => { t.idDomain.max = 2 ** 53; }, (t) => { t.idPattern = '^a+$'; },
+    (t) => { t.key = { ref: 'kind' }; }, (t) => { t.identity = 'minted'; },
+    (t) => { t.idSpace = 'global'; }, (t) => { t.singletonId = 'node'; },
+  ]) {
+    const invalid = structuredClone(document);
+    change(invalid.types[0]);
+    assert.notDeepEqual(errorsOf(SCHEMA, invalid), []);
+    assert.throws(() => new Registry(invalid), RegistryError);
   }
 });

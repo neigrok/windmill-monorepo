@@ -65,6 +65,9 @@ a multi-variable incantation onto the command line.
 Run each recipe from the repository root. The first runs without Postgres, even if the shell has
 database settings; the second creates and removes two isolated databases. Both run serially.
 
+The agent that launches a gate waits for its exit before handing work back. Keep the checked commit,
+command, exit code and log in task scratch; an active process session id is not completion evidence.
+
 Build a commit checked out into a reused worktree in a fresh build directory
 (`cmake -S backend -B backend/build-<sha>`). A build directory carried across many commits can link
 a `windmill_server` that corrupts its own memory while every suite still passes.
@@ -76,8 +79,8 @@ env -u WM_PG_TEST -u DATABASE_URL -u WM_SYNC_DATABASE_URL \
   ctest --test-dir backend/build --parallel 1 -V
 ```
 
-The four C++ suites are `domain`, `mcp`, `sync` and `adapters`; five script checks cover deployment,
-authentication comparison, log shutdown and the restore epoch tool.
+The four C++ suites are `domain`, `mcp`, `sync` and `adapters`; the script checks beside them are listed in
+`backend/RUNNING.md` §7.
 
 Each binary ends with `N/M cases passed, X stopped before the end, Y skipped, Z assertion(s)
 failed`. Read all four numbers: *skipped* is never a pass, and a case a `REQUIRE` cut short counts
@@ -214,6 +217,10 @@ is first opened rather than editing rows and restarting.
 Use the [roadmap capture rig](../../../web/scripts/roadmap-rig/APPARATUS.md) for authenticated
 desktop/phone screenshots, selection checks and caption measurements. It waits for explicit scene
 settlement; the canvas's continuous animation loop makes page-idle checks unsuitable.
+Use its [shared browser proof contract](../../../web/scripts/roadmap-rig/APPARATUS.md#shared-browser-proof)
+for visible-font/finite-animation settlement, current-subscribe baselines, live HTTP read-only
+guards and bounded confirmation polls. Socket write observation detects transmission; it does
+not prevent it. Confirm the requested theme/view before settling pixels.
 
 The rig uses SwiftShader and cannot establish hardware frame rate. Use a hardware-backed browser
 for timing and native interactions. Check the reduced-motion preference before judging animation.

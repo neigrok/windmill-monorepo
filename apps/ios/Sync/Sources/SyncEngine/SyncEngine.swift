@@ -5,6 +5,18 @@ import SyncReplica
 import SyncStore
 import Synchronization
 
+public struct WriterTiming: Sendable {
+  public enum Operation: String, Sendable { case commit, engine }
+  public enum Outcome: String, Sendable { case success, failure }
+  public let operation: Operation
+  public let queue: Duration
+  public let held: Duration
+  public let outcome: Outcome
+}
+
+// Runs synchronously after writer release; observation is outside the measured hold.
+public typealias WriterObserver = @Sendable (WriterTiming) -> Void
+
 // The engine (design §5.3): the `Replica` products commit and read through, the loops that send, release, pull and
 // follow live, and the views UI modules observe. Construction runs the start work that must precede the first frame;
 // `start()` says hello and starts the loops.
@@ -30,9 +42,11 @@ public final class SyncEngine: Replica {
 
   public convenience init(config: EngineConfig, bindings: [any ProductBinding] = [], store: Store, transport: any SyncTransport,
                           tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
-                          connectivity: any Connectivity, telemetry: any Telemetry = NoopTelemetry()) throws {
+                          connectivity: any Connectivity, telemetry: any Telemetry = NoopTelemetry(),
+                          writerObserver: WriterObserver? = nil) throws {
     try self.init(config: config, bindings: bindings, store: store, transport: transport, tokens: tokens, forkGuard: forkGuard,
-                  clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity, telemetry: telemetry)
+                  clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity, telemetry: telemetry,
+                  writerObserver: writerObserver)
   }
 
   // Construction runs engine start's first half (`EngineCore.launch`). `identities` mints every id and actor; the
@@ -41,9 +55,10 @@ public final class SyncEngine: Replica {
   package init(config: EngineConfig, bindings: [any ProductBinding], store: Store, transport: any SyncTransport,
                tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
                identities: any IdentitySource & Sendable, connectivity: any Connectivity,
-               tap: (@Sendable (EngineEvent) -> Void)? = nil, telemetry: any Telemetry = NoopTelemetry()) throws {
+               tap: (@Sendable (EngineEvent) -> Void)? = nil, telemetry: any Telemetry = NoopTelemetry(),
+               writerObserver: WriterObserver? = nil) throws {
     let core = EngineCore(config: config, bindings: bindings, store: store, tokens: tokens, clock: clock, random: random,
-                          identities: identities, connectivity: connectivity, telemetry: telemetry)
+                          identities: identities, connectivity: connectivity, telemetry: telemetry, writerObserver: writerObserver)
     if let tap { core.publisher.tap(tap) }
     try core.launch(forkGuard: forkGuard)
 
@@ -122,7 +137,7 @@ public final class SyncEngine: Replica {
     -> (outcome: CommitOutcome?, value: T) {
     let committed: (outcome: CommitOutcome?, value: T)
     do {
-      committed = try core.write { store, instance in
+      committed = try core.write(operation: .commit) { store, instance in
         try store.commit(in: scope, instance: instance, identities: core.identities) { [core, deviceNow = instance.deviceNow, actor = instance.actor.text] tx in
           let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: deviceNow, actor: actor)
           defer { context.end() }
@@ -150,11 +165,87 @@ public final class SyncEngine: Replica {
     return committed
   }
 
+  public func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T),
+                           segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
+    let committed: (outcome: ActCommitOutcome?, value: T)
+    do {
+      committed = try core.write(operation: .commit) { store, instance in
+        var newMints: Set<ScopeRef> = []
+        return try store.commitAct(instance: instance, identities: core.identities, prepare: { [core] tx, staging in
+          let context = try TransactionActContext(tx, core: core, instance: instance, staging: staging)
+          defer { context.end() }
+          let prepared: (ActRequest?, T)
+          do { prepared = try prepare(context) }
+          catch { throw context.failure ?? BodyError(error: error) }
+          try context.finish()
+          newMints = context.newMints
+          return prepared
+        }, segment: { [core] value, index, scope, tx in
+          if newMints.contains(scope), let governing = core.registry.governingRecord(of: scope) {
+            let reader = try TransactionReader(tx, core: core, scope: governing.scope, deviceNow: instance.deviceNow, actor: instance.actor.text)
+            defer { reader.end() }
+            guard try reader.drawn(governing.key.type, governing.key.id)?.life?.isAlive == true else {
+              throw CommitFailure.malformed("an act must create the governing record before using identities in its new scope")
+            }
+          }
+          let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: instance.deviceNow, actor: instance.actor.text)
+          defer { context.end() }
+          let gesture: Gesture
+          do { gesture = try segment(value, index, context) }
+          catch { throw context.failure ?? BodyError(error: error) }
+          try context.finish()
+          return gesture
+        })
+      }
+    } catch let own as BodyError { throw own.error }
+    catch let failure as CommitFailure { throw failure }
+    catch { throw CommitFailure(.storeFailure, "\(error)") }
+    if case .committed(let receipt)? = committed.outcome {
+      core.wakes.sender.kick()
+      if receipt.releaseAt != nil { core.wakes.releaser.kick() }
+    }
+    return committed
+  }
+
   // An Undo's silent fold may leave sendable what the held gesture held back, so an Undo kicks the sender.
-  public func undo(_ gestureId: String) throws -> Bool {
+  public func cancelHeld(_ gestureId: String) throws -> Bool {
     let undone = try core.write { store, _ in try store.undo(gestureId) }
     if undone { core.wakes.sender.kick() }
     return undone
+  }
+
+  // MARK: Undo of an act (§7.3, K-3)
+
+  // requestInverse(sourceActId, inverseSlots?): an act still wholly held is cancelled at once; otherwise its inverse slots
+  // are reserved and projected, and the sender takes them from here. `slots` replace the stored recipes whole. A failure
+  // of the transaction throws as a commit's does. Each request reports its outcome, never its ids.
+  public func requestInverse(_ sourceActId: String, slots: [ActUndo.Segment]? = nil) throws -> InverseResult {
+    let result: InverseResult
+    do {
+      result = try core.write(operation: .commit) { store, instance in
+        try store.requestInverse(sourceActId, replacing: slots, instance: instance, identities: core.identities)
+      }
+    } catch {
+      core.telemetry.event("sync_inverse", properties: ["outcome": "failed"])
+      throw error as? CommitFailure ?? CommitFailure(.storeFailure, "\(error)")
+    }
+    let outcome: String = switch result {
+    case .cancelled, .settled: "ok"
+    case .pending: "pending"
+    case .unavailable: "unavailable"
+    }
+    core.telemetry.event("sync_inverse", properties: ["outcome": outcome])
+    core.wakes.sender.kick()
+    return result
+  }
+
+  public func readInverseResult(_ requestId: String) throws -> InverseResult {
+    try core.storageOperation { try core.store.readInverseResult(requestId) }
+  }
+
+  // The product's stack no longer needs the act: its journal record goes once no unsettled request reads it.
+  public func releaseReversibleAct(_ actId: String) throws -> Bool {
+    try core.write { store, _ in try store.releaseReversibleAct(actId) }
   }
 
   public func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
@@ -207,7 +298,8 @@ public final class SyncEngine: Replica {
     core.publisher.events()
   }
 
-  public func dismissNotice(_ id: String) throws {
+  @discardableResult
+  public func dismissNotice(_ id: String) throws -> Bool {
     try core.write { store, _ in try store.dismissNotice(id) }
   }
 
@@ -232,7 +324,8 @@ public final class SyncEngine: Replica {
       if !opened.contains(scope) { opened.append(scope) }
     }
     core.publish(\.firstPulls)
-    core.pullWants.add([scope])
+    if case .tree(let id) = scope.kind { core.pullWants.add([scope, .overlay(id)]) }
+    else { core.pullWants.add([scope]) }
     core.wakes.puller.kick()
     core.wakes.live.kick()
     return outcome
@@ -334,6 +427,8 @@ final class EngineCore: Sendable {
   let pullWants = PullWants()
   // A re-authentication cleared the pause: the live channel's next step opens its socket at once, with `k` reset.
   let liveReopensAtOnce = Atomic(false)
+  let liveReadiness = Mutex<LiveReadiness?>(nil)
+  let seatTransitions = Mutex(0)
   let actor = Mutex(EngineCore.provisionalActor)
   let upgrade = Atomic(false)
   let foreground = Atomic(true)
@@ -341,6 +436,7 @@ final class EngineCore: Sendable {
   let doubts = Mutex(Doubts())
   let failedPushScopes = Mutex<[[UInt8]: [ScopeRef: PushFailure]]>([:])
   let writers = WriterLine()
+  let writerObserver: WriterObserver?
   let slices: Mutex<WriterSlices>
   // The thread inside a write, 0 when none: a write nested in one on the same thread (an engine call from a commit's
   // body) stops with a message instead of waiting on itself.
@@ -348,7 +444,7 @@ final class EngineCore: Sendable {
 
   init(config: EngineConfig, bindings: [any ProductBinding], store: Store, tokens: any TokenStore, clock: EngineClock,
        random: any RandomSource, identities: any IdentitySource & Sendable, connectivity: any Connectivity,
-       telemetry: any Telemetry = NoopTelemetry()) {
+       telemetry: any Telemetry = NoopTelemetry(), writerObserver: WriterObserver? = nil) {
     self.config = config
     self.bindings = bindings
     self.store = store
@@ -357,6 +453,7 @@ final class EngineCore: Sendable {
     self.random = random
     self.identities = identities
     self.connectivity = connectivity
+    self.writerObserver = writerObserver
     let telemetry: any Telemetry = telemetry is NoopTelemetry || telemetry is BoundedTelemetry ? telemetry : BoundedTelemetry(telemetry)
     self.telemetry = telemetry
     diagnostics = TransportDiagnostics(telemetry)
@@ -368,6 +465,8 @@ final class EngineCore: Sendable {
         telemetry.failure("sync_digest", kind: "digest_mismatch", properties: ["scope_kind": kind])
       case .pushMalformed:
         telemetry.failure("sync_admission", kind: "malformed")
+      case .inverseSettled(let applied, let skipped):
+        telemetry.event("sync_inverse", properties: ["outcome": "settled", "applied": String(applied), "skipped": String(skipped)])
       case .ended, .activeReplicaChanged: break
       }
     }
@@ -384,18 +483,28 @@ final class EngineCore: Sendable {
   // while a scope waits for its governing record's create, or that touches a governing record and so may change the
   // subscription set, wakes both, which pull and follow the scopes that joined it (§7.9). One that takes rows out of
   // every view wakes the sweep.
-  func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
-    try timedWrite(action).value
+  func write<Value>(operation: WriterTiming.Operation = .engine, _ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
+    try timedWrite(operation: operation, action).value
   }
 
   // The same, and how long it held the writer on the engine's clock, which sizes the next sliced step (§2.5).
-  func timedWrite<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> (value: Value, held: Duration) {
+  func timedWrite<Value>(operation: WriterTiming.Operation = .engine,
+                         _ action: (Store, inout Instance) throws -> Written<Value>) throws -> (value: Value, held: Duration) {
     var thread: UInt64 = 0
     pthread_threadid_np(nil, &thread)
     precondition(writingThread.load(ordering: .acquiring) != thread,
                  "an engine write inside another: a commit's body reads through its context and writes nothing")
+    let queued = writerObserver.map { _ in ContinuousClock.now }
     writers.enter()
-    defer { writers.leave() }
+    let acquired = queued.map { _ in ContinuousClock.now }
+    var outcome = WriterTiming.Outcome.failure
+    defer {
+      let completed = acquired.map { _ in ContinuousClock.now }
+      writers.leave()
+      if let writerObserver, let queued, let acquired, let completed {
+        writerObserver(WriterTiming(operation: operation, queue: acquired - queued, held: completed - acquired, outcome: outcome))
+      }
+    }
     var written: (value: Value, change: StoreChange)?
     let held: Duration
     do {
@@ -424,6 +533,7 @@ final class EngineCore: Sendable {
       wakes.live.kick()
     }
     if change.released { wakes.sweeper.kick() }
+    outcome = .success
     return (value, held)
   }
 
@@ -443,7 +553,7 @@ final class EngineCore: Sendable {
   func firstPullComplete(_ tx: StoreTransaction, of scope: ScopeRef, in replica: String) throws -> Bool {
     let lifecycle = ReplicaLifecycle(registry: registry)
     let subscriptions = subscriptions()
-    guard let loaded = try tx.replica(replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection()) else {
+    guard let loaded = try tx.replica(replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection(projectionTargets: true)) else {
       throw StoreError.noReplica(replica)
     }
     return lifecycle.firstPullComplete(scope, in: loaded, subscribed: Set(try lifecycle.subscriptionSet(of: loaded, subscriptions)))
@@ -527,6 +637,28 @@ final class EngineCore: Sendable {
   }
 
 
+  struct LiveReadiness: Sendable {
+    let replica: String
+    let token: SessionToken
+    let scopes: Set<ScopeRef>
+    let connectivity: Int
+    let lifecycle: Int
+  }
+
+  func freshness(_ scope: ScopeRef, meta: ReplicaMeta) -> SyncFreshness {
+    guard seatTransitions.withLock({ $0 == 0 }), isForeground, connectivity.isOnline, !upgradeRequired,
+          meta.state == .bound, !meta.authPaused, let account = meta.account,
+          let live = liveReadiness.withLock({ $0 }), live.replica == meta.replica,
+          live.token == tokens.token(for: account), live.scopes.contains(scope),
+          live.connectivity == connectivityGeneration.withLock({ $0 }),
+          live.lifecycle == lifecycleGeneration.withLock({ $0 }),
+          !doubts.withLock({ $0.inDoubt(scope) }), !meta.offset.samples.isEmpty,
+          let sample = meta.offset.clockReading else { return SyncFreshness() }
+    let now = clock.wall.reading()
+    guard !now.jumped(since: sample) else { return SyncFreshness() }
+    return SyncFreshness(serverNow: meta.physNow(deviceNow: now.wall), live: true)
+  }
+
   // The active replica's meta.
   func seat() throws -> ReplicaMeta? {
     try storageRead { tx in try tx.meta(of: tx.activeReplica()) }
@@ -603,11 +735,11 @@ final class EngineCore: Sendable {
     try write { store, _ in try store.reconcile(subscriptions()) }
   }
 
-  // §7.9 the active replica's own subscription set: the products its surface carries, the trees its governing records
-  // hold alive, and the scopes opened by hand. A transaction reads it against the replica as it then stands.
+  // §7.9 the active replica's own subscription set: the products its build carries for its surface, the trees its
+  // governing records hold alive, and the scopes opened by hand. A transaction reads it against the replica as it then
+  // stands.
   func subscriptions() -> SubscriptionSet {
-    .own(Subscriptions(
-      products: registry.products.filter { $0.surfaces.contains(config.surface) }.map(\.name), opened: opened.withLock { $0 }))
+    .own(Subscriptions(products: config.products(of: registry), opened: opened.withLock { $0 }))
   }
 
   var isForeground: Bool { foreground.load(ordering: .relaxed) }

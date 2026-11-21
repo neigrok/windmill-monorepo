@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { signIn } from '../../client/lifecycle.js';
+import { cancelSignIn, signIn } from '../../client/lifecycle.js';
 import { Device, Replica } from '../../client/replica.js';
 import { jcs } from '../../core/jcs.js';
 import { registry } from '../../vectors/fixtures.js';
@@ -53,4 +53,19 @@ for (const choice of ['add', 'discard']) test(`device-only work pins its bytes b
   assert.deepEqual(final, { complete: true, due: stale.due });
   assert.deepEqual(device.activeReplica.device.probe ?? {}, choice === 'add' ? { rack: { body: 'newer writing' } } : {});
   assert.equal(device.replicas.some((replica) => replica.meta.state === 'anon' && replica.device.probe?.rack), false);
+});
+
+test('cancelling an incomplete sign-in drops its record and leaves the anon replica active with its work; a completed one has none to cancel', () => {
+  const { device, ctx } = setup(false);
+  assert.equal(signIn(device, ctx, { account: 'A', holdsRecords: { probe: true } }).complete, false);
+  const before = structuredClone(device.toJSON());
+  cancelSignIn(device, 'B');
+  assert.deepEqual(device.toJSON(), before);
+  cancelSignIn(device, 'A');
+  const { meta, ...unchanged } = before;
+  assert.deepEqual({ meta, after: device.toJSON() }, { meta: { pendingSignIn: { account: 'A' } }, after: unchanged });
+  assert.equal(signIn(device, ctx, { account: 'A', holdsRecords: { probe: false } }).complete, true);
+  const bound = structuredClone(device.toJSON());
+  assert.throws(() => cancelSignIn(device, 'A'), /no sign-in is pending/);
+  assert.deepEqual(device.toJSON(), bound);
 });

@@ -25,6 +25,9 @@ public enum Constants {
   public static let maxRecordBytes = 1_048_576
   public static let pushMaxIntents = 64
   public static let pushMaxBytes = 2_097_152
+  public static let effectMaxBytes = 67_108_864
+  public static let receiptMaxBytes = 67_108_864
+  public static let scopedResponseMaxBytes = 71_303_168
   public static let pushWorkMs: Int64 = 50
   public static let pullPageBytes = 1_048_576
   public static let pullMaxScopes = 64

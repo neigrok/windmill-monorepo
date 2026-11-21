@@ -130,7 +130,7 @@ public struct PageApplier: Sendable {
   public func awaitsGoverningCreate(_ scope: ScopeRef, in replica: LoadedReplica) -> Bool {
     guard let governing = registry.governingRecord(of: scope) else { return false }
     return replica.entries(touching: governing.key, in: governing.scope).contains { entry in
-      entry.state != .acked && entry.drawnDeltas.contains { $0.key == governing.key && $0.creates }
+      entry.state != .acked && entry.deltas(in: governing.scope).contains { $0.key == governing.key && $0.creates }
     }
   }
 
@@ -188,6 +188,11 @@ public struct PageApplier: Sendable {
     return [.tree(tree), .overlay(tree)]
   }
 
+  // The scopes a dead governing row among `rows` ends, whose entries its transaction reads (`receive`).
+  func ended(by rows: [Row]) -> [ScopeRef] {
+    rows.filter { !$0.isAlive }.flatMap(governed)
+  }
+
   // §7.5 step 2: the ends a client does not apply, forgetting and recording nothing. Any gone or not-found of a product
   // scope: a product scope never dies, and the server answers one only to a request served as anonymous, which a bound
   // replica has already handled as a 401 (§9.1); defence in depth. And a not-found for a tree or overlay scope that waits
@@ -209,7 +214,7 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // What of the outbox a step reads in `meta`'s replica: a last chunk what it settles and one more, an end its scope's, an epoch change all.
+  // What of the outbox a step reads in `meta`'s replica: a last chunk what it settles and one more, a tree end also its own overlay's, an epoch change all.
   public func entries(of step: PullStep, in meta: ReplicaMeta) -> EntrySelection {
     switch step {
     case .sample, .pauseAuth:
@@ -220,20 +225,26 @@ public struct PageApplier: Sendable {
     case .page(let page, _, let chunk):
       switch page.body {
       case .reset: return EntrySelection()
-      case .gone, .notFound: return EntrySelection(scopes: [page.scope])
+      case .gone, .notFound:
+        if case .tree(let id) = page.scope.kind { return EntrySelection(scopes: [page.scope, .overlay(id)]) }
+        return EntrySelection(scopes: [page.scope])
       case .rows(let rows):
-        guard chunk.isLast, let cursor = Cursor(decoding: rows.cursor), let cleanSeq = cursor.cleanSeq else { return EntrySelection() }
-        return EntrySelection(covered: CoveredEntries(scope: page.scope, epoch: cursor.epoch, cleanSeq: cleanSeq, limit: chunk.settles.onePast))
+        let ended = Set(ended(by: Array(rows.rows[chunk.rows])))
+        guard chunk.isLast, let cursor = Cursor(decoding: rows.cursor), let cleanSeq = cursor.cleanSeq else { return EntrySelection(scopes: ended) }
+        return EntrySelection(
+          covered: CoveredEntries(scope: page.scope, epoch: cursor.epoch, cleanSeq: cleanSeq, limit: chunk.settles.onePast), scopes: ended)
       }
     }
   }
 
-  // What of the outbox a frame reads (§7.5 step 3): a change what it settles and one more, an end its scope's, never every entry.
+  // What of the outbox a frame reads (§7.5 step 3): a change what it settles and one more, a tree end also its own overlay's, never every entry.
   public func entries(of frame: LiveFrame, settling count: Int) -> EntrySelection {
     switch frame {
     case .change(let change):
-      return EntrySelection(covered: CoveredEntries(scope: change.scope, epoch: change.epoch, cleanSeq: change.seq, limit: count.onePast))
+      return EntrySelection(covered: CoveredEntries(scope: change.scope, epoch: change.epoch, cleanSeq: change.seq, limit: count.onePast),
+                            scopes: Set(ended(by: change.rows ?? [])))
     case .gone(let scope, _), .notFound(let scope, _):
+      if case .tree(let id) = scope.kind { return EntrySelection(scopes: [scope, .overlay(id)]) }
       return EntrySelection(scopes: [scope])
     case .pong, .other:
       return EntrySelection()
@@ -293,7 +304,7 @@ public struct PageApplier: Sendable {
     guard replica.cursors[scope]?.cleanSeq != nil else { return (0, false) }
     let covered = replica.covered(in: scope)
     let slice = covered.prefix(count)
-    for entry in slice { try replica.move(entry.localId, .resolve) }
+    for entry in slice { try replica.settle(entry.localId) }
     return (slice.count, covered.count > count)
   }
 
@@ -378,17 +389,21 @@ public struct PageApplier: Sendable {
   }
 
   // A row replaces the stored one by seq (§3.4); a dead row deletes it, a dead derived row adds a spent id, and a dead
-  // governing record makes its tree and overlay known gone, which §7.1 step 2 refuses. An alive governing record deletes
-  // a not-found record of either (`rejoins`). The target's digest after the row.
+  // governing record makes its tree and overlay known gone, which §7.1 step 2 refuses, and ends them for the outbox. An
+  // alive governing record deletes a not-found record of either (`rejoins`). The target's digest after the row.
   func receive(_ row: Row, into scope: ScopeRef, staged: Bool, digest: ScopeDigest, in replica: inout LoadedReplica) throws -> ScopeDigest {
     let previous = staged ? replica.staging[scope]!.rows.row(row.key) : replica.rows(scope).row(row.key)
     if let previous, row.seq < previous.seq { return digest }
     guard row.isAlive else {
       if registry.type(row.key.type)?.identity == .derived {
         guard let born = row.lattice.born else { throw JSONError.shape("the dead derived row \(row.key) carries no born") }
-        replica.apply(.putSpent(scope, SpentID(key: row.key, born: born)))
+        replica.apply(.putSpent(scope, SpentID(key: row.key, born: born, seq: row.seq)))
       }
-      for governed in governed(by: row) { replica.apply(.putKnown(governed, .gone)) }
+      for governed in governed(by: row) {
+        replica.apply(.putKnown(governed, .gone))
+        try replica.forgetJournalScope(governed)
+        try replica.endProjections(in: governed)
+      }
       if previous != nil { replica.apply(staged ? .deleteStagedRow(scope, row.key) : .deleteRow(scope, row.key)) }
       return digest.replacing(previous?.json, with: nil)
     }
@@ -430,12 +445,18 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // Gone or not found: the scope's rows, spent ids, cursor and staging go, it is known, and its acked entries resolve.
-  // Only a tree's scopes are ever known so (§2.5); the replica's own product scope never is.
+  // A scope end also ends a bound tree's own overlay; both forget their cache and their journal values and end only
+  // acknowledged entries' effects there. Only a tree's scopes are ever known so (§2.5); the replica's own product scope
+  // never is.
   func forget(_ scope: ScopeRef, as kind: KnownKind, in replica: inout LoadedReplica) throws {
-    replica.apply(.forgetScope(scope))
-    replica.apply(.putKnown(scope, kind))
-    for entry in replica.entries(in: scope) where entry.state == .acked { try replica.move(entry.localId, .resolve) }
+    var scopes = [scope]
+    if replica.meta.state == .bound, case .tree(let id) = scope.kind { scopes.append(.overlay(id)) }
+    for endedScope in scopes {
+      replica.apply(.forgetScope(endedScope))
+      try replica.forgetJournalScope(endedScope)
+      if replica.known[endedScope] != .gone { replica.apply(.putKnown(endedScope, kind)) }
+      try replica.endProjections(in: endedScope)
+    }
   }
 
   // MARK: Frames

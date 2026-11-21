@@ -5,7 +5,7 @@ import SyncSchema
 
 // A change to the open workout's plan that Coach proposes and the lifter applies or turns down: the whole plan's diff
 // against the plan as it stood, a routine proposal's change lines. The server stamps the plan revision it read.
-public struct WorkoutProposal: Writable, Equatable {
+public struct WorkoutProposal: ProductEntity, Writable, Equatable {
   public static let type = Gym.Types.workoutProposal
   public static let scope = Gym.scope
 

@@ -294,6 +294,21 @@ Json::Value toJson(const Progress& progress) {
   return root;
 }
 
+Json::Value toJson(const ShownProgress& shown) {
+  Json::Value root = toJson(shown.progress);
+  Json::Value subtrees(Json::arrayValue);
+  for (const SubtreeCount& subtree : shown.subtrees) {
+    Json::Value row(Json::objectValue);
+    row["node"] = subtree.step.str();
+    row["tree"] = subtree.tree.str();
+    row["done"] = static_cast<Json::UInt64>(subtree.done);
+    row["total"] = static_cast<Json::UInt64>(subtree.total);
+    subtrees.append(row);
+  }
+  root["subtrees"] = subtrees;
+  return root;
+}
+
 Json::Value toJson(const TreeDiagnostics& diagnostics) {
   Json::Value root(Json::objectValue);
 

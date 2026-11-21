@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { navigate } from '../../../shell/navigation.js';
+import { navigate, requestNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { Board } from '../board/Board.js';
 import { LINK_COPIED } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { deleteTree, listAllTrees, renameTree } from '../persistence/TreeRegistry.js';
-import { reportRoadmapFailure } from '../reportFailure.js';
+import { BoundaryFailure, reportRoadmapFailure } from '../reportFailure.js';
 import { buildRoadmapExport, downloadExport } from '../settings/exportArchive.js';
 import { treeShareUrl } from '../share/ShareDialog.jsx';
 import { deleteDeviceTree, deleteLocalTree, readDeviceTrees, renameLocalTree } from '../sync/localTrees.js';
 import { withDeviceOpeners } from '../identity/deleteCost.js';
 
 // What the identity row reads and does: Find's handoff, the Next chip, the switcher, the phone's sheet and its verbs.
-export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast }) {
+// `listTrees` reads the account's roadmaps where the room keeps its own list (the replica's); without it the switcher
+// and the sheet read the server's and the device's.
+export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, replicaRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast, listTrees = null }) {
   const { owner, phone, breakpoint } = who;
   const { boardActive, canvasView, switchView } = view;
   const { completed, completedAt } = progress;
@@ -35,11 +37,13 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
 
   const onIdentityQuery = useCallback((change) => {
     const query = typeof change === 'function' ? change(boardQueryRef.current) : change;
-    boardQueryRef.current = query;
-    setBoardQuery(query);
-    if (boardActive || !query.searching) return;
-    switchView('board', { keepFocus: true });
-    track('roadmap_graph_find', { step: 'handoff' });
+    const apply = () => { boardQueryRef.current = query; setBoardQuery(query); };
+    if (boardActive || !query.searching) { apply(); return; }
+    return requestNavigation({ key: 'view:find', run: (tx) => {
+      apply();
+      switchView('board', { keepFocus: true, transaction: tx });
+      track('roadmap_graph_find', { step: 'handoff' });
+    } });
   }, [boardActive, switchView, setBoardQuery]);
   const identityFind = useMemo(() => ({ query: boardQuery, onQuery: onIdentityQuery }), [boardQuery, onIdentityQuery]);
 
@@ -94,19 +98,26 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
   }, [closeActivity]);
   const openRowActivity = useCallback((door) => {
     if (!activityEnabled) return;
-    if (door === 'key') track('roadmap_verb', { verb: 'activity', door: 'key', view: boardActive ? 'board' : 'graph', band: breakpoint });
     if (feedVisible) {
+      if (door === 'key') track('roadmap_verb', { verb: 'activity', door: 'key', view: boardActive ? 'board' : 'graph', band: breakpoint });
       closeRowActivity();
       return;
     }
-    if (breakpoint === 'desktop' && boardActive) switchView('tree', { keepFocus: true });
-    setSelectedId(null);
-    openActivity();
+    return requestNavigation({ key: 'view:activity', run: (tx) => {
+      if (door === 'key') track('roadmap_verb', { verb: 'activity', door: 'key', view: boardActive ? 'board' : 'graph', band: breakpoint });
+      if (breakpoint === 'desktop' && boardActive) switchView('tree', { keepFocus: true, transaction: tx });
+      setSelectedId(null);
+      openActivity();
+    } });
   }, [activityEnabled, feedVisible, closeRowActivity, breakpoint, boardActive, switchView, setSelectedId, openActivity]);
-  const openActivityStep = useCallback((id) => {
-    closeActivity();
-    if (canvasView) graphStepReturnRef.current = true;
-    address.open(id, 'activity');
+  const openActivityStep = useCallback((id, transaction) => {
+    const run = (tx) => {
+      closeActivity();
+      if (canvasView) graphStepReturnRef.current = true;
+      address.open(id, 'activity', tx);
+    };
+    if (transaction) return run(transaction);
+    return requestNavigation({ key: `step:open:${id}`, run });
   }, [closeActivity, canvasView, address.open]);
 
   const currentRoadmap = useMemo(() => ({
@@ -117,28 +128,37 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
     ? { groups: activityGroups, nodesById: tree?.nodesById ?? new Map(), onOpenStep: openActivityStep }
     : null, [owner, phone, activityGroups, tree, openActivityStep]);
   const identitySheet = useMemo(() => ({
-    listTrees: listAllTrees, current: currentRoadmap,
-    onPickTree: (id) => { window.location.hash = `#/app/${id}`; },
+    listTrees: listTrees ?? listAllTrees, current: currentRoadmap,
+    onPickTree: (id, transaction) => transaction ? transaction.navigate(`#/app/${id}`) : navigate(`#/app/${id}`),
     onNewRoadmap: newRoadmap,
-    onBrowse: () => { window.location.hash = '#/browse'; },
+    onBrowse: (transaction) => transaction ? transaction.navigate('#/browse') : navigate('#/browse'),
     activity: sheetActivity,
-  }), [currentRoadmap, sheetActivity]);
+  }), [currentRoadmap, sheetActivity, listTrees]);
 
   const switcher = {
     current: currentRoadmap,
-    listTrees: listSwitcherTrees,
+    listTrees: listTrees ?? listSwitcherTrees,
     onNew: newRoadmap,
     onPreviewTitle: (id, title) => {
       if (id === treeId) document.title = t('roadmap.room.pageTitle', { title: title.trim() || t('roadmap.common.untitled') });
     },
-    // A local row renames the blob and device index; a server row goes through the registry.
-    onRename: (id, title, { local = false } = {}) => {
+    // Where the room reads the device's copy, any row is renamed there. Otherwise a local row renames the blob and device
+    // index, and a server row goes through the registry.
+    onRename: async (id, title, { local = false } = {}) => {
+      const replica = replicaRef.current;
+      if (replica) {
+        if (!await replica.writes.renameRoadmap(id, title)) throw new BoundaryFailure('The name was not written');
+        return undefined;
+      }
       if (id === treeId && sessionRef.current?.renameTree(title)) return undefined;
       return local ? renameLocalTree(id, title) : renameTree(id, title);
     },
-    // The server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
+    // Where the room reads the device's copy, any row's deletion is held there, and answers itself while held. Otherwise the
+    // server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
     // A tree that lives only here goes with the steps of the other trees here that open it, or not at all (deleteDeviceTree).
     onDelete: async (id, { local = false } = {}) => {
+      const replica = replicaRef.current;
+      if (replica) return replica.writes.deleteRoadmap(id);
       if (local) return deleteDeviceTree(id, { live: sessionRef.current });
       await deleteTree(id);
       if (id === treeId) sessionRef.current?.close();
@@ -149,7 +169,7 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
   return {
     switcher, activityEnabled, identityFind, graphNext, identityNext, shareFromRow, exportFromRow, currentRoadmap, identitySheet,
     closeRowActivity, openRowActivity, openActivityStep,
-    openRowSettings: () => navigate('/app/settings'),
+    openRowSettings: (transaction) => transaction?.navigate ? transaction.navigate('/app/settings') : navigate('/app/settings'),
   };
 }
 
@@ -160,6 +180,7 @@ async function listSwitcherTrees() {
   return trees ? withDeviceOpeners(rows, trees) : rows;
 }
 
-function newRoadmap() {
-  window.location.hash = '#/app/new';
+function newRoadmap(transaction) {
+  if (transaction?.navigate) return transaction.navigate('#/app/new');
+  return navigate('#/app/new');
 }

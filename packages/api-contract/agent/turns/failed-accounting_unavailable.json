@@ -1,0 +1,301 @@
+{
+  "format": "coach-turn/v1",
+  "name": "failed-accounting_unavailable",
+  "profile": {
+    "name": "vector.coach",
+    "version": 1,
+    "system": [
+      "Be useful."
+    ],
+    "firstContent": {
+      "historyPrefix": "History: ",
+      "contextPrefix": "Context: ",
+      "questionPrefix": "Question: ",
+      "emptyQuestion": "Look."
+    },
+    "refusals": {
+      "not-offered": "not-offered.",
+      "seat-required": "seat-required.",
+      "invalid-input": "invalid-input.",
+      "one-proposal": "one-proposal.",
+      "coach-turn-volume": "coach-turn-volume.",
+      "product-refused": "product-refused.",
+      "stopped": "stopped.",
+      "executor-refused": "executor-refused."
+    },
+    "tools": [
+      {
+        "name": "read",
+        "description": "read a value",
+        "input": {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "integer"
+            }
+          }
+        },
+        "countsAsWrite": false
+      },
+      {
+        "name": "write",
+        "description": "write a value",
+        "input": {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "integer"
+            }
+          }
+        },
+        "countsAsWrite": true
+      }
+    ],
+    "model": "small",
+    "effort": "low",
+    "output": {
+      "maxTokens": 100,
+      "minTokens": null
+    },
+    "label": "other",
+    "limits": {
+      "modelCalls": 3,
+      "abilityCalls": 4,
+      "writes": 2
+    },
+    "groups": [
+      {
+        "name": "proposal",
+        "tools": [
+          "write"
+        ],
+        "maxSuccesses": 1,
+        "code": "one-proposal"
+      }
+    ]
+  },
+  "input": {
+    "turnId": "turn-vector",
+    "seat": {
+      "kind": "bound",
+      "key": "seat-1"
+    },
+    "question": "Help",
+    "pictures": []
+  },
+  "runtime": {
+    "nowMs": 0,
+    "callIds": [
+      "AAAAAAAAAAAAAAAAAAAAAA",
+      "BBBBBBBBBBBBBBBBBBBBBB",
+      "CCCCCCCCCCCCCCCCCCCCCC"
+    ],
+    "lockAvailable": true,
+    "connected": true
+  },
+  "host": {
+    "open": {
+      "history": "Earlier",
+      "context": [
+        "Now"
+      ],
+      "pictures": []
+    },
+    "checks": {},
+    "executions": {},
+    "recovery": null
+  },
+  "service": {
+    "passes": [
+      {
+        "pass": "vector-pass",
+        "expiresIn": 600000
+      }
+    ],
+    "exchanges": [
+      {
+        "events": [
+          {
+            "id": 1,
+            "event": "started",
+            "data": {
+              "callId": "AAAAAAAAAAAAAAAAAAAAAA",
+              "served": "small",
+              "maxTokens": 100
+            }
+          },
+          {
+            "id": 2,
+            "event": "text",
+            "data": {
+              "delta": "Hello"
+            }
+          },
+          {
+            "id": 3,
+            "event": "failed",
+            "data": {
+              "code": "accounting_unavailable",
+              "charged": null,
+              "allowance": null
+            }
+          }
+        ],
+        "refusal": null,
+        "broken": false,
+        "repeat": 1
+      }
+    ],
+    "pictures": []
+  },
+  "controls": [],
+  "expected": {
+    "requests": [
+      {
+        "method": "PUT",
+        "path": "/v1/calls/AAAAAAAAAAAAAAAAAAAAAA/text?label=other",
+        "body": {
+          "model": "small",
+          "system": [
+            "Be useful."
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "read a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "write",
+              "description": "write a value",
+              "input": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "History: Earlier"
+                },
+                {
+                  "text": "Context: Now"
+                },
+                {
+                  "text": "Question: Help"
+                }
+              ]
+            }
+          ],
+          "output": {
+            "maxTokens": 100,
+            "minTokens": null,
+            "schema": null
+          },
+          "effort": "low",
+          "cache": true
+        }
+      }
+    ],
+    "hostCalls": [
+      {
+        "op": "open",
+        "input": {
+          "turnId": "turn-vector",
+          "seat": {
+            "kind": "bound",
+            "key": "seat-1"
+          },
+          "question": "Help",
+          "pictures": []
+        }
+      },
+      {
+        "op": "beginRound",
+        "text": "",
+        "mark": {
+          "turnId": "turn-vector",
+          "callId": "AAAAAAAAAAAAAAAAAAAAAA",
+          "textBytesBeforeRound": 0
+        }
+      },
+      {
+        "op": "text",
+        "text": "Hello"
+      },
+      {
+        "op": "end",
+        "end": {
+          "state": "failed",
+          "text": "Hello",
+          "truncated": false,
+          "code": "accounting_unavailable"
+        }
+      }
+    ],
+    "gateRefusals": [],
+    "marks": [
+      {
+        "turnId": "turn-vector",
+        "callId": null,
+        "textBytesBeforeRound": 0
+      },
+      {
+        "turnId": "turn-vector",
+        "callId": "AAAAAAAAAAAAAAAAAAAAAA",
+        "textBytesBeforeRound": 0
+      },
+      null
+    ],
+    "waitsMs": [],
+    "telemetry": [
+      {
+        "kind": "turn",
+        "state": "failed",
+        "seat": "bound",
+        "code": "accounting_unavailable",
+        "rounds": 1,
+        "abilityCalls": 0,
+        "refusals": 0,
+        "answerBytes": 5,
+        "durationMs": 0
+      }
+    ],
+    "end": {
+      "state": "failed",
+      "text": "Hello",
+      "truncated": false,
+      "code": "accounting_unavailable"
+    }
+  }
+}

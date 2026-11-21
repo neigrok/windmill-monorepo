@@ -2,17 +2,21 @@
 // corpus/README.md ("Changes").
 
 import { Clock } from '../core/clock.js';
+import { utf8 } from '../core/encoding.js';
 import { CONSTANTS } from '../core/constants.js';
 import { derive, mintId } from '../core/derive.js';
 import { OrderKeyError, dropKey } from '../core/fracindex.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { INTENT_MACHINE, moveEntry, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
+import { orderedScopes } from '../core/receipts.js';
 import { isVisible, recordKey } from '../core/rows.js';
-import { roundToDomain } from '../core/values.js';
+import { checkId, roundToDomain } from '../core/values.js';
 import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
-import { drawn, foldDelta, stored, visibleCount } from './views.js';
+import { settleEnded } from './journal.js';
+import { predictionsOf } from './projections.js';
+import { drawn, foldDelta, RecordView, stored, visibleCount } from './views.js';
 
 // §7.1's three failures before the transaction commits: `not-writable`, `malformed` (a programming
 // error) and `store`, the device's store failing to commit, which only the browser engine raises.
@@ -120,7 +124,13 @@ class DeltaBuilder {
   idOf(type, change) {
     if (change.id !== undefined) return change.id;
     const taken = this.takenIds(type);
-    if (type.identity === 'derived' && change.label !== undefined) return derive(change.label, type.derive.fallback, taken);
+    if (type.identity === 'derived' && change.label !== undefined) {
+      try { return derive(change.label, type.derive.fallback, taken, type.idDomain?.max); }
+      catch (error) {
+        if (error instanceof RangeError) throw new CommitError('a derived id cannot fit its domain');
+        throw error;
+      }
+    }
     let id = mintId(type, this.draw);
     while (taken.has(id)) id = mintId(type, this.draw);
     return id;
@@ -303,7 +313,7 @@ function refusalOfScope(replica, registry, scope) {
   if (replica.known[scope] || replica.known[`tree/${tree}`]) return 'scope-dead';
   const governing = registry.governingType;
   const productScope = `self/${registry.productOfScopeKind(governing.scope)}`;
-  const record = stored(replica, registry, productScope).get(recordKey(governing.type, tree));
+  const record = new RecordView(replica, registry, productScope, { withHeld: false }).get(recordKey(governing.type, tree));
   return record?.life?.[0] === 'dead' ? 'scope-dead' : null;
 }
 
@@ -352,6 +362,7 @@ function groupIntents(scope, deltas, guards, opts, cmd, gestureId) {
 // §7.1 step 8: the capped type the gesture's deltas, applied to `stored`, grow past its cap by the growth
 // rule, or undefined. A held delete still occupies its slot.
 function cappedType(registry, storedView, deltas) {
+  if (!deltas.some((delta) => registry.type(delta.t).cap !== undefined)) return undefined;
   const after = new Map(storedView);
   for (const delta of deltas) foldDelta(after, registry, delta);
   return [...new Set(deltas.map((delta) => delta.t))].find((t) => {
@@ -363,11 +374,12 @@ function cappedType(registry, storedView, deltas) {
 }
 
 // §7.1 step 4: the held gestures of the scope that carry no command and whose every delta removes
-// (life → dead) a record `retire` names, as their entries.
-function retiringEntries(replica, scope, retire) {
+// (life → dead) a record `retire` names, as their entries. A capture command is the ordinary deltas' own.
+function retiringEntries(replica, registry, scope, retire) {
   if (retire.length === 0) return [];
   const named = new Set(retire.map(({ t, id }) => recordKey(t, id)));
-  const removes = (entry) => entry.intent.cmd === undefined && (entry.intent.d ?? []).length > 0
+  const commandFree = (entry) => entry.intent.cmd === undefined || registry.command(entry.intent.cmd.name)?.engine === 'capture';
+  const removes = (entry) => commandFree(entry) && (entry.intent.d ?? []).length > 0
     && entry.intent.d.every((delta) => delta.life?.[0] === 'dead' && named.has(recordKey(delta.t, delta.id)));
   const gestures = new Map();
   for (const entry of replica.entries()) gestures.set(entry.gestureId, [...(gestures.get(entry.gestureId) ?? []), entry]);
@@ -391,15 +403,16 @@ function supersedingEntries(replica, scope, gestureIds) {
 // ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits, device}; `device` holds every
 // replica a given `opts.gestureId` is checked against. `changes` is a list with its `opts`, answering
 // {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a function of the views,
-// the commit's one physNow reading and the id of the replica it writes to {drawn, stored, now, replica}
-// (§7.12), read in this transaction before the scope check, answering {gesture: {changes, opts} | null, value}, and then `commit` answers {outcome, value}.
+// the scope's spent ids, the commit's one physNow reading and the id of the replica it writes to
+// {drawn, stored, spent, now, replica} (§7.12), read in this transaction before the scope check, answering {gesture: {changes, opts} | null, value}, and then `commit` answers {outcome, value}.
 // A null gesture writes nothing, ticks no clock and gives a null outcome. A throw writes nothing, and
 // the body's own throw passes through unchanged.
 export function commit(replica, ctx, scope, changes, opts = {}) {
   if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`, 'not-writable');
   const physNow = ctx.deviceNow + replica.meta.serverOffsetMs;
   if (typeof changes !== 'function') return commitGesture(replica, ctx, physNow, scope, changes, opts);
-  const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope), now: physNow, replica: replica.id });
+  const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope),
+    spent: replica.spentRows(scope), now: physNow, replica: replica.id });
   if (!gesture) return { outcome: null, value };
   return { outcome: commitGesture(replica, ctx, physNow, scope, gesture.changes, gesture.opts ?? {}), value };
 }
@@ -408,10 +421,13 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
 // dependents are planned first, and the diff reads views without them. A cap refusal writes nothing,
 // and a too-large refusal writes only its notice; neither retires. The clock is written back once the
 // commit is accepted.
-function commitGesture(replica, ctx, physNow, scope, changes, opts) {
+export function commitGesture(replica, ctx, physNow, scope, changes, opts, act = null) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
-  if (opts.gestureId !== undefined && ctx.device.carriesGesture(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken on the device`);
+  for (const projection of Array.isArray(opts.scopedPredict) ? opts.scopedPredict : []) {
+    if (registry.scopeKindOf(projection?.scope)) ctx.ensureScope?.(projection.scope);
+  }
+  if (!act && opts.gestureId !== undefined && ctx.device.carriesGesture(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken on the device`);
   const product = registry.productOfRef(scope);
   for (const key of Object.keys(opts.local ?? {})) {
     const rows = Object.values(registry.products[product]?.device ?? {});
@@ -424,18 +440,54 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   clock.observe(replica.meta.hlcHigh);
   const stamp = clock.tick();
 
-  const retiring = retiringEntries(replica, scope, opts.retire ?? []);
+  const retiring = retiringEntries(replica, registry, scope, opts.retire ?? []).filter((entry) => !act || entry.gestureId !== opts.gestureId);
+  if (act && opts.supersede?.includes(opts.gestureId)) throw new CommitError('an act cannot supersede itself');
   const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
   const ending = [...new Set([...retiring, ...superseding])];
-  const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
-  const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])])]);
-  const drawnView = drawn(replica, registry, scope, gone);
-  const storedView = stored(replica, registry, scope, gone);
+  const folded = ending.length === 0 ? [] : silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
+  const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? predictionsOf(entry).flatMap(({ d }) => d) : [])])]);
+  const drawnView = new RecordView(replica, registry, scope, { withHeld: true, except: gone });
+  const storedView = new RecordView(replica, registry, scope, { withHeld: false, except: gone });
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
-  const deltas = oneDeltaPerRecord(changes.map((change) => ({ change, delta: builder.delta(change) })).filter(({ delta }) => delta !== null));
+  const built = changes.map((change) => ({ change, delta: builder.delta(change) }));
+  const deltas = oneDeltaPerRecord(built.filter(({ delta }) => delta !== null));
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
-  const cmd = opts.cmd === undefined ? undefined : roundedCommand(registry, opts.cmd);
+  const command = opts.cmd ?? (opts.capture !== undefined && deltas.length ? { name: opts.capture, args: {} } : undefined);
+  const cmd = command === undefined ? undefined : roundedCommand(registry, command);
+  const definition = cmd && registry.command(cmd.name);
+  let predictions;
+  if (opts.scopedPredict !== undefined && (!definition?.scopedEffects || !Array.isArray(opts.scopedPredict))) throw new CommitError('scopedPredict requires a scopedEffects command');
+  if (definition?.scopedEffects) {
+    if (predict.length && opts.scopedPredict?.length) throw new CommitError('predict and scopedPredict are mutually exclusive');
+    const groups = new Map([[scope, []]]);
+    if (predict.length) groups.get(scope).push(...(opts.predict ?? []));
+    for (const group of opts.scopedPredict ?? []) {
+      if (!group || Object.keys(group).sort().join() !== 'changes,scope' || !Array.isArray(group.changes)) throw new CommitError('a scoped prediction names scope and changes');
+      const kind = registry.scopeKindOf(group.scope);
+      if (!kind || kind === 'device' || ((kind === 'tree' || kind === 'overlay')
+        && (!registry.governingType || checkId(registry, registry.governingType, group.scope.split('/').pop())))) throw new CommitError('invalid prediction scope');
+      const refusal = refusalOfScope(replica, registry, group.scope);
+      if (refusal) return { refused: refusal };
+      if (!groups.has(group.scope)) groups.set(group.scope, []);
+      groups.get(group.scope).push(...group.changes);
+    }
+    predictions = orderedScopes(scope, groups.keys()).map((target) => {
+      const targetBuilder = target === scope ? builder : new DeltaBuilder({ registry, replica, scope: target, stamp, physNow,
+        drawnView: new RecordView(replica, registry, target, { withHeld: true, except: gone }),
+        storedView: new RecordView(replica, registry, target, { withHeld: false, except: gone }), draw: ctx.draw });
+      const changes = groups.get(target);
+      if (changes.some((change) => !definition.predicts?.includes(change.t))) throw new CommitError('prediction type is not declared by the command');
+      const d = oneDeltaPerRecord(changes.map((change) => ({ change, delta: targetBuilder.predicted(change) })));
+      return { scope: target, d };
+    });
+    if (holdsNul(predictions)) throw new CommitError('a string of the predictions holds U+0000');
+    if (utf8(jcs(predictions)).length > Math.min(limits.EFFECT_MAX_BYTES, CONSTANTS.EFFECT_MAX_BYTES)) return { refused: 'too-large' };
+  }
+  const { references } = registry;
+  const written = [...deltas, ...predict, ...(predictions ?? []).flatMap(({ d }) => d)];
+  if (written.some((delta) => Object.entries(delta.f ?? {}).some(([name, [value]]) => references.checkValue(registry.type(delta.t).field(name), value)))
+    || (definition && references.checkArguments(definition, cmd.args))) throw new CommitError('a typed reference is malformed');
   if (holdsNul({ scope, d: deltas, guard: guards, cmd, gestureId: opts.gestureId })) throw new CommitError('a string of the intents holds U+0000');
   const capped = cappedType(registry, storedView, deltas);
   if (capped !== undefined) return { refused: 'cap', detail: { type: capped, cap: registry.type(capped).cap } };
@@ -454,12 +506,13 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   for (const entry of retiring) moveEntry(replica, ctx.ended, entry, 'retire');
   for (const entry of superseding) if (replica.entry(entry.localId)) moveEntry(replica, ctx.ended, entry, 'silent-fold');
   foldSilently(replica, ctx.ended, folded);
+  settleEnded(replica, 'undone');
   replica.meta.hlc = clock.pair;
-  const firstOrder = replica.nextCommitOrder();
+  const firstOrder = act ? act.firstOrder + act.offset : replica.nextCommitOrder();
   const entries = intents.map((intent, k) => {
     const state = transition(INTENT_MACHINE, null, 'commit', opts.hold ? 'held' : 'ready');
     const entry = {
-      localId: `${gestureId}/${k}`,
+      localId: `${gestureId}/${(act?.offset ?? 0) + k}`,
       gestureId,
       lineage: replica.lineage(),
       scope,
@@ -469,7 +522,8 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
       stamp,
       intent,
     };
-    if (cmd && predict.length) entry.predict = predict;
+    if (predictions) entry.predictions = predictions;
+    else if (cmd && predict.length) entry.predict = predict;
     const texts = {};
     for (const delta of intent.d ?? []) {
       for (const name of Object.keys(delta.x ?? {})) {
@@ -488,6 +542,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   }
   replica.meta.hlcHigh = stamp;
   const outcome = { localIds: entries.map((entry) => entry.localId), retired: [...new Set(retiring.map((entry) => entry.gestureId))], stamp };
+  if (act) outcome.ids = built.map(({ change, delta }) => delta?.id ?? change.id ?? null);
   if (superseding.length > 0) outcome.superseded = [...new Set(superseding.map((entry) => entry.gestureId))];
   return outcome;
 }

@@ -2,7 +2,6 @@
 // §3 entities and records: the declaration an entity's records belong to, its typed id, and the lenient
 // reader of one record or one object inside it.
 
-import { compareBytes, utf8 } from '../sync/core/encoding.js';
 import { compareJcs, jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Instant, LocalDay } from './time.js';
 import { Fault, precondition } from './values.js';
@@ -12,9 +11,9 @@ import { Fault, precondition } from './values.js';
 /** @typedef {{ t: string, id: RecordID }} RecordRef */
 /**
  * The engine's view record (engine §7.6): lattice registers `[value, stamp]`, texts as plain strings,
- * serials as numbers.
+ * serials as numbers; a confirmed record also keeps its row's `seq`.
  * @typedef {{ t: string, id: RecordID, life?: [string, string], born?: string, f?: Record<string, [Json, string]>,
- *   x?: Record<string, string>, v?: Record<string, number>, rc?: number }} ViewRecord
+ *   x?: Record<string, string>, v?: Record<string, number>, seq?: number, rc?: number }} ViewRecord
  */
 /**
  * An entity value: its id, and when written, every client field as JSON.
@@ -24,7 +23,7 @@ import { Fault, precondition } from './values.js';
 /**
  * A registry type as the kit reads it (ER-16): the engine's TypeDef with the members `Object.assign` gives it.
  * @typedef {import('../../../../packages/api-contract/sync/reference/core/registry.js').TypeDef & { identity: string, scope: string, life?: boolean, cap?: number,
- *   wholePut?: boolean, singletonId?: RecordID, mint?: { prefix: string, alphabet: string, length: number },
+ *   wholePut?: boolean, revivable?: boolean, singletonId?: RecordID, mint?: { prefix: string, alphabet: string, length: number },
  *   fields: Record<string, { kind: string, writer: string }> }} Definition
  */
 
@@ -42,12 +41,30 @@ export class DecodeError extends Error {
   }
 }
 
+// Text in the order of its UTF-8 bytes, read without encoding: UTF-8 orders as code points do, so the texts compare
+// code point by code point, a lone surrogate reading as U+FFFD as the encoder writes it. As the encoder takes them, an
+// absent text reads as empty and any other value as its string.
 /**
- * @param {string} a
- * @param {string} b
+ * @param {string} left
+ * @param {string} right
  */
-export function compareText(a, b) {
-  return compareBytes(utf8(a), utf8(b));
+export function compareText(left, right) {
+  const a = left === undefined ? '' : `${left}`;
+  const b = right === undefined ? '' : `${right}`;
+  const scalarAt = (/** @type {string} */ text, /** @type {number} */ index) => {
+    const point = text.codePointAt(index) ?? 0;
+    return point >= 0xd800 && point <= 0xdfff ? 0xfffd : point;
+  };
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const x = scalarAt(a, i);
+    const y = scalarAt(b, j);
+    if (x !== y) return x < y ? -1 : 1;
+    i += x > 0xffff ? 2 : 1;
+    j += y > 0xffff ? 2 : 1;
+  }
+  return Number(i < a.length) - Number(j < b.length);
 }
 
 /** @param {Iterable<string>} names */
@@ -65,18 +82,23 @@ export function sameJson(a, b) {
   return jcs(a) === jcs(b);
 }
 
-// An entity's declaration (§3.1): the registry type and scope its records live in, its decoder, and
+// An entity's declaration (§3.1): its registry type, optional fixed scope, decoder, and
 // the protocols it takes. `checks` makes it Writable, `heldRemoval` Removable, `orderField` Ordered,
-// `savesGuarded` Draftable and `timestampField` Timestamped.
-/** @template E */
+// `savesGuarded` Draftable and `timestampField` Timestamped. `savesReversibly` opts a Draftable's saves into
+// Undo of an act (§10.2).
+/**
+ * @template E
+ * @template {string | null} [S=string | null]
+ */
 export class EntityType {
   /**
-   * @param {{ type: string, scope: string, decode: (f: Fields) => E, checks?: import('./validation.js').Check<E>[],
-   *   heldRemoval?: boolean, orderField?: string, savesGuarded?: boolean, timestampField?: string }} declaration
+   * @param {{ type: string, scope: S, decode: (f: Fields) => E, checks?: import('./validation.js').Check<E>[],
+   *   heldRemoval?: boolean, orderField?: string, savesGuarded?: boolean, savesReversibly?: boolean, timestampField?: string }} declaration
    */
-  constructor({ type, scope, decode, checks, heldRemoval, orderField, savesGuarded, timestampField }) {
+  constructor({ type, scope, decode, checks, heldRemoval, orderField, savesGuarded, savesReversibly, timestampField }) {
     precondition(savesGuarded === undefined || checks !== undefined, `${type}: a Draftable entity is Writable`);
     precondition(timestampField === undefined || savesGuarded !== undefined, `${type}: a Timestamped entity is Draftable`);
+    precondition(savesReversibly === undefined || savesGuarded !== undefined, `${type}: a reversible save is a Draftable's`);
     this.type = type;
     this.scope = scope;
     this.decode = decode;
@@ -84,8 +106,16 @@ export class EntityType {
     this.heldRemoval = heldRemoval ?? null;
     this.orderField = orderField ?? null;
     this.savesGuarded = savesGuarded ?? null;
+    this.savesReversibly = savesReversibly === true;
     this.timestampField = timestampField ?? null;
     Object.freeze(this);
+  }
+
+  /** @param {string | null} [scope] */
+  boundScope(scope = this.scope) {
+    precondition(typeof scope === 'string', `${this.type} requires an explicit scope`);
+    precondition(this.scope === null || this.scope === scope, `${this.type} cannot be rebound to ${scope}`);
+    return scope;
   }
 
   get isWritable() {

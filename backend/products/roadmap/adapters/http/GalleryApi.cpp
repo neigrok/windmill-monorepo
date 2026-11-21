@@ -16,12 +16,28 @@
 
 namespace wm {
 
+namespace {
+
+// The wall's one line when its follows left an owner unread.
+void tellDegraded(const FollowTally& tally) {
+  if (!tally.degraded()) return;
+  LOG_INFO << "roadmap_gallery_follows followed=" << tally.followed << " timed_out=" << tally.timedOut
+           << " failed=" << tally.failed << " cooling_off=" << tally.coolingOff << " past_cap=" << tally.pastCap;
+}
+
+}
+
 GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<OwnerProgress> progress,
-                       std::shared_ptr<AuthService> auth, std::string webRoot)
+                       std::shared_ptr<AuthService> auth, std::string webRoot, std::shared_ptr<EngineReadModels> engine)
     : trees_(std::move(trees)), progress_(std::move(progress)), auth_(std::move(auth)),
-      webRoot_(std::move(webRoot)) {}
+      webRoot_(std::move(webRoot)), engine_(std::move(engine)) {}
 
 std::vector<WallCandidate> GalleryApi::candidates() {
+  if (engine_) {
+    EngineWall wall = engine_->wall(kFollowCap);
+    tellDegraded(wall.tally);
+    return std::move(wall.candidates);
+  }
   std::vector<ListedTree> listed = trees_->listPublic();
   std::vector<WallCandidate> candidates;
   candidates.reserve(listed.size());
@@ -49,10 +65,7 @@ std::vector<WallCandidate> GalleryApi::candidates() {
     owners[slot->second].trees.emplace(entry.id, std::move(listed[i].pointers));
   }
   ShownToReaders shown = progress_->shownToReaders(owners, kFollowCap, "gallery");
-  if (shown.tally.degraded())
-    LOG_INFO << "roadmap_gallery_follows followed=" << shown.tally.followed << " timed_out=" << shown.tally.timedOut
-             << " failed=" << shown.tally.failed << " cooling_off=" << shown.tally.coolingOff
-             << " past_cap=" << shown.tally.pastCap;
+  tellDegraded(shown.tally);
 
   for (WallCandidate& candidate : candidates) {
     const auto marks = shown.progress.find(candidate.data.id);
@@ -60,6 +73,8 @@ std::vector<WallCandidate> GalleryApi::candidates() {
   }
   return candidates;
 }
+
+std::vector<GalleryEntry> GalleryApi::wall(const Viewer& viewer) { return publicWall(candidates(), viewer); }
 
 std::string GalleryApi::renderWall(const std::string& shell, const std::vector<GalleryEntry>& wall) {
   if (wall.empty()) return shell;
@@ -95,7 +110,7 @@ std::string GalleryApi::renderWall(const std::string& shell, const std::vector<G
 }
 
 void GalleryApi::page(const drogon::HttpRequestPtr&, HttpCallback&& callback) {
-  const std::vector<GalleryEntry> wall = publicWall(candidates(), Viewer{});
+  const std::vector<GalleryEntry> wall = this->wall(Viewer{});
   const std::vector<GalleryEntry> firstPage = wallPage(wall, "", kWallLimit)->entries;
 
   std::string shell = readWebFile(webRoot_, "gallery.html");
@@ -128,10 +143,10 @@ void GalleryApi::index(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   Viewer viewer;
   if (caller) {
     viewer.user = caller;
-    viewer.forked = trees_->listForkedSources(*caller);
+    viewer.forked = engine_ ? engine_->forkedSources(*caller) : trees_->listForkedSources(*caller);
   }
 
-  const std::vector<GalleryEntry> wall = publicWall(candidates(), viewer);
+  const std::vector<GalleryEntry> wall = this->wall(viewer);
   const std::string cursor = req->getParameter("cursor");
   const std::optional<WallPage> page = wallPage(wall, cursor, limit);
   if (!page) {

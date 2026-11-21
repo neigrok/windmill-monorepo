@@ -148,8 +148,9 @@ export class SkillTree {
 
     const renderEdges = this.allEdges.map((edge) => ({ from: edge.from, to: edge.to, kind: this.trunkTree.edgeKind(edge.from, edge.to) }));
 
-    const xs = renderNodes.map((node) => node.x);
-    const ys = renderNodes.map((node) => node.y);
+    // A tree with no steps has the extent of one step at the origin.
+    const xs = renderNodes.length ? renderNodes.map((node) => node.x) : [0];
+    const ys = renderNodes.length ? renderNodes.map((node) => node.y) : [0];
     const bounds = {
       minX: Math.min(...xs) - NODE_SIZE,
       minY: Math.min(...ys) - NODE_SIZE,

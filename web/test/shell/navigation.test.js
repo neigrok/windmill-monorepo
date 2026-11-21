@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { navigate, previousLocation, rememberHashNavigation, replaceLocation, returnToPreviousLocation } from '../../src/shell/navigation.js';
+import { navigate, previousLocation, initializeNavigation, replaceEntry, replaceLocation, returnToPreviousLocation } from '../../src/shell/navigation.js';
 import { elementsOf, loadScreen, renderHook } from '../products/gym/harness.mjs';
 
 function browser(t, href = '/app/gym?week=2#/gym/session/session-17') {
@@ -36,8 +36,7 @@ function browser(t, href = '/app/gym?week=2#/gym/session/session-17') {
   globalThis.document = { activeElement: null };
   globalThis.PopStateEvent = class { constructor(type) { this.type = type; } };
   t.after(() => { globalThis.window = oldWindow; globalThis.document = oldDocument; globalThis.PopStateEvent = oldPopStateEvent; });
-  rememberHashNavigation();
-  win.addEventListener('hashchange', rememberHashNavigation);
+  initializeNavigation();
   return {
     win,
     hash(hash) {
@@ -50,18 +49,18 @@ function browser(t, href = '/app/gym?week=2#/gym/session/session-17') {
   };
 }
 
-test('account return preserves the full source, nested settings, browser history and reload metadata', (t) => {
+test('account return preserves the full source, nested settings, browser history and reload metadata', async (t) => {
   const { win } = browser(t);
   navigate('/app/connect');
   assert.equal(previousLocation(), '/app/gym?week=2#/gym/session/session-17');
   navigate('/app/connect#/settings');
   replaceLocation('/app/settings#/settings');
   assert.equal(previousLocation(), '/app/connect');
-  rememberHashNavigation();
+  initializeNavigation();
   assert.equal(previousLocation(), '/app/connect', 'initialization after reload retains the recorded predecessor');
-  returnToPreviousLocation();
+  await returnToPreviousLocation();
   assert.equal(win.location.href, 'https://windmill.works/app/connect');
-  returnToPreviousLocation();
+  await returnToPreviousLocation();
   assert.equal(win.location.href, 'https://windmill.works/app/gym?week=2#/gym/session/session-17');
   win.history.go(1);
   assert.equal(previousLocation(), '/app/gym?week=2#/gym/session/session-17');
@@ -69,7 +68,7 @@ test('account return preserves the full source, nested settings, browser history
   assert.equal(previousLocation(), '/app/connect');
 });
 
-test('native legacy hash doors retain their source through pathname upgrades and browser back', (t) => {
+test('native legacy hash doors retain their source through pathname upgrades and browser back', async (t) => {
   const { win, hash } = browser(t, '/roadmap?view=mine#/tree/tree-9');
   hash('#/connect');
   replaceLocation('/app/connect?view=mine#/connect');
@@ -77,18 +76,18 @@ test('native legacy hash doors retain their source through pathname upgrades and
   hash('#/settings');
   replaceLocation('/app/settings?view=mine#/settings');
   assert.equal(previousLocation(), '/app/connect?view=mine#/connect');
-  returnToPreviousLocation();
+  await returnToPreviousLocation();
   assert.equal(win.location.href, 'https://windmill.works/app/connect?view=mine#/connect');
-  returnToPreviousLocation();
+  await returnToPreviousLocation();
   assert.equal(win.location.href, 'https://windmill.works/roadmap?view=mine#/tree/tree-9');
 });
 
-test('direct entry and malformed or external predecessor metadata use the app fallback', (t) => {
+test('direct entry and malformed or external predecessor metadata use the app fallback', async (t) => {
   const { win } = browser(t, '/app/connect');
   for (const previous of [null, 'https://example.com', '//example.com', '//[', '/\\example.com', '/\n/example.com']) {
-    win.history.replaceState({ windmillNavigation: { href: '/app/connect', previous } }, '', '/app/connect');
+    replaceEntry('/app/connect', { windmillNavigation: { href: '/app/connect', previous } });
     assert.equal(previousLocation(), null);
-    returnToPreviousLocation();
+    await returnToPreviousLocation();
     assert.equal(win.location.href, 'https://windmill.works/app');
   }
 });
@@ -106,6 +105,7 @@ test('Back and Escape share return behavior in both chrome modes, including focu
       const event = { type: 'keydown', key: 'Escape', button: 0, preventDefault() { this.defaultPrevented = true; } };
       if (action === 'click') back.props.onClick(event);
       else win.dispatchEvent(event);
+      await new Promise((resolve) => setImmediate(resolve));
       assert.equal(event.defaultPrevented, true);
       assert.equal(win.location.href, 'https://windmill.works/app/gym?week=2#/gym/session/session-17');
       view.unmount();

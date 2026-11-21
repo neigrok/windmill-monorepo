@@ -1,5 +1,6 @@
 // The room's shared words and the sentences it builds from counts, read from the roadmap catalog. Step titles arrive as plain strings.
 
+import { APP_LOCALE } from '../../platform/i18n/index.js';
 import { COACHED_CHILDREN } from './demo/demoStage.js';
 import { t } from './i18n/index.js';
 
@@ -100,7 +101,6 @@ export const COMPOSER = {
   none: t('roadmap.composer.none'),
   create: t('roadmap.composer.create'),
 };
-export const EDIT_STEP = { title: t('roadmap.editStep.title'), save: t('roadmap.common.save') };
 export const PICKER = {
   title: t('roadmap.picker.title'),
   allSteps: t('roadmap.picker.allSteps'),
@@ -138,7 +138,10 @@ export const NOTE_EDITOR = {
   urlPlaceholder: t('roadmap.noteEditor.urlPlaceholder'),
   apply: t('roadmap.common.apply'),
 };
-export const BULK = { region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor };
+export const BULK = {
+  region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor,
+  keepRoot: t('roadmap.bulk.keepRoot'),
+};
 export const RECOLOR = {
   steps: t('roadmap.recolor.steps'),
   kind: (name) => t('roadmap.recolor.kind', { name }),
@@ -186,6 +189,21 @@ export function reasonLine({ needs, unlocks }) {
   if (unlocks && unlocks.extra > 0) return t('roadmap.card.unlocksMore', { step: unlocks.first.label, extra: formatCount(unlocks.extra) });
   if (unlocks) return t('roadmap.card.unlocks', { step: unlocks.first.label });
   return null;
+}
+
+// §6's quiet line under a step, where it is listed and on its page (flow 48): what the person's edit brought back, and
+// the deleted steps it was linked from with what it follows past them. Null where no approved line says it: a step that
+// follows nothing past them, or one linked from a deleted step whose name the visit never read.
+export function landingLine(line) {
+  if (line.rule === 'cameBack') return t('roadmap.landing.cameBack');
+  if (line.followed.length === 0 || !line.removed.every(Boolean)) return null;
+  const names = new Intl.ListFormat(APP_LOCALE, { type: 'conjunction' });
+  return t('roadmap.landing.follows', { count: line.removed.length, removed: names.format(line.removed), followed: names.format(line.followed) });
+}
+
+// A step's landing lines as the one quiet note under it, sentence after sentence.
+export function landingNote(lines) {
+  return lines.map(landingLine).join(' ');
 }
 
 export function lockedStatus({ toGo }) {
@@ -427,7 +445,6 @@ export const STEP_DETAIL = {
   copyLink: t('roadmap.step.copyLink'),
   openInGraph: t('roadmap.step.openInGraph'),
   deleteStep: t('roadmap.step.deleteStep'),
-  editStep: t('roadmap.step.editStep'),
   editNote: t('roadmap.step.editNote'),
   viewBranch: t('roadmap.step.viewBranch'),
   subtasks: t('roadmap.step.subtasks'),

@@ -189,6 +189,8 @@ export class SkillTreeScene {
 
   // ---- public API -----------------------------------------------------
 
+  claimActivationClick() { this.input.claimActivationClick(); }
+
   // Full load: fit the camera and clear selection.
   setModel(renderModel) {
     this.director.cancel();

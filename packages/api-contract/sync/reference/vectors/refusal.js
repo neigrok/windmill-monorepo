@@ -286,6 +286,11 @@ function folds() {
       .pushRound({ deviceNow: 5001 })
       .add({ op: 'dismiss', id: 'notice:g1/0' })
       .vector('a dismissed notice is kept, hidden'),
+    script()
+      .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
+      .pushRound({ deviceNow: 5001 })
+      .add({ op: 'dismiss', id: 'notice:g2/0' })
+      .vector('dismissing a notice the replica does not hold answers false and changes nothing'),
     inStep()
       .add(commitStep('self/probe', [newCard('card0009')], { hold: true, gestureId: 'held' }, 5000))
       .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], undefined, 5001))

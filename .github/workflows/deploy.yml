@@ -66,8 +66,14 @@ jobs:
           # The bearer secret of the subscription service's internal doors, handed to the server and the service.
           # Empty ⇒ the server's feed follower stays off and the doors answer 401 (backend/deploy/README.md).
           SUBSCRIPTIONS_INTERNAL_TOKEN: ${{ secrets.SUBSCRIPTIONS_INTERNAL_TOKEN }}
+          # The App Store Server API's in-app purchase key (.p8 PEM); unset ⇒ claims and refreshes answer 503.
+          SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY: ${{ secrets.SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY }}
           AI_DB_PASSWORD: ${{ secrets.AI_DB_PASSWORD }}
           AI_PASS_KEYS: ${{ vars.AI_PASS_KEYS || '{}' }}
+          AI_PASS_PRIVATE_SEED: ${{ secrets.AI_PASS_PRIVATE_SEED }}
+          AI_PASS_KID: ${{ vars.AI_PASS_KID }}
+          AI_PASS_MIN_VERSIONS: ${{ vars.AI_PASS_MIN_VERSIONS || '{}' }}
+          AI_PASS_ENVIRONMENT: production
           AI_CARRY_KEY: ${{ secrets.AI_CARRY_KEY }}
           AI_FUNDING_SECRET: ${{ secrets.AI_FUNDING_SECRET }}
           AI_OPERATOR_SECRET: ${{ secrets.AI_OPERATOR_SECRET }}
@@ -106,6 +112,8 @@ jobs:
           # Windmill One's sandbox testers and the stores its paid line is open on. Unset ⇒ none, and closed.
           WINDMILL_SANDBOX_EMAILS: ${{ vars.WINDMILL_SANDBOX_EMAILS }}
           SUBSCRIPTIONS_PURCHASABLE_STORES: ${{ vars.SUBSCRIPTIONS_PURCHASABLE_STORES }}
+          SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID: ${{ vars.SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID }}
+          SUBSCRIPTIONS_APP_STORE_API_KEY_ID: ${{ vars.SUBSCRIPTIONS_APP_STORE_API_KEY_ID }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
@@ -263,6 +271,7 @@ jobs:
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
             for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD SUBSCRIPTIONS_INTERNAL_TOKEN AI_DB_PASSWORD AI_PASS_KEYS AI_CARRY_KEY \
+                       AI_PASS_PRIVATE_SEED AI_PASS_KID AI_PASS_MIN_VERSIONS AI_PASS_ENVIRONMENT \
                        AI_FUNDING_SECRET AI_OPERATOR_SECRET AI_ANTHROPIC_KEY AI_OPENAI_KEY AI_AZURE_KEY \
                        AI_AZURE_URL AI_AZURE_DEPLOYMENT DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
                        RESEND_API_KEY RESEND_FROM RESEND_WEBHOOK_SECRET ANTHROPIC_API_KEY OPENAI_API_KEY \
@@ -282,15 +291,27 @@ jobs:
                        JOURNAL_ECHO_ADMIN_TOKEN \
                        APPLE_NATIVE_ENABLED APPLE_CLIENT_ID \
                        WINDMILL_OWNER_EMAILS WINDMILL_SANDBOX_EMAILS SUBSCRIPTIONS_PURCHASABLE_STORES \
+                       SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID SUBSCRIPTIONS_APP_STORE_API_KEY_ID \
                        WINDMILL_COOKIE_RETIRED_DOMAINS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done
+            # A PEM spans lines, which one .env line cannot hold; the service reads it with its line breaks removed.
+            printf 'SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY=%s\n' "$(printf '%s' "${SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY:-}" | tr -d '\r\n')"
           } >> rendered.env
 
           printf '%s\n' "$SSH_KEY" > deploy_key && chmod 600 deploy_key
           PORT="${SSH_PORT:-22}"
           SSH="ssh -i deploy_key -p ${PORT} -o StrictHostKeyChecking=accept-new"
+
+          # Roadmap on the sync engine runs only on the commit its cutover ran from and those after it, which the host's
+          # roadmap-engine.floor names (backend/deploy/README.md, "Roadmap's cutover onto the sync engine"): an older image
+          # ignores the switch and serves roadmap's own sync beside the engine's. Read before anything reaches the host.
+          floor=$($SSH "$SSH_USER@$SSH_HOST" 'cat ~/windmill/roadmap-engine.floor 2> /dev/null || true' < /dev/null)
+          if [ -n "$floor" ] && { [[ ! "$floor" =~ ^[a-f0-9]{40}$ ]] || ! git merge-base --is-ancestor "$floor" "$IMAGE_TAG" 2> /dev/null; }; then
+            echo 'Refusing deploy: roadmap is on the sync engine, and the selected image is older than the commit its cutover ran from.' >&2
+            exit 1
+          fi
 
           # A folder left by a refused candidate would take the next copy inside it, so it goes first.
           $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill && rm -rf ~/windmill/subscriptions-db.next ~/windmill/ai-db.next'

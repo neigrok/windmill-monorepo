@@ -16,3 +16,15 @@ for (const [name, location] of [
 test('Planted in public stays outside the room', () => {
   assert.equal(roadmapRoutes.render({ hash: '#/browse', pathname: '/', search: '' }).inRoom, undefined);
 });
+
+test('a build that sets no switch opens every roadmap room on today\'s reading, has no page of the person\'s roadmaps and asks the shell no question of roadmaps, and only Web Deploy, from the host\'s switch and on for a pull request\'s tests, and the cutover set one', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const rooms = ['#/t/t_shared', '#/demo', '#/app/t_mine'].map((hash) => roadmapRoutes.render({ hash, pathname: '/', search: '' }).props.replica);
+  const roadmaps = roadmapRoutes.render({ hash: '#/app/roadmaps', pathname: '/', search: '' }).props;
+  const workflows = new URL('../../../../.github/workflows/', import.meta.url);
+  const setting = Object.fromEntries(readdirSync(workflows).map((name) => [name, [...readFileSync(new URL(name, workflows), 'utf8')
+    .matchAll(/^ *VITE_ROADMAP_REPLICA_ROOM: *(.+)$/gm)].map((match) => match[1])]).filter(([, values]) => values.length));
+  assert.deepEqual({ rooms, roadmaps, path: roadmapRoutes.render({ hash: '', pathname: '/t/t_shared', search: '' }).props.replica, sync: roadmapRoutes.sync, setting },
+    { rooms: [false, false, false], roadmaps: { treeId: 'roadmaps', birth: false, start: false, demo: false, replica: false }, path: false, sync: undefined, setting: {
+      'roadmap-cutover.yml': ['on'], 'web.yml': ['on', "${{ steps.roadmap.outputs.room || 'off' }}"] } });
+});

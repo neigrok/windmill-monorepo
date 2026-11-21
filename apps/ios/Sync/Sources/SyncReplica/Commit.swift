@@ -19,20 +19,38 @@ public struct CommitPlanner: Sendable {
   // caller's reader, and commits here only when the body decides a gesture: a nil one writes nothing and ticks no clock.
   // `gestureIdTaken`: an outbox entry or a notice of any replica on the device carries the gesture's given id (§2.5).
   // `draws`: the ids an earlier plan of this commit drew before it stopped at `UnreadDraws`, taken again first.
+  // `capture`: an opted act segment's capture command, which joins the gesture when it writes a delta (§7.3).
   public func commit(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw] = []) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw] = [],
+                     actOffset: Int? = nil, actFirstOrder: Int64? = nil, capture: String? = nil) throws -> CommitOutcome {
     try checkWritable(replica.meta)
     return try commitGesture(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken,
-                             draws: draws)
+                             draws: draws, actOffset: actOffset, actFirstOrder: actFirstOrder, capture: capture)
   }
 
   // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
-  // changes, predictions, guards and retire name; whole types where it derives an id from a label, places by an anchor,
-  // or may grow a capped type; and in a tree or overlay scope, the governing record the scope check reads. The ids
-  // minted creates draw are read by their keys once drawn (`UnreadDraws`).
+  // changes, predictions, guards and retire name, an opted command's predictions in their own scopes; whole types where
+  // it derives an id from a label, places by an anchor, or may grow a capped type; and for each tree or overlay scope,
+  // the governing record the scope check reads. The ids minted creates draw are read by their keys once drawn
+  // (`UnreadDraws`).
   public func reads(of gesture: Gesture, in scope: ScopeRef) -> [ScopeRef: RowSelection] {
+    var origin = rows(namedBy: gesture.changes + gesture.predict)
+    origin.keys.formUnion(gesture.guards.map(\.key))
+    origin.keys.formUnion(gesture.retire.map(\.key))
+    var reads = [scope: origin]
+    for prediction in gesture.scopedPredict {
+      reads[prediction.scope] = (reads[prediction.scope] ?? RowSelection()).union(rows(namedBy: prediction.changes))
+    }
+    for read in reads.keys {
+      guard let governing = registry.governingRecord(of: read) else { continue }
+      reads[governing.scope, default: RowSelection()].keys.insert(governing.key)
+    }
+    return reads
+  }
+
+  func rows(namedBy changes: [Change]) -> RowSelection {
     var selection = RowSelection()
-    for change in gesture.changes + gesture.predict {
+    for change in changes {
       guard let type = registry.type(change.type) else { continue }
       switch change.operation {
       case .create(.minted): break
@@ -43,11 +61,7 @@ public struct CommitPlanner: Sendable {
       }
       if change.anchor != nil || type.cap != nil { selection.types.insert(type.name) }
     }
-    selection.keys.formUnion(gesture.guards.map(\.key))
-    selection.keys.formUnion(gesture.retire.map(\.key))
-    var reads = [scope: selection]
-    if let governing = registry.governingRecord(of: scope) { reads[governing.scope, default: RowSelection()].keys.insert(governing.key) }
-    return reads
+    return selection
   }
 
   // Retire loads held gestures; supersede loads the whole outbox to prove complete eligibility and fold dependents.
@@ -63,7 +77,8 @@ public struct CommitPlanner: Sendable {
   // Steps 2–11, after the checks before step 2. The retire, the supersede and their one silent fold run on a working copy,
   // which the diff reads and which the replica becomes once the commit is accepted.
   func commitGesture(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw]) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw], actOffset: Int?, actFirstOrder: Int64?,
+                     capture: String?) throws -> CommitOutcome {
     guard registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("\(scope) is no scope of the registry") }
     let product = try product(of: scope)
     if let taken = gesture.gestureId, gestureIdTaken { throw CommitFailure.malformed("the gesture id \(taken) is taken") }
@@ -79,7 +94,12 @@ public struct CommitPlanner: Sendable {
 
     // Step 4: the retired gestures end by retire and the superseded by silent fold, a gesture in both by retire, and the
     // dependents of all of them fold in one pass, as a replacement when any gesture is superseded.
-    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica)
+    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica).filter {
+      actOffset == nil || $0.gestureId != gesture.gestureId
+    }
+    if actOffset != nil, let id = gesture.gestureId, gesture.supersede.contains(id) {
+      throw CommitFailure.malformed("an act cannot supersede itself")
+    }
     let superseding = try supersedingEntries(gesture.supersede, in: scope, replica: replica)
     let supersedingOnly = superseding.filter { entry in !retiring.contains { $0.commitOrder == entry.commitOrder } }
     let ending = retiring.map { (entry: $0, event: IntentEvent.retire) } + supersedingOnly.map { (entry: $0, event: IntentEvent.silentFold) }
@@ -99,7 +119,57 @@ public struct CommitPlanner: Sendable {
     }
     guard builder.unread.isEmpty else { throw UnreadDraws(keys: builder.unread, draws: builder.draws) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
-    let command = gesture.command.map(registry.rounded)
+    let captured: Command? = capture.flatMap { (name: String) -> Command? in deltas.isEmpty ? nil : Command(name: name, args: [:]) }
+    let command = (gesture.command ?? captured).map(registry.rounded)
+    // E-7: an opted command predicts one projection a scope, the origin's always and first, the rest by byte order, each
+    // built against its own scope; `predict` is its origin's projection. A scope known gone refuses, and grouped bytes
+    // past EFFECT_MAX_BYTES refuse too-large, leaving nothing.
+    let definition = command.flatMap { registry.command($0.name) }
+    guard definition?.scopedEffects == true || gesture.scopedPredict.isEmpty else {
+      throw CommitFailure.malformed("scoped predictions belong to a command with scoped effects")
+    }
+    var predictions: [Projection]?
+    if let definition, definition.scopedEffects {
+      guard gesture.predict.isEmpty || gesture.scopedPredict.isEmpty else { throw CommitFailure.malformed("predict and scopedPredict are exclusive") }
+      var groups: [ScopeRef: [Change]] = [scope: gesture.predict]
+      for prediction in gesture.scopedPredict {
+        guard registry.scopeKind(of: prediction.scope) != nil, registry.isScopeID(prediction.scope) else {
+          throw CommitFailure.malformed("\(prediction.scope) is no scope a command predicts in")
+        }
+        if try scopeIsDead(prediction.scope, in: replica) { return .refused(.scopeDead, detail: nil) }
+        groups[prediction.scope, default: []] += prediction.changes
+      }
+      let projections = try EffectReceipt.ordered(origin: scope, groups.keys).map { target in
+        let changes = groups[target]!
+        guard changes.allSatisfy({ change in definition.predicts.contains { $0.utf8.elementsEqual(change.type.utf8) } }) else {
+          throw CommitFailure.malformed("\(definition.name) predicts no type of \(target) it was given")
+        }
+        guard target != scope else { return Projection(scope: target, deltas: try oneDeltaPerRecord(changes.map { ($0, try builder.predicted($0)) })) }
+        var projected = DeltaBuilder(
+          registry: registry, replica: retired, scope: target, stamp: stamp, physNow: physNow,
+          drawn: try ScopeView(retired, target, .drawn, registry: registry),
+          stored: try ScopeView(retired, target, .stored, registry: registry), identities: identities, draws: [])
+        return Projection(scope: target, deltas: try oneDeltaPerRecord(changes.map { ($0, try projected.predicted($0)) }))
+      }
+      let grouped = JSON.array(projections.map(\.json))
+      guard !grouped.holdsNul else { throw CommitFailure.malformed("a string of the predictions holds U+0000") }
+      guard grouped.jcs.count <= limits.effectMaxBytes else { return .refused(.tooLarge, detail: nil) }
+      predictions = projections
+    }
+    // E-8: a typed leaf of a value the gesture writes or predicts, or of its command's arguments, that breaks admission's
+    // leaf rule throws, since dependents and id maps read every leaf of a queued entry.
+    let predicted: [Delta] = (predictions ?? []).flatMap(\.deltas)
+    let written: [Delta] = deltas + predict + predicted
+    for delta in written {
+      guard let type = registry.type(delta.key.type) else { continue }
+      for (name, register) in delta.lattice.fields {
+        guard let field = type.field(name), registry.typedLeafFault(of: register.value, for: field, of: type) != nil else { continue }
+        throw CommitFailure.malformed("\(type.name).\(name) holds a malformed typed reference")
+      }
+    }
+    if let command, let definition, registry.typedLeafFault(of: command.args, for: definition) != nil {
+      throw CommitFailure.malformed("\(definition.name)'s arguments hold a malformed typed reference")
+    }
     // Step 7: a string the intents send (their scope, deltas, guards, command and given gesture id) holding U+0000
     // throws, before step 8's caps; predictions and device rows are never sent.
     let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: command, gestureId: gesture.gestureId)
@@ -123,16 +193,17 @@ public struct CommitPlanner: Sendable {
 
     replica = retired
     let releaseAt = gesture.hold ? instance.deviceNow + limits.holdMs : 0
-    let firstOrder = replica.nextCommitOrder
+    let firstOrder = actFirstOrder.map { $0 + Int64(actOffset ?? 0) } ?? replica.nextCommitOrder
     let entries = try intents.enumerated().map { k, intent in
       guard case .state(let state) = try Machines.intent.transition(from: nil, .commit, to: .state(gesture.hold ? .held : .ready)) else {
         preconditionFailure("a commit enqueues")
       }
       let texts = Set(intent.deltas.flatMap { delta in delta.texts.keys.map { TextRef(delta.key, $0) } })
       return OutboxEntry(
-        localId: "\(gestureId)/\(k)", gestureId: gestureId, lineage: replica.meta.lineage, scope: scope, state: state,
+        localId: "\(gestureId)/\((actOffset ?? 0) + k)", gestureId: gestureId, lineage: replica.meta.lineage, scope: scope, state: state,
         commitOrder: firstOrder + Int64(k), releaseAt: releaseAt, stamp: stamp, intent: intent,
-        predict: command == nil ? [] : predict, baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
+        predict: command == nil || predictions != nil ? [] : predict, predictions: predictions,
+        baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
     }
     for entry in entries { replica.apply(.putEntry(entry)) }
 
@@ -187,11 +258,15 @@ public struct CommitPlanner: Sendable {
   }
 
   // Step 4's retire: the held gestures of the scope with no command, whose every delta removes a named record.
+  // A capture command is the ordinary deltas' own, so it does not stop a retire.
   func retiringEntries(of retire: [RecordRef], in scope: ScopeRef, replica: LoadedReplica) -> [OutboxEntry] {
     guard !retire.isEmpty else { return [] }
     let named = Set(retire.map(\.key))
-    let removesNamed = { (entry: OutboxEntry) in
-      entry.intent.command == nil && !entry.intent.deltas.isEmpty
+    let commandFree = { (entry: OutboxEntry) -> Bool in
+      entry.intent.command.map { (command: Command) -> Bool in self.registry.command(command.name)?.engine == .capture } ?? true
+    }
+    let removesNamed = { (entry: OutboxEntry) -> Bool in
+      commandFree(entry) && !entry.intent.deltas.isEmpty
         && entry.intent.deltas.allSatisfy { $0.removes && named.contains($0.key) }
     }
     var gestures: [(id: String, entries: [OutboxEntry])] = []
@@ -440,7 +515,12 @@ struct DeltaBuilder {
       }
     case .derived(let label):
       guard type.identity == .derived, let fallback = type.deriveFallback else { throw CommitFailure.malformed("\(type.name) does not derive ids") }
-      return RecordID(DerivedID.from(label: label, fallback: fallback, taken: takenIDs(of: type).compactMap(\.string)))
+      do {
+        return RecordID(try DerivedID.from(label: label, fallback: fallback,
+                                          taken: takenIDs(of: type).compactMap(\.string), maxChars: type.idMaxChars))
+      } catch {
+        throw CommitFailure.malformed("a derived id cannot fit its domain")
+      }
     case .minted:
       guard let mint = type.mint else { throw CommitFailure.malformed("\(type.name) does not mint ids") }
       while true {

@@ -58,7 +58,7 @@ TEST(a_sweep_decides_claims_and_only_then_mails) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK(report.ran);
@@ -96,7 +96,7 @@ TEST(the_mail_carries_the_links_the_counters_and_the_coloured_slots) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   sweep.run(kNow, false);
 
   REQUIRE_EQ(email.sent.size(), std::size_t{1});
@@ -140,7 +140,7 @@ TEST(the_mail_names_the_in_tree_remainder_and_the_other_trees_separately) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   sweep.run(kNow, false);
 
   REQUIRE_EQ(email.sent.size(), std::size_t{1});
@@ -158,7 +158,7 @@ TEST(a_rehearsal_decides_everything_and_commits_nothing) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, true);
 
   CHECK(report.ran);
@@ -182,7 +182,7 @@ TEST(a_week_another_sweep_already_owns_is_dropped_in_silence) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.due, 1);
@@ -203,7 +203,7 @@ TEST(a_skip_still_claims_its_week_so_the_ledger_stays_complete) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.skipped, 1);
@@ -224,7 +224,7 @@ TEST(a_dark_engine_records_an_honest_send_holds_it_and_delivers_nothing) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(false, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_FALSE(sweep.arming().enabled);
@@ -253,7 +253,7 @@ TEST(an_armed_engine_still_mails_only_the_allowlist) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.due, 2);
@@ -274,7 +274,7 @@ TEST(a_refused_send_is_recorded_never_retried_and_leaves_the_old_pause_link_aliv
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.claimed, 1);
@@ -296,7 +296,7 @@ TEST(a_sweep_that_cannot_take_the_fleet_lock_touches_nothing) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_FALSE(report.ran);
@@ -317,7 +317,7 @@ TEST(a_user_whose_facts_cannot_be_read_still_claims_the_week_and_moves_on) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u0,u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.due, 2);
@@ -348,7 +348,7 @@ TEST(an_unreadable_user_in_a_rehearsal_commits_nothing_either) {
   FakeClock clock;
 
   ReminderSweep sweep(reminders, email, tokens, clock, MailArming(true, "u0,u1"),
-                      "https://windmill.works");
+                      "https://windmill.works", nullptr);
   const MailSweepReport report = sweep.run(kNow, true);
 
   CHECK_EQ(report.due, 2);

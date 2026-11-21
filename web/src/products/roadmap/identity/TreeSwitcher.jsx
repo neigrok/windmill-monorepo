@@ -1,3 +1,4 @@
+import { readNavigation, requestNavigation } from '../../../shell/navigation.js';
 // Rows wear a tag — "on this device" for unclaimed local trees, "synced" for the rest — and every
 // edit routes by that tag, never by presence in the server list.
 
@@ -11,6 +12,7 @@ import { ON_DEVICE, ROADMAP_SHEET, formatCount } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
 import { deleteCost, withoutTree } from './deleteCost.js';
+import { HeldDeletion } from './HeldDeletion.js';
 import { onTreeClaimed } from '../sync/claimLocalTrees.js';
 import './identity.css';
 
@@ -157,10 +159,12 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   const rows = mergeCurrent(trees, current);
 
   const go = (id) => {
-    setOpen(false);
-    if (!id || id === current?.id) return;
-    track('roadmap_sheet', { step: 'switch', door: 'switcher' });
-    window.location.hash = `#/app/${id}`;
+    if (!id || id === current?.id) { setOpen(false); return; }
+    return requestNavigation({ key: `tree:switch:${id}`, run: (tx) => {
+      setOpen(false);
+      track('roadmap_sheet', { step: 'switch', door: 'switcher' });
+      tx.navigate(`#/app/${id}`);
+    } });
   };
 
   const startEdit = (tree) => {
@@ -210,40 +214,51 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   };
 
   // `cost` is what the confirmation said goes with the tree, as the list read it when the menu opened.
-  const confirmDelete = async (tree, cost) => {
-    if (deleteRequestsRef.current.has(tree.id)) return;
-    focusRef.current = { id: tree.id, action: 'delete' };
-    setConfirmId(null);
-    const seam = seamOf(mergeCurrent(treesRef.current, currentRef.current).find((row) => row.id === tree.id) ?? {});
-    if (seam === null) return;
-    const local = seam === 'local';
-    const place = local ? 'device' : 'account';
-    const menuAtDelete = menuRef.current;
-    const routeAtDelete = window.location.hash;
-    const currentAtDelete = currentRef.current?.id;
-    deleteRequestsRef.current.add(tree.id);
-    try {
-      await onDelete?.(tree.id, { local });
-    } catch (error) {
-      reportUnexpectedFailure('roadmap-switcher-delete', error);
-      track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed', place });
-      return; // a refusal leaves the row standing
-    } finally {
-      deleteRequestsRef.current.delete(tree.id);
-    }
-    track('roadmap_sheet', { step: 'delete', door: 'switcher', openers: cost ? 'some' : 'none', place });
-    const latestRows = mergeCurrent(treesRef.current, currentRef.current);
-    const remaining = updateTrees((latest) => withoutTree(Array.isArray(latest) ? latest : [], tree.id));
-    if (menuRef.current !== menuAtDelete || window.location.hash !== routeAtDelete || currentRef.current?.id !== currentAtDelete) return;
-    const removedFocus = tree.id === currentAtDelete ? menuRef.current : rowRefs.current.get(tree.id);
-    if (removedFocus?.contains(document.activeElement)) {
-      const nextRows = latestRows.filter((row) => row.id !== tree.id);
-      const nextRow = nextRows[Math.min(latestRows.findIndex((row) => row.id === tree.id), nextRows.length - 1)];
-      focusRef.current = { id: tree.id === currentAtDelete ? null : nextRow?.id };
-    }
-    if (tree.id !== currentAtDelete) return;
-    setOpen(false); // land on the newest remaining, or hand bare #/app to the resolver
-    window.location.hash = remaining.length ? `#/app/${remaining[0].id}` : '#/app';
+  const confirmDelete = (tree, cost) => {
+    const run = async (transaction) => {
+      if (deleteRequestsRef.current.has(tree.id)) return;
+      focusRef.current = { id: tree.id, action: 'delete' };
+      setConfirmId(null);
+      const seam = seamOf(mergeCurrent(treesRef.current, currentRef.current).find((row) => row.id === tree.id) ?? {});
+      if (seam === null) return;
+      const local = seam === 'local';
+      const place = local ? 'device' : 'account';
+      const menuAtDelete = menuRef.current;
+      const routeAtDelete = readNavigation().hash;
+      const currentAtDelete = currentRef.current?.id;
+      deleteRequestsRef.current.add(tree.id);
+      let deleted;
+      try {
+        deleted = await onDelete?.(tree.id, { local });
+      } catch (error) {
+        reportUnexpectedFailure('roadmap-switcher-delete', error);
+        track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed', place });
+        return; // a refusal leaves the row standing
+      } finally {
+        deleteRequestsRef.current.delete(tree.id);
+      }
+      track('roadmap_sheet', { step: 'delete', door: 'switcher', openers: cost ? 'some' : 'none', place });
+      const latestRows = mergeCurrent(treesRef.current, currentRef.current);
+      const remaining = updateTrees((latest) => withoutTree(Array.isArray(latest) ? latest : [], tree.id));
+      if (menuRef.current !== menuAtDelete || readNavigation().hash !== routeAtDelete || currentRef.current?.id !== currentAtDelete) return;
+      const removedFocus = tree.id === currentAtDelete ? menuRef.current : rowRefs.current.get(tree.id);
+      if (removedFocus?.contains(document.activeElement)) {
+        const nextRows = latestRows.filter((row) => row.id !== tree.id);
+        const nextRow = nextRows[Math.min(latestRows.findIndex((row) => row.id === tree.id), nextRows.length - 1)];
+        focusRef.current = { id: tree.id === currentAtDelete ? null : nextRow?.id };
+      }
+      if (tree.id !== currentAtDelete) return;
+      setOpen(false);
+      // A deletion held on the device's copy lands on the person's roadmaps with its Undo standing; any other on the newest
+      // remaining, or hands bare #/app to the resolver.
+      if (deleted instanceof HeldDeletion) {
+        deleted.landOn(transaction);
+        return;
+      }
+      transaction.navigate(remaining.length ? `#/app/${remaining[0].id}` : '#/app');
+    };
+    if (tree.id !== currentRef.current?.id) return run(null);
+    return requestNavigation({ key: `tree:delete:${tree.id}`, run });
   };
 
   const liveDraft = editingId != null && editingId === current?.id;
@@ -381,7 +396,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
           <div style={divider} />
 
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); track('roadmap_sheet', { step: 'new', door: 'switcher' }); onNew(); }}
+          <button type="button" role="menuitem" onClick={() => requestNavigation({ key: 'tree:new', run: (tx) => { setOpen(false); track('roadmap_sheet', { step: 'new', door: 'switcher' }); onNew(tx); } })}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             style={{ ...row, fontWeight: 800 }}>
@@ -390,7 +405,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
           </button>
 
           <button type="button" role="menuitem" aria-label={t('roadmap.switcher.browse')}
-            onClick={() => { setOpen(false); track('roadmap_sheet', { step: 'browse', door: 'switcher' }); window.location.hash = '#/browse'; }}
+            onClick={() => requestNavigation({ key: 'tree:browse', run: (tx) => { setOpen(false); track('roadmap_sheet', { step: 'browse', door: 'switcher' }); tx.navigate('#/browse'); } })}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             style={row}>

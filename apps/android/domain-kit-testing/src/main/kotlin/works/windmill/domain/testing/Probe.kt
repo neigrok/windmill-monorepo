@@ -7,7 +7,7 @@ import works.windmill.sync.core.*
 internal data class ProbeEntity(override val id: Id<ProbeEntity>, val values: Map<String, Json>) : Writable<ProbeEntity> {
     override fun fields() = values
 }
-internal open class ProbeType(override val type: String, override val scope: ScopeRef,
+internal open class ProbeType(override val type: String, override val scope: ScopeRef?,
     val defaults: Map<String, Json>, val specs: List<ValueSpec>) : WritableType<ProbeEntity> {
     override fun decode(f: Fields): ProbeEntity = ProbeEntity(Id(f.id, this), defaults.mapValues { (name, fallback) ->
         if (type == "mark" && name == "memo") Json.of(f.text(name)) else f.json(name) ?: fallback
@@ -28,6 +28,7 @@ internal object Probe {
     val tree = ScopeRef.tree("b_00000001")
     val overlay = ScopeRef.overlay("b_00000001")
     val start = 1_800_000_000_000L
+    val board: ProbeType = object : ProbeType("board", scope, emptyMap(), emptyList()), RemovableType<ProbeEntity> { override val heldRemoval = true }
     val card: ProbeType = object : ProbeType("card", scope, mapOf("title" to Json.of(""), "body" to Json.of(""), "size" to Json.Null, "claim" to Json.Null, "tier" to Json.of("draft")),
         listOf(TextSpec("card.title", MeasureUnit.chars, 1, 12, true, true), TextSpec("card.body", MeasureUnit.bytes, 0, 24, true, true), NumberSpec("card.size", -500.0, 500.0, quantum = .01), TextSpec("card.claim", MeasureUnit.chars, 0, 12, true, true), ChoiceSpec("card.tier", listOf("draft", "review", "done", "dropped")))), DraftableType<ProbeEntity>, RemovableType<ProbeEntity>, OrderedType<ProbeEntity> {
         override val savesGuarded = true; override val heldRemoval = true; override val orderField = "ord"
@@ -38,13 +39,26 @@ internal object Probe {
     val fact: ProbeType = object : ProbeType("fact", scope, mapOf("value" to Json.Null, "at" to Json.Null), listOf(NumberSpec("fact.value", 0.0, 500.0, quantum = .1))), TimestampedType<ProbeEntity>, RemovableType<ProbeEntity> {
         override val savesGuarded = false; override val heldRemoval = true; override val timestampField = "at"
     }
-    val mark: ProbeType = object : ProbeType("mark", overlay, mapOf("done" to Json.Null, "memo" to Json.of("")), listOf(TextSpec("mark.memo", MeasureUnit.bytes, 0, 40, false, false))), DraftableType<ProbeEntity> { override val savesGuarded = false }
-    val meta: ProbeType = object : ProbeType("meta", tree, mapOf("title" to Json.of("")), listOf(TextSpec("meta.title", MeasureUnit.chars, 0, 12, true, true))), DraftableType<ProbeEntity> { override val savesGuarded = false }
+    val mark: ProbeType = object : ProbeType("mark", null, mapOf("done" to Json.Null, "memo" to Json.of("")), listOf(TextSpec("mark.memo", MeasureUnit.bytes, 0, 40, false, false))), DraftableType<ProbeEntity> { override val savesGuarded = false }
+    val guardedMeta: ProbeType = object : ProbeType("meta", null, mapOf("title" to Json.of("")), listOf(TextSpec("meta.title", MeasureUnit.chars, 0, 12, true, true))), DraftableType<ProbeEntity> { override val savesGuarded = true }
+    val meta: ProbeType = object : ProbeType("meta", null, mapOf("title" to Json.of("")), listOf(TextSpec("meta.title", MeasureUnit.chars, 0, 12, true, true))), DraftableType<ProbeEntity> { override val savesGuarded = false }
     val lap: ProbeType = object : ProbeType("lap", scope, mapOf("runId" to Json.of(""), "at" to Json.Null, "weight" to Json.Null), listOf(NumberSpec("lap.weight", -500.0, 500.0, quantum = .01))), RemovableType<ProbeEntity> { override val heldRemoval = false }
     val run: ProbeType = object : ProbeType("run", scope, mapOf("startedAt" to Json.Null, "label" to Json.Null), listOf(TextSpec("run.label", MeasureUnit.chars, 0, 12, true, true))), RemovableType<ProbeEntity> { override val heldRemoval = false }
-    val link: ProbeType = object : ProbeType("link", tree, mapOf("strength" to Json.Null), listOf(NumberSpec("link.strength", 0.0, 9.0, integer = true))), RemovableType<ProbeEntity> { override val heldRemoval = true }
-    val tag = ProbeType("tag", tree, mapOf("label" to Json.of("")), emptyList())
-    fun entity(type: String): ProbeType = listOf(card, day, fact, mark, meta, lap, run, link, tag).firstOrNull { it.type == type } ?: throw ContractError("no probe entity $type")
+    val link: ProbeType = object : ProbeType("link", null, mapOf("strength" to Json.Null), listOf(NumberSpec("link.strength", 0.0, 9.0, integer = true))), RemovableType<ProbeEntity> { override val heldRemoval = true }
+    val tag: ProbeType = object : ProbeType("tag", null, mapOf("label" to Json.of("")), listOf(TextSpec("tag.label", MeasureUnit.chars, 0, 24, false, false))), RemovableType<ProbeEntity> { override val heldRemoval = false }
+    // Card, Day and Mark with `savesReversibly` (§10.2): the card unguarded and checking title and body only.
+    val reversibleCard: ProbeType = object : ProbeType("card", scope, mapOf("title" to Json.of(""), "body" to Json.of(""), "size" to Json.Null, "claim" to Json.Null, "tier" to Json.of("draft")),
+        listOf(TextSpec("card.title", MeasureUnit.chars, 1, 12, true, true), TextSpec("card.body", MeasureUnit.bytes, 0, 24, true, true))), DraftableType<ProbeEntity>, OrderedType<ProbeEntity> {
+        override val savesGuarded = false; override val savesReversibly = true; override val orderField = "ord"
+    }
+    val reversibleDay: ProbeType = object : ProbeType("day", scope, mapOf("score" to Json.Null), listOf(NumberSpec("day.score", 0.0, 10.0, integer = true))), DraftableType<ProbeEntity>, RemovableType<ProbeEntity> {
+        override val savesGuarded = false; override val savesReversibly = true; override val heldRemoval = true
+    }
+    val reversibleMark: ProbeType = object : ProbeType("mark", null, mapOf("done" to Json.Null, "memo" to Json.of("")), listOf(TextSpec("mark.memo", MeasureUnit.bytes, 0, 40, false, false))), DraftableType<ProbeEntity> {
+        override val savesGuarded = false; override val savesReversibly = true
+    }
+    private val aliases = mapOf("guardedMeta" to guardedMeta, "reversibleCard" to reversibleCard, "reversibleDay" to reversibleDay, "reversibleMark" to reversibleMark)
+    fun entity(type: String): ProbeType = aliases[type] ?: listOf(board, card, day, fact, mark, meta, lap, run, link, tag).firstOrNull { it.type == type } ?: throw ContractError("no probe entity $type")
 }
 internal sealed interface ProbeRefusal {
     data class Invalid(val violation: Violation) : ProbeRefusal
@@ -60,3 +74,5 @@ internal object ProbeRefusals : Refusals<ProbeRefusal> {
     override fun isGeneric(refusal: ProbeRefusal) = refusal is ProbeRefusal.Rejected
 }
 val Refused.form: Json get() = Json.objectOf("code" to Json.of(code.text), "subject" to (subject?.form ?: Json.Null), "detail" to (detail ?: Json.Null), "path" to Json.of(path.name))
+
+internal val EntityType<*>.fixtureScope: ScopeRef get() = scope ?: if (type == "mark") Probe.overlay else Probe.tree

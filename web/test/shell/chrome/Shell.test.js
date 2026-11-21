@@ -51,6 +51,17 @@ test('the unpublished Shell header contains only its unchanged mark, navigation 
   ]);
 });
 
+test('the seat shows a member the rows product sessions offer', async (t) => {
+  browser();
+  const { useAccountRowOffer } = await loadScreen('shell/ProductSessions.jsx');
+  const row = { label: 'Kept here', count: 1, onSelect() {} };
+  renderHook(t, () => useAccountRowOffer(row));
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const view = renderHook(t, () => Shell({ location }), { context });
+  const seat = elementsOf(view.tree).find((element) => element.type?.name === 'AccountSeat');
+  assert.deepEqual(seat.props.offered, [row]);
+});
+
 test('the slot has one full polite announcement and a named narrow tap with the offline icon', async (t) => {
   browser();
   const { registerRoomStatus } = await loadScreen('shell/roomStatus.js');

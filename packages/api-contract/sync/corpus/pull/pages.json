@@ -486,7 +486,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -2241,6 +2242,7 @@
               }
             },
             "known": {
+              "self/overlay/b_00000001": "gone",
               "tree/b_00000001": "gone"
             },
             "outbox": [
@@ -2389,6 +2391,7 @@
               }
             },
             "known": {
+              "self/overlay/b_0000000b": "not-found",
               "tree/b_0000000b": "not-found"
             }
           }
@@ -9628,7 +9631,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -10483,7 +10487,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -12739,6 +12744,7 @@
               }
             },
             "known": {
+              "self/overlay/b_00000001": "gone",
               "tree/b_00000001": "gone"
             }
           }
@@ -13400,7 +13406,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -14085,7 +14092,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -14770,7 +14778,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -15465,7 +15474,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -16150,7 +16160,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -16815,7 +16826,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -17263,7 +17275,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -26353,7 +26366,8 @@
                 {
                   "t": "tag",
                   "id": "elm",
-                  "born": "1100:0:r_aaaaaaaaaaaa"
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "seq": 3
                 }
               ]
             },
@@ -26607,6 +26621,3415 @@
           "event": "activeReplicaChanged",
           "previous": "rp_00000000000000000000000000000001",
           "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "opening another account’s tree subscribes the reader’s overlay; its mark survives ack and pull and leaves with the tree",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5000
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5000
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "tSend": 5001,
+          "tRecv": 5001,
+          "deviceNow": 5001
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": false
+              }
+            }
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "push",
+          "deviceNow": 5003
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5003,
+              "epoch": "ep-1",
+              "as": "B",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1
+                }
+              ]
+            }
+          },
+          "deviceNow": 5003,
+          "tSend": 5003,
+          "tRecv": 5003
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5004
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5005
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5005,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "f": {
+                        "done": [
+                          false,
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 5003,
+                      "ru": 5003
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "16b36f8872d49eb77bb49ca46ea7984b7f3917d5c30e752337ae1a073446bdfc"
+                }
+              ]
+            }
+          },
+          "tSend": 5005,
+          "tRecv": 5005,
+          "deviceNow": 5005
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5006
+        },
+        {
+          "op": "unsubscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5007
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5007
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5008
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null,
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5002:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "B",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "5002:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0"
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0"
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        null,
+        [
+          "self/probe"
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5002,
+                "counter": 0
+              },
+              "hlcHigh": "5002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5002:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "B",
+              "clockReading": {
+                "wall": 5005,
+                "mono": 5005,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a separately opened native overlay survives voluntary tree release until its own release",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5000
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5000
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "tSend": 5001,
+          "tRecv": 5001,
+          "deviceNow": 5001
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": false
+              }
+            }
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "push",
+          "deviceNow": 5003
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5003,
+              "epoch": "ep-1",
+              "as": "B",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1
+                }
+              ]
+            }
+          },
+          "deviceNow": 5003,
+          "tSend": 5003,
+          "tRecv": 5003
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5004
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5005
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5005,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "f": {
+                        "done": [
+                          false,
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 5003,
+                      "ru": 5003
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "16b36f8872d49eb77bb49ca46ea7984b7f3917d5c30e752337ae1a073446bdfc"
+                }
+              ]
+            }
+          },
+          "tSend": 5005,
+          "tRecv": 5005,
+          "deviceNow": 5005
+        },
+        {
+          "op": "subscribe",
+          "scope": "self/overlay/b_00000001",
+          "deviceNow": 5006
+        },
+        {
+          "op": "unsubscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5007
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5007
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5008
+        },
+        {
+          "op": "unsubscribe",
+          "scope": "self/overlay/b_00000001",
+          "deviceNow": 5009
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5009
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null,
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5002:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "B",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "5002:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0"
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0"
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        null,
+        null,
+        [
+          "self/probe",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        null,
+        [
+          "self/probe"
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5002,
+                "counter": 0
+              },
+              "hlcHigh": "5002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5002:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "B",
+              "clockReading": {
+                "wall": 5005,
+                "mono": 5005,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a reader’s tree access denial atomically forgets its explicit overlay and acked mark; reopening clears both not-found records",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5000
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5000
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "tSend": 5001,
+          "tRecv": 5001,
+          "deviceNow": 5001
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": false
+              }
+            }
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "push",
+          "deviceNow": 5003
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5003,
+              "epoch": "ep-1",
+              "as": "B",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1
+                }
+              ]
+            }
+          },
+          "deviceNow": 5003,
+          "tSend": 5003,
+          "tRecv": 5003
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5004
+        },
+        {
+          "op": "subscribe",
+          "scope": "self/overlay/b_00000001",
+          "deviceNow": 5004
+        },
+        {
+          "op": "frame",
+          "frame": {
+            "op": "not-found",
+            "as": "B",
+            "scope": "tree/b_00000001"
+          },
+          "deviceNow": 5005
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5006
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5006
+        },
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5007
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5007
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5008
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5008,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "f": {
+                        "done": [
+                          false,
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 5003,
+                      "ru": 5003
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "16b36f8872d49eb77bb49ca46ea7984b7f3917d5c30e752337ae1a073446bdfc",
+                  "total": 1
+                }
+              ]
+            }
+          },
+          "tSend": 5008,
+          "tRecv": 5008,
+          "deviceNow": 5008
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5009
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null,
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5002:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "B",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "5002:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        null,
+        "not-found",
+        [
+          "self/probe"
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        },
+        null,
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0"
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5002,
+                "counter": 0
+              },
+              "hlcHigh": "5002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5002:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "B",
+              "clockReading": {
+                "wall": 5008,
+                "mono": 5008,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "5002:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 5003,
+                  "ru": 5003
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Plan",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "16b36f8872d49eb77bb49ca46ea7984b7f3917d5c30e752337ae1a073446bdfc",
+                "booted": true
+              },
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a denied tree page also ends its overlay before a later overlay page can arrive; only acknowledged work resolves",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5000
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5000
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "tSend": 5001,
+          "tRecv": 5001,
+          "deviceNow": 5001
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": false
+              }
+            }
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "push",
+          "deviceNow": 5003
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5003,
+              "epoch": "ep-1",
+              "as": "B",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1
+                }
+              ]
+            }
+          },
+          "deviceNow": 5003,
+          "tSend": 5003,
+          "tRecv": 5003
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5004
+        },
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "x": {
+                "memo": "Queued"
+              }
+            }
+          ],
+          "deviceNow": 5004
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5005
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5005,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "not-found"
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "f": {
+                        "done": [
+                          false,
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 5003,
+                      "ru": 5003
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "16b36f8872d49eb77bb49ca46ea7984b7f3917d5c30e752337ae1a073446bdfc"
+                }
+              ]
+            }
+          },
+          "tSend": 5005,
+          "tRecv": 5005,
+          "deviceNow": 5005
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5006
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null,
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5002:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "B",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "5002:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5004:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0"
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0"
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "not-found"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "outside"
+          }
+        ],
+        [
+          "self/probe"
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5004,
+                "counter": 0
+              },
+              "hlcHigh": "5004:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5002:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "B",
+              "clockReading": {
+                "wall": 5005,
+                "mono": 5005,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            },
+            "known": {
+              "self/overlay/b_00000001": "not-found",
+              "tree/b_00000001": "not-found"
+            },
+            "outbox": [
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "B",
+                "scope": "self/overlay/b_00000001",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/overlay/b_00000001",
+                  "d": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "x": {
+                        "memo": {
+                          "text": "Queued",
+                          "base": {
+                            "text": ""
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                },
+                "baseTexts": {
+                  "[\"mark\",\"oak\",\"memo\"]": ""
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a tree death ends its reader overlay and cannot be reopened",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5000
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5000
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "tSend": 5001,
+          "tRecv": 5001,
+          "deviceNow": 5001
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": false
+              }
+            }
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "push",
+          "deviceNow": 5003
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5003,
+              "epoch": "ep-1",
+              "as": "B",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1
+                }
+              ]
+            }
+          },
+          "deviceNow": 5003,
+          "tSend": 5003,
+          "tRecv": 5003
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5004
+        },
+        {
+          "op": "subscribe",
+          "scope": "self/overlay/b_00000001",
+          "deviceNow": 5004
+        },
+        {
+          "op": "frame",
+          "frame": {
+            "op": "gone",
+            "as": "B",
+            "scope": "tree/b_00000001"
+          },
+          "deviceNow": 5005
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5006
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5006
+        },
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5007
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5007
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null,
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5002:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "B",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "5002:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  false,
+                  "5002:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        null,
+        "gone",
+        [
+          "self/probe"
+        ],
+        {
+          "records": [],
+          "capCount": {}
+        },
+        "gone",
+        [
+          "self/probe"
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5002,
+                "counter": 0
+              },
+              "hlcHigh": "5002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5002:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "B",
+              "clockReading": {
+                "wall": 5003,
+                "mono": 5003,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            },
+            "known": {
+              "self/overlay/b_00000001": "gone",
+              "tree/b_00000001": "gone"
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "releasing an explicit tree leaves its owner-derived tree and overlay subscribed",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "life": [
+                        "alive",
+                        "1001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Card 1",
+                          "1001:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0002",
+                      "life": [
+                        "alive",
+                        "1002:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1002:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Card 2",
+                          "1002:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0003",
+                      "life": [
+                        "alive",
+                        "1003:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1003:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Card 3",
+                          "1003:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 3,
+                      "rc": 3000,
+                      "ru": 3000
+                    },
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "life": [
+                        "alive",
+                        "900:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "900:0:r_aaaaaaaaaaaa",
+                      "seq": 4,
+                      "rc": 4000,
+                      "ru": 4000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                  "more": false,
+                  "seq": 4,
+                  "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                  "total": 4
+                }
+              ]
+            }
+          },
+          "tSend": 5000,
+          "tRecv": 5000,
+          "deviceNow": 5000
+        },
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5001
+        },
+        {
+          "op": "unsubscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5002
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5002
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        null,
+        null,
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1003,
+                "counter": 0
+              },
+              "hlcHigh": "1003:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1003:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1002:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1002:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 2",
+                      "1002:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "card",
+                  "id": "card0003",
+                  "life": [
+                    "alive",
+                    "1003:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1003:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 3",
+                      "1003:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "an open tree is tree-only anonymously and gains only the active bound account’s overlay after each account change",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002",
+        "rp_00000000000000000000000000000003"
+      ],
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001",
+          "deviceNow": 5000
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5000
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": null,
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "tSend": 5001,
+          "tRecv": 5001,
+          "deviceNow": 5001
+        },
+        {
+          "op": "signIn",
+          "account": "B",
+          "holdsRecords": {},
+          "deviceNow": 5002
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5003
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5003,
+              "epoch": "ep-1",
+              "as": "B",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "tSend": 5003,
+          "tRecv": 5003,
+          "deviceNow": 5003
+        },
+        {
+          "op": "signOut",
+          "choice": "keep",
+          "deviceNow": 5004
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5004
+        },
+        {
+          "op": "signIn",
+          "account": "A",
+          "holdsRecords": {},
+          "deviceNow": 5005
+        },
+        {
+          "op": "subscriptions",
+          "deviceNow": 5005
+        },
+        {
+          "op": "pull",
+          "deviceNow": 5006
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5006,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "life": [
+                        "alive",
+                        "900:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "900:0:r_aaaaaaaaaaaa",
+                      "seq": 4,
+                      "rc": 4000,
+                      "ru": 4000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                  "more": false,
+                  "seq": 4,
+                  "digest": "ec3db0b0c28bd5239e03f0e4b71dc425ba3b5bb73cecdacebc1e701f0961063c",
+                  "total": 1
+                },
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "visibility": [
+                          "public",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                  "total": 2,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                },
+                {
+                  "scope": "self/overlay/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "f": {
+                        "done": [
+                          true,
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                  "more": false,
+                  "seq": 1,
+                  "digest": "4368107826b94aaf075965dbe518f0d2d01fab2d1dfffb7aa12a453867b3ea6b",
+                  "total": 1
+                }
+              ]
+            }
+          },
+          "tSend": 5006,
+          "tRecv": 5006,
+          "deviceNow": 5006
+        },
+        {
+          "op": "view",
+          "scope": "self/overlay/b_00000001",
+          "withHeld": true,
+          "deviceNow": 5007
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null,
+        [
+          "tree/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "complete": true,
+          "due": []
+        },
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "complete": true,
+          "unsent": 0,
+          "ready": 0,
+          "sent": 0,
+          "counted": []
+        },
+        [
+          "tree/b_00000001"
+        ],
+        {
+          "complete": true,
+          "due": []
+        },
+        [
+          "self/probe",
+          "tree/b_00000001",
+          "self/overlay/b_00000001"
+        ],
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            },
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            },
+            {
+              "scope": "self/overlay/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          },
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          },
+          {
+            "scope": "self/overlay/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000003",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1000,
+                "counter": 0
+              },
+              "hlcHigh": "1000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1000:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Plan",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                "booted": true
+              }
+            }
+          },
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "dormant",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1000,
+                "counter": 0
+              },
+              "hlcHigh": "1000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1000:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B",
+              "clockReading": {
+                "wall": 5003,
+                "mono": 5003,
+                "boot": "boot-1"
+              }
+            }
+          },
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000003",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1000,
+                "counter": 0
+              },
+              "hlcHigh": "1000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1000:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5006,
+                "mono": 5006,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      true,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ],
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Plan",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "4368107826b94aaf075965dbe518f0d2d01fab2d1dfffb7aa12a453867b3ea6b",
+                "booted": true
+              },
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "ec3db0b0c28bd5239e03f0e4b71dc425ba3b5bb73cecdacebc1e701f0961063c",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "2d2d2997eddad2e5a4714adaef701f51aa1271e7426dbd5ce01a27753c769ac5",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        },
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000002",
+          "replica": "rp_00000000000000000000000000000001"
+        },
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000003"
         }
       ]
     }

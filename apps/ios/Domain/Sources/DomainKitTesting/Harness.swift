@@ -59,12 +59,20 @@ public final class Harness {
     engine.failNextCommit()
   }
 
-  public func drawn<E: Entity>(_ type: E.Type) throws -> [E] {
-    try Repository<E>.decode(engine.drawn(E.scope, E.type))
+  public func drawn<E: Entity>(_ type: E.Type, in scope: ScopeRef) throws -> [E] {
+    try runner.read(scope) { try $0.repository(type).all(in: .drawn) }
   }
 
-  public func stored<E: Entity>(_ type: E.Type) throws -> [E] {
-    try Repository<E>.decode(engine.stored(E.scope, E.type))
+  public func stored<E: Entity>(_ type: E.Type, in scope: ScopeRef) throws -> [E] {
+    try runner.read(scope) { try $0.repository(type).all(in: .stored) }
+  }
+
+  public func drawn<E: ProductEntity>(_ type: E.Type) throws -> [E] {
+    try drawn(type, in: E.scope)
+  }
+
+  public func stored<E: ProductEntity>(_ type: E.Type) throws -> [E] {
+    try stored(type, in: E.scope)
   }
 
   // The notices of every product of the registry not dismissed, each product's in the order they were written.

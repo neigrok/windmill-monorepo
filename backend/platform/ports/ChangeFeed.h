@@ -22,7 +22,7 @@ struct ScopeChange {
   std::vector<Json::Value> rows;
 };
 
-// What one committed admission changed: the scopes it wrote in step order (its own, then any it created),
+// What one committed admission changed: its origin first, then other changed scopes in key order,
 // and the scopes it killed, ascending.
 struct CommittedChange {
   std::string epoch;
@@ -31,7 +31,7 @@ struct CommittedChange {
 };
 
 // Where committed changes go: the live channel in-process, a relay once several processes run the engine.
-// Admission publishes after COMMIT and before it releases the scope's mutex, so one scope's changes
+// Admission publishes after COMMIT and before it releases the owner gate and origin mutex, so one scope's changes
 // arrive in seq order.
 class ChangeFeed {
 public:

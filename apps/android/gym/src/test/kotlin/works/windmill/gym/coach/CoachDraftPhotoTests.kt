@@ -172,12 +172,13 @@ class CoachDraftPhotoTests {
     }
 
     @Test fun deletingAfterPhotoStoragePrunesTheLateFileAndKeepsAnotherChatsReferencedPhoto() = runTest {
-        val dispatcher = PhotoQueue()
-        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val main = PhotoQueue()
+        val io = PhotoQueue()
+        val scope = CoroutineScope(SupervisorJob() + main)
         try {
             val file = File(tmp.root, "deleted-stored")
             val disk = LocalCoach(file)
-            val store = chats({ "alice" }, disk, scope)
+            val store = chats({ "alice" }, disk, scope, storage = io)
             val origin = store.freshChat("Delete this draft")
             val other = store.freshChat("Keep this draft")
             val kept = CoachAttachment("attachment-kept", "image/png", 1, 1, 3)
@@ -185,16 +186,17 @@ class CoachDraftPhotoTests {
             store.saveDraft(other, CoachDraft("Keep this draft", kept))
             val late = CoachAttachment("attachment-late", "image/png", 1, 1, 3)
             val importing = async(start = CoroutineStart.UNDISPATCHED) { store.importPhoto(origin) { late to byteArrayOf(1, 2, 3) } }
-            dispatcher.next()
-            val deadline = System.nanoTime() + 5_000_000_000
-            while ((!disk.photoFile("alice", late.id).isFile || !dispatcher.ready) && System.nanoTime() < deadline) Thread.yield()
+            main.next()
+            io.next()
             assertTrue(disk.photoFile("alice", late.id).isFile)
-            assertTrue(dispatcher.ready)
+            assertTrue(main.ready)
             val deletion = async(start = CoroutineStart.UNDISPATCHED) { store.deleteThread(origin) }
-            dispatcher.last()
+            main.last()
             assertEquals(GymResult.Ok(Unit), deletion.await())
-            dispatcher.next()
-            while (!importing.isCompleted && System.nanoTime() < deadline) { dispatcher.next(); runCurrent(); Thread.yield() }
+            main.next()
+            io.next()
+            main.next()
+            runCurrent()
             assertTrue(importing.isCompleted)
             importing.await()
             assertNull(store.chat(origin))

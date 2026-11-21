@@ -1,8 +1,9 @@
 # Echoes
 
 An echo pairs a saved journal page with older passages from the same writer. It shows the original
-text and the time between the two pages. Echoes are automatic for signed-in writers; passive
-vendor spend has its own allowance.
+text and the time between the two pages. Echoes are automatic for signed-in writers. In production,
+where AI allowances are on, each model call draws on the writer's own AI allowance, and a free
+account's on the shared free budgets too.
 
 ## Product contract
 
@@ -106,7 +107,9 @@ and matching vectors; changed bodies or absent spans still require segmentation.
 Only `ok`, `empty_ok` and `refused` settle a page and advance its derivation stamps. Transport,
 rate-limit, truncation and schema failures leave it due. A refusal reopens only on a body edit or
 pipeline version change, not corpus movement. Version claims are recorded after the corresponding
-spans are stored. `attempts` is diagnostic and does not implement backoff.
+spans are stored. `attempts` counts unsettled passes in a row, and a budget refusal counts none. Six of them stop only
+a page whose stamps and versions already matched; a page that never settled, or that a save, a moved
+corpus or a changed version reopened, stays due however many it has.
 
 ## Scheduling and limits
 
@@ -125,9 +128,13 @@ accounts. The queue drains every second. `LiveDerivationRules` defaults are:
 Deferred and unqueued pages remain due. A six-hour repair heartbeat scans accounts active in the
 last 24 hours, with 40 pages per account, 20 inbound pages per changed page and ten echoes per page.
 
-`Entitlements::sweepAllowanceFor` limits passive `echo.segment` and `echo.curate` spend to an internal
-$2 per account per rolling 30 days. Over-budget work is skipped without advancing stamps. Voice
-transcription uses the active AI allowance instead. `ai_usage` records vendor usage and outcomes;
+With AI allowances on, as in production, `echo.segment` and `echo.curate` are admitted against the
+writer's own allowance and one of its calls in flight, as [USD AI allowances](../../AI_ALLOWANCES.md)
+says of every hosted call; a refused call leaves the page due with no attempt counted. With them
+off, `Entitlements::sweepAllowanceFor` limits that spend to an internal $2 per account per rolling 30
+days, and over-budget work is skipped without advancing stamps.
+[Echoes on the AI service](../../../docs/foundation/echoes-on-ai-service.md) specifies the move of
+both calls onto the AI service, where a budget of Windmill's own pays. `ai_usage` records vendor usage and outcomes;
 use it to measure cost and cache use.
 
 `WarmEchoRepository` caches a corpus per account and embedding version for 15 minutes. Span writes

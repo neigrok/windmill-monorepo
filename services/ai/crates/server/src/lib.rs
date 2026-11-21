@@ -3,6 +3,7 @@ pub mod guards;
 pub mod listeners;
 pub mod live;
 pub mod pass;
+pub mod pictures;
 pub mod policy;
 pub mod results;
 pub mod telemetry;
@@ -48,6 +49,7 @@ pub struct Service {
     pub text: Option<Arc<Anthropic>>,
     pub live: Option<Arc<LiveClient>>,
     pub results: Results,
+    pub pictures: pictures::Pictures,
     pub rates: Rates,
     pub refusals: Refusals,
     pub provider_health: telemetry::ProviderHealth,
@@ -158,6 +160,7 @@ pub fn public_router(service: Arc<Service>) -> Router {
         .route("/v1/calls/{callId}/result", get(result))
         .route("/v1/calls/{callId}", get(status))
         .route("/v1/allowance", get(allowance))
+        .route("/v1/pictures/{pictureId}", put(pictures::upload))
         .fallback(|| async { refusal("call_unknown", None) })
         .layer(middleware::from_fn_with_state(service.clone(), no_store))
         .with_state(service)
@@ -214,7 +217,20 @@ async fn no_store(State(service): State<Arc<Service>>, request: Request, next: N
         "/internal/v1/calls/{id}/correct" => Some("call.correct"),
         _ => None,
     };
-    if let Some(operation) = operation {
+    if route == "/v1/pictures/{pictureId}" {
+        let outcome = response
+            .extensions()
+            .get::<RefusalCode>()
+            .map_or("ok", |code| code.0);
+        tracing::info!(
+            operation = "picture.upload",
+            product = "ai",
+            door = "public",
+            outcome,
+            duration_ms,
+            "write"
+        );
+    } else if let Some(operation) = operation {
         let outcome = response
             .extensions()
             .get::<WriteOutcome>()
@@ -403,7 +419,7 @@ pub fn refusal(code: &'static str, allowance: Option<Value>) -> Response {
         "funding_required" | "device_bound" => StatusCode::FORBIDDEN,
         "call_unknown" | "not_found" => StatusCode::NOT_FOUND,
         "conflict" => StatusCode::CONFLICT,
-        "result_gone" => StatusCode::GONE,
+        "result_gone" | "picture_gone" => StatusCode::GONE,
         "too_large" => StatusCode::PAYLOAD_TOO_LARGE,
         "subject_exhausted"
         | "free_month_exhausted"
@@ -730,6 +746,13 @@ async fn text(
         }
     };
     drop(bytes);
+    if let Err(code) = service.pictures.resolve(
+        &principal_key(&identity.principal),
+        &mut request,
+        Instant::now(),
+    ) {
+        return reject(&service, &identity, code, "call.text").await;
+    }
     request.output.max_tokens = request.output.max_tokens.min(row.output_ceiling);
     let requested = match request.model {
         TextClass::Large => ModelClass::Large,

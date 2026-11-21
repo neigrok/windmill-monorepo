@@ -197,13 +197,13 @@ test('a held set deletion refuses corrections, restores exactly on Undo and expi
   assert.deepEqual(refused.kind === 'refused' && refusalForm(refused.refusal), { gone: { subject: input.id.ref, path: 'predicted' } });
   await a.sync();
   assert.deepEqual(b.drawn(TrainingSet), [before]);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.deepEqual(a.drawn(TrainingSet), [before]);
   const again = committed(await a.runner.run(DeleteSet(input.id)));
   await a.advance(CONSTANTS.HOLD_MS - 1);
   assert.deepEqual(a.undoOffers(), [{ id: again.receipt.gestureId, releaseAt: again.receipt.releaseAt, records: [input.id.ref] }]);
   await a.advance(1);
-  assert.equal(await a.runner.undo(again.receipt.gestureId), false);
+  assert.equal(await a.runner.cancelHeld(again.receipt.gestureId), false);
   await a.sync();
   assert.deepEqual(a.stored(TrainingSet), []);
   assert.deepEqual(b.drawn(TrainingSet), []);
@@ -227,7 +227,7 @@ test('discarding a stale workout is held, refuses Finish while hidden and cascad
   assert.deepEqual(finishRefusal.kind === 'refused' && refusalForm(finishRefusal.refusal), { gone: { subject: sessionId.ref, path: 'predicted' } });
   assert.deepEqual(a.drawn(Session), []);
   assert.deepEqual(a.drawn(TrainingSet), sets);
-  assert.equal(await a.runner.undo(removal.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removal.receipt.gestureId), true);
   assert.deepEqual(a.drawn(Session), before);
   assert.deepEqual(a.drawn(TrainingSet), sets);
   committed(await a.runner.run(DiscardSession(sessionId)));
@@ -343,7 +343,7 @@ test('a held deletion remains undoable while a workout correction waits for serv
   committed(await a.runner.run(CorrectSession({ id: sessionId, requestId: 'request1', startedAt, finishedAt, routineName: null,
     sets: [correction(before, { weightKg: 90 })] })));
   assert.deepEqual(a.drawn(TrainingSet), []);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   await a.sync();
   assert.deepEqual(a.drawn(TrainingSet), [editing(before, { weightKg: 90 })]);
   assert.deepEqual(a.notices(GymRefusals), []);

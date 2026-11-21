@@ -1,10 +1,19 @@
 package works.windmill.domain.kit
 
+import java.io.File
 import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.sync.core.Json
 
 class AbilitiesTests {
+    @Test fun everySharedPatternUsesWholeValueMatchingWithBacktracking() {
+        val cases = Json.parse(File(System.getProperty("windmill.contract"), "catalog/schema-patterns.json").readText()).arr()
+        for (case in cases) {
+            val expected = case.member("fault").orNull()?.let { SchemaFault(Path(it.member("path").str()), it.member("reason").str()) }
+            assertEquals(case.member("name").str(), expected, JsonSchema(case.member("schema")).fault(case.member("value")))
+        }
+    }
+
     fun entry(name: String, kind: String = "read", agent: String = "runs", seats: String = "any", extra: String = ""): String =
         """{"name": "$name", "description": "d", "input": {"type": "object"}, "result": {"type": "array"}, "class": "$kind", "agent": "$agent", "seats": "$seats", "phrase": "read $name", "ui": "$name"$extra}"""
 

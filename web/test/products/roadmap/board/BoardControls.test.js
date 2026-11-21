@@ -28,11 +28,11 @@ test('PhoneTools — its New step door exists only with a callback', () => {
   assert.equal(renderToStaticMarkup(React.createElement(PhoneTools, { ...props, onNewStep: () => {} })), `${plain.slice(0, -6)}${create}</div>`);
 });
 
-test('BulkBar — the entire bar is a named region with a first-child heading and ordered controls', async () => {
+test('BulkBar — the entire bar is a named region with a count heading and ordered controls', async () => {
   const { BULK, COMPOSER, selectedCount, deleteStepsAction } = await import('../../../../src/products/roadmap/copy.js');
   const html = renderToStaticMarkup(React.createElement(BulkBar, { count: 2, kinds: [], sharedKind: null, onDelete: () => {} }))
     .replace(/<svg[^>]*>.*?<\/svg>/g, '<svg/>');
-  assert.equal(html, `<div role="region" aria-label="${BULK.region}" class="st-board-bulk"><h2 class="st-board-bulk-heading">${selectedCount({ count: 2 })}</h2><button class="st-board-bulk-done" type="button">${BULK.done}</button><div class="st-board-bulk-kinds" inert="" aria-hidden="true"><div role="radiogroup" aria-label="${COMPOSER.kind}"></div></div><div class="st-board-bulk-actions"><button type="button" class="st-board-bulk-recolor" aria-expanded="false"><span>${BULK.recolor}</span></button><button type="button" class="st-board-bulk-delete"><svg/><span>${deleteStepsAction({ count: 2 })}</span></button></div></div>`);
+  assert.equal(html, `<div role="region" aria-label="${BULK.region}" class="st-board-bulk"><div class="st-board-bulk-summary"><h2 class="st-board-bulk-heading">${selectedCount({ count: 2 })}</h2></div><button class="st-board-bulk-done" type="button">${BULK.done}</button><div class="st-board-bulk-kinds" inert="" aria-hidden="true"><div role="radiogroup" aria-label="${COMPOSER.kind}"></div></div><div class="st-board-bulk-actions"><button type="button" class="st-board-bulk-recolor" aria-expanded="false"><span>${BULK.recolor}</span></button><button type="button" class="st-board-bulk-delete"><svg/><span>${deleteStepsAction({ count: 2 })}</span></button></div></div>`);
 });
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));

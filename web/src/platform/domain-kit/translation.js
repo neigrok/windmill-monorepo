@@ -17,12 +17,13 @@ import { PlanError } from './plans.js';
 /** @typedef {{ text: string, from: string | null }} TextEdit */
 /**
  * The engine's change language (engine corpus "Changes"), one change per plan operation.
- * @typedef {{ op: 'create' | 'update' | 'delete' | 'put' | 'write' | 'move', t: string, id: RecordID, f?: Record<string, Json>,
+ * @typedef {{ op: 'create' | 'update' | 'delete' | 'revive' | 'put' | 'write' | 'move', t: string, id: RecordID, f?: Record<string, Json>,
  *   x?: Record<string, TextEdit>, present?: boolean | null, anchor?: { field: string, below: RecordID | null } }} Change
  */
 /**
  * @typedef {{ changes: Change[], atomic: boolean, hold: boolean, guards: RegisterRef[], retire: RecordRef[],
- *   cmd: import('./plans.js').Command | null, predict: Change[], local: import('./plans.js').DeviceWrite[], supersede?: string[] }} Gesture
+ *   cmd: import('./plans.js').Command | null, predict: Change[], scopedPredict?: { scope: string, changes: Change[] }[],
+ *   local: import('./plans.js').DeviceWrite[], supersede?: string[] }} Gesture
  */
 /** @typedef {import('./entities.js').Definition} Definition */
 
@@ -103,10 +104,11 @@ function checkWhole(definition, names) {
 function creation(operation, definition, names, anchor, base, registry) {
   checkWhole(definition, names);
   const { values, texts } = split(operation, names, definition, base);
-  const minted = definition.identity === 'minted';
-  if (anchor !== null && !minted) throw new PlanError(0, 'an anchored create names a non-minted type');
-  if (!minted && names.length === 0) throw new PlanError(8, 'a keyed create writes no field');
-  if (minted) {
+  const hasBorn = definition.hasBorn;
+  if (anchor !== null && !hasBorn) throw new PlanError(0, 'an anchored create names a type without a birth identity');
+  const presenceOnly = definition.identity === 'keyed' && definition.life === true && Object.keys(definition.fields).length === 0;
+  if (!hasBorn && names.length === 0 && !presenceOnly) throw new PlanError(8, 'a keyed create writes no field');
+  if (hasBorn) {
     // §5.3: a nil time field is left to the engine, which stamps it with the commit's now.
     const written = Object.fromEntries(Object.entries(values).filter(([name, value]) => value !== null || definition.fields[name]?.kind !== 'time'));
     const change = withParts({ op: 'create', t: operation.entity.type, id: operation.id }, written, texts);
@@ -127,13 +129,12 @@ function changeOf(operation, scope, registry) {
   const { entity, kind } = operation;
   const definition = /** @type {Definition | undefined} */ (registry.type(entity.type));
   if (!definition) throw new PlanError(0, `the registry has no type ${entity.type}`);
-  if (entity.scope !== scope || definition.scope !== registry.scopeKindOf(scope)) throw new PlanError(1, `${entity.type} lives outside ${scope}`);
-  if (definition.identity === 'derived') throw new PlanError(0, 'the kit writes no derived type');
-  const minted = definition.identity === 'minted';
+  if ((entity.scope !== null && entity.scope !== scope) || definition.scope !== registry.scopeKindOf(scope)) throw new PlanError(1, `${entity.type} lives outside ${scope}`);
+  const hasBorn = definition.hasBorn;
   const keyedWithLife = definition.identity === 'keyed' && definition.life === true;
   switch (kind.op) {
     case 'create':
-      if (entity.isOrdered || (kind.named !== null && minted)) throw new PlanError(4, 'create does not place an Ordered type, nor part of a minted one');
+      if (entity.isOrdered || (kind.named !== null && hasBorn)) throw new PlanError(4, 'create does not place an Ordered type, nor part of a minted or derived one');
       return creation(operation, definition, kind.named ?? uniqueInByteOrder(Object.keys(operation.values)), null, kind.base, registry);
     case 'insert':
       if (entity.orderField === null) throw new PlanError(4, 'insert names an unordered type');
@@ -147,12 +148,20 @@ function changeOf(operation, scope, registry) {
       }
       checkWhole(definition, kind.named);
       const { values, texts } = split(operation, kind.named, definition, kind.base);
-      if (minted) return withParts({ op: 'update', t: entity.type, id: operation.id }, values, texts);
+      if (hasBorn) return withParts({ op: 'update', t: entity.type, id: operation.id }, values, texts);
       if (keyedWithLife) return withParts({ op: 'put', t: entity.type, id: operation.id, present: null }, values, texts);
       return withParts({ op: 'write', t: entity.type, id: recordIdOf(operation, registry) }, values, texts);
     }
+    case 'revive': {
+      if (!definition.hasBorn || definition.revivable !== true) throw new PlanError(0, `${entity.type} has no revivable life`);
+      for (const name of kind.named) {
+        if (['const', 'time', 'text'].includes(definition.fields[name]?.kind ?? '')) throw new PlanError(7, `revive cannot edit ${name}`);
+      }
+      const { values, texts } = split(operation, kind.named, definition, kind.base);
+      return withParts({ op: 'revive', t: entity.type, id: operation.id }, values, texts);
+    }
     case 'remove':
-      if (minted) return { op: 'delete', t: entity.type, id: operation.id };
+      if (hasBorn) return { op: 'delete', t: entity.type, id: operation.id };
       if (keyedWithLife) return { op: 'put', t: entity.type, id: operation.id, present: false };
       throw new PlanError(0, `${entity.type} has no removable life`);
     case 'move':
@@ -179,7 +188,7 @@ function guardsOf(operations, registry) {
     const isLattice = (/** @type {string} */ name) => Registry.isLattice(definition?.fields[name]?.kind);
     /** @type {readonly string[]} */
     let fields = [];
-    if (operation.kind.op === 'update' && operation.kind.guarded) fields = operation.kind.named.filter(isLattice);
+    if ((operation.kind.op === 'update' || operation.kind.op === 'revive') && operation.kind.guarded) fields = operation.kind.named.filter(isLattice);
     if (operation.kind.op === 'guardRead') {
       fields = operation.kind.fields;
       if (fields.some((name) => !isLattice(name))) throw new PlanError(6, 'a guard names no lattice register');
@@ -192,29 +201,52 @@ function guardsOf(operations, registry) {
   return [...guards.values()].sort((a, b) => compareText(a.t, b.t) || compareJcs(a.id, b.id) || compareText(a.field, b.field));
 }
 
+// Rule 5: the command predicts the type, in a scope that holds it; a scope other than the plan's needs a command
+// with scoped effects. Predictions of other scopes go in groups, the plan's scope first, then by bytes.
 /**
  * @param {Plan} plan
+ * @param {string} scope
  * @param {Registry} registry
- * @returns {Change[]}
+ * @returns {{ predict: Change[], scopedPredict?: { scope: string, changes: Change[] }[] }}
  */
-function predictionsOf(plan, registry) {
-  return plan.predictions.map((prediction) => {
-    const predicts = plan.command ? registry.command(plan.command.name)?.predicts ?? [] : [];
-    if (!predicts.includes(prediction.type)) throw new PlanError(5, `the command does not predict ${prediction.type}`);
-    const texts = Object.fromEntries(Object.entries(prediction.texts).map(([name, text]) => [name, { text, from: null }]));
-    switch (prediction.kind) {
-      case 'create':
-        return withParts({ op: 'create', t: prediction.type, id: prediction.id }, prediction.values, {});
-      case 'update':
-        return withParts({ op: 'update', t: prediction.type, id: prediction.id }, prediction.values, {});
-      case 'write':
-        return withParts({ op: 'write', t: prediction.type, id: prediction.id }, prediction.values, texts);
-      default:
-        return registry.type(prediction.type)?.identity === 'keyed'
-          ? { op: 'put', t: prediction.type, id: prediction.id, present: false }
-          : { op: 'delete', t: prediction.type, id: prediction.id };
-    }
-  });
+function predictionsOf(plan, scope, registry) {
+  const command = plan.command ? registry.command(plan.command.name) : undefined;
+  /** @type {Map<string, Change[]>} */
+  const groups = new Map([[scope, []]]);
+  for (const prediction of plan.predictions) {
+    const target = prediction.scope ?? scope;
+    if (registry.type(prediction.type)?.scope !== registry.scopeKindOf(target)) throw new PlanError(5, `${prediction.type} is predicted outside its scope`);
+    if (target !== scope && command?.scopedEffects !== true) throw new PlanError(5, `${plan.command?.name ?? 'a plan'} predicts no other scope`);
+    if (!groups.has(target)) groups.set(target, []);
+    groups.get(target)?.push(changeOfPrediction(prediction, command?.predicts ?? [], registry));
+  }
+  const origin = groups.get(scope) ?? [];
+  if (groups.size === 1) return { predict: origin };
+  const others = [...groups.keys()].filter((key) => key !== scope).sort(compareText);
+  return { predict: [], scopedPredict: [...(origin.length ? [{ scope, changes: origin }] : []), ...others.map((key) => ({ scope: key, changes: groups.get(key) ?? [] }))] };
+}
+
+/**
+ * @param {import('./plans.js').Prediction} prediction
+ * @param {string[]} predicts
+ * @param {Registry} registry
+ * @returns {Change}
+ */
+function changeOfPrediction(prediction, predicts, registry) {
+  if (!predicts.includes(prediction.type)) throw new PlanError(5, `the command does not predict ${prediction.type}`);
+  const texts = Object.fromEntries(Object.entries(prediction.texts).map(([name, text]) => [name, { text, from: null }]));
+  switch (prediction.kind) {
+    case 'create':
+      return withParts({ op: 'create', t: prediction.type, id: prediction.id }, prediction.values, {});
+    case 'update':
+      return withParts({ op: 'update', t: prediction.type, id: prediction.id }, prediction.values, {});
+    case 'write':
+      return withParts({ op: 'write', t: prediction.type, id: prediction.id }, prediction.values, texts);
+    default:
+      return registry.type(prediction.type)?.identity === 'keyed'
+        ? { op: 'put', t: prediction.type, id: prediction.id, present: false }
+        : { op: 'delete', t: prediction.type, id: prediction.id };
+  }
 }
 
 /**
@@ -244,8 +276,33 @@ export function translate(plan, scope, registry) {
     guards: guardsOf(operations, registry),
     retire,
     cmd: plan.command,
-    predict: predictionsOf(plan, registry),
+    ...predictionsOf(plan, scope, registry),
     local: plan.deviceWrites.map((write) => ({ key: write.key, value: write.value })),
     ...(plan.supersededGestures.length ? { supersede: [...plan.supersededGestures] } : {}),
   };
+}
+
+// K-3: a plan's Undo recipes in the engine's form (engine §7.3 Undo of an act); a target or record without a
+// scope of its own lives in the plan's.
+/**
+ * @param {Plan} plan
+ * @param {string} scope
+ * @returns {Json[] | null}
+ */
+export function translateUndo(plan, scope) {
+  const undo = plan.undo;
+  if (undo === null) return null;
+  const target = (/** @type {import('./plans.js').UndoTarget} */ item) => ({ scope: item.scope ?? scope, t: item.id.entity.type, id: item.id.record, slot: { ...item.slot } });
+  const record = (/** @type {import('./entities.js').Id<any>} */ id, /** @type {string | null} */ at) => ({ scope: at ?? scope, t: id.entity.type, id: id.record });
+  return undo.recipes.map((recipe) => {
+    if (recipe.kind === 'fields') {
+      return { kind: 'fields', restoreCommand: recipe.restoreCommand,
+        targets: recipe.targets.map((item) => ({ target: target(item.target), ...(item.defaultValue === undefined ? {} : { defaultValue: item.defaultValue }) })) };
+    }
+    if (recipe.kind === 'createdRecord') return { kind: 'createdRecord', restoreCommand: recipe.restoreCommand, record: record(recipe.id, null) };
+    return { kind: 'command', command: recipe.command, input: recipe.input, evidence: {
+      ownedFields: recipe.evidence.ownedFields.map(target),
+      unchangedCreatedRecords: recipe.evidence.unchangedCreatedRecords.map((item) => record(item.id, item.scope)),
+      unchangedCreatedScopes: [...recipe.evidence.unchangedCreatedScopes] } };
+  });
 }

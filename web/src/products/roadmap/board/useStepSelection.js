@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { readNavigation, subscribeNavigation, pushEntry, replaceEntry, requestNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { StepSelection, deletable } from './acts.js';
 import { stepOf } from '../step/stepAddress.js';
@@ -80,29 +81,29 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
       const present = context.state;
       if (!SELECTING.has(present.phase)) return;
       const sameRoadmap = !context.tree || context.tree.treeId === present.visit.treeId;
-      const stillActive = context.active && sameRoadmap && window.location.href === present.visit.href;
+      const stillActive = context.active && sameRoadmap && readNavigation().href === present.visit.href;
       transition({ type: 'end', restore: via !== 'left' || stillActive });
       track('roadmap_board_select', { step: 'end', via });
-      const entry = window.history.state?.boardSelection;
-      const ownsEntry = entry?.token === present.visit.token && window.location.href === present.visit.href;
+      const entry = readNavigation().state?.boardSelection;
+      const ownsEntry = entry?.token === present.visit.token && readNavigation().href === present.visit.href;
       if (!pop || !ownsEntry) {
         transition({ type: 'left' });
         return;
       }
       if (present.phase === 'closingKinds') return;
-      window.history.go(entry.kinds ? -2 : -1);
+      requestNavigation({ key: 'selection:end', run: (tx) => tx.traverse(entry.kinds ? -2 : -1) });
     };
 
     const kinds = (open) => {
       const { state: present } = current.current;
       if (open && present.phase === 'cards') {
         transition({ type: 'openKinds' });
-        window.history.pushState({ ...window.history.state, boardSelection: { token: present.visit.token, kinds: true } }, '', window.location.href);
+        pushEntry(readNavigation().href, { ...readNavigation().state, boardSelection: { token: present.visit.token, kinds: true } });
         return true;
       }
       if (!open && present.phase === 'kinds') {
         transition({ type: 'closeKinds' });
-        window.history.back();
+        requestNavigation({ key: 'selection:back', run: (tx) => tx.traverse(-1) });
         return true;
       }
       return false;
@@ -113,13 +114,13 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
       kinds,
       start(id) {
         const context = current.current;
-        if (!context.enabled || context.state.phase !== 'idle' || stepOf(window.location.hash) !== null || !deletable(context.tree, [id])) return false;
+        if (!context.enabled || context.state.phase !== 'idle' || stepOf(readNavigation().hash) !== null || !deletable(context.tree, [id])) return false;
         const candidate = new StepSelection([id]).prune(context.board, context.shown, { doneExpanded: context.doneExpanded });
         if (candidate.count === 0) return false;
-        const visit = { token: crypto.randomUUID(), id, column: context.shown, treeId: context.tree.treeId, href: window.location.href };
+        const visit = { token: crypto.randomUUID(), id, column: context.shown, treeId: context.tree.treeId, href: readNavigation().href };
         ownedTokens.current.add(visit.token);
         transition({ type: 'start', visit });
-        window.history.pushState({ ...window.history.state, boardSelection: { token: visit.token, kinds: false } }, '', window.location.href);
+        pushEntry(readNavigation().href, { ...readNavigation().state, boardSelection: { token: visit.token, kinds: false } });
         track('roadmap_board_select', { step: 'start' });
         return true;
       },
@@ -168,16 +169,16 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
       done() { end('done'); },
       back() {
         const { state: present } = current.current;
-        const entry = window.history.state?.boardSelection;
+        const entry = readNavigation().state?.boardSelection;
         if (present.phase === 'idle') {
           if (!ownedTokens.current.has(entry?.token)) return;
-          const { boardSelection, ...rest } = window.history.state;
-          window.history.replaceState(rest, '', window.location.href);
+          const { boardSelection, ...rest } = readNavigation().state;
+          replaceEntry(readNavigation().href, rest);
           return;
         }
-        if (present.phase === 'endingKinds' && entry?.token === present.visit.token && window.location.href === present.visit.href) {
+        if (present.phase === 'endingKinds' && entry?.token === present.visit.token && readNavigation().href === present.visit.href) {
           transition({ type: 'leaveKinds' });
-          window.history.back();
+          requestNavigation({ key: 'selection:back', run: (tx) => tx.traverse(-1) });
           return;
         }
         if (present.phase === 'ending' || present.phase === 'endingKinds') {
@@ -204,13 +205,15 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
   }, [transition]);
 
   useEffect(() => {
-    window.addEventListener('popstate', handlers.back);
+    const release = subscribeNavigation(handlers.back);
     window.addEventListener('keydown', handlers.escape, true);
     return () => {
-      window.removeEventListener('popstate', handlers.back);
+      release();
       window.removeEventListener('keydown', handlers.escape, true);
       handlers.end('left');
-      if (current.current.state.phase === 'endingKinds') window.addEventListener('popstate', handlers.back, { once: true });
+      if (current.current.state.phase === 'endingKinds') {
+        const releaseOnce = subscribeNavigation(() => { releaseOnce(); handlers.back(); });
+      }
     };
   }, [handlers]);
 
@@ -245,7 +248,7 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
 
   const starterId = state.visit && SELECTING.has(state.phase) ? state.visit.id : null;
   const restoreId = state.visit && (SELECTING.has(state.phase) || state.focus) ? state.last : null;
-  // A selection that takes every root the roadmap has left offers no Delete, as the Graph's selection bars do.
+  // The phone bar explains a missing delete handler as the selection taking every remaining root.
   const selectionDeletable = derived.selection !== null && deletable(tree, derived.selection.ids);
   return { selection: derived.selection, starterId, restoreId, announcement: state.announcement, ...handlers, deleteSelected: selectionDeletable ? handlers.deleteSelected : null };
 }

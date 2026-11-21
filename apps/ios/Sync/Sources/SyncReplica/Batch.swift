@@ -31,6 +31,13 @@ public enum ReplicaWrite: Sendable, Hashable {
   case deleteDeviceRow(product: String, key: String)
   case deleteDeviceRows(product: String)
   case purgeCaches
+  // K-3 the journal (§7.3 Undo of an act): one record an act, an inverse request or a cancellation receipt, by its id.
+  case putAct(ReversibleAct)
+  case deleteAct(String)
+  case putInverse(InverseRequest)
+  case deleteInverse(String)
+  case putCancellation(CancellationReceipt)
+  case deleteCancellation(String)
 }
 
 public enum StoreWrite: Sendable, Hashable {

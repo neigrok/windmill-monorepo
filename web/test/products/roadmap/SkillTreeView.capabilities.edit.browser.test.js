@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { COMPOSER, EDIT_STEP, LABELS, PICKER, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
+import { COMPOSER, LABELS, PICKER, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 
@@ -35,11 +35,15 @@ for (const width of everyWidth) {
     const { page, errors } = await openHost({ width, surface: 'board' });
     try {
       await openStep(page, 'wind');
-      await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
+      await page.getByRole('button', { name: 'Edit name', exact: true }).click();
       await page.getByRole('textbox', { name: COMPOSER.name, exact: true }).fill('Read gusts');
-      await page.getByRole('textbox', { name: COMPOSER.description }).fill('Watch the water.');
-      await page.getByRole('dialog', { name: EDIT_STEP.title, exact: true }).getByRole('radio', { name: 'Sky', exact: true }).click();
-      await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
+      await page.getByRole('button', { name: 'Edit description', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Description', exact: true }).fill('Watch the water.');
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
+      await page.getByRole('button', { name: 'Edit kind', exact: true }).click();
+      await page.getByRole('radio', { name: 'Sky', exact: true }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
       await page.getByRole('article', { name: 'Read gusts', exact: true }).waitFor();
       assert.deepEqual(await savedStep(page, 'wind'), { label: 'Read gusts', description: 'Watch the water.', color: 'sky', prerequisites: ['course'] });
       assert.equal(await page.locator('.st-ticker').count(), 0);
@@ -51,7 +55,7 @@ for (const width of everyWidth) {
     const { page, errors } = await openHost({ width, role: 'reader', surface: 'board' });
     try {
       await openStep(page, 'wind');
-      assert.equal(await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: 'Edit name', exact: true }).count(), 0);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });
@@ -61,11 +65,9 @@ for (const width of everyWidth) {
     try {
       await openColumn(page, width, 'Locked');
       await openStep(page, 'dock');
-      await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
-      await page.locator('.st-board-draft-needs').click();
+      await page.getByRole('button', { name: 'Edit prerequisites', exact: true }).click();
       await page.getByRole('checkbox', { name: /^Choose a course/ }).click();
-      await page.getByRole('button', { name: PICKER.apply, exact: true }).click();
-      await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
       await page.getByRole('article', { name: 'Leave the dock', exact: true }).waitFor();
       assert.deepEqual((await savedStep(page, 'dock')).prerequisites, ['course', 'wind']);
       assert.deepEqual(errors, []);
@@ -89,13 +91,13 @@ for (const width of everyWidth) {
   });
 }
 
-hostTest('Graph activation edits through the shared composer without a second editor tenant', async () => {
+hostTest('Graph activation edits through the shared document', async () => {
   const { page, errors } = await openHost({ surface: 'tree' });
   try {
     await page.evaluate(() => window.scene.activate('wind'));
-    await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
+    await page.getByRole('button', { name: 'Edit name', exact: true }).click();
     await page.getByRole('textbox', { name: COMPOSER.name, exact: true }).fill('Read gusts');
-    await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).filter({ visible: true }).click();
     await page.getByRole('article', { name: 'Read gusts' }).waitFor();
     assert.equal(await page.locator('.st-detail-panel--open').count(), 0);
     assert.deepEqual(await savedStep(page, 'wind'), { label: 'Read gusts', description: undefined, color: 'terracotta', prerequisites: ['course'] });

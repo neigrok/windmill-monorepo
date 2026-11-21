@@ -62,6 +62,18 @@
   cursor: pointer;
 }
 .st-step-refusal { flex-shrink: 0; min-width: 0; padding: 8px 24px 0; }
+.st-step-landed {
+  flex-shrink: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 24px 24px 0;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-secondary);
+  overflow-wrap: break-word;
+}
 .st-step-copy-anchor { position: relative; flex-shrink: 0; }
 .st-step-copy-recovery {
   position: absolute;
@@ -132,11 +144,26 @@
 .st-step-section-links button { display: flex; align-items: center; gap: 8px; min-height: 44px; width: 100%; padding: 0; background: none; border: 0; color: var(--text-secondary); font: 600 13px/18px var(--font-body); cursor: pointer; }
 .st-step-section-links strong { flex: 1; color: var(--text-primary); font-size: 14px; text-align: left; }
 .st-step-workspace-section, .st-step-history-section { border-top: 1px solid var(--st-step-rule); padding-top: 20px; scroll-margin-top: 12px; }
-.st-step-pinned-actions { display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; gap: 12px; min-height: 72px; padding: 8px 24px; box-sizing: border-box; background: var(--st-step-paper); }
+.st-step-pinned-actions { position: relative; display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; gap: 12px; min-height: 72px; padding: 8px 24px; box-sizing: border-box; background: var(--st-step-paper); }
 .st-step-shared-label { display: flex; align-items: center; flex-shrink: 0; gap: 5px; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .st-step-pinned-actions .st-board-step-action { min-height: 44px; padding: 0 10px; border-radius: 8px; font-size: 13px; line-height: 17px; }
 .st-step-pinned-actions .st-board-step-action--primary { background: var(--st-step-action); border-color: var(--st-step-action); box-shadow: none; }
-.st-step-pinned-actions .st-board-step-preview { font-size: 12px; }
+.st-step-pinned-actions .st-board-step-preview {
+  position: absolute;
+  z-index: 1;
+  right: 24px;
+  bottom: calc(100% + 12px);
+  width: max-content;
+  max-width: calc(100% - 48px);
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: 0 4px 8px rgb(var(--shadow-ink) / 0.13);
+  font-size: 12px;
+  pointer-events: none;
+}
 .st-step-pinned-actions .st-board-step-outcome { min-width: 0; }
 .st-step-pinned-actions .st-board-step-undo { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .st-step-document .st-board-step-action:disabled,
@@ -171,6 +198,7 @@
 .is-phone .st-step-graph-link { padding: 0; width: 44px; border: 0; background: none; }
 .is-phone .st-step-graph-link span { display: none; }
 .is-phone .st-step-refusal { padding: 8px 16px 0; }
+.is-phone .st-step-landed { padding: 16px 16px 0; }
 .is-phone .st-step-copy-recovery { right: 12px; width: calc(100% - 24px); max-width: none; }
 .is-phone .st-step-read-heading { padding: 24px 0 16px; }
 .is-phone .st-step-kind-label { min-height: 44px; box-sizing: border-box; }

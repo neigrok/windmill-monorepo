@@ -68,7 +68,7 @@ struct RoutinesTests {
     let deletion = try #require(try phone.runner.run(DeleteRoutine(one)).receipt)
     #expect(deletion.releaseAt == 1_800_000_000_000 + Constants.holdMs)
     #expect(try phone.drawn(Routine.self).map(\.id) == [two])
-    #expect(try phone.runner.undo(deletion.gestureId))
+    #expect(try phone.runner.cancelHeld(deletion.gestureId))
     #expect(try Routine.ordered(phone.drawn(Routine.self)).map(\.id) == [two, one])
   }
 

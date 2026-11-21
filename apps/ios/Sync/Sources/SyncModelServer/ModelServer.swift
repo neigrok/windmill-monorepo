@@ -81,7 +81,16 @@ public struct ModelServer: Sendable {
     if bound { state.replicas[request.replica] = ReplicaBinding(account: request.account, lastN: 0) }
     var answer = PushAnswer()
     for (n, intent) in request.intents {
+      if n > state.replicas[request.replica]!.lastN + 1 { _ = answer.stop(conflict: "gap"); break }
+      if let alone = answer.scoped {
+        guard n == alone else { _ = answer.stop(retryAt: n, after: 0); break }
+        guard state.results[request.replica]?[n]?.digest == SHA256Hex.of(intent.jcs) else { _ = answer.stop(conflict: "replica-forked"); break }
+        continue
+      }
+      let opted = isScoped(intent)
+      if opted && !answer.results.isEmpty { _ = answer.stop(retryAt: n, after: 0); break }
       guard take(n, intent, of: request.replica, account: account, at: serverNow, faults: faults, into: &answer) else { break }
+      if opted { answer.scoped = n }
     }
     let lastN = state.replicas[request.replica]!.lastN
     if let conflict = answer.conflict {
@@ -96,6 +105,13 @@ public struct ModelServer: Sendable {
     ]
     reply["retry"] = answer.retry
     return Reply(status: 200, body: .object(reply), events: answer.events)
+  }
+
+  // §6.2 step 5: an intent naming a registry command with scoped effects, whose result occupies an answer alone. The
+  // answer stops before it behind ordinary results, and after it before the next intent; a copy of its n answers once.
+  func isScoped(_ intent: JSON) -> Bool {
+    guard case .string(let name)? = intent["cmd"]?["name"] else { return false }
+    return registry.command(name)?.scopedEffects == true
   }
 
   // A push a client sends: its body, as received, is the request's JCS.
@@ -492,6 +508,8 @@ struct PullBody {
 // What one push answers so far: the results in order, the live events of its admissions, and how it stopped.
 struct PushAnswer {
   var results: [JSON] = []
+  // The n of the opted result this answer holds alone.
+  var scoped: Int64?
   var events: [LiveEvent] = []
   var admissions = 0
   var retry: JSON?

@@ -7,6 +7,7 @@ import { moveEntry } from '../core/machines.js';
 import { compactRow, isAlive, recordKey, stampsOf } from '../core/rows.js';
 import { Cursor } from '../core/wire.js';
 import { deltasOf } from './dependents.js';
+import { forgetJournalScope } from './journal.js';
 import { epochChange } from './lifecycle.js';
 import { drawn, stored } from './views.js';
 
@@ -56,6 +57,15 @@ export function pullRequest(replica, registry, scopes) {
 // whole, cleanSeq: the cursor's seq, one less while it carries a key, and none while booting or without
 // a cursor.
 function covers(replica, entry) {
+  if (entry.predictions) {
+    if (entry.state !== 'acked' || entry.resultEpoch !== replica.meta.serverEpoch) return false;
+    for (const projection of entry.predictions) {
+      const cursor = Cursor.decode(replica.cursorOf(projection.scope).cursor);
+      const cleanSeq = cursor?.m === 'live' ? cursor.s - (cursor.k === undefined ? 0 : 1) : -1;
+      if (replica.known[projection.scope] === 'gone' || projection.resultSeq <= cleanSeq) projection.covered = true;
+    }
+    return entry.predictions.every((projection) => projection.covered);
+  }
   const cursor = Cursor.decode(replica.cursorOf(entry.scope).cursor);
   if (cursor === null || cursor.m !== 'live') return false;
   const cleanSeq = cursor.k === undefined ? cursor.s : cursor.s - 1;
@@ -65,7 +75,7 @@ function covers(replica, entry) {
 // One settling transaction of `scope` (§7.5 step 2): the first `count` of the acked entries its stored
 // cursor covers now resolve, in commit order. Answers whether covered entries are left.
 export function settle(replica, ctx, scope, count) {
-  const covered = replica.entries(scope).filter((entry) => covers(replica, entry));
+  const covered = replica.entries().filter((entry) => (entry.scope === scope || entry.predictions?.some((projection) => projection.scope === scope)) && covers(replica, entry));
   for (const entry of covered.slice(0, count)) moveEntry(replica, ctx.ended, entry, 'resolve');
   return covered.length > count;
 }
@@ -74,6 +84,18 @@ export function settle(replica, ctx, scope, count) {
 // entry, and no other (§7.5 step 2).
 export function resolveIfCovered(replica, ctx, entry) {
   if (covers(replica, entry)) moveEntry(replica, ctx.ended, entry, 'resolve');
+}
+
+export function endScopeProjections(replica, ctx, scope) {
+  for (const entry of replica.entries()) {
+    if (entry.state !== 'acked') continue;
+    if (!entry.predictions) {
+      if (entry.scope === scope) moveEntry(replica, ctx.ended, entry, 'resolve');
+      continue;
+    }
+    for (const projection of entry.predictions) if (projection.scope === scope) projection.covered = true;
+    resolveIfCovered(replica, ctx, entry);
+  }
 }
 
 function observeRows(replica, rows) {
@@ -108,9 +130,14 @@ function checkDigest(replica, ctx, scope, received, seq) {
 }
 
 function forget(replica, ctx, scope, kind) {
-  replica.forgetScope(scope);
-  replica.known[scope] = kind;
-  for (const entry of replica.entries(scope)) if (entry.state === 'acked') moveEntry(replica, ctx.ended, entry, 'resolve');
+  const scopes = replica.meta.state === 'bound' && scope.startsWith('tree/')
+    ? [scope, `self/overlay/${scope.slice('tree/'.length)}`] : [scope];
+  for (const endedScope of scopes) {
+    replica.forgetScope(endedScope);
+    forgetJournalScope(replica, ctx.ended, endedScope);
+    if (replica.known[endedScope] !== 'gone') replica.known[endedScope] = kind;
+    endScopeProjections(replica, ctx, endedScope);
+  }
 }
 
 // A row into a set of rows (confirmed, or a boot's staging) with its digest: replace by seq (§3.4),
@@ -124,8 +151,12 @@ function receiveRow(replica, ctx, scope, target, row) {
   const type = ctx.registry.type(row.t);
   const governed = type?.governs === 'tree' ? [`tree/${row.id}`, `self/overlay/${row.id}`] : [];
   if (row.life && !isAlive(row)) {
-    if (type?.identity === 'derived') replica.addSpent(scope, row.t, row.id, row.born);
-    for (const ref of governed) replica.known[ref] = 'gone';
+    if (type?.identity === 'derived') replica.addSpent(scope, row);
+    for (const ref of governed) {
+      replica.known[ref] = 'gone';
+      forgetJournalScope(replica, ctx.ended, ref);
+      endScopeProjections(replica, ctx, ref);
+    }
     delete target.rows[key];
     target.digest = replaceRow(target.digest, previous, undefined);
     return;

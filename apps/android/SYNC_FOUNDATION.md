@@ -6,24 +6,10 @@ strict layering. A2 composes that engine into the shipping gym, imports signed-o
 sign-in and uses engine account decisions. See
 [the app verification loop](README.md#local-verification).
 
-## A1 module baseline
+## Modules
 
-There are 13 Gradle projects: nine JVM modules, Android `:sync-engine`, and `:app`, `:platform`,
-`:gym`; `:agent` holds no sync code and the table leaves it out. Kotlin source lines below include comments and blanks, exclude build output, and include
-generated schema. The schema generator and its tests contain 356 Python lines.
-
-| Module | Main lines | Test lines |
-|---|---:|---:|
-| `:sync-core` | 1491 | 0 |
-| `:sync-api` | 121 | 239 |
-| `:sync-schema` | 1669 | 0 |
-| `:sync-engine` | 3252 | 2496 |
-| `:sync-testing` | 1758 | 1469 |
-| `:sync-model-server` | 1298 | 82 |
-| `:domain-kit` | 1075 | 470 |
-| `:domain-kit-testing` | 752 | 651 |
-| `:gym:domain` | 1014 | 1226 |
-| Total | 12430 | 6633 |
+There are 13 Gradle projects: nine JVM modules, Android `:sync-engine`, and `:app`, `:platform`, `:gym`; `:agent`
+holds no sync code.
 
 `ScopeReader.serverSchema()` reads the account's last successful hello version, or null before it
 is known. The engine persists it with account metadata, replaces it on downgrade and clears it
@@ -67,13 +53,50 @@ Refusal and held Undo fold commands whose predictions inherit the source's life,
 transitive predictions, while preserving unrelated intent deltas. Four public-path regressions
 cover intent and predicted deletions, restored confirmed-alive rows, records views and notices.
 
-The JVM model server implements probe, gym and journal bindings. Step mode drives the production
+An opted command (engine §2.4) keeps its prediction as one projection per scope in its outbox
+entry's JSON (`predictions`), its origin's always present, and from its `ok` the receipt it was
+accepted with (`acceptedEffects`). Both are additive: entries written before them read unchanged.
+`outbox_touch` names every scope an entry's deltas are in.
+A projection draws over its own scope until that scope's cursor covers its accepted seq or the scope
+ends; the entry resolves when every projection is covered. Once its receipt applies, the command's own
+intent draws, and later queued work follows, at the versions the server accepted. `HTTPTransport` takes the registry's opted
+command names: a push carrying one may be answered with up to `SCOPED_RESPONSE_MAX_BYTES`, and every
+other non-pull answer keeps the 4 MiB bound. Android's registries declare no opted command.
+
+The registry compiles every place it declares a record identity — ids, key parts, `ref` fields,
+`ref<t>` arguments and `refPaths` leaves (engine §2.4 References) — once, into `Registry.references`.
+Value and argument checks, dependents and every write map read identities only through it; a map
+renames each delta, guard, receipt row and argument in two passes, global leaves first and then
+scope-local ones, and a proposed creation moves only with its own retained target.
+
+An act opted into Undo (engine §7.3 Undo of an act, `ActRequest.undo`) journals each segment's source
+entry with its recipes, its first local preimages (each with the confirmed row and epoch it was read at)
+and the values it left, and each `ok` or terminal refusal in the result's own transaction. An Undo skips
+a field unless the journal's own receipts chain from that row to the act's last write; a Redo writes back
+the values the act left. An `ok` whose receipt or inverse outcomes the replica cannot read still
+acknowledges its entry, ends its projections and reports `sync-push-malformed`. The `Replica` port's `cancelHeld` is the held-only Undo; its `requestInverse` cancels a
+wholly held act, or reserves inverse slots at the end of commit order that stop the sender until the
+act's sources are authoritative, then binds them into restore or product inverse commands;
+`readInverseResult` and `releaseReversibleAct` answer and release. The kit's `ActionRunner` offers them as
+`cancelHeld`, `undo`, `redo`, `inverseResult` and `release` (domain-kit §9.6). The journal,
+inverse requests and cancellation receipts are replica JSON (`journal`, `inverses`, `cancellations`);
+SQLite schema version 2 keeps each as one row of its replica in `reversible_act`, `inverse_request` and
+`cancellation`, written only when it changes. A version 1 store gains the three empty tables when it
+opens. Android's registries declare no restore or inverse command.
+
+A composed act (engine §7.1, domain-kit §9.7) decides in parts inside one act's prepare: `ActContext.stage`
+commits a part's segment to a tentative copy of the replica and answers its local refusal, and `beginPart`
+opens the next part's load, which reads and mints through every staged segment. The copy is thrown away;
+the request's segments commit afresh under the act's one hold. The kit's `ActionRunner.runComposed` runs
+its parts this way and refuses them all, in the refusing part's words, before anything is written.
+
+The JVM model server implements probe, gym, journal and roadmap bindings. Step mode drives the production
 engine's sender/result batches and puller/page chunks/settling, with virtual clocks and transport.
 Step mode leaves sender waits pending until the caller advances its virtual clock; timed-out pulls
 retry, and live/pull answers remain bound to the requested replica across lineage changes. Live
 channels close on replica renewal, leave, authentication pause and shutdown.
 
-Gym consumes registry v12/minimum 11. The model server binds the Coach conversation types `thread` and
+Gym consumes registry v13/minimum 11. The model server binds the Coach conversation types `thread` and
 `message` (gym Coach §9.1), and authors routine revision/original count,
 proposal base revision/name/change count, note content time and immutable Coach creation snapshots.
 The gym domain decodes that metadata without including it in client fields, plans or guards;
@@ -136,9 +159,9 @@ commits and forbids pushing.
 
 ## Interpretations and discrepancies
 
-- Generate full gym+journal composition v12/minVersion 11; production automatic subscriptions remain
-  gym-only. Journal client vectors and fuzz are mandatory. The corpus README includes
-  `journal/claim-edit.json`, which §11.1's table omits; the client runner therefore counts 52 files.
+- Generate the full gym+journal+roadmap composition v13/minVersion 11; production automatic
+  subscriptions remain gym-only. Journal client vectors and fuzz are mandatory. The corpus README
+  includes `journal/claim-edit.json`, which §11.1's table omits; the client runner claims it too.
 - The runner guard follows Kotlin's coroutine context through an injected pure port. It cannot
   discover CoroutineContext from a synchronous function while obeying §2.3's owner denial; the
   actual context adapter belongs at the permitted boundary. No SyncAPI change or layering exception.

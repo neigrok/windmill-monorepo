@@ -105,6 +105,7 @@ async fn run() -> Result<(), &'static str> {
         text,
         live,
         results: Results::default(),
+        pictures: ai_server::pictures::Pictures::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
         provider_health: ai_server::telemetry::ProviderHealth::default(),
@@ -147,6 +148,7 @@ async fn run() -> Result<(), &'static str> {
                 _=cleanup_stop.cancelled()=>break,
                 _=tick.tick()=>{
                     cleanup_service.results.prune();
+                    cleanup_service.pictures.prune(Instant::now());
                     cleanup_service.refusals.flush();
                 }
             }

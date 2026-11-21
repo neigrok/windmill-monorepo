@@ -32,7 +32,7 @@ export class NoteValue {
   fields() { return { title: this.title, body: this.body }; }
 }
 
-/** @type {EntityType<NoteValue>} */
+/** @type {EntityType<NoteValue, string>} */
 export const Note = new EntityType({
   type: 'note', scope: 'self/gym', orderField: 'ord', savesGuarded: true, heldRemoval: true,
   decode: (f) => new NoteValue(new Id(f.id, Note), f.string('title'), f.string('body', ''), f.optionalInstant('updatedAt')),

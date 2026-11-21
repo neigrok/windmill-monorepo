@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { flushSync } from 'react-dom';
 import { Activity, ChevronLeft, Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
 import { Tooltip } from '../../../design-system';
+import { requestNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { FindStep, NewStep, handleMenuKey } from '../board/BoardControls.jsx';
@@ -268,9 +269,13 @@ export function RoadmapIdentity({
           >
             {menuItems.map((item) => (
               <button key={item.verb} type="button" role="menuitem" onClick={() => {
-                verb(item.verb, 'more');
-                close();
-                item.act();
+                const run = (tx) => {
+                  verb(item.verb, 'more');
+                  close();
+                  return item.act(tx);
+                };
+                if (item.verb === 'settings') return requestNavigation({ key: 'row:settings', run });
+                return run();
               }}>
                 <item.icon size={20} aria-hidden />
                 <span>{item.label}</span>

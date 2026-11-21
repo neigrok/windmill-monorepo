@@ -9,9 +9,8 @@
 # resolve them once in a fat builder and ship a slim runtime that carries the
 # service binaries, the schema, and their shared libraries.
 #
-# The context is backend/, which cannot see the contract the build embeds and the tests read (the sync
-# registries and corpus, the gym ability catalog and its corpus, the subscription service's wire fixtures), so the
-# build takes it as a second, named context:
+# The context is backend/, so the build receives the complete API contract package as a second, named
+# context. The builder carries every fixture family that the compiled code and tests can read:
 #   docker buildx build --build-context contract=packages/api-contract backend
 
 ########################  builder  ########################
@@ -48,13 +47,7 @@ RUN git clone --depth 1 --branch "${LIBPQXX_VERSION}" https://github.com/jtv/lib
 
 WORKDIR /src
 COPY . .
-COPY --from=contract sync/*.registry.json sync/composition.json /contract/sync/
-COPY --from=contract sync/corpus /contract/sync/corpus
-COPY --from=contract gym /contract/gym
-COPY --from=contract roadmap-addresses.json /contract/roadmap-addresses.json
-COPY --from=contract roadmap-link-urls.json /contract/roadmap-link-urls.json
-COPY --from=contract roadmap-socket.json /contract/roadmap-socket.json
-COPY --from=contract subscriptions/*.json /contract/subscriptions/
+COPY --from=contract / /contract/
 
 # Configure once, then build the two service binaries, the probe server the sync conformance runs against, the offline
 # tools and every test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a
@@ -62,7 +55,7 @@ COPY --from=contract subscriptions/*.json /contract/subscriptions/
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract -DWM_DROGON_PREFIX=/opt/drogon \
  && cmake --build build -j"$(nproc)" \
       --target windmill_server windmill_server_test_clock windmill_mcp windmill_mcp_http windmill_server_probe \
-               windmill_rotate_sync_epoch windmill_resum_sync_digests windmill_subtree_inventory \
+               windmill_rotate_sync_epoch windmill_resum_sync_digests windmill_subtree_inventory windmill_roadmap_adopt \
                windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
@@ -75,7 +68,8 @@ RUN test -x build/windmill_server && test -x build/windmill_mcp_http
 
 # The probe is the sync engine's test and dev product: it must never ship. No shipped binary that binds the
 # engine links probe code, and the runtime stage carries schema.sql, never probe.sql.
-RUN ! nm -C build/windmill_server build/windmill_mcp_http build/windmill_resum_sync_digests | grep -q 'wm::probe::'
+RUN ! nm -C build/windmill_server build/windmill_mcp_http build/windmill_resum_sync_digests build/windmill_roadmap_adopt \
+  | grep -q 'wm::probe::'
 
 ########################  runtime  ########################
 # Same Ubuntu 22.04 userland as the builder, so glibc/libstdc++ ABI matches exactly.
@@ -103,6 +97,7 @@ COPY --from=build /src/build/windmill_mcp_http  /usr/local/bin/windmill_mcp_http
 COPY --from=build /src/build/windmill_rotate_sync_epoch /usr/local/bin/windmill_rotate_sync_epoch
 COPY --from=build /src/build/windmill_resum_sync_digests /usr/local/bin/windmill_resum_sync_digests
 COPY --from=build /src/build/windmill_subtree_inventory /usr/local/bin/windmill_subtree_inventory
+COPY --from=build /src/build/windmill_roadmap_adopt /usr/local/bin/windmill_roadmap_adopt
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 COPY --from=build /src/build/sync-compatibility.json /app/sync-compatibility.json
 

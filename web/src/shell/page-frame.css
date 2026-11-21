@@ -1,0 +1,4 @@
+.wm-page-frame { display: flex; flex-direction: column; min-width: 0; height: 100vh; height: 100dvh; }
+.wm-page-content { flex: 1; min-height: 0; min-width: 0; position: relative; contain: layout paint; }
+.wm-page-frame--flow { height: auto; min-height: 100vh; }
+.wm-page-frame--flow > .wm-page-content { contain: none; }

@@ -130,6 +130,13 @@ AiInstallationCode AiInstallations::admitGeneration(const AiInstallationPrincipa
   }
 }
 
+AiInstallationCode AiInstallations::admitPass(const AiInstallationPrincipal& principal, const std::string& canonicalIp) {
+  if (!anonymousEnabled()) return AiInstallationCode::Unavailable;
+  if (budgets_->boundAccount(principal.id())) return AiInstallationCode::DeviceBound;
+  const long long atMs = clock_.nowMs();
+  return repository_.admit(principal.id(), tokens_.mint().digest, network(canonicalIp, atMs, false), atMs);
+}
+
 AiBudgetCode AiInstallations::bind(const AiInstallationPrincipal& principal, const UserId& account) {
   return budgets_->bindDevice(principal.id(), account.str());
 }

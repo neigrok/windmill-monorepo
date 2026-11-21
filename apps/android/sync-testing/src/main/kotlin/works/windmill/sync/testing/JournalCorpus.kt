@@ -17,7 +17,7 @@ object JournalCorpus {
             "journal/claim-edit.json" to { input -> claimEdit(registry, input) })
     }
     private fun client(registry: Registry, input: Json): Json {
-        var answer = NetworkCorpus.handlers(registry).getValue("commit/grouping.json")(input)
+        var answer = NetworkCorpus.handler(registry)(input)
         answer = answer.with("events" to (answer["events"] ?: Json.array()), "telemetry" to (answer["telemetry"] ?: Json.array()))
         val steps = input.member("steps").arr(); val returns = answer.member("returns").arr()
         if (steps.last()["op"] == Json.of("push") && returns.last() !== Json.Null) {

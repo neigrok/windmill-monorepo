@@ -8,10 +8,13 @@ import { TransitionError } from '../../../../../packages/api-contract/sync/refer
 import { compareRecords, isAlive } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Cursor } from '../../../../../packages/api-contract/sync/reference/core/wire.js';
 import { CommitError, commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { commitAct } from '../../../../../packages/api-contract/sync/reference/client/acts.js';
 import { release, releaseAll, releaseDue, undo } from '../../../../../packages/api-contract/sync/reference/client/hold.js';
 import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../../packages/api-contract/sync/reference/client/refusal.js';
+import { readInverseResult, requestInverse } from '../../../../../packages/api-contract/sync/reference/client/inverse.js';
+import { releaseReversibleAct } from '../../../../../packages/api-contract/sync/reference/client/journal.js';
 import { Device } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
 import { nextPush, onHello, onPushResponse, ResponseError } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
 import { reconcile, subscribe, subscriptionsOf } from '../../../../../packages/api-contract/sync/reference/client/subscriptions.js';
@@ -34,9 +37,16 @@ export function settle(deviceJson, epoch = 'ep-1') {
   return out;
 }
 
-// An input device must be one a client can reach: no dead confirmed row (a dead row deletes), no
-// confirmed rows without their scope's cursor record, and every digest the sum of its rows.
+// A gesture id, and so a local id, names one gesture of the device (§2.5): no two outbox entries of its replicas share one.
+function assertDistinctLocalIds(deviceJson, what) {
+  const localIds = deviceJson.replicas.flatMap((replica) => (replica.outbox ?? []).map(({ localId }) => localId));
+  if (new Set(localIds).size !== localIds.length) throw new Error(`${what}: two outbox entries share a local id`);
+}
+
+// An input device must be one a client can reach: distinct local ids, no dead confirmed row (a dead row deletes),
+// no confirmed rows without their scope's cursor record, and every digest the sum of its rows.
 export function assertReachable(deviceJson) {
+  assertDistinctLocalIds(deviceJson, 'unreachable input');
   for (const replica of deviceJson.replicas) {
     const where = (scope) => `${replica.meta.replica} ${scope}`;
     for (const [scope, rows] of Object.entries(replica.confirmed ?? {})) {
@@ -89,6 +99,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
   let lastPull = null;
   let pulledFor = null;
   let reconciled = null;
+  const opened = new Set();
   for (const step of structuredClone(steps)) {
     const before = { device: device.toJSON(), ended: ended.length, telemetry: telemetry.length, events: events.length, queues: queues.snapshot(), gestures, current };
     const stepActor = step.actor ?? current;
@@ -101,7 +112,11 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
       events,
       appVersion: step.appVersion ?? '1',
       device,
-      nextGestureId: () => `g${(gestures += 1)}`,
+      nextGestureId: () => {
+        let gestureId;
+        do gestureId = `g${(gestures += 1)}`; while (device.carriesGesture(gestureId));
+        return gestureId;
+      },
       newReplicaId: () => queues.take('ids'),
       newActor: () => queues.take('actors'),
       newForkGuard: () => queues.take('forkGuards'),
@@ -120,6 +135,12 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           if (step.changes === null) answer(commit(replica, ctx, step.scope, () => ({ gesture: null })).outcome);
           else answer(commit(replica, ctx, step.scope, step.changes ?? [], step.opts ?? {}));
           break;
+        case 'commitAct': {
+          const outcome = commitAct(replica, ctx, step.segments, step.opts ?? {});
+          if (outcome === null || outcome.refused) { queues.restore(before.queues); gestures = before.gestures; }
+          answer(outcome);
+          break;
+        }
         case 'release':
           answer(release(replica, registry, ended, replica.entry(step.localId)));
           break;
@@ -134,9 +155,17 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
         case 'undo':
           answer(undo(replica, registry, ended, step.gestureId));
           break;
+        case 'requestInverse':
+          answer(requestInverse(replica, ctx, step.actId, step.slots));
+          break;
+        case 'readInverseResult':
+          answer(readInverseResult(replica, step.requestId));
+          break;
+        case 'releaseReversibleAct':
+          answer(releaseReversibleAct(replica, step.actId));
+          break;
         case 'dismiss':
-          dismiss(replica, step.id);
-          answer(null);
+          answer(dismiss(replica, step.id));
           break;
         case 'push':
           lastPush = nextPush(replica, ctx, step.limit === undefined ? {} : { limit: step.limit });
@@ -150,7 +179,11 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(null);
           break;
         case 'pull':
-          lastPull = pullRequest(replica, registry, step.scopes);
+          if (step.scopes === undefined) {
+            reconciled = subscriptionsOf(replica, registry, ['probe'], opened);
+            reconcile(replica, ctx, reconciled);
+          }
+          lastPull = pullRequest(replica, registry, step.scopes ?? reconciled);
           pulledFor = replica;
           answer(lastPull);
           break;
@@ -170,13 +203,27 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(onFrame(replica, ctx, step.frame, reconciled === null ? undefined : (scope) => reconciled.includes(scope)));
           break;
         case 'reconcile':
-          reconciled = step.scopes === undefined ? subscriptionsOf(replica, registry, ['probe']) : [...step.scopes];
+          reconciled = step.scopes === undefined ? subscriptionsOf(replica, registry, ['probe'], opened) : [...step.scopes];
           reconcile(replica, ctx, reconciled);
           answer(null);
           break;
-        case 'subscribe':
-          if (reconciled !== null && !reconciled.includes(step.scope)) reconciled.push(step.scope);
-          answer(subscribe(replica, step.scope));
+        case 'subscribe': {
+          const outcome = subscribe(replica, step.scope);
+          if (outcome !== 'gone') {
+            opened.add(step.scope);
+            if (reconciled !== null) reconciled = [...new Set([...reconciled, ...subscriptionsOf(replica, registry, [], [step.scope])])];
+          }
+          answer(outcome);
+          break;
+        }
+        case 'unsubscribe':
+          opened.delete(step.scope);
+          reconciled = subscriptionsOf(replica, registry, ['probe'], opened);
+          reconcile(replica, ctx, reconciled);
+          answer(null);
+          break;
+        case 'subscriptions':
+          answer(subscriptionsOf(replica, registry, ['probe'], opened));
           break;
         case 'signIn':
           answer(signIn(device, ctx, { account: step.account, holdsRecords: step.holdsRecords, decisions: step.decisions, counted: step.counted }));
@@ -240,6 +287,7 @@ export function stepsVector(name, input) {
     if (input[key] === undefined || (Array.isArray(input[key]) && input[key].length === 0)) delete input[key];
   }
   const out = runSteps(input);
+  assertDistinctLocalIds(out.device, `${name} expects a device`);
   const expect = { returns: out.returns, device: out.device, ended: out.ended };
   if (out.telemetry.length) expect.telemetry = out.telemetry;
   if (out.events.length) expect.events = out.events;

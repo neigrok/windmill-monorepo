@@ -2,6 +2,7 @@
 
 #include "platform/domain/sync/Identity.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/Restore.h"
 
 #include <algorithm>
 #include <initializer_list>
@@ -144,8 +145,13 @@ Cmd commandOf(const Registry& registry, const ScopeKey& scope, const Json::Value
   const CommandDef* def = wire["name"].isString() ? registry.command(wire["name"].asString()) : nullptr;
   const Json::Value& args = wire["args"];
   if (!def || def->scope != scope.registryScope() || !args.isObject()) invalid();
+  if (def->engine == EngineCommand::restore) {
+    if (!admitsRestoreArguments(registry, *def, args)) invalid();
+    return Cmd{def->name, args};
+  }
+  if (def->inverse && (!args.isMember("evidence") || !admitsEvidence(registry, args["evidence"]))) invalid();
   for (const std::string& name : args.getMemberNames()) {
-    if (!def->args.contains(name)) invalid();
+    if (!def->args.contains(name) && !(def->inverse && name == "evidence")) invalid();
   }
   for (const auto& [name, arg] : def->args) {
     if (!args.isMember(name)) {
@@ -155,6 +161,7 @@ Cmd commandOf(const Registry& registry, const ScopeKey& scope, const Json::Value
     if (!registry.admitsArgument(arg, args[name])) invalid();
     if (arg.type == ArgType::instant && args[name].asDouble() > static_cast<double>(bound)) invalid();
   }
+  if (!registry.admitsArguments(*def, args)) invalid();
   return Cmd{def->name, args};
 }
 
@@ -180,6 +187,43 @@ void clampTimes(const Registry& registry, Intent& intent, Ms serverNow, Ms bound
   }
 }
 
+}
+
+Json::Value effectWire(const Registry& registry, const ScopeKey& scope, const Delta& delta, bool command) {
+  Json::Value wire = delta.lattice.toJson();
+  wire["t"] = delta.t;
+  wire["id"] = delta.id.json();
+  auto slot = [](const Stamp& stamp) { return stamp.isSet() ? Json::Value(toString(stamp)) : Json::Value(Json::nullValue); };
+  if (delta.lattice.life) wire["life"][1] = slot(delta.lattice.life->stamp);
+  if (delta.lattice.born) wire["born"] = slot(*delta.lattice.born);
+  for (const auto& [name, reg] : delta.lattice.f) wire["f"][name][1] = slot(reg.stamp);
+  for (const auto& [name, text] : delta.x) {
+    wire["x"][name]["text"] = text.text;
+    if (text.replacement) {
+      if (!command) invalid();
+      wire["x"][name]["base"]["rev"] = 0;
+    } else if (text.base.rev) wire["x"][name]["base"]["rev"] = Json::UInt64(*text.base.rev);
+    else wire["x"][name]["base"]["text"] = text.base.text;
+  }
+  if (holdsNul(wire)) invalid();
+  const Delta shaped = deltaOf(registry, scope, wire, Sender{scope.account(), true});
+  const TypeDef& type = *registry.type(shaped.t);
+  for (const auto& [name, reg] : shaped.lattice.f) {
+    if (!registry.admitsValue(*type.field(name), reg.value)) invalid();
+  }
+  for (const auto& [name, value] : delta.v) {
+    const FieldDef* field = type.field(name);
+    if (!field || field->kind != FieldKind::serial || !isSafeInteger(value) || value.asDouble() < 1) invalid();
+    wire["v"][name] = value;
+  }
+  for (const auto& [name, text] : delta.x) {
+    if (!text.replacement) continue;
+    wire["x"][name].removeMember("base");
+    wire["x"][name]["replace"] = true;
+    wire["x"][name]["archiveNonempty"] = text.archiveNonempty;
+    wire["x"][name]["archive"] = text.archive;
+  }
+  return wire;
 }
 
 Shaped shapeIntent(const Registry& registry, const Json::Value& wire, const Sender& sender, Ms serverNow, Ms maxSkewMs) {

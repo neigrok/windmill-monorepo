@@ -6,6 +6,7 @@ public enum SyncSchema {
   public static let registry = try! Registry(name: "windmill", composing: [
     Registry(json: Gym.registryFile),
     Registry(json: Journal.registryFile),
+    Registry(json: Roadmap.registryFile),
   ])
   public static let version = registry.version
 }

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HttpTransport, LiveChannel } from '../../../src/platform/sync/transport.js';
-import { syncTelemetry } from '../../../src/platform/sync/telemetry.js';
 import { FakeTimers, tick } from './fakes.js';
 
 test('HTTP carriers use schema v4, credentials, canonical JSON and bounded timeout', async () => {
@@ -115,28 +114,19 @@ for (const data of [new Uint8Array([1]), 'é'.repeat(70_000), '{'])
     live.stop(); assert.equal(timers.tasks.size, 0);
   });
 
-test('telemetry drops content, ids, unknown labels and exceptions, and enforces its per-minute bound', () => {
-  const events = [], failures = []; let time = 0;
-  const telemetry = syncTelemetry({ limit: 3, now: () => time,
-    event: (name, props) => events.push({ name, props }), failure: (operation) => failures.push(operation) });
-  telemetry.event('sync-digest-mismatch', { scopeKind: 'product', seq: 42, body: 'secret', account: 'A', token: 'secret' });
-  telemetry.failure('storage');
-  telemetry.event('sync-persist', { outcome: 'denied', scope: 'tree/secret' });
-  telemetry.failure('transport');
-  telemetry.failure('secret');
-  telemetry.event('secret', { token: 'secret' });
-  assert.deepEqual(events, [{ name: 'sync-digest-mismatch', props: { scopeKind: 'product', seq: 42 } }, { name: 'sync-persist', props: { outcome: 'denied' } }]);
-  assert.deepEqual(failures, ['storage']);
-  time = 60_000; telemetry.failure('transport');
-  assert.deepEqual(failures, ['storage', 'transport']);
-});
-
-test('writer measurements are bounded numeric labels and never forward content or non-finite values', () => {
-  const events = [];
-  const telemetry = syncTelemetry({ event: (name, props) => events.push({ name, props }) });
-  telemetry.event('sync-writer', { durationMs: 90000, queueMs: 12, body: 'secret', scope: 'private' });
-  telemetry.event('sync-writer', { durationMs: Infinity, queueMs: -1, account: 'private' });
-  assert.deepEqual(events, [{ name: 'sync-writer', props: { durationMs: 60000, queueMs: 12 } }, { name: 'sync-writer', props: {} }]);
+test('a live frame carries the binding its socket opened under, not the one standing when it arrives', async () => {
+  const timers = new FakeTimers(), sockets = [], received = [];
+  let binding = 'signed out';
+  const live = new LiveChannel({ timers, now: () => timers.time, draw: () => 100, binding: () => binding,
+    transport: { openLive: () => { const socket = { readyState: 0, send() {}, close() { this.readyState = 3; } }; sockets.push(socket); return socket; } },
+    onFrame: (frame, opened) => received.push([frame.scope, opened]), onReconnect() {}, onFailure() {} });
+  live.start(); sockets[0].readyState = 1; sockets[0].onopen();
+  binding = 'signed in';
+  sockets[0].onmessage({ data: '{"op":"change","scope":"tree/a"}' }); await tick();
+  live.stop({ reset: true }); live.start(); sockets[1].readyState = 1; sockets[1].onopen();
+  sockets[1].onmessage({ data: '{"op":"change","scope":"tree/b"}' }); await tick();
+  assert.deepEqual(received, [['tree/a', 'signed out'], ['tree/b', 'signed in']]);
+  live.stop(); assert.equal(timers.tasks.size, 0);
 });
 
 test('the default browser fetch preserves its global receiver', async () => {
@@ -158,4 +148,23 @@ test('a captured browser fetch preserves its global receiver', async () => {
       return new Response('{"serverTime":1000,"epoch":"e","as":null}');
     } });
   assert.equal((await transport.request('hello')).response.status, 200);
+});
+
+test('scoped push and saved-result replay select the bounded UTF-8 response allowance from registry command names', async () => {
+  const text = '{"value":"界"}';
+  assert.equal(new TextEncoder().encode(text).length, 15);
+  const timers = new FakeTimers();
+  const transport = new HttpTransport({ schema: 3, timers, scopedCommands: ['probe.capture'],
+    limits: { REQUEST_TIMEOUT_MS: 1000, PULL_PAGE_BYTES: 7, PULL_MAX_SCOPES: 1, SCOPED_RESPONSE_MAX_BYTES: 15 },
+    reading: () => ({ wall: 1, mono: 1, boot: 'test' }), fetch: async () => new Response(text) });
+  for (const ackThrough of [0, 8]) {
+    const { response } = await transport.request('push', { ackThrough, intents: [{ n: 9, cmd: { name: 'probe.capture', args: {} } }] });
+    assert.deepEqual(response.body, { value: '界' });
+  }
+  for (const [endpoint, body] of [['hello', undefined], ['push', { intents: [] }], ['push', { intents: [{ cmd: { name: 'legacy' } }] }]]) {
+    await assert.rejects(transport.request(endpoint, body), { message: 'sync response too large' });
+  }
+  transport.limits.SCOPED_RESPONSE_MAX_BYTES = 14;
+  await assert.rejects(transport.request('push', { intents: [{ cmd: { name: 'probe.capture' } }] }), { message: 'sync response too large' });
+  assert.equal(timers.tasks.size, 0);
 });

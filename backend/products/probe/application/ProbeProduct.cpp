@@ -1,10 +1,14 @@
 #include "products/probe/application/ProbeProduct.h"
 
+#include "platform/domain/sync/Restore.h"
 #include "platform/domain/sync/Scope.h"
 #include "platform/domain/sync/Wire.h"
 #include "products/probe/domain/ProbeRules.h"
 
+#include <algorithm>
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace wm::probe {
 
@@ -14,6 +18,37 @@ namespace {
 
 Delta runDelta(const std::string& id) {
   return Delta{.t = "run", .id = RecordId(id)};
+}
+
+// The alive row `holds` picks, the least id first: the subtree a step owns, or the tag a label names.
+template <typename Holds>
+std::optional<Row> aliveWhere(const std::vector<Row>& rows, Holds holds) {
+  std::optional<Row> picked;
+  for (const Row& row : rows) {
+    if (row.alive() && holds(row) && (!picked || row.id.column() < picked->id.column())) picked = row;
+  }
+  return picked;
+}
+
+bool holdsField(const Row& row, const std::string& field, const Json::Value& value) {
+  const auto found = row.lattice.f.find(field);
+  return found != row.lattice.f.end() && found->second.value == value;
+}
+
+// A resolution to a record that exists already: `from` the called id when it differs.
+CommandOutcome resolvedTo(const std::string& type, const Row& row, const std::string& called) {
+  WriteEntry entry{.t = type, .id = row.id, .born = row.lattice.born};
+  if (row.id.column() != called) entry.from = RecordId(called);
+  return CommandOutcome{.write = {entry}};
+}
+
+// A record the command creates at the server stamp, with one field.
+CommandOutcome createdWith(const std::string& type, const std::string& id, const std::string& field, const Json::Value& value) {
+  Delta created{.t = type, .id = RecordId(id)};
+  created.lattice.life = Life(LifeState::alive, Stamp{});
+  created.lattice.born = Stamp{};
+  created.lattice.f.emplace(field, Reg(value, Stamp{}));
+  return CommandOutcome{.deltas = {created}, .write = {WriteEntry{.t = type, .id = RecordId(id), .born = Stamp{}, .f = {{field, Stamp{}}}}}};
 }
 
 }
@@ -92,6 +127,12 @@ class ProbeProduct::Copy final : public SyncCommand {
 public:
   explicit Copy(ProbeReceipts& receipts) : receipts_(receipts) {}
 
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    if (receipts_.copiedFrom(ctx.txn, ctx.scope.key, ctx.args["dst"].asString()) == ctx.args["src"].asString()) return {};
+    if (ctx.read.lock("board", RecordId(ctx.args["dst"])).state.kind != IdState::Kind::none) return {};
+    return {ScopeKey::tree(ctx.args["dst"].asString())};
+  }
+
   bool isReplay(CommandCtx& ctx) override {
     return receipts_.copiedFrom(ctx.txn, ctx.scope.key, ctx.args["dst"].asString()) == ctx.args["src"].asString();
   }
@@ -146,12 +187,163 @@ public:
   }
 };
 
+// probe.branch {parent, child, title}: creates board child and titles both trees; its receipt resolves a replay
+// from any replica to the board it created.
+class ProbeProduct::Branch final : public SyncCommand {
+public:
+  explicit Branch(ProbeReceipts& receipts) : receipts_(receipts) {}
+
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    return {ScopeKey::tree(ctx.args["parent"].asString()), ScopeKey::tree(ctx.args["child"].asString())};
+  }
+
+  bool isReplay(CommandCtx& ctx) override {
+    return receipts_.branched(ctx.txn, ctx.scope.key, ctx.args["child"].asString()) == receiptOf(ctx);
+  }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const std::string parent = ctx.args["parent"].asString();
+    const std::string child = ctx.args["child"].asString();
+    if (isReplay(ctx)) {
+      const std::optional<Row>& created = ctx.read.lock("board", RecordId(child)).stored;
+      CommandOutcome replayed;
+      if (created && created->alive()) replayed.write = {WriteEntry{.t = "board", .id = created->id, .born = created->lattice.born}};
+      replayed.detail["created"] = false;
+      return replayed;
+    }
+    if (parent == child) throw Refusal(code::invalid);
+    if (ctx.read.lock("board", RecordId(child)).stored) throw Refusal(code::idTaken);
+    receipts_.recordBranch(ctx.txn, ctx.scope.key, child, receiptOf(ctx));
+    Delta board{.t = "board", .id = RecordId(child)};
+    board.lattice.born = Stamp{};
+    board.lattice.life = Life(LifeState::alive, Stamp{});
+    Delta meta{.t = "meta", .id = RecordId(std::string("meta"))};
+    meta.lattice.f.emplace("title", Reg(ctx.args["title"], Stamp{}));
+    CommandOutcome outcome{.deltas = {board},
+      .into = {{ScopeKey::tree(parent), {meta}}, {ScopeKey::tree(child), {meta}}},
+      .write = {{.t = "board", .id = RecordId(child), .born = Stamp{}}}};
+    outcome.detail["created"] = true;
+    return outcome;
+  }
+
+private:
+  static BranchReceipt receiptOf(const CommandCtx& ctx) { return BranchReceipt{ctx.args["parent"].asString(), ctx.args["title"].asString()}; }
+
+  ProbeReceipts& receipts_;
+};
+
+// probe.sprout {board, tag, child}: creates board child owned by the step {board, tag}, its parent, or answers
+// the board the step already owns, so a retry or another device's sprout resolves to that subtree. Neither the
+// board nor the tag need exist (E-8).
+class ProbeProduct::Sprout final : public SyncCommand {
+public:
+  bool isReplay(CommandCtx& ctx) override { return owned(ctx).has_value(); }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const std::string child = ctx.args["child"].asString();
+    if (const std::optional<Row> board = owned(ctx)) return resolvedTo("board", *board, child);
+    if (ctx.read.lock("board", RecordId(child)).state.kind != IdState::Kind::none) throw Refusal(code::idTaken);
+    return createdWith("board", child, "parent", stepOf(ctx));
+  }
+
+private:
+  static Json::Value stepOf(const CommandCtx& ctx) {
+    Json::Value step(Json::objectValue);
+    step["board"] = ctx.args["board"];
+    step["tag"] = ctx.args["tag"];
+    return step;
+  }
+
+  static std::optional<Row> owned(CommandCtx& ctx) {
+    const Json::Value step = stepOf(ctx);
+    return aliveWhere(ctx.read.scan("board"), [&step](const Row& row) { return holdsField(row, "parent", step); });
+  }
+};
+
+// probe.adopt {tag, label}: answers the tree's alive tag labelled `label`, a map of a scope-local id, or
+// creates tag `tag` with that label.
+class ProbeProduct::Adopt final : public SyncCommand {
+public:
+  bool isReplay(CommandCtx& ctx) override { return labelled(ctx).has_value(); }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const std::string tag = ctx.args["tag"].asString();
+    if (const std::optional<Row> named = labelled(ctx)) return resolvedTo("tag", *named, tag);
+    if (ctx.read.lock("tag", RecordId(tag)).state.kind != IdState::Kind::none) throw Refusal(code::idTaken);
+    return createdWith("tag", tag, "label", ctx.args["label"]);
+  }
+
+private:
+  static std::optional<Row> labelled(CommandCtx& ctx) {
+    const Json::Value label = ctx.args["label"];
+    return aliveWhere(ctx.read.scan("tag"), [&label](const Row& row) { return holdsField(row, "label", label); });
+  }
+};
+
+// K-3 probe.unbranch {input: {parent, child, title}, evidence}: the inverse of probe.branch, all or nothing.
+// While the created board and its tree are unchanged since the branch, and the parent's title is still the
+// one the branch wrote where it wrote one, the board dies, killing its tree, and the parent takes back its
+// earlier title. The evidence must prove the board and its tree; an owned parent title is restored only
+// when the evidence names it.
+class ProbeProduct::Unbranch final : public SyncCommand {
+public:
+  std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override {
+    return {ScopeKey::tree(ctx.args["input"]["parent"].asString()), ScopeKey::tree(ctx.args["input"]["child"].asString())};
+  }
+
+  bool isReplay(CommandCtx&) override { return false; }
+
+  CommandOutcome run(CommandCtx& ctx) override {
+    const Json::Value& input = ctx.args["input"];
+    const Json::Value& evidence = ctx.args["evidence"];
+    const std::string parent = input["parent"].asString();
+    const std::string child = input["child"].asString();
+    const auto names = [](const Json::Value& list, auto matches) {
+      return std::any_of(list.begin(), list.end(), matches);
+    };
+    const bool proves = names(evidence["unchangedCreatedRecords"], [&](const Json::Value& item) {
+      return item["record"]["scope"] == "self/probe" && item["record"]["t"] == "board" && item["record"]["id"] == child;
+    }) && names(evidence["unchangedCreatedScopes"], [&](const Json::Value& item) { return item["scope"] == "tree/" + child; });
+    if (!proves || parent == child) throw Refusal(code::invalid);
+    const auto keyOf = [&](const std::string& ref) { return resolve(ctx.registry, ref, ctx.caller.account); };
+    const EvidenceReader read{
+        .row = [&](const std::string& scope, const std::string& type, const RecordId& id) -> std::optional<Row> {
+          const std::optional<ScopeKey> key = keyOf(scope);
+          return key ? ctx.read.lockIn(*key, type, id).stored : std::nullopt;
+        },
+        .seq = [&](const std::string& scope) -> std::optional<Seq> {
+          const std::optional<ScopeKey> key = keyOf(scope);
+          const std::optional<ScopeRow> row = key ? ctx.read.scope(*key) : std::nullopt;
+          return row ? std::optional<Seq>(row->seq) : std::nullopt;
+        },
+    };
+    if (const std::optional<std::string> skip = evidenceSkip(read, evidence, ctx.epoch)) return CommandOutcome{.detail = inverseDetail(skip)};
+    Delta board{.t = "board", .id = RecordId(child)};
+    board.lattice.born = ctx.read.lock("board", RecordId(child)).stored->lattice.born;
+    board.lattice.life = Life(LifeState::dead, Stamp{});
+    CommandOutcome outcome{.deltas = {board}, .detail = inverseDetail(std::nullopt)};
+    const bool restoresTitle = names(evidence["ownedFields"], [&](const Json::Value& item) {
+      return item["target"]["scope"] == "tree/" + parent && item["target"]["t"] == "meta" && item["target"]["slot"]["name"] == "title";
+    });
+    if (restoresTitle) {
+      Delta meta{.t = "meta", .id = RecordId(std::string("meta"))};
+      meta.lattice.f.emplace("title", Reg(input["title"], Stamp{}));
+      outcome.into.push_back(IntoScope{ScopeKey::tree(parent), {meta}});
+    }
+    return outcome;
+  }
+};
+
 ProbeProduct::ProbeProduct(ProbeReceipts& receipts)
     : runRules_(std::make_unique<RunRules>()),
       start_(std::make_unique<Start>(receipts)),
       end_(std::make_unique<End>()),
       copy_(std::make_unique<Copy>(receipts)),
-      tick_(std::make_unique<Tick>()) {}
+      tick_(std::make_unique<Tick>()),
+      branch_(std::make_unique<Branch>(receipts)),
+      sprout_(std::make_unique<Sprout>()),
+      adopt_(std::make_unique<Adopt>()),
+      unbranch_(std::make_unique<Unbranch>()) {}
 
 ProbeProduct::~ProbeProduct() = default;
 
@@ -161,6 +353,10 @@ void ProbeProduct::bindTo(SyncCatalog& catalog, const std::map<std::string, Type
   catalog.bindCommand("probe.end", *end_);
   catalog.bindCommand("probe.copy", *copy_);
   catalog.bindCommand("probe.tick", *tick_);
+  catalog.bindCommand("probe.branch", *branch_);
+  catalog.bindCommand("probe.sprout", *sprout_);
+  catalog.bindCommand("probe.adopt", *adopt_);
+  catalog.bindCommand("probe.unbranch", *unbranch_);
 }
 
 }
