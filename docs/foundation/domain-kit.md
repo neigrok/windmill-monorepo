@@ -1973,7 +1973,8 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 | `rules/<read>.json` | each derived read (§7.4; for gym, gym Coach §3.5 `rules/`): `{read, input?, records: {drawn, stored?}, firstPullComplete?, now, offsetSeconds}` → `{result}`, the read over a reader of the records in its scope at the moment, `firstPullComplete` defaulting to true; a read of plain values names them and no records (`collation.json`, §4.6) |
 
 An entity in a product's corpus is `{id, fields}`. A decision's `refuse` holds the product refusal's
-form, which the product's README states.
+form, which the product's README states. A case that gives no `now` or `offsetSeconds` runs at `1800000000000`
+(2027-01-15T08:00:00Z) in UTC, as the kit's corpus does (§15.2).
 
 ---
 

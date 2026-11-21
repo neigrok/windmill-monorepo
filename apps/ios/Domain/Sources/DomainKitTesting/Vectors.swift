@@ -109,10 +109,10 @@ public struct ProductCorpus {
 }
 
 extension Moment {
-  // `{now, offsetSeconds}`: the instant in a fixed zone.
+  // `{now?, offsetSeconds?}`: the instant in a fixed zone, 2027-01-15T08:00:00Z in UTC where a case gives neither.
   init(form: JSON) throws {
-    let offset = Int(try form.member("offsetSeconds").asInteger())
-    self.init(now: Instant(ms: try form.member("now").asInteger()), zone: FixedZone(offsetSeconds: offset))
+    let offset = Int(try form["offsetSeconds"]?.asInteger() ?? 0)
+    self.init(now: Instant(ms: try form["now"]?.asInteger() ?? 1_800_000_000_000), zone: FixedZone(offsetSeconds: offset))
   }
 }
 
