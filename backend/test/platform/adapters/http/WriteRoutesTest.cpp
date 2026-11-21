@@ -219,8 +219,6 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
   CHECK_EQ(writeHttpOutcome(error(drogon::k429TooManyRequests, "private"), "gym.write"), std::string("http_429"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k400BadRequest, "private", "PRIVATE TOKEN"), "gym.write"),
            std::string("http_400"));
-  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "Windmill One checkout is closed.", "checkout_closed"),
-                           "platform.POST.v1.billing.checkout"), std::string("checkout_closed"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "subscriptions_unavailable"),
                            "subscription.claim"), std::string("subscriptions_unavailable"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "subscriptions_unavailable"), "gym.write"),
@@ -282,9 +280,6 @@ TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issue
       {"journal.POST.v1.journal.transcribe", "voice_unavailable"},
       {"journal.POST.v1.journal.transcribe", "voice_busy"},
       {"journal.POST.v1.journal.transcribe", "voice_ration_spent", drogon::k429TooManyRequests},
-      {"platform.POST.v1.billing.checkout", "checkout_closed"},
-      {"platform.POST.v1.paddle.webhook", "funding_binding_pending"},
-      {"platform.POST.v1.paddle.webhook", "funding_unconfigured"},
       {"platform.GET.v1.ai.allowance", "ai_allowance_disabled"},
       {"ai.installation.issue", "anonymous_ai_unavailable"},
       {"ai.installation.bind", "anonymous_ai_unavailable"},
@@ -293,9 +288,6 @@ TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issue
       {"ai.installation.issue", "installation_rate_limited", drogon::k429TooManyRequests},
       {"ai.installation.bind", "installation_bound", drogon::k409Conflict},
       {"ai.installation.issue", "invalid_installation", drogon::k401Unauthorized},
-      {"platform.POST.v1.paddle.webhook", "invalid_payment_identity", drogon::k400BadRequest},
-      {"platform.POST.v1.paddle.webhook", "funding_account_mismatch", drogon::k409Conflict},
-      {"platform.POST.v1.paddle.webhook", "funding_conflict", drogon::k409Conflict},
       {"gym.POST.v1.gym.ask", "subject_exhausted", drogon::k429TooManyRequests}};
   for (const auto* operation : {"gym.POST.v1.gym.ask", "roadmap.POST.v1.trees.id.tend",
                                 "journal.POST.v1.journal.transcribe"})
@@ -328,12 +320,10 @@ TEST(write_http_accounting_and_unknown_server_failures_still_create_one_issue) {
   };
   std::vector<Failure> failures{
       {"platform.POST.v1.unrelated", "free_day_exhausted"},
-      {"platform.POST.v1.unrelated", "funding_binding_pending"},
-      {"platform.POST.v1.unrelated", "checkout_closed"},
+      {"platform.POST.v1.unrelated", "subscriptions_unavailable"},
       {"gym.POST.v1.gym.ask", "free_day_exhausted", drogon::k500InternalServerError}};
   for (const auto* operation : {"gym.POST.v1.gym.ask", "roadmap.POST.v1.trees.id.tend",
-                                "journal.POST.v1.journal.transcribe", "platform.POST.v1.billing.checkout",
-                                "platform.POST.v1.paddle.webhook", "platform.GET.v1.ai.allowance"})
+                                "journal.POST.v1.journal.transcribe", "platform.GET.v1.ai.allowance"})
     for (const auto* code : {"ai_accounting_unavailable", "PRIVATE UNKNOWN CODE", ""})
       failures.push_back({operation, code});
   for (const auto& failure : failures) {

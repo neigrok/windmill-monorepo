@@ -1,16 +1,27 @@
 // A plain text well whose gutter is the live parse — ◉ root · ├ branch · · step · ✓ arrives done ·
 // ¶ kept as a note — measured with an invisible mirror so every glyph sits on its wrapped line.
 // The deterministic parser is the only door into TreeData.
+// The parse holds values alone: this file draws each line's mark and words each liberty taken.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { KindLegend } from '../graph/tree/KindLegend.jsx';
 import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind, kindName } from '../model/Legend.js';
 import { KIND_CSS } from '../theme.js';
 import { graftedStepCount } from './graftPlan.js';
+import { plantedRoadmap } from './planGrammar.js';
 import { LABELS } from '../copy.js';
 import { t } from '../i18n/index.js';
 
 const PLACEHOLDER = t('roadmap.paste.placeholder');
+
+const GLYPHS = { root: '◉', branch: '├', step: '·', done: '✓', note: '¶' };
+const CLAMP_WORDS = { ragged: t('roadmap.paste.mixedIndentClamped'), jump: t('roadmap.paste.indentClamped') };
+
+function libertyWords(liberty) {
+  if (liberty.type === 'rename') return t('roadmap.paste.renamedTo', { label: liberty.label });
+  if (liberty.type === 'clamp') return CLAMP_WORDS[liberty.indent];
+  return t('roadmap.paste.keptAsNote');
+}
 
 export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse, budName, planting, onClose, onPlant, sheet = false, append = false }) {
   const [name, setName] = useState(budName ?? '');
@@ -63,13 +74,12 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       onPlant(parse);
       return;
     }
-    if (parse.missingRoot && name.trim() === '') {
+    const roadmap = plantedRoadmap(parse, name);
+    if (roadmap === null) {
       nameRef.current?.focus();
       return;
     }
-    const title = parse.missingRoot ? name.trim().slice(0, 200) : parse.title;
-    const nodes = parse.missingRoot ? parse.nodes.map((node, i) => (i === 0 ? { ...node, label: title } : node)) : parse.nodes;
-    onPlant({ title, nodes, kinds: parse.kinds.map(({ id, hue, label, description }) => ({ id, hue, label, description })) });
+    onPlant(roadmap);
   }
 
   // Legend edits are Legend.js ops over the local draft, which feeds back into parsePlan. Editing
@@ -93,9 +103,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   if (parse.readout.branches > 0) readout.push(t('roadmap.paste.branches', { count: parse.readout.branches }));
   if (parse.readout.done > 0) readout.push(t('roadmap.paste.alreadyDone', { count: parse.readout.done }));
 
-  const notes = parse.imperfections.filter((entry) => entry.type === 'note').length;
-  const clamps = parse.imperfections.filter((entry) => entry.type === 'clamp').length;
-  const renames = parse.imperfections.filter((entry) => entry.type === 'rename').length;
+  const { notes, clamps, renames } = parse.imperfections;
   const chip = [];
   if (notes > 0) chip.push(t('roadmap.paste.notes', { count: notes }));
   if (clamps > 0) chip.push(t('roadmap.paste.clamped', { count: clamps }));
@@ -116,11 +124,12 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         {hasText && (
           <div className="pc-gutter" aria-hidden="true">
             {parse.gutter.map((entry, index) => {
-              if (entry.glyph === null || glyphTops[index] === undefined) return null;
-              const tone = entry.glyph === '✓' ? ' pc-glyph--done' : entry.glyph === '¶' ? ' pc-glyph--note' : '';
+              if (entry.mark === null || glyphTops[index] === undefined) return null;
+              const tone = entry.mark === 'done' ? ' pc-glyph--done' : entry.mark === 'note' ? ' pc-glyph--note' : '';
+              const taken = entry.liberties.length > 0;
               return (
-                <span key={index} className={`pc-glyph${tone}${entry.liberty ? ' pc-glyph--liberty' : ''}`} style={{ top: glyphTops[index] }} title={entry.liberty ?? undefined}>
-                  {entry.glyph}
+                <span key={index} className={`pc-glyph${tone}${taken ? ' pc-glyph--liberty' : ''}`} style={{ top: glyphTops[index] }} title={taken ? entry.liberties.map(libertyWords).join(' · ') : undefined}>
+                  {GLYPHS[entry.mark]}
                 </span>
               );
             })}

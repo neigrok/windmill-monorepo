@@ -43,7 +43,7 @@ function(wm_embed_registry target namespace function file)
 endfunction()
 
 # Windmill is one modular-monolith backend behind a brand of products. `windmill_platform` is
-# the product-neutral core (auth, oauth, billing, the MCP transport engine, the vendor edges);
+# the product-neutral core (auth, oauth, subscriptions, the MCP transport engine, the vendor edges);
 # `windmill_roadmap` is the skill-tree product (trees, the sync/room cluster, the roadmap tools)
 # and depends on the platform, never the other way round. `windmill_journal` and `windmill_gym`
 # mirror that seam — one products/<name> library each, beside roadmap and linked into the server.
@@ -422,7 +422,6 @@ target_sources(windmill_platform PRIVATE
   platform/adapters/postgres/PgAccountFootprint.cpp
   platform/adapters/postgres/PgOAuthRepository.cpp
   platform/adapters/postgres/PgMcpKeyRepository.cpp
-  platform/adapters/postgres/PgSubscriptionRepository.cpp
   platform/adapters/postgres/PgEventRepository.cpp
   platform/adapters/postgres/PgFeedbackRepository.cpp
   platform/adapters/postgres/PgServerErrorRepository.cpp
@@ -447,9 +446,6 @@ target_sources(windmill_platform PRIVATE
   platform/adapters/http/LogFormat.cpp
   platform/adapters/amplitude/AmplitudeClient.cpp
   platform/adapters/amplitude/AmplitudeUsageSink.cpp
-  platform/adapters/paddle/PaddleSignature.cpp
-  platform/adapters/paddle/PaddleApiClient.cpp
-  platform/adapters/paddle/BillingApi.cpp
   platform/adapters/mcp/McpServer.cpp
   platform/adapters/mcp/McpHttpEndpoint.cpp
   platform/adapters/mcp/CompositeToolHost.cpp
@@ -736,8 +732,6 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/oidc/IdTokenTest.cpp
   test/platform/adapters/sentry/LogTeeTest.cpp
   test/platform/adapters/sentry/ObservedToolTest.cpp
-  test/platform/adapters/paddle/PaddleSignatureTest.cpp
-  test/platform/adapters/paddle/BillingApiTest.cpp
   test/platform/adapters/amplitude/AmplitudeUsageSinkTest.cpp
   test/platform/adapters/amplitude/AmplitudeClientTest.cpp
   test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
@@ -746,7 +740,6 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/postgres/PgAccountClosureTest.cpp
   test/platform/adapters/postgres/PgAppleLinkingTest.cpp
   test/platform/adapters/postgres/PgPoolTest.cpp
-  test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp
   test/products/roadmap/adapters/json/SubgraphJsonTest.cpp
   test/products/roadmap/adapters/json/TreeJsonTest.cpp
   test/products/roadmap/adapters/json/CommandJsonTest.cpp

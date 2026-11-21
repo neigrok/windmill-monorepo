@@ -36,8 +36,8 @@ TEST(vendor_call_levels_treat_every_transport_fault_as_ours_to_chase) {
 TEST(vendor_call_line_carries_the_vendor_operation_status_and_cost) {
   CHECK_EQ(vendorCallLine("resend", "send", 200, VendorFault::none, 340'500),
            std::string("vendor=resend op=send status=200 340.5ms"));
-  CHECK_EQ(vendorCallLine("paddle", "customers.find", 403, VendorFault::none, 88'100),
-           std::string("vendor=paddle op=customers.find status=403 88.1ms"));
+  CHECK_EQ(vendorCallLine("resend", "domains.get", 403, VendorFault::none, 88'100),
+           std::string("vendor=resend op=domains.get status=403 88.1ms"));
   CHECK_EQ(vendorCallLine("openai", "transcribe", 500, VendorFault::none, 4'201'900),
            std::string("vendor=openai op=transcribe status=500 4201.9ms"));
 }

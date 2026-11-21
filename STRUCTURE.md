@@ -5,7 +5,7 @@ repository groups code by surface, then product.
 
 ```text
 backend/                    C++20 modular monolith
-  platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry, AI usage and
+  platform/                 product-neutral auth, OAuth, subscriptions, MCP, email, telemetry, AI usage and
                             the sync engine server
     infra/                  composition roots for the server and standalone MCP transports
     ai_passes/              optional Ed25519 pass issuer for the AI service
@@ -32,9 +32,9 @@ web/                        Vite/React superapp for all three products
   test/                     mirrors the source
 apps/
   ios/                      App/ (the journal and gym app), Sync/ (the sync engine client), Domain/ (the
-                            domain kit and the gym and journal domains on it), Agent/ (the Coach engine),
-                            WindmillKit/ (its AI client and runtime), SyncTestingSurface/ and the dev-only
-                            SyncProbe/ app
+                            domain kit, the gym and journal domains on it and roadmap's reads), Agent/
+                            (the Coach engine), WindmillKit/ (its AI client and runtime),
+                            SyncTestingSurface/ and the dev-only SyncProbe/ app
   android/                  Kotlin/Compose gym app; :app, :platform, :gym (its presentation package
                             projects :gym:domain for the screens) and :gym:domain, the sync engine
                             (:sync-*), the domain kit (:domain-kit, :domain-kit-testing) and the
@@ -75,7 +75,6 @@ room machinery.
 
 Raw design tokens are mirrored in `web/src/styles/tokens/` and
 `apps/android/platform/src/main/kotlin/works/windmill/platform/design/Tokens.kt`. Edit them together.
-`PLAN_COPY`, shared subscription wording, still lives in roadmap's web settings module.
 
 ## CI and deployment
 
@@ -141,8 +140,9 @@ contents. Native acceptance and a same-key update check precede publication. See
   that engine on every surface, are specified and not built.
   [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md), which moves roadmap's records and rules
   onto the engine and the domain kit, is built, and production's roadmaps sync through the engine; the deletion of
-  roadmap's own sync remains. Three more are specified and not built:
-  [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on them;
+  roadmap's own sync remains. Of [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on
+  them, the Swift domain's pure reads are built (`apps/ios/Domain/Sources/RoadmapDomain`) and nothing else. Two more
+  are specified and not built:
   [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI service; and
   [the web as a device](docs/foundation/web-device-parity.md), which makes gym and journal on the web
   work as they do on a phone. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which

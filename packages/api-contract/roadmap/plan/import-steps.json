@@ -1,0 +1,447 @@
+[
+  {
+    "name": "A named plan lands as one step under the step, with its own steps under it",
+    "input": {
+      "text": "# Deployment\n- write dockerfile\n- set up CI",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "deployment", "label": "Deployment", "icon": "", "color": "terracotta"},
+            {"key": "write-dockerfile", "label": "write dockerfile", "icon": "", "color": "terracotta"},
+            {"key": "set-up-ci", "label": "set up CI", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["deployment", "write-dockerfile"], ["deployment", "set-up-ci"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "A list with no name lands each of its first steps under the step",
+    "input": {
+      "text": "- one\n- two\n  - two and a half\n- three",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "one", "label": "one", "icon": "", "color": "terracotta"},
+            {"key": "two", "label": "two", "icon": "", "color": "terracotta"},
+            {"key": "two-and-a-half", "label": "two and a half", "icon": "", "color": "terracotta"},
+            {"key": "three", "label": "three", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["two", "two-and-a-half"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "With no step to land under, a named plan lands whole at the root",
+    "input": {
+      "text": "# Deployment\n- write dockerfile\n- set up CI",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": null,
+      "held": []
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "deployment", "label": "Deployment", "icon": "", "color": "terracotta"},
+            {"key": "write-dockerfile", "label": "write dockerfile", "icon": "", "color": "terracotta"},
+            {"key": "set-up-ci", "label": "set up CI", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["deployment", "write-dockerfile"], ["deployment", "set-up-ci"]]
+        },
+        "under": null
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "With no step to land under, a list lands as first steps with no link above them",
+    "input": {
+      "text": "- one\n- two\n  - two and a half",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": null,
+      "held": []
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "one", "label": "one", "icon": "", "color": "terracotta"},
+            {"key": "two", "label": "two", "icon": "", "color": "terracotta"},
+            {"key": "two-and-a-half", "label": "two and a half", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["two", "two-and-a-half"]]
+        },
+        "under": null
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "A heading the roadmap has no kind for adds one, which is created; a kind it binds is not",
+    "input": {
+      "text": "Plan\n## Research\n- read the paper\n## Build\n- ship it",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "plan", "label": "Plan", "icon": "", "color": "terracotta"},
+            {"key": "research", "label": "Research", "icon": "", "color": "gold"},
+            {"key": "read-the-paper", "label": "read the paper", "icon": "", "color": "gold"},
+            {"key": "build", "label": "Build", "icon": "", "color": "terracotta"},
+            {"key": "ship-it", "label": "ship it", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["plan", "research"], ["research", "read-the-paper"], ["plan", "build"], ["build", "ship-it"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": [{"hue": "gold", "label": "Research", "description": ""}]
+    }
+  },
+  {
+    "name": "Each added kind is created in the order the plan met it",
+    "input": {
+      "text": "## One\n- a\n## Two\n- b\n## Learn\n- c\n## Three\n- d",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "one", "label": "One", "icon": "", "color": "brick"},
+            {"key": "a", "label": "a", "icon": "", "color": "brick"},
+            {"key": "two", "label": "Two", "icon": "", "color": "sky"},
+            {"key": "b", "label": "b", "icon": "", "color": "sky"},
+            {"key": "learn", "label": "Learn", "icon": "", "color": "olive"},
+            {"key": "c", "label": "c", "icon": "", "color": "olive"},
+            {"key": "three", "label": "Three", "icon": "", "color": "plum"},
+            {"key": "d", "label": "d", "icon": "", "color": "plum"}
+          ],
+          "links": [["one", "a"], ["two", "b"], ["learn", "c"], ["three", "d"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": [
+        {"hue": "brick", "label": "One", "description": ""},
+        {"hue": "sky", "label": "Two", "description": ""},
+        {"hue": "plum", "label": "Three", "description": ""}
+      ]
+    }
+  },
+  {
+    "name": "Where every hue is worn nothing is created",
+    "input": {
+      "text": "## One\n- a\n## Two\n- b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": ""},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": ""},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": ""},
+        {"id": "fix", "hue": "brick", "label": "Fix", "description": ""},
+        {"id": "explore", "hue": "sky", "label": "Explore", "description": ""},
+        {"id": "rest", "hue": "plum", "label": "Rest", "description": ""}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "one", "label": "One", "icon": "", "color": "terracotta"},
+            {"key": "a", "label": "a", "icon": "", "color": "terracotta"},
+            {"key": "two", "label": "Two", "icon": "", "color": "olive"},
+            {"key": "b", "label": "b", "icon": "", "color": "olive"}
+          ],
+          "links": [["one", "a"], ["two", "b"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "A done mark is not carried into a roadmap",
+    "input": {
+      "text": "- [x] Rig the boat\n  - [X] Tie the knots\n- Read the wind",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "rig-the-boat", "label": "Rig the boat", "icon": "", "color": "terracotta"},
+            {"key": "tie-the-knots", "label": "Tie the knots", "icon": "", "color": "terracotta"},
+            {"key": "read-the-wind", "label": "Read the wind", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["rig-the-boat", "tie-the-knots"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "Notes and addresses ride with their step",
+    "input": {
+      "text": "- step\nhalf a sentence\nhttps://example.com/docs",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {
+              "key": "step",
+              "label": "step",
+              "icon": "",
+              "color": "terracotta",
+              "description": "half a sentence",
+              "links": [{"url": "https://example.com/docs", "label": ""}]
+            }
+          ],
+          "links": []
+        },
+        "under": "start"
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "The first step wears no icon, named plan or not",
+    "input": {
+      "text": "Sail\n- Rig",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [{"key": "sail", "label": "Sail", "icon": "", "color": "terracotta"}, {"key": "rig", "label": "Rig", "icon": "", "color": "terracotta"}],
+          "links": [["sail", "rig"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "A lone heading lands as a step and adds its kind",
+    "input": {
+      "text": "## Deploy",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {"imported": {"steps": [{"key": "deploy", "label": "Deploy", "icon": "", "color": "brick"}], "links": []}, "under": "start"},
+      "CreateKind": [{"hue": "brick", "label": "Deploy", "description": ""}]
+    }
+  },
+  {
+    "name": "A marked file lands every first step under the step, duplicate names kept",
+    "input": {
+      "text": "# Plan\n<!-- windmill:roadmap -->\n- Same <!-- windmill:kind sky Sailing -->\n  - Same\n- Other <!-- windmill:kind gold -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "same", "label": "Same", "icon": "", "color": "sky"},
+            {"key": "same-2", "label": "Same", "icon": "", "color": "sky"},
+            {"key": "other", "label": "Other", "icon": "", "color": "gold"}
+          ],
+          "links": [["same", "same-2"]]
+        },
+        "under": "start"
+      },
+      "CreateKind": [{"hue": "sky", "label": "Sailing", "description": ""}]
+    }
+  },
+  {
+    "name": "A marked file with no step adds nothing, the kinds its headings name included",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n## Sailing <!-- windmill:kind sky -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": null
+  },
+  {
+    "name": "Empty text adds nothing",
+    "input": {
+      "text": "",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start"]
+    },
+    "expect": null
+  },
+  {
+    "name": "Whitespace-only text adds nothing",
+    "input": {
+      "text": " \n\t\n\u3000",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": null,
+      "held": []
+    },
+    "expect": null
+  },
+  {
+    "name": "A key never equals an id the roadmap holds, the step to land under included: it counts up past held ids and keys already given",
+    "input": {
+      "text": "- start\n- root\n- step\n- Step\n- free",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": "start",
+      "held": ["start", "step", "start-2", "deleted-long-ago"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "start-3", "label": "start", "icon": "", "color": "terracotta"},
+            {"key": "root-2", "label": "root", "icon": "", "color": "terracotta"},
+            {"key": "step-2", "label": "step", "icon": "", "color": "terracotta"},
+            {"key": "step-2-2", "label": "Step", "icon": "", "color": "terracotta"},
+            {"key": "free", "label": "free", "icon": "", "color": "terracotta"}
+          ],
+          "links": []
+        },
+        "under": "start"
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "With no step to land under a key still avoids the ids the roadmap holds",
+    "input": {
+      "text": "# Deploy\n- ship it",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "under": null,
+      "held": ["deploy", "ship-it", "ship-it-2"]
+    },
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "deploy-2", "label": "Deploy", "icon": "", "color": "terracotta"},
+            {"key": "ship-it-3", "label": "ship it", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["deploy-2", "ship-it-3"]]
+        },
+        "under": null
+      },
+      "CreateKind": []
+    }
+  },
+  {
+    "name": "Steps with no ASCII in their names are keyed step, step-2 and so on",
+    "input": {"text": "- Привет\n- 你好\n  - 🚀", "kinds": [], "under": null, "held": []},
+    "expect": {
+      "ImportSteps": {
+        "imported": {
+          "steps": [
+            {"key": "step", "label": "Привет", "icon": "", "color": "terracotta"},
+            {"key": "step-2", "label": "你好", "icon": "", "color": "terracotta"},
+            {"key": "step-3", "label": "🚀", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["step-2", "step-3"]]
+        },
+        "under": null
+      },
+      "CreateKind": []
+    }
+  }
+]

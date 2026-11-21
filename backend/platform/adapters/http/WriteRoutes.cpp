@@ -56,15 +56,14 @@ const std::set<std::string> refusalCodes{
     "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
     "ask-session-open", "ask-thread-taken", "bad-id", "bad_request", "client-update-required",
-    "cascade-unavailable", "checkout_closed", "clock-ahead", "coach-bad-request", "coach-busy", "coach-draft-invalid", "coach-draft-not-found",
+    "cascade-unavailable", "clock-ahead", "coach-bad-request", "coach-busy", "coach-draft-invalid", "coach-draft-not-found",
     "coach-rate-limited", "coach-turn-conflict", "coach-turn-order", "coach-turn-stopped", "coach-turn-unknown", "coach-update-required",
     "save-pending", "kinds-refused", "no-such-tree", "step-gone", "depth-limit", "step-opens-a-tree",
     "concurrency_exhausted", "debt_outstanding",
     "device_bound", "device_verification_required", "expired", "free_day_exhausted", "free_month_exhausted",
-    "funding_account_mismatch", "funding_binding_pending", "funding_conflict", "funding_required", "funding_unconfigured",
-    "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
+    "funding_required", "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
     "identity-taken", "invalid_client", "invalid_client_metadata", "invalid_email", "invalid_grant",
-    "invalid_payment_identity", "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "not-a-root",
+    "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "not-a-root",
     "rate_limited", "untrusted-origin", "unsupported-media-type",
     "replica-foreign", "request-too-large", "routine-save-in-progress", "session-deleted", "session-id-taken",
     "session-overlap", "set-id-taken", "share-id-taken", "subject_exhausted", "subscriptions_unavailable", "temporarily_unavailable",
@@ -237,10 +236,7 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   if (operation == "roadmap.PUT.v1.trees.tree.steps.step.subtree" && code == "save-pending") return code;
   if (operation == "journal.POST.v1.journal.transcribe" &&
       (code == "voice_busy" || code == "voice_unavailable")) return code;
-  if (operation == "platform.POST.v1.billing.checkout" && code == "checkout_closed") return code;
   if (operation == "subscription.claim" && code == "subscriptions_unavailable") return code;
-  if (operation == "platform.POST.v1.paddle.webhook" &&
-      (code == "funding_binding_pending" || code == "funding_unconfigured")) return code;
   if (operation == "platform.GET.v1.ai.allowance" && code == "ai_allowance_disabled") return code;
   return "failed";
 }

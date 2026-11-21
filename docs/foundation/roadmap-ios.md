@@ -6,7 +6,8 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified; nothing is built. The owner approved it on 2026-11-17; what it says of
+**Status:** Specified. `RoadmapDomain` holds the pure reads (§2) and runs their vector files (§10);
+nothing else is built. The owner approved it on 2026-11-17; what it says of
 quests, plans, Export, Share, the gallery and Activity follows the boards and has not been before
 the owner. The iPhone app carries journal and gym. Roadmap's design for it is
 [Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
@@ -354,13 +355,21 @@ makes it false.
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
   is on the web. Nothing serves an association file.
+- `RoadmapDomain` holds the pure reads alone: no entity, action, replica read, Undo, plan grammar, quest or Coach
+  executor.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.
-- The plan grammar and the quest roster are the web's code and the web's own tests alone
-  (`web/src/products/roadmap/paste/`, `web/src/products/roadmap/quests/roster/`): no shared case
-  holds either. The web's grammar returns sentences of its catalog among what it derives, which a
-  shared case cannot compare.
+- The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
+  implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
+- The grammar's writer does not write every roadmap so that it reads back the same, as §7.3 needs.
+  A description is written raw, so a line of it that looks like a list item, a heading or an
+  address reads back as a step, a kind or a link; a name that begins like a checkbox reads back as
+  a mark; a name with a line break breaks the file's first line; and steps on a loop are not
+  written. In a file an export wrote, text before the first step is dropped, where §7.1 keeps
+  every line. The cases of `write.json` and `read.json` pin each as it stands.
+- The quest roster is the web's code and the web's own tests alone
+  (`web/src/products/roadmap/quests/roster/`): no shared case holds it.
 - The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - The app's Info.plist names no Markdown type (§7.3).
 

@@ -128,11 +128,6 @@ jobs:
           VITE_SENTRY_DSN: https://8ccb99ec79873a1f7ad27fb1939906d0@o4511760691953664.ingest.de.sentry.io/4511760715350096
           # Stamps the build so Sentry groups errors by release.
           VITE_RELEASE: ${{ github.sha }}
-          # Paddle's client-side token is public (it only opens checkouts); the API key stays on the
-          # server. Unset ⇒ empty token ⇒ billingConfigured() is false. No surface offers a checkout
-          # while paidPlansOpen() is false, whatever the token.
-          VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
-          VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           VITE_ROADMAP_REPLICA_ROOM: ${{ steps.roadmap.outputs.room || 'off' }}
         run: npm run build
 
