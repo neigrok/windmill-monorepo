@@ -12,11 +12,14 @@ Coach. Use a phone for workout entry. Verify every screen on the version offered
 using its recording. Use only example data in assets. [Gym product contract](../../PRODUCT_LOG.md#gym) ·
 [Phone Coach](../../foundation/mobile/gym_coach.md)
 
-**Invitation copy**
+**Invitation, in the product's voice**
 
-> I’m building Windmill Gym for lifters who repeat a program. Would you try logging two workouts you already
-> plan to do on your phone? It’s a free beta. At the end I’d like to hear where it saved time or got in your
-> way.
+> Windmill Gym is a training log for lifters who repeat a program. Would you try logging two workouts you
+> already plan to do, on your phone? It is a free beta. Afterwards we would like to hear where it saved time
+> or got in your way.
+
+An agent drafts this message for the product, and the owner approves it before it is sent. An invitation to
+someone the owner knows is his own to write. [Voice and approval](../strategy.md#what-the-owner-does-and-what-agents-do)
 
 Give the invitation before showing the demo. Observe unaided use first and record whether help was needed.
 The demonstration is available on request. Ask what the lifter would use again and what they already use or

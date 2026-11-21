@@ -2,9 +2,10 @@
 
 **Free native pilot, planned until recruitment is recorded.** Set actual intake and first-set cutoff dates before inviting anyone. The founder looks for people who
 already follow a repeatable program, expect to train twice within seven days and agree to use a supported
-iOS TestFlight build or Android sideload. Start with existing lifting contacts and introductions from a
-coach or training partner who can ask interested people to opt in. The founder handles invitations
-personally. Use [the invitation and demo](04-gym-demo-and-checkout.md).
+iOS TestFlight build or Android sideload. Start with existing lifting contacts, introductions from a
+coach or training partner who can ask interested people to opt in, and the candidates the owner approved
+from [research](../strategy.md#finding-the-first-people). The owner invites the people he knows in his own
+words. An invitation to anyone else is drafted for the product and sent after he approves it. Use [the invitation and demo](04-gym-demo-and-checkout.md).
 
 1. Verify one install-to-history journey on each offered build. Give each consenting participant the correct
    route, explain beta access, and note platform plus whether they needed help to install. Lock the roster
