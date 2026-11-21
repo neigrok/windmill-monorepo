@@ -4,7 +4,9 @@ import { parsePlan, serializePlan } from '../../../../src/products/roadmap/paste
 import { readFileSync } from 'node:fs';
 import { dogfoodTreeData } from '../fixtures/dogfoodTree.js';
 import { largeRoadmap, ROADMAP_SHAPES } from '../fixtures/largeRoadmap.js';
-import shipV1 from '../../../../src/products/roadmap/quests/roster/shipV1.js';
+import { ROSTER } from '../../../../src/products/roadmap/quests/roster.js';
+
+const shipV1 = ROSTER.find((quest) => quest.id === 'ship-v1');
 
 const KINDS = [
   { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make' },

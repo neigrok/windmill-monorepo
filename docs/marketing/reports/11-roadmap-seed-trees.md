@@ -4,7 +4,7 @@
 starter for builders with an active small project. Its opening steps ask the builder to write a one-sentence
 promise and cut the scope to one core flow. That gives participants something they can finish now and a
 reason to reopen the tree when the project moves.
-[Starter source](../../../web/src/products/roadmap/quests/roster/shipV1.js)
+[Starter source](../../../packages/api-contract/roadmap/quests/roster.json)
 
 **Use the existing starter.** Send the picker link and ask the builder to choose **Ship v1**. The
 November 12 production build showed that option in a fresh signed-out Chromium session. Before invitations,

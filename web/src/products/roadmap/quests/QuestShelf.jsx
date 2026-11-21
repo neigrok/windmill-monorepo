@@ -9,7 +9,7 @@ import { countBucket } from '../board/acts.js';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR, prefersReducedMotion } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';
-import { ROSTER } from './roster/index.js';
+import { ROSTER } from './roster.js';
 import { t } from '../i18n/index.js';
 
 const SEED_EASE_MS = 600;
@@ -30,11 +30,7 @@ export function QuestShelf({ replica = false } = {}) {
   const pickingRef = useRef(false);  // the plant guard — synchronous, unlike the state it mirrors
 
   async function mintTree(quest) {
-    const plan = {
-      title: quest.title,
-      nodes: [{ ...quest.nodes[0], icon: 'sparkles' }, ...quest.nodes.slice(1)],
-      kinds: quest.kinds,
-    };
+    const plan = { title: quest.title, nodes: quest.nodes, kinds: quest.kinds };
     if (replica) {
       const { treeId, local } = await new ReplicaBirth().plant(plan);
       if (local) track('birth', { quest: quest.id, steps: countBucket(plan.nodes.length), local: true });
@@ -93,8 +89,8 @@ export function QuestShelf({ replica = false } = {}) {
     }
   }
 
-  const dev = ROSTER.filter((quest) => quest.audience === 'dev');
-  const life = ROSTER.filter((quest) => quest.audience !== 'dev');
+  const dev = ROSTER.filter((quest) => quest.group === 'dev');
+  const life = ROSTER.filter((quest) => quest.group !== 'dev');
   const planting = pickedId !== null;
   const shelfClass = [
     'quest-shelf',
