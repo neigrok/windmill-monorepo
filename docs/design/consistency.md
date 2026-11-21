@@ -637,7 +637,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Roadmap · iOS · boards that disagree with what the room reads.** [Roadmap on iOS](../foundation/roadmap-ios.md)
   names every read and command the boards need (§3 INV-1, §7.1 to §7.4) and rules three of the differences (R-7 to
   R-9). To redraw, the build tree's step `m0-redraw-what-the-reads-cannot-serve`: Activity (01.13) and History
-  (03.12) without their dated *unlocked* rows (R-7); a gallery row (09.12a) without its author (R-8), and its
+  (03.12) without their dated *unlocked* rows (R-7) and showing only what the phone's copy holds a time for, since
+  both are read from it (R-11), so *Activity with no connection* (01.14) and *History with no connection* (03.13)
+  are states the room never reaches; a gallery row (09.12a) without its author (R-8), and its
   caption, which says newest first where `GET /v1/gallery` ranks by forks, then by last activity; the words for the
   feed's other deeds — steps removed and recolored, links drawn and taken away, kinds added, renamed, described,
   recolored, reordered and removed — where the boards word only *added*, *renamed* and *completed* and the server's
