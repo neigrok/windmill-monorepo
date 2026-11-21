@@ -5,7 +5,7 @@ repository groups code by surface, then product.
 
 ```text
 backend/                    C++20 modular monolith
-  platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry, AI usage and
+  platform/                 product-neutral auth, OAuth, subscriptions, MCP, email, telemetry, AI usage and
                             the sync engine server
     infra/                  composition roots for the server and standalone MCP transports
     ai_passes/              optional Ed25519 pass issuer for the AI service

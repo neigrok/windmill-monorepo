@@ -145,14 +145,14 @@ services:
       # The operator's rehearsal door for one nightly pass. Unset → the route 403s, its resting state.
       JOURNAL_ECHO_ADMIN_TOKEN: ${JOURNAL_ECHO_ADMIN_TOKEN:-}
       # The people building this, comma-separated. They hold Windmill One (nothing can be BOUGHT —
-      # checkout is shut and BillingApi 503s, so without this the team is the one group guaranteed
+      # no surface holds a checkout, so without this the team is the one group guaranteed
       # never to see the surfaces it ships) and the journal's 20-page corpus floor is waived for
       # them. Empty → nobody is an owner and every gate behaves exactly as it did before.
       WINDMILL_OWNER_EMAILS: ${WINDMILL_OWNER_EMAILS:-}
       # Windmill One (docs/foundation/subscriptions.md §5.3, §6.2). The accounts whose sandbox purchases count, the
       # team's testers and the App Review account, comma-separated; empty → a sandbox purchase entitles no one. The
-      # stores GET /v1/subscription offers a buy control for (app_store, play_store, paddle); empty → the paid line is
-      # closed on every store, and a name the server does not know stays closed and is reported at start.
+      # stores GET /v1/subscription offers a buy control for (app_store, play_store); empty → the paid line is closed on
+      # every store, and any other name stays closed and is reported at start.
       WINDMILL_SANDBOX_EMAILS: ${WINDMILL_SANDBOX_EMAILS:-}
       SUBSCRIPTIONS_PURCHASABLE_STORES: ${SUBSCRIPTIONS_PURCHASABLE_STORES:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
@@ -160,7 +160,7 @@ services:
       TENDING_ENABLED: ${TENDING_ENABLED:-}
       # Resend's Svix signing secret for the delivery webhook: a permanent bounce or a spam complaint
       # suppresses that address's weekly reminder. Empty → POST /v1/resend/webhook refuses every
-      # delivery, so the door is dark rather than forgeable (the PADDLE_WEBHOOK_SECRET stance).
+      # delivery, so the door is dark rather than forgeable.
       RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
       # The reminder engine's arming pair, plus the manual-sweep bearer. All three were MISSING here
       # until 2026-08-02, so the engine could not be armed in prod at all — the allowlist was
@@ -202,13 +202,6 @@ services:
       # Google sign-in (second door onto wm_session). Empty → the /auth/google routes stay dark.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      # Paddle billing. The webhook secret belongs to ONE notification destination — sandbox and
-      # production have separate destinations and separate secrets. Empty → every delivery is
-      # refused (and retried), so billing is dark rather than forgeable.
-      PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
-      PADDLE_API_KEY: ${PADDLE_API_KEY:-}
-      PADDLE_ENV: ${PADDLE_ENV:-sandbox}
-      PADDLE_PRICE_ID: ${PADDLE_PRICE_ID:-}
       # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}

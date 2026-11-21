@@ -1,9 +1,7 @@
-// Upgrading asks the server for a checkout: the browser never names a price, an email or an account.
+// The account's plan as GET /v1/subscription states it, with nothing to buy. No settings page mounts it.
 
 import React from 'react';
-import { Button } from '../../../design-system';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
-import { beginUpgrade, billingConfigured } from '../../../shell/billing/checkout.js';
 import { fetchSubscription, holdsWindmillOne } from '../../../shell/billing/subscription.js';
 import { t } from '../i18n/settings/index.js';
 
@@ -32,31 +30,17 @@ const asDate = (ms) => {
 export function PlanSection() {
   const [subscription, setSubscription] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
-  const [opening, setOpening] = React.useState(false);
-  const [failed, setFailed] = React.useState(false);
 
-  const refresh = React.useCallback(async () => {
-    setSubscription(await fetchSubscription());
-    setLoading(false);
+  React.useEffect(() => {
+    fetchSubscription().then((read) => {
+      setSubscription(read);
+      setLoading(false);
+    });
   }, []);
-
-  React.useEffect(() => { refresh(); }, [refresh]);
-
-  const upgrade = async () => {
-    setFailed(false);
-    setOpening(true);
-    // The subscription reaches the backend's copy a moment after the payment clears, so re-read rather than guess.
-    if (!(await beginUpgrade({ onCompleted: refresh }))) setFailed(true);
-    setOpening(false);
-  };
-
-  if (!billingConfigured()) return null;
 
   const plan = planOf(subscription);
   const copy = PLAN_COPY[plan];
   const ending = plan === 'windmillOne' && subscription.governing?.autoRenew === false ? asDate(subscription.accessUntil) : '';
-  // This page buys through Paddle, and offers it only while the backend names it purchasable (INV-12).
-  const purchasable = Boolean(subscription?.purchasable.includes('paddle'));
 
   return (
     <Section title={t('roadmap.plan.title')}>
@@ -70,17 +54,7 @@ export function PlanSection() {
           )}
         </div>
         {!loading && plan === 'windmillOne' && !ending && <span style={styles.tag}>{t('roadmap.plan.activeTag')}</span>}
-        {!loading && purchasable && (
-          <Button size="sm" onClick={upgrade} disabled={opening}>
-            {opening ? t('roadmap.plan.opening') : t('roadmap.plan.upgrade')}
-          </Button>
-        )}
       </div>
-      {failed && (
-        <p style={{ ...styles.calmLine, marginTop: 8 }}>
-          {t('roadmap.plan.checkoutFailed')}
-        </p>
-      )}
     </Section>
   );
 }

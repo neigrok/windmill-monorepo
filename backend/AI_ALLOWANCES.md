@@ -66,15 +66,11 @@ Routine setup offers only its eight relevant history, notes, catalog, routine an
 tools. This reduces repeated input while preserving the conservative request estimate; ordinary
 Coach conversations retain the full tool catalog.
 
-Subscription funding comes from two doors, and a subscription status or entitlement alone funds
+Subscription funding comes from one door, and a subscription status or entitlement alone funds
 nothing. The subscription service's feed funds one grant for each production period recorded under
 an account with a positive price and no refund, spanning the period, its reference the period's id
 (`platform/subscriptions/PeriodFunding`, [subscriptions.md](../docs/foundation/subscriptions.md)
-§6.3); a sandbox period, a free trial's period priced at nothing and a refunded one fund nothing. A
-verified, successfully completed Paddle payment event for the configured `PADDLE_PRICE_ID` funds
-the period it describes: one positive, fully paid, non-prorated monthly One line, with a captured
-payment and an explicit billing period. Customer, subscription, price and account bindings must
-agree, and missing account mirrors receive a retryable refusal.
+§6.3); a sandbox period, a free trial's period priced at nothing and a refunded one fund nothing.
 
 Each grant carries its source, account, funded period, amount and funding reference. Funding again
 a reference already funded for that account replays, whatever the grant's close or amount, and the
@@ -92,8 +88,7 @@ when no subscription grant is current.
 An active subscription grant takes precedence over an owner grant; their remaining amounts are
 never combined. An expired subscription period does not prevent the owner's calendar fallback.
 Unused subscription capacity survives a calendar-month boundary and expires at its funded period
-end. Expiry never releases unresolved calls or forgives their debt. Checkout remains closed even
-when the funding price is configured.
+end. Expiry never releases unresolved calls or forgives their debt.
 
 ## Admission and accounting
 
@@ -347,8 +342,6 @@ request quotas. Enabling the durable ledger does not invent reservations for ear
 - Subscription and owner grants share one ledger. Nonoverlap is enforced within each source, and
   a current subscription grant takes priority over the owner grant. No subscription-status funding
   fallback should be introduced.
-- Paddle refunds, chargebacks and payment adjustments do not revoke or revise a Paddle-funded grant.
-  Define and implement those outcomes before Paddle funding serves customers.
 - The permanent device relation lets account reads include associated anonymous cost without
   copying spend into a second ledger or creating transfer/refund arithmetic.
 - Keep connection-specific SSE delivery at the HTTP edge. Buffered and incremental responses

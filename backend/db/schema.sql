@@ -1079,8 +1079,8 @@ create table if not exists roadmap_coach_write_fates (
 create index if not exists roadmap_coach_write_fates_feed on roadmap_coach_write_fates (scope_key, seq);
 
 -- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
--- Every customer and subscription notification upserts here, and funding a Paddle payment reads this database, never
--- the Paddle API. No access is read from it: Windmill One is read from account_entitlements. An account bridges to a
+-- Paddle's customers and subscriptions as last mirrored. Nothing writes them, and only erasing an account deletes its
+-- rows (PgAuthRepository::eraseAccount). They stand until the owner rules on dropping them. An account bridged to a
 -- Paddle customer by email (citext, matching users.email).
 create table if not exists paddle_customers (
   customer_id text primary key,   -- "ctm_..."
@@ -1090,25 +1090,20 @@ create table if not exists paddle_customers (
 );
 create index if not exists paddle_customers_email on paddle_customers (email);
 
--- No foreign key to paddle_customers: deliveries are unordered, so an orphan row is legal, and a payment
--- for it funds nothing until its customer lands.
 create table if not exists paddle_subscriptions (
   subscription_id     text primary key,  -- "sub_..."
   customer_id         text not null,
-  user_id             uuid,              -- the Windmill account, stamped via checkout custom_data
+  user_id             uuid,              -- the Windmill account
   status              text not null,     -- active | trialing | past_due | paused | canceled
   price_id            text not null default '',
   product_id          text not null default '',
   scheduled_change_at timestamptz,       -- set while a pause/cancel is pending; status stays active
-  occurred_at         timestamptz,       -- Paddle's event time; a stale retry must not overwrite newer state
+  occurred_at         timestamptz,       -- Paddle's event time
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );
 create index if not exists paddle_subscriptions_customer on paddle_subscriptions (customer_id);
--- Deliveries can land out of order: the upsert refuses to move occurred_at backwards.
 alter table paddle_subscriptions add column if not exists occurred_at timestamptz;
--- Checkout stamps custom_data.user_id and the webhook lands it here. Funding refuses a payment whose
--- stamped account is not the one its customer's email names.
 alter table paddle_subscriptions add column if not exists user_id uuid;
 create index if not exists paddle_subscriptions_user on paddle_subscriptions (user_id);
 

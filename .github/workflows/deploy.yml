@@ -100,8 +100,6 @@ jobs:
           SENTRY_RELEASE: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
-          PADDLE_WEBHOOK_SECRET: ${{ secrets.PADDLE_WEBHOOK_SECRET }}
           # Bearer for POST /v1/admin/reminders/sweep. Unset ⇒ that route 404s.
           REMINDERS_ADMIN_TOKEN: ${{ secrets.REMINDERS_ADMIN_TOKEN }}
           # Bearers for POST /v1/admin/journal/{nudge,echo}/sweep. Unset ⇒ each route 403s.
@@ -114,8 +112,6 @@ jobs:
           SUBSCRIPTIONS_PURCHASABLE_STORES: ${{ vars.SUBSCRIPTIONS_PURCHASABLE_STORES }}
           SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID: ${{ vars.SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID }}
           SUBSCRIPTIONS_APP_STORE_API_KEY_ID: ${{ vars.SUBSCRIPTIONS_APP_STORE_API_KEY_ID }}
-          PADDLE_ENV: ${{ vars.PADDLE_ENV }}
-          PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
           # Every Domain the session cookie was set in before DOMAIN_APP, comma-separated (backend/AUTH.md). Empty ⇒ none.
@@ -260,9 +256,9 @@ jobs:
 
           # The stores the paid line is open on (docs/foundation/subscriptions.md §5.3). A server given a name it does not
           # know keeps that store closed, so a typo is refused here, before anything reaches the host.
-          stores='^ *((app_store|play_store|paddle) *(,|$) *)*$'
+          stores='^ *((app_store|play_store) *(,|$) *)*$'
           if [[ ! "${SUBSCRIPTIONS_PURCHASABLE_STORES:-}" =~ $stores ]]; then
-            echo "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store, play_store or paddle, comma-separated."
+            echo "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store or play_store, comma-separated."
             exit 1
           fi
 
@@ -285,7 +281,6 @@ jobs:
                        WINDMILL_EVENTS_RETENTION_DAYS WINDMILL_FEEDBACK_RETENTION_DAYS \
                        WINDMILL_SERVER_ERROR_RETENTION_DAYS \
                        GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
-                       PADDLE_WEBHOOK_SECRET PADDLE_API_KEY PADDLE_ENV PADDLE_PRICE_ID \
                        REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \
                        JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
                        JOURNAL_ECHO_ADMIN_TOKEN \
