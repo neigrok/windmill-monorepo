@@ -24,8 +24,9 @@ owner has marked ready, and the boards for the review, signed out and History ar
 The [AI service](ai-service.md), which makes each model call. The engine that runs a turn, the AI
 client and the pass door, which the [Coach engine](coach-engine.md) holds. Gym Coach's own move onto
 the device ([Gym Coach on the AI service](gym-coach-on-ai-service.md)). The iPhone's room
-([Roadmap on iOS](roadmap-ios.md)). `POST /v1/compose`. The roadmap tools
-an outside assistant reaches over MCP, which stay on the server as a catalog of their own.
+([Roadmap on iOS](roadmap-ios.md)). The roadmap tools an outside assistant reaches over MCP, which
+stay on the server as a catalog of their own. A paste is split into steps by the plain parser alone; making a roadmap from pasted material is
+Coach's to take up.
 
 **Depends on:** [Roadmap on the sync engine](roadmap-on-the-engine.md), whose registry and shared
 domain the abilities are built on; the [Coach engine](coach-engine.md), and through it the AI

@@ -100,8 +100,6 @@ export function NewTreeBirth({ replica = false } = {}) {
       const file = [...event.dataTransfer.files].find(planFile);
       if (!file) return;
       file.text().then((content) => {
-        // Retire any in-flight AI stream BEFORE the draft lands: a pending flush would overwrite the drop.
-        window.dispatchEvent(new Event('wm-draft-replaced'));
         setDraft(content);
         setComposerOpen(true);
       });

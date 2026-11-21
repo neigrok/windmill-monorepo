@@ -7,7 +7,7 @@
 using namespace wm;
 
 TEST(rate_limiter_grants_the_burst_then_denies_the_next_call) {
-  RateLimiter limiter{10.0 / 600.0, 5.0};  // the compose per-IP shape: ~10/10min, burst 5
+  RateLimiter limiter{10.0 / 600.0, 5.0};  // ~10/10min, burst 5
   for (int i = 0; i < 5; ++i) CHECK(limiter.allow("203.0.113.7"));
   CHECK_FALSE(limiter.allow("203.0.113.7"));
   CHECK_FALSE(limiter.allow("203.0.113.7"));

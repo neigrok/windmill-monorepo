@@ -123,8 +123,8 @@ The tier table holds its values in a section of its own:
 [Echoes on the AI service](echoes-on-ai-service.md) is its first caller.
 
 The amounts, the calls in flight and the anonymous row's model are the backend's policy as it stands
-([USD AI allowances](../../backend/AI_ALLOWANCES.md)); `large` is `claude-opus-5`, `medium` is
-`claude-sonnet-5` and `small` is `claude-haiku-4-5`, the models the backend calls. The output
+([USD AI allowances](../../backend/AI_ALLOWANCES.md)); `large` is `claude-opus-5` and `medium` is
+`claude-sonnet-5`, the models the backend calls, and `small` is `claude-haiku-4-5`. The output
 ceilings, the calls a minute and `OWNER_GRANTS_MAX` are set here. (R-4)
 
 - A class a tier serves as another is not refused: the call runs on the class served, and its answer

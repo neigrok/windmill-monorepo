@@ -44,8 +44,8 @@ TEST(vendor_call_line_carries_the_vendor_operation_status_and_cost) {
 
 // A call that never landed has no status; the word says which leg failed — dns is a config, tls is a cert, timeout is a vendor gone slow.
 TEST(vendor_call_line_names_the_failed_leg_instead_of_inventing_a_status) {
-  CHECK_EQ(vendorCallLine("anthropic", "compose.stream", 0, VendorFault::timeout, 90'000'000),
-           std::string("vendor=anthropic op=compose.stream status=timeout 90000.0ms"));
+  CHECK_EQ(vendorCallLine("anthropic", "tend", 0, VendorFault::timeout, 90'000'000),
+           std::string("vendor=anthropic op=tend status=timeout 90000.0ms"));
   CHECK_EQ(vendorCallLine("google", "exchange", 0, VendorFault::dns, 12'000),
            std::string("vendor=google op=exchange status=dns 12.0ms"));
   CHECK_EQ(vendorCallLine("apple", "exchange", 0, VendorFault::tls, 55'500),

@@ -598,6 +598,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
+- **Roadmap · the paste sheet draws a control the web no longer has.** Compose is retired (owner, 2026-11-21): the
+  paste sheet splits a paste into steps by the plain parser alone, with no *Shape this into a plan* handle, its
+  *What's sent?* disclosure, its shaping, undo, stopped, failed, rate-limited or too-long states. Flow 05's boards
+  ([44:71](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=44-71),
+  [44:145](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=44-145),
+  [183:957](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-957),
+  [185:2376](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2376),
+  [185:2444](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2444),
+  [183:899](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-899)) may still draw those states. For
+  the designer: delete every frame and layer that draws them, keeping the rest of the sheet as built.
 - **Roadmap on the sync engine · what the web redraws (owner, 2026-11-17).**
   [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md) rules that a change is never shown as
   refused for what happened elsewhere, and that presence ends. The owner approved

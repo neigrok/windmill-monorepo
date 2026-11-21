@@ -480,11 +480,9 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/http/GalleryApi.cpp
   products/roadmap/adapters/http/OgImageApi.cpp
   products/roadmap/adapters/http/OgVideoApi.cpp
-  products/roadmap/adapters/http/ComposeApi.cpp
   products/roadmap/adapters/http/TreeRegistryApi.cpp
   products/roadmap/adapters/http/TendingApi.cpp
   products/roadmap/adapters/http/RemindersApi.cpp
-  products/roadmap/adapters/llm/AnthropicComposer.cpp
   products/roadmap/adapters/llm/AnthropicAgent.cpp
   products/roadmap/adapters/ws/WsPresenceBus.cpp
   products/roadmap/adapters/ws/PresenceHub.cpp
@@ -749,7 +747,6 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/postgres/PgOpLogTest.cpp
   test/products/roadmap/adapters/postgres/PgTreeRepositoryTest.cpp
   test/products/roadmap/adapters/postgres/PgReminderRepositoryTest.cpp
-  test/products/roadmap/adapters/http/ComposeApiTest.cpp
   test/products/roadmap/adapters/http/TreeApiTest.cpp
   test/products/roadmap/adapters/http/SharePageApiTest.cpp
   test/products/roadmap/adapters/http/GalleryApiTest.cpp
@@ -763,7 +760,6 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/llm/AiCallBudgetTest.cpp
   test/platform/adapters/llm/AgentLoopTest.cpp
   test/platform/adapters/llm/AnthropicStreamTest.cpp
-  test/products/roadmap/adapters/llm/AnthropicComposerTest.cpp
   test/products/roadmap/adapters/llm/AnthropicAgentTest.cpp
   test/products/journal/adapters/http/JournalApiTest.cpp
   test/products/journal/adapters/http/NudgeApiTest.cpp
