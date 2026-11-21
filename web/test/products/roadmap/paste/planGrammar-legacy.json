@@ -193,184 +193,264 @@
       ],
       "gutter": [
         {
-          "glyph": "◉",
+          "mark": "root",
           "nodeId": "ship-v1",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "ship-v1",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "cut-scope-to-one-core-flow",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "cut-scope-to-one-core-flow",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "sketch-the-core-flow-on-paper",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "sketch-the-core-flow-on-paper",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "pick-a-boring-stack-and-deploy-it",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "pick-a-boring-stack-and-deploy-it",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "build-the-walking-skeleton",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "build-the-walking-skeleton",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "build-the-walking-skeleton",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "make-the-core-feature-real",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "make-the-core-feature-real",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "├",
+          "mark": "branch",
           "nodeId": "polish",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "dogfood-it-for-a-week",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "dogfood-it-for-a-week",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "dogfood-it-for-a-week",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "smooth-the-first-run-experience",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "smooth-the-first-run-experience",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "handle-failure-gracefully",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "handle-failure-gracefully",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "wire-up-analytics-and-feedback",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "wire-up-analytics-and-feedback",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "wire-up-analytics-and-feedback",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "├",
+          "mark": "branch",
           "nodeId": "launch",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "make-the-landing-page",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "make-the-landing-page",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "make-the-landing-page",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "run-a-friendly-beta",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "run-a-friendly-beta",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "run-a-friendly-beta",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "launch-it-where-your-people-are",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "launch-it-where-your-people-are",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "launch-it-where-your-people-are",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "ship-the-first-fix-release",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "ship-the-first-fix-release",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         }
       ],
       "readout": {
@@ -378,108 +458,11 @@
         "branches": 2,
         "done": 0
       },
-      "imperfections": [
-        {
-          "line": 1,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 3,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 5,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 7,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 9,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 10,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 12,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 15,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 16,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 18,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 20,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 22,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 23,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 26,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 27,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 29,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 30,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 32,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 33,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 35,
-          "type": "note",
-          "detail": "kept as a note"
-        }
-      ]
+      "imperfections": {
+        "notes": 20,
+        "clamps": 0,
+        "renames": 0
+      }
     }
   },
   {
@@ -598,59 +581,77 @@
       ],
       "gutter": [
         {
-          "glyph": "◉",
+          "mark": "root",
           "nodeId": "a-plan",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "├",
+          "mark": "branch",
           "nodeId": "build",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "✓",
+          "mark": "done",
           "nodeId": "a",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "b",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "c",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "d",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "├",
+          "mark": "branch",
           "nodeId": "new-kind",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "a-2",
-          "liberty": "renamed to \"a (2)\""
+          "liberties": [
+            {
+              "type": "rename",
+              "label": "a (2)"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "jump",
-          "liberty": "indent clamped"
+          "liberties": [
+            {
+              "type": "clamp",
+              "indent": "jump"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "jump",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "jump",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         }
       ],
       "readout": {
@@ -658,28 +659,11 @@
         "branches": 2,
         "done": 1
       },
-      "imperfections": [
-        {
-          "line": 7,
-          "type": "rename",
-          "detail": "renamed to \"a (2)\""
-        },
-        {
-          "line": 8,
-          "type": "clamp",
-          "detail": "indent clamped"
-        },
-        {
-          "line": 9,
-          "type": "note",
-          "detail": "kept as a note"
-        },
-        {
-          "line": 10,
-          "type": "note",
-          "detail": "kept as a note"
-        }
-      ]
+      "imperfections": {
+        "notes": 2,
+        "clamps": 1,
+        "renames": 1
+      }
     }
   },
   {
@@ -746,24 +730,28 @@
       ],
       "gutter": [
         {
-          "glyph": "◉",
+          "mark": "root",
           "nodeId": "plan",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "¶",
+          "mark": "note",
           "nodeId": "plan",
-          "liberty": "kept as a note"
+          "liberties": [
+            {
+              "type": "note"
+            }
+          ]
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "a-windmill-kind-sky-learning",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "├",
+          "mark": "branch",
           "nodeId": "b-windmill-kind-sky",
-          "liberty": null
+          "liberties": []
         }
       ],
       "readout": {
@@ -771,13 +759,11 @@
         "branches": 1,
         "done": 0
       },
-      "imperfections": [
-        {
-          "line": 1,
-          "type": "note",
-          "detail": "kept as a note"
-        }
-      ]
+      "imperfections": {
+        "notes": 1,
+        "clamps": 0,
+        "renames": 0
+      }
     }
   },
   {
@@ -869,29 +855,29 @@
       ],
       "gutter": [
         {
-          "glyph": "◉",
+          "mark": "root",
           "nodeId": "plan",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "├",
+          "mark": "branch",
           "nodeId": "brand-new",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "a",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "├",
+          "mark": "branch",
           "nodeId": "build",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "b",
-          "liberty": null
+          "liberties": []
         }
       ],
       "readout": {
@@ -899,7 +885,11 @@
         "branches": 2,
         "done": 0
       },
-      "imperfections": []
+      "imperfections": {
+        "notes": 0,
+        "clamps": 0,
+        "renames": 0
+      }
     }
   },
   {
@@ -954,24 +944,29 @@
       "kinds": [],
       "gutter": [
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "a",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "✓",
+          "mark": "done",
           "nodeId": "b",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "c",
-          "liberty": null
+          "liberties": []
         },
         {
-          "glyph": "·",
+          "mark": "step",
           "nodeId": "a-2",
-          "liberty": "renamed to \"a (2)\""
+          "liberties": [
+            {
+              "type": "rename",
+              "label": "a (2)"
+            }
+          ]
         }
       ],
       "readout": {
@@ -979,13 +974,11 @@
         "branches": 0,
         "done": 1
       },
-      "imperfections": [
-        {
-          "line": 3,
-          "type": "rename",
-          "detail": "renamed to \"a (2)\""
-        }
-      ]
+      "imperfections": {
+        "notes": 0,
+        "clamps": 0,
+        "renames": 1
+      }
     }
   },
   {
@@ -1007,9 +1000,9 @@
       "kinds": [],
       "gutter": [
         {
-          "glyph": null,
+          "mark": null,
           "nodeId": null,
-          "liberty": null
+          "liberties": []
         }
       ],
       "readout": {
@@ -1017,7 +1010,11 @@
         "branches": 0,
         "done": 0
       },
-      "imperfections": []
+      "imperfections": {
+        "notes": 0,
+        "clamps": 0,
+        "renames": 0
+      }
     }
   }
 ]

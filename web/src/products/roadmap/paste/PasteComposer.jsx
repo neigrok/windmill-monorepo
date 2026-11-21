@@ -1,6 +1,7 @@
 // A plain text well whose gutter is the live parse — ◉ root · ├ branch · · step · ✓ arrives done ·
 // ¶ kept as a note — measured with an invisible mirror so every glyph sits on its wrapped line.
 // The deterministic parser is the only door into TreeData; the AI handle only rewrites the text.
+// The parse holds values alone: this file draws each line's mark and words each liberty taken.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { KindLegend } from '../graph/tree/KindLegend.jsx';
@@ -9,6 +10,7 @@ import { KIND_CSS } from '../theme.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { readComposeStream, shapeFailureLabels } from './composeStream.js';
 import { graftedStepCount } from './graftPlan.js';
+import { plantedRoadmap } from './planGrammar.js';
 import { reportError } from '../../../telemetry/beacon.js';
 import { kindName } from '../model/Legend.js';
 import { LABELS } from '../copy.js';
@@ -37,6 +39,15 @@ const AI_COPY = {
   retry: t('roadmap.common.tryAgain'),
   undoDoor: t('roadmap.common.undo'),
 };
+
+const GLYPHS = { root: '◉', branch: '├', step: '·', done: '✓', note: '¶' };
+const CLAMP_WORDS = { ragged: t('roadmap.paste.mixedIndentClamped'), jump: t('roadmap.paste.indentClamped') };
+
+function libertyWords(liberty) {
+  if (liberty.type === 'rename') return t('roadmap.paste.renamedTo', { label: liberty.label });
+  if (liberty.type === 'clamp') return CLAMP_WORDS[liberty.indent];
+  return t('roadmap.paste.keptAsNote');
+}
 
 // A 503 compose-unavailable hides the handle for the whole session, without a message.
 let composeUnavailable = false;
@@ -135,13 +146,12 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       onPlant(parse);
       return;
     }
-    if (parse.missingRoot && name.trim() === '') {
+    const roadmap = plantedRoadmap(parse, name);
+    if (roadmap === null) {
       nameRef.current?.focus();
       return;
     }
-    const title = parse.missingRoot ? name.trim().slice(0, 200) : parse.title;
-    const nodes = parse.missingRoot ? parse.nodes.map((node, i) => (i === 0 ? { ...node, label: title } : node)) : parse.nodes;
-    onPlant({ title, nodes, kinds: parse.kinds.map(({ id, hue, label, description }) => ({ id, hue, label, description })) });
+    onPlant(roadmap);
   }
 
   // Legend edits are Legend.js ops over the local draft, which feeds back into parsePlan. Editing
@@ -161,8 +171,8 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   };
 
   // The shape door is offered for real content only; text past the server's byte cap keeps it quiet.
-  const spoken = parse.gutter.filter((entry) => entry.glyph !== null);
-  const prose = spoken.length >= 6 && spoken.filter((entry) => entry.glyph === '¶').length / spoken.length >= 0.6;
+  const spoken = parse.gutter.filter((entry) => entry.mark !== null);
+  const prose = spoken.length >= 6 && spoken.filter((entry) => entry.mark === 'note').length / spoken.length >= 0.6;
   const shapeable = spoken.length >= 3 && new TextEncoder().encode(text).length <= COMPOSE_TEXT_MAX_BYTES;
   const aiVisible = !aiHidden && (shapeable || ai.phase !== 'idle');
 
@@ -314,9 +324,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   if (parse.readout.branches > 0) readout.push(t('roadmap.paste.branches', { count: parse.readout.branches }));
   if (parse.readout.done > 0) readout.push(t('roadmap.paste.alreadyDone', { count: parse.readout.done }));
 
-  const notes = parse.imperfections.filter((entry) => entry.type === 'note').length;
-  const clamps = parse.imperfections.filter((entry) => entry.type === 'clamp').length;
-  const renames = parse.imperfections.filter((entry) => entry.type === 'rename').length;
+  const { notes, clamps, renames } = parse.imperfections;
   const chip = [];
   if (notes > 0) chip.push(t('roadmap.paste.notes', { count: notes }));
   if (clamps > 0) chip.push(t('roadmap.paste.clamped', { count: clamps }));
@@ -337,11 +345,12 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         {hasText && (
           <div className="pc-gutter" aria-hidden="true">
             {parse.gutter.map((entry, index) => {
-              if (entry.glyph === null || glyphTops[index] === undefined) return null;
-              const tone = entry.glyph === '✓' ? ' pc-glyph--done' : entry.glyph === '¶' ? ' pc-glyph--note' : '';
+              if (entry.mark === null || glyphTops[index] === undefined) return null;
+              const tone = entry.mark === 'done' ? ' pc-glyph--done' : entry.mark === 'note' ? ' pc-glyph--note' : '';
+              const taken = entry.liberties.length > 0;
               return (
-                <span key={index} className={`pc-glyph${tone}${entry.liberty ? ' pc-glyph--liberty' : ''}`} style={{ top: glyphTops[index] }} title={entry.liberty ?? undefined}>
-                  {entry.glyph}
+                <span key={index} className={`pc-glyph${tone}${taken ? ' pc-glyph--liberty' : ''}`} style={{ top: glyphTops[index] }} title={taken ? entry.liberties.map(libertyWords).join(' · ') : undefined}>
+                  {GLYPHS[entry.mark]}
                 </span>
               );
             })}

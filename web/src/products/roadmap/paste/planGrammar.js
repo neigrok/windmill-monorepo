@@ -1,9 +1,7 @@
 // The deterministic plan grammar: plain text in, a wire-ready subgraph out. The same text must
 // always yield the same tree — node ids seed the ceremony jitter, so Date.now and random may never
-// leak in here. Parsing can never fail; the worst case is one root and a pile of ¶ notes, and
-// every liberty taken is visible in the gutter.
-
-import { t } from '../i18n/settings/index.js';
+// leak in here. Parsing can never fail; the worst case is one root and a pile of notes, and every
+// liberty taken is a value in the gutter. packages/api-contract/roadmap/plan/ holds its cases.
 
 const PLAN_HUES = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const ROOT_LABEL_MAX = 200;
@@ -29,7 +27,16 @@ export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
     }
   }
   const grove = growNodes(lines, root, existingKinds, bindOnly);
-  return assemble(root, grove, lines);
+  return assemble(root, grove);
+}
+
+// The roadmap New Roadmap plants from a parse: a plan's own name wins over a typed one, and null while it has neither.
+export function plantedRoadmap(parse, typedName) {
+  const kinds = parse.kinds.map(({ id, hue, label, description }) => ({ id, hue, label, description }));
+  if (!parse.missingRoot) return { title: parse.title, nodes: parse.nodes, kinds };
+  const title = clip(typedName.trim(), ROOT_LABEL_MAX);
+  if (title === '') return null;
+  return { title, nodes: parse.nodes.map((node, index) => (index === 0 ? { ...node, label: title } : node)), kinds };
 }
 
 // One record per raw line: indent columns (tab = 2), a kind — blank | heading | item | text — and
@@ -73,11 +80,8 @@ function takeRoot(lines) {
   const at = lines.findIndex((line) => line.kind !== 'blank');
   if (at === -1) return { title: '', missingRoot: true, line: -1 };
   const first = lines[at];
-  if (first.kind === 'heading' && first.depth === 1) {
-    return { title: first.content.slice(0, ROOT_LABEL_MAX), missingRoot: false, line: at };
-  }
-  if (first.kind === 'text') {
-    return { title: first.content.slice(0, ROOT_LABEL_MAX), missingRoot: false, line: at };
+  if ((first.kind === 'heading' && first.depth === 1) || first.kind === 'text') {
+    return { title: clip(first.content, ROOT_LABEL_MAX), missingRoot: false, line: at };
   }
   return { title: '', missingRoot: true, line: -1 };
 }
@@ -115,7 +119,7 @@ class KindBook {
         ? this.kinds.find((kind) => kind.hue === exportHue)
         : this.kinds.find((kind) => kind.source === 'existing' && !this.claimed.has(kind.id));
       if (starter) {
-        starter.label = label.slice(0, KIND_LABEL_MAX);
+        starter.label = clip(label, KIND_LABEL_MAX);
         starter.description = '';
         starter.source = 'relabeled';
         this.claimed.add(starter.id);
@@ -125,7 +129,7 @@ class KindBook {
     const taken = new Set(this.kinds.map((kind) => kind.hue));
     const hue = exportHue ?? PLAN_HUES.find((candidate) => !taken.has(candidate));
     if (hue) {
-      const minted = { id: this.mintId(label), hue, label: label.slice(0, KIND_LABEL_MAX), description: '', source: 'added' };
+      const minted = { id: this.mintId(label), hue, label: clip(label, KIND_LABEL_MAX), description: '', source: 'added' };
       this.kinds.push(minted);
       this.claimed.add(minted.id);
       return minted;
@@ -149,7 +153,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
   const book = new KindBook(existingKinds, bindOnly);
   const nodes = root.exported ? [] : [{ role: 'root', label: root.title, hue: book.firstHue(), parent: -1, checked: false, notes: [], links: [], line: root.line }];
   const marks = lines.map(() => null);
-  if (root.line >= 0 && !root.exported) marks[root.line] = { node: 0, glyph: '◉', liberties: [] };
+  if (root.line >= 0 && !root.exported) marks[root.line] = { node: 0, mark: 'root', liberties: [] };
 
   let branch = root.exported ? -1 : 0;
   let hue = book.firstHue();
@@ -170,7 +174,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
       nodes.push({ role: 'branch', label: line.content, hue, parent: 0, checked: false, notes: [], links: [], line: at });
       branch = nodes.length - 1;
       stack.length = 0;
-      marks[at] = { node: branch, glyph: '├', liberties: [] };
+      marks[at] = { node: branch, mark: 'branch', liberties: [] };
       return;
     }
 
@@ -184,12 +188,12 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
       }
       if (root.exported) line.content = unescapeExportText(line.content);
       const liberties = [];
-      if (line.ragged) liberties.push({ type: 'clamp', detail: t('roadmap.paste.mixedIndentClamped') });
+      if (line.ragged) liberties.push({ type: 'clamp', indent: 'ragged' });
       let level = line.level;
       const ceiling = (stack.length > 0 ? stack[stack.length - 1].level : -1) + 1;
       if (level > ceiling) {
         level = ceiling;
-        liberties.push({ type: 'clamp', detail: t('roadmap.paste.indentClamped') });
+        liberties.push({ type: 'clamp', indent: 'jump' });
       }
       let sibling = null;
       while (stack.length > 0 && stack[stack.length - 1].level >= level) {
@@ -200,7 +204,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
       const chains = line.ordered && sibling !== null && sibling.ordered && sibling.anchor === anchor;
       nodes.push({ role: 'step', label: line.content, hue, parent: chains ? sibling.index : anchor, checked: line.checked, notes: [], links: [], line: at });
       stack.push({ level, index: nodes.length - 1, ordered: line.ordered, anchor });
-      marks[at] = { node: nodes.length - 1, glyph: line.checked ? '✓' : '·', liberties };
+      marks[at] = { node: nodes.length - 1, mark: line.checked ? 'done' : 'step', liberties };
       return;
     }
 
@@ -209,7 +213,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
     if (nearest < 0) return;
     if (/^https?:\/\/\S+$/.test(line.content)) nodes[nearest].links.push(line.content);
     else nodes[nearest].notes.push(line.content);
-    marks[at] = { node: nearest, glyph: '¶', liberties: [{ type: 'note', detail: t('roadmap.paste.keptAsNote') }] };
+    marks[at] = { node: nearest, mark: 'note', liberties: [{ type: 'note' }] };
   });
 
   return { nodes, marks, kinds: book.kinds };
@@ -217,7 +221,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
 
 // Ordinary pastes rename duplicate labels; exports retain them. IDs use a slug and occurrence
 // counter, and parents become prerequisite arrays.
-function assemble(root, grove, lines) {
+function assemble(root, grove) {
   const labels = new Set();
   const ids = new Set();
   const named = grove.nodes.map((draft, index) => {
@@ -226,7 +230,7 @@ function assemble(root, grove, lines) {
       let n = 2;
       while (labels.has(`${label} (${n})`)) n += 1;
       label = `${label} (${n})`;
-      grove.marks[draft.line]?.liberties.push({ type: 'rename', detail: t('roadmap.paste.renamedTo', { label }) });
+      grove.marks[draft.line]?.liberties.push({ type: 'rename', label });
     }
     if (label !== '') labels.add(label);
     const base = slug(label) || (index === 0 ? 'root' : 'step');
@@ -249,21 +253,16 @@ function assemble(root, grove, lines) {
     return node;
   });
 
-  const gutter = lines.map((line, at) => {
-    const mark = grove.marks[at];
-    if (!mark) return { glyph: null, nodeId: null, liberty: null };
-    return {
-      glyph: mark.glyph,
-      nodeId: nodes[mark.node].id,
-      liberty: mark.liberties.length > 0 ? mark.liberties.map((liberty) => liberty.detail).join(' · ') : null,
-    };
-  });
+  const gutter = grove.marks.map((spoken) => (spoken
+    ? { mark: spoken.mark, nodeId: nodes[spoken.node].id, liberties: spoken.liberties }
+    : { mark: null, nodeId: null, liberties: [] }));
 
-  const imperfections = [];
-  grove.marks.forEach((mark, at) => {
-    if (!mark) return;
-    for (const liberty of mark.liberties) imperfections.push({ line: at, type: liberty.type, detail: liberty.detail });
-  });
+  const liberties = gutter.flatMap((entry) => entry.liberties);
+  const imperfections = {
+    notes: liberties.filter((liberty) => liberty.type === 'note').length,
+    clamps: liberties.filter((liberty) => liberty.type === 'clamp').length,
+    renames: liberties.filter((liberty) => liberty.type === 'rename').length,
+  };
 
   const readout = {
     steps: nodes.length,
@@ -284,6 +283,13 @@ function assemble(root, grove, lines) {
 
 function slug(label) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+}
+
+// At most `max` UTF-16 code units, and never half of a surrogate pair.
+function clip(text, max) {
+  const lastKept = text.charCodeAt(max - 1);
+  const splitsPair = text.length > max && lastKept >= 0xd800 && lastKept <= 0xdbff;
+  return text.slice(0, splitsPair ? max - 1 : max);
 }
 
 function escapeExportText(text, comment = false) {

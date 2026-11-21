@@ -61,8 +61,8 @@ export class ReplicaBirth {
     const runner = new ActionRunner(new EngineReplica(engine), engine.registry, DEVICE_ZONE);
     const created = await runner.runAct(ReplicaBirth.creation(plan));
     if (created.kind !== 'committed') throw new BirthFailure('refused');
-    const { tree, steps } = created.result;
-    const done = plan.nodes.filter((node) => node.status === 'complete').map((node) => Complete(String(tree), steps[node.id]));
+    const { tree } = created.result;
+    const done = ReplicaBirth.marks(plan, created.result);
     try {
       await runner.release(created.receipt.gestureId);
       const marked = done.length === 0 ? null : await runner.runComposed(done);
@@ -83,5 +83,10 @@ export class ReplicaBirth {
     const legend = kinds.map(({ hue, label, description }) => ({ hue, label: label ?? '', description: description ?? '' }));
     const genesis = GENESIS_KINDS.map(({ hue, label, description }) => ({ hue, label, description }));
     return new CreateRoadmap(title, { steps, links }, legend.length === 0 || jcs(legend) === jcs(genesis) ? null : legend);
+  }
+
+  // The marks of the steps a plan brings done, in its order, each under the id the creation gave its step.
+  static marks({ nodes }, { tree, steps }) {
+    return nodes.filter((node) => node.status === 'complete').map((node) => Complete(String(tree), steps[node.id]));
   }
 }

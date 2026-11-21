@@ -3,7 +3,7 @@
 // target, icon dropped; with it true the synthesized root is dropped and its direct children
 // re-parent onto the target. A null target lands the graft at root level. `reservedNodeIds` must
 // be every id the lattice has a record for, tombstones included, or a colliding paste resurrects a
-// deleted node. The legend is adds-only, by id.
+// deleted node. The legend is adds-only, by id. A plan that lands no step grafts nothing: null.
 
 export function graftPlan({ parse, targetId, reservedNodeIds, liveKinds }) {
   const rootId = parse.nodes[0]?.id;
@@ -42,6 +42,7 @@ export function graftPlan({ parse, targetId, reservedNodeIds, liveKinds }) {
       : parsed.prerequisites.map((from) => (dissolve && from === rootId ? targetId : remap.get(from)));
     for (const from of prereqs) if (from) edges.push({ from, to: id });
   }
+  if (nodes.length === 0) return null;
 
   const liveKindIds = new Set(liveKinds.map((kind) => kind.id));
   const kinds = parse.kinds
