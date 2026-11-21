@@ -33,29 +33,76 @@ admitted() {
   psql -XAtq -c 'select 1' > /dev/null 2>&1
 }
 
-# 1. The rules go in first, so the database never exists without them. They lead pg_hba.conf, where
-#    the first matching line decides, between markers that each run replaces. A rewrite that would
-#    turn the backend away is never put in force.
+# 1. The rules go in first, so the database never exists without them. Each ledger's rules stand
+#    between markers of its own, and the ledgers' blocks lead pg_hba.conf, where the first matching line
+#    decides, in the order of their names: every run of either one-shot writes the same file, so a run
+#    that changes no rule leaves it as it is. A block ahead of this one is checked to admit nothing to
+#    this database or its role. A rewrite that would turn the backend away is never put in force.
 hba=$(psql -XAtq -c 'show hba_file') || fail "the cluster does not answer the backend's role"
 [[ -w "$hba" ]] || fail "the cluster's pg_hba.conf is not writable from this container"
-begin='# BEGIN windmill_ai'
-end='# END windmill_ai'
+block=$(mktemp)
 next=$(mktemp "$hba.next.XXXXXX")
 previous=$(mktemp "$hba.previous.XXXXXX")
-trap 'rm -f "$next" "$previous"' EXIT
+trap 'rm -f "$block" "$next" "$previous"' EXIT
 # `awk 1` ends every line of the rules with a newline, the last one included, so the end marker always
-# stands on a line of its own. A block left open in the live file would take every line after it, so it
-# stops the run instead.
+# stands on a line of its own.
 {
-  printf '%s: written by ai-db on every deploy\n' "$begin"
+  printf '# BEGIN windmill_ai: written by ai-db on every deploy\n'
   awk 1 "$(dirname "$0")/pg_hba.conf"
-  printf '%s\n' "$end"
-  awk -v begin="$begin" -v end="$end" '
-    index($0, begin) == 1 { inside = 1 }
-    !inside { print }
-    index($0, end) == 1 { inside = 0 }
-    END { exit inside }' "$hba"
-} > "$next" || fail "pg_hba.conf holds a windmill_ai block with no end, so it is left as it was"
+  printf '# END windmill_ai\n'
+} > "$block"
+# The live file's leading blocks are read whole, this ledger's own dropped wherever it stands, and the
+# rest kept as it is. A block left open would take every line after it, so it stops the run instead. A
+# rule ahead of this block admits nothing to it when it rejects, or names neither this database nor this
+# role by any pattern that could match them.
+status=0
+awk -v mine=windmill_ai -v block="$block" '
+  function matches(names, count, token, i) {
+    count = split(names, token, ",")
+    for (i = 1; i <= count; i++)
+      if (token[i] !~ /^[a-z_][a-z0-9_]*$/ || token[i] ~ /^(all|sameuser|samerole|samegroup|replication)$/ ||
+          token[i] == mine)
+        return 1
+    return 0
+  }
+  BEGIN { leading = 1 }
+  leading && open == "" && index($0, "# BEGIN windmill_") == 1 {
+    open = substr($0, 9)
+    sub(/[: \t].*/, "", open)
+    if (open != mine) ledgers[++count] = open
+  }
+  open != "" {
+    if (open != mine) text[open] = text[open] $0 "\n"
+    if (index($0, "# END " open) == 1) open = ""
+    next
+  }
+  { leading = 0 }
+  index($0, "# BEGIN " mine) == 1 { inside = 1 }
+  !inside { rest = rest $0 "\n" }
+  index($0, "# END " mine) == 1 { inside = 0 }
+  END {
+    if (inside || open == mine) exit 1
+    if (open != "") exit 3
+    for (i = 1; i <= count; i++) {
+      if (ledgers[i] > mine) continue
+      lines = split(text[ledgers[i]], line, "\n")
+      for (j = 1; j <= lines; j++) {
+        if (line[j] ~ /^[ \t]*(#|$)/) continue
+        fields = split(line[j], field, " ")
+        if (field[fields] == "reject") continue
+        if (field[1] ~ /^include/ || matches(field[2]) || matches(field[3])) exit 2
+      }
+    }
+    for (i = 1; i <= count; i++) if (ledgers[i] < mine) printf "%s", text[ledgers[i]]
+    while ((getline rule < block) > 0) print rule
+    for (i = 1; i <= count; i++) if (ledgers[i] > mine) printf "%s", text[ledgers[i]]
+    printf "%s", rest
+  }' "$hba" > "$next" || status=$?
+case $status in
+  1) fail "pg_hba.conf holds a windmill_ai block with no end, so it is left as it was" ;;
+  2) fail "a ledger block ahead of windmill_ai in pg_hba.conf could admit a role to it, so it is left as it was" ;;
+  3) fail "pg_hba.conf holds another ledger's block with no end, so it is left as it was" ;;
+esac
 
 # Through the session held open across the reload, from which a reload never takes the connection away.
 held() {

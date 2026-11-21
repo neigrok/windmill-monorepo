@@ -221,11 +221,13 @@ global runtime log encoder removes request objects and headers, including on ups
 neither passes in `Sec-WebSocket-Protocol` nor caller IDs in URLs enter those logs.
 
 `windmill_ai` is a separate database owned by the nonsuperuser role `windmill_ai`. The `ai-db`
-one-shot runs after `subscriptions-db`, giving the shared HBA file one writer at a time. Its rules
-admit only that role to its ledger, reject every other role (including the backend's superuser),
-and deny its role access to all other databases. Before reloading, it validates that the backend
-can still connect; after reloading, it probes that path and restores the old HBA file on failure.
-Both TCP and local socket paths use these rules. The AI process migrates its ledger on startup.
+one-shot runs after `subscriptions-db`, giving the shared HBA file one writer at a time, and writes
+its block as `subscriptions-db` writes its own ([The subscription database](#the-subscription-database)):
+the two blocks lead the file, `windmill_ai` first, so a deploy that changes neither set of rules prints
+`rules unchanged` for both. Its rules admit only that role to its ledger, reject every other role
+(including the backend's superuser), and deny its role access to all other databases. Before
+reloading, it validates that the backend can still connect; after reloading, it probes that path and
+restores the old HBA file on failure. Both TCP and local socket paths use these rules. The AI process migrates its ledger on startup.
 
 A deployment validates the AI credentials and, before promoting any files, pins `ai-<sha>` to its
 immutable image ID, or keeps the pinned image when nothing it is built from changed. When that tag is
@@ -549,10 +551,13 @@ cluster, owned by a role of the same name. The `subscriptions-db` one-shot
 every deploy and against the existing volume, as `migrate` applies the schema. Its `psql` connects as the
 backend does, as `windmill` over the network to the backend's database.
 
-1. It puts the rules in `deploy/subscriptions-db/pg_hba.conf` at the head of the cluster's
-   `pg_hba.conf`, between lines starting `# BEGIN windmill_subscriptions` and
-   `# END windmill_subscriptions` that each run replaces. A live file holding a block with no end stops
-   the run with the file as it was. A rewrite that does not parse, or whose first rule for `windmill` on
+1. It puts the rules in `deploy/subscriptions-db/pg_hba.conf` between lines starting
+   `# BEGIN windmill_subscriptions` and `# END windmill_subscriptions` that each run replaces. The
+   ledgers' blocks (this one and `ai-db`'s `windmill_ai`) lead the cluster's `pg_hba.conf` in the order
+   of their names, so `windmill_ai` stands first and either one-shot, run again with its rules as they
+   are, writes the file it found. A block ahead of this one that does not reject, and names this
+   database or role, `all` or any pattern that could match them, stops the run with the file as it was,
+   and so does a live file holding a ledger block with no end. A rewrite that does not parse, or whose first rule for `windmill` on
    its database, over the network or the socket, rejects it, is never put in force. Otherwise it holds a
    session of `windmill` open, reloads Postgres, and waits until `windmill` is refused
    `windmill_subscriptions` while a fresh connection of `windmill` still reaches its own database; when
@@ -905,7 +910,10 @@ the restore door seals them.
   `PASS roadmap: …`.
 - **The image**: `~/windmill/roadmap-engine.floor` names the commit the cutover ran from. While that file names a
   commit, **Deploy to VPS** refuses, before anything reaches the host, an `image_tag` that does not descend from it, a
-  rollback among them: an older image ignores the switch.
+  rollback among them: an older image ignores the switch. A deploy that keeps the backend's image
+  ([What a deploy replaces](#what-a-deploy-replaces)) runs every check here as one that replaces it: the floor is
+  checked against the `image_tag` dispatched, whose backend inputs the kept image was built from, and the kept server's
+  switch and `410` are checked after `up` like a new one's.
 - **The web**: Web Deploy reads the running server's switch before it builds, and builds `VITE_ROADMAP_REPLICA_ROOM` `on`
   or `off` from it, `on` in production; a pull request's build reaches no host and builds it off. Its preflight holds any
   release whose room the running server's is not, the cutover's own among them.
