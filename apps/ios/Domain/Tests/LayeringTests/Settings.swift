@@ -1,7 +1,7 @@
 // §2.4 item 3, the packages: tools 6.2 or later, language mode 6 only, every non-test target's settings exactly its row's.
 enum Settings {
   static let memberImportVisibility = ["enableUpcomingFeature(MemberImportVisibility)"]
-  static let memberImportVisibilityTargets: Set<String> = ["Agent", "DomainKit", "GymDomain", "JournalDomain", "SyncCore", "SyncAPI", "SyncSchema"]
+  static let memberImportVisibilityTargets: Set<String> = ["Agent", "DomainKit", "GymDomain", "JournalDomain", "RoadmapDomain", "SyncCore", "SyncAPI", "SyncSchema"]
   static let userInterface = ["defaultIsolation(MainActor)", "treatAllWarnings(error)", "treatWarning(DeprecatedDeclaration, warning)"]
   static let userInterfacePackage = "WindmillKit"
   static let minimumToolsVersion = [6, 2]
