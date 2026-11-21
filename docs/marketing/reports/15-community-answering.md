@@ -13,10 +13,12 @@ separate from ordinary reader referrals. [Roadmap invitation](11-roadmap-seed-tr
    engagement and leaves communities room to set their own rules.
    [Reddit spam policy](https://support.reddithelp.com/hc/en-us/articles/360043504051-Spam)
 2. Answer the question in a way someone can use without opening Windmill. Where an invitation is welcome,
-   disclose that you build the product, name the free task and the supported route. A founder posting in a
-   permitted builder feedback thread might write, “I build Windmill. If you're working on a first release, I
-   have a free starter tree you can adapt. Would you like to try it on your own project?”
-3. Respond personally to people who opt in. Use a bounded source label such as `builder_community`,
+   disclose that you build the product, name the free task and the supported route. A post for the product in a
+   permitted builder feedback thread might read, “This is the Windmill account, run by the people who build
+   it. If you're working on a first release, there is a free starter tree you can adapt. Would you like to
+   try it on your own project?” An agent drafts such a post and the owner approves it before it is sent. A
+   post under the owner's own name is his to write.
+3. Reply one by one to people who opt in. Use a bounded source label such as `builder_community`,
    `coach_intro` or `direct`. Keep participant names and message text out of campaign analytics. Do not send
    unsolicited bulk DMs.
 
