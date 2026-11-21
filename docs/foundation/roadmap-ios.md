@@ -6,7 +6,8 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified; nothing is built. The owner approved it on 2026-11-17; what it says of
+**Status:** Specified; the web's build ships the association file (§4), and nothing else is built.
+The owner approved it on 2026-11-17; what it says of
 quests, plans, Export, Share, the gallery and Activity follows the boards and has not been before
 the owner. The iPhone app carries journal and gym. Roadmap's design for it is
 [Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
@@ -353,7 +354,7 @@ makes it false.
 ## §13 Gaps this build closes
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
-  is on the web. Nothing serves an association file.
+  is on the web.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.

@@ -74,6 +74,7 @@ jobs:
           VITE_RELEASE: ${{ github.sha }}
           VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
           VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           VITE_ROADMAP_REPLICA_ROOM: on
         run: npm run build
 

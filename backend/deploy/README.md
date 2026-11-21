@@ -113,6 +113,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `AI_CARRY_KEY` | 32 random bytes encoded as unpadded base64url |
 | `AI_FUNDING_SECRET`, `AI_OPERATOR_SECRET` | Distinct 32–256 character bearer secrets; ASCII letters, digits, `_`, `-` |
 | `SUBSCRIPTIONS_DB_PASSWORD` | The subscription database role's password, 64 lowercase hex characters ([below](#the-subscription-database)) |
+| `APPLE_TEAM_ID` | The ten-character Apple team identifier, which the web build writes into the iPhone app's association file ([below](#frontend)) |
 
 **Variables** — same page → Variables:
 
@@ -966,6 +967,11 @@ The frontend is the `web/` half of this monorepo — a static Vite SPA, no conta
 `.github/workflows/web.yml` tests, builds, and rsyncs `dist/` into `~/windmill/web/` on a push to
 `main`; Caddy serves it at `DOMAIN_APP`, path-routes `/v1/stores/*` to `subscriptions` and the rest of
 `/v1`, `/mcp` and `/oauth` to `server`. One origin, so the build bakes in no API host.
+
+The build writes `.well-known/apple-app-site-association`, the file iOS reads before it opens a roadmap's link in the
+iPhone app ([Roadmap on iOS](../../docs/foundation/roadmap-ios.md) §4), from the secret `APPLE_TEAM_ID`, and the workflow
+holds a release that carries none before it reaches the host. Caddy serves the file as `application/json` with no
+redirect, through a pause too ([above](#pause-the-site)), and Web Smoke holds the live answer to what the build writes.
 
 `server` mounts that directory read-only as `WINDMILL_WEB_ROOT` to splice unfurl meta into the
 `/t/:id` share pages, and `embedder` mounts `web/models` for its weights. **On a fresh host, run the
