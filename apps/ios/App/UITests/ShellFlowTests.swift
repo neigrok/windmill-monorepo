@@ -132,7 +132,11 @@ import XCTest
     XCTAssertTrue(done.waitForHittable(timeout: 5))
     done.tap()
     XCTAssertTrue(done.waitForValue("Expanded", timeout: 5))
-    XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-step", "Build, Rig the boat")).firstMatch.waitForExistence(timeout: 5))
+    // The fixture completed its three steps in one moment of the board's clock, so their order in Done is not told, and
+    // the list draws only the rows on screen: any one of the three shows that Done opened.
+    let completed = NSPredicate(format: "identifier == %@ AND (label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@)",
+                                "roadmap-step", "Choose a sailing course", "Name the boat parts", "Rig the boat")
+    XCTAssertTrue(app.descendants(matching: .any).matching(completed).firstMatch.waitForExistence(timeout: 5))
     app.terminate()
     app.launchArguments = ["-board", "roadmap-learn-to-sail", "-restore-board", "-server", "https://offline.invalid", "-offline-fixture", "no-network"]
     app.launch()
