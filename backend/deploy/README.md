@@ -746,9 +746,12 @@ deleted when the rehearsal ends.
 
 ## Pause the site
 
-While `~/windmill/maintenance/on` exists, Caddy answers every request on both hosts, but an ACME challenge, with `503`,
-`Retry-After: 600`, `Cache-Control: no-store` and one sentence of plain text: *Windmill is down for a planned update and
-will be back shortly.* The Cloudflare gate still answers first, so a request from outside Cloudflare is refused `403`.
+While `~/windmill/maintenance/on` exists, Caddy answers every request on both hosts, but an ACME challenge and
+`/.well-known/apple-app-site-association`, with `503`, `Retry-After: 600`, `Cache-Control: no-store` and one sentence of
+plain text: *Windmill is down for a planned update and will be back shortly.* The association file is still served from
+the web directory, since Apple fetches it on its own schedule and a refused fetch shows only as a roadmap's link opening
+the browser; the API host holds no such file, and that path reaches `server` there. The Cloudflare gate still answers
+first, so a request from outside Cloudflare is refused `403`.
 Caddy mounts `~/windmill/maintenance` read-only and looks for the file on each request, so pausing and lifting need no
 reload, and a deploy that recreates Caddy finds the pause as it was. `deploy-production.sh` creates the folder and never
 the file. `test/deploy/caddyfile_routes_test.py` drives both states.
