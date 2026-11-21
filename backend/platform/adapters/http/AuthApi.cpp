@@ -1,3 +1,4 @@
+#include "platform/adapters/http/MutationPolicy.h"
 #include "platform/adapters/http/AuthApi.h"
 
 #include "platform/adapters/http/Caller.h"
@@ -236,21 +237,14 @@ AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> 
 
 bool AuthApi::allowAppleMutation(const drogon::HttpRequestPtr& req, HttpCallback& callback, bool jsonBody) {
   const bool cookies = !req->getHeader("cookie").empty() || !req->getCookie("wm_session").empty();
-  const auto& origin = req->getHeader("origin");
-  if ((cookies || !origin.empty()) && !allowedOrigins_.contains(origin)) {
+  const auto refusal = MutationPolicy{MutationHeaders::Compatible, cookies, jsonBody || cookies}.check(req, allowedOrigins_);
+  if (refusal == MutationRefusal::UntrustedOrigin) {
     callback(error(drogon::k403Forbidden, "untrusted origin", "untrusted-origin"));
     return false;
   }
-  if (jsonBody || cookies) {
-    std::string essence = req->getHeader("content-type").substr(0, req->getHeader("content-type").find(';'));
-    const auto first = essence.find_first_not_of(" \t");
-    const auto last = essence.find_last_not_of(" \t");
-    essence = first == std::string::npos ? "" : essence.substr(first, last - first + 1);
-    for (char& c : essence) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
-    if (essence != "application/json") {
-      callback(error(drogon::k415UnsupportedMediaType, "application/json required", "unsupported-media-type"));
-      return false;
-    }
+  if (refusal == MutationRefusal::UnsupportedMediaType) {
+    callback(error(drogon::k415UnsupportedMediaType, "application/json required", "unsupported-media-type"));
+    return false;
   }
   return true;
 }

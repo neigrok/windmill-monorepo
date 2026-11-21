@@ -91,10 +91,19 @@ pub enum Part {
     Image {
         image: Image,
     },
+    Picture {
+        image: Picture,
+    },
     ToolCall {
         #[serde(rename = "toolCall")]
         tool_call: ToolCall,
     },
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Picture {
+    pub picture: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -236,6 +245,18 @@ impl TextRequest {
                                     _ => decoded.starts_with(b"\xff\xd8\xff"),
                                 };
                                 if !signature {
+                                    return Err(invalid);
+                                }
+                            }
+                            Part::Picture { image } => {
+                                images += 1;
+                                if !matches!(message, Message::User { .. })
+                                    || images > 8
+                                    || !(22..=64).contains(&image.picture.len())
+                                    || !image.picture.bytes().all(|b| {
+                                        b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-')
+                                    })
+                                {
                                     return Err(invalid);
                                 }
                             }

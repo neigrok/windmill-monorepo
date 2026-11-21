@@ -11,12 +11,17 @@ import Synchronization
 public protocol ClientDevice {
   // A nil gesture is a read-and-commit that decides none: nothing is written and the outcome is nil.
   mutating func commit(_ gesture: Gesture?, in scope: ScopeRef, instance: Instance, identities: IdentitySource) throws -> CommitOutcome?
+  mutating func commitAct(_ segments: [ScopedGesture]?, undo: ActUndo?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome?
+  // K-3 Undo of an act (§7.3): an inverse request, its result, and an act's release.
+  mutating func requestInverse(_ actId: String, slots: [ActUndo.Segment]?, instance: Instance, identities: IdentitySource) throws -> InverseResult
+  func readInverseResult(_ requestId: String) throws -> InverseResult
+  mutating func releaseReversibleAct(_ actId: String) throws -> Bool
   mutating func release(_ localId: String) throws -> Bool
   mutating func releaseAll() throws
   mutating func releaseDue(at deviceNow: Int64) throws
   mutating func undo(_ gestureId: String) throws -> Bool
-  // D-17: the active replica's notice takes `dismissed`; a notice the replica does not hold throws.
-  mutating func dismiss(_ noticeId: String) throws
+  // D-17: the active replica's notice takes `dismissed`, true; a notice the replica does not hold is left alone, false.
+  mutating func dismiss(_ noticeId: String) throws -> Bool
   mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest?
   // One transaction of a push answer, on the active replica.
   mutating func apply(_ step: PushStep, instance: inout Instance, timing: Timing, identities: IdentitySource) throws
@@ -56,6 +61,7 @@ public struct PlannedDevice: ClientDevice {
   let pushes: PushPlanner
   let pages: PageApplier
   let lifecycle: ReplicaLifecycle
+  let inverses: Inverses
 
   public init(_ device: LoadedDevice, registry: Registry, limits: Limits, commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
               pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
@@ -65,6 +71,7 @@ public struct PlannedDevice: ClientDevice {
     pushes = PushPlanner(registry: registry, limits: limits, commandResultWrites: commandResultWrites)
     pages = PageApplier(registry: registry)
     lifecycle = ReplicaLifecycle(registry: registry, pendingDeviceWork: pendingDeviceWork)
+    inverses = Inverses(registry: registry)
   }
 
   public var events: [EngineEvent] { device.events }
@@ -79,6 +86,58 @@ public struct PlannedDevice: ClientDevice {
       }
       return try commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken)
     }
+  }
+
+  public mutating func commitAct(_ segments: [ScopedGesture]?, undo: ActUndo?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
+    let identities = UniqueGestureIDs(identities, carries: device.carries(gestureId:))
+    return try device.modify(device.active) { replica in
+      try commits.checkWritable(replica.meta)
+      guard let segments, !segments.isEmpty else { return nil }
+      var working = replica
+      let plan = try commits.undoPlan(undo, scopes: segments.map(\.scope), in: replica)
+      let gestureId = try identities.gestureID()
+      let firstOrder = replica.nextCommitOrder
+      let held = segments.contains { $0.gesture.hold }
+      var offset = 0
+      var receipts: [ActSegmentReceipt] = []
+      var retired: [String] = [], superseded: [String] = []
+      var wrote = false
+      for (index, item) in segments.enumerated() {
+        var gesture = item.gesture
+        gesture.gestureId = gestureId; gesture.hold = held
+        let before = working
+        let capture = plan?.opts(index) == true ? try commits.capture(for: gesture, in: item.scope) : nil
+        switch try commits.commit(gesture, in: item.scope, to: &working, as: instance, identities: identities,
+                                  gestureIdTaken: false, actOffset: offset, actFirstOrder: firstOrder, capture: capture) {
+        case .refused(let code, let detail, _): return .refused(segment: index, code: code, detail: detail)
+        case .committed(let receipt):
+          let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
+          if changed { wrote = true } else { working = before }
+          receipts.append(ActSegmentReceipt(scope: item.scope, stamp: changed ? receipt.stamp : nil, localIds: receipt.localIds, ids: receipt.ids))
+          offset += receipt.localIds.count
+          for id in receipt.retired where !retired.contains(id) { retired.append(id) }
+          for id in receipt.superseded where !superseded.contains(id) { superseded.append(id) }
+        }
+      }
+      guard wrote else { return nil }
+      try commits.record(act: gestureId, plan: plan, receipts: receipts, in: &working)
+      replica = working
+      return .committed(ActReceipt(gestureId: gestureId, segments: receipts, retired: retired, superseded: superseded,
+                                  releaseAt: held && offset > 0 ? instance.deviceNow + commits.limits.holdMs : nil))
+    }
+  }
+
+  public mutating func requestInverse(_ actId: String, slots: [ActUndo.Segment]?, instance: Instance, identities: IdentitySource) throws -> InverseResult {
+    let identities = UniqueGestureIDs(identities, carries: device.carries(gestureId:))
+    return try device.modify(device.active) { try inverses.request(actId, replacing: slots, in: &$0, as: instance, identities: identities) }
+  }
+
+  public func readInverseResult(_ requestId: String) throws -> InverseResult {
+    inverses.read(requestId, in: device.activeReplica)
+  }
+
+  public mutating func releaseReversibleAct(_ actId: String) throws -> Bool {
+    device.modify(device.active) { inverses.release(actId, in: &$0) }
   }
 
   public mutating func release(_ localId: String) throws -> Bool {
@@ -97,10 +156,8 @@ public struct PlannedDevice: ClientDevice {
     try device.modify(device.active) { try hold.undo(gestureId, in: &$0) }
   }
 
-  public mutating func dismiss(_ noticeId: String) throws {
-    guard device.modify(device.active, { $0.dismiss(notice: noticeId) }) else {
-      throw VectorError("\(noticeId) is not a notice of \(device.active)")
-    }
+  public mutating func dismiss(_ noticeId: String) throws -> Bool {
+    device.modify(device.active) { $0.dismiss(notice: noticeId) }
   }
 
   public mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest? {
@@ -194,6 +251,7 @@ public struct StepContext {
   var lastPush: PushRequest?
   var lastPull: (request: PullRequest?, replica: String)?
   var subscribed: [ScopeRef]?
+  var opened: [ScopeRef] = []
 
   public init(registry: Registry, identities: QueuedIdentities, actor: Stamp.Actor) {
     self.registry = registry
@@ -209,7 +267,9 @@ public enum ClientSteps {
   // step that throws a commit or transition error answers `{throws: true}` and leaves everything as it was.
   public static func run<Device: ClientDevice>(_ input: JSON, registry: Registry,
                                                device makeDevice: (LoadedDevice, Limits) throws -> Device) throws -> JSON {
-    let limits = Limits(pushMaxBytes: Int(try input["limits"]?["PUSH_MAX_BYTES"]?.asInteger() ?? Int64(Constants.pushMaxBytes)))
+    let limits = Limits(
+      pushMaxBytes: Int(try input["limits"]?["PUSH_MAX_BYTES"]?.asInteger() ?? Int64(Constants.pushMaxBytes)),
+      effectMaxBytes: Int(try input["limits"]?["EFFECT_MAX_BYTES"]?.asInteger() ?? Int64(Constants.effectMaxBytes)))
     var device = try makeDevice(try LoadedDevice(json: input.member("device"), registry: registry), limits)
     var context = StepContext(
       registry: registry, identities: try QueuedIdentities(input), actor: try Stamp.Actor(input["actor"]?.asString() ?? ClientSteps.actor))
@@ -225,12 +285,13 @@ public enum ClientSteps {
         returns.append(["throws": true])
       }
     }
+    let events = device.events.filter(\.isContract)
     var expect: JSON.Object = [
-      "returns": .array(returns), "device": try device.dump(), "ended": .array(device.events.filter(\.isEnded).map(\.json)),
+      "returns": .array(returns), "device": try device.dump(), "ended": .array(events.filter(\.isEnded).map(\.json)),
     ]
-    let telemetry = device.events.filter(\.isTelemetry)
+    let telemetry = events.filter(\.isTelemetry)
     if !telemetry.isEmpty { expect["telemetry"] = .array(telemetry.map(\.json)) }
-    let announced = device.events.filter { !$0.isEnded && !$0.isTelemetry }
+    let announced = events.filter { !$0.isEnded && !$0.isTelemetry }
     if !announced.isEmpty { expect["events"] = .array(announced.map(\.json)) }
     return .object(expect)
   }
@@ -249,6 +310,16 @@ public enum ClientSteps {
       let decided = step["changes"]?.isNull == true ? nil : try gesture(step)
       let outcome = try device.commit(decided, in: try ScopeRef(json: step.member("scope")), instance: instance, identities: identities)
       return outcome.map(json) ?? .null
+    case "commitAct":
+      let before = identities.snapshot()
+      let segments = try step["segments"].flatMap { value in
+        value.isNull ? nil : try value.asArray().map { item in ScopedGesture(scope: try ScopeRef(json: item.member("scope")), gesture: try gesture(item)) }
+      }
+      let undo = try step["opts"]?["undo"].map { (undo: JSON) throws -> ActUndo in try ActUndo(json: undo) }
+      let outcome = try device.commitAct(segments, undo: undo, instance: instance, identities: identities)
+      if outcome == nil { identities.restore(before) }
+      if case .refused? = outcome { identities.restore(before) }
+      return outcome.map(json) ?? .null
     case "release": return .bool(try device.release(step.member("localId").asString()))
     case "releaseAll":
       try device.releaseAll()
@@ -257,14 +328,19 @@ public enum ClientSteps {
       try device.releaseDue(at: deviceNow)
       return .null
     case "undo": return .bool(try device.undo(step.member("gestureId").asString()))
-    case "dismiss":
-      try device.dismiss(step.member("id").asString())
-      return .null
+    case "requestInverse":
+      let slots = try step["slots"].map { (slots: JSON) throws -> [ActUndo.Segment] in
+        try ActUndo(json: ["version": 1, "segments": slots]).segments
+      }
+      return try device.requestInverse(step.member("actId").asString(), slots: slots, instance: instance, identities: identities).json
+    case "readInverseResult": return try device.readInverseResult(step.member("requestId").asString()).json
+    case "releaseReversibleAct": return .bool(try device.releaseReversibleAct(step.member("actId").asString()))
+    case "dismiss": return .bool(try device.dismiss(step.member("id").asString()))
     case "push":
       context.lastPush = try device.push(limit: try step["limit"].map { Int(try $0.asInteger()) }, at: deviceNow)
       return context.lastPush?.json ?? .null
     case "pushResponse":
-      guard let request = context.lastPush else { throw VectorError("pushResponse without a push") }
+      guard let request = try context.lastPush ?? persistedPush(of: device.activeReplica()) else { throw VectorError("pushResponse without a push") }
       let limit = try receive(try answer(step, PushResponse.init(json:)), to: request, dieAfter: try step["dieAfter"]?.asInteger(),
                               on: &device, instance: &instance, timing: timing, context: context)
       return limit.map { ["limit": JSON($0)] } ?? .null
@@ -275,7 +351,13 @@ public enum ClientSteps {
       let backup: BackupCopy = try step["backupGuard"].map { $0.isNull ? .missing : .held(try $0.asString()) } ?? .notKept
       return json(try device.start(backup: backup, instance: &instance, identities: identities))
     case "pull":
-      let request = try device.pullRequest(try step.member("scopes").asArray().map { try ScopeRef(json: $0) })
+      let scopes: [ScopeRef]
+      if let given = step["scopes"] { scopes = try given.asArray().map { try ScopeRef(json: $0) } }
+      else {
+        scopes = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened)))
+        context.subscribed = scopes
+      }
+      let request = try device.pullRequest(scopes)
       context.lastPull = (request, try device.activeReplica().id)
       return request?.json ?? .null
     case "pullResponse":
@@ -290,16 +372,31 @@ public enum ClientSteps {
       return .string(try device.apply(frame, subscribed: subscribed, instance: instance).rawValue)
     case "subscribe":
       let scope = try ScopeRef(json: step.member("scope"))
-      if let subscribed = context.subscribed, !subscribed.contains(scope) { context.subscribed = subscribed + [scope] }
       let outcome = try device.subscribe(scope)
+      if outcome == .subscribed {
+        if !context.opened.contains(scope) { context.opened.append(scope) }
+        if let subscribed = context.subscribed {
+          let added = try ReplicaLifecycle(registry: context.registry).subscriptionSet(
+            of: device.activeReplica(), .own(Subscriptions(products: [], opened: [scope])))
+          context.subscribed = subscribed + added.filter { !subscribed.contains($0) }
+        }
+      }
       return outcome == .gone ? .string(outcome.rawValue) : .null
+    case "unsubscribe":
+      let scope = try ScopeRef(json: step.member("scope"))
+      context.opened.removeAll { $0 == scope }
+      context.subscribed = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened)))
+      return .null
+    case "subscriptions":
+      return .array(try ReplicaLifecycle(registry: context.registry).subscriptionSet(
+        of: device.activeReplica(), .own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened))).map(\.json))
     case "reconcile":
       if let scopes = step["scopes"] {
         let given = try scopes.asArray().map { try ScopeRef(json: $0) }
         _ = try device.reconcile(.given(given))
         context.subscribed = given
       } else {
-        context.subscribed = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: [])))
+        context.subscribed = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: context.opened)))
       }
       return .null
     case "signIn":
@@ -344,6 +441,14 @@ public enum ClientSteps {
     case let op:
       throw VectorError("unknown step \(op)")
     }
+  }
+
+  // The push a persisted queue's sent entries were numbered into before the steps began, which a first `pushResponse`
+  // answers; nil when the replica holds none.
+  static func persistedPush(of replica: LoadedReplica) -> PushRequest? {
+    let sent = replica.outbox.filter { $0.state == .sent }.sorted { $0.n! < $1.n! }
+    guard !sent.isEmpty, let account = replica.meta.account else { return nil }
+    return PushRequest(replica: replica.meta.replica, account: account, ackThrough: replica.meta.ackThrough, intents: sent.map(\.intent))
   }
 
   // A push answer, one result a batch, the process dying once `dieAfter` results are recorded; answers a halved batch.
@@ -432,6 +537,11 @@ public enum ClientSteps {
       supersede: try opts["supersede"]?.asArray().map { try $0.asString() } ?? [],
       command: try opts["cmd"].map { try Command(json: $0) },
       predict: try opts["predict"]?.asArray().map { try change($0, prediction: true) } ?? [],
+      scopedPredict: try opts["scopedPredict"]?.asArray().map { group in
+        try group.asObject().expectKeys(required: ["scope", "changes"])
+        return ScopedPrediction(scope: try ScopeRef(json: group.member("scope")),
+                                changes: try group.member("changes").asArray().map { try change($0, prediction: true) })
+      } ?? [],
       local: try (opts["local"]?.asObject().members ?? []).map { DeviceWrite(key: $0.key, value: $0.value.isNull ? nil : $0.value) },
       gestureId: try opts["gestureId"]?.asString())
   }
@@ -467,6 +577,21 @@ public enum ClientSteps {
   }
 
   // MARK: Answers in the corpus's form
+
+  public static func json(_ outcome: ActCommitOutcome) -> JSON {
+    switch outcome {
+    case .refused(let segment, let code, let detail):
+      var result: JSON.Object = ["refused": code.json, "segment": JSON(segment)]
+      if let detail { result["detail"] = detail }
+      return .object(result)
+    case .committed(let receipt):
+      return ["gestureId": .string(receipt.gestureId), "segments": .array(receipt.segments.map { item in
+        ["scope": item.scope.json, "stamp": item.stamp?.json ?? .null, "localIds": .array(item.localIds.map(JSON.string)),
+         "ids": .array(item.ids.map { $0?.json ?? .null })]
+      }), "retired": .array(receipt.retired.map(JSON.string)), "superseded": .array(receipt.superseded.map(JSON.string)),
+        "releaseAt": receipt.releaseAt.map(JSON.init) ?? .null]
+    }
+  }
 
   public static func json(_ outcome: CommitOutcome) -> JSON {
     switch outcome {
@@ -632,11 +757,5 @@ public struct VectorError: Error, CustomStringConvertible {
 
   public init(_ description: String) {
     self.description = description
-  }
-}
-
-extension JSON {
-  public func nullable<Value>(_ decode: (JSON) throws -> Value) rethrows -> Value? {
-    isNull ? nil : try decode(self)
   }
 }

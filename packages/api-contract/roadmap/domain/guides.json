@@ -1,0 +1,307 @@
+[
+  {
+    "name": "Own guide keeps a place among the nearest eight with byte ties",
+    "input": {
+      "operation": "guides",
+      "trees": [
+        {"id": "T", "present": true, "read": "loaded", "parent": null, "meta": {"title": "T", "guide": "own", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"}, "nodes": [], "edges": [], "kinds": [], "marks": [], "pointers": []},
+        {
+          "id": "G0",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G0", "guide": "G0", "guideInherited": true, "root": "G0", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G1",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G1", "guide": "G1", "guideInherited": false, "root": "G1", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G2",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G2", "guide": "G2", "guideInherited": false, "root": "G2", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G3",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G3", "guide": "G3", "guideInherited": false, "root": "G3", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G4",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G4", "guide": "G4", "guideInherited": false, "root": "G4", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G5",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G5", "guide": "G5", "guideInherited": false, "root": "G5", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G6",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G6", "guide": "G6", "guideInherited": false, "root": "G6", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G7",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G7", "guide": "G7", "guideInherited": false, "root": "G7", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        },
+        {
+          "id": "G8",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "G8", "guide": "G8", "guideInherited": false, "root": "G8", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "T"}]
+        }
+      ],
+      "tree": "T"
+    },
+    "expect": [
+      {"tree": "G0", "title": "G0", "text": "G0", "own": false},
+      {"tree": "G1", "title": "G1", "text": "G1", "own": true},
+      {"tree": "G2", "title": "G2", "text": "G2", "own": true},
+      {"tree": "G3", "title": "G3", "text": "G3", "own": true},
+      {"tree": "G4", "title": "G4", "text": "G4", "own": true},
+      {"tree": "G5", "title": "G5", "text": "G5", "own": true},
+      {"tree": "G6", "title": "G6", "text": "G6", "own": true},
+      {"tree": "T", "title": "T", "text": "own", "own": true}
+    ]
+  },
+  {
+    "name": "Nearest guides are selected before farthest-first display",
+    "input": {
+      "operation": "guides",
+      "trees": [
+        {
+          "id": "C0",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C0", "guide": "C0", "guideInherited": false, "root": "C0", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C1"}]
+        },
+        {
+          "id": "C1",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C1", "guide": "C1", "guideInherited": false, "root": "C1", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C2"}]
+        },
+        {
+          "id": "C2",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C2", "guide": "C2", "guideInherited": false, "root": "C2", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C3"}]
+        },
+        {
+          "id": "C3",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C3", "guide": "C3", "guideInherited": false, "root": "C3", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C4"}]
+        },
+        {
+          "id": "C4",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C4", "guide": "C4", "guideInherited": false, "root": "C4", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C5"}]
+        },
+        {
+          "id": "C5",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C5", "guide": "C5", "guideInherited": false, "root": "C5", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C6"}]
+        },
+        {
+          "id": "C6",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C6", "guide": "C6", "guideInherited": false, "root": "C6", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C7"}]
+        },
+        {
+          "id": "C7",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C7", "guide": "C7", "guideInherited": false, "root": "C7", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C8"}]
+        },
+        {
+          "id": "C8",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C8", "guide": "C8", "guideInherited": false, "root": "C8", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "C9"}]
+        },
+        {
+          "id": "C9",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "C9", "guide": "C9", "guideInherited": false, "root": "C9", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "tree": "C9"
+    },
+    "expect": [
+      {"tree": "C2", "title": "C2", "text": "C2", "own": true},
+      {"tree": "C3", "title": "C3", "text": "C3", "own": true},
+      {"tree": "C4", "title": "C4", "text": "C4", "own": true},
+      {"tree": "C5", "title": "C5", "text": "C5", "own": true},
+      {"tree": "C6", "title": "C6", "text": "C6", "own": true},
+      {"tree": "C7", "title": "C7", "text": "C7", "own": true},
+      {"tree": "C8", "title": "C8", "text": "C8", "own": true},
+      {"tree": "C9", "title": "C9", "text": "C9", "own": true}
+    ]
+  }
+]

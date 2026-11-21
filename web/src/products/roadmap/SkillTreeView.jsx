@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './skilltree.css';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
+import { readNavigation, requestNavigation, updateNavigationState } from '../../shell/navigation.js';
 import { Button, ErrorBoundary } from '../../design-system';
 import { track } from '../../telemetry/beacon.js';
 import { ActivityPanel } from './activity/ActivityRows.jsx';
@@ -12,18 +13,23 @@ import { useActivity } from './activity/useActivity.js';
 import { BoardQuery } from './board/Board.js';
 import { BoardToast } from './board/BoardToast.jsx';
 import BoardView from './board/BoardView.jsx';
+import { HeldDeletion } from './identity/HeldDeletion.js';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './identity/RoadmapIdentity.jsx';
 import { GuideEntry } from './guide/GuideEntry.jsx';
 import { GuideNote } from './guide/GuideNote.jsx';
 import { useRoomGuide } from './guide/useGuide.js';
 import { StepComposer } from './step/StepComposer.jsx';
+import { useStepDraft } from './step/StepDraftProvider.jsx';
+import { useInlineStepEditor, UnavailableStepDraft } from './step/InlineStepEditor.jsx';
+import { SkillTree } from './model/SkillTree.js';
+import { makeRenderable } from './model/renderableGraph.js';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
 import { deletable, takesEveryRoot } from './board/acts.js';
-import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast } from './copy.js';
+import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast, landingNote } from './copy.js';
 import { t } from './i18n/index.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
-import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
+import { useBoardActs } from './board/useBoardActs.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { COACHED_NODE_ID } from './demo/demoStage.js';
 import { useDemoCoach } from './demo/useDemoCoach.js';
@@ -39,6 +45,7 @@ import { listDeviceTrees, readDeviceTreeCard } from './sync/localTrees.js';
 import { reportRoadmapFailure } from './reportFailure.js';
 import { toastSeat, useRoadmapToast } from './room/useRoadmapToast.js';
 import { useRoomAuthority, useRoomHolder } from './room/useRoomAuthority.js';
+import { Landed, useRoomLanding } from './room/useRoomLanding.js';
 import { useRoomLoad } from './room/useRoomLoad.js';
 import { useRoomProgress } from './room/useRoomProgress.js';
 import { useRoomScene } from './room/useRoomScene.js';
@@ -74,14 +81,17 @@ import { frontierTarget } from './graph/viewport.js';
 
 const handle = () => ({ current: null });
 // What the seams reach for after render: the live objects, the chrome's DOM, and what the camera has been asked to frame.
-const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), viewRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
+const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), replicaRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), viewRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
 const chromeAnchors = () => ({ canvasRef: handle(), rootRef: handle(), identityRef: handle(), boardLayerRef: handle(), legendDockRef: handle() });
 const cameraFraming = () => ({ insetsRef: handle(), firstFrameRef: handle(), graphRevealRef: handle() });
 
 const leavesWithItsView = (toast) => toast.surface === 'board' || toast.surface === 'graph';
 
-export function SkillTreeView({ treeId, demo = false }) {
+// `replica` reads the roadmap from the device's copy through the sync engine (room/ReplicaReading.js); the route table
+// turns it on only where the build says so.
+export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const openSignInDoor = useSignInDoor();
+  const draftHost = useStepDraft();
   const { breakpoint, shared } = useViewMode();
   const { status, refresh, account, confirmed: accountConfirmed, lapsed: sessionLapsed } = useAuth();
   const [room] = useState(roomHandles);
@@ -94,7 +104,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // Who is looking, and what this device keeps for them.
   const knownReaderRef = useRef(false);
-  const { lapsed, demotion, setDemotion, claims } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
+  const { lapsed, demotion, setDemotion, claims, sharedWritesAllowed } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
   const placeKept = !shared && breakpoint === 'desktop';
   const desktopEditorRef = useRef(false);
   const phone = breakpoint === 'phone';
@@ -105,10 +115,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { toast, showToast, toastShown, pauseToast, dismissToast, dismissToastIf, runToastAction } = useRoadmapToast();
   const legendKit = useLegend(room);
   const { legend, legendRef, highlightedKindId, highlightedKindIdRef, clearHighlightedKind } = legendKit;
-  const { workspaceByNode, hydrateWorkspaces, pushArcs, ...workspaceActions } = useWorkspace(room);
+  const { workspaceByNode, hydrateWorkspaces, adoptWorkspaces, pushArcs, ...workspaceActions } = useWorkspace(room);
   const activity = useActivity({ sceneRef, selectedId });
   const { emit, ticker, feedVisible, feedSummonedRef, closeActivity } = activity;
-  const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
+  const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status, replica });
   // What the history entry said of a tree visit as the room opened: a return to it is a step reached by going back.
   const [arrival] = useState(readTreeVisit);
   const stepAddress = useStepAddress(arrival.through === null ? 'link' : 'back');
@@ -130,15 +140,17 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The canvas, then the tree it draws.
   const { scene, graphAvailability, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, onNodeActivate: activateGraphNode, showToast });
   const graphUnavailable = graphAvailability === 'unavailable';
+  const landing = useRoomLanding({ room, treeId });
   const load = useRoomLoad({
-    treeId, accountId: account?.id ?? null, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
-    legend: legendKit, workspace: { hydrateWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
+    treeId, accountId: account?.id ?? null, demo, shared, demotion, replica, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
+    legend: legendKit, workspace: { hydrateWorkspaces, adoptWorkspaces, pushArcs }, selection, showToast, dismissToast, desktopEditorRef,
     onRemoteProgress: (remote) => {
       const said = progressActs.adoptRemote(remote);
       if (!said) return;
       if (view.boardActive) showToast(said);
       else sceneRef.current?.announceCeremony(said);
     },
+    onLanding: landing.adopt,
   });
   const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace } = load;
   placeRef.current = treePlace;
@@ -178,8 +190,8 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims });
-  const treeVisit = useTreeVisit({ room, arrival, holder, visitor: !demo && !owner, place: treePlace, route: shared ? '#/t/' : '#/app/', role: loading ? null : who.role, band: breakpoint });
+  const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims, replica });
+  const treeVisit = useTreeVisit({ room, arrival, holder, heldCard: load.card, visitor: !demo && !owner, place: treePlace, route: shared ? '#/t/' : '#/app/', role: loading ? null : who.role, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
   room.viewRef.current = shownView;
@@ -195,6 +207,13 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     if (decidedView === null || !load.takeForkNote()) return;
     showToast(forkedToast({ count: tree.nodes.length }), { surface: decidedView === 'board' ? 'board' : 'graph', act: 'fork' });
+  }, [decidedView]);
+  // An Undo of this roadmap's deletion returns here, which says so once its view stands, and once (flow 51).
+  const [undoneDeletion] = useState(() => HeldDeletion.of(readNavigation().state));
+  useEffect(() => {
+    if (decidedView === null || !undoneDeletion?.undone || undoneDeletion.treeId !== treeId) return;
+    showToast(t('roadmap.deletion.undone'), { surface: decidedView === 'board' ? 'board' : 'graph', act: 'notice' });
+    updateNavigationState(HeldDeletion.without);
   }, [decidedView]);
 
   // The Board's query, its acts and what a held delete projects.
@@ -213,7 +232,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [boardOverall, setBoardOverall] = useState(null);
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
-  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef });
+  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef, replica, held: load.guides });
   const guideView = boardActive ? 'board' : 'graph';
   const guideEntry = guide && !boardAwaitsRoadmap ? (
     <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>
@@ -225,7 +244,17 @@ export function SkillTreeView({ treeId, demo = false }) {
     else sceneRef.current?.revealNode(id);
     setSelectedId(id);
   }, [setSelectedId]);
+  const readEditAuthority = () => {
+    const session = sessionRef.current;
+    const currentSession = !loading && session?.treeId === treeId && !session.closed ? session : null;
+    const ready = Boolean(currentSession?.ready);
+    const currentTree = currentSession ? new SkillTree(makeRenderable(currentSession.treeData()).tree) : null;
+    const onDevice = holder?.place === 'device' && (replica || new LocalTreeRegistry().onDevice(treeId) !== null);
+    const editable = owner && sharedWritesAllowed() && (onDevice || session?.reach !== 'reader') && !session?.closed;
+    return { tree: currentTree, ready, editable, session, savingBlocked: !ready || Boolean(session?.rebaselining || session?.discardPending) };
+  };
   const { held: boardHeld, acts: boardActs } = useBoardActs({
+    readEditAuthority, readInlineDraft: () => draftHost?.store.getSnapshot()?.draft,
     active: boardActive, graphActive: canvasView, owner, treeId, tree,
     progress, query: boardQuery, session: sessionRef.current,
     completeStep: (id, options) => progressActs.complete(id, { ...options, tree: boardTree }),
@@ -244,13 +273,14 @@ export function SkillTreeView({ treeId, demo = false }) {
     track, emit, report: reportRoadmapFailure,
   });
   // Attaching, changing and detaching the tree a step opens: the holder's, while the session can take a write, among the
-  // trees where the holder's lives (the server's, or this device's). A chosen tree's row stands at once from what the
-  // picker knew of it, and a read the server refuses for want of a session is the room's lapse, as a refused write is.
+  // trees where the holder's lives (the device's copy where the room reads it, else the server's or this device's). A
+  // chosen tree's row stands at once from what the picker knew of it, and a read the server refuses for want of a
+  // session is the room's lapse, as a refused write is.
+  const pickerTrees = load.heldTrees
+    ?? (holder?.place === 'device' ? { list: listDeviceTrees, read: readDeviceTreeCard } : { list: listServerTrees, read: readTreeCard });
   const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining ? {
     view: boardActive ? 'board' : 'graph',
-    trees: holder.place === 'device'
-      ? { place: 'device', signedIn: status === 'signed-in', list: listDeviceTrees, read: readDeviceTreeCard }
-      : { place: 'account', list: listServerTrees, read: readTreeCard },
+    trees: holder.place === 'device' ? { place: 'device', signedIn: status === 'signed-in', ...pickerTrees } : { place: 'account', ...pickerTrees },
     set: (id, chosen) => {
       if (chosen) load.knowTree(id, chosen);
       return boardActs.setTree(id, chosen?.id ?? '');
@@ -294,18 +324,27 @@ export function SkillTreeView({ treeId, demo = false }) {
     onGraphStepOpen: () => { framing.firstFrameRef.current = null; },
   });
   const { detailId, focusLayer } = stepPage;
+  const inlineEditor = useInlineStepEditor({ treeId, tree: boardTree, owner, loading, readAuthority: readEditAuthority,
+    acts: boardActs, legend, completed, stepId: stepAddress.id });
   const shownDetailId = detailId !== null && boardTree?.nodesById.has(detailId) ? detailId : null;
   const newStepFromBoard = useCallback((door = 'verbs') => {
     if (!owner) return;
     setBoardComposer({ door, view: boardActive ? 'board' : 'tree', opener: document.activeElement });
     track('roadmap_board_create', { step: 'open', door, view: boardActive ? 'board' : 'graph' });
   }, [boardActive, owner]);
-  const composerDoor = new BoardComposer({ view: canvasView ? 'tree' : 'board', owner, detailId: shownDetailId, composer: boardComposer, acts: boardActs, onOpen: setBoardComposer });
-  const shownComposer = composerDoor.shown;
+  const shownComposer = owner && boardComposer?.view === (canvasView ? 'tree' : 'board') ? boardComposer : null;
   if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
   const stepCovering = detailId !== null || boardComposer !== null;
+  // The owner's landing lines (only their own roadmap's reading has any) on the Board, which says one is shown only while
+  // it stands uncovered, and on the open step's page.
+  const boardLanded = useMemo(() => ({
+    lines: landing.lines,
+    shown: boardActive && !stepCovering ? (step) => landing.shown(step, 'board') : null,
+  }), [landing, boardActive, stepCovering]);
+  const detailLanded = landing.lines.has(shownDetailId) ? landingNote(landing.lines.get(shownDetailId)) : null;
   activationRef.current = (id) => {
     if (!canvasView || stepCovering || selection.multiMode || tablet.aim || !boardTree?.nodesById.has(id)) return;
+    sceneRef.current?.claimActivationClick?.();
     stepPage.openFromGraph(id);
   };
   useEffect(() => {
@@ -330,6 +369,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const verbs = useRowVerbs({
     treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable, address: stepAddress,
     graphStepReturnRef: stepPage.graphStepReturnRef, anchors, room, revealOnGraph, setSelectedId, setShareOpen, showToast,
+    listTrees: load.listTrees,
   });
   const legendWithCounts = useMemo(() => withCounts(legend, tree?.nodes ?? []), [legend, tree]);
   const legendVisible = useMemo(() => inUseCount(legend, tree?.nodes ?? []) >= 2, [legend, tree]) || legendKit.legendForceOpen;
@@ -419,6 +459,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (breakpoint !== 'tablet' || !boardActive || !loadError || shared || demo) return null;
     if (status === 'signed-in' && account?.id) return { place: 'account' };
     if (status !== 'ghost') return null;
+    if (replica) return load.card(treeId) ? { place: 'device' } : null;
     try {
       return new LocalTreeRegistry().readList(null).some((row) => row.id === treeId && !row.claimed) ? { place: 'device' } : null;
     } catch (error) {
@@ -445,7 +486,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         style={boardActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
       />
 
-      {desktopEditor && (
+      {desktopEditor && !replica && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} sessionRef={sessionRef} selection={selectedId} />
       )}
 
@@ -464,7 +505,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             loading={boardAwaitsRoadmap && !loadError}
             back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap && !inSubtree ? <TreeSwitcher {...verbs.switcher} /> : null}
-            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place}
+            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place} listHeld={load.heldTrees?.list ?? null}
               onPickTree={verbs.identitySheet.onPickTree} onNew={verbs.identitySheet.onNewRoadmap} onBrowse={verbs.identitySheet.onBrowse} />}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
@@ -493,6 +534,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       {view.boardMounted && (
         <div ref={boardLayerRef} className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
           <ErrorBoundary fallback={graphUnavailable ? undefined : null} onCrash={crashBoard}>
+            <Landed.Provider value={boardLanded}>
             <BoardView
               tree={boardTree}
               completed={completed}
@@ -531,6 +573,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onQuery={setBoardQuery}
               legend={legend}
             />
+            </Landed.Provider>
           </ErrorBoundary>
           {boardActive && activityPanel}
         </div>
@@ -681,7 +724,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         <ForkDoor open={forkOpen} presentation={phone ? 'sheet' : 'dialog'} treeId={treeId} signedIn={status === 'signed-in'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 
-      {demo && coachAllowed && scene && canvasView && (
+      {demo && coachAllowed && scene && canvasView && tree && (
         <CoachChip
           scene={scene}
           nodeId={COACHED_NODE_ID}
@@ -738,6 +781,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         title={tree?.title ?? ''}
         subtrees={tree?.nodes.some((step) => step.opening?.owned) ?? false}
         onStanceChange={setTreeVisibility}
+        writeVisibility={replica ? (id, visibility) => sessionRef.current.setVisibility(visibility) : undefined}
       />
 
       {loading && !loadError && !boardActive && <div className="st-loading"><span className="st-loading-msg">{GRAPH_LOAD.planting}</span></div>}
@@ -758,7 +802,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {shownDetailId !== null && (
+      {inlineEditor?.unavailable && <UnavailableStepDraft editor={inlineEditor} phone={phone} onClose={inlineEditor.host.cancel} />}
+      {shownDetailId !== null && !inlineEditor?.unavailable && (
         <ErrorBoundary fallback={null} onCrash={stepPage.crash}>
           <StepDetail
             tree={boardTree}
@@ -769,9 +814,11 @@ export function SkillTreeView({ treeId, demo = false }) {
             roadmapTitle={tree.title}
             editable={owner}
             refusal={refusal}
+            landed={detailLanded}
+            onLandedShown={() => landing.shown(shownDetailId, 'step')}
             progressBlocked={Boolean(syncSnapshot?.progressBlocked)}
             deletable={deletable(boardTree, [detailId])}
-            onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
+            inlineEditor={owner ? inlineEditor : null}
             treeActs={treeActs}
             stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
             kindLabel={legend.find((kind) => kind.hue === boardTree.nodesById.get(detailId)?.color)?.label}
@@ -792,8 +839,14 @@ export function SkillTreeView({ treeId, demo = false }) {
             onViewBranch={stepPage.viewBranch}
             onDelete={stepPage.deleteStep}
             onDeletePrompt={(step) => boardActs.deletePrompt(step)}
-            onAddStep={tabletEditor ? (id) => { stepAddress.close(); tablet.addStepUnder(id); } : undefined}
-            onConnect={tabletEditor ? (id) => { stepAddress.close(); tablet.enterAim(id); } : undefined}
+            onAddStep={tabletEditor ? (id) => requestNavigation({ key: `step:add:${id}`, run: async (tx) => {
+              if (await stepAddress.close(tx) === false) return;
+              tablet.addStepUnder(id);
+            } }) : undefined}
+            onConnect={tabletEditor ? (id) => requestNavigation({ key: `step:connect:${id}`, run: async (tx) => {
+              if (await stepAddress.close(tx) === false) return;
+              tablet.enterAim(id);
+            } }) : undefined}
             onNotify={showToast}
           />
         </ErrorBoundary>
@@ -805,8 +858,8 @@ export function SkillTreeView({ treeId, demo = false }) {
           setBoardComposer(null);
           focusLayer();
         }}>
-          <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
-            editing={shownComposer.editing ?? null} savingBlocked={Boolean(syncSnapshot?.rebaselining)} onEdit={(request) => composerDoor.saveEdit(request)}
+          <StepComposer key="create" tree={boardTree} completed={completed} legend={legend} band={breakpoint}
+            savingBlocked={Boolean(syncSnapshot?.rebaselining)}
             onCreate={(request) => boardActs.create(request)} onClose={() => setBoardComposer(null)} />
         </ErrorBoundary>
       )}

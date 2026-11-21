@@ -36,7 +36,7 @@ export function usePages() {
     staged.current = null;
     const save = () => {
       if (engine.activeReplica() !== writing.replica) throw new Error('journal-replica-changed');
-      const retained = engine.device.activeReplica.deviceRows('journal')[EditorDraft.key];
+      const retained = engine.readDeviceRows('journal')[EditorDraft.key];
       let priorDraft = writing.priorDraft ?? null;
       if (priorDraft && previous?.saved && !retained) priorDraft = null;
       const previousDocument = previous && { body: previous.doc.body, mood: previous.doc.mood, energy: previous.doc.energy, source: previous.doc.source };
@@ -75,7 +75,7 @@ export function usePages() {
   const change = useCallback((field, value) => {
     if (!engine || !session.ready) return;
     const previous = drafts.current.get(records.replica);
-    const retained = engine.device.activeReplica.deviceRows('journal')[EditorDraft.key];
+    const retained = engine.readDeviceRows('journal')[EditorDraft.key];
     const destination = pagesOf(engine).find((page) => page.day === today) ?? held;
     const current = previous && !previous.saved && !previous.recovered ? previous.doc
       : retained && retained.day !== today ? { day: retained.day, ...retained.document } : destination;
@@ -92,7 +92,7 @@ export function usePages() {
   useEffect(() => {
     if (!engine || !session.ready) return;
     let writing = drafts.current.get(records.replica);
-    const retained = engine.device.activeReplica.deviceRows('journal')[EditorDraft.key];
+    const retained = engine.readDeviceRows('journal')[EditorDraft.key];
     if (writing?.recovered && writing.recovered !== retained) {
       drafts.current.delete(records.replica);
       writing = null;
@@ -124,9 +124,9 @@ export function usePages() {
     };
   }, [flush]);
   const hasPending = engine?.device.activeReplica.entries(SCOPE).length > 0
-    || Object.keys(engine?.device.activeReplica.deviceRows('journal') ?? {}).some((key) => key.startsWith('pendingClaim:'));
+    || Object.keys(engine?.readDeviceRows('journal') ?? {}).some((key) => key.startsWith('pendingClaim:'));
   const room = engine && session.ready ? journalRoom(engine, records) : null;
-  const retainedDraft = engine?.device.activeReplica.deviceRows('journal')[EditorDraft.key];
+  const retainedDraft = engine?.readDeviceRows('journal')[EditorDraft.key];
   const retireScales = () => {
     if (engine && session.ready) retireInvitation(engine, 'scales', records.replica)
       .catch(() => captureError('journal', 'journal-invitation', '', '/journal'));

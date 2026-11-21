@@ -219,6 +219,7 @@ async fn service(
             )
         }),
         results: Results::default(),
+        pictures: ai_server::pictures::Pictures::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
         provider_health: ai_server::telemetry::ProviderHealth::default(),

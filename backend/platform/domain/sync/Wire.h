@@ -121,6 +121,10 @@ struct Limits {
   std::size_t maxRecordBytes = 1'048'576;
   std::size_t pushMaxIntents = 64;
   std::size_t pushMaxBytes = 2'097'152;
+  // Generated canonical effect bytes, shared across every scope; independent of input body size.
+  std::size_t effectMaxBytes = 67'108'864;
+  std::size_t receiptMaxBytes = 67'108'864;
+  std::size_t scopedResponseMaxBytes = 71'303'168;
   Ms pushWorkMs = 50;
   std::size_t pullPageBytes = 1'048'576;
   std::size_t pullMaxScopes = 64;

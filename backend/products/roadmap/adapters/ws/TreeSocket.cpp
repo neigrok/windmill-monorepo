@@ -2,6 +2,10 @@
 
 #include "products/roadmap/adapters/ws/Collab.h"
 
+#include <drogon/HttpAppFramework.h>
+
+#include <memory>
+
 namespace wm {
 
 void TreeSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
@@ -18,6 +22,6 @@ void TreeSocket::handleConnectionClosed(const drogon::WebSocketConnectionPtr& co
   if (collab()) collab()->onClose(conn);
 }
 
-void linkTreeSocket() {}
+void installTreeSocket() { drogon::app().registerController(std::make_shared<TreeSocket>()); }
 
 }

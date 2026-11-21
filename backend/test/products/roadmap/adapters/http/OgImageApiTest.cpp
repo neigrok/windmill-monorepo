@@ -46,7 +46,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
 
-  OgImageApi make() { return OgImageApi{images, rooms, auth}; }
+  OgImageApi make() { return OgImageApi{images, rooms, auth, nullptr}; }
 
   UserId signIn(const std::string& sessionSecret, const std::string& emailAddr = "sam@example.com") {
     User user = authRepo.createUser(Email{emailAddr}, "sam");

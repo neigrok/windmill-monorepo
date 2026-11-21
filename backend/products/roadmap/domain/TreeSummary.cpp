@@ -26,11 +26,11 @@ TreeStats treeStats(const TreeData& tree, const Progress& progress) {
   }
 
   // A tie for most-worn breaks to the root's color — the smallest-id node with no
-  // prerequisites, else the smallest-id node (nodes arrive id-sorted from the projection).
-  const NodeSpec* root = &tree.nodes.front();
-  for (const NodeSpec& node : tree.nodes)
-    if (node.prerequisites.empty()) { root = &node; break; }
-  stats.dominantKind = root->color;
+  // prerequisites, else the smallest-id node, in whatever order the nodes arrive.
+  const auto rootBefore = [](const NodeSpec& a, const NodeSpec& b) {
+    return std::pair(!a.prerequisites.empty(), a.id) < std::pair(!b.prerequisites.empty(), b.id);
+  };
+  stats.dominantKind = std::min_element(tree.nodes.begin(), tree.nodes.end(), rootBefore)->color;
   return stats;
 }
 

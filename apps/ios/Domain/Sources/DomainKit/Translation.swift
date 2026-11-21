@@ -11,6 +11,7 @@ extension Plan {
     }
     try checkOneOperationPerRecord(registry)
     try checkHeldPlan()
+    let predicted = try predicted(in: scope, registry)
     return Gesture(
       changes: changes,
       atomic: changes.count > 1,
@@ -19,7 +20,8 @@ extension Plan {
       retire: retire(registry),
       supersede: supersededGestures,
       command: command,
-      predict: try predicted(registry),
+      predict: predicted.origin,
+      scopedPredict: predicted.scoped,
       local: deviceWrites)
   }
 
@@ -50,7 +52,7 @@ extension Plan {
     for operation in operations {
       let definition = registry.type(operation.entity.type)
       switch operation.kind {
-      case .update(let named, _, true):
+      case .update(let named, _, true), .revive(let named, _, true):
         guards += named.filter { definition?.field($0)?.kind.isLattice == true }
           .map { RegisterRef(type: operation.entity.type, id: operation.recordID(in: registry), field: $0) }
       case .guardRead(let fields):
@@ -78,23 +80,32 @@ extension Plan {
     }
   }
 
-  // Rule 5: every prediction is of a type the command's registry entry predicts.
-  func predicted(_ registry: Registry) throws(PlanError) -> [Change] {
-    var changes: [Change] = []
+  // Rule 5: every prediction is of a type the command's registry entry predicts, in a scope that holds it, and a scope
+  // other than the plan's needs a command with scoped effects (engine E-7). With any other scope, every prediction goes in
+  // `scoped`, grouped by scope, the plan's own first and the rest by bytes, each in the plan's order, and `origin` is left
+  // empty; else `origin` holds them all.
+  func predicted(in scope: ScopeRef, _ registry: Registry) throws(PlanError) -> (origin: [Change], scoped: [ScopedPrediction]) {
+    let definition: CommandDef? = command.flatMap { (command: Command) -> CommandDef? in registry.command(command.name) }
+    var groups: [ScopeRef: [Change]] = [scope: []]
     for prediction in predictions {
-      guard let command, registry.command(command.name)?.predicts.contains(where: { $0.utf8.elementsEqual(prediction.type.utf8) }) == true
-      else { throw PlanError(rule: 5, "the plan's command does not predict \(prediction.type)") }
-      switch prediction.kind {
-      case .create: changes.append(.create(prediction.type, id: .given(prediction.id), prediction.values))
-      case .update: changes.append(.update(prediction.type, prediction.id, prediction.values))
-      case .write: changes.append(.write(prediction.type, prediction.id, prediction.values, texts: prediction.texts.mapValues { TextEdit(text: $0) }))
-      case .remove:
-        changes.append(registry.type(prediction.type)?.identity == .keyed
-          ? .put(prediction.type, prediction.id, present: false)
-          : .delete(prediction.type, prediction.id))
+      let target: ScopeRef = prediction.scope ?? scope
+      guard registry.lives(prediction.type, in: target) else { throw PlanError(rule: 5, "\(prediction.type) is predicted outside \(target)") }
+      guard target == scope || definition?.scopedEffects == true else {
+        throw PlanError(rule: 5, "\(definition?.name ?? "a plan") predicts in \(target), a scope other than \(scope), without scoped effects")
       }
+      guard definition?.predicts.contains(where: { $0.utf8.elementsEqual(prediction.type.utf8) }) == true else {
+        throw PlanError(rule: 5, "the plan's command does not predict \(prediction.type)")
+      }
+      groups[target, default: []].append(prediction.change(registry))
     }
-    return changes
+    let origin: [Change] = groups[scope] ?? []
+    guard groups.count > 1 else { return (origin, []) }
+    let others: [ScopeRef] = groups.keys.filter { $0 != scope }.sorted { $0.text.utf8.lexicographicallyPrecedes($1.text.utf8) }
+    let first: [ScopedPrediction] = origin.isEmpty ? [] : [ScopedPrediction(scope: scope, changes: origin)]
+    let rest: [ScopedPrediction] = others.map { (target: ScopeRef) -> ScopedPrediction in
+      ScopedPrediction(scope: target, changes: groups[target] ?? [])
+    }
+    return ([], first + rest)
   }
 
   static func precedes(_ a: RegisterRef, _ b: RegisterRef) -> Bool {
@@ -104,19 +115,41 @@ extension Plan {
   }
 }
 
+extension Plan {
+  // §9.6: the plan's Undo recipes in the engine's form (engine §7.3), a target or record without a scope of its own in
+  // the plan's; none for a segment named as evidence alone, nil when the plan does not opt in.
+  package func undoRecipes(in scope: ScopeRef) -> [ActUndoRecipe]? {
+    guard undo != nil else { return nil }
+    let address = { (record: UndoRecord) -> RecordAddress in RecordAddress(scope: record.scope ?? scope, key: record.key) }
+    let target = { (target: UndoTarget) -> Target in Target(address(target.record), target.slot) }
+    return undoRecipes.map { (recipe: UndoRecipe) -> ActUndoRecipe in
+      switch recipe {
+      case .fields(let command, let targets):
+        return .fields(restoreCommand: command, targets: targets.map { (item: (target: UndoTarget, default: JSON?)) -> RestoreTarget in
+          RestoreTarget(target: target(item.target), defaultValue: item.default)
+        })
+      case .createdRecord(let command, let record):
+        return .createdRecord(restoreCommand: command, record: address(record))
+      case .command(let name, let input, let owned, let records, let scopes):
+        return .command(name, input: input, evidence: EvidenceSelection(
+          ownedFields: owned.map(target), unchangedCreatedRecords: records.map(address), unchangedCreatedScopes: scopes))
+      }
+    }
+  }
+}
+
 extension Operation {
   // The table's cell for this operation, or nil for a guard, which writes nothing.
   func change(in scope: ScopeRef, registry: Registry) throws(PlanError) -> Change? {
     guard let definition = registry.type(entity.type) else { throw PlanError(rule: 0, "the registry holds no type \(entity.type)") }
-    guard entity.scope == scope, registry.lives(entity.type, in: scope) else {
+    guard entity.scope.map({ $0 == scope }) ?? true, registry.lives(entity.type, in: scope) else {
       throw PlanError(rule: 1, "\(entity.type) lives outside the action's scope \(scope)")
     }
-    guard definition.identity != .derived else { throw PlanError(rule: 0, "the kit writes no derived type (\(entity.type))") }
     switch kind {
     case .create(let named, let base):
       guard !entity.isOrdered else { throw PlanError(rule: 4, "create names the ordered type \(entity.type); insert places it") }
-      guard named == nil || definition.identity != .minted else {
-        throw PlanError(rule: 4, "create(_:fields:) names the minted type \(entity.type)")
+      guard named == nil || !definition.hasBorn else {
+        throw PlanError(rule: 4, "create(_:fields:) names the minted or derived type \(entity.type)")
       }
       return try creation(definition, writing: named ?? Array(values.keys).uniqueInByteOrder, anchor: nil, editedFrom: base)
     case .insert(let below):
@@ -125,6 +158,16 @@ extension Operation {
                           anchor: OrderAnchor(field: orderField, below: below))
     case .update(let named, let base, _):
       return try update(definition, writing: named, base: base)
+    case .revive(let names, let base, _):
+      guard definition.hasBorn, definition.revivable == true else { throw PlanError(rule: 0, "\(entity.type) has no revivable life") }
+      for name in names {
+        switch definition.field(name)?.kind {
+        case .const?, .time?, .text?: throw PlanError(rule: 7, "revive cannot edit \(name)")
+        default: continue
+        }
+      }
+      let (values, _) = try split(names, definition, editedFrom: base)
+      return .revive(entity.type, id, values)
     case .remove:
       return try removal(definition)
     case .move(let below):
@@ -137,23 +180,24 @@ extension Operation {
     }
   }
 
-  // A minted create leaves a nil time field unset, so the engine stamps it with the commit's now (§5.3, engine §7.1
+  // A minted or derived create leaves a nil time field unset, so the engine stamps it with the commit's now (§5.3, engine §7.1
   // step 4).
   func creation(_ definition: TypeDef, writing names: [String], anchor: OrderAnchor?, editedFrom base: [String: JSON]? = nil)
     throws(PlanError) -> Change {
     try checkWhole(definition, writing: names)
     var (values, texts) = try split(names, definition, editedFrom: base)
-    if definition.identity == .minted {
+    if definition.hasBorn {
       values = values.filter { name, value in !(value.isNull && definition.field(name)?.isTime == true) }
     }
-    guard anchor == nil || definition.identity == .minted else {
+    guard anchor == nil || definition.hasBorn else {
       throw PlanError(rule: 0, "an anchored create of the \(definition.identity.rawValue) type \(entity.type)")
     }
-    if definition.identity != .minted && names.isEmpty {
+    let presenceOnly = definition.identity == .keyed && definition.life && definition.fields.isEmpty
+    if !definition.hasBorn && names.isEmpty && !presenceOnly {
       throw PlanError(rule: 8, "a keyed create of \(ref) writes no field")
     }
     switch definition.identity {
-    case .minted: return .create(entity.type, id: .given(id), values, texts: texts, anchor: anchor)
+    case .minted, .derived: return .create(entity.type, id: .given(id), values, texts: texts, anchor: anchor)
     case .keyed where definition.life: return .put(entity.type, id, present: true, values, texts: texts)
     default: return .write(entity.type, recordID(in: definition), values, texts: texts)
     }
@@ -172,7 +216,7 @@ extension Operation {
     try checkWhole(definition, writing: names)
     let (values, texts) = try split(names, definition, editedFrom: base)
     switch definition.identity {
-    case .minted: return .update(entity.type, id, values, texts: texts)
+    case .minted, .derived: return .update(entity.type, id, values, texts: texts)
     case .keyed where definition.life: return .put(entity.type, id, present: nil, values, texts: texts)
     default: return .write(entity.type, recordID(in: definition), values, texts: texts)
     }
@@ -187,7 +231,7 @@ extension Operation {
 
   func removal(_ definition: TypeDef) throws(PlanError) -> Change {
     switch definition.identity {
-    case .minted: return .delete(entity.type, id)
+    case .minted, .derived: return .delete(entity.type, id)
     case .keyed where definition.life: return .put(entity.type, id, present: false)
     default: throw PlanError(rule: 0, "the \(entity.type) type has no life to remove")
     }
@@ -225,6 +269,18 @@ extension Operation {
 
   func recordID(in registry: Registry) -> RecordID {
     registry.type(entity.type).map(recordID(in:)) ?? id
+  }
+}
+
+extension Prediction {
+  // §8.4: a removal draws a dead life register, as a keyed `put(present: false)` or a minted `delete`.
+  func change(_ registry: Registry) -> Change {
+    switch kind {
+    case .create: .create(type, id: .given(id), values)
+    case .update: .update(type, id, values)
+    case .write: .write(type, id, values, texts: texts.mapValues { (text: String) -> TextEdit in TextEdit(text: text) })
+    case .remove: registry.type(type)?.identity == .keyed ? .put(type, id, present: false) : .delete(type, id)
+    }
   }
 }
 

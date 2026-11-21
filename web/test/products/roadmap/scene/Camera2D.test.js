@@ -139,6 +139,14 @@ test('fit shows the whole model inside the visible area and never past the worki
   assert.ok(Math.abs(centre.x - 208) < 1e-9 && Math.abs(centre.y - 322) < 1e-9);
 });
 
+test('a fit to an extent with no finite edge leaves the camera where it stands, and a fit to a single point centres it at the working zoom', () => {
+  const cam = fresh(0.5);
+  cam.fitToView({ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+  assert.deepEqual({ x: cam.x, y: cam.y, zoom: cam.zoom }, { x: 0, y: 0, zoom: 0.5 });
+  cam.fitToView({ minX: 40, maxX: 40, minY: -30, maxY: -30 });
+  assert.deepEqual({ x: cam.x, y: cam.y, zoom: cam.zoom }, { x: 40, y: -30, zoom: cam.workingZoom });
+});
+
 test('a tiny installed tree can restore and focus at working zoom without jumping off the visible centre', () => {
   const cam = fresh(1);
   cam.setInsets({ left: 24, right: 408, top: 76, bottom: 24 });

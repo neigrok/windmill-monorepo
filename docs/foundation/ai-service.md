@@ -7,7 +7,8 @@ and roadmap nodes can cite them.
 ## §0 Status and scope
 
 **Status:** Implemented in [services/ai](../../services/ai/ARCHITECTURE.md), with product integrations
-still outside the build. The C++ backend continues to hold its AI allowance ledger
+still outside the build. Background work (§3) is specified and not built: the service believes a
+pass whose `client` is `server` as it believes any other. The C++ backend continues to hold its AI allowance ledger
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)), provider keys and existing product calls.
 The service's default deployment has no pinned pass key and admits nobody. Production acceptance
 and provider-billing evidence are tracked in the AI service roadmap tree, which the dogfood tree
@@ -51,7 +52,8 @@ check.
   a value.
 - **D-4 Tier.** The row of the tier table (§3) a call is admitted under: `anonymous` for an
   installation; `one` for an account whose plan is `one` while a grant is in force for it, an owner
-  grant included (§3); `free` for every other account.
+  grant included (§3); `free` for every other account. A background call (§3) is admitted under
+  none of the three and is recorded as `background`.
 - **D-5 Capability.** What a call asks a provider to do: `text` or `transcription`.
 - **D-6 Model class.** The name a caller uses for a text model: `large`, `medium` or `small`. The tier
   table maps a class to a provider's model, so no caller names a provider or a model id.
@@ -88,6 +90,37 @@ tiers, so adding a tier adds a row and a plan value and no code.
 | Text classes served | `medium` (also for `large`), `small` | `large`, `medium`, `small` | `large`, `medium`, `small` |
 | Output ceiling of a text call | 2,000 tokens | 16,000 tokens | 16,000 tokens |
 | Transcription | no | no | yes |
+
+**Background work.** A call under a pass whose `client` is `server` is work nobody waits on (I-6).
+It is admitted under no tier above, whatever the account's plan, and is recorded as `background`.
+The tier table holds its values in a section of its own:
+
+| | Background |
+|---|---|
+| Own budget | `BACKGROUND_MONTH` for each account, a UTC calendar month. Windmill's own cost |
+| Shared budgets | a background month and a background day, across all accounts. Windmill's own cost |
+| Hourly ceiling | `BACKGROUND_HOUR`, below `HOURLY_FUSE`, so background work never opens the fuse people's calls depend on |
+| Calls in flight | 1 an account, counted apart from the person's |
+| Calls started and reads a minute | its own counters, apart from the person's |
+| Text classes served | `medium`, `small` |
+| Output ceiling of a text call | 16,000 tokens |
+| Transcription | no |
+
+- A background call draws on its account's background budget and the two shared background budgets
+  and on nothing else: no allowance, no grant, no free pool.
+- A server pass states `sub` as an account, `plan` `none`, and no `ownerGrant` or `installation`. Any
+  other pass whose `client` is `server` is `pass_malformed`. The service decides background before it
+  reads the plan, so such a call funds no owner grant and records no binding.
+- Its refusals carry a null `allowance`, and `GET /v1/allowance` under a server pass is
+  `invalid_request`. A person's own `GET /v1/allowance` says nothing of background work.
+- An exhausted background budget refuses as `subject_exhausted`, a shared one as
+  `background_exhausted`, and the hourly ceiling as `paused`.
+- The shared background budgets report their crossings as the free budgets do (§5.7), and the
+  operator's budgets door lists them.
+- The backend's pass door signs that `client` for no outside caller; the backend signs it for itself
+  by a path the door cannot reach.
+
+[Echoes on the AI service](echoes-on-ai-service.md) is its first caller.
 
 The amounts, the calls in flight and the anonymous row's model are the backend's policy as it stands
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)); `large` is `claude-opus-5`, `medium` is
@@ -128,7 +161,7 @@ unpadded base64url of an Ed25519 signature, verified strictly, over the ASCII by
 | `plan` | `none` or `one` (D-3). On an account's pass only, where it is required. |
 | `ownerGrant` | `true` when the account is funded as owner access is (§3). Only with `plan: one`. |
 | `installation` | On an account's pass: the installation this device was before it signed in, when the issuer holds that binding (§5.6). |
-| `client` | `ios`, `android`, `web` or `server`: who is calling, for reporting only. |
+| `client` | `ios`, `android`, `web` or `server`: who is calling. `server` makes the call background work (§3); the others are for reporting only. |
 
 The service verifies the signature before it reads the payload, and believes a pass only when all of
 these hold. Otherwise it answers 401 with the code beside the rule and admits nothing:
@@ -450,9 +483,9 @@ never on the status.
 | 403 | `funding_required`, `device_bound` |
 | 404 | `call_unknown` |
 | 409 | `conflict` |
-| 410 | `result_gone` |
+| 410 | `result_gone`, `picture_gone` |
 | 413 | `too_large` |
-| 429 | `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `concurrency_exhausted`, `rate_limited` |
+| 429 | `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `background_exhausted`, `concurrency_exhausted`, `rate_limited` |
 | 503 | `busy`, `paused`, `accounting_unavailable`, `provider_unavailable` |
 
 The provider codes can arrive before admission when the counting door rejects the request or its
@@ -711,7 +744,7 @@ principal.
   `provider_rejected`, every other as `provider_unavailable`. A 401, 402 or 403 from the provider is
   reported at once, since the key or the account is at fault.
 
-### §8.2 Transcription: OpenAI, with Azure as the fallback
+### §8.2 Transcription: OpenAI
 
 Transcription runs live on `gpt-live-transcribe`, called at OpenAI. No language is named to it: the
 model decides what it hears (R-6). Read on OpenAI's documentation on 2026-11-14:
@@ -748,26 +781,8 @@ Transcription, as the provider documents it:
   adapter sends none. It keeps what a Realtime session carried for 30 days for abuse monitoring and
   does not train on it. Zero data retention exists for the account and is not arranged (R-11).
 
-The fallback is Azure (R-6). Read on Microsoft's documentation on 2026-11-14:
-
-- Microsoft hosts the same model, `gpt-live-transcribe`, as a Realtime transcription session at
-  `wss://<resource>.openai.azure.com/openai/v1/realtime?intent=transcription`. Its Realtime API
-  "follows the OpenAI Realtime API specification"; the stated difference is that a session names a
-  deployment and not a model. The fallback is therefore the same adapter with another address, key
-  header and deployment name, and the door of §6.6 does not change.
-- The price is the same, $1.02 an hour of audio, billed by duration, and a language is an optional
-  hint there too.
-- Microsoft does not give what a session carried to OpenAI and does not train on it. A sample may be
-  stored for a person to review for abuse; the period is not stated, and turning that off needs
-  Microsoft's approval.
-- No retirement date is published for the model there. It is offered as a global deployment from
-  eight regions.
-- Azure's own speech recognition cannot be the fallback while no language is named: without one it
-  assumes English, and its language identification chooses among at most ten languages somebody
-  lists.
-
-The service calls one provider at a time, the one the tier table names. Moving to the fallback is a
-change of that table made by hand; the service does not fail over by itself.
+There is no fallback provider (R-6). While the provider is down or its fuse is open, transcription
+is unavailable and Talk says so.
 
 ## §9 Structure
 
@@ -873,7 +888,7 @@ Configuration, with the values the service ships with:
 | The database | Every new call is refused as `accounting_unavailable`. A call in flight is read to its end and settled when the database returns, or ended `assumed`. |
 | The provider's counting door | Text reservations fall back to one token a byte and grow severalfold, so a call near the end of a budget is refused that would have fitted. |
 | This service, restarted | New calls are refused as `busy` until the calls in flight finish, at most `DRAIN` (§7). Live sessions are cut. Lingering answers and held pictures are lost. |
-| This service, down | Coach and Talk stop. Sync, the journal and the log are untouched. |
+| This service, down | Coach and Talk stop, and Echoes derives nothing until it returns. Sync, the journal and the log are untouched. |
 | The network edge cutting a long answer | The call goes on; its caller asks for the `callId` again (§6.4). |
 | A live session's connection cut | The service commits what it forwarded and settles. The transcript so far lingers for the caller to fetch (§6.6). |
 | The service's clock behind the issuer's by more than `PASS_SKEW` | Every fresh pass is refused as `pass_expired`. Ahead of it, passes end early. |
@@ -902,16 +917,19 @@ designed when the service is built, one integration at a time.
 - **I-5 Talk.** Journal Talk streams the microphone to the live transcription door from the device,
   detecting the person's pauses there and naming no language. It is part of Windmill One. Where Talk
   is offered, the product tells the person that their speech is sent to the provider and kept there
-  for 30 days (R-11).
+  for 30 days (R-11). [Journal Talk](journal-talk.md) specifies it.
 - **I-6 Work nobody waits on.** When the backend has AI work for an account with no device present,
-  it calls the same doors with a pass it signs for that account. The queue of that work stays in the
-  backend, and a refusal or an unreachable service leaves the work due. Such a call takes one of the
-  account's calls in flight, as it does in the backend's ledger.
+  it calls the same doors with a pass it signs for that account, whose `client` is `server`. The
+  queue of that work stays in the backend, and a refusal or an unreachable service leaves the work
+  due. Such a call is background work (§3): Windmill's own budget for the account pays for it, and
+  it takes the account's background slot, never one of the person's calls in flight. (R-18, R-19)
 - **I-7 Funding.** When a paid period is recorded, one grant is funded for exactly that period. When
   it is refunded the grant is closed, and when the refund is reversed it is reopened
-  ([subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)). Whether a worker of this
-  service follows the subscription feed or the feed's follower calls the grants door is open. Either
-  way no call waits on it (INV-15). The amount a period funds then has one home, this service's tier
+  ([subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)). While the backend's ledger
+  still has a caller, a paid period funds a grant in both ledgers, so nothing a subscriber has stops
+  working and Windmill's most for one subscriber is twice the tier's amount until that ledger
+  retires (R-16). Whether a worker of this service follows the subscription feed or the feed's
+  follower calls the grants door is open. Either way no call waits on it (INV-15). The amount a period funds then has one home, this service's tier
   table; where the buy sheet reads it from is settled with this move.
 - **I-8 Cutover.** The backend's ledger rows are not carried over: every allowance starts empty in
   this service. The backend's ledger, its provider clients and its provider keys are deleted when
@@ -919,8 +937,9 @@ designed when the service is built, one integration at a time.
 - **I-9 Erasure.** When an account is erased the backend signs no further pass for it. The ledger
   keeps the account's opaque id on its budgets, grants and bindings, as accounting, and its call
   rows until `CALL_RETENTION` ends them.
-- **I-10 Order.** Which integration is built first, and when, is the owner's to decide once the
-  service is built.
+- **I-10 Order.** Gym's Coach and roadmap's move first, on one shared engine; Talk on the iPhone and
+  Echoes follow, all before the iOS release; the web's Talk moves after it. The backend's ledger
+  retires when the web's Talk has moved. (R-17)
 
 ## §13 Rulings
 
@@ -933,13 +952,20 @@ The owner's rulings. All are settled.
 | R-3 | The ledger rows the backend holds at cutover | Dropped. No subscription has been sold, so no paid grant is lost; each installation's lifetime spend and each account's month start again. (2026-11-14) |
 | R-4 | The amounts and limits of each tier | One table with a row a tier, holding the backend's amounts as they stand. The output ceilings, the calls a minute and `OWNER_GRANTS_MAX` are values this document sets. (2026-11-14) |
 | R-5 | Who may use transcription | Windmill One only, from a grant. (2026-11-14) |
-| R-6 | The model that serves transcription | Live, word by word, on `gpt-live-transcribe` at OpenAI, with no language named: the model decides what it hears. The fallback is Azure, which hosts the same model (§8.2). (2026-11-14) |
+| R-6 | The model that serves transcription | Live, word by word, on `gpt-live-transcribe` at OpenAI, with no language named: the model decides what it hears. There is no fallback provider: a second one would hold people's speech under terms Talk cannot state. (2026-11-14, revised 2026-11-17) |
 | R-7 | Whose prompts the service accepts | Any. It enforces money rules only. (2026-11-14) |
 | R-8 | A call the provider billed above its reservation | The whole cost is spent and reported, and nobody is locked out. (2026-11-14) |
 | R-9 | How long a call's row is kept | 90 days, after which only the budgets' sums remain. (2026-11-14) |
 | R-10 | Whether installations and free accounts share one daily pool | Shared. The tier table can give each its own. (2026-11-14) |
 | R-11 | Whether the transcription provider may keep what a session carried | Zero data retention is not arranged; the owner cannot arrange it. What a Talk session carried is kept at the provider for 30 days for abuse monitoring and is not used for training, as its data page said on 2026-11-14. The product says so wherever Talk is offered (I-5). (2026-11-14) |
 | R-12 | Whether the service may hold a picture between calls | Yes, in memory only and for a short time, so that a device uploads a picture once for a turn of several rounds (§6.7). (2026-11-15) |
+| R-13 | Whether a changed tier amount or pool limit reaches budgets that exist | It applies at once to every budget, an installation's lifetime budget and a pool's current period included, so a limit lowered in an emergency holds from the moment it is set. (2026-11-17) |
+| R-14 | Whether a `carry` is bound to the principal that received it | It is not. Any caller may send any sealed `carry`; none can read one, and no money is at risk. (2026-11-17) |
+| R-15 | What raises the provider-trouble alert | The share of calls that failed in a short window, not a run of failures a single success resets. (2026-11-17) |
+| R-16 | Which ledger a paid period funds while two live | Both, until the backend's ledger retires. (2026-11-17) |
+| R-17 | The order of the moves onto this service | Coach first; Talk on the iPhone and Echoes before the iOS release; the web's Talk after it. (2026-11-15, completed 2026-11-17) |
+| R-18 | Whose budget pays for work nobody waits on | Budgets of Windmill's own: one for each account, and shared ones across all accounts, apart from the person's allowance, a grant and the free budgets. Their amounts are the tier table's and are set from a measurement of Echoes' spend. (2026-11-17) |
+| R-19 | Whether background work shares a person's calls in flight | It does not: one background call in flight an account, counted apart, with rate counters of its own. (2026-11-17) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 

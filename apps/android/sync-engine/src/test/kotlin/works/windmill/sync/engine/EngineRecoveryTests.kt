@@ -175,18 +175,23 @@ class EngineRecoveryTests {
         }
     }
 
-    @Test fun writeMapRekeysTupleKeysKeyedGuardsAndBaseTextFallback() {
+    // A scope-local identity moves wherever a reference resolves into the tree the command wrote it in (E-8): a link's key parts,
+    // an overlay mark keyed by it, the guard on that mark and its base text; one tree's tag never maps the same id in another tree.
+    @Test fun writeMapRekeysTupleKeysKeyedGuardsAndBaseTextFallbackWhereReferencesResolve() {
         engine().use { engine ->
-            val command = entry("command", 0, "acked", "101:0:old", intent())
+            val command = entry("command", 0, "acked", "101:0:old", json("""{"scope":"tree/b_00000001","d":[]}"""))
             val text = entry("text", 1, "ready", "102:0:old", json("""{"scope":"self/overlay/b_00000001","d":[{"t":"mark","id":"old","x":{"memo":{"text":"New","base":{"rev":3}}}}],"guard":[{"t":"mark","id":"old","field":"done","stamp":null}]}"""))
             text.json = text.json.with("baseTexts" to Json.objectOf("[\"mark\",\"old\",\"memo\"]" to Json.of("From")))
             val link = entry("link", 2, "ready", "103:0:old", json("""{"scope":"tree/b_00000001","d":[{"t":"link","id":["old","other"],"life":["alive","103:0:old"]}]}"""))
-            engine.write { r -> replica(engine, listOf(command, text, link)); engine.applyWriteMap(r, command, listOf(json("""{"t":"tag","id":"joined","from":"old"}"""))) }
+            val elsewhere = entry("elsewhere", 3, "ready", "104:0:old", json("""{"scope":"tree/b_00000002","d":[{"t":"link","id":["old","other"],"life":["alive","104:0:old"]}]}"""))
+            val untouched = elsewhere.json
+            engine.write { r -> replica(engine, listOf(command, text, link, elsewhere)); engine.applyWriteMap(r, command, listOf(json("""{"t":"tag","id":"joined","from":"old"}"""))) }
             val entries = engine.device.current().entries()
             assertEquals(Json.of("joined"), entries[1].json.member("intent").items("d")[0].member("id"))
             assertEquals(Json.of("joined"), entries[1].json.member("intent").items("guard")[0].member("id"))
             assertEquals(Json.of("From"), entries[1].json.member("baseTexts").member("[\"mark\",\"joined\",\"memo\"]"))
             assertEquals(json("""["joined","other"]"""), entries[2].json.member("intent").items("d")[0].member("id"))
+            assertEquals(untouched, entries[3].json)
             engine.write { r -> val next = r.entries()[1]; next.state = "sent"; engine.onRefused(r, next, json("""{"code":"base-unknown"}"""), Json.objectOf()) }
             assertEquals(json("""{"text":"From"}"""), engine.device.current().entries()[1].json.member("intent").items("d")[0].member("x").member("memo").member("base"))
         }

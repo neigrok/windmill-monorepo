@@ -49,6 +49,20 @@ struct ProductCorpusTests {
     }
   }
 
+  // A scene's read takes its scope's records and the scene's device rows; a scope the scene leaves out holds none.
+  @Test func aReadOverASceneReadsItsOwnScope() throws {
+    let meta: JSON = ["t": "meta", "id": "meta", "seq": 1, "f": ["title": ["Kept", "1000:0:r_aaaaaaaaaaaa"]]]
+    let scopes: JSON = ["tree/b_00000001": ["drawn": [meta]], "self/probe": ["drawn": [ProductCorpusTests.fact]]]
+    let vector = try ProductCorpusTests.vector(["scopes": scopes, "device": ["rack": 2], "now": 1_800_000_000_000, "offsetSeconds": 0])
+    let titles = { (read: Reader) throws -> JSON in
+      let drawn: [JSON] = try read.repository(Meta.self).all(in: .drawn).map { (meta: Meta) -> JSON in .string(meta.title) }
+      let rack: JSON = try read.device("rack") ?? .null
+      return .array(drawn + [rack])
+    }
+    #expect(try ProductCorpusTests.corpus().read(vector, in: Probe.tree, titles) == ["result": ["Kept", 2]])
+    #expect(try ProductCorpusTests.corpus().read(vector, in: .tree("b_00000002"), titles) == ["result": [2]])
+  }
+
   @Test func aReadOfATypeOfAnotherScopeThrowsAsTheEnginesReadersDo() throws {
     let vector = try ProductCorpusTests.vector(["records": ["drawn": [ProductCorpusTests.fact]], "now": 1_800_000_000_000,
                                                 "offsetSeconds": 0])

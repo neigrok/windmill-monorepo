@@ -7,7 +7,7 @@ import SyncSchema
 // turn ran on the Coach message, the receipt that derives from those calls (§9.2), and the two actions a turn's driver
 // takes around the calls: opening the turn (§4.1 step 2) and ending it (§4.4, §4.5).
 
-public struct CoachThread: Writable, Removable, Equatable {
+public struct CoachThread: ProductEntity, Writable, Removable, Equatable {
   public static let type = Gym.Types.thread
   public static let scope = Gym.scope
   public static let heldRemoval = false
@@ -74,7 +74,7 @@ public struct Picture: ValueObject, Equatable {
   }
 }
 
-public struct CoachMessage: Writable, Removable, Equatable {
+public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   public enum Role: String, Sendable, Equatable {
     case lifter, coach
   }

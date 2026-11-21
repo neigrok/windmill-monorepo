@@ -92,6 +92,20 @@ public struct PlannedDelta: Sendable, Hashable {
       fields: row.lattice.fields.mapValues { PlannedRegister($0.value, .given($0.stamp)) })
   }
 
+  public var json: JSON {
+    var object: JSON.Object = ["t": .string(key.type), "id": key.id.json]
+    object["life"] = life.map { [.string($0.state.rawValue), $0.slot.stamp?.json ?? .null] }
+    object["born"] = born.map { $0.stamp?.json ?? .null }
+    if !fields.isEmpty { object["f"] = .object(JSON.Object(uniqueKeysWithValues: fields.map { ($0.key, .array([$0.value.value, $0.value.slot.stamp?.json ?? .null])) })) }
+    var text = JSON.Object(uniqueKeysWithValues: texts.map { ($0.key, $0.value.json) })
+    for (name, replacement) in replacements {
+      text[name] = ["text": .string(replacement.text), "replace": true, "archiveNonempty": .bool(replacement.archiveNonempty), "archive": .object(replacement.archive)]
+    }
+    if !text.isEmpty { object["x"] = .object(text) }
+    if !serials.isEmpty { object["v"] = .object(JSON.Object(uniqueKeysWithValues: serials.map { ($0.key, $0.value) })) }
+    return .object(object)
+  }
+
   public var hasServerSlots: Bool { !serverRegisters.isEmpty }
 
   // The registers whose stamps the server mints: "life", "born", or a field's name.
@@ -151,6 +165,16 @@ public struct CheckedCommand: Sendable, Hashable {
     hasher.combine(Array(name.utf8))
     hasher.combine(args)
   }
+
+  // A string argument, "" when it holds none.
+  func string(_ argument: String) -> String {
+    (try? args[argument]?.asString()) ?? ""
+  }
+
+  // A string member of an inverse command's `input`, "" when it holds none.
+  func input(_ member: String) -> String {
+    (try? args["input"]?[member]?.asString()) ?? ""
+  }
 }
 
 public struct CheckedIntent: Sendable, Hashable {
@@ -186,6 +210,36 @@ public enum IntentShape {
     return CheckedIntent(scope: scope, deltas: deltas, guards: guards, command: command)
   }
 
+  public static func effect(_ json: JSON, in scope: ScopeKey, source: ChangeSource, registry: Registry) throws(Refusal) -> PlannedDelta {
+    guard !json.holdsNul, var wire = try? json.asObject(), let kind = registry.scopeKind(of: scope.ref) else { throw Refusal(.invalid) }
+    let serials = try members(wire["v"] ?? [:])
+    wire["v"] = nil
+    var replacements: [String: TextReplacement] = [:]
+    if let writes = wire["x"] {
+      var texts = JSON.Object()
+      for (name, write) in try members(writes) {
+        if write["replace"] == true && source == .command {
+          guard let text = try? write["text"]?.asString(),
+                let archive = try? (write["archive"] ?? [:]).asObject() else { throw Refusal(.invalid) }
+          replacements[name] = TextReplacement(text, archiveNonempty: write["archiveNonempty"] == true, archive: archive)
+          texts[name] = ["text": .string(text), "base": ["rev": 0]]
+        } else { texts[name] = write }
+      }
+      wire["x"] = .object(texts)
+    }
+    var parsed = try delta(.object(wire), kind: kind, isReplica: false, registry: registry)
+    for (name, value) in serials {
+      guard case .serial? = registry.type(parsed.key.type)?.field(name)?.kind,
+            (try? value.asInteger(atLeast: 1)) != nil else { throw Refusal(.invalid) }
+      parsed.serials[name] = value
+    }
+    for (name, replacement) in replacements {
+      parsed.texts[name] = nil
+      parsed.replacements[name] = replacement
+    }
+    return parsed
+  }
+
   static func delta(_ json: JSON, kind: ScopeKind, isReplica: Bool, registry: Registry) throws(Refusal) -> PlannedDelta {
     guard case .object(let object) = json, (try? object.expectKeys(required: ["t", "id"], optional: ["life", "born", "f", "x"])) != nil,
           case .string(let typeName)? = object["t"], let type = registry.type(typeName), type.scope == kind,
@@ -197,7 +251,7 @@ public enum IntentShape {
     var fields: [String: PlannedRegister] = [:]
     for (name, register) in try members(object["f"] ?? [:]) {
       guard let field = type.field(name), field.kind.isLattice, !isReplica || field.writer == .client,
-            case .array(let pair) = register, pair.count == 2, registry.admits(pair[0], for: field)
+            case .array(let pair) = register, pair.count == 2, registry.admits(pair[0], for: field, of: type)
       else { throw Refusal(.invalid) }
       fields[name] = PlannedRegister(pair[0], try slot(pair[1], isReplica: isReplica))
     }
@@ -264,19 +318,24 @@ public enum IntentShape {
     return Guard(key: RecordKey(typeName, id), field: fieldName, stamp: parsed)
   }
 
+  // A restore's arguments are its fixed shape (§6.4), and an inverse command's are its declared `input` beside the
+  // engine's `evidence`.
   static func commandOf(_ json: JSON, kind: ScopeKind, registry: Registry) throws(Refusal) -> CheckedCommand {
     guard case .object(let object) = json, (try? object.expectKeys(required: ["args", "name"])) != nil,
           case .string(let name)? = object["name"], let definition = registry.command(name), definition.scope == kind,
-          case .object(let args)? = object["args"],
-          args.keys.allSatisfy({ key in definition.args.contains { $0.name.utf8.elementsEqual(key.utf8) } })
+          case .object(var args)? = object["args"]
     else { throw Refusal(.invalid) }
-    for argument in definition.args {
-      guard let value = args[argument.name] else {
-        if argument.optional { continue }
-        throw Refusal(.invalid)
-      }
-      guard registry.admits(value, for: argument) else { throw Refusal(.invalid) }
+    if definition.engine == .restore {
+      guard (try? registry.restoreArguments(.object(args), of: definition)) != nil else { throw Refusal(.invalid) }
+      return CheckedCommand(definition: definition, args: args)
     }
+    let evidence: JSON? = definition.inverse ? args["evidence"] : nil
+    if definition.inverse {
+      guard let evidence, (try? registry.evidence(evidence)) != nil else { throw Refusal(.invalid) }
+      args["evidence"] = nil
+    }
+    guard registry.admits(arguments: args, of: definition) else { throw Refusal(.invalid) }
+    args["evidence"] = evidence
     return CheckedCommand(definition: definition, args: args)
   }
 

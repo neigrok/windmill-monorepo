@@ -1,10 +1,13 @@
 import test from 'node:test';
+import { registerNavigationGuard } from '../../../src/shell/navigation.js';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
-import { environment, until } from '../../platform/sync/fakes.js';
+import { environment, tick, until } from '../../platform/sync/fakes.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
+import { journalRoutes } from '../../../src/products/journal/routes.js';
+import { PRODUCTS } from '../../../src/shell/products.js';
 import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_STATUS } from '../../../src/products/roadmap/copy.js';
 
 async function account(t) {
@@ -15,7 +18,8 @@ async function account(t) {
   const listeners = new Map();
   const broadcasts = [];
   const globals = {
-    window: { location: { hash: '#/app/t_pending' }, setTimeout: () => 0,
+    window: { location: new URL('https://windmill.works/app/roadmap#/app/t_pending'), setTimeout: () => 0,
+      history: { state: null, replaceState(state) { this.state = state; } },
       addEventListener: (event, listener) => listeners.set(event, listener),
       removeEventListener: (event) => listeners.delete(event) },
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
@@ -444,7 +448,8 @@ test('a failed explicit sign-out wipe retries in the same document after the rep
   await decision().props.onDecision('keep');
   assert.equal(await finished, true);
   assert.equal(state.engine.device.meta.deviceCleanup, undefined);
-  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.deepEqual(state.forgotten.map(({ navigation, ...change }) => change), [{ previous: 'A', next: null }]);
+  assert.equal(typeof state.forgotten[0].navigation.navigate, 'function');
   assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed }, { status: 'ghost', lapsed: false });
 });
 
@@ -484,4 +489,412 @@ test('finishing an old cleanup cannot acknowledge a newer departure by the same 
   release();
   await refresh;
   assert.deepEqual(state.engine.device.meta.deviceCleanup, newer);
+});
+
+test('voluntary sign-out waits for admission before engine cleanup and cancellation leaves the account intact', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const begin = t.mock.method(state.engine, 'beginSignOut');
+  let notice;
+  const release = registerNavigationGuard({ blocked: ({ kind }) => kind === 'sign-out', onBlocked: (value) => { notice = value; }, onUnrestorableNavigation() {} });
+  t.after(release);
+  const cancelled = state.auth().signOut();
+  assert.deepEqual(notice.context, { kind: 'sign-out' });
+  assert.equal(Object.isFrozen(notice.context), true);
+  assert.equal(state.auth().signOut(), cancelled);
+  assert.equal(begin.mock.callCount(), 0);
+  assert.equal(state.auth().roomChanging, false);
+  assert.equal(state.auth().status, 'signed-in');
+  assert.deepEqual(state.forgotten, []);
+  notice.cancel();
+  notice.proceed();
+  assert.equal(await cancelled, false);
+  assert.equal(begin.mock.callCount(), 0);
+
+  const allowed = state.auth().signOut();
+  assert.equal(state.auth().signOut(), allowed);
+  notice.proceed();
+  notice.proceed();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+  assert.equal(begin.mock.callCount(), 1);
+  const decision = elementsOf(state.view.tree).find((node) => node.props.onCancel && node.props.onDecision);
+  await decision.props.onCancel();
+  assert.equal(await allowed, false);
+  assert.equal(state.auth().status, 'signed-in');
+  assert.deepEqual(state.forgotten, []);
+});
+
+test('an observed replacement account completes security cleanup without asking the voluntary guard', async (t) => {
+  const state = await account(t);
+  const release = registerNavigationGuard({ blocked: () => true,
+    onBlocked() { assert.fail('account replacement is forced cleanup'); }, onUnrestorableNavigation() {} });
+  t.after(release);
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.auth().refresh();
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: 'B' }]);
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.auth().roomChanging, false);
+});
+
+test('document scope fences before replacement publication and reuses the ticket through cleanup', async (t) => {
+  const state = await account(t);
+  const scope = state.auth().dataScope;
+  assert.deepEqual(scope.getSnapshot(), { epoch: 1, phase: 'ready', owner: { kind: 'account', id: 'A' } });
+  const previous = scope.getSnapshot();
+  const invalidations = [];
+  t.mock.method(roadmapRoutes.session, 'invalidateAccount', () => invalidations.push(scope.getSnapshot()));
+  let release;
+  const cleanup = new Promise((resolve) => { release = resolve; });
+  roadmapRoutes.forgetDevice.mock.mockImplementation(() => cleanup);
+  state.setMe({ id: 'B', name: 'Bea' });
+  const signIn = state.auth().signIn({ id: 'B', name: 'Bea' });
+  assert.deepEqual(scope.getSnapshot(), { epoch: previous.epoch + 1, phase: 'changing', owner: { kind: 'account', id: 'B' } });
+  assert.equal(state.auth().account.id, 'A');
+  await until(() => state.engine.device.meta.deviceCleanup);
+  assert.equal(invalidations.length, 1);
+  release();
+  await signIn;
+  assert.deepEqual(scope.getSnapshot(), { epoch: previous.epoch + 1, phase: 'ready', owner: { kind: 'account', id: 'B' } });
+});
+
+test('cancelled sign-out preparation and pre-commit failure preserve scope, but attempted cleanup remains fenced', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const before = state.auth().dataScope.getSnapshot();
+  const pending = state.auth().signOut();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  assert.equal(state.auth().dataScope.getSnapshot(), before);
+  await decision().props.onCancel();
+  assert.equal(await pending, false);
+  assert.equal(state.auth().dataScope.getSnapshot(), before);
+  const again = state.auth().signOut();
+  await until(() => decision().props.question);
+  const transact = state.engine.store.transact.bind(state.engine.store);
+  state.engine.store.transact = () => Promise.reject(new Error('pre-commit store failure'));
+  await decision().props.onDecision('keep');
+  assert.equal(state.auth().dataScope.getSnapshot(), before);
+  state.engine.store.transact = (change, options) => transact(change, { ...options, beforeCommit: ({ transaction }) => transaction.abort() });
+  await decision().props.onDecision('keep');
+  const fenced = state.auth().dataScope.getSnapshot();
+  assert.deepEqual(fenced, { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } });
+  state.engine.store.transact = transact;
+  await decision().props.onCancel();
+  assert.equal(await again, false);
+  assert.equal(state.auth().dataScope.getSnapshot(), fenced);
+});
+
+test('lapse preserves scope and a missed completed sign-out fences the old owner on reconciliation', async (t) => {
+  const state = await account(t);
+  const scope = state.auth().dataScope;
+  const before = scope.getSnapshot();
+  state.setMe(null);
+  await state.auth().refresh();
+  assert.equal(scope.getSnapshot(), before);
+  await state.engine.finishSignOut({ choice: 'keep' });
+  await state.engine.write(null, (device) => { delete device.meta.clearCredential; });
+  await state.auth().refresh();
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 1, phase: 'ready', owner: { kind: 'anonymous' } });
+});
+
+test('a throwing product invalidator cannot stop the scope fence, later invalidators or cleanup', async (t) => {
+  const state = await account(t);
+  const { PRODUCTS } = await import('../../../src/shell/products.js');
+  const afterRoadmap = PRODUCTS.find((product) => product.id !== 'roadmap');
+  const previous = afterRoadmap.session;
+  const observations = [];
+  afterRoadmap.session = { invalidateAccount: () => observations.push(state.auth().dataScope.getSnapshot()) };
+  t.after(() => { if (previous) afterRoadmap.session = previous; else delete afterRoadmap.session; });
+  t.mock.method(roadmapRoutes.session, 'invalidateAccount', () => { throw new Error('Private draft value must not escape'); });
+  const before = state.auth().dataScope.getSnapshot();
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.auth().signIn({ id: 'B', name: 'Bea' });
+  assert.deepEqual(observations, [{ epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'account', id: 'B' } }]);
+  assert.deepEqual(state.auth().dataScope.getSnapshot(), { epoch: before.epoch + 1, phase: 'ready', owner: { kind: 'account', id: 'B' } });
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: 'B' }]);
+});
+
+test('the same sign-out callback is idempotent and an old callback cannot fence a newer account', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const finish = state.engine.finishSignOut.bind(state.engine);
+  const callbacks = [];
+  const invalidations = [];
+  t.mock.method(roadmapRoutes.session, 'invalidateAccount', () => invalidations.push(state.auth().dataScope.getSnapshot()));
+  state.engine.finishSignOut = (options) => finish({ ...options, beforeSignOutCommit: () => {
+    callbacks.push(options.beforeSignOutCommit);
+    options.beforeSignOutCommit();
+    options.beforeSignOutCommit();
+  } });
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => decision()?.props.question);
+  await decision().props.onDecision('keep');
+  assert.equal(await departure, true);
+  assert.equal(invalidations.length, 1);
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.auth().signIn({ id: 'B', name: 'Bea' });
+  const current = state.auth().dataScope.getSnapshot();
+  assert.equal(current.owner.id, 'B');
+  assert.throws(callbacks[0], { message: 'stale document data transition' });
+  assert.equal(state.auth().dataScope.getSnapshot(), current);
+});
+
+
+test('online sign-out completes its anonymous scope and accepts a new draft after a 401 refresh', async (t) => {
+  const state = await account(t);
+  const scope = state.auth().dataScope;
+  const before = scope.getSnapshot();
+  const transitions = [];
+  t.after(scope.subscribe(() => transitions.push(scope.getSnapshot())));
+  let loggedOut = false;
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/auth/logout')) {
+      loggedOut = true; state.setMe(null);
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+    return { ok: !loggedOut, status: loggedOut ? 401 : 200,
+      json: async () => ({ user: loggedOut ? null : { id: 'A', name: 'Ada' } }) };
+  });
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => state.engine.signoutTimer !== undefined);
+  state.env.timers.advance(state.engine.limits.SIGNOUT_FLUSH_MS + 1);
+  await until(() => decision()?.props.question);
+  await decision().props.onDecision('keep');
+  assert.equal(await departure, true);
+  await state.auth().refresh();
+  assert.equal(state.engine.device.activeReplica.meta.state, 'anon');
+  assert.equal(state.engine.device.meta.clearCredential, undefined);
+  assert.equal(state.engine.device.meta.deviceCleanup, undefined);
+  assert.equal(state.auth().status, 'ghost');
+  assert.deepEqual(transitions, [
+    { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } },
+    { epoch: before.epoch + 1, phase: 'ready', owner: { kind: 'anonymous' } },
+  ]);
+  const { StepDraftSession } = await import('../../../src/products/roadmap/step/StepDraftSession.js');
+  const drafts = new StepDraftSession();
+  drafts.bindScope(scope);
+  assert.notEqual(drafts.start({ draft: { field: 'label' }, displayValue: 'Anonymous edit' }), null);
+});
+
+test('a different cookie owner during committed sign-out fences its own scope before cleanup continues', async (t) => {
+  const state = await account(t);
+  const clear = state.engine.credentials.clear, answers = [];
+  state.engine.credentials.clear = async (account) => { const gone = await clear(account); answers.push(gone); return gone; };
+  const scope = state.auth().dataScope;
+  const before = scope.getSnapshot();
+  const transitions = [];
+  t.after(scope.subscribe(() => transitions.push(scope.getSnapshot())));
+  const cleanupScopes = [];
+  roadmapRoutes.forgetDevice.mock.mockImplementation(() => cleanupScopes.push(scope.getSnapshot()));
+  let answer;
+  const cookie = new Promise((resolve) => { answer = resolve; });
+  let reads = 0;
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    assert.equal(String(url).endsWith('/auth/logout'), false);
+    reads++;
+    if (reads === 1) return cookie;
+    return { ok: true, status: 200, json: async () => ({ user: { id: 'B', name: 'Bea' } }) };
+  });
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => state.engine.signoutTimer !== undefined);
+  state.env.timers.advance(state.engine.limits.SIGNOUT_FLUSH_MS + 1);
+  await until(() => decision()?.props.question);
+  const finish = decision().props.onDecision('keep');
+  await until(() => reads === 1);
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } });
+  state.setMe({ id: 'B', name: 'Bea' });
+  answer({ ok: true, status: 200, json: async () => ({ user: { id: 'B', name: 'Bea' } }) });
+  await finish;
+  assert.equal(await departure, true);
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } });
+  assert.deepEqual(cleanupScopes, [{ epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } }]);
+  await state.auth().refresh();
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.engine.device.activeReplica.meta.account, 'B');
+  assert.deepEqual(scope.getSnapshot(), { epoch: before.epoch + 2, phase: 'ready', owner: { kind: 'account', id: 'B' } });
+  assert.deepEqual(transitions, [
+    { epoch: before.epoch + 1, phase: 'changing', owner: { kind: 'anonymous' } },
+    { epoch: before.epoch + 2, phase: 'changing', owner: { kind: 'account', id: 'B' } },
+    { epoch: before.epoch + 2, phase: 'ready', owner: { kind: 'account', id: 'B' } },
+  ]);
+  assert.deepEqual(answers, [false]);
+});
+
+test('the credentials port answers that the browser holds no credential once it logged its own account out, or found none', async (t) => {
+  const state = await account(t);
+  let me = { id: 'A', name: 'Ada' };
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/auth/logout')) { me = null; return { ok: true, status: 200, json: async () => ({}) }; }
+    return { ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) };
+  });
+  const own = await state.engine.credentials.clear('A');
+  const none = await state.engine.credentials.clear('A');
+  assert.deepEqual({ own, none, loggedOut: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/auth/logout')).length },
+    { own: true, none: true, loggedOut: 1 });
+});
+
+test('a paused anon replica waits on the shell\'s 20-second read of the account, which releases it once the browser holds no credential, and nothing else asks the server', async (t) => {
+  const state = await account(t);
+  const engine = state.engine;
+  await engine.start();
+  await until(() => engine.leader);
+  state.setMe(null);
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await engine.cleanupCredentials();
+  await state.auth().refresh();
+  const reads = () => globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/v1/me')).length;
+  const told = () => state.env.events.filter(({ name }) => name === 'sync-auth-paused').map(({ props }) => props.outcome);
+  const before = { reads: reads(), fetches: globalThis.fetch.mock.calls.length, told: told().length };
+  await engine.receiveFrame({ op: 'change', scope: 'tree/b_00000001', as: 'A' });
+  for (let i = 0; i < 20; i++) { state.env.timers.advance(15_000); await tick(); }
+  t.mock.timers.tick(19_999);
+  await tick();
+  const waited = { state: engine.device.activeReplica.meta.state, authPaused: engine.device.activeReplica.meta.authPaused,
+    fetches: globalThis.fetch.mock.calls.length - before.fetches };
+  t.mock.timers.tick(1);
+  await until(() => engine.device.activeReplica.meta.authPaused === false);
+  assert.deepEqual({ waited, reads: reads() - before.reads, fetches: globalThis.fetch.mock.calls.length - before.fetches,
+    told: told().slice(before.told), status: state.auth().status, failures: state.env.failures }, {
+    waited: { state: 'anon', authPaused: true, fetches: 0 },
+    reads: 1, fetches: 1, told: ['paused', 'released'], status: 'ghost', failures: [],
+  });
+});
+
+test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {
+  const state = await account(t);
+  const steps = [];
+  const said = { title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],
+    note: 'Choosing Discard removes this browser roadmap.' };
+  const words = { ...said, onStep: (step) => steps.push(step) };
+  t.mock.method(journalRoutes.sync, 'adoptionAnswer', () => null);
+  t.mock.method(journalRoutes.sync, 'adoptionCount', () => 2);
+  const sync = roadmapRoutes.sync;
+  roadmapRoutes.sync = { signInWords: async (engine, due) => (due.product === 'roadmap' ? words : null) };
+  t.after(() => { roadmapRoutes.sync = sync; });
+  const due = [{ kind: 'signed-out', product: 'journal', count: { page: 3 }, counted: ['j1'] },
+    { kind: 'signed-out', product: 'roadmap', count: { tree: 1, meta: 1 }, counted: ['r1', 'r2'] }];
+  const answered = [];
+  t.mock.method(state.engine, 'signIn', async (_account, answers = {}) => {
+    answered.push(answers);
+    return { complete: due.every((question) => answers.decisions?.[question.product]), due };
+  });
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  const asked = () => {
+    const { product, count, words: worded } = decision().props.question;
+    if (!worded) return { product, count, words: worded };
+    const { onStep, ...shown } = worded;
+    onStep('shown');
+    return { product, count, words: shown };
+  };
+
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const first = asked();
+  await decision().props.onDecision('add');
+  const second = asked();
+  await decision().props.onDecision('discard');
+  assert.deepEqual({ first, second, last: decision().props.question, answered, status: state.auth().status, steps }, {
+    first: { product: 'journal', count: { page: 2 }, words: null },
+    second: { product: 'roadmap', count: { tree: 1, meta: 1 }, words: said },
+    steps: ['shown'],
+    last: null,
+    answered: [{}, { decisions: { journal: 'add' }, counted: { journal: ['j1'] } },
+      { decisions: { journal: 'add', roadmap: 'discard' }, counted: { journal: ['j1'], roadmap: ['r1', 'r2'] } }],
+    status: 'signed-in',
+  });
+});
+
+test('cancelling a sign-in its product words keeps the work from before on the device, unsent, and signs the account out of it', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  state.broadcasts[0].onmessage({ data: { type: 'signed-out' } });
+  await until(() => state.auth().status === 'ghost');
+  await state.engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'made signed out' } }]);
+  const request = state.env.transport.request.bind(state.env.transport);
+  state.env.transport.request = async (endpoint, body) => {
+    const answer = await request(endpoint, body);
+    if (endpoint === 'hello' && answer.response.body.holdsRecords) answer.response.body.holdsRecords.probe = true;
+    return answer;
+  };
+  const steps = [];
+  const said = { title: 'Add your cards?', lead: '1 card on this browser can join your account.', items: ['made signed out'], note: 'Discard removes it.' };
+  const probe = { id: 'probe', sync: { signInWords: async () => ({ ...said, onStep: (step) => steps.push(step) }) } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+
+  state.setMe({ id: 'A', name: 'Ada' });
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const decision = elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  const pendingSignIn = structuredClone(state.engine.device.meta.pendingSignIn);
+  globalThis.fetch.mock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/auth/logout')) { state.setMe(null); return { ok: true, status: 200, json: async () => ({}) }; }
+    return { ok: true, status: 200, json: async () => ({ user: { id: 'A', name: 'Ada' } }) };
+  });
+  const { onStep, ...shown } = decision.props.question.words;
+  onStep('cancel');
+  await decision.props.onCancel();
+  const replicas = state.engine.device.replicas.map((replica) => [replica.meta.state, replica.entries().map((entry) => [entry.lineage, entry.scope])]);
+  assert.deepEqual({ asked: [decision.props.question.product, shown], steps, pendingSignIn,
+    after: { question: elementsOf(state.view.tree).find((node) => node.props.onDecision).props.question, status: state.auth().status,
+      pendingSignIn: state.engine.device.meta.pendingSignIn, clearCredential: state.engine.device.meta.clearCredential, replicas },
+    loggedOut: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/auth/logout')).length }, {
+    asked: ['probe', said],
+    steps: ['cancel'],
+    pendingSignIn: { account: 'A' },
+    after: { question: null, status: 'ghost', pendingSignIn: undefined, clearCredential: undefined,
+      replicas: [['anon', [['anon', 'self/probe']]], ['dormant', [['A', 'self/probe']]]] },
+    loggedOut: 1,
+  });
+});
+
+test('a product whose sign-out notice or whose words\' steps throw cannot keep a person from signing out and in: the shell asks without them', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const thrown = () => { throw new Error('the product chunk did not load'); };
+  const words = (title) => ({ title, lead: '1 card on this browser.', items: ['made signed out'], note: 'Discard removes it.', onStep: thrown });
+  const probe = { id: 'probe', signOutNotice: thrown,
+    sync: { signInWords: async () => words('Add your cards?'), signOutWords: async () => words('Keep your cards?') } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+
+  const departure = state.auth().signOut();
+  await until(() => decision()?.props.question);
+  const signOut = decision().props;
+  for (const step of ['shown', 'keep']) signOut.question.words.onStep(step);
+  await signOut.onDecision('keep');
+  const departed = await departure;
+
+  state.engine.online = true;
+  await state.engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'made signed out' } }]);
+  const request = state.env.transport.request.bind(state.env.transport);
+  state.env.transport.request = async (endpoint, body) => {
+    const answer = await request(endpoint, body);
+    if (endpoint === 'hello' && answer.response.body.holdsRecords) answer.response.body.holdsRecords.probe = true;
+    return answer;
+  };
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const signIn = decision().props;
+  for (const step of ['shown', 'add']) signIn.question.words.onStep(step);
+  await signIn.onDecision('add');
+  assert.deepEqual({ departed, notices: signOut.notices, asked: [signOut.question.words.title, signIn.question.words.title],
+    status: state.auth().status, replica: state.engine.device.activeReplica.meta.state, question: decision().props.question },
+  { departed: true, notices: [], asked: ['Keep your cards?', 'Add your cards?'], status: 'signed-in', replica: 'bound', question: null });
+});
+
+test('a product whose sign-out words throw cannot keep a person from signing out: the shell asks in its own words', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const probe = { id: 'probe', sync: { signOutWords: async () => { throw new Error('the product chunk did not load'); } } };
+  PRODUCTS.push(probe);
+  t.after(() => PRODUCTS.splice(PRODUCTS.indexOf(probe), 1));
+  const departure = state.auth().signOut();
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await until(() => decision()?.props.question);
+  assert.deepEqual(decision().props.question, { complete: false, unsent: 1, ready: 1, sent: 0, counted: [state.entries[0].localId] });
+  await decision().props.onDecision('keep');
+  assert.deepEqual({ departed: await departure, status: state.auth().status, replica: state.engine.device.activeReplica.meta.state },
+    { departed: true, status: 'ghost', replica: 'anon' });
 });

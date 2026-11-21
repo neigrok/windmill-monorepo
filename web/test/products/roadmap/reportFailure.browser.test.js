@@ -59,11 +59,15 @@ function start() {
           if (id.endsWith('/telemetry/beacon.js')) return '\0report-failure-beacon';
           if (id.endsWith('/telemetry/sentry.js')) return '\0report-failure-sentry';
           if (id.endsWith('/auth/AuthProvider.jsx')) return '\0report-failure-auth';
+          if (id.endsWith('/replicaRoom.js')) return '\0report-failure-switch';
         },
         load(id) {
           if (id === '\0report-failure-entry') return entry;
           if (id === '\0report-failure-beacon') return beacon;
           if (id === '\0report-failure-auth') return auth;
+          // Settings' export here reads roadmap's own sync, as a build with the switch off does; its read of the device's copy
+          // is test/products/roadmap/settings/exportArchive.test.js's.
+          if (id === '\0report-failure-switch') return 'export const ROOM_READS_REPLICA = false;';
           if (id === '\0report-failure-sentry') return 'export function captureError(kind, operation, stack, route) { window.issues.push({ operation, route }); (window.stacks ??= []).push(stack); }';
         },
         configureServer(vite) {
@@ -289,7 +293,7 @@ async function exportAll(page) {
   }));
 }
 
-test('Export all with one roadmap failing says how many it got, reports it, and downloads the rest', async () => {
+test('with the switch off, Export all with one roadmap failing says how many it got, reports it, and downloads the rest', async () => {
   await withDoor('data', exportAnswers(json({ error: 'boom' }, 500)), async (page) => {
     assert.deepEqual(await exportAll(page), {
       note: 'Exported 1 of 2 roadmaps.',
@@ -300,7 +304,7 @@ test('Export all with one roadmap failing says how many it got, reports it, and 
   });
 });
 
-test("Export all keeps a roadmap out of the zip rather than export it with marks it couldn't read", async () => {
+test("with the switch off, Export all keeps a roadmap out of the zip rather than export it with marks it couldn't read", async () => {
   await withDoor('data', exportAnswers(TREE_B, json({ error: 'boom' }, 500)), async (page) => {
     const { note, issues, events } = await exportAll(page);
     assert.deepEqual({ note, issues, events }, {
@@ -311,7 +315,7 @@ test("Export all keeps a roadmap out of the zip rather than export it with marks
   });
 });
 
-test('Export all with every roadmap failing downloads nothing and says it failed', async () => {
+test('with the switch off, Export all with every roadmap failing downloads nothing and says it failed', async () => {
   await withDoor('data', { ...exportAnswers(json({ error: 'boom' }, 500)), 'GET /v1/trees/t_b': json({ error: 'boom' }, 500) }, async (page) => {
     assert.deepEqual(await exportAll(page), {
       note: "Couldn't build your export just now — try again.",
@@ -322,7 +326,7 @@ test('Export all with every roadmap failing downloads nothing and says it failed
   });
 });
 
-test('Export all whose download is refused reports roadmap-export and says it failed', async () => {
+test('with the switch off, Export all whose download is refused reports roadmap-export and says it failed', async () => {
   await withDoor('data', exportAnswers(TREE_B), async (page) => {
     await page.evaluate(() => { URL.createObjectURL = () => { throw new Error('refused'); }; });
     const { note, issues, events } = await exportAll(page);

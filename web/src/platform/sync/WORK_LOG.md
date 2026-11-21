@@ -20,21 +20,33 @@ their read barrier. Rejecting a blocked open cannot cancel its native request, s
 later upgrades and closes late successful connections. Native lifecycle regressions also check that
 aborted upgrades close, retries retain every row, and version changes release all open stores.
 
+A store version change closes the older tab's connection but not its Web Locks or its channel: a started engine
+whose store closed keeps leading and answering peers while it can read nothing, and every tab of the newer bundle
+waits on it. Lock and channel names therefore carry the store version (IndexedDB never lets tabs hold the store open
+at two versions at once), and an engine whose store an upgrade closes releases its locks and its channel itself.
+
 The domain kit's nesting guard covers the synchronous execution context across runner instances and
 checks before queueing storage work. Holding it across the outer Promise would mistake independent
 queued actions for nested calls; checking only inside a queued transaction lets an inner write escape
 the outer fault. Persisted run/save regressions wait for both outcomes and reopen the device store.
 
 First-tab detection needs a short registration lock around `locks.query()` and acquisition of the
-shared `wm-tab` lock. Querying independently in simultaneous tab starts can designate two first
+shared `wm-tab@<store>` lock. Querying independently in simultaneous tab starts can designate two first
 tabs and release a current Undo window. Delayed push replies must also match their request's wire
 replica ID, even though storage retains the same replica handle.
 
-Writer transactions hydrate control records and explicitly selected row keys/scopes, with a type
-index for governing records. Row generations keep staging swaps and cache removal independent of
-cache size. Queue-to-durability timings are measured; 128-key cleanup batches bound storage work.
-The observer hydrates only the scopes it needs after boot and may still do work proportional to
-an observed scope. This work happens in a readonly transaction after the writer commits.
+Writer transactions edit working copies of the control records the store last committed or read,
+while the head revision holds, and hydrate explicitly selected row keys/scopes, with a type index for
+governing records; rows a connection has read stay in memory, frozen, per generation version. Row generations
+keep staging swaps and cache removal independent of cache size. Queue-to-durability timings are
+measured; 128-key cleanup batches bound storage work. An observation folds again only the records a
+publication changed; its first read of a scope is proportional to the scope.
+
+At roadmap's size (the browser harness in `packages/api-contract/sync/benchmarks`), a write still
+re-encodes every control record to find what changed, because the reference edits outbox entries in
+place: a few milliseconds per write for a queue of 10,000 entries. A commit folds a whole scope only
+to mint an id, place an anchored move or count a capped type. A first pull is bound by IndexedDB
+writing each row with its two secondary indexes, and a cold open by reading each row.
 
 Both runtime replays register all 20 seeds as separate test cases, each with a 60-second limit,
 so the timeout bounds one seed's work. Every persisted seed exercises all 34 faults and checks

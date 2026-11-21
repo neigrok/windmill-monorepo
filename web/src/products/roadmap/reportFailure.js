@@ -1,4 +1,5 @@
 import { captureError } from '../../telemetry/sentry.js';
+import { buildRetirement } from './sync/retirement.js';
 
 // A failure its boundary has already judged, reported or not: a catch further up passes it on without a second Issue.
 export class BoundaryFailure extends Error {}
@@ -22,11 +23,11 @@ export function pageWatching() {
 
 const STORAGE_REFUSALS = new Set(['SecurityError', 'QuotaExceededError']);
 
-// A refusal, a request nobody was waiting on and a browser refusing storage are expected answers; anything else reports,
-// under the tags its boundary gives it.
+// A refusal, a request nobody was waiting on, one a retired build never sent and a browser refusing storage are expected
+// answers; anything else reports, under the tags its boundary gives it.
 export function reportUnexpectedFailure(operation, error, tags) {
   if (STORAGE_REFUSALS.has(error?.name)) return;
-  if (error?.status === 0 && !pageWatching()) return;
+  if (error?.status === 0 && (!pageWatching() || buildRetirement.retired)) return;
   if (error?.status > 0 && error.status < 500) return;
   reportRoadmapFailure(operation, error, tags);
 }

@@ -81,7 +81,7 @@ struct LiveChannelTests {
     await rig.engine.puller.enqueue(.gone(Self.tree, servedAs: "A"), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Self.tree, .gone))
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .unsub([Self.tree])])
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree, Self.overlay]), .unsub([Self.tree, Self.overlay])])
   }
 
   // §7.9: a tree whose board's create is in the outbox is not followed, nor its overlay, and a not-found frame for the
@@ -114,10 +114,7 @@ struct LiveChannelTests {
     #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.overlay]), .sub([Self.tree])])
   }
 
-  // §6.8, §7.9: the socket subscribed the tree before its board reached the server, which answered not-found and kept no
-  // subscription. The frame lands after the board's create is acked, so it is ignored, and the tree is in doubt: no `sub`
-  // goes out for it, while the overlay that joined with the board is followed. The next pull brings the tree's rows,
-  // which ends the doubt, and the tree is followed again.
+  // A stale not-found after the board's acknowledgement leaves its tree in doubt and its overlay followed until rows arrive.
   @Test func aTreeWhoseStaleNotFoundFrameIsIgnoredIsSubscribedAgainOnceItsRowsCame() async throws {
     let (rig, socket) = try await Self.open()
     try rig.engine.subscribe(Self.tree)
@@ -130,7 +127,7 @@ struct LiveChannelTests {
     #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
     #expect(try rig.active().known == [:])
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .sub([Self.overlay])])
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree, Self.overlay])])
     rig.transport.willAnswerPull(200, Rig.pulled([
       Rig.rows([try PullerTests.board(seq: 1)], seq: 1), Rig.rows(in: Self.tree, seq: 0), Rig.rows(in: Self.overlay, seq: 0),
     ]))
@@ -143,7 +140,7 @@ struct LiveChannelTests {
       PullRequest.Pulled(scope: Self.overlay, cursor: nil),
     ]))
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .sub([Self.overlay]), .sub([Self.tree])])
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree, Self.overlay]), .sub([Self.tree])])
   }
 
   // §6.8, §7.9: an ignored end frame drops its scope from what the socket follows and puts it in doubt: no `sub` goes out
@@ -215,9 +212,9 @@ struct LiveChannelTests {
     #expect(rig.engine.doubts.k(Rig.scope) == 2)
   }
 
-  // §6.8, §7.9: an applied end frame sends no `unsub`; a subscribe sends `sub` again for a tree not found, not one gone.
+  // An end frame detaches its tree; the client unsubscribes its overlay and can follow both again after not-found.
   @Test(arguments: [KnownKind.gone, .notFound])
-  func anAppliedEndFrameIsFollowedNoMoreWithoutAnUnsub(_ kind: KnownKind) async throws {
+  func anAppliedTreeEndDetachesItsOverlayAndOnlyNotFoundCanResubscribe(_ kind: KnownKind) async throws {
     let (rig, socket) = try await Self.open()
     try rig.engine.subscribe(Self.tree)
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
@@ -225,11 +222,11 @@ struct LiveChannelTests {
     #expect(await rig.engine.live.receiveNext())
     #expect(await rig.engine.puller.step() == .frame(Self.tree, kind == .gone ? .gone : .notFound))
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree])])
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree, Self.overlay]), .unsub([Self.overlay])])
     #expect(try rig.engine.subscribe(Self.tree) == (kind == .gone ? .gone : .subscribed))
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    let resubscribed: [LiveRequest] = kind == .gone ? [] : [.sub([Self.tree])]
-    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree])] + resubscribed)
+    let resubscribed: [LiveRequest] = kind == .gone ? [] : [.sub([Self.tree, Self.overlay])]
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree, Self.overlay]), .unsub([Self.overlay])] + resubscribed)
   }
 
   // Leaving closes the socket; back in the foreground another opens.

@@ -1,8 +1,12 @@
 export class TabLeadership {
-  constructor({ locks = globalThis.navigator?.locks, channel = (name) => new BroadcastChannel(name),
+  constructor({ locks = globalThis.navigator?.locks, channel = (name) => new BroadcastChannel(name), store,
     visible = true, readReplica, onLeader, onMessage, onFailure = () => {}, id = crypto.randomUUID() }) {
-    if (!locks || !channel) throw new Error('sync coordination unavailable');
+    if (!locks || !channel || !store) throw new Error('sync coordination unavailable');
     Object.assign(this, { locks, channelFactory: channel, visible, readReplica, onLeader, onMessage, onFailure, id });
+    // Every name carries the device store's IndexedDB version (engine.md §7.8). Two versions never hold the store open
+    // together, so a tab under another version's names is one an upgrade cut off from the store: it may hold its lock
+    // forever, and no tab of this version waits on it, counts it as a peer or hears it.
+    this.names = { start: `wm-tab-start@${store}`, tab: `wm-tab@${store}`, replica: (replica) => `wm-sync@${store}:${replica}` };
     this.peers = new Map();
     this.closed = false;
     this.leader = false;
@@ -12,15 +16,15 @@ export class TabLeadership {
   }
 
   async start(replica) {
-    await this.locks.request('wm-tab-start', async () => {
+    await this.locks.request(this.names.start, async () => {
       if (this.closed) return;
       const { held } = await this.locks.query();
       if (this.closed) return;
-      this.first = !held.some((lock) => lock.name === 'wm-tab');
+      this.first = !held.some((lock) => lock.name === this.names.tab);
       let acquired;
       const ready = new Promise((resolve, reject) => {
         acquired = resolve;
-        this.tabTask = this.locks.request('wm-tab', { mode: 'shared' }, () => {
+        this.tabTask = this.locks.request(this.names.tab, { mode: 'shared' }, () => {
           acquired();
           if (this.closed) return;
           return new Promise((resolve) => { this.releaseTab = resolve; });
@@ -40,7 +44,7 @@ export class TabLeadership {
     this.channel?.close();
     this.peers.clear();
     this.replica = replica;
-    this.channel = this.channelFactory(`wm-sync:${replica}`);
+    this.channel = this.channelFactory(this.names.replica(replica));
     this.channel.onmessage = ({ data }) => {
       this.messages = this.messages.then(() => this.receive(data)).catch(() => this.onFailure('leadership'));
     };
@@ -96,7 +100,7 @@ export class TabLeadership {
     const controller = new AbortController();
     const generation = this.generation;
     this.pending = controller;
-    const task = this.locks.request(`wm-sync:${this.replica}`, { signal: controller.signal }, async () => {
+    const task = this.locks.request(this.names.replica(this.replica), { signal: controller.signal }, async () => {
       if (this.closed || controller.signal.aborted || generation !== this.generation) return;
       const replica = await this.readReplica();
       if (this.closed || controller.signal.aborted || generation !== this.generation) return;

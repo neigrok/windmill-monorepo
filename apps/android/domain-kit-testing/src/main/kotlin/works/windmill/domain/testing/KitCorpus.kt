@@ -36,8 +36,13 @@ object KitCorpus {
         "capacity/count.json" to WriteVectors::capacity,
         "plan/translate.json" to WriteVectors::translate,
         "run/pipeline.json" to WriteVectors::pipeline,
+        "run/acts.json" to WriteVectors::act,
+        "run/act-decisions.json" to WriteVectors::actDecision,
+        "run/composed.json" to WriteVectors::engineAct,
+        "run/undo.json" to WriteVectors::engineAct,
         "draft/save.json" to WriteVectors::save,
         "draft/script.json" to WriteVectors::script,
+        "scope/bindings.json" to WriteVectors::script,
         "refusal/subject.json" to WriteVectors::subject,
     )
     fun valueVector(input: Json): Json = if (input["spec"]?.get("kind")?.str() == "count") handlers.getValue("value/count.json")(input) else value(input)

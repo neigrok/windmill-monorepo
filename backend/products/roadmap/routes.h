@@ -5,7 +5,8 @@
 #include "platform/ports/TokenGenerator.h"
 #include "products/roadmap/adapters/ws/PresenceHub.h"
 #include "products/roadmap/adapters/ws/WsPresenceBus.h"
-#include "products/roadmap/application/ForkService.h"
+#include "products/roadmap/application/EngineReadModels.h"
+#include "products/roadmap/ports/TreeForks.h"
 #include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/ReminderSweep.h"
@@ -38,7 +39,7 @@ struct RoadmapDeps {
   std::shared_ptr<WsPresenceBus> bus;
   std::shared_ptr<PresenceHub> presence;
   std::shared_ptr<AuthService> authService;
-  std::shared_ptr<ForkService> forkService;
+  std::shared_ptr<TreeForks> forkService;
   std::shared_ptr<TreeRegistry> treeRegistry;
   std::shared_ptr<OgImageRepository> ogImages;
   std::shared_ptr<OgVideoRepository> ogVideos;
@@ -51,13 +52,18 @@ struct RoadmapDeps {
   std::shared_ptr<Clock> clock;
   std::string remindersAdminToken;
   std::shared_ptr<PlanComposer> composer;
+  // Set where the engine serves roadmap's scopes (ROADMAP_ENGINE_ENABLED): the activity, the progress, the share page, its
+  // card and video, and the gallery read its records, and the rooms' socket and routes are retired; unset, the rooms and
+  // roadmap's own tables serve.
+  std::shared_ptr<EngineReadModels> engineReads;
   // The origins allowed to drive this server from a browser — main.cpp composes the set once, for
   // CORS, and the collab socket gates its upgrade on the same one. Two lists would drift.
   std::set<std::string> allowedOrigins;
 };
 
-// Mounts the roadmap product on the shared app: the collab socket, its presence flush, and every
-// roadmap HTTP route (/v1/trees*, /gallery, /t/:id, /v1/reminders*, /v1/tend*, /v1/compose, …).
+// Mounts the roadmap product on the shared app: the collab socket and its presence flush, or their retirement where the
+// engine serves roadmap's scopes, and every roadmap HTTP route (/v1/trees*, /gallery, /t/:id, /v1/reminders*, /v1/tend*,
+// /v1/compose, …).
 void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps);
 
 }

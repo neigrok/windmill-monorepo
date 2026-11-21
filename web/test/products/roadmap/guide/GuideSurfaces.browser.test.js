@@ -675,7 +675,7 @@ test('Chromium: Enter held on the entry opens the note once: it neither runs on 
   } finally { await empty.close(); }
 });
 
-test('Chromium: an owner demoted mid-draft saves nothing and is told it was refused; a clipboard that refuses the copy leaves Copy draft standing, and Cancel still asks', async () => {
+test('Chromium: an owner demoted mid-draft saves nothing and sees the local refusal; a refused copy explains the failure, and Cancel still asks', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
@@ -691,11 +691,11 @@ test('Chromium: an owner demoted mid-draft saves nothing and is told it was refu
       const line = page.getByRole('alert');
       await line.waitFor();
       assert.deepEqual({ line: await line.textContent(), writes: await page.evaluate(() => window.writes), draft: await field(page).inputValue(), last: (await events(page)).at(-1) },
-        { line: 'The server refused this save. Copy your draft to keep it.', writes: [], draft: `${GUIDE} Written`, last: { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' } });
+        { line: 'You can’t save this guide. Copy your draft to keep it.', writes: [], draft: `${GUIDE} Written`, last: { step: 'save', outcome: 'failed', length: '1-500', reason: 'not-owner' } });
       await page.getByRole('button', { name: 'Copy draft' }).click();
       await page.waitForFunction(() => window.events.some(({ props }) => props.step === 'copy'));
       assert.deepEqual({ footer: await page.locator('.st-guide-footer').textContent(), copied: await page.getByRole('status').count(), last: (await events(page)).at(-1) },
-        { footer: 'The server refused this save. Copy your draft to keep it.CancelCopy draft', copied: 0, last: { step: 'copy', outcome: 'failed' } });
+        { footer: 'Couldn’t copy your draft. Try Copy draft again.CancelCopy draft', copied: 0, last: { step: 'copy', outcome: 'failed' } });
       await page.getByRole('button', { name: 'Cancel' }).click();
       await page.getByRole('alertdialog', { name: 'Discard draft?' }).waitFor();
       await page.getByRole('button', { name: 'Keep editing' }).click();

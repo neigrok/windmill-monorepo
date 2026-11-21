@@ -1,9 +1,10 @@
 # MCP adapter (`adapters/mcp/`)
 
 An AI agent reads and authors Windmill roadmaps through the same application core an HTTP or
-WebSocket client drives. Edits route through the tree's `TreeRoom`, so they are merged, sequenced,
-logged to `tree_ops`, and persisted to the per-entry lattice tables (`tree_nodes` / `tree_edges` /
-`tree_kinds`) like any other edit.
+WebSocket client drives. Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, as production's does, every
+edit is a call of roadmap's door into the sync engine (The door, below). Elsewhere edits route through the
+tree's `TreeRoom`, so they are merged, sequenced, logged to `tree_ops`, and persisted to the per-entry lattice
+tables (`tree_nodes` / `tree_edges` / `tree_kinds`) like any other edit.
 
 ## Layout
 
@@ -32,11 +33,16 @@ platform/adapters/mcp/
 products/roadmap/adapters/mcp/
   RoadmapTools             roadmap's ToolHost: catalog + dispatch into RoomRegistry / TreeRoom /
                            ProgressService. It declares its tools and never its own gate.
+  RoadmapDoorTools         the same tools through the engine's door (The door, below), registered in
+                           RoadmapTools' place where ROADMAP_ENGINE_ENABLED serves roadmap's scopes.
+  RoadmapToolParts         what both hosts say alike: argument checks that read no tree, the marks a
+                           call carries, and the words of a refusal and a receipt.
   ToolArgs                 argument validation and the sentence a refusal is written in.
   ReadShape                the read projections (`fields`) and paging (`limit`/`cursor`).
   EditReceipt              what an edit answers about diagnostics.
   RoadmapResources         `roadmapInstructions()` and `roadmapResources()`.
-  golden/wire_corpus.json  a byte-compared transcript of one authoring session (WireCorpusTest).
+  golden/wire_corpus.json  a byte-compared transcript of one authoring session (WireCorpusTest), and
+  golden/wire_corpus_door.json the same session through the door.
 platform/infra/
   main.cpp                 `windmill_server`   — REST + the collab socket + MCP, one process.
   mcp_main.cpp             `windmill_mcp`      — stdio transport (local hosts spawn it).
@@ -136,8 +142,9 @@ both speak JSON-RPC 2.0, protocol version `2025-06-18`:
     the liveness probe is the app root (`deploy/docker-compose.yml`).
 
 The deployed HTTP transport is `windmill_server`: `main.cpp` registers `McpHttpEndpoint` on the
-REST host's `WINDMILL_MCP_PATH`, over the *same* `RoomRegistry` REST and the collab socket use, so
-an agent's edit fans out to connected browsers through `WsPresenceBus` as it lands.
+REST host's `WINDMILL_MCP_PATH`. In production its roadmap tools are the door's, so an agent's edit reaches
+browsers through the engine's live feed as it lands; where `ROADMAP_ENGINE_ENABLED` is unset they run over the
+*same* `RoomRegistry` REST and the collab socket use, and an edit fans out through `WsPresenceBus`.
 `windmill_mcp_http` is the standalone build of that endpoint — its own process, its own
 `RoomRegistry`, a null presence bus — for local and single-purpose runs only (see *Operating
 notes*).
@@ -875,6 +882,47 @@ and none overrides another.
   exact id, id prefix, label hit, id substring, description-only hit. Matching and ranking live in
   the pure `selectNodes` read-model (`domain/NodeQuery`); the order is deterministic, which is what
   keeps a resume `cursor` pointing at the row it was minted from.
+
+## The door
+
+Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes (`platform/infra/main.cpp`), `windmill_server` registers
+`RoadmapDoorTools` and every call is roadmap's door's (`application/RoadmapDoor`, Roadmap on the sync engine §7): a write
+is one call of the door, whose intents are built under their scope's lock and admitted through roadmap's binding; a
+tree's edits plan in a `TreeRoom` built from the tree scope's rows (`application/RoadmapRows`), so this file's refusals,
+receipts and planners hold, and the room's changes become the intent's deltas, a step's pointer in its owner's overlay;
+the caller's marks are their overlay's `progress`. Reads read the typed tables through the read domain
+(`domain/read/`). Every write takes an optional `requestId`: the call's reply is stored with it, so the same call sent again
+is answered that reply and writes nothing, and other arguments under it are refused `request-conflict`. A call the engine
+cannot take now answers `busy`, nothing written. A call's admits are the same in every attempt, and each builds what it
+writes from the call's arguments and the rows under its lock, so a call cut short after some of its writes and sent again
+under its requestId makes exactly the writes that had not landed and answers `resumed: true` with the tree's `seq`; what
+the first attempt would have answered is not told. A refusal met under a lock abandons its admit whole, so no stored
+part is ever a refusal. `windmill_mcp` and `windmill_mcp_http` keep the rooms.
+
+What the door answers otherwise, each pinned by `golden/wire_corpus_door.json` or `DoorToolsTest.cpp`:
+
+- `seq` and `expectedSeq` are the tree scope's sequence number. A change that only moves a step's `opens` writes the
+  owner's overlay and leaves `seq` where it was.
+- A step or kind the door creates takes an order key after every one the roadmap holds, so a read answers that `order`
+  and lists steps in authored order (order, birth, id); `prerequisites` are what a step follows (D-5), in that order.
+- A `create_node` without an `id` derives one by the engine's D-26: the base stops at 40 characters and an empty one is
+  `step`.
+- What a step follows is read through absent steps (D-5): `prerequisites`, `state` and `find_nodes {state}` follow a
+  deleted step's prerequisites, and `get_diagnostics` lists in `dangling` only links naming an id no step record holds,
+  never `maskedWork`, and no loop of absent steps alone. A write's `diagnosticsClean` and `introducedDiagnostics` read
+  the tree the same way, so deleting a step dangles none of its links.
+- A write is committed before it answers: no reply says `saved`, `saveError`, `unsaved` or `incomplete`, and the owner's
+  roadmaps are read in the reply's snapshot, so none says `openedTreesUnavailable`, `guidesAboveUnavailable` or
+  `pointerDiagnosticsUnavailable`.
+- A step's pointer is written in the owner's overlay after the tree write, only where the call sends one: a step an
+  import brings back from a delete keeps the pointer the overlay holds for it, as it keeps its links.
+- `delete_tree` answers in `removed` the steps of the owner's other roadmaps whose pointer opened it, which the engine
+  deletes with it; their links stay, read through while the steps are absent.
+- `list_trees` answers `updatedAt` as the newest write among a roadmap's records and the caller's marks, newest first.
+- A root stands only once its tree scope holds its `meta`: a `create_tree`, or a fork (`application/DoorForks`), cut
+  short after its record and before its meta is listed, counted and opened nowhere until the same call sent again
+  finishes it.
+- Nothing is written to `tree_ops`.
 
 ## Build
 

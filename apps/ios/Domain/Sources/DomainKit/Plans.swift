@@ -9,8 +9,29 @@ public struct Plan: Sendable {
   var predictions: [Prediction] = []
   var deviceWrites: [DeviceWrite] = []
   var supersededGestures: [String] = []
+  var undoRecipes: [UndoRecipe] = []
+  var undoEvidence = false
 
   public init() {}
+
+  // §9.6: opts the plan's act into Undo after its hold, with the recipes an Undo runs.
+  public mutating func undoBy(_ recipes: UndoRecipe...) {
+    precondition(!recipes.isEmpty, "undoBy takes Undo recipes")
+    undoRecipes += recipes
+  }
+
+  // §9.6: names the plan's segment for its act's Undo with no recipe of its own. The engine journals the segment's
+  // receipts, which prove what another segment's command recipe names as evidence, such as a scope the act created and
+  // this segment wrote.
+  public mutating func evidenceForUndo() {
+    undoEvidence = true
+  }
+
+  // The plan's Undo recipes as engine §7.3's `{version: 1, recipes}`, with no recipe for evidence alone, or nil when it
+  // does not opt in.
+  public var undo: (version: Int, recipes: [UndoRecipe])? {
+    undoRecipes.isEmpty && !undoEvidence ? nil : (1, undoRecipes)
+  }
 
   // §8.4: the one command a plan runs, its string arguments normalised by the command's specs.
   public init<C: ServerCommand>(running command: C, predicting: [Prediction] = []) throws(Violation) {
@@ -45,6 +66,11 @@ public struct Plan: Sendable {
   public mutating func update<E: Writable>(_ value: Valid<E>, fields: [String]? = nil, from base: E? = nil,
                                            guarded: Bool = false) {
     append(.update(named: (fields ?? value.checked).uniqueInByteOrder, base: base?.fields, guarded: guarded), value)
+  }
+
+  public mutating func revive<E: Writable>(_ value: Valid<E>, fields: [String], from base: E? = nil,
+                                           guarded: Bool = false) {
+    append(.revive(named: fields.uniqueInByteOrder, base: base?.fields, guarded: guarded), value)
   }
 
   public mutating func remove<E: Removable>(_ id: ID<E>) {
@@ -111,6 +137,7 @@ struct Operation: Sendable {
     case create(named: [String]?, base: [String: JSON]?)
     case insert(below: RecordID?)
     case update(named: [String], base: [String: JSON]?, guarded: Bool)
+    case revive(named: [String], base: [String: JSON]?, guarded: Bool)
     case remove
     case move(below: RecordID?)
     case guardRead([String])
@@ -161,7 +188,9 @@ public protocol ServerCommand: Sendable {
   var args: [String: JSON] { get }
 }
 
-// The values a product expects its command to write, server-written fields included, drawn until the result arrives.
+// The values a product expects its command to write, server-written fields included, drawn until the result arrives. A
+// prediction names its scope when that is not the plan's: a command with scoped effects (engine E-7) may predict records
+// in every scope it changes.
 public struct Prediction: Sendable {
   enum Kind: Sendable {
     case create, update, write, remove
@@ -172,21 +201,78 @@ public struct Prediction: Sendable {
   let id: RecordID
   let values: [String: JSON]
   var texts: [String: String] = [:]
+  var scope: ScopeRef?
 
-  public static func write<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], texts: [String: String] = [:]) -> Prediction {
-    Prediction(kind: .write, type: E.type, id: id.record, values: values, texts: texts)
+  public static func write<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], texts: [String: String] = [:],
+                                      in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .write, type: E.type, id: id.record, values: values, texts: texts, scope: scope)
   }
 
-  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction {
-    Prediction(kind: .create, type: E.type, id: id.record, values: values)
+  public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .create, type: E.type, id: id.record, values: values, scope: scope)
   }
 
-  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction {
-    Prediction(kind: .update, type: E.type, id: id.record, values: values)
+  public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .update, type: E.type, id: id.record, values: values, scope: scope)
   }
 
-  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>) -> Prediction {
-    Prediction(kind: .remove, type: E.type, id: id.record, values: [:])
+  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>, in scope: ScopeRef? = nil) -> Prediction {
+    Prediction(kind: .remove, type: E.type, id: id.record, values: [:], scope: scope)
+  }
+}
+
+// MARK: - Undo of an act (§9.6, K-3)
+
+// A record an Undo recipe names, in its scope or, nil, in the scope of the plan that carries it.
+public struct UndoRecord: Sendable {
+  let key: RecordKey
+  let scope: ScopeRef?
+
+  public static func of<E: Entity>(_ id: ID<E>, in scope: ScopeRef? = nil) -> UndoRecord {
+    UndoRecord(key: RecordKey(E.type, id.record), scope: scope)
+  }
+}
+
+// One slot of a record an Undo recipe names: a field, a text or the life.
+public struct UndoTarget: Sendable {
+  let record: UndoRecord
+  let slot: EffectSlot.Slot
+
+  public static func field<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> UndoTarget {
+    UndoTarget(record: .of(id, in: scope), slot: .field(name))
+  }
+
+  public static func text<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> UndoTarget {
+    UndoTarget(record: .of(id, in: scope), slot: .text(name))
+  }
+
+  public static func life<E: Entity>(_ id: ID<E>, in scope: ScopeRef? = nil) -> UndoTarget {
+    UndoTarget(record: .of(id, in: scope), slot: .life)
+  }
+}
+
+// What an Undo of a plan's writes runs, the closed union: earlier values of client fields, texts and lives by the scope's
+// restore command, a target unset before the act carrying the value equivalent to unset; a record the plan created,
+// deleted again while its own writes are all that changed it; or a product's inverse command over the evidence the
+// engine builds.
+public enum UndoRecipe: Sendable {
+  case fields(restoreCommand: String, targets: [(target: UndoTarget, default: JSON?)])
+  case createdRecord(restoreCommand: String, record: UndoRecord)
+  case command(String, input: JSON, ownedFields: [UndoTarget] = [], unchangedCreatedRecords: [UndoRecord] = [],
+               unchangedCreatedScopes: [ScopeRef] = [])
+}
+
+// A product's Redo of one source of an inverse act, by its ordinal, with the scope that source wrote: its plan's Undo
+// recipes stand in for the stored ones, as a Redo of a terminal creation names its own command and a fresh id.
+public struct ProductSlot: Sendable {
+  public let index: Int
+  public let scope: ScopeRef
+  public let plan: Plan
+
+  public init(index: Int, scope: ScopeRef, plan: Plan) {
+    self.index = index
+    self.scope = scope
+    self.plan = plan
   }
 }
 

@@ -211,6 +211,20 @@ INSERT INTO feedback (user_id, message) VALUES ('SAM', 'erase note');
 INSERT INTO feedback (message, email) VALUES ('erase ghost note', 'Erase-Sam-PGTest@example.com');
 INSERT INTO server_errors (actor, path) VALUES ('SAM', '/erase');
 INSERT INTO sync_scopes (key, kind, owner) VALUES ('acct:SAM/gym', 'product', 'SAM');
+INSERT INTO sync_scopes (key, kind, owner) VALUES ('acct:SAM/roadmap', 'product', 'SAM');
+INSERT INTO sync_scopes (key, kind, owner, governed_by) VALUES ('tree:t_erase_sam_engine', 'tree', 'SAM', 'acct:SAM/roadmap#tree#t_erase_sam_engine');
+INSERT INTO roadmap_trees (scope_key, id, seq, rc, ru, born, life, life_stamp) VALUES ('acct:SAM/roadmap', 't_erase_sam_engine', 1, 1, 1, '1:0:a', 'alive', '1:0:a');
+INSERT INTO roadmap_nodes (scope_key, id, seq, rc, ru, born, life, life_stamp, label) VALUES ('tree:t_erase_sam_engine', 'n1', 1, 1, 1, '1:0:a', 'alive', '1:0:a', 'Sam');
+INSERT INTO roadmap_coach_threads (scope_key, id, seq, rc, ru, born, life_stamp, tree_id) VALUES ('acct:SAM/roadmap', 'erase-roadmap-thread', 1, 1, 1, '1:0:a', '1:0:a', 't_erase_sam');
+INSERT INTO roadmap_coach_proposals (scope_key, id, seq, rc, ru, born, life_stamp, tree_id) VALUES ('acct:SAM/roadmap', 'erase-roadmap-proposal', 1, 1, 1, '1:0:a', '1:0:a', 't_erase_sam');
+INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) VALUES ('t_erase_sam_engine', 1, 'SAM', 'gesture:erase', 'DeleteNode', '{"id": "n1"}', '');
+INSERT INTO tree_og_images (tree_id, png) VALUES ('t_erase_sam_engine', '\x00'::bytea);
+INSERT INTO sync_scopes (key, kind, owner, governed_by) VALUES ('acct:EVE/overlay/t_erase_sam_engine', 'overlay', 'EVE', 'tree:t_erase_sam_engine');
+INSERT INTO roadmap_progress (scope_key, id, seq, rc, ru, mark, mark_stamp) VALUES ('acct:EVE/overlay/t_erase_sam_engine', 'n1', 1, 1, 1, '{"status": "complete", "outOfOrder": false}', '1:0:b');
+INSERT INTO sync_scopes (key, kind, owner) VALUES ('acct:EVE/roadmap', 'product', 'EVE');
+INSERT INTO sync_scopes (key, kind, owner, governed_by) VALUES ('tree:t_erase_eve_engine', 'tree', 'EVE', 'acct:EVE/roadmap#tree#t_erase_eve_engine');
+INSERT INTO roadmap_trees (scope_key, id, seq, rc, ru, born, life, life_stamp) VALUES ('acct:EVE/roadmap', 't_erase_eve_engine', 1, 1, 1, '1:0:b', 'alive', '1:0:b');
+INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) VALUES ('t_erase_eve_engine', 1, 'EVE', 'gesture:keep', 'DeleteNode', '{"id": "n1"}', '');
 INSERT INTO sync_spent (scope_key, type, id, life_stamp, seq) VALUES ('acct:SAM/gym', 'set', 'erase-spent', 's', 1);
 INSERT INTO sync_replicas (replica, account, last_seen) VALUES ('erase-replica', 'SAM', 1);
 INSERT INTO sync_results (replica, n, digest) VALUES ('erase-replica', 1, decode(repeat('00', 32), 'hex'));
@@ -306,6 +320,16 @@ INSERT INTO ai_budget_device_accounts (device_id, account_id, bound_at_ms) VALUE
   CHECK_EQ(count("gym_routine_entry_sets WHERE routine_id = 'erase-routine'"), 0);
   CHECK_EQ(count("gym_log_share_sessions WHERE share_id = 'erase-log-share'"), 0);
   CHECK_EQ(count("sync_spent WHERE scope_key = 'acct:SAM/gym'"), 0);
+  // Roadmap's engine rows go with the account's scopes (db/schema.sql, Roadmap on the engine).
+  CHECK_EQ(count("roadmap_trees WHERE scope_key = 'acct:SAM/roadmap'"), 0);
+  CHECK_EQ(count("roadmap_nodes WHERE scope_key = 'tree:t_erase_sam_engine'"), 0);
+  // Its roadmaps' activity, cards and the marks other accounts made on them go with them, as their old rows do.
+  CHECK_EQ(count("tree_ops WHERE tree_id = 't_erase_sam_engine'"), 0);
+  CHECK_EQ(count("tree_og_images WHERE tree_id = 't_erase_sam_engine'"), 0);
+  CHECK_EQ(count("sync_scopes WHERE key = 'acct:EVE/overlay/t_erase_sam_engine'"), 0);
+  CHECK_EQ(count("roadmap_progress WHERE scope_key = 'acct:EVE/overlay/t_erase_sam_engine'"), 0);
+  CHECK_EQ(count("roadmap_trees WHERE id = 't_erase_eve_engine'"), 1);
+  CHECK_EQ(count("tree_ops WHERE tree_id = 't_erase_eve_engine'"), 1);
   CHECK_EQ(count("sync_results WHERE replica = 'erase-replica'"), 0);
   // What the accounting keeps, and everything of another account's.
   CHECK_EQ(count("ai_usage WHERE user_id = 'SAM' AND operation = 'erase-pgtest'"), 1);

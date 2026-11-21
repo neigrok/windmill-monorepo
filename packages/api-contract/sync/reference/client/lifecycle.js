@@ -7,8 +7,10 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
-import { commandRefs } from './dependents.js';
+import { bindReferences } from './inverse.js';
+import { adoptJournal, discardJournal, invalidateEpochs, releaseJournal } from './journal.js';
 import { Replica } from './replica.js';
+import { effectsOf } from './projections.js';
 
 // §7.12: `activeReplica()` answers `replica` where it answered `previous`.
 function announce(ctx, previous, replica) {
@@ -31,32 +33,42 @@ export function renewActor(ctx) {
 }
 
 export function epochChange(replica, ctx, epoch) {
+  bindReferences(replica, replica.meta.serverEpoch);
   replica.meta.serverEpoch = epoch;
   for (const cursor of Object.values(replica.cursors)) cursor.cursor = null;
   replica.staging = {};
   for (const entry of replica.entries()) {
     if (entry.state !== 'acked' || entry.resultEpoch === epoch) continue;
     if (entry.intent.cmd && entry.writeTargets === undefined) {
-      const refs = commandRefs(ctx.registry, entry.intent.cmd);
+      const { references } = ctx.registry;
+      const proposed = references.ofCommand(entry.scope, entry.intent.cmd, 'creation');
+      const named = references.ofCommand(entry.scope, entry.intent.cmd);
       entry.writeTargets = (entry.predict ?? []).flatMap((delta) => {
-        const sources = refs.filter((ref) => ref.t === delta.t);
+        const creations = proposed.filter((ref) => ref.t === delta.t);
+        const sources = creations.length ? creations : named.filter((ref) => ref.t === delta.t);
         if (sources.length !== 1 || entry.predict.filter((other) => other.t === delta.t).length !== 1) return [];
         return [{ t: delta.t, from: sources[0].id, id: delta.id, ...(delta.born === undefined ? {} : { born: delta.born }) }];
       });
     }
+    for (const projection of entry.predictions ?? []) { delete projection.covered; delete projection.resultSeq; }
     moveEntry(replica, ctx.ended, entry, 'epoch');
   }
+  invalidateEpochs(replica, epoch);
   reidentify(replica, ctx);
   renewActor(ctx);
 }
 
-// §7.3 and §7.11 at engine start: every held entry is released, the instance takes a new actor, and a
+// §7.3 and §7.11 at engine start: every held entry is released, the journal keeps only what an unsettled
+// request reads, the instance takes a new actor, and a
 // native store (options.backupGuard given: the backup-excluded copy, or null when missing) whose
 // forkGuard differs from that copy re-identifies every replica under a new forkGuard. A store without
 // a forkGuard mints its first. Web runs no fork guard and passes no backupGuard.
 // Answers {actor, reidentified, pendingSignIn?}; a pending sign-in is resumed by the caller.
 export function engineStart(device, ctx, options = {}) {
-  for (const replica of device.replicas) releaseAll(replica, ctx.registry, ctx.ended);
+  for (const replica of device.replicas) {
+    releaseAll(replica, ctx.registry, ctx.ended);
+    releaseJournal(replica);
+  }
   renewActor(ctx);
   let reidentified = false;
   if (Object.hasOwn(options, 'backupGuard')) {
@@ -79,7 +91,7 @@ function entriesOf(registry, replica, product) {
 export function anonCount(registry, replica, product) {
   const records = new Map();
   for (const entry of entriesOf(registry, replica, product)) {
-    for (const delta of [...(entry.intent.d ?? []), ...(entry.predict ?? [])]) records.set(`${entry.scope}|${recordKey(delta.t, delta.id)}`, delta.t);
+    for (const { scope, d } of effectsOf(entry)) for (const delta of d) records.set(`${scope}|${recordKey(delta.t, delta.id)}`, delta.t);
   }
   const counts = {};
   for (const t of [...records.values()].sort()) counts[t] = (counts[t] ?? 0) + 1;
@@ -88,7 +100,7 @@ export function anonCount(registry, replica, product) {
 
 function observeEntries(replica) {
   for (const entry of replica.entries()) {
-    replica.observe([entry.stamp, ...[...(entry.intent.d ?? []), ...(entry.predict ?? [])].flatMap(stampsOf)]);
+    replica.observe([entry.stamp, ...effectsOf(entry).flatMap(({ d }) => d.flatMap(stampsOf))]);
   }
 }
 
@@ -130,6 +142,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   for (const decision of due) {
     if (decisions[decision.product] !== 'discard') continue;
     for (const entry of entriesOf(registry, anon, decision.product)) moveEntry(anon, ctx.ended, entry, 'discard');
+    discardJournal(anon, registry, decision.product);
     delete anon.device[decision.product];
   }
 
@@ -148,8 +161,9 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   }
 
   if (hasAnonWork && anon !== target) {
+    let nextOrder = target.nextCommitOrder();
     for (const entry of anon.entries()) {
-      entry.commitOrder = target.nextCommitOrder();
+      entry.commitOrder = nextOrder++;
       target.outbox.push(entry);
     }
     for (const [product, rows] of Object.entries(anon.device)) {
@@ -165,6 +179,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
       for (const [key, value] of Object.entries(rows)) if (!Object.hasOwn(kept, key)) kept[key] = value;
     }
     target.notices.push(...anon.notices);
+    adoptJournal(target, anon);
     transition(REPLICA_MACHINE, 'anon', 'sign-in', 'deleted');
     device.remove(anon);
   }
@@ -177,12 +192,20 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   return { complete: true, due };
 }
 
+// Cancelling the incomplete sign-in as `account`: its record goes, the anon replica stays active with its work, and
+// nothing resumes at the next engine start. A sign-in that completed leaves nothing to cancel.
+export function cancelSignIn(device, account) {
+  if (device.activeReplica.meta.state !== 'anon') throw new Error('no sign-in is pending');
+  if (device.meta.pendingSignIn?.account === account) delete device.meta.pendingSignIn;
+}
+
 // Sign-out after the caller's flush (at most SIGNOUT_FLUSH_MS). Without a finish (`choice` keep, the
 // confirm when nothing is left, or discard) it answers the question {unsent, ready, sent, counted},
 // the counted local ids of the ready and sent entries and the byte-pinned durable device work
 // (Discard cannot recall a sent entry that may have
 // landed). Keep covers every entry; a Discard whose pinned `counted` differs from the entries now is
-// asked again. The finish resolves acked entries, which the server holds.
+// asked again. The finish resolves acked entries, which the server holds, and makes the anon replica active,
+// unpaused: the credential that paused it goes with the account (§9.1).
 export function signOut(device, ctx, { choice, counted } = {}) {
   const bound = device.activeReplica;
   const previous = bound.id;
@@ -217,6 +240,7 @@ export function signOut(device, ctx, { choice, counted } = {}) {
     device.remove(bound);
   }
   device.activeReplica = device.anonReplica() ?? device.add(Replica.fresh({ replica: ctx.newReplicaId(), state: 'anon' }));
+  device.activeReplica.meta.authPaused = false;
   announce(ctx, previous, device.activeReplica.id);
   return { complete: true, ...question };
 }

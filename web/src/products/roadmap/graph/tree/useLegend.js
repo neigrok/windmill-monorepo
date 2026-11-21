@@ -1,12 +1,18 @@
-// The lattice is the authority: each edit is dispatched as one gesture and the displayed kinds
-// re-derive from the projection. Only the open flag is a local preference (LegendStore).
+// The roadmap's session is the authority: each edit is dispatched as one gesture, said once it has landed, and the
+// displayed kinds re-derive from the projection. Only the open flag is a local preference (LegendStore).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../../../telemetry/beacon.js';
 import { LegendStore } from '../../persistence/LegendStore.js';
 import { deriveLegend, withCounts, freeHue, addKind, recolorKind } from '../../model/Legend.js';
+import { onceLanded } from '../../board/acts.js';
 
 const legendStore = new LegendStore();
+
+// A legend edit's event, once its write has landed; one nothing took says nothing.
+function saved(receipt, edit) {
+  if (receipt) onceLanded(receipt, () => track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: edit }));
+}
 
 export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
   const [legend, setLegend] = useState([]);
@@ -54,19 +60,22 @@ export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
 
 
   const onRenameKind = useCallback((id, label) => {
-    sessionRef.current?.dispatch({ kind: 'RenameKind', id, label });
-    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'rename' });
+    const session = sessionRef.current;
+    if (!session) return;
+    saved(session.dispatch({ kind: 'RenameKind', id, label }), 'rename');
   }, [sessionRef]);
   const onDescribeKind = useCallback((id, description) => {
-    sessionRef.current?.dispatch({ kind: 'DescribeKind', id, description });
-    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'describe' });
+    const session = sessionRef.current;
+    if (!session) return;
+    saved(session.dispatch({ kind: 'DescribeKind', id, description }), 'describe');
   }, [sessionRef]);
   const onAddKind = useCallback((hue) => {
     const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
     if (next === legendRef.current) return; // hue taken or palette full — nothing added
     const added = next[next.length - 1];
-    sessionRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
-    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'add' });
+    const session = sessionRef.current;
+    if (!session) return;
+    saved(session.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue }), 'add');
   }, [sessionRef]);
 
   // Remove is offered only for a kind no node wears; read the editor's live nodes against a stale click.
@@ -74,16 +83,18 @@ export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
     const nodes = projectionRef.current?.nodes ?? [];
     const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
     if (!target || target.count > 0) return;
-    sessionRef.current?.dispatch({ kind: 'RemoveKind', id });
-    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'remove' });
+    const session = sessionRef.current;
+    if (!session) return;
+    saved(session.dispatch({ kind: 'RemoveKind', id }), 'remove');
   }, [sessionRef, projectionRef]);
 
   // Recolor swaps the kind's hue AND repaints every node of the old hue, as one atomic gesture.
   const onRecolorKind = useCallback((id, targetHue) => {
     const { newHue } = recolorKind(legendRef.current, id, targetHue);
     if (!newHue) return;
-    sessionRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
-    track('roadmap_board_edit', { step: 'saved', view: 'graph', legend: 'recolor' });
+    const session = sessionRef.current;
+    if (!session) return;
+    saved(session.dispatch({ kind: 'RecolorKind', id, hue: newHue }), 'recolor');
   }, [sessionRef]);
 
   // State tracks the kind id, but the scene is handed the HUE, null to clear.

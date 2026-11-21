@@ -54,7 +54,7 @@ export class PageValue {
   }
 }
 
-/** @type {EntityType<PageValue>} */
+/** @type {EntityType<PageValue, string>} */
 export const Page = new EntityType({
   type: 'page', scope: JOURNAL_SCOPE,
   decode: (fields) => new PageValue(new Id(fields.id, Page), new PageDocument({ body: fields.text('body'),
@@ -80,7 +80,7 @@ export class JournalStateValue {
   get keepDue() { return this.firstPage === 'retired' && this.scales === 'retired'; }
 }
 
-/** @type {EntityType<JournalStateValue>} */
+/** @type {EntityType<JournalStateValue, string>} */
 export const JournalState = new EntityType({
   type: 'journalState', scope: JOURNAL_SCOPE,
   decode: (fields) => new JournalStateValue(Object.fromEntries(STATE_FIELDS.map((name) => [name, fields.string(name, 'pending')]))),

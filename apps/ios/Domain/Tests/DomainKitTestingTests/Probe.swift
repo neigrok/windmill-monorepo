@@ -17,13 +17,36 @@ enum Probe {
 protocol ProbeEntity: Writable {}
 
 extension ProbeEntity {
+  static var fixtureScope: ScopeRef {
+    (Self.self as? any ProductEntity.Type)?.scope ?? (type == "mark" ? Probe.overlay : Probe.tree)
+  }
   static func decoding(_ id: RecordID, _ f: [String: JSON]) throws -> Self {
     try Self(Fields(Record(type: type, id: id, life: nil, born: nil, values: f, texts: [:], serials: [:], rc: nil, ru: nil,
                            isVisible: true, isPending: false, isHeld: false)))
   }
 }
 
-struct Card: ProbeEntity, Draftable, Removable, Ordered {
+// A board writes no client field: its `parent` is the server's.
+struct Board: ProductEntity, ProbeEntity, Removable {
+  static let type = "board"
+  static let scope = Probe.scope
+  static let heldRemoval = true
+
+  let id: ID<Board>
+
+  init(id: ID<Board>) {
+    self.id = id
+  }
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+  }
+
+  var fields: [String: JSON] { [:] }
+  static let checks: [Check<Board>] = []
+}
+
+struct Card: ProductEntity, ProbeEntity, Draftable, Removable, Ordered {
   static let type = "card"
   static let scope = Probe.scope
   static let orderField = "ord"
@@ -69,7 +92,7 @@ struct Card: ProbeEntity, Draftable, Removable, Ordered {
   ]
 }
 
-struct Day: ProbeEntity, Draftable, Removable {
+struct Day: ProductEntity, ProbeEntity, Draftable, Removable {
   static let type = "day"
   static let scope = Probe.scope
   static let savesGuarded = false
@@ -98,7 +121,7 @@ struct Day: ProbeEntity, Draftable, Removable {
   ]
 }
 
-struct Fact: ProbeEntity, Draftable, Removable, Timestamped {
+struct Fact: ProductEntity, ProbeEntity, Draftable, Removable, Timestamped {
   static let type = "fact"
   static let scope = Probe.scope
   static let savesGuarded = false
@@ -129,7 +152,6 @@ struct Fact: ProbeEntity, Draftable, Removable, Timestamped {
 
 struct Mark: ProbeEntity, Draftable {
   static let type = "mark"
-  static let scope = Probe.overlay
   static let savesGuarded = false
   static let memo = TextSpec("mark.memo", unit: .bytes, min: 0, max: 40, trim: false, nfc: false)
 
@@ -156,7 +178,6 @@ struct Mark: ProbeEntity, Draftable {
 
 struct Meta: ProbeEntity, Draftable {
   static let type = "meta"
-  static let scope = Probe.tree
   static let savesGuarded = false
   static let title = TextSpec("meta.title", unit: .chars, min: 0, max: 12, trim: true, nfc: true)
 
@@ -179,7 +200,94 @@ struct Meta: ProbeEntity, Draftable {
   ]
 }
 
-struct Lap: ProbeEntity, Removable {
+struct GuardedMeta: ProbeEntity, Draftable {
+  static let type = Meta.type
+  static let savesGuarded = true
+  let id: ID<GuardedMeta>
+  var title: String
+
+  init(_ record: Fields) throws(DecodeError) {
+    id = ID(record.id)
+    title = try record.string("title", default: "")
+  }
+
+  var fields: [String: JSON] { ["title": .string(title)] }
+  static let checks: [Check<GuardedMeta>] = [
+    Check("title") { value, _ in value.title = try Meta.title.apply(value.title, at: "title") },
+  ]
+}
+
+// `Card`, `Day` and `Mark` whose saves are reversible acts (§10.2 Reversible); the card unguarded, checking its title and
+// body only.
+struct ReversibleCard: ProductEntity, ProbeEntity, Draftable, Ordered {
+  static let type = Card.type
+  static let scope = Probe.scope
+  static let orderField = "ord"
+  static let savesGuarded = false
+  static let savesReversibly = true
+
+  let id: ID<ReversibleCard>
+  var card: Card
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    card = try Card(r)
+  }
+
+  var fields: [String: JSON] { card.fields }
+
+  static let checks: [Check<ReversibleCard>] = [
+    Check("title") { c, _ in c.card.title = try Card.title.apply(c.card.title, at: "title") },
+    Check("body") { c, _ in c.card.body = try Card.body.apply(c.card.body, at: "body") },
+  ]
+}
+
+struct ReversibleDay: ProductEntity, ProbeEntity, Draftable, Removable {
+  static let type = Day.type
+  static let scope = Probe.scope
+  static let savesGuarded = false
+  static let savesReversibly = true
+  static let heldRemoval = true
+
+  let id: ID<ReversibleDay>
+  var score: Int?
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    score = try r.optionalInt("score")
+  }
+
+  var fields: [String: JSON] { ["score": .of(score)] }
+
+  static let checks: [Check<ReversibleDay>] = [
+    .key { d, moment in
+      if let day = d.id.day, day > moment.today { throw Violation(rule: "day.notFuture", path: "id", reason: .custom("future")) }
+    },
+    Check("score") { d, _ in d.score = try Day.score.apply(d.score, at: "score") },
+  ]
+}
+
+struct ReversibleMark: ProbeEntity, Draftable {
+  static let type = Mark.type
+  static let savesGuarded = false
+  static let savesReversibly = true
+
+  let id: ID<ReversibleMark>
+  var mark: Mark
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    mark = try Mark(r)
+  }
+
+  var fields: [String: JSON] { mark.fields }
+
+  static let checks: [Check<ReversibleMark>] = [
+    Check("memo") { m, _ in m.mark.memo = try Mark.memo.apply(m.mark.memo, at: "memo") },
+  ]
+}
+
+struct Lap: ProductEntity, ProbeEntity, Removable {
   static let type = "lap"
   static let scope = Probe.scope
   static let heldRemoval = false
@@ -204,7 +312,7 @@ struct Lap: ProbeEntity, Removable {
   ]
 }
 
-struct Run: ProbeEntity, Removable {
+struct Run: ProductEntity, ProbeEntity, Removable {
   static let type = "run"
   static let scope = Probe.scope
   static let heldRemoval = false
@@ -229,7 +337,6 @@ struct Run: ProbeEntity, Removable {
 
 struct Link: ProbeEntity, Removable {
   static let type = "link"
-  static let scope = Probe.tree
   static let heldRemoval = true
   static let strength = NumberSpec("link.strength", min: 0, max: 9, integer: true)
 
@@ -248,9 +355,9 @@ struct Link: ProbeEntity, Removable {
   ]
 }
 
-struct Tag: ProbeEntity {
+struct Tag: ProbeEntity, Removable {
+  static let heldRemoval = false
   static let type = "tag"
-  static let scope = Probe.tree
 
   let id: ID<Tag>
   var label: String
@@ -262,12 +369,18 @@ struct Tag: ProbeEntity {
 
   var fields: [String: JSON] { ["label": .string(label)] }
 
-  static let checks: [Check<Tag>] = []
+  static let label = TextSpec("tag.label", unit: .chars, min: 0, max: 24, trim: false, nfc: false)
+  static let checks: [Check<Tag>] = [Check("label") { tag, _ in tag.label = try Tag.label.apply(tag.label, at: "label") }]
+
 }
 
 // The entity a vector names by its registry type.
 func probeEntity(_ type: String) throws -> any ProbeEntity.Type {
-  let entities: [any ProbeEntity.Type] = [Card.self, Day.self, Fact.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
+  let aliases: [String: any ProbeEntity.Type] = [
+    "guardedMeta": GuardedMeta.self, "reversibleCard": ReversibleCard.self, "reversibleDay": ReversibleDay.self, "reversibleMark": ReversibleMark.self,
+  ]
+  if let alias = aliases[type] { return alias }
+  let entities: [any ProbeEntity.Type] = [Board.self, Card.self, Day.self, Fact.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
   guard let entity = entities.first(where: { $0.type == type }) else { throw ContractError("no probe entity \(type)") }
   return entity
 }
@@ -288,6 +401,12 @@ struct ProbeEnd: ServerCommand {
 
 struct ProbeCopy: ServerCommand {
   static let name = "probe.copy"
+  static let specs: [any ValueSpec] = []
+  let args: [String: JSON]
+}
+
+struct ProbeBranch: ServerCommand {
+  static let name = "probe.branch"
   static let specs: [any ValueSpec] = []
   let args: [String: JSON]
 }

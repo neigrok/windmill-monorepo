@@ -1,14 +1,16 @@
 // §7.7 step 3 dependents: later deltas and commands that touch or name a record a source created, that
 // carry a life register a source wrote, or that target a scope its governing record creates; by
-// (scope, t, id), and transitive through absorb(). The refusal fold (§7.7), the silent fold of an undo,
-// a retire and a supersede (§7.3), and held-back numbering (§7.4) all use it.
+// (scope, t, id), and transitive through absorb(). A reference names the record its compiled leaf
+// resolves to (E-8), and a command's proposed creation names none. The refusal fold (§7.7), the silent
+// fold of an undo, a retire and a supersede (§7.3), and held-back numbering (§7.4) all use it.
 
 import { moveEntry } from '../core/machines.js';
 import { recordKey } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
+import { effectsOf, predictionsOf } from './projections.js';
 
 export function deltasOf(entry) {
-  return [...(entry.intent.d ?? []), ...(entry.predict ?? [])];
+  return effectsOf(entry).flatMap(({ d }) => d);
 }
 
 export function scopedKey(scope, t, id) {
@@ -17,30 +19,6 @@ export function scopedKey(scope, t, id) {
 
 function lifeKey(scope, delta) {
   return `${scopedKey(scope, delta.t, delta.id)}|${delta.life.join('@')}`;
-}
-
-// A reference names a record in the scope its type lives in: a product scope, or the tree and overlay
-// scopes of the referencing scope's tree.
-function scopeOfType(registry, fromScope, t) {
-  const kind = registry.type(t)?.scope;
-  if (kind?.startsWith('product:')) return `self/${kind.slice('product:'.length)}`;
-  const tree = fromScope.split('/').pop();
-  return kind === 'tree' ? `tree/${tree}` : `self/overlay/${tree}`;
-}
-
-function refsOf(registry, delta) {
-  const values = Object.fromEntries(Object.entries(delta.f ?? {}).map(([name, register]) => [name, register[0]]));
-  return registry.type(delta.t).referencesOf(delta.id, values);
-}
-
-export function commandRefs(registry, cmd) {
-  const def = registry.command(cmd.name);
-  const refs = [];
-  for (const [name, arg] of Object.entries(def?.args ?? {})) {
-    const t = /^ref<(.+)>$/.exec(arg.type)?.[1];
-    if (t && typeof cmd.args[name] === 'string') refs.push({ t, id: cmd.args[name], name });
-  }
-  return refs;
 }
 
 export class Dependents {
@@ -66,8 +44,12 @@ export class Dependents {
     }
   }
 
-  names(fromScope, t, id) {
-    return this.created.has(scopedKey(scopeOfType(this.registry, fromScope, t), t, id));
+  names(references) {
+    return references.some(({ scope, t, id }) => this.created.has(scopedKey(scope, t, id)));
+  }
+
+  absorbEntry(entry, selected) {
+    for (const { scope, d } of effectsOf(entry)) this.absorb(scope, selected ? d.filter((delta) => selected.includes(delta)) : d, entry.stamp);
   }
 
   // One later entry's dependent part: the dependent deltas, whether its command is dependent, whether
@@ -75,14 +57,19 @@ export class Dependents {
   // they created: a replacement is numbered after the entry, so the record it read is not there yet.
   of(entry, { replaced = false } = {}) {
     const deltas = entry.intent.d ?? [];
+    const { references } = this.registry;
     const removed = deltas.filter((delta) => this.governed.has(entry.scope)
       || this.created.has(scopedKey(entry.scope, delta.t, delta.id))
       || (delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta)))
-      || refsOf(this.registry, delta).some((ref) => this.names(entry.scope, ref.t, ref.id)));
+      || this.names(references.ofRecord(entry.scope, delta)));
     const cmd = entry.intent.cmd;
     const cmdGone = cmd !== undefined
       && (this.governed.has(entry.scope)
-        || commandRefs(this.registry, cmd).some((ref) => this.names(entry.scope, ref.t, ref.id))
+        || this.names(references.ofCommand(entry.scope, cmd))
+        || (entry.predictions && predictionsOf(entry).some(({ scope, d }) => this.governed.has(scope)
+          || d.some((delta) => this.created.has(scopedKey(scope, delta.t, delta.id))
+            || (delta.life && this.lives.has(lifeKey(scope, delta)))
+            || this.names(references.ofRecord(scope, delta)))))
         || (entry.predict ?? []).some((delta) => delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta))));
     const guards = replaced ? (entry.intent.guard ?? []).filter((guard) => this.created.has(scopedKey(entry.scope, guard.t, guard.id))) : [];
     return { removed, cmdGone, guards, any: removed.length > 0 || cmdGone || guards.length > 0, whole: removed.length === deltas.length && (cmd === undefined || cmdGone) };
@@ -90,7 +77,8 @@ export class Dependents {
 
   // A dependent part joins the sources, so dependency is transitive through the records it creates.
   absorbPart(entry, { removed, cmdGone }) {
-    this.absorb(entry.scope, [...removed, ...(cmdGone ? entry.predict ?? [] : [])], entry.stamp);
+    this.absorb(entry.scope, removed, entry.stamp);
+    if (cmdGone) for (const { scope, d } of predictionsOf(entry)) this.absorb(scope, d, entry.stamp);
   }
 }
 
@@ -100,7 +88,10 @@ export class Dependents {
 export function removeDependent(entry, { removed, cmdGone, guards = [] }) {
   const content = {};
   if (removed.length) content.d = structuredClone(removed);
-  if (cmdGone) content.cmd = structuredClone(entry.intent.cmd);
+  if (cmdGone) {
+    content.cmd = structuredClone(entry.intent.cmd);
+    if (entry.predictions) content.predictions = structuredClone(entry.predictions);
+  }
   const kept = (entry.intent.d ?? []).filter((delta) => !removed.includes(delta));
   const removedKeys = new Set(removed.map((delta) => recordKey(delta.t, delta.id)));
   if (kept.length) entry.intent.d = kept;
@@ -112,6 +103,8 @@ export function removeDependent(entry, { removed, cmdGone, guards = [] }) {
   if (cmdGone) {
     delete entry.intent.cmd;
     delete entry.predict;
+    delete entry.predictions;
+    delete entry.acceptedEffects;
   }
   return content;
 }
@@ -131,7 +124,7 @@ export function silentFoldOf(replica, registry, sources, { replaced = false } = 
   for (const entry of replica.entries()) {
     const source = sources.find((candidate) => candidate.entry === entry);
     if (source) {
-      dependents.absorb(entry.scope, source.deltas, entry.stamp);
+      dependents.absorbEntry(entry, source.deltas);
       continue;
     }
     const part = dependents.of(entry, { replaced });

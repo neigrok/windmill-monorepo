@@ -14,7 +14,7 @@ namespace {
 
 TableMap tableOf(const std::string& type) {
   static const std::map<std::string, TableMap> tables{
-      {"board", {"probe_boards", {}}},
+      {"board", {"probe_boards", {{"parent", SqlType::jsonb}}}},
       {"card",
        {"probe_cards",
         {{"title", SqlType::text},
@@ -31,7 +31,7 @@ TableMap tableOf(const std::string& type) {
       {"meta", {"probe_metas", {{"title", SqlType::text}, {"visibility", SqlType::text}}}},
       {"tag", {"probe_tags", {{"label", SqlType::text}}}},
       {"link", {"probe_links", {{"strength", SqlType::bigint}}}},
-      {"mark", {"probe_marks", {{"done", SqlType::boolean}, {"memo", SqlType::text}}, 1}},
+      {"mark", {"probe_marks", {{"done", SqlType::boolean}, {"memo", SqlType::text}, {"opens", SqlType::text}}, 1}},
   };
   const auto table = tables.find(type);
   if (table == tables.end()) throw std::logic_error("the probe stores no table for the type " + type);
@@ -62,6 +62,18 @@ std::optional<std::string> PgProbeReceipts::copiedFrom(sync::SyncTxn& txn, const
 void PgProbeReceipts::recordCopy(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::string& destination, const std::string& source) {
   sync::sqlOf(txn).exec("insert into probe_copy_receipts (scope_key, destination, source) values ($1, $2, $3) on conflict do nothing",
                         pqxx::params{scope.text(), destination, source});
+}
+
+std::optional<BranchReceipt> PgProbeReceipts::branched(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::string& child) {
+  const pqxx::result rows = sync::sqlOf(txn).exec("select parent, title from probe_branch_receipts where scope_key = $1 and child = $2",
+                                                  pqxx::params{scope.text(), child});
+  if (rows.empty()) return std::nullopt;
+  return BranchReceipt{rows[0]["parent"].as<std::string>(), rows[0]["title"].as<std::string>()};
+}
+
+void PgProbeReceipts::recordBranch(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::string& child, const BranchReceipt& receipt) {
+  sync::sqlOf(txn).exec("insert into probe_branch_receipts (scope_key, child, parent, title) values ($1, $2, $3, $4) on conflict do nothing",
+                        pqxx::params{scope.text(), child, receipt.parent, receipt.title});
 }
 
 PgProbe::PgProbe(const sync::Registry& registry) : product_(receipts_) {

@@ -29,3 +29,11 @@ test('strict recovery reads distinguish unreadable and malformed indexes from em
   assert.deepEqual(registry.entries(), {});
   assert.deepEqual(registry.list(null), []);
 });
+
+test('the device index reads row by row: a row that does not read is named, every other row read, and only an index that does not read throws', () => {
+  const rows = { t_good: { title: 'Good', owner: null, claimed: false }, t_title: { title: 7 }, t_owner: { owner: 3 }, t_claimed: { claimed: 'yes' }, t_null: null, t_bare: { updatedAt: 1 } };
+  assert.deepEqual(new LocalTreeRegistry({ getItem: () => JSON.stringify(rows) }).readRows(),
+    { rows: { t_good: { title: 'Good', owner: null, claimed: false }, t_bare: { updatedAt: 1 } }, malformed: ['t_title', 't_owner', 't_claimed', 't_null'] });
+  assert.deepEqual(new LocalTreeRegistry({ getItem: () => null }).readRows(), { rows: {}, malformed: [] });
+  for (const value of ['{', 'null', '[]']) assert.throws(() => new LocalTreeRegistry({ getItem: () => value }).readRows());
+});

@@ -1,9 +1,9 @@
 name: iOS CI
 
-# Tests the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain) and the engine's
+# Tests the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain), Coach (Agent and WindmillKit) and the engine's
 # public-surface test (SyncTestingSurface) — and builds the dev-only SyncProbe app and the product app in Release for
 # the simulator. App unit tests and three class-based UI shards (ios-ui-tests.yml) run in parallel; ships nothing. The corpus runners read
-# packages/api-contract/{sync,domain-kit,gym,journal} by walking up from #filePath, and the
+# packages/api-contract/{sync,domain-kit,gym,journal,agent,ai} by walking up from #filePath, and the
 # SyncSchema target is generated from the registries there, so the whole repository is checked out and a
 # change to any of those contracts runs this workflow too.
 
@@ -13,6 +13,8 @@ on:
     paths:
       - 'apps/ios/**'
       - 'packages/api-contract/sync/**'
+      - 'packages/api-contract/agent/**'
+      - 'packages/api-contract/ai/**'
       - 'packages/api-contract/domain-kit/**'
       - 'packages/api-contract/gym/**'
       - 'packages/api-contract/journal/**'
@@ -25,6 +27,8 @@ on:
     paths:
       - 'apps/ios/**'
       - 'packages/api-contract/sync/**'
+      - 'packages/api-contract/agent/**'
+      - 'packages/api-contract/ai/**'
       - 'packages/api-contract/domain-kit/**'
       - 'packages/api-contract/gym/**'
       - 'packages/api-contract/journal/**'
@@ -115,6 +119,14 @@ jobs:
       - name: Test on macOS
         env:
           SYNC_SIM_SEEDS: ${{ github.event_name == 'pull_request' && '32' || '128' }}
+        run: swift test --explicit-target-dependency-import-check error
+
+      - name: Test the Coach engine
+        working-directory: apps/ios/Agent
+        run: swift test --explicit-target-dependency-import-check error
+
+      - name: Test the AI client
+        working-directory: apps/ios/WindmillKit
         run: swift test --explicit-target-dependency-import-check error
 
       # The runners are Apple silicon, so a simulator build compiles the arm64 slice alone. The App build below compiles

@@ -3,6 +3,7 @@ import { fetchTending, startTend, fetchRun } from './tendingClient.js';
 import { isTerminal, runFace } from './receipts.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { LABELS, TEND_TOAST } from '../copy.js';
+import { onceLanded } from '../board/acts.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const POLL_INTERVAL_MS = 1200;
@@ -82,9 +83,12 @@ export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, 
   // The run wrote on the server, so no local receipt names it; `created` is exactly what it planted.
   const undoTend = useCallback((planted) => {
     try {
-      if (!sessionRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] })) return;
-      track('roadmap_graph_toast', { act: 'tend', step: 'undo' });
-      showToast(TEND_TOAST.reverted, { surface: 'tend' });
+      const receipt = sessionRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] });
+      if (!receipt) return;
+      onceLanded(receipt, () => {
+        track('roadmap_graph_toast', { act: 'tend', step: 'undo' });
+        showToast(TEND_TOAST.reverted, { surface: 'tend' });
+      });
     } catch (error) {
       reportRoadmapFailure('roadmap-tend-undo', error);
     }

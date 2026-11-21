@@ -140,7 +140,7 @@ class DeletionsStore(
             return null
         }
         try {
-            if (training.engine.undoOffers().none { it.id == receipt.gestureId } || !training.engine.undo(receipt.gestureId)) {
+            if (training.engine.undoOffers().none { it.id == receipt.gestureId } || !training.engine.cancelHeld(receipt.gestureId)) {
                 weightAction("undo", "closed")
                 refreshHeldWeights()
                 return null

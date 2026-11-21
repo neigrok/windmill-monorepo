@@ -9,11 +9,14 @@
 
 import { readFileSync } from 'node:fs';
 import { CONSTANTS } from '../../core/constants.js';
-import { jcs } from '../../core/jcs.js';
+import { jcs, sameJson } from '../../core/jcs.js';
 import { Registry } from '../../core/registry.js';
 import { compareRecords, isAlive, isVisible, recordKey } from '../../core/rows.js';
 import { ProbeProduct } from '../../probe/product.js';
+import { commitAct } from '../../client/acts.js';
 import { commit } from '../../client/commit.js';
+import { requestInverse } from '../../client/inverse.js';
+import { releaseReversibleAct } from '../../client/journal.js';
 import { releaseAll, releaseDue, undo, undoOffered } from '../../client/hold.js';
 import { engineStart, signIn, signOut } from '../../client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../client/puller.js';
@@ -30,6 +33,7 @@ import { Rng } from '../../vectors/fixtures.js';
 export const PROBE_REGISTRY = new Registry(JSON.parse(readFileSync(new URL('../../../probe.registry.json', import.meta.url), 'utf8')));
 
 const WORDS = ['oak', 'ash', 'elm', 'fir', 'yew', 'bay', 'box', 'ivy'];
+const STEPS = ['oak', 'ash'];
 
 // What a replica holds from pulls and frames: its confirmed rows, cursors and known scopes.
 function pulledState(replica) {
@@ -261,8 +265,56 @@ export class World {
     if (roll < 0.94) {
       device.skew = this.rng.int(1_200_000) - 600_000;
       this.count('device clock jumped');
+      return undefined;
     }
+    if (roll < 0.965) return this.optedAct(device);
+    if (roll < 0.99) return this.inverse(device);
     return undefined;
+  }
+
+  // K-3: an act opted into Undo: a card's title, or a held removal of a tag whose life a Redo brings back.
+  optedAct(device) {
+    const replica = device.replica;
+    if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') return undefined;
+    const ctx = device.ctx();
+    const cards = [...drawn(replica, this.registry, 'self/probe').values()].filter((record) => record.t === 'card' && isAlive(record));
+    const boards = [...drawn(replica, this.registry, 'self/probe').values()].filter((record) => record.t === 'board' && isAlive(record));
+    const treeScope = boards.length ? `tree/${this.rng.pick(boards).id}` : null;
+    const tags = treeScope ? [...drawn(replica, this.registry, treeScope).values()].filter((record) => record.t === 'tag' && isAlive(record)) : [];
+    const recipe = (scope, restoreCommand, target, defaultValue) => ({ undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand, targets: [{ target, defaultValue }] }] }] } });
+    let outcome;
+    if (tags.length && this.rng.chance(0.4)) {
+      const tag = this.rng.pick(tags).id;
+      outcome = commitAct(replica, ctx, [{ scope: treeScope, changes: [{ op: 'delete', t: 'tag', id: tag }], opts: { hold: true } }],
+        recipe(treeScope, 'probe.restoreTree', { scope: treeScope, t: 'tag', id: tag, slot: { kind: 'life' } }, 'dead'));
+    } else if (cards.length) {
+      const card = this.rng.pick(cards).id;
+      outcome = commitAct(replica, ctx, [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: card, f: { title: this.rng.pick(WORDS) } }] }],
+        recipe('self/probe', 'probe.restore', { scope: 'self/probe', t: 'card', id: card, slot: { kind: 'field', name: 'title' } }, WORDS[0]));
+    }
+    if (!outcome || outcome.refused) return undefined;
+    device.committed.push(...outcome.segments.flatMap(({ localIds }) => localIds));
+    this.count('opted act');
+    return outcome;
+  }
+
+  // An Undo of a journaled act, a Redo of an inverse act, or a release the product's stack makes.
+  inverse(device) {
+    const replica = device.replica;
+    if (replica.journal.length === 0 && replica.cancellations.length === 0) return undefined;
+    if (this.rng.chance(0.2)) {
+      releaseReversibleAct(replica, this.rng.pick([...replica.journal.map((act) => act.actId), ...replica.cancellations.map(({ inverseActId }) => inverseActId)]));
+      this.count('reversible act released');
+      return undefined;
+    }
+    const ids = [...replica.journal.map((act) => act.actId), ...replica.cancellations.map(({ inverseActId }) => inverseActId)];
+    const actId = this.rng.pick(ids);
+    const redo = replica.inverses.some((request) => request.inverseActId === actId);
+    const before = new Set(replica.outbox.map((entry) => entry.localId));
+    const result = requestInverse(replica, device.ctx(), actId);
+    device.committed.push(...replica.outbox.map((entry) => entry.localId).filter((localId) => !before.has(localId)));
+    this.count(`${redo ? 'redo' : 'undo'} ${result.kind}`);
+    return result;
   }
 
   // Gestures a person makes, on the views the person sees.
@@ -304,6 +356,28 @@ export class World {
     if (choice === 15 && boards.length) {
       const dst = `b_${this.ids.toString(16).padStart(8, '0')}`;
       this.ids += 1;
+      const command = this.rng.int(5);
+      if (command === 1 || command === 2) {
+        // E-8: a step of a board, often one this device already sees owning a subtree, as a device with a
+        // staler view would, so the later sprout is answered with the subtree the step owns; later gestures
+        // build in and under the proposed child.
+        const owning = boards.filter((board) => board.f?.parent?.[0]).map((board) => board.f.parent[0]);
+        const parent = owning.length && this.rng.chance(0.5) ? structuredClone(this.rng.pick(owning)) : { board: this.rng.pick(boards).id, tag: this.rng.pick(STEPS) };
+        return record(commit(replica, ctx, 'self/probe', [], {
+          cmd: { name: 'probe.sprout', args: { ...parent, child: dst } },
+          predict: [{ op: 'create', t: 'board', id: dst, f: { parent } }],
+        }));
+      }
+      if (command === 3 || command === 4) {
+        // E-8: a tag proposed under a label the tree's tags often carry already, so the adopt is answered
+        // with a scope-local id map that queued marks, links and steps follow.
+        const tree = `tree/${this.rng.pick(boards).id}`;
+        const labels = [...drawn(replica, registry, tree).values()].filter((r) => r.t === 'tag' && isAlive(r) && r.f?.label).map((r) => r.f.label[0]);
+        const args = { tag: this.id('tag'), label: labels.length && this.rng.chance(0.5) ? this.rng.pick(labels) : this.rng.pick(WORDS) };
+        return record(commit(replica, ctx, tree, [], {
+          cmd: { name: 'probe.adopt', args }, predict: [{ op: 'create', t: 'tag', id: args.tag, f: { label: args.label } }],
+        }));
+      }
       return record(commit(replica, ctx, 'self/probe', [], {
         cmd: { name: 'probe.copy', args: { src: this.rng.pick(boards).id, dst } },
         predict: [{ op: 'create', t: 'board', id: dst }],
@@ -427,6 +501,7 @@ export class World {
     const replica = device.replica;
     const request = nextPush(replica, device.ctx(), device.pushLimit === undefined ? {} : { limit: device.pushLimit });
     if (!request) return;
+    this.checkRedirects(device, request);
     device.pushing = { kind: 'push', device, replica, replicaId: replica.id, request: structuredClone(request), send: device.reading(), id: this.id('m') };
     this.network.push({ ...device.pushing, phase: 'request' });
   }
@@ -480,7 +555,11 @@ export class World {
         : push({ state: this.server, registry: this.registry, product: this.product, account, credential, request: message.request, serverNow: this.now, budget, faultOf, limits: this.serverLimits });
       this.server = out.state;
       this.count(`http ${out.response.status}${out.response.body.error ? ` ${out.response.body.error}` : ''}`);
-      for (const result of out.response.body.results ?? []) this.count(result.s === 'ok' ? (result.write?.some((w) => w.from) ? 'ok with a joining write map' : 'ok') : `refused ${result.code}`);
+      for (const result of out.response.body.results ?? []) {
+        this.count(result.s === 'ok' ? (result.write?.some((w) => w.from) ? 'ok with a joining write map' : 'ok') : `refused ${result.code}`);
+        if (result.write?.some((w) => w.from && w.t === 'board')) this.count('sprout answered with its step\'s subtree');
+        if (result.write?.some((w) => w.from && w.t === 'tag')) this.count('adopt answered with a labelled tag');
+      }
       if (out.response.body.retry) this.count('retry');
       this.watchDeaths();
       for (const event of out.live) this.broadcast(event);
@@ -699,6 +778,38 @@ export class World {
     return contents;
   }
 
+  // E-8: once a device holds a write map that redirected a proposed record, no intent it pushes names the
+  // proposal, by its own id or by any typed reference, but the command that proposed it; what named the
+  // proposal names the record it was redirected to. An id another retained command resolved to is a record
+  // that exists, as a proposal can become after a restored server answers its replay or another command.
+  checkRedirects(device, request) {
+    const { references } = this.registry;
+    const replica = device.replica;
+    const keyOf = (scope, t, id) => `${this.registry.type(t)?.idSpace === 'global' ? '' : scope}|${t}|${jcs(id)}`;
+    const redirected = new Map();
+    for (const entry of replica.entries()) {
+      for (const target of entry.writeTargets ?? []) {
+        if (!sameJson(target.from, target.id)) redirected.set(keyOf(entry.scope, target.t, target.from), { owner: entry, to: keyOf(entry.scope, target.t, target.id) });
+      }
+    }
+    const followed = new Set([...redirected.values()].map(({ to }) => to));
+    for (const entry of replica.entries()) for (const target of entry.writeTargets ?? []) redirected.delete(keyOf(entry.scope, target.t, target.id));
+    if (followed.size === 0) return;
+    for (const intent of request.intents) {
+      const entry = replica.entries().find((candidate) => candidate.intent === intent);
+      const named = [
+        ...(intent.d ?? []).flatMap((delta) => references.resolve(references.recordLeaves(delta.t), delta, intent.scope)),
+        ...(intent.cmd ? references.resolve(references.commandLeaves(intent.cmd.name), intent.cmd, intent.scope) : []),
+      ];
+      for (const { scope, t, id } of named) {
+        const key = keyOf(scope, t, id);
+        const hit = redirected.get(key);
+        if (hit && hit.owner !== entry) this.violations.push(`E-8 ${device.name}: ${intent.n} names ${t} ${jcs(id)}, which a write map redirected`);
+        if (followed.has(key) && !hit) this.count('a pushed reference names a record a redirect resolved to');
+      }
+    }
+  }
+
   // INV-3 by content: a refused entry's records and command are in the notice that holds it.
   checkRefusals(device, before, from) {
     const notices = new Map(device.store.replicas.flatMap((replica) => replica.notices.map((notice) => [notice.id, notice])));
@@ -828,6 +939,10 @@ export class World {
         if (end.outcome !== 'refused') continue;
         const holder = end.orphanOf ?? end.localId;
         if (!notices.has(`notice:${holder}`)) this.violations.push(`INV-3 ${tag}: ${end.localId} refused (${end.event}) with no notice holding it`);
+      }
+      for (const request of replica.inverses) {
+        if (request.state !== 'settled') this.violations.push(`K-3 ${tag}: inverse ${request.requestId} is still ${request.state} after quiescence`);
+        else this.count(`inverse ${request.result.kind}${request.result.appliedCount ? ' applied' : ''}${request.result.skippedCount ? ' skipped' : ''}`);
       }
       if (replica.meta.state !== 'bound') continue;
       for (const [scope, kind] of Object.entries(replica.known)) {

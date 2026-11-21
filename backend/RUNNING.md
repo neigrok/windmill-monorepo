@@ -53,6 +53,21 @@ provider keys absent for a dark local process. `AI_TEST_DATABASE_URL` names a di
 database for the Rust tests, which create isolated databases. Production HBA isolation is exercised
 with `python3 backend/test/deploy/ai_db_test.py -v` from the repository root, using Docker Postgres 16.
 
+The backend mounts `POST /v1/ai/passes` only with `AI_PASS_PRIVATE_SEED` set. Configure the 32-byte
+Ed25519 seed as unpadded base64url, `AI_PASS_KID`, `AI_PASS_ENVIRONMENT=development` and
+`AI_PASS_MIN_VERSIONS` as an object of profile names to positive integer minimum versions. Pin its
+public key under the same kid in the service's `AI_PASS_KEYS`. The published test seed in the pass
+vectors is accepted only in development under a `test-` kid. A production backend rejects that
+public key under every kid, and rejects every `test-` kid.
+
+The pass lasts 600,000 ms. Account claims come from `Entitlements::aiPrincipalFor` without grant
+funding. An account pass names a presented installation only when it is bound to that account.
+An installation alone must be unbound and anonymous admission enabled. Its pass consumes the same
+durable address bucket as legacy generations, 30/hour by default; installation issuance remains
+10/day. A separate principal token bucket allows 30 passes/minute, with burst 30. The route strictly
+checks header occurrences and JSON keys; cookie sessions require an allowlisted Origin and JSON.
+Every response is `no-store`. Existing installation and Coach routes keep their contracts.
+
 ## 3. Build
 
 ```sh
@@ -75,6 +90,17 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
+
+`ROADMAP_ENGINE_ENABLED=1`, which production's host sets (`deploy/README.md`, "Roadmap's cutover onto the sync
+engine"), serves roadmap's scopes through the sync engine (`products/roadmap/sync/`), on the
+`roadmap_*` tables `db/schema.sql` builds, and feeds roadmap's read models from them: the activity feed, the owner's
+progress, the share page with its card and video, the gallery and reminders' readiness (`application/EngineReadModels`).
+It also retires the rooms' socket and routes (`products/roadmap/routes.cpp`): `/v1/socket`, `GET`/`POST /v1/trees`,
+`GET`/`PATCH`/`DELETE /v1/trees/{id}`, its `/guides` and `/diagnostics` and `PUT …/subtree` answer 410
+`client-update-required` before authentication. Without it the server
+composes and binds roadmap but withholds its scopes: hello says roadmap
+holds nothing, `self/roadmap` pulls empty, its trees are not found, every roadmap intent is refused, and the read
+models read the rooms and roadmap's own tables.
 
 ### The subscription service
 
@@ -282,9 +308,9 @@ identity-token/nonce exchange.
 #### A server that requires an update (426)
 
 Hello, push, pull and the live upgrade answer `426 upgrade-required` to a registry version below the
-server's minimum. `SyncApi` takes that minimum from the `minVersion` of the gym and journal
+server's minimum. `SyncApi` takes that minimum from the `minVersion` of the composed
 registries embedded at build time; no environment variable changes it. To drive the app's update
-path, build a second binary from a copy of the contract whose two registries both stand one version
+path, build a second binary from a copy of the contract whose composed registries all stand one version
 ahead, with `minVersion` equal to `version`:
 
 ```sh
@@ -292,7 +318,7 @@ WM_426_CONTRACT=$(mktemp -d)/api-contract
 cp -R ../packages/api-contract "$WM_426_CONTRACT"
 python3 - "$WM_426_CONTRACT/sync" <<'PY'
 import json, sys
-for name in ("gym.registry.json", "journal.registry.json"):
+for name in json.load(open(sys.argv[1] + "/composition.json"))["registries"]:
     path = f"{sys.argv[1]}/{name}"
     with open(path) as file:
         registry = json.load(file)
@@ -305,10 +331,10 @@ cmake --build build-426 --target windmill_server
 ```
 
 Stop the engine server by its port and serve `./build-426/windmill_server` with the same command and
-database. A hello at version 9 answers `"schema":9,"minSchema":9`, and the app's version 8 is refused:
+database. The copied registries now require version 13; the app's version 12 is refused:
 
 ```sh
-curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 8'
+curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 12'
 # HTTP/1.1 426 Upgrade Required … {"epoch":"…","error":"upgrade-required","serverTime":…}
 ```
 
@@ -391,11 +417,16 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and nine script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and fourteen script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
-`domain`, `mcp`, `sync` and `adapters` are the C++ suites. `deploy` checks that the production
+`domain`, `mcp`, `sync` and `adapters` are the C++ suites. `one_definition` checks that no two files of
+`platform/` and `products/` define a class or struct under one qualified name: every binary links them all, and the
+linker would keep one copy of the inline code the two share. `log_sources` checks that every file of them that writes a
+`LOG_` line is one `privacySafeLogBody` keeps the lines of, and that it names no other: a line from a file it does not
+name reaches the log and Sentry Logs as `framework diagnostic suppressed`. `sync_composition` checks that the manifest
+and explicit server bindings name the same registries without duplicates. `deploy` checks that the production
 Caddyfile forwards every credential line as received, `deploy_stop_grace` that the time the compose
 file gives the server to stop covers the server's own deadline and exit flush, `deploy_production` runs
 `deploy/deploy-production.sh` against a modeled Docker host, `auth_differential` tests the
@@ -408,10 +439,20 @@ checks committed rotation, concurrent retries, rollback and lock timeouts using 
 `DATABASE_URL` and tells it to stop — with a room it cannot save, with a request still running, in
 the middle of a burst of socket frames, with a second request read behind one being served and with
 a sync pull a worker answers late — and checks its exit code, the deadline it exits by, what landed
-after the signal and its log. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
+after the signal and its log. `roadmap_routes` runs only under `WM_PG_TEST`: it starts `windmill_server` over
+`DATABASE_URL` with `ROADMAP_ENGINE_ENABLED` unset and set, and asks every route of roadmap's rooms, `/v1/socket`'s upgrade
+and a plain GET of it, and the routes the move keeps, signed out and signed in, with a body none can parse: unset, each
+answers through its handler, as roadmap's rooms serve it; set, each of the rooms' answers 410 `client-update-required`
+with the CORS headers an allow-listed origin reads, logged once under its static operation in a line that names no tree, session
+or body, and the kept routes answer as they do unset. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
 databases of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
 counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
-it counts a chain of 200,001 trees to its end.
+it counts a chain of 200,001 trees to its end. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
+it builds databases of its own beside `DATABASE_URL`'s from `db/schema.sql` and `test/platform/infra/roadmap_adopt_fixture.sql`
+and runs every stage on them: their counts, a second run that writes nothing, a run killed between stages and in the middle
+of its adoption, a stage refused beside another client, which it watches for from `DATABASE_URL`'s database, the rows
+that stop it, and that nothing it prints names a record
+(`products/roadmap/adoption/README.md`).
 
 Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z
 assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` cut short; *skipped*
@@ -424,20 +465,21 @@ each built by `db/schema.sql`. `DATABASE_URL` holds it alone. `WM_SYNC_DATABASE_
 writes through `GymDoor` (`test/products/gym/sync/GymDoorFixture.h`). The gym HTTP
 and MCP cases that only read run over a read-only fake store (`test/products/gym/Fakes.h`). The sync
 suite wipes sync, probe, gym and journal data as it replays the corpus, store and concurrency cases;
-run these binaries serially.
+run these binaries serially. Create the test databases explicitly as UTF-8; the Unicode contract
+cases must not inherit a SQL_ASCII maintenance database.
 
 ```sh
-createdb -h /tmp wm_rest_test
-createdb -h /tmp wm_sync_test
+createdb -h /tmp --template=template0 --encoding=UTF8 wm_rest_test
+createdb -h /tmp --template=template0 --encoding=UTF8 wm_sync_test
 psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|server_stop)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|roadmap_adopt|server_stop|roadmap_routes)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product
-instead of gym and journal, for the throwaway sync database only; it refuses to start where
+instead of the product composition, for the throwaway sync database only; it refuses to start where
 `WINDMILL_APP_URL` is https. It also mounts the dev stack's endpoints
 (`products/probe/adapters/http/DevApi.h`), which native end-to-end runs drive:
 
@@ -490,12 +532,14 @@ dropdb -h /tmp wm_sync_test
 
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
-`mcp`, `sync`, `adapters` and `sync_epoch` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service
+`mcp`, `sync`, `adapters`, `sync_epoch`, `subtree_inventory`, `roadmap_adopt` and `server_stop` tests in one `ctest` run
+under `WM_PG_TEST` against a Postgres 16 service
 with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `windmill_sync_test` for
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
 database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
-suite over the gym + journal catalog (schema 8, minimum 4) and both product scopes. On the runner
+suite over the product composition's catalog, roadmap's scopes withheld there with `ROADMAP_ENGINE_ENABLED` unset, and
+its three product scopes. On the runner
 itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
 deploy does, changes nothing, and that repeated application removes retired cutover storage and the
 retired tree columns while preserving live rows.

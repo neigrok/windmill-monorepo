@@ -245,7 +245,9 @@ impl Anthropic {
                                     "source": {"type":"base64", "media_type":image.media_type, "data":image.data},
                                 }));
                             }
-                            Part::ToolCall { .. } => return Err(ValidationError::InvalidRequest),
+                            Part::ToolCall { .. } | Part::Picture { .. } => {
+                                return Err(ValidationError::InvalidRequest);
+                            }
                         }
                     }
                     ("user", content)
@@ -267,7 +269,7 @@ impl Anthropic {
                                         "type":"tool_use", "id":tool_call.id,
                                         "name":tool_call.name, "input":tool_call.input,
                                     })),
-                                    Part::Image { .. } => {
+                                    Part::Image { .. } | Part::Picture { .. } => {
                                         return Err(ValidationError::InvalidRequest);
                                     }
                                 }
@@ -330,11 +332,9 @@ impl Anthropic {
         if let Some(schema) = request.output.schema {
             body["output_config"]["format"] = json!({"type":"json_schema","schema":schema});
         }
-        let bytes = serde_json::to_vec(&body).map_err(|_| ValidationError::InvalidRequest)?;
-        if bytes.len() > MAX_TEXT_BODY {
-            return Err(ValidationError::TooLarge);
-        }
-        let input = (bytes.len() as u64)
+        let mut size = RequestSize(0);
+        serde_json::to_writer(&mut size, &body).map_err(|_| ValidationError::TooLarge)?;
+        let input = (size.0 as u64)
             .checked_add(
                 image_count
                     .checked_mul(profile.image_token_ceiling)
@@ -916,6 +916,23 @@ fn parse_usage(value: &Value) -> Option<Usage> {
         cache_creation_1h_input_tokens,
         output_tokens: 0,
     })
+}
+
+struct RequestSize(usize);
+
+impl std::io::Write for RequestSize {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self
+            .0
+            .checked_add(bytes.len())
+            .filter(|size| *size <= MAX_TEXT_BODY)
+            .ok_or_else(|| std::io::Error::other("provider_request_too_large"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

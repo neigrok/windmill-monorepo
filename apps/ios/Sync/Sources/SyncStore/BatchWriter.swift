@@ -69,9 +69,9 @@ struct BatchWriter {
       try setStagingDigest(nil, replica: replica, scope: scope)
     case .putSpent(let scope, let spent):
       try db.execute(sql: """
-        INSERT INTO spent (replica, scope, type, id, born) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (replica, scope, type, id) DO UPDATE SET born = excluded.born
-        """, arguments: [replica.value, scope.text, spent.key.type, spent.key.id.text, spent.born.text])
+        INSERT INTO spent (replica, scope, type, id, born, seq) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (replica, scope, type, id) DO UPDATE SET born = excluded.born, seq = excluded.seq
+        """, arguments: [replica.value, scope.text, spent.key.type, spent.key.id.text, spent.born.text, spent.seq])
     case .putCursor(let scope, let record):
       try db.cachedStatement(sql: """
         INSERT INTO cursor (replica, scope, cursor, digest, booted, behind, mismatch_reset, digest_stop) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -92,6 +92,27 @@ struct BatchWriter {
         """, arguments: [replica.value, scope.text, kind.rawValue])
     case .deleteKnown(let scope):
       try db.execute(sql: "DELETE FROM known_scope WHERE replica = ? AND scope = ?", arguments: [replica.value, scope.text])
+    case .putAct(let act):
+      try db.cachedStatement(sql: "INSERT OR REPLACE INTO journal_act (act_id, replica, act) VALUES (?, ?, ?)")
+        .execute(arguments: [act.actId, replica.value, Blob.of(act.json)])
+      try noteJournal(of: replica)
+    case .deleteAct(let id):
+      try db.cachedStatement(sql: "DELETE FROM journal_act WHERE act_id = ? AND replica = ?").execute(arguments: [id, replica.value])
+      try noteJournal(of: replica)
+    case .putInverse(let request):
+      try db.cachedStatement(sql: "INSERT OR REPLACE INTO inverse_request (request_id, replica, inverse_act_id, request) VALUES (?, ?, ?, ?)")
+        .execute(arguments: [request.requestId, replica.value, request.inverseActId, Blob.of(request.json)])
+      try noteJournal(of: replica)
+    case .deleteInverse(let id):
+      try db.cachedStatement(sql: "DELETE FROM inverse_request WHERE request_id = ? AND replica = ?").execute(arguments: [id, replica.value])
+      try noteJournal(of: replica)
+    case .putCancellation(let receipt):
+      try db.cachedStatement(sql: "INSERT OR REPLACE INTO cancellation (inverse_act_id, replica, receipt) VALUES (?, ?, ?)")
+        .execute(arguments: [receipt.inverseActId, replica.value, Blob.of(receipt.json)])
+      try noteJournal(of: replica)
+    case .deleteCancellation(let id):
+      try db.cachedStatement(sql: "DELETE FROM cancellation WHERE inverse_act_id = ? AND replica = ?").execute(arguments: [id, replica.value])
+      try noteJournal(of: replica)
     case .putNotice(let notice): try put(notice, in: replica)
     case .moveNotice(let notice):
       try db.execute(sql: "DELETE FROM notice WHERE id = ?", arguments: [notice.id])
@@ -129,6 +150,15 @@ struct BatchWriter {
 
   // MARK: Notices
 
+  // Whether the replica's journal holds anything now, which its loads read with its row.
+  func noteJournal(of replica: ReplicaHandle) throws {
+    try db.cachedStatement(sql: """
+      UPDATE replica SET journaled = (EXISTS (SELECT 1 FROM journal_act WHERE replica = ?1)
+        OR EXISTS (SELECT 1 FROM inverse_request WHERE replica = ?1) OR EXISTS (SELECT 1 FROM cancellation WHERE replica = ?1))
+      WHERE handle = ?1
+      """).execute(arguments: [replica.value])
+  }
+
   // A notice keeps its replica: the same id under another replica is refused, as a local id is.
   func put(_ notice: Notice, in replica: ReplicaHandle) throws {
     try db.execute(sql: """
@@ -144,32 +174,41 @@ struct BatchWriter {
   // MARK: The outbox
 
   // An entry keeps its replica and its commit order: a put that would replace another replica's entry, or another entry
-  // of the same local id, is refused. Every put replaces the records the entry touches in `outbox_touch`, and a delete
-  // takes them along.
+  // of the same local id, is refused. Every put replaces the records the entry touches in any scope in `outbox_touch`, and
+  // an opted entry's projections in `outbox_projection`; a delete takes them along.
   func put(_ entry: OutboxEntry, in replica: ReplicaHandle) throws {
     let baseTexts = JSON.object(from: Dictionary(uniqueKeysWithValues: entry.baseTexts.map { ($0.key.text, $0.value) })) { .string($0) }
     try db.cachedStatement(sql: """
       INSERT INTO outbox (replica, local_id, gesture_id, lineage, scope, state, commit_order, release_at, stamp, intent,
-        predict, base_texts, n, digest, result_seq, result_epoch, orphan_of, write_targets)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        predict, predictions, accepted_effects, base_texts, n, digest, result_seq, result_epoch, orphan_of, write_targets, inverse_of)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (local_id) DO UPDATE SET gesture_id = excluded.gesture_id, lineage = excluded.lineage,
         scope = excluded.scope, state = excluded.state, commit_order = excluded.commit_order, release_at = excluded.release_at,
-        stamp = excluded.stamp, intent = excluded.intent, predict = excluded.predict,
-        base_texts = excluded.base_texts, n = excluded.n, digest = excluded.digest, result_seq = excluded.result_seq,
-        result_epoch = excluded.result_epoch, orphan_of = excluded.orphan_of, write_targets = excluded.write_targets
+        stamp = excluded.stamp, intent = excluded.intent, predict = excluded.predict, predictions = excluded.predictions,
+        accepted_effects = excluded.accepted_effects, base_texts = excluded.base_texts, n = excluded.n, digest = excluded.digest,
+        result_seq = excluded.result_seq, result_epoch = excluded.result_epoch, orphan_of = excluded.orphan_of,
+        write_targets = excluded.write_targets, inverse_of = excluded.inverse_of
       WHERE outbox.replica = excluded.replica AND outbox.commit_order = excluded.commit_order
       """).execute(arguments: [
         replica.value, entry.localId, entry.gestureId, entry.lineage, entry.scope.text, entry.state.rawValue, entry.commitOrder,
         entry.releaseAt, entry.stamp.text, Blob.of(entry.intent.json),
-        entry.predict.isEmpty ? nil : Blob.of(.array(entry.predict.map(\.json))), baseTexts.map(Blob.of), entry.n,
-        entry.digest.map { Data(Blob.hexBytes($0)) }, entry.resultSeq, entry.resultEpoch, entry.orphanOf,
-        entry.writeTargets.map { Blob.of(.array($0.map(\.json))) },
+        entry.predict.isEmpty ? nil : Blob.of(.array(entry.predict.map(\.json))),
+        entry.predictions.map { Blob.of(.array($0.map(\.json))) }, entry.acceptedEffects.map { Blob.of(.array($0.map(\.json))) },
+        baseTexts.map(Blob.of), entry.n, entry.digest.map { Data(Blob.hexBytes($0)) }, entry.resultSeq, entry.resultEpoch,
+        entry.orphanOf, entry.writeTargets.map { Blob.of(.array($0.map(\.json))) }, entry.inverseOf,
       ])
     guard db.changesCount == 1 else { throw StoreError.localIdTaken(entry.localId) }
     try db.cachedStatement(sql: "DELETE FROM outbox_touch WHERE local_id = ?").execute(arguments: [entry.localId])
-    for key in Set(entry.drawnDeltas.map(\.key)) {
-      try db.cachedStatement(sql: "INSERT INTO outbox_touch (local_id, scope, type, id) VALUES (?, ?, ?, ?)")
-        .execute(arguments: [entry.localId, entry.scope.text, key.type, key.id.text])
+    for effect in entry.effects() {
+      for key in Set(effect.deltas.map(\.key)) {
+        try db.cachedStatement(sql: "INSERT INTO outbox_touch (local_id, scope, type, id) VALUES (?, ?, ?, ?)")
+          .execute(arguments: [entry.localId, effect.scope.text, key.type, key.id.text])
+      }
+    }
+    try db.cachedStatement(sql: "DELETE FROM outbox_projection WHERE local_id = ?").execute(arguments: [entry.localId])
+    for projection in entry.predictions ?? [] {
+      try db.cachedStatement(sql: "INSERT INTO outbox_projection (local_id, scope, result_seq, covered) VALUES (?, ?, ?, ?)")
+        .execute(arguments: [entry.localId, projection.scope.text, projection.resultSeq, projection.covered])
     }
   }
 

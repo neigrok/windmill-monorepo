@@ -35,7 +35,7 @@ export class WeighInValue {
   }
 }
 
-/** @type {EntityType<WeighInValue>} */
+/** @type {EntityType<WeighInValue, string>} */
 export const WeighIn = new EntityType({
   type: 'weighin', scope: 'self/gym', savesGuarded: false, heldRemoval: true, timestampField: 'recordedAt',
   decode: (f) => new WeighInValue(new Id(f.id, WeighIn), f.optionalDouble('kg'), f.optionalInstant('recordedAt')),

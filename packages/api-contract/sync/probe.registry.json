@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "probe",
-  "version": 2,
+  "version": 6,
   "minVersion": 2,
   "products": {
     "probe": {
@@ -26,7 +26,22 @@
       "governs": "tree",
       "origins": ["replica", "server"],
       "primary": true,
-      "fields": {}
+      "fields": {
+        "parent": {
+          "kind": "const",
+          "writer": "server",
+          "domain": {
+            "type": "object",
+            "nullable": true,
+            "properties": { "board": { "type": "string" }, "tag": { "type": "string" } },
+            "required": ["board", "tag"]
+          },
+          "refPaths": [
+            { "path": ["board"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } },
+            { "path": ["tag"], "type": "tag", "scope": { "kind": "treeFrom", "path": ["board"] } }
+          ]
+        }
+      }
     },
     {
       "type": "card",
@@ -189,11 +204,85 @@
       "origins": ["replica"],
       "fields": {
         "done": { "kind": "lww", "writer": "client", "domain": { "type": "boolean", "nullable": true } },
-        "memo": { "kind": "text", "writer": "client", "unit": "bytes", "max": 40 }
+        "memo": { "kind": "text", "writer": "client", "unit": "bytes", "max": 40 },
+        "opens": { "kind": "lww", "writer": "client", "ref": "board" }
       }
     }
   ],
   "commands": [
+    {
+      "name": "probe.capture", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {},
+      "predicts": ["board", "card", "run", "lap", "day"]
+    },
+    {
+      "name": "probe.captureTree", "scope": "tree", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {},
+      "predicts": ["meta", "tag", "link", "run"]
+    },
+    {
+      "name": "probe.captureOverlay", "scope": "overlay", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "capture", "args": {}, "predicts": ["mark"]
+    },
+    {
+      "name": "probe.restore", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "restore", "args": {}, "predicts": ["card", "run", "lap", "day"]
+    },
+    {
+      "name": "probe.restoreTree", "scope": "tree", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "restore", "args": {}, "predicts": ["meta", "tag", "link"]
+    },
+    {
+      "name": "probe.restoreOverlay", "scope": "overlay", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "engine": "restore", "args": {}, "predicts": ["mark"]
+    },
+    {
+      "name": "probe.unbranch", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true, "inverse": true,
+      "args": {
+        "input": { "type": "json", "domain": { "type": "object", "properties": {
+          "parent": { "type": "string" }, "child": { "type": "string" },
+          "title": { "type": "string", "unit": "chars", "max": 12 } }, "required": ["parent", "child", "title"] } }
+      },
+      "refPaths": [
+        { "path": ["input", "parent"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } },
+        { "path": ["input", "child"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } }
+      ]
+    },
+    {
+      "name": "probe.branch", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false, "scopedEffects": true,
+      "args": {
+        "parent": { "type": "ref<board>" },
+        "child": { "type": "ref<board>" },
+        "title": { "type": "json", "domain": { "type": "string", "unit": "chars", "max": 12 } }
+      },
+      "predicts": ["board", "meta"]
+    },
+    {
+      "name": "probe.sprout", "scope": "product:probe", "origins": ["replica", "server"],
+      "serverInternal": false,
+      "args": {
+        "board": { "type": "json", "domain": { "type": "string" } },
+        "tag": { "type": "json", "domain": { "type": "string" } },
+        "child": { "type": "json", "domain": { "type": "string" } }
+      },
+      "refPaths": [
+        { "path": ["board"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" } },
+        { "path": ["tag"], "type": "tag", "scope": { "kind": "treeFrom", "path": ["board"] } },
+        { "path": ["child"], "type": "board", "scope": { "kind": "fixed", "value": "self/probe" }, "role": "creation" }
+      ],
+      "predicts": ["board"]
+    },
+    {
+      "name": "probe.adopt", "scope": "tree", "origins": ["replica", "server"],
+      "serverInternal": false,
+      "args": {
+        "tag": { "type": "ref<tag>" },
+        "label": { "type": "json", "domain": { "type": "string", "unit": "chars", "max": 24 } }
+      },
+      "predicts": ["tag"]
+    },
     {
       "name": "probe.start",
       "scope": "product:probe",

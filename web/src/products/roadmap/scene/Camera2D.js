@@ -296,8 +296,10 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  // Show all of `bounds` inside the visible area; the cap keeps a tiny tree from fitting-to-fill past the working zoom.
+  // Show all of `bounds` inside the visible area; the cap keeps a tiny tree from fitting-to-fill past the working zoom. An
+  // extent without finite edges shows nothing, and leaves the camera where it stands.
   fitToView(bounds, padding = FIT_PADDING, maxZoom = this.workingZoom) {
+    if (![bounds.minX, bounds.maxX, bounds.minY, bounds.maxY].every(Number.isFinite)) return;
     this.glide = null;
     this.velocityX = 0;
     this.velocityY = 0;

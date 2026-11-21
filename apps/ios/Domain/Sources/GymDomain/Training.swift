@@ -5,7 +5,7 @@ import SyncSchema
 
 // A workout. The server writes every field but `plan`, which the lifter and applied workout proposals revise while it is
 // open; `fields` is the record as the phone holds it, without the server's two revision counters.
-public struct Session: Writable, Removable, Equatable {
+public struct Session: ProductEntity, Writable, Removable, Equatable {
   public static let type = Gym.Types.session
   public static let scope = Gym.scope
   public static let heldRemoval = true
@@ -71,7 +71,7 @@ public struct VolumePart: Equatable, Sendable {
   }
 }
 
-public struct TrainingSet: Writable, Removable, Equatable {
+public struct TrainingSet: ProductEntity, Writable, Removable, Equatable {
   public static let type = Gym.Types.set
   public static let scope = Gym.scope
   public static let heldRemoval = true

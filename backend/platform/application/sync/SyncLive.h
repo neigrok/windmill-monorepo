@@ -79,10 +79,9 @@ private:
   void decide(const LiveSocket& socket, const std::vector<Wanted>& wanted, const std::map<ScopeKey, std::optional<ScopeRow>>& trees);
   void unwatch(const std::vector<Wanted>& wanted);
 
-  // What every fan-out does, in order: fold the change into the cache, end who lost access, send the changes,
-  // answer the deaths.
+  // Fold authoritative facts into the cache, send eligible changes, end unreadable subscriptions, answer deaths.
   std::vector<ScopeKey> learn(const CommittedChange& change);
-  void sendChange(const std::string& epoch, const ScopeChange& changed);
+  void sendChange(const std::string& epoch, const ScopeChange& changed, bool killedHere);
   // §9.5 {op: 'gone' | 'not-found', as, scope}, sent to one subscriber.
   static void answer(const Subscriber& subscriber, const std::string& op, const std::string& scope);
   void answerDeath(const ScopeKey& killed);

@@ -184,7 +184,61 @@ public struct WriteTarget: Sendable, Hashable {
   }
 }
 
-// §2.5 one intent in the outbox; `n` lives in the intent, set iff sent or acked.
+// E-7 an opted entry's effects in one scope: the deltas it predicts there, and from its acknowledgement the seq of that
+// scope which covers them. A covered projection draws nothing more; the entry resolves once every one is covered
+// (§7.5). The origin's projection is always present, empty or not, and the intent's own deltas belong to it.
+public struct Projection: Sendable, Hashable {
+  public var scope: ScopeRef
+  public var deltas: [Delta]
+  public var resultSeq: Int64?
+  public var covered: Bool
+
+  public init(scope: ScopeRef, deltas: [Delta] = [], resultSeq: Int64? = nil, covered: Bool = false) {
+    self.scope = scope
+    self.deltas = deltas
+    self.resultSeq = resultSeq
+    self.covered = covered
+  }
+
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    try object.expectKeys(required: ["scope", "d"], optional: ["resultSeq", "covered"])
+    self.init(
+      scope: try ScopeRef(json: object.member("scope")), deltas: try object.member("d").asArray().map { try Delta(json: $0) },
+      resultSeq: try object["resultSeq"]?.asInteger(), covered: try object["covered"]?.asBool() ?? false)
+  }
+
+  public var json: JSON {
+    var object: JSON.Object = ["scope": scope.json, "d": .array(deltas.map(\.json))]
+    object["resultSeq"] = resultSeq.map { JSON($0) }
+    object["covered"] = covered ? true : nil
+    return .object(object)
+  }
+
+  // Projections a governor's remap brought into one scope join: their deltas in order, covered only if each was, at the
+  // greatest seq; the origin's first, then the rest by byte order, the origin's present even when empty.
+  public static func merged(_ projections: [Projection], origin: ScopeRef) -> [Projection] {
+    var byScope: [ScopeRef: Projection] = [:]
+    for projection in projections {
+      guard var joined = byScope[projection.scope] else {
+        byScope[projection.scope] = projection
+        continue
+      }
+      joined.deltas += projection.deltas
+      joined.covered = joined.covered && projection.covered
+      if let seq = projection.resultSeq { joined.resultSeq = max(joined.resultSeq ?? 0, seq) }
+      byScope[projection.scope] = joined
+    }
+    return EffectReceipt.ordered(origin: origin, byScope.keys).map { byScope[$0] ?? Projection(scope: $0) }
+  }
+
+  public static func == (lhs: Projection, rhs: Projection) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
+}
+
+// §2.5 one intent in the outbox; `n` lives in the intent, set iff sent or acked. A legacy command's prediction folds into
+// its scope (`predict`); an opted command's (`scopedEffects`, E-7) keeps one projection a scope (`predictions`), and from
+// its acknowledgement the receipt's accepted versions (`acceptedEffects`), until the entry resolves.
 public struct OutboxEntry: Sendable, Hashable {
   public var localId: String
   public var gestureId: String
@@ -196,15 +250,20 @@ public struct OutboxEntry: Sendable, Hashable {
   public var stamp: Stamp
   public var intent: Intent
   public var predict: [Delta]
+  public var predictions: [Projection]?
+  public var acceptedEffects: [EffectReceipt]?
   public var baseTexts: [TextRef: String]
   public var digest: String?
   public var resultSeq: Int64?
   public var resultEpoch: String?
   public var orphanOf: String?
   public var writeTargets: [WriteTarget]?
+  // K-3: the inverse request whose slot this entry is (§7.3 Undo of an act).
+  public var inverseOf: String?
 
   public init(localId: String, gestureId: String, lineage: String, scope: ScopeRef, state: EntryState, commitOrder: Int64,
-              releaseAt: Int64, stamp: Stamp, intent: Intent, predict: [Delta] = [], baseTexts: [TextRef: String] = [:]) {
+              releaseAt: Int64, stamp: Stamp, intent: Intent, predict: [Delta] = [], predictions: [Projection]? = nil,
+              baseTexts: [TextRef: String] = [:]) {
     self.localId = localId
     self.gestureId = gestureId
     self.lineage = lineage
@@ -215,6 +274,7 @@ public struct OutboxEntry: Sendable, Hashable {
     self.stamp = stamp
     self.intent = intent
     self.predict = predict
+    self.predictions = predictions
     self.baseTexts = baseTexts
   }
 
@@ -223,13 +283,55 @@ public struct OutboxEntry: Sendable, Hashable {
   // Held or ready: not yet on the wire, so every part of it is rewritable.
   public var isQueued: Bool { state == .held || state == .ready }
 
-  // The intent's deltas, then the prediction's: everything the entry draws (§7.6).
-  public var drawnDeltas: [Delta] { intent.deltas + predict }
+  // Everything the entry holds, scope by scope: its intent's deltas and its predictions, the stored effects dependents,
+  // identity recovery and notices read. `active` keeps only the projections no cursor covers yet, the ones views draw
+  // (§7.6): an opted entry's ordinary deltas draw while its origin projection is uncovered, at their accepted versions.
+  public func effects(active: Bool = false) -> [ScopedDeltas] {
+    guard let predictions else { return [ScopedDeltas(scope: scope, deltas: intent.deltas + predict)] }
+    let ordinary = active ? acceptedDeltas : intent.deltas
+    return predictions.filter { !active || !$0.covered }.map { projection in
+      ScopedDeltas(scope: projection.scope, deltas: (projection.scope == scope ? ordinary : []) + projection.deltas)
+    }
+  }
 
-  public func touches(_ key: RecordKey) -> Bool { drawnDeltas.contains { $0.key == key } }
+  // The intent's deltas as views draw them once its receipt is applied: copies, each born, life and field the origin's
+  // receipt versions at its accepted stamp, so a guard read after the ACK holds what the server stored. The numbered
+  // intent never changes.
+  var acceptedDeltas: [Delta] {
+    let rows = acceptedEffects?.first { $0.scope == scope }?.rows ?? []
+    return intent.deltas.map { delta in
+      guard let slots = rows.first(where: { $0.key == delta.key })?.slots else { return delta }
+      var accepted = delta
+      for slot in slots {
+        guard case .stamp(let stamp) = slot.version else { continue }
+        switch slot.slot {
+        case .born: accepted.lattice.born = accepted.lattice.born.map { _ in stamp }
+        case .life: accepted.lattice.life = accepted.lattice.life.map { Life($0.state, stamp) }
+        case .field(let name): accepted.lattice.fields[name] = accepted.lattice.fields[name].map { Register($0.value, stamp) }
+        case .text: continue
+        }
+      }
+      return accepted
+    }
+  }
 
-  // What a notice holds of this entry: its deltas and its command.
-  public var content: NoticeContent { NoticeContent(deltas: intent.deltas, command: intent.command) }
+  // The entry's effects in `scope`.
+  public func deltas(in scope: ScopeRef, active: Bool = false) -> [Delta] {
+    effects(active: active).filter { $0.scope == scope }.flatMap(\.deltas)
+  }
+
+  // What the command predicts, scope by scope: an opted entry's projections, a legacy one's prediction in its scope.
+  public var projected: [ScopedDeltas] {
+    predictions.map { $0.map { ScopedDeltas(scope: $0.scope, deltas: $0.deltas) } } ?? [ScopedDeltas(scope: scope, deltas: predict)]
+  }
+
+  // The scopes the entry has effects in.
+  public var scopes: [ScopeRef] { effects().map(\.scope) }
+
+  // What a notice holds of this entry: its deltas, its command and an opted command's predictions.
+  public var content: NoticeContent {
+    NoticeContent(deltas: intent.deltas, command: intent.command, predictions: predictions.map { $0.map { ScopedDeltas(scope: $0.scope, deltas: $0.deltas) } })
+  }
 
   public init(json: JSON) throws {
     let object = try json.asObject()
@@ -240,14 +342,17 @@ public struct OutboxEntry: Sendable, Hashable {
       commitOrder: try object.member("commitOrder").asInteger(), releaseAt: try object.member("releaseAt").asInteger(),
       stamp: try Stamp(json: object.member("stamp")), intent: try Intent(json: object.member("intent")),
       predict: try object["predict"]?.asArray().map { try Delta(json: $0) } ?? [],
+      predictions: try object["predictions"]?.asArray().map { try Projection(json: $0) },
       baseTexts: Dictionary(uniqueKeysWithValues: try (object["baseTexts"]?.asObject().members ?? []).map {
         (try TextRef(text: $0.key), try $0.value.asString())
       }))
+    acceptedEffects = try object["acceptedEffects"]?.asArray().map { try EffectReceipt(json: $0) }
     digest = try object["digest"]?.asString()
     resultSeq = try object["resultSeq"].map { try $0.asInteger() }
     resultEpoch = try object["resultEpoch"]?.asString()
     orphanOf = try object["orphanOf"]?.asString()
     writeTargets = try object["writeTargets"]?.asArray().map { try WriteTarget(json: $0) }
+    inverseOf = try object["inverseOf"]?.asString()
   }
 
   public var json: JSON {
@@ -257,6 +362,8 @@ public struct OutboxEntry: Sendable, Hashable {
       "intent": intent.json,
     ]
     object["predict"] = predict.isEmpty ? nil : .array(predict.map(\.json))
+    object["predictions"] = predictions.map { .array($0.map(\.json)) }
+    object["acceptedEffects"] = acceptedEffects.map { .array($0.map(\.json)) }
     object["baseTexts"] = baseTexts.isEmpty ? nil : .object(JSON.Object(uniqueKeysWithValues: baseTexts.map { ($0.key.text, .string($0.value)) }))
     object["n"] = n.map { JSON($0) }
     object["digest"] = digest.map { .string($0) }
@@ -264,6 +371,7 @@ public struct OutboxEntry: Sendable, Hashable {
     object["resultEpoch"] = resultEpoch.map { .string($0) }
     object["orphanOf"] = orphanOf.map { .string($0) }
     object["writeTargets"] = writeTargets.map { .array($0.map(\.json)) }
+    object["inverseOf"] = inverseOf.map(JSON.string)
     return .object(object)
   }
 
@@ -326,27 +434,29 @@ public struct Staging: Sendable, Hashable {
   }
 }
 
-// §2.5 a spent id of a derived type, with the born its dead row carried.
+// §2.5 a spent id of a derived type, with the born and the seq of the dead row it came from (§7.5). A spent id stored
+// without a seq keeps none, and gives a preimage read over it none (§7.3).
 public struct SpentID: Sendable, Hashable {
   public let key: RecordKey
   public let born: Stamp
+  public let seq: Int64?
 
-  public init(key: RecordKey, born: Stamp) {
+  public init(key: RecordKey, born: Stamp, seq: Int64?) {
     self.key = key
     self.born = born
+    self.seq = seq
   }
 
   public init(json: JSON) throws {
-    self.init(key: RecordKey(try json.member("t").asString(), try RecordID(json: json.member("id"))), born: try Stamp(json: json.member("born")))
+    self.init(key: RecordKey(try json.member("t").asString(), try RecordID(json: json.member("id"))), born: try Stamp(json: json.member("born")),
+              seq: try json["seq"].map { (seq: JSON) throws -> Int64 in try seq.asInteger() })
   }
 
-  public var json: JSON { ["t": .string(key.type), "id": key.id.json, "born": born.json] }
-}
-
-// One record of one scope, the same only byte for byte: what dependents, held-back numbering and anon counts key by.
-struct ScopedKey: Hashable {
-  let scope: ScopeRef
-  let key: RecordKey
+  public var json: JSON {
+    var object: JSON.Object = ["t": .string(key.type), "id": key.id.json, "born": born.json]
+    if let seq { object["seq"] = JSON(seq) }
+    return .object(object)
+  }
 }
 
 // A tree or overlay scope the replica learned is gone or not found (§7.5), which §7.1 step 2 refuses.
@@ -473,20 +583,27 @@ public struct EntrySelection: Sendable, Hashable {
   public var numbered: Set<Int64>
   public var covered: CoveredEntries?
   public var scopes: Set<ScopeRef>
+  // The scopes uncovered projections target, which a subscription set read in the transaction joins (§7.9).
+  public var projectionTargets: Bool
+  // Entries by local id: those the journal names, loaded with it (§7.3 Undo of an act).
+  public var localIds: Set<String>
 
   public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = [], covered: CoveredEntries? = nil,
-              scopes: Set<ScopeRef> = []) {
+              scopes: Set<ScopeRef> = [], projectionTargets: Bool = false, localIds: Set<String> = []) {
     self.all = all
     self.heldGestures = heldGestures
     self.numbered = numbered
     self.covered = covered
     self.scopes = scopes
+    self.projectionTargets = projectionTargets
+    self.localIds = localIds
   }
 
   public static let every = EntrySelection(all: true)
 }
 
-// §7.5 step 2 the acked entries of `scope` a cursor live at `cleanSeq` covers in `epoch`, the first `limit` of them.
+// §7.5 step 2 the acked entries with an uncovered effect in `scope` that a cursor live at `cleanSeq` covers in `epoch`,
+// the first `limit` of them.
 public struct CoveredEntries: Sendable, Hashable {
   public let scope: ScopeRef
   public let epoch: String
@@ -512,6 +629,9 @@ public enum EngineEvent: Sendable, Hashable {
   case pushMalformed
   // `activeReplica()` answers `replica` where it answered `previous`; not durable.
   case activeReplicaChanged(previous: String, replica: String)
+  // An inverse request the device sent settled, with its operation counts; the engine reports it as a product event, which
+  // the shared contract does not describe.
+  case inverseSettled(applied: Int, skipped: Int)
 
   public var json: JSON {
     switch self {
@@ -523,7 +643,15 @@ public enum EngineEvent: Sendable, Hashable {
     case .pushMalformed: return ["event": "sync-push-malformed"]
     case .activeReplicaChanged(let previous, let replica):
       return ["event": "activeReplicaChanged", "previous": .string(previous), "replica": .string(replica)]
+    case .inverseSettled(let applied, let skipped):
+      return ["event": "sync-inverse", "outcome": "settled", "applied": JSON(applied), "skipped": JSON(skipped)]
     }
+  }
+
+  // Whether the shared corpus describes it: every event but the engine's own product reports.
+  public var isContract: Bool {
+    if case .inverseSettled = self { return false }
+    return true
   }
 
   public var isEnded: Bool {
@@ -533,7 +661,7 @@ public enum EngineEvent: Sendable, Hashable {
 
   public var isTelemetry: Bool {
     switch self {
-    case .digestMismatch, .pushMalformed: true
+    case .digestMismatch, .pushMalformed, .inverseSettled: true
     case .ended, .activeReplicaChanged: false
     }
   }
@@ -544,15 +672,19 @@ public enum EngineEvent: Sendable, Hashable {
 extension NoticeContent {
   public init(json: JSON) throws {
     self.init(
+      scope: try json["scope"].map { try ScopeRef(json: $0) },
       deltas: try json["d"]?.asArray().map { try Delta(json: $0) } ?? [],
       command: try json["cmd"].map { try Command(json: $0) },
+      predictions: try json["predictions"]?.asArray().map { try ScopedDeltas(json: $0) },
       dependents: try json["dependents"]?.asArray().map { try NoticeContent(json: $0) } ?? [])
   }
 
   public var json: JSON {
     var object = JSON.Object()
+    object["scope"] = scope?.json
     object["d"] = deltas.isEmpty ? nil : .array(deltas.map(\.json))
     object["cmd"] = command?.json
+    object["predictions"] = predictions.map { .array($0.map(\.json)) }
     object["dependents"] = dependents.isEmpty ? nil : .array(dependents.map(\.json))
     return .object(object)
   }
@@ -598,12 +730,16 @@ public struct Limits: Sendable, Hashable {
   public let holdMs: Int64
   public let pushMaxIntents: Int
   public let pushMaxBytes: Int
+  // The canonical bytes of an opted command's grouped predictions (§9.7); a test may only shrink it.
+  public let effectMaxBytes: Int
 
   public init(holdMs: Int64 = Constants.holdMs, pushMaxIntents: Int = Constants.pushMaxIntents,
-              pushMaxBytes: Int = Constants.pushMaxBytes) {
+              pushMaxBytes: Int = Constants.pushMaxBytes, effectMaxBytes: Int = Constants.effectMaxBytes) {
+    precondition((1...Constants.effectMaxBytes).contains(effectMaxBytes), "EFFECT_MAX_BYTES only shrinks")
     self.holdMs = holdMs
     self.pushMaxIntents = pushMaxIntents
     self.pushMaxBytes = pushMaxBytes
+    self.effectMaxBytes = effectMaxBytes
   }
 }
 

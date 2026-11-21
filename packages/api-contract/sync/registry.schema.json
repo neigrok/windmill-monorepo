@@ -73,6 +73,33 @@
       "type": "string",
       "pattern": "^\\^[ -~]*\\$$"
     },
+    "idDomain": {
+      "description": "A scope-local scalar derived or keyed ID: valid Unicode without NUL, no normalization, counted in Unicode code points.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "unit",
+        "min",
+        "max"
+      ],
+      "properties": {
+        "type": {
+          "const": "string"
+        },
+        "unit": {
+          "const": "chars"
+        },
+        "min": {
+          "const": 1
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 1,
+          "exclusiveMaximum": 9007199254740992
+        }
+      }
+    },
     "scope": {
       "description": "The scope kind a type or command lives in (D-4): a product scope `product:<name>`, a governed `tree` scope, or an account's `overlay` of a tree.",
       "type": "string",
@@ -147,7 +174,7 @@
       }
     },
     "key": {
-      "description": "A keyed type's natural key (D-8): an id of another type, or an array of such ids whose JCS is the identity (§9.1). Without `key`, the key is a string matching idPattern.",
+      "description": "A keyed type's natural key (D-8): an id of another type, or an array of such ids whose JCS is the identity (§9.1). Without `key`, the key is a string matching idPattern or idDomain.",
       "oneOf": [
         {
           "type": "object",
@@ -227,8 +254,11 @@
           ]
         },
         "idPattern": {
-          "description": "Every id of the type matches it (§6.1 step 2). A tuple-keyed type has none: each part matches its referenced type's pattern.",
+          "description": "Every scalar id matches this pattern. A key inherits each referenced type's pattern or domain.",
           "$ref": "#/$defs/regex"
+        },
+        "idDomain": {
+          "$ref": "#/$defs/idDomain"
         },
         "key": {
           "$ref": "#/$defs/key"
@@ -328,7 +358,7 @@
           "const": true
         },
         "mint": {
-          "description": "How a CSPRNG id of a minted or derived type is minted (D-8): the prefix, then `length` characters drawn uniformly from `alphabet`. Every minted id matches idPattern.",
+          "description": "How a CSPRNG id of a minted or derived type is minted (D-8): the prefix, then `length` characters drawn uniformly from `alphabet`. Each alphabet symbol is a Unicode scalar. Every minted id satisfies the type's idPattern or idDomain.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -366,7 +396,6 @@
           "then": {
             "required": [
               "idSpace",
-              "idPattern",
               "revivable",
               "deadRows",
               "mint"
@@ -430,18 +459,23 @@
           }
         },
         {
-          "if": {
-            "not": {
+          "oneOf": [
+            {
+              "required": [
+                "idPattern"
+              ]
+            },
+            {
+              "required": [
+                "idDomain"
+              ]
+            },
+            {
               "required": [
                 "key"
               ]
             }
-          },
-          "then": {
-            "required": [
-              "idPattern"
-            ]
-          }
+          ]
         },
         {
           "description": "A governing type's ids are global: a tree scope is keyed by the id alone (D-5).",
@@ -541,6 +575,59 @@
               "life"
             ]
           }
+        },
+        {
+          "if": {
+            "required": [
+              "idDomain"
+            ]
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "enum": [
+                  "derived",
+                  "keyed"
+                ]
+              },
+              "idSpace": {
+                "const": "scope"
+              }
+            },
+            "not": {
+              "required": [
+                "singletonId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "key"
+            ]
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "const": "keyed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "singletonId"
+            ]
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "const": "singleton"
+              }
+            }
+          }
         }
       ]
     },
@@ -624,6 +711,14 @@
         },
         "default": {
           "description": "On a lattice field: the value a reader takes while the register is unset (§2.4). It is on the field's domain; the engine never stores or sends it."
+        },
+        "refPaths": {
+          "description": "E-8: the record identities inside the field's object value, each at a literal property path (§2.4 References).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/refPath"
+          }
         }
       },
       "allOf": [
@@ -949,19 +1044,58 @@
           }
         },
         "predicts": {
-          "description": "The types whose records the command's client prediction may carry (§7.1 `predict`).",
+          "description": "The types whose records the command's client prediction may carry (§7.1 `predict`); a scopedEffects command's `scopedPredict` may carry them in any scope that holds them. No wholePut type.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/typeName"
           },
           "uniqueItems": true
         },
+        "scopedEffects": {
+          "description": "A successful result's detail carries the scope-qualified receipt of every committed version (§6.4), and the command accepts scoped local predictions (§7.1).",
+          "const": true
+        },
+        "engine": {
+          "description": "The platform runs the command: `capture` admits the intent's ordinary deltas, checks and consequences with no product mutation; `restore` writes back earlier values of the types it predicts, each operation under its own condition, with §6.4's fixed arguments (K-3). Requires scopedEffects and no declared args.",
+          "enum": ["capture", "restore"]
+        },
+        "inverse": {
+          "description": "K-3: a product command an Undo or Redo recipe runs. Its wire arguments are the declared `input` and the engine-built `evidence` (§6.4). Requires scopedEffects, no engine, and exactly the one required json argument `input`.",
+          "const": true
+        },
         "beforePull": {
           "description": "A server-internal command that runs before every pull of its scope, in its own admission (§6.7).",
           "type": "boolean"
+        },
+        "refPaths": {
+          "description": "E-8: the record identities inside the command's json arguments, each at a literal property path from the arguments object (§2.4 References).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/commandRefPath"
+          }
         }
       },
       "allOf": [
+        {
+          "if": { "required": ["engine"] },
+          "then": {
+            "required": ["scopedEffects"],
+            "properties": { "scopedEffects": { "const": true }, "args": { "additionalProperties": false } }
+          }
+        },
+        {
+          "if": { "required": ["engine"], "properties": { "engine": { "const": "restore" } } },
+          "then": { "required": ["predicts"], "not": { "required": ["refPaths"] } }
+        },
+        {
+          "if": { "required": ["inverse"] },
+          "then": {
+            "required": ["scopedEffects"],
+            "not": { "required": ["engine"] },
+            "properties": { "args": { "required": ["input"], "additionalProperties": false, "properties": { "input": { "$ref": "#/$defs/argument" } } } }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -1000,6 +1134,115 @@
         },
         "domain": {
           "$ref": "#/$defs/domain"
+        }
+      }
+    },
+    "propertyPath": {
+      "description": "Literal object property names, outermost first: no array index, wildcard or expression.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/fieldName"
+      }
+    },
+    "refScope": {
+      "description": "The scope the identity names: `origin`, the scope its type lives in seen from the holder's scope (D-10); `fixed`, one product scope; `treeFrom`, the tree, or the caller's overlay of it, whose governing id the leaf at `path` holds.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "origin"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "fixed"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^self/[a-z][a-z0-9]*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "path"
+          ],
+          "properties": {
+            "kind": {
+              "const": "treeFrom"
+            },
+            "path": {
+              "$ref": "#/$defs/propertyPath"
+            }
+          }
+        }
+      ]
+    },
+    "refPath": {
+      "description": "One typed leaf: a string id of `type` at `path`, in the scope `scope` names; null only when `nullable`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type",
+        "scope"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/propertyPath"
+        },
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "scope": {
+          "$ref": "#/$defs/refScope"
+        },
+        "nullable": {
+          "const": true
+        }
+      }
+    },
+    "commandRefPath": {
+      "description": "A command's typed leaf. `role: creation` proposes the identity of a record the command creates: it is admitted as the command's own create and names no existing record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type",
+        "scope"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/propertyPath"
+        },
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "scope": {
+          "$ref": "#/$defs/refScope"
+        },
+        "nullable": {
+          "const": true
+        },
+        "role": {
+          "const": "creation"
         }
       }
     }

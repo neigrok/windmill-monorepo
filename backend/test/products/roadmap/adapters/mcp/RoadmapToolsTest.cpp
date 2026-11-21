@@ -3443,7 +3443,7 @@ TEST(mcp_a_forks_copied_guide_is_not_yours_until_its_owner_writes_one_through_an
     return body(h.tools.callTool("get_tree", with("treeId", tree.c_str()), ToolCaller{forker, ToolScope::everything()}))["tree"]["guide"];
   };
   const auto forkOf = [&](const char* id) {
-    REQUIRE(forks.fork(TreeId{"t"}, id, "", forker).outcome == ForkService::Outcome::forked);
+    REQUIRE(forks.fork(TreeId{"t"}, id, "", forker, std::nullopt).outcome == ForkService::Outcome::forked);
     CHECK_EQ(guideOf(id), parse(R"({"text":"Delete what you do not need.","yours":false})"));
     h.registry.evict(TreeId{id});
     CHECK_EQ(guideOf(id), parse(R"({"text":"Delete what you do not need.","yours":false})"));
@@ -3510,15 +3510,15 @@ TEST(mcp_forking_your_own_tree_keeps_its_guide_yours_and_anyone_elses_does_not) 
     return body(h.tools.callTool("get_tree", with("treeId", tree), ToolCaller{reader, ToolScope::everything()}))["tree"]["guide"];
   };
 
-  REQUIRE(forks.fork(TreeId{"t"}, "t_mine", "", h.caller).outcome == ForkService::Outcome::forked);
+  REQUIRE(forks.fork(TreeId{"t"}, "t_mine", "", h.caller, std::nullopt).outcome == ForkService::Outcome::forked);
   CHECK_EQ(guideOf("t_mine", h.caller), parse(R"({"text":"Rig first, then sail.","yours":true})"));
   CHECK_FALSE(h.trees.byId["t_mine"].guideInherited);
 
   const UserId stranger = uid("stranger");
-  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger).outcome == ForkService::Outcome::forked);
+  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger, std::nullopt).outcome == ForkService::Outcome::forked);
   CHECK_EQ(guideOf("t_theirs", stranger), parse(R"({"text":"Rig first, then sail.","yours":false})"));
 
-  REQUIRE(forks.fork(TreeId{"t_theirs"}, "t_theirs_again", "", stranger).outcome == ForkService::Outcome::forked);
+  REQUIRE(forks.fork(TreeId{"t_theirs"}, "t_theirs_again", "", stranger, std::nullopt).outcome == ForkService::Outcome::forked);
   CHECK_EQ(guideOf("t_theirs_again", stranger), parse(R"({"text":"Rig first, then sail.","yours":false})"));
 }
 
@@ -5811,7 +5811,7 @@ TEST(mcp_update_tree_writes_a_guide_sent_as_held_so_a_forks_owner_makes_it_their
   h.trees.byId["t"].visibility = Visibility::public_;
   CHECK_FALSE(h.call("update_tree", with("guide", "Rig first, then sail.")).isError);
   const UserId stranger = uid("stranger");
-  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger).outcome == ForkService::Outcome::forked);
+  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger, std::nullopt).outcome == ForkService::Outcome::forked);
   const auto call = [&](const char* tool, Json::Value args) {
     args["treeId"] = "t_theirs";
     return body(h.tools.callTool(tool, args, ToolCaller{stranger, ToolScope::everything()}));

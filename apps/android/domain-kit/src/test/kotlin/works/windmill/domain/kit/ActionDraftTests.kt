@@ -70,6 +70,7 @@ class ActionDraftTests {
         override fun stored(type: String) = storedRows.filter { it.type == type }
         override fun drawn(type: String, field: String, id: RecordID) = drawn(type).filter { it.values[field] == id.json }
         override fun stored(type: String, field: String, id: RecordID) = stored(type).filter { it.values[field] == id.json }
+        override fun spentBorn(type: String, id: RecordID): Stamp? = null
         override fun device(key: String): Json? = null
         override fun devices(prefix: String): Map<String, Json> = emptyMap()
         override fun firstPullComplete() = true
@@ -96,12 +97,18 @@ class ActionDraftTests {
             return (if (written == null) null else response) to result
         }
         override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = body(context)
-        override fun undo(gestureId: String) = true
+            override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>, segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> =
+            error("act vectors use the real engine")
+        override fun cancelHeld(gestureId: String) = true
+        override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult = error("inverse vectors use the real engine")
+        override fun readInverseResult(requestId: String): InverseResult = error("inverse vectors use the real engine")
+        override fun releaseReversibleAct(actId: String): Boolean = error("inverse vectors use the real engine")
         override fun mintID(type: String) = context.mintID(type)
         override fun physNow() = context.now
-        override fun dismissNotice(id: String) {
+        override fun dismissNotice(id: String): Boolean {
             dismissalFailure?.let { throw it }
             dismissed = id
+            return true
         }
     }
 

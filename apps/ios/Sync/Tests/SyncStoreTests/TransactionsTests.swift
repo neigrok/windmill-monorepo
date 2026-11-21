@@ -136,7 +136,7 @@ struct TransactionsTests {
     let deviceRows = "SELECT product, key, value FROM device_row WHERE replica = 1"
     let confirmed = #"SELECT id FROM row_set WHERE replica = 1 AND scope = 'self/probe' AND role = 'confirmed'"#
     let anyRow = "SELECT EXISTS (SELECT 1 FROM set_row WHERE row_set = 1)"
-    let spent = #"SELECT type, id, born FROM spent WHERE replica = 1 AND scope = 'self/probe'"#
+    let spent = #"SELECT type, id, born, seq FROM spent WHERE replica = 1 AND scope = 'self/probe'"#
     let row = { (type: String, id: String) in
       #"SELECT row FROM set_row WHERE row_set = 1 AND type = '"# + type + #"' AND id = '""# + id + #""'"#
     }
@@ -145,9 +145,13 @@ struct TransactionsTests {
         + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '"# + type + #"' AND outbox_touch.id = '""# + id
         + #""' AND outbox.replica = 1"#
     }
-    let carried = { (gestureId: String) in
-      [#"SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = '"# + gestureId + "')",
-       #"SELECT id FROM notice WHERE id >= 'notice:"# + gestureId + #"/' AND id < 'notice:"# + gestureId + "0'"]
+    let carried = { (gestureId: String) -> [String] in
+      let journal: String = """
+        SELECT EXISTS (SELECT 1 FROM journal_act WHERE act_id = '\(gestureId)') OR EXISTS (SELECT 1 FROM inverse_request WHERE request_id = '\(gestureId)')
+          OR EXISTS (SELECT 1 FROM inverse_request WHERE inverse_act_id = '\(gestureId)') OR EXISTS (SELECT 1 FROM cancellation WHERE inverse_act_id = '\(gestureId)')
+        """
+      return [#"SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = '"# + gestureId + "')",
+              #"SELECT id FROM notice WHERE id >= 'notice:"# + gestureId + #"/' AND id < 'notice:"# + gestureId + "0'", journal]
     }
     let cards = #"SELECT row FROM set_row WHERE row_set = 1 AND type = 'card'"#
     let touchingCards = "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
@@ -244,24 +248,49 @@ struct TransactionsTests {
     let runs = try [0, 40].map(Self.framesBeside)
     #expect(runs[0].reads == runs[1].reads)
     #expect(runs.map(\.outcomes) == Array(repeating: ["applied", "pull self/probe", "ignored tree/b_00000001", "gone"], count: 2))
-    #expect(runs.map(\.outbox) == [["b/0"], ["b/0"] + (0..<40).map { "u\($0)/0" }])
-    let touching = { (type: String, id: String?) in
-      "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
-        + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '"# + type + "'"
-        + (id.map { #" AND outbox_touch.id = '""# + $0 + #""'"# } ?? "") + " AND outbox.replica = 1"
+    let unsent: [String] = (0..<40).map { (index: Int) -> String in "u\(index)/0" }
+    let besideUnsent: [String] = ["b/0"] + unsent
+    #expect(runs.map(\.outbox) == [["b/0"], besideUnsent])
+    let touching: (String, String?) -> String = { type, id in
+      let record: String = id.map { (id: String) -> String in " AND outbox_touch.id = '\"\(id)\"'" } ?? ""
+      return """
+        SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
+        WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '\(type)'\(record) AND outbox.replica = 1
+        """
     }
-    let covered = { (seq: Int) in
-      "SELECT * FROM outbox WHERE replica = 1 AND scope = 'self/probe' AND state = 'acked' AND result_epoch = 'ep-1' AND result_seq <= \(seq)\n"
-        + "ORDER BY commit_order LIMIT 33"
+    let covered: (Int) -> [String] = { seq in
+      let unprojected: String = """
+        SELECT * FROM outbox WHERE replica = 1 AND scope = 'self/probe' AND state = 'acked' AND result_epoch = 'ep-1' AND result_seq <= \(seq)
+          AND predictions IS NULL
+        ORDER BY commit_order LIMIT 33
+        """
+      let projected: String = """
+        SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id)
+        WHERE outbox_projection.scope = 'self/probe' AND outbox_projection.covered = 0 AND outbox_projection.result_seq <= \(seq)
+          AND outbox.replica = 1 AND outbox.state = 'acked' AND outbox.result_epoch = 'ep-1'
+        ORDER BY outbox.commit_order LIMIT 33
+        """
+      return [unprojected, projected]
     }
-    let scope = { (scope: String) in "SELECT * FROM outbox WHERE replica = 1 AND scope = '\(scope)'" }
-    let above = { (count: Int) in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
-    #expect(runs[0].reads == [
-      [touching("card", "card0009"), touching("board", nil), covered(6), above(3)],
-      [touching("card", "card0010"), touching("board", nil), covered(9), above(2)],
-      [touching("board", "b_00000001"), touching("board", nil), scope("tree/b_00000001"), above(2)],
-      [touching("board", nil), scope("tree/b_00000002"), above(3)],
-    ])
+    let scope: (String) -> [String] = { scope in
+      let entries: String = "SELECT * FROM outbox WHERE replica = 1 AND scope = '\(scope)'"
+      let projections: String =
+        "SELECT outbox.* FROM outbox_projection JOIN outbox USING (local_id) WHERE outbox_projection.scope = '\(scope)' AND outbox.replica = 1"
+      return [entries, projections]
+    }
+    let targets: String = """
+      SELECT outbox_projection.scope FROM outbox_projection JOIN outbox USING (local_id)
+      WHERE outbox_projection.covered = 0 AND outbox.replica = 1
+      ORDER BY outbox.commit_order, outbox_projection.scope <> outbox.scope, outbox_projection.scope
+      """
+    let above: (Int) -> String = { count in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
+    let settling: [String] = [touching("card", "card0009"), touching("board", nil), targets, above(3)] + covered(6)
+    let pastAGap: [String] = [touching("card", "card0010"), touching("board", nil), targets, above(2)] + covered(9)
+    let notFound: [String] = [touching("board", "b_00000001"), touching("board", nil), targets, above(2)]
+      + scope("tree/b_00000001") + scope("self/overlay/b_00000001")
+    let gone: [String] = [touching("board", nil), targets, above(3)] + scope("tree/b_00000002") + scope("self/overlay/b_00000002")
+    let expected: [[String]] = [settling, pastAGap, notFound, gone].map { (reads: [String]) -> [String] in reads.sorted() }
+    #expect(runs[0].reads == expected)
   }
 
   // A settling change, a change past a gap, a not-found whose board's create waits, a gone: their outbox reads and outcomes, the outbox after.
@@ -311,11 +340,54 @@ struct TransactionsTests {
       let applied = try #require(try store.apply(
         frame, replica: "rp_1", subscribed: .own(Subscriptions(products: ["probe"], opened: [])), settling: 32,
         instance: Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: 5000, appVersion: "1")).value)
-      reads.append(taken().filter { $0.contains("outbox") })
+      reads.append(taken().filter { $0.contains("outbox") }.sorted())
       outcomes.append(([applied.outcome.rawValue] + applied.next.map(\.text) + (applied.unsettled ? ["unsettled"] : [])).joined(separator: " "))
     }
     let left = try store.read { try $0.device(rows: true).activeReplica.outbox.map(\.localId) }
     return (reads, outcomes, left)
+  }
+
+  // §7.5 step 2 under E-7: a settling slice finds an acked entry's uncovered projection through the projection index, past
+  // any number of entries whose projection there is covered already, so a covered marker never starves one that is not.
+  // Marking it covered is the slice's work though its entry still waits on its tree; the reads are the same beside 0 or 40
+  // covered entries.
+  @Test func aSettlingSliceReachesAnUncoveredProjectionPastCoveredOnes() throws {
+    let runs = try [0, 40].map(Self.settlingBeside)
+    #expect(runs[0].reads == runs[1].reads)
+    #expect(runs.map(\.settled) == [[1, 0], [1, 0]])
+    let tree = ScopeRef.tree("b_00000001")
+    let projections: [Projection] = [Projection(scope: .product("probe"), resultSeq: 1, covered: true), Projection(scope: tree, resultSeq: 9)]
+    #expect(runs.map(\.projections) == [projections, projections])
+  }
+
+  // Two slices of `self/probe` beside `covered` acked opted entries covered there already, then the entry whose projection
+  // there its cursor now covers: what each resolved, the outbox reads, and that entry's projections after.
+  static func settlingBeside(_ covered: Int) throws -> (reads: [String], settled: [Int], projections: [Projection]) {
+    let product = ScopeRef.product("probe")
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")
+    meta.serverEpoch = "ep-1"
+    let entry = { (localId: String, order: Int64, coveredHere: Bool) in
+      var entry = OutboxEntry(
+        localId: localId, gestureId: String(localId.dropLast(2)), lineage: "A", scope: product, state: .acked, commitOrder: order,
+        releaseAt: 0, stamp: stamp, intent: Intent(n: order, scope: product, command: Command(name: "probe.capture", args: [:])),
+        predictions: [Projection(scope: product, resultSeq: 1, covered: coveredHere), Projection(scope: .tree("b_00000001"), resultSeq: 9)])
+      entry.digest = entry.intent.digest
+      entry.resultSeq = 1
+      entry.resultEpoch = "ep-1"
+      return entry
+    }
+    let coveredEntries: [OutboxEntry] = (0..<covered).map { (index: Int) -> OutboxEntry in entry("c\(index)/0", Int64(index + 1), true) }
+    let outbox: [OutboxEntry] = coveredEntries + [entry("x/0", Int64(covered + 1), false)]
+    let store = try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [
+      LoadedReplica(meta: meta, outbox: outbox, cursors: [product: CursorRecord(cursor: Cursor(epoch: "ep-1", mode: .live, seq: 1).text, booted: true)],
+                    wholeScopes: true),
+    ]), registry: Self.probe)
+    let taken = try Self.readsRecorded(by: store)
+    let settled = try (0..<2).map { _ in try #require(try store.settle(product, replica: "rp_1", count: 1).value).resolved }
+    let reads = taken().filter { $0.contains("outbox") }
+    let projections = try store.read { try $0.device(rows: true).activeReplica.entry("x/0")?.predictions ?? [] }
+    return (reads, settled, projections)
   }
 
   // A commit whose gesture mints any number of ids loads the replica twice: once for what the gesture names, and once
@@ -360,7 +432,7 @@ struct TransactionsTests {
       case ..<55:
         var gesture = try Self.commitGesture(&random, over: whole)
         gesture.gestureId = "step\(step)"
-        let held = Set(whole.rows(scope).all.map(\.key) + whole.outbox.flatMap(\.drawnDeltas).map(\.key))
+        let held = Set(whole.rows(scope).all.map(\.key) + whole.outbox.flatMap { $0.deltas(in: scope) }.map(\.key))
         let repeated = random.chance(0.4) ? random.pick(held.filter { $0.id.string?.count == 16 }.sorted()) : nil
         let draws = JSON.array(((repeated?.id.string.map { Array($0) } ?? []).map { alphabet.firstIndex(of: $0)! }
           + (0..<256).map { _ in random.below(62) }).map { JSON($0) })
@@ -464,7 +536,7 @@ struct TransactionsTests {
   // if none does yet, and else a gesture retiring the removal while it changes other records; now and then a retire of
   // another held removal, or a held removal alone; otherwise up to three changes, held or atomic now and then.
   static func commitGesture(_ random: inout SeededRandom, over whole: LoadedReplica) throws -> Gesture {
-    let keys = whole.rows(.product("probe")).all.map(\.key) + whole.outbox.flatMap(\.drawnDeltas).map(\.key)
+    let keys = whole.rows(.product("probe")).all.map(\.key) + whole.outbox.flatMap { $0.deltas(in: .product("probe")) }.map(\.key)
     let ids = { (type: String) in Array(Set(keys.filter { $0.type == type }.map(\.id))).sorted() }
     let changes = { (random: inout SeededRandom, count: Int) -> [Change] in
       var seen: Set<RecordKey> = []
@@ -477,7 +549,7 @@ struct TransactionsTests {
     let retirable = whole.outbox.filter { $0.state == .held && !$0.intent.deltas.isEmpty && $0.intent.deltas.allSatisfy(\.removes) }
     if let removal = retirable.first(where: { $0.intent.deltas.contains { $0.key.type == "day" } }), random.chance(0.7) {
       let day = removal.intent.deltas.first { $0.key.type == "day" }!.key
-      guard whole.outbox.contains(where: { $0.commitOrder > removal.commitOrder && $0.state != .held && $0.touches(day) }) else {
+      guard whole.outbox.contains(where: { $0.commitOrder > removal.commitOrder && $0.state != .held && $0.deltas(in: .product("probe")).contains { $0.key == day } }) else {
         return Gesture(changes: [.put("day", day.id, present: nil, ["score": JSON(random.below(11))])])
       }
       return retiring(&random, day)
@@ -592,15 +664,17 @@ struct TransactionsTests {
     #expect(try store.read { try $0.device(rows: true).json } == device.json)
   }
 
-  // D-17: dismissing a notice the active replica does not hold throws, and nothing is written.
-  @Test func dismissingANoticeTheActiveReplicaDoesNotHoldThrows() throws {
+  // D-17: dismissing a notice the active replica does not hold answers false: it neither throws nor writes.
+  @Test func dismissingANoticeTheActiveReplicaDoesNotHoldChangesNothing() throws {
     let device = try LoadedDevice(json: try JSON(parsing: """
       {"active": "rp_00000000000000000000000000000001", "replicas": [{"meta": {"replica": "rp_00000000000000000000000000000001",
         "state": "bound", "account": "A", "nextN": 1, "hlc": {"ms": 0, "counter": 0}, "hlcHigh": "0:0:", "admittedHigh": "0:0:",
         "serverOffsetMs": 0, "offsetSamples": [], "serverEpoch": "ep-1", "ackThrough": 0, "authPaused": false}}]}
       """), registry: Self.probe)
     let store = try Store.inMemory(holding: device, registry: Self.probe)
-    #expect(throws: StoreError.noNotice("notice:g1/0")) { try store.dismissNotice("notice:g1/0") }
+    let written = try store.dismissNotice("notice:g1/0")
+    #expect(written.value == false)
+    #expect(written.change == StoreChange())
     #expect(try store.read { try $0.device(rows: true).json } == device.json)
   }
 
@@ -651,11 +725,26 @@ struct StoredDevice: ClientDevice {
     take(try store.commit(in: scope, instance: instance, identities: identities) { _ in (gesture, ()) }).outcome
   }
 
+  mutating func commitAct(_ segments: [ScopedGesture]?, undo: ActUndo?, instance: Instance, identities: IdentitySource) throws -> ActCommitOutcome? {
+    let written = try store.commitAct(instance: instance, identities: identities, prepare: { _, _ in
+      (segments.map { ActRequest(scopes: $0.map(\.scope), hold: $0.contains { $0.gesture.hold }, undo: undo) }, segments)
+    }, segment: { values, index, _, _ in values![index].gesture })
+    events += written.events
+    return written.value.outcome
+  }
+
+  mutating func requestInverse(_ actId: String, slots: [ActUndo.Segment]?, instance: Instance, identities: IdentitySource) throws -> InverseResult {
+    take(try store.requestInverse(actId, replacing: slots, instance: instance, identities: identities))
+  }
+
+  func readInverseResult(_ requestId: String) throws -> InverseResult { try store.readInverseResult(requestId) }
+  mutating func releaseReversibleAct(_ actId: String) throws -> Bool { take(try store.releaseReversibleAct(actId)) }
+
   mutating func release(_ localId: String) throws -> Bool { take(try store.release(localId)) }
   mutating func releaseAll() throws { _ = take(try store.releaseAll()) }
   mutating func releaseDue(at deviceNow: Int64) throws { take(try store.releaseDue(at: deviceNow)) }
   mutating func undo(_ gestureId: String) throws -> Bool { take(try store.undo(gestureId)) }
-  mutating func dismiss(_ noticeId: String) throws { take(try store.dismissNotice(noticeId)) }
+  mutating func dismiss(_ noticeId: String) throws -> Bool { take(try store.dismissNotice(noticeId)) }
   mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest? { take(try store.number(limit: limit, at: deviceNow)) }
 
   mutating func apply(_ step: PushStep, instance: inout Instance, timing: Timing, identities: IdentitySource) throws {

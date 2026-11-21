@@ -333,14 +333,19 @@ final class ViewHub {
     guard let device = try tx.deviceMeta(), let replica = try tx.replica(device.active) else { throw StoreError.noDevice }
     let failed = core.failedPushScopes.withLock { $0[Array(replica.meta.replica.utf8)] ?? [:] }
     var failedPushes: [ScopeRef: Set<RecordKey>] = [:]
-    for entry in replica.outbox where failed[entry.scope] != nil && (entry.state == .ready || entry.state == .sent) {
-      failedPushes[entry.scope, default: []].formUnion(entry.drawnDeltas.map(\.key))
+    var unansweredPushes: Set<ScopeRef> = []
+    for entry in replica.outbox where entry.state == .ready || entry.state == .sent {
+      guard let failure = failed[entry.scope] else { continue }
+      for effect in entry.effects() {
+        failedPushes[effect.scope, default: []].formUnion(effect.deltas.map(\.key))
+        if failure == .unanswered { unansweredPushes.insert(effect.scope) }
+      }
     }
     return SyncStatus.Snapshot(
       account: replica.meta.state == .bound ? replica.meta.account : nil, authPaused: replica.meta.authPaused,
       upgradeRequired: core.upgradeRequired, online: core.connectivity.isOnline, pendingSignIn: device.meta.pendingSignIn,
       ready: replica.outbox.filter { $0.state == .ready }.count, sent: replica.outbox.filter { $0.state == .sent }.count,
-      failedPushes: failedPushes, unansweredPushes: Set(failedPushes.keys.filter { failed[$0] == .unanswered }))
+      failedPushes: failedPushes, unansweredPushes: unansweredPushes)
   }
 }
 

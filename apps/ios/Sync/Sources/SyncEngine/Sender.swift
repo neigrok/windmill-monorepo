@@ -158,7 +158,17 @@ package actor Sender {
         failureKind = "decode"
         core.telemetry.failure("sync_push", kind: "decode")
       }
-      let next = try record(reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      let next: SenderStep
+      do {
+        next = try record(reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      } catch is JSONError {
+        // §7.4: an answer whose scoped receipts do not decode changed nothing, its sample included; it fails as an
+        // undecodable answer does.
+        core.telemetry.failure("sync_push", kind: "decode")
+        core.recordPushFailure(request, .answered)
+        core.outcome("sync_push_outcome", reply: Reply<PushResponse>.unreachable, since: send.mono, failureKind: "decode")
+        return .backoff(ms: nextBackoff(floorMs: 0))
+      }
       // A 400 or 413 was halved or refused, so the next push differs, and a conflict re-identifies; every other failure
       // holds the entries it named back.
       switch reply {

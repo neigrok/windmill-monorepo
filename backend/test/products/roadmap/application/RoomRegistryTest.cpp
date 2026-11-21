@@ -1480,9 +1480,9 @@ TEST(registry_a_write_an_earlier_save_stored_is_answered_saved_though_the_save_o
   FakeBus bus;
   HeldRetries retries;
   repo.byId["t"] = oneNodeTree();
-  RoomRegistry registry(repo, log, bus, retries.timer());
-  int saves = 0;
+  int saves = 0;  // before the registry, whose stop saves through the hook that counts here
   bool refuses = false;
+  RoomRegistry registry(repo, log, bus, retries.timer());
   repo.duringSave = [&](const TreeId&) {
     ++saves;
     if (refuses) throw std::runtime_error("the write was refused");

@@ -171,7 +171,7 @@ public enum ProposalProvenance: Equatable, Sendable {
   case other(door: String, connection: String, agent: String)
 }
 
-public struct Proposal: Writable, Equatable {
+public struct Proposal: ProductEntity, Writable, Equatable {
   public static let type = Gym.Types.proposal
   public static let scope = Gym.scope
 
@@ -257,7 +257,7 @@ public struct Proposal: Writable, Equatable {
   ]
 }
 
-public struct RoutineCreation: Entity {
+public struct RoutineCreation: ProductEntity {
   public static let type = "routineCreation"
   public static let scope = Gym.scope
   public let id: ID<RoutineCreation>

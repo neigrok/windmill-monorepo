@@ -9,6 +9,7 @@ enum ServerHandlers {
   static let probe = try! Corpus.probeRegistry()
   static let journal = try! Registry(json: Corpus.registryFile("journal"))
   static let gym = try! Registry(json: Corpus.registryFile("gym"))
+  static let roadmap = try! Registry(json: Corpus.registryFile("roadmap"))
 
   static let table: [String: @Sendable (JSON) throws -> JSON] = files.merging(admitFiles) { $1 }
 
@@ -41,6 +42,7 @@ enum ServerHandlers {
       return ["kept": .array(JournalServerRules.prune(rows, days: days, serverNow: try input.member("serverNow").asInteger()).map { JSON($0.rev) })]
     },
     "gym/admit.json": { try admit($0, registry: gym, rules: GymServerRules()) },
+    "roadmap/admit.json": { try admit($0, registry: roadmap, rules: RoadmapServerRules()) },
     "push/serve.json": { try push($0) },
     "pull/serve.json": { try pull($0) },
     "live/death.json": { input in
@@ -150,9 +152,14 @@ enum ServerHandlers {
     let from: IntentOrigin = try origin.member("kind").asString() == "replica"
       ? .replica(account: account, replica: try origin.member("replica").asString(), n: try origin.member("n").asInteger())
       : .server(account: account, requestId: nil)
+    let rules = input["effectPlan"].map { EffectPlanRules(plan: $0) as any ServerRules } ?? rules
     let admission = Admission(registry: registry, rules: rules, limits: try ServerLimits(json: input["limits"]))
-    let admitted = try admission.admit(input.member("intent"), from: from, at: try input.member("serverNow").asInteger(), in: &state)
-    return ["result": admitted.result.json, "state": state.json]
+    do {
+      let admitted = try admission.admit(input.member("intent"), from: from, at: try input.member("serverNow").asInteger(), in: &state)
+      return ["result": admitted.result.json, "state": state.json]
+    } catch is AdmissionFault where input["effectPlan"]?["fault"] == true {
+      return ["fault": true, "state": state.json]
+    }
   }
 
   // `{state, calls}`: §6.3 for each call in order; a call ended by `crashAfter` or `transientAt` answers null, and
@@ -257,4 +264,54 @@ struct ServerVectorError: Error, CustomStringConvertible {
   init(_ description: String) {
     self.description = description
   }
+}
+
+struct EffectPlanRules: ServerRules {
+  let plan: JSON
+  let probe = ProbeServerRules()
+  var localCheckTypes: Set<String>? {
+    if let types = try? plan["legacyTypes"]?.asArray().map({ try $0.asString() }) { return Set(types) }
+    return probe.localCheckTypes
+  }
+
+  func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] {
+    try probe.check(changes, in: &context)
+  }
+
+  func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { probe.replays(command, in: context) }
+
+  func discoverEffectScopes(in context: RuleContext, command: CheckedCommand?) throws(Refusal) -> Set<ScopeKey> {
+    guard let declared = try? (plan["declared"] ?? []).asArray(),
+          let scopes = try? declared.map({ try ScopeKey(parsing: $0.asString()) }) else { throw Refusal(.invalid) }
+    return probe.discoverEffectScopes(in: context, command: command).union(scopes)
+  }
+
+  func run(_ command: CheckedCommand, in context: RuleContext) throws -> CommandOutcome {
+    var result = try probe.run(command, in: context)
+    for (scope, deltas) in try effects("command", context: context, source: .command) {
+      result.into[scope, default: []] += deltas
+    }
+    if let detail = plan["detail"] { result.detail = detail }
+    return result
+  }
+
+  func effects(_ changes: [RecordChange], in context: inout RuleContext) throws -> Effects {
+    var byScope = try localEffects(changes, in: &context).byScope
+    for (scope, deltas) in try effects("check", context: context, source: .check) { byScope[scope, default: []] += deltas }
+    return Effects(byScope: byScope)
+  }
+
+  func effects(_ stage: String, context: RuleContext, source: ChangeSource) throws(Refusal) -> [ScopeKey: [PlannedDelta]] {
+    guard let groups = try? (plan[stage] ?? [:]).asObject() else { throw Refusal(.invalid) }
+    var byScope: [ScopeKey: [PlannedDelta]] = [:]
+    for (key, values) in groups.members {
+      guard let scope = try? ScopeKey(parsing: key), let deltas = try? values.asArray() else { throw Refusal(.invalid) }
+      byScope[scope] = try deltas.map { delta throws(Refusal) in
+        try IntentShape.effect(delta, in: scope, source: source, registry: context.registry)
+      }
+    }
+    return byScope
+  }
+
+  func keptRevisions(_ revisions: [Revision]) -> [Revision] { probe.keptRevisions(revisions) }
 }

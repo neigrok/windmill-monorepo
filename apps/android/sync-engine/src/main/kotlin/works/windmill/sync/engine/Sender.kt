@@ -20,10 +20,10 @@ internal fun Engine.heldBack(replica: ReplicaState): Set<Entry> {
     val back = mutableSetOf<Entry>()
     for (entry in replica.entries()) {
         if (entry.state == "ready") {
-            val keys = (entry.deltas.map { it.key } + entry.intent.guards.map { it.key }).map { entry.scope to it }
+            val keys = entry.effects.flatMap { group -> group.deltas.map { group.scope to it.key } } + entry.intent.guards.map { entry.scope to it.key }
             if (sources.of(entry).any || keys.any { it in touched }) { back.add(entry); touched.addAll(keys) }
         }
-        if (entry.state == "held" || entry in back || entry.json["orphanOf"] != null && entry.state in setOf("sent", "ready")) sources.absorb(entry.scope, entry.deltas, entry.stamp)
+        if (entry.state == "held" || entry in back || entry.json["orphanOf"] != null && entry.state in setOf("sent", "ready")) sources.absorb(entry)
     }
     return back
 }
@@ -39,6 +39,11 @@ fun Engine.nextPush(limit: Int = Constants.PUSH_MAX_INTENTS): Json? = write(Engi
         var back = heldBack(replica)
         for (entry in replica.entries().filter { it.state == "ready" }) {
             if (entry !in replica.outbox || entry.state != "ready") continue
+            if (entry.inverseOf != null) {
+                if (!passesBarrier(replica, entry)) break
+                back = heldBack(replica)
+                if (entry !in replica.outbox) continue
+            }
             if (entry in back) { if (entry.intent.command != null) break; continue }
             val n = replica.meta.member("nextN").long()
             val intent = entry.intent.copy(n = n)
@@ -61,12 +66,15 @@ fun Engine.onHello(response: SyncResponse, timing: RequestTiming) { write(Engine
 fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: RequestTiming, dieAfter: Int = Int.MAX_VALUE): Json? {
     val body = response.body
     val requestedReplica = request.member("replica").str()
+    var unreadable = emptySet<Long>()
     val proceed = write(EngineOperation.push) { _ ->
         val replica = device.replicas.firstOrNull { it.id == requestedReplica } ?: return@write false
+        if (response.status == 200 && body != null && !response.unauthenticated(replica.account)) unreadable = unreadableResults(replica, body)
         if (response.unauthenticated(replica.account)) {
             body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
             replica.meta = replica.meta.with("authPaused" to Json.of(true)); return@write false
         }
+        if (unreadable.isNotEmpty()) diagnostic(Json.objectOf("event" to Json.of("sync-push-malformed")))
         if (response.status == 409) {
             validateResponse("push-conflict", body ?: throw JsonError("response"))
             offset(replica, body.member("serverTime").long(), timing)
@@ -81,7 +89,7 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
         if (response.status == 200 && body != null && replica.meta["serverEpoch"] !== Json.Null && replica.meta["serverEpoch"] != body["epoch"]) {
             validateResponse("push", body)
             offset(replica, body.member("serverTime").long(), timing)
-            recoverPushEpoch(replica, body)
+            recoverPushEpoch(replica, body, unreadable)
             return@write false
         }
         body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
@@ -113,7 +121,7 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
             val replica = device.replicas.firstOrNull { it.id == requestedReplica } ?: return@write null
             if (replica.meta["serverEpoch"] !== Json.Null && replica.meta["serverEpoch"] != body["epoch"]) {
                 validateResponse("push", body)
-                recoverPushEpoch(replica, body)
+                recoverPushEpoch(replica, body, unreadable)
                 return@write null
             }
             started = System.nanoTime()
@@ -121,16 +129,16 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
             for (result in results.subList(from, to)) {
                 val entry = replica.entries().firstOrNull { it.state == "sent" && it.json.member("n") == result.member("n") } ?: continue
                 if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
-                if (result.member("s").str() == "refused") onRefused(replica, entry, result, body)
-                else {
-                    acceptPushResult(replica, entry, result, body.member("epoch"))
-                    resolveIfCovered(replica, entry)
-                }
+                if (result.member("s").str() == "refused") {
+                    onRefused(replica, entry, result, body)
+                    if (entry !in replica.outbox) replica.retainOutcome(entry.id, Attempt(body.member("epoch").str(), result.member("n").long(), ok = false))
+                    replica.applyInverseResult(entry, result, body.member("epoch").str())
+                } else acceptPushResult(replica, entry, result, body.member("epoch").str(), unreadable)
                 recorded++
             }
             if (to == results.size) {
                 if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
-                replica.meta = replica.meta.with("ackThrough" to body.member("lastN"))
+                replica.meta = replica.meta.with("ackThrough" to Json.of(minOf(body.member("lastN").long(), body["retry"]?.member("n")?.long()?.minus(1) ?: Long.MAX_VALUE)))
             }
             recorded
         } ?: return null
@@ -141,24 +149,69 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
     return null
 }
 
-private fun Engine.acceptPushResult(replica: ReplicaState, entry: Entry, result: Json, epoch: Json) {
-    applyIntentResultDeviceWrites(replica, entry.intent, entry.gestureId, PushResult(result), epoch.str())
-    replica.move(entry, "ok", ended)
-    entry.json = entry.json.with("resultSeq" to result.member("seq"), "resultEpoch" to epoch)
-    raiseAdmittedHigh(replica, entry.intent.deltas.flatMap { it.lattice.stamps })
-    result["write"]?.let { applyWriteMap(replica, entry, it.arr()) }
+// An opted command's ok result carries its receipts, which must name every scope it predicted, under the identities its write map gives.
+private fun Engine.receipts(entry: Entry, result: Json): List<EffectReceipt> {
+    val write = result.items("write").map(::WriteMapEntry)
+    val required = entry.predictions!!.map { registry.remappedScope(it.scope, write, entry.json.items("writeTargets")) }
+    return EffectReceipt.read(registry, entry.scope, required, result.member("seq").long(), result["detail"])
 }
 
-private fun Engine.recoverPushEpoch(replica: ReplicaState, body: Json) {
-    val epoch = body.member("epoch")
-    if (replica.entries().none { it.state == "acked" && it.json["resultEpoch"] != epoch }) {
+// What a 200 acknowledges is checked before anything of it applies, its offset sample included, each result against the entry it applies
+// to, the sent entry at its n: an entry acknowledged under an earlier replica id keeps its old n until it settles, and no result answers it.
+// A continuation naming an n before a result or past `lastN + 1`, or a response over SCOPED_RESPONSE_MAX_BYTES that answers an opted
+// entry, throws, and the response changes nothing. An `ok` whose receipt or inverse outcomes fail their check is unreadable: its n is in
+// the set answered, and it still acknowledges its entry.
+private fun Engine.unreadableResults(replica: ReplicaState, body: Json): Set<Long> {
+    body["retry"]?.let { retry ->
+        val n = retry.member("n").long(1); retry.member("retryAfterMs").long(0)
+        if (n > body.member("lastN").long(0) + 1 || body.items("results").any { it.member("n").long() >= n }) throw JsonError("push-continuation")
+    }
+    return body.items("results").mapNotNull { result ->
+        val entry = replica.entries().firstOrNull { it.state == "sent" && it.json["n"] == result["n"] } ?: return@mapNotNull null
+        if (result.member("s").str() != "ok") return@mapNotNull null
+        if (entry.predictions != null && body.jcs.encodeToByteArray().size > Constants.SCOPED_RESPONSE_MAX_BYTES) throw JsonError("scoped-response")
+        try {
+            replica.checkInverseResult(entry, result)
+            if (entry.predictions != null) receipts(entry, result) else if (result["detail"]?.get("windmillKit") != null) throw JsonError("scoped-receipt")
+            null
+        } catch (_: JsonError) { result.member("n").long() }
+    }.toSet()
+}
+
+// One `ok`'s transaction. An unreadable one still acknowledges its entry, since the server holds the write: it records no receipt, every
+// projection ends at once and the pull brings the rows, its source's history proves nothing, and an inverse slot settles skipped `invalid`.
+private fun Engine.acceptPushResult(replica: ReplicaState, entry: Entry, result: Json, epoch: String, unreadable: Set<Long>) {
+    val n = result.member("n").long()
+    val effects = if (entry.predictions != null && n !in unreadable) receipts(entry, result) else null
+    applyIntentResultDeviceWrites(replica, entry.intent, entry.gestureId, PushResult(result), epoch)
+    replica.move(entry, "ok", ended)
+    entry.json = entry.json.with("resultSeq" to result.member("seq"), "resultEpoch" to Json.of(epoch))
+    raiseAdmittedHigh(replica, entry.intent.deltas.flatMap { it.lattice.stamps })
+    result["write"]?.let { applyWriteMap(replica, entry, it.arr()) }
+    if (n in unreadable) {
+        entry.predictions = entry.predictions?.map { it.copy(covered = true) }
+        replica.retainOutcome(entry.id, Attempt(epoch, n, ok = true))
+        resolveIfCovered(replica, entry)
+        replica.applyInverseResult(entry, Json.objectOf("s" to Json.of("refused"), "code" to Json.of("invalid")), epoch)
+        return
+    }
+    if (effects != null) applyReceipt(replica, entry, effects, result.items("write"))
+    replica.retainOutcome(entry.id, Attempt(epoch, n, ok = true, entry.acceptedEffects))
+    replica.resolveReferences(entry, epoch)
+    replica.applyInverseResult(entry, result, epoch)
+    resolveIfCovered(replica, entry)
+}
+
+private fun Engine.recoverPushEpoch(replica: ReplicaState, body: Json, unreadable: Set<Long>) {
+    val epoch = body.member("epoch").str()
+    if (replica.entries().none { it.state == "acked" && it.json["resultEpoch"] != Json.of(epoch) }) {
         for (result in body.items("results").sortedBy { it.member("n").long() }) {
             if (result.member("s").str() != "ok") continue
             val entry = replica.entries().firstOrNull { it.state == "sent" && it.json.member("n") == result.member("n") } ?: continue
-            acceptPushResult(replica, entry, result, epoch)
+            acceptPushResult(replica, entry, result, epoch, unreadable)
         }
     }
-    epochChange(replica, epoch.str())
+    epochChange(replica, epoch)
 }
 
 class SenderWait {

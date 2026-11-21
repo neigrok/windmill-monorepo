@@ -37,7 +37,7 @@ struct Harness {
 
   explicit Harness(MailArming arming = MailArming(), std::string adminToken = "")
       : sweep(std::make_shared<ReminderSweep>(*reminders, reminderMail, *tokens, *clock,
-                                              std::move(arming), "https://windmill.works")),
+                                              std::move(arming), "https://windmill.works", nullptr)),
         api(std::make_shared<RemindersApi>(sweep, reminders, auth, tokens, clock,
                                            std::move(adminToken))) {}
 

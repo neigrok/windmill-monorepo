@@ -12,8 +12,16 @@
 namespace wm {
 
 AccountErasure roadmapAccountErasure() {
-  const std::string owned = "(SELECT id FROM trees WHERE owner_id = $1::uuid)";
+  // The account's roadmaps in both stores: roadmap's own tables and the engine's `tree` records (roadmap-on-the-engine.md
+  // §7). The engine's rows of the account's own scopes go with those scopes; the overlays other accounts keep of its
+  // roadmaps, their marks on them, go here, as node_progress's do.
+  const std::string engine = "SELECT id FROM roadmap_trees WHERE scope_key = 'acct:' || $1::uuid::text || '/roadmap'";
+  const std::string owned = "(SELECT id FROM trees WHERE owner_id = $1::uuid UNION " + engine + ")";
+  const std::string overlays = "(SELECT key FROM sync_scopes WHERE kind = 'overlay' AND governed_by IN (SELECT 'tree:' || id FROM (" +
+                               engine + ") AS roadmaps))";
   return {{
+      "DELETE FROM sync_spent WHERE scope_key IN " + overlays,
+      "DELETE FROM sync_scopes WHERE key IN " + overlays,
       "DELETE FROM tree_nodes WHERE tree_id IN " + owned,
       "DELETE FROM tree_edges WHERE tree_id IN " + owned,
       "DELETE FROM tree_kinds WHERE tree_id IN " + owned,

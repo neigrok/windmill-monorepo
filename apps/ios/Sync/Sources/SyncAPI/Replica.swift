@@ -14,10 +14,14 @@ public protocol ScopeReader {
   // The visible records of a type whose top-level ref `field` names `id`, in id-byte order; any other field throws.
   func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record]
   func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record]
+  // §2.5, §7.5: the born of the scope's spent id of a record, all the device keeps of a derived record deleted elsewhere
+  // once its row is gone; nil where the scope keeps none.
+  func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp?
   // A row of `device/<product>` of the scope's product.
   func device(_ key: String) throws -> JSON?
   // §7.9: the scope's first pull is complete, or the replica does not pull it.
   func firstPullComplete() throws -> Bool
+  func freshness() throws -> SyncFreshness
   func confirmed(_ type: String, _ id: RecordID) throws -> Record?
   func checkpoint() throws -> ScopeCheckpoint
   func devices(prefix: String) throws -> JSON.Object
@@ -35,6 +39,34 @@ public protocol CommitContext: ScopeReader {
   // A CSPRNG id by the type's registry `mint`, never one taken in the views. A type that mints none, or a mint after the
   // call that passed the context returned, throws malformed.
   func mintID(_ type: String) throws -> RecordID
+}
+
+// The context an act prepares through (§7.1 Ordered local acts). A composed act decides in parts: `stage` ends the current
+// load, commits the gesture `segment` decides over the views through every segment staged so far to the act's tentative
+// copy, and answers its local refusal, or nil; `beginPart` opens the next part's load, whose reads and identities go
+// through the staged segments. Staging writes nothing durable: the request's segments commit afresh.
+public protocol ActContext {
+  var now: Int64 { get }
+  var replica: String { get }
+  var actor: String { get }
+  var isAnonymous: Bool { get }
+  func finishLoad() throws
+  func inScope<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T
+  func mintID(_ type: String, in scope: ScopeRef) throws -> RecordID
+  func opaqueID() throws -> String
+  func stage(_ scope: ScopeRef, _ segment: (any CommitContext) throws -> Gesture) throws -> StagedRefusal?
+  func beginPart() throws
+}
+
+// A staged segment the engine refuses locally, as its commit would.
+public struct StagedRefusal: Sendable, Hashable {
+  public let code: RefusalCode
+  public let detail: JSON?
+
+  public init(code: RefusalCode, detail: JSON?) {
+    self.code = code
+    self.detail = detail
+  }
 }
 
 // §7.1 a commit that throws, before its transaction commits, throws this, of one of three kinds told apart by where it
@@ -75,18 +107,32 @@ public protocol Replica: Sendable {
   // §7.1 read-and-commit: the body decides a gesture from the views, or nil to write nothing and tick no clock. Throws a
   // `CommitFailure`, or the body's own error as it threw it.
   func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T)
-  // §7.3: true iff every entry of the gesture was still held, and so removed.
-  func undo(_ gestureId: String) throws -> Bool
+  func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T),
+                    segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T)
+  // §7.3: the held-only Undo, true iff every entry of the gesture was still held, and so removed.
+  func cancelHeld(_ gestureId: String) throws -> Bool
+  // §7.3 Undo of an act (K-3): the inverse of a journaled act, `slots` replacing its stored recipes whole by source
+  // ordinal; the result as it stands; and the act's release from the product's stack, false when nothing held it.
+  func requestInverse(_ actId: String, slots: [ActUndo.Segment]?) throws -> InverseResult
+  func readInverseResult(_ requestId: String) throws -> InverseResult
+  func releaseReversibleAct(_ actId: String) throws -> Bool
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T
   // A CSPRNG id by the type's registry `mint`; a type that mints none throws malformed.
   func mintID(_ type: String) throws -> RecordID
   // §10.2: the device wall clock plus the active replica's server offset.
   func physNow() throws -> Int64
-  // D-17: hides a notice of the active replica, as its product does once it has told the person.
-  func dismissNotice(_ id: String) throws
+  // D-17: hides a notice of the active replica, as its product does once it has told the person; true iff the replica
+  // holds it. A notice it does not hold is left alone: false, with no throw.
+  @discardableResult func dismissNotice(_ id: String) throws -> Bool
 }
 
 extension Replica {
+  public func commitAct(_ segments: [ScopedGesture], gestureId: String? = nil) throws -> ActCommitOutcome? {
+    try commitAct({ _ in
+      (ActRequest(scopes: segments.map(\.scope), hold: segments.contains { $0.gesture.hold }, gestureId: gestureId), segments)
+    }, segment: { segments, index, _ in segments[index].gesture }).outcome
+  }
+
   public func commit(_ scope: ScopeRef, _ gesture: Gesture) throws -> CommitOutcome {
     let (outcome, _) = try commit(scope) { _ in (gesture, ()) }
     guard let outcome else { preconditionFailure("a commit of a gesture always has an outcome") }
@@ -108,4 +154,14 @@ public struct QueuedCommand: Sendable {
   public init(gestureId: String, command: Command, canSupersede: Bool, isAdmitted: Bool = false) {
     self.gestureId = gestureId; self.command = command; self.canSupersede = canSupersede; self.isAdmitted = isAdmitted
   }
+}
+
+public struct SyncFreshness: Sendable, Equatable {
+  public let serverNow: Int64?
+  public let live: Bool
+  public init(serverNow: Int64? = nil, live: Bool = false) { self.serverNow = serverNow; self.live = live }
+}
+
+extension ScopeReader {
+  public func freshness() throws -> SyncFreshness { SyncFreshness() }
 }

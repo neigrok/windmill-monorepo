@@ -6,8 +6,10 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. The only Coach loop that exists runs on the server, for gym
-([phone-hosted Coach abilities](mobile/gym_coach.md) §4.2). The build order lives in the Coach engine
+**Status:** Approved by the owner on 2026-11-15. Product-neutral turn libraries and AI clients are
+implemented for web, iOS and Android, together with the optional backend pass issuer and shared
+turn stories. Product screens do not use these libraries yet; their integrations and production
+acceptance remain separate work. The build order lives in the Coach engine
 roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `coach-engine`.
 
 **Scope:** What every Coach shares once its turn runs on the device (AI service I-3): the engine
@@ -61,7 +63,7 @@ the pass door and no turn; its move is designed apart (AI service I-5).
 - **D-5 AI client.** The code that fetches a pass and makes a call (§4). It knows no turn.
 - **D-6 Mark.** A row the device keeps for itself, which does not sync. It names the turn the
   device is running, the `callId` of the round in flight, and how many bytes of the Coach message's
-  text, as UTF-8, had arrived before that round began.
+  text, as UTF-8, had arrived before that round began. Before the first round, `callId` is null.
 
 ## §3 Where things live
 
@@ -116,9 +118,12 @@ The body is `{"client": "ios" | "android" | "web", "use": "<profile name>", "ver
   as the backend's other doors that take a cookie require.
 - An installation's request first passes the limits the backend keeps for installations by network
   address. The limit on generations an address may start in an hour becomes a limit on the passes
-  it may be signed. What an address can spend in a day does not change: the installations it may be
-  issued, each with its lifetime allowance. It can be spent in fewer requests than before, since a
-  pass admits any call the allowance still covers.
+  it may be signed. What an address can spend in a day through this door is what it could spend
+  before it: the installations it may be issued, each with its lifetime allowance, in fewer requests
+  than before, since a pass admits any call the allowance still covers. The AI service keeps a ledger
+  of its own, so while the backend's signed-out Coach still runs beside this door an address can
+  spend that much on each, and the free budgets stand twice, until gym's cutover
+  ([Gym Coach on the AI service](gym-coach-on-ai-service.md) R-5).
 - The door is mounted only where a signing key is configured. The key is an Ed25519 private key the
   backend alone holds, under a `kid`; the issuer proves itself against
   `packages/api-contract/ai/passes/vectors.json`.
@@ -132,10 +137,13 @@ installation routes already answer keep their meaning:
 | 400 | `invalid_request` | The body is not the one above, the `use` is not one the backend knows, or the network address cannot be read |
 | 401 | `unauthenticated` | No session and no installation credential, or a session that has ended |
 | 401 | `invalid_installation` | The installation credential is not one the backend issued |
+| 403 | `untrusted-origin` | A cookie request lacks an allow-listed Origin, or a presented Origin is untrusted |
 | 409 | `device_bound` | The installation alone asked, and it is bound to an account: sign in |
+| 415 | `unsupported-media-type` | The request's Content-Type is not JSON |
 | 426 | `client-update-required` | The version of this use is retired |
 | 429 | `rate_limited` | The address or the principal asked too often |
 | 503 | `anonymous_ai_unavailable` | Signed-out AI is switched off on this server |
+| 503 | `unavailable` | The backend failed to issue a pass; a technical failure under `ai-pass` |
 
 Issuing an installation credential and binding it to an account stay the backend's routes they are
 ([phone-hosted Coach abilities](mobile/gym_coach.md) §8). A binding is stated to the AI service by
@@ -150,7 +158,10 @@ the first account pass that names the installation
 - **A pass.** The client asks the pass door when it holds no pass, or one with less than
   `PASS_REFRESH` left. A call refused `pass_expired` fetches a new pass and asks once more under the
   same `callId`; a second `pass_expired` is a defect. `pass_missing`, `pass_signature`,
-  `pass_audience` and `pass_malformed` are defects too: the client stops and reports.
+  `pass_audience` and `pass_malformed` are defects too: the client stops and reports. Once a text
+  request may have been admitted, a temporary refresh failure (connection loss, rate limiting or
+  backend unavailability) stays inside that round's asking-again window; it cannot withdraw the
+  turn or restart the clock. A definitive pass refusal ends it with its admission evidence intact.
 - **A call.** `PUT /v1/calls/{callId}/text?label=<label>` with the pass as `Authorization: Bearer`.
   The client sends no cookie and no installation credential to the service's routes. They are on
   the API origin the device already talks to
@@ -158,7 +169,8 @@ the first account pass that names the installation
   host.
 - **A `callId`** is 22 characters of unpadded base64url from 128 bits of a cryptographic random
   source, minted for each round.
-- **Asking again.** An answer that breaks, or ends without `ended` or `failed`, is asked for again
+- **Asking again.** An answer that breaks, ends without `ended` or `failed`, or is an HTTP error
+  without a valid service refusal is asked for again
   under the same `callId`:
   - before any event arrived, by sending the same `PUT` with the same body. The service answers a
     call it admitted from its first event, and admits one it never saw;
@@ -169,20 +181,32 @@ the first account pass that names the installation
   An asking-again answered `rate_limited`, `busy` or `accounting_unavailable` waits and asks once
   more. One answered `result_gone` means the call was made and its answer is lost, and ends the
   asking. One answered `call_unknown` is a defect: the pass names another principal than the one
-  that made the call.
+  that made the call. During process recovery, however, `call_unknown` is expected (§5): the mark
+  may have been written before its request left the device.
 - **A refusal that passes.** A call refused as `busy`, `paused`, `rate_limited`,
   `concurrency_exhausted`, `accounting_unavailable` or `provider_unavailable` is sent again under
   the same `callId`, after 1, 2, 4 and 8 s and then every 8 s, for `REFUSAL_RETRY`; the client then
   gives the refusal to the engine. Sending again is safe whatever became of the first: the service
-  answers a call it admitted and admits one it did not. Every other refusal is given at once.
+  answers a call it admitted and admits one it did not. A resent first `PUT` keeps this rule even
+  after a lost answer: `paused`, `concurrency_exhausted` and `provider_unavailable` wait up to
+  `REFUSAL_RETRY` from its first dispatch. The asking-again refusals above keep their longer window.
+  A refresh that finishes after the active refusal deadline returns that refusal, whether the
+  refresh succeeded or failed; a late failure cannot reopen an expired window. A temporary
+  preparation failure observed before that deadline, with possible admission, enters asking again
+  under the original `ASK_AGAIN_FOR` clock. Every other refusal is given at once.
 - **What a refusal proves.** `busy` and `accounting_unavailable` can be answered for a call the
   service did admit. Every other refusal of a `PUT` whose earlier attempts all had an answer proves
-  that nothing was admitted.
+  that nothing was admitted. Only a known code in a valid service refusal is such evidence. An
+  unreadable proxy response, including an HTML 502, proves nothing, is treated as connection loss
+  and files no Issue. A malformed successful event protocol remains a reported wire defect; its
+  turn retains possible admission and is never withdrawn.
 - **A picture.** The client uploads a picture once, with `PUT /v1/pictures/{pictureId}`, and each
   round names it ([AI service §6.7](ai-service.md#67-pictures-a-caller-uploads)). A call refused
-  `picture_gone` uploads the picture again and is sent once more under the same `callId`.
+  `picture_gone` uploads the picture again and is sent once more under the same `callId`. A second
+  `picture_gone` is a defect and ends that operation; it does not mint another call.
 - **The allowance.** `GET /v1/allowance` answers what the seat has left. An `ended`, a `failed` and
-  a refusal carry it too, or null where the service could not read it.
+  a refusal carry it too, or null where the service could not read it. Clients validate its wire
+  types, formats and enums, never its arithmetic or the service's tier and transcription policy.
 - The client never makes a call under a second `callId` for the same round (INV-2).
 
 ## §5 The turn
@@ -217,16 +241,27 @@ profile. The engine runs it in this order.
       - `declined`: end the turn `declined`.
    6. On `failed`, on a refusal, or when the answer is lost for good (§4.2), end the turn `failed`
       with the code.
-4. Reaching `MAX_MODEL_CALLS` without `completed` ends the turn `failed`.
+4. Reaching `MAX_MODEL_CALLS` without `completed` ends the turn `failed` with `model-call-limit`.
 5. **End.** The tool host writes the end in one local write: the state, the whole text,
    `truncated`, the code, and what the product derives from the calls. The same write clears the
    mark. Every end keeps the text that arrived and every write an ability made.
 
 **A turn that never began.** A turn is withdrawn, its records removed and its question and picture
 returned to the field, only when the engine knows the service admitted nothing for round 1: the
-pass door refused before any call was sent, or the text door's refusal proves it (§4.2). A turn
+pass door refused before any call was sent, the text door's refusal proves it (§4.2), or the device
+reported no connection when round 1 was to be sent, so nothing left it. A turn sent with no
+connection is therefore returned to the field at once, with or without a pass in hand, and Coach
+says it needs a connection (R-6). A connection lost after a round was sent is asked for again as §4.2 says. A turn
 whose round 1 may have been admitted is never withdrawn: it ends `failed` with the code the engine
 was given, or `interrupted` when it was given none, with its question on the record.
+
+**Offline before dispatch.** A turn begun while the device reports no connection sends nothing and
+is withdrawn at once: the engine asks before round 1 writes its mark, uploads a picture or fetches a
+pass (R-6). A failure while obtaining a first pass or uploading a picture likewise returns the
+unsent question and picture to the field promptly. With no refusal code this is an `interrupted`
+outcome whose records are withdrawn. Once the text transport is invoked, a connection error cannot
+prove the request was unsent: the record stays and the same call is asked for again. No working
+conversation is persisted for this retry.
 
 **Stop.** Stop takes effect before the next round or the next ability call. The round in flight is
 read to its end and paid for, as the service reads every call to its end
@@ -244,10 +279,16 @@ the round's `PUT` again: it no longer holds the request.
 - An answer that is `failed` ends the turn `failed` with its code.
 - Everything else ends the turn `interrupted`, with the text that had arrived: an answer that ends
   `tool_calls`, an answer the service no longer holds, a pass or a read refused, and no answer
-  within `ASK_AGAIN_FOR`.
+  within `ASK_AGAIN_FOR`. A recovered `call_unknown` is also an expected interruption with no
+  failure report: the process may have ended between writing its mark and sending its request.
 
 A recovered turn is never withdrawn, and a turn is not otherwise resumed. A round in flight when
 the process ended is paid for. (R-4)
+
+Recovery measures `ASK_AGAIN_FOR` from the recovery attempt's start; the mark holds no dispatch
+time. A mark with no `callId` ends `interrupted` without making a service request. A live client
+that exhausts its asking-again deadline gives the engine `answer-timeout`, retaining its admission
+certainty.
 
 **The device sleeps.** A process that stayed alive while its connection dropped asks for the round
 again. A phone holds the platform's lease for work in progress while a turn runs, as
@@ -256,6 +297,11 @@ again. A phone holds the platform's lease for work in progress while a turn runs
 **The seat changes.** A sign-in, a sign-out or a change of the active replica ends a running turn
 `interrupted` and drops the pass (INV-1). The end is written when the change begins, before a
 sign-out sends what the device still holds, so the account's record carries it.
+The caller awaits this barrier before replacing the seat or credentials. The host guards every
+write and ability execution against that turn's seat and record identities within its commit;
+a late response cannot write through an invalidated seat or recreate a removed record. A removed
+record completes the barrier normally. Stop and seat validity are checked again while holding the
+ability mutation lock, before an execution is counted or started.
 
 **A record gone.** A Coach message removed under its running turn, as when the conversation is
 deleted on another device, ends the turn. Nothing is written, and nothing is reported as a failure.
@@ -303,8 +349,12 @@ an error result holding its code and the profile's sentence for that code, and t
   AI service nor the backend relies on it: what the server accepts of a device's writes is checked
   where the server admits them.
 - A product's executor MAY check again what the gate checked.
+- Volume counts calls admitted to execution, including executions the host then refuses; a gate
+  refusal consumes no volume. Once groups count successful executions only.
 - A tool is sent to the provider with its input schema. Whether the provider enforces that schema
   is the AI service's to say; the Shape rule holds either way.
+- Duplicate tool-call ids within one terminal message are `invalid-answer`, a defect refused before
+  any call from that message runs. Transport replay never dispatches an already executed call again.
 
 ## §7 Access
 
@@ -320,8 +370,8 @@ for each are the product's.
 | Update | the pass door's `client-update-required` |
 | Switched off | the pass door's `anonymous_ai_unavailable`; a 404 from the pass door, which means this server has no AI |
 | Offline | no connection |
-| Did not answer | `provider_unavailable`, `provider_failed`, `accounting_unavailable`, `result_gone` |
-| A defect | `invalid_request`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, `call_unknown`, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
+| Did not answer | `provider_unavailable`, `provider_failed`, `accounting_unavailable`, `result_gone`, `answer-timeout`, `model-call-limit` |
+| A defect | `invalid_request`, `invalid-answer`, `untrusted-origin`, `unsupported-media-type`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, a live `call_unknown` (not process recovery), a second `picture_gone`, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
 
 - The engine reads `GET /v1/allowance` when Coach opens, and its `code` says before a question is
   sent whether one could be asked.
@@ -379,7 +429,11 @@ order, the mark at each step, and the end.
   call, with the ability's name and its outcome or refusal code.
 - The AI client reports to Sentry under the static name `ai-call`: a transport failure that is not
   a lost connection, an answer it cannot read, and every code §7 calls a defect. The pass door's
-  failures report under `ai-pass`. A refusal a person can act on is an event and never an Issue.
+  unexpected failures report under `ai-pass`; a recognized temporary pass refusal is quiet on the
+  client because the backend reports its originating failure. Proxy errors treated as loss and
+  recovery `call_unknown` file no Issue. A refusal a person can act on is an event and never an Issue.
+  Unexpected host or runtime failures report under `agent-host`; a removed record or stale seat is
+  an expected interruption and files no Issue.
 - The backend logs one line for each pass it signs or refuses: operation `ai.pass.sign`, the kind
   of principal, the plan, the client, the use and its version, the outcome or code and the
   duration. It logs nothing else of a turn.
@@ -406,3 +460,4 @@ order, the mark at each step, and the end.
 | R-3 | How long a pass lasts | 10 minutes. A sign-out, an erased account and a change of plan therefore reach the AI service within 10 minutes and no sooner (AI service INV-2). (2026-11-15) |
 | R-4 | A turn whose process ends | Its answer is recovered when the round in flight was the turn's last and the service still holds it; otherwise the turn ends `interrupted`. Carrying on a turn that was still calling abilities would need the working conversation written to the device, which P-5 rules out. (2026-11-15) |
 | R-5 | A turn its device never ends | Any of the person's devices ends it `interrupted` once no write has reached it for 30 minutes by the server's clock. No server ends a turn. (2026-11-15) |
+| R-6 | A question sent with no connection | It returns to the field at once and Coach says it needs a connection. Nothing is left trying. (2026-11-17) |

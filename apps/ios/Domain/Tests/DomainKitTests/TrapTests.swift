@@ -97,7 +97,7 @@ enum Kit {
            isVisible: true, isPending: false, isHeld: false)
   }
 
-  struct Card: Draftable, Ordered {
+  struct Card: ProductEntity, Draftable, Ordered {
     static let type = "card"
     static let scope = ScopeRef.product("probe")
     static let orderField = "ord"
@@ -127,7 +127,7 @@ enum Kit {
     ]
   }
 
-  struct Lap: Draftable {
+  struct Lap: ProductEntity, Draftable {
     static let type = "lap"
     static let scope = ScopeRef.product("probe")
     static let savesGuarded = false
@@ -187,11 +187,17 @@ enum Kit {
       return (.committed(CommitReceipt(gestureId: "g1", stamp: .unset, localIds: ["g1/0"], ids: [], releaseAt: nil, retired: [])), value)
     }
 
-    func undo(_ gestureId: String) throws -> Bool { false }
+    func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T), segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
+      throw CommitFailure.malformed("act vectors use the real engine")
+    }
+    func cancelHeld(_ gestureId: String) throws -> Bool { false }
+    func requestInverse(_ actId: String, slots: [ActUndo.Segment]?) throws -> InverseResult { .unavailable(requestId: nil, reason: "not-reversible") }
+    func readInverseResult(_ requestId: String) throws -> InverseResult { .unavailable(requestId: requestId, reason: "unknown-request") }
+    func releaseReversibleAct(_ actId: String) throws -> Bool { false }
     func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try body(Context(records: records)) }
     func mintID(_ type: String) throws -> RecordID { throw CommitFailure.malformed("\(type) mints no id here") }
     func physNow() throws -> Int64 { Kit.moment.now.ms }
-    func dismissNotice(_ id: String) throws { throw CommitFailure(.storeFailure, "no notice \(id) here") }
+    func dismissNotice(_ id: String) throws -> Bool { throw CommitFailure(.storeFailure, "no notice \(id) here") }
   }
 
   struct Context: CommitContext {
@@ -206,6 +212,7 @@ enum Kit {
     func stored(_ type: String) throws -> [Record] { try drawn(type) }
     func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] { [] }
     func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] { [] }
+    func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { nil }
     func device(_ key: String) throws -> JSON? { nil }
     func firstPullComplete() throws -> Bool { true }
     func confirmed(_ type: String, _ id: RecordID) throws -> Record? { try stored(type, id) }
