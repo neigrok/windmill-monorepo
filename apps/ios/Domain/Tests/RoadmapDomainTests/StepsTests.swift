@@ -5,11 +5,9 @@ import SyncAPI
 import SyncCore
 import Testing
 
-// A roadmap's steps and links: each case of steps-actions.json Swift's acts decide, by its complete decision.
+// A roadmap's steps and links: each case of steps-actions.json by its complete decision.
 struct StepsTests {
-  static let decided = ["CreateStep", "ChangeStep", "MoveStep", "DeleteStep", "ChangePrerequisites"]
-
-  @Test(arguments: try Contract.vectors("roadmap/domain/steps-actions.json").filter { decided.contains(try $0.input.member("action").asString()) })
+  @Test(arguments: try Contract.vectors("roadmap/domain/steps-actions.json"))
   func action(_ vector: Vector) throws {
     for scene in [vector, vector.withRecordsReversed] {
       let actual = try Self.decision(scene)
@@ -36,6 +34,11 @@ struct StepsTests {
     case "ChangePrerequisites":
       let act = ChangePrerequisites(tree: tree, step: try input.id("step"), add: try input.ids("add"), remove: try input.ids("remove"))
       return try corpus.act(act, vector, result: { .null }, refusal: \.form)
+    case "ImportSteps":
+      let act = ImportSteps(tree: tree, imported: try ImportedSteps(form: input.member("imported")), under: try input.optionalID("under"))
+      return try corpus.act(act, vector, result: { (planted: [(key: String, id: ID<RoadmapStep>)]) -> JSON in
+        .object(JSON.Object(uniqueKeysWithValues: planted.map { ($0.key, $0.id.json) }))
+      }, refusal: \.form)
     case let name: throw ContractError("no step action \(name)")
     }
   }

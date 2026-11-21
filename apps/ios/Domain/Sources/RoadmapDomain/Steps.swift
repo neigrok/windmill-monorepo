@@ -216,21 +216,28 @@ struct ImportUnit {
 
   var count: Int { 1 + links.count }
 
-  func write(to plan: inout Plan) {
+  // The step and its links, and, where the act's Undo is not a command's over the whole roadmap, an Undo that deletes them
+  // again while they are as the import made them.
+  func write(to plan: inout Plan, undoable: Bool) {
     plan.create(step)
     for link in links { plan.create(link) }
+    guard undoable else { return }
+    plan.undoBy(.createdRecord(restoreCommand: Roadmap.Commands.restoreTree, record: .of(step.value.id)))
+    for link in links { plan.undoBy(.createdRecord(restoreCommand: Roadmap.Commands.restoreTree, record: .of(link.value.id))) }
   }
 }
 
-// What an import brings to a new roadmap: its steps under fresh ids, in the order they follow one another, each keyed after
-// the steps before it under its trunk parent, with the links that lead to it.
+// What an import brings to a roadmap: its steps under fresh ids, in the order they follow one another, each keyed after
+// the steps before it under its trunk parent, with the links that lead to it. A step the import has no prerequisite for
+// comes after the roadmap's first steps or, under `under`, follows that step and comes after the steps it leads to.
 struct StepsImport {
   let units: [ImportUnit]
   // Each step's id by its key, in the import's order.
   let ids: [(key: String, id: ID<RoadmapStep>)]
 
   // A loop among the import's links is refused before an id is minted, a step past a bound at its place in the import.
-  init(_ imported: ImportedSteps, in scope: ScopeRef, at moment: Moment, ids: ActIDSource) throws(Violation) {
+  init(_ imported: ImportedSteps, into roadmap: RoadmapTree, under: ID<RoadmapStep>?, in scope: ScopeRef, at moment: Moment,
+       ids: ActIDSource) throws(Violation) {
     let keys = imported.steps.map { Array($0.key.utf8) }
     precondition(Set(keys).count == keys.count, "an import names each step once")
     var links: [(from: Int, to: Int)] = []
@@ -249,6 +256,7 @@ struct StepsImport {
     let minted = imported.steps.map { (step: ImportedStep) -> ID<RoadmapStep> in ids.mint(RoadmapStep.self, inScope: scope) }
     var waiting = keys.indices.map { (index: Int) -> Int in parents[index].count }
     var lastOrd: [ID<RoadmapStep>?: FractionalKey] = [:]
+    lastOrd[under] = roadmap.index.lastKey(under: under?.description)
     var units: [ImportUnit] = []
     while units.count < keys.count {
       // The first step that waits for no step before it is placed, and counted no more.
@@ -256,8 +264,9 @@ struct StepsImport {
       waiting[index] = -1
       for link in links where link.from == index { waiting[link.to] -= 1 }
       let leading = links.filter { $0.to == index }.map { minted[$0.from] }
-      let ord = FractionalKey(after: lastOrd[leading.first])
-      lastOrd[leading.first] = ord
+      let parent = leading.first ?? under
+      let ord = FractionalKey(after: lastOrd[parent])
+      lastOrd[parent] = ord
       let valid: Valid<RoadmapStep>
       do throws(Violation) {
         valid = try Valid(RoadmapStep(id: minted[index], ord: ord.text).taking(imported.steps[index].step).step, at: moment)
@@ -265,7 +274,9 @@ struct StepsImport {
         throw error.at(Path("steps") + index)
       }
       var made: [Valid<RoadmapLink>] = []
-      for from in leading { made.append(try Valid(RoadmapLink(from: from, to: minted[index]), at: moment)) }
+      for from in leading.isEmpty ? (under.map { [$0] } ?? []) : leading {
+        made.append(try Valid(RoadmapLink(from: from, to: minted[index]), at: moment))
+      }
       units.append(ImportUnit(step: valid, links: made))
     }
     self.units = units
@@ -533,5 +544,43 @@ public struct ChangePrerequisites: ActAction {
     for link in removing { plan.undoBy(.restoring(link.id, life: true, by: Roadmap.Commands.restoreTree)) }
     if !adding.isEmpty { plan.note(loaded.note.adding(edges: adding, names: loaded.names(of: adding.map(\.from))), of: tree) }
     return .write(plan, in: tree.tree, ())
+  }
+}
+
+// §5 Import and paste into a roadmap: the steps under fresh ids, in chunks, prerequisites first, one act and so one Undo.
+// Under a step, the import's first steps follow it. The device notes every step and link, with the name of each step a
+// link comes from (§6).
+public struct ImportSteps: ActAction {
+  public let tree: ID<RoadmapEntry>
+  public let imported: ImportedSteps
+  public let under: ID<RoadmapStep>?
+
+  public init(tree: ID<RoadmapEntry>, imported: ImportedSteps, under: ID<RoadmapStep>? = nil) {
+    self.tree = tree
+    self.imported = imported
+    self.under = under
+  }
+
+  public func load(_ read: ActReader) throws -> HeldSteps {
+    try HeldSteps(of: tree, naming: under.map { [$0] } ?? [], in: read)
+  }
+
+  // Each planted step's id by its key, in the order the gesture brought them.
+  public func decide(_ loaded: HeldSteps, ids: ActIDSource) throws(Violation) -> ActDecision<[(key: String, id: ID<RoadmapStep>)], RoadmapRefusal> {
+    if let under, !loaded.known.contains(under) { return .refuse(.gone(under.ref, .predicted)) }
+    guard !imported.steps.isEmpty else { return .unchanged([]) }
+    let planned = try StepsImport(imported, into: loaded.roadmap, under: under, in: tree.tree, at: loaded.moment, ids: ids)
+    let (steps, links) = (planned.units.map(\.step.value), planned.units.flatMap(\.links).map(\.value))
+    let full = loaded.steps.refusal(growing: steps.count, subject: steps.first?.id.ref)
+      ?? loaded.links.refusal(growing: links.count, subject: links.first?.id.ref)
+    if let full { return .refuse(RoadmapRefusal(full)) }
+    var chunks = planned.chunks(reserving: 0).map { (chunk: [ImportUnit]) -> Plan in
+      var plan = Plan()
+      for unit in chunk { unit.write(to: &plan, undoable: true) }
+      return plan
+    }
+    let labels = Dictionary(uniqueKeysWithValues: steps.map { ($0.id, $0.label) })
+    chunks[0].note(loaded.note.adding(nodes: steps.map(\.id), edges: links, names: loaded.names(of: links.map(\.from), made: labels)), of: tree)
+    return .write(ActPlan(chunks.map { ScopedPlan(tree.tree, $0) }), planned.ids)
   }
 }

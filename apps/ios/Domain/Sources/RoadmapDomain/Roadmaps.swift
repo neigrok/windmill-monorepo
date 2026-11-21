@@ -224,7 +224,7 @@ public struct CreateRoadmap: ActAction {
     } else {
       for kind in RoadmapRules.genesisKinds { legend.append(try Valid(kind, at: moment)) }
     }
-    let imported = try StepsImport(steps, in: tree.tree, at: moment, ids: ids)
+    let imported = try StepsImport(steps, into: RoadmapTree(id: tree.description, meta: nil), under: nil, in: tree.tree, at: moment, ids: ids)
     var entry = Plan()
     entry.create(try Valid(RoadmapEntry(id: tree), at: moment))
     entry.undoBy(.command(Roadmap.Commands.undoCreateRoadmap, input: ["tree": tree.json], unchangedCreatedRecords: [.of(tree)],
@@ -236,7 +236,7 @@ public struct CreateRoadmap: ActAction {
         plan.create(words, fields: ["title"])
         for kind in legend { plan.create(kind) }
       }
-      for unit in chunk { unit.write(to: &plan) }
+      for unit in chunk { unit.write(to: &plan, undoable: false) }
       plan.evidenceForUndo()
       segments.append(ScopedPlan(tree.tree, plan))
     }
