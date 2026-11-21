@@ -146,11 +146,9 @@ struct LandingTests {
     #expect(try StepsTests.note(of: tree, on: phone) == newest(last, previous, "Next"))
   }
 
-  // The note of steps planted whole is settled from one read of the roadmap's steps: a call of the engine's reader costs
-  // the device's journal, so a read for each noted record would grow with the square of what was planted. Once 120 steps
-  // and their links have landed, the next write lets go of all of them in under 80 reads of the roadmap's steps, timed in
-  // the same run: it takes about 8, where a read for each noted record takes about 370.
-  @Test func aLargeNoteThatLandedIsLetGoOfInsideItsCeiling() throws {
+  // A note of steps planted whole is let go of whole: once 120 steps and their links have landed, the next write's note
+  // holds its own step alone.
+  @Test func aLargeNoteThatLandedIsLetGoOfByTheNextWrite() throws {
     let phone = RoadmapsTests.phone()
     let (tree, basics) = try RoadmapsTests.rooted(on: phone)
     let imported = ImportedSteps(steps: (0..<120).map { ImportedStep(key: "k\($0)", .init(label: "Step \($0)")) },
@@ -161,22 +159,14 @@ struct LandingTests {
     }
     #expect(try StepsTests.note(of: tree, on: phone)["nodes"]?.asArray().count == 120)
     phone.sync()
-    let reads = try (0..<5).map { (_: Int) throws -> Duration in
-      try ContinuousClock().measure { _ = try phone.drawn(RoadmapStep.self, in: tree.tree) }
+    guard case .committed(let next, _) = try phone.runner.runAct(
+      CreateStep(tree: tree, step: RoadmapStep.Changes(label: "Next"), prerequisites: [planted[0].id])) else {
+      Issue.record("the step was not created")
+      return
     }
-    let read = try #require(reads.min())
-    var made: ID<RoadmapStep>?
-    let took = try ContinuousClock().measure {
-      guard case .committed(let step, _) = try phone.runner.runAct(
-        CreateStep(tree: tree, step: RoadmapStep.Changes(label: "Next"), prerequisites: [planted[0].id])) else { return }
-      made = step
-    }
-    let next = try #require(made)
     let newest: JSON = ["nodes": [next.json], "edges": [[planted[0].id.json, next.json]], "revived": [],
                         "names": [["id": planted[0].id.json, "name": "Step 0"]]]
     #expect(try StepsTests.note(of: tree, on: phone) == newest)
-    print("roadmap note of 120 landed steps and their links let go of: \(took), \(took / read) reads of its steps")
-    #expect(took < read * 80)
   }
 
   // The kit corpus's notice form, `{id, scope, code, detail?, content: {d, cmd?, dependents?}, at}`. The case states a

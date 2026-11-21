@@ -1899,13 +1899,22 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   Design System component "Account / Usage row" `89:876` shows per-product credits. Delete the
   Proposals boards and retire the component when the 🚧 views are built; board 21 takes the Plan and AI
   allowance sections then.
-- **Echoes and the AI allowance.** `journal.landing.echoes.free` and `shell.landingHead.faq.costAnswer`
-  say echoes never use the AI allowance. `backend/AI_ALLOWANCES.md` says every hosted AI call debits the
+- **Who the pricing page says you pay.** `web/public/pricing.html` names Paddle as seller of record and
+  says Paddle runs the checkout. [Marketing strategy](../marketing/strategy.md#when-money-enters-the-plan)
+  says One is sold first as an App Store subscription inside the iOS app and the web sells nothing. Make
+  the page name the store a person will buy through.
+- **Echoes and the AI allowance.** `journal.landing.echoes.free`, `shell.landingHead.faq.costAnswer` and
+  `web/public/pricing.html` say echoes never use the AI allowance. `backend/AI_ALLOWANCES.md` says every hosted AI call debits the
   allowance, including background Journal processing. Check whether echo derivation calls a hosted
   model, then make the copy or the allowance document name what is true.
 
 ## Marketing and email
 
+- **Marketing site proposal against brand foundations.** The [proposal](marketing-site-proposal.md)
+  sets Inter in place of Baloo 2 and Nunito on the public pages, the word “Windmill” in Inter beside the
+  unchanged mark, a night version of the mark, hairlines and one ground in place of card outlines,
+  shadows and a ground per room, and a first screen with no live scene. Brand foundations' Fonts, Logo
+  and Landings sections describe the pages as built. Update them when the flow is marked ✅ Ready for dev.
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
 - **0i · Brand-root anatomy.** Reconcile the common landing roles with the root's product-band

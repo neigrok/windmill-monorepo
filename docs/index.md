@@ -2,7 +2,7 @@
 
 Where each user flow is drawn. Each section reads left to right; every board's caption names the code
 that ships it. Status lives in the Figma layer names. Roadmap on web, Journal on iOS and Gym on iOS and
-Android are indexed here.
+Android are indexed here, with the proposal for the public pages.
 
 ## Roadmap · Web
 
@@ -190,3 +190,10 @@ Fix set, the movement form, Edit movement, the weigh-in, the routine editor and 
 full-width 56 dp stock pill button at their foot under a ✕ Close head, as their redrawn N boards show; signed-out Notes keeps its full-width **Sign in**.
 
 Sign in, You, sign out and Delete account: Shell file, page [Android](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-6), section `33:1568`; deletion recovery D1–D6, section `116:754`.
+
+## Marketing site · 🧪 Proposal
+
+Figma: Marketing file, page [Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
+Written half: [marketing site proposal](design/marketing-site-proposal.md), which holds the sitemap, the
+wording, the search repairs, the Instrument look and the owner's rulings. The boards are 🧪 proposals;
+none is marked ✅ Ready for dev and nothing is built from them.

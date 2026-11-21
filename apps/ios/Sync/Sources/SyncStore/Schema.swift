@@ -45,7 +45,7 @@ enum Schema {
     // K-3: the journal of reversible acts, inverse requests and cancellation receipts, each record by its id, which is a
     // gesture id and so unique on the device, in its replica's namespace; an inverse slot's request beside its entry; and
     // whether a replica's journal holds anything, read with its replica row, so a replica with none reads no more (§7.3
-    // Undo of an act). A journal that holds records loads whole with its replica.
+    // Undo of an act). A journal that holds records loads whole for a planner that reads it, and not at all for a reader.
     migrator.registerMigration("v4") { db in
       try db.execute(sql: """
         ALTER TABLE outbox ADD COLUMN inverse_of TEXT NULL;

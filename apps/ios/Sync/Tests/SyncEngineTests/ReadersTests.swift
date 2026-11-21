@@ -2,13 +2,14 @@ import SyncAPI
 import SyncCore
 @testable import SyncEngine
 import SyncReplica
-import SyncStore
+@testable import SyncStore
+import Synchronization
 import SyncTesting
 import Testing
 
 // The readers a `read` and a commit's body get (§7.6, design §5.2): drawn and stored apart, the indexed read by a ref
-// field (ER-12), spent ids, device rows, the first pull, ids minted inside a commit, and every misuse of a reader, which
-// is malformed (§7.1) wherever it surfaces.
+// field (ER-12), spent ids, device rows, the first pull, ids minted inside a commit, every misuse of a reader, which
+// is malformed (§7.1) wherever it surfaces, and the statements a read runs, the same whatever the journal holds.
 
 struct ReadersTests {
   static let scope = ScopeRef.product("shelf")
@@ -364,6 +365,64 @@ struct ReadersTests {
     #expect(throws: noScope) { try rig.engine.commit(tree, Gesture(changes: [.create("tag", id: .given("sail"))])) }
     #expect(throws: noScope) { try rig.engine.read(tree) { try $0.drawn("tag") } }
     #expect(try rig.store.read { try $0.device(rows: true).json } == before)
+  }
+
+  // §7.6: a read loads what it names. A read by id finds its replica, its row and the entries that touch it, each by an
+  // index; and beside an act opted into Undo and not released (§7.3), which the journal holds with the entry it names,
+  // each kind of read, and the reads an act makes before it writes, run the statements they run beside none.
+  @Test func aReadRunsTheSameStatementsWhateverTheJournalHolds() throws {
+    let day = RecordID("2026-01-01")
+    let reads: [(any ScopeReader) throws -> Void] = [
+      { _ = try $0.drawn("day", day) }, { _ = try $0.stored("day", day) }, { _ = try $0.drawn("card") },
+      { _ = try $0.confirmed("day", day) }, { _ = try $0.spentSeq("day", day) }, { _ = try $0.spentBorn("day", day) },
+      { _ = try $0.device("rack") }, { _ = try $0.firstPullComplete() },
+    ]
+    let runs = try [0, 40].map { (planted: Int) throws -> (replica: String, statements: [[String]]) in
+      let rig = try Rig()
+      let standing: [Change] = Rig.days(1) + [Rig.card("card0001", "One")]
+      try rig.commit(Gesture(changes: standing, local: [DeviceWrite(key: "rack", value: 1)]))
+      if planted > 0 {
+        let ids: [RecordID] = (0..<planted).map { RecordID("3000-01-\(10 + $0)") }
+        let recipes: [ActUndoRecipe] = ids.map { .createdRecord(restoreCommand: "probe.restore", record: RecordAddress(scope: Rig.scope, key: RecordKey("day", $0))) }
+        let act = try rig.engine.commitAct({ _ in (ActRequest(scopes: [Rig.scope], undo: ActUndo(segments: [ActUndo.Segment(index: 0, recipes: recipes)])), ()) },
+                                           segment: { _, _, _ in Gesture(changes: ids.map { .put("day", $0, present: true, ["score": 1]) }) })
+        guard case .committed(let receipt)? = act.outcome else { throw RigError("the act did not commit") }
+        #expect(try rig.active().journal.acts.map(\.sourceEntries).map { $0.map(\.localId) } == [receipt.localIds])
+      }
+      let statements = Mutex<[String]>([])
+      try rig.store.writer.write { db in
+        db.trace { event in
+          guard case .statement(let statement) = event, statement.sql.hasPrefix("SELECT") else { return }
+          statements.withLock { $0.append(statement.expandedSQL) }
+        }
+      }
+      var taken: [[String]] = []
+      for read in reads {
+        try rig.engine.read(Rig.scope, read)
+        taken.append(statements.withLock { recorded in defer { recorded = [] }; return recorded })
+      }
+      _ = try rig.engine.commitAct({ context -> (ActRequest?, Void) in
+        statements.withLock { $0 = [] }
+        for read in reads { try context.inScope(Rig.scope, read) }
+        taken.append(statements.withLock { $0 })
+        return (nil, ())
+      }, segment: { _, _, _ in Gesture(changes: []) })
+      return (try rig.engine.activeReplica(), taken)
+    }
+    #expect(runs[0].statements == runs[1].statements)
+    let replica = "SELECT * FROM replica WHERE id = '\(runs[0].replica)'"
+    let touching: String = "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
+      + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = 'day' AND outbox_touch.id = '"2026-01-01"' AND outbox.replica = 1"#
+    let byId: [String] = [
+      "SELECT fork_guard, pending_sign_in, replica.id AS active FROM device JOIN replica ON replica.handle = device.active_replica",
+      replica, replica, "SELECT * FROM cursor WHERE replica = 1",
+      "SELECT id FROM row_set WHERE replica = 1 AND scope = 'self/probe' AND role = 'confirmed'",
+      "SELECT type, id, born, seq FROM spent WHERE replica = 1 AND scope = 'self/probe'", touching,
+      "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT 2",
+      "SELECT scope, kind FROM known_scope WHERE replica = 1", "SELECT product, key, value FROM device_row WHERE replica = 1",
+      "SELECT active_replica FROM device WHERE id = 1",
+    ]
+    #expect(runs[0].statements[0] == byId)
   }
 
   // §7.9: true for a scope the replica does not pull (an anon replica pulls no product scope), else once booted.

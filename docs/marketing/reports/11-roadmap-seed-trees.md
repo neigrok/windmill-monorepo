@@ -13,14 +13,18 @@ count anyone who stops there. For a later test of direct forks, explicitly publi
 verify its signed-out link and measure that intake separately. [Open the starter picker](https://windmill.works/roadmap#/app/start) ·
 [Share path](07-sharing-surfaces.md)
 
-**Recruiting copy**
+**Invitation, in the product's voice**
 
-> I’m building Windmill Roadmap. If you’re shipping a small project, would you try a free starter tree for
-> it? Make a copy, change a step to fit the project, and mark one thing you’ve actually done. I’d like to
-> learn whether you use it again as the work moves on.
+> Windmill Roadmap turns a plan into a skill tree. If you are shipping a small project, would you try a free
+> starter tree for it? Make a copy, change a step to fit the project, and mark one thing you have actually
+> done. We would like to learn whether you use it again as the work moves on.
 
-Recruit builders new to Windmill who are already working toward a release, through direct introductions or a
-community that permits feedback requests. Close the read only after the last eligible signup has had 14 days. Track how many were invited, consented and personally tried the
+An agent drafts this message for the product, and the owner approves it before it is sent. An invitation to
+someone the owner knows is his own to write. [Voice and approval](../strategy.md#what-the-owner-does-and-what-agents-do)
+
+Recruit builders new to Windmill who are already working toward a release, through direct introductions, a
+community that permits feedback requests, or a candidate the owner approved from
+[research](../strategy.md#finding-the-first-people). Close the read only after the last eligible signup has had 14 days. Track how many were invited, consented and personally tried the
 starter. Lock the trial group at the first 20 who try it, including people who never claim a tree. Exclude
 staff, founder-run demos and trees built on someone's behalf. A participant may use an external assistant
 later. MCP tool access follows per-product, per-level grants for Roadmap and Gym. Normal external tool

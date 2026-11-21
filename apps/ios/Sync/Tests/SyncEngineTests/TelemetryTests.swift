@@ -535,7 +535,8 @@ struct TelemetryTests {
   }
 
   // §7.3 Undo of an act: a request reports its outcome, one still waiting at engine start its count and the oldest one's
-  // age, and its settlement in a later transaction its operation counts; never an id or a value.
+  // age, and its settlement in a later transaction its operation counts; never an id or a value. Each engine hands its
+  // reports over on a queue of its own, so the first engine's are drained before the second is built.
   @Test func anInverseRequestReportsItsOutcomeAndSettlementByCountsAlone() async throws {
     let recorder = Recorder()
     let rig = try Rig(account: "A", telemetry: recorder)
@@ -548,6 +549,7 @@ struct TelemetryTests {
     })
     guard case .committed(let receipt)? = act.outcome else { Issue.record("the act did not commit"); return }
     guard case .pending = try rig.engine.requestInverse(receipt.gestureId) else { Issue.record("the Undo is not pending"); return }
+    await drain(rig.engine.core.telemetry)
     rig.clock.advance(ms: 5_000)
     let relaunched = try Rig.engine(over: rig.store, clock: rig.clock, random: rig.random, transport: rig.transport, tokens: rig.tokens,
                                     forkGuard: rig.forkGuard, connectivity: rig.connectivity, slicing: rig.slicing, drivesLoops: false,
