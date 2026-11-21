@@ -39,6 +39,7 @@ struct ObservationTests {
       let records = switch (listing.narrowing, listing.mode) {
       case (let narrowing?, .drawn): try reader.drawn(listing.type, where: narrowing.field, is: narrowing.id)
       case (let narrowing?, .stored): try reader.stored(listing.type, where: narrowing.field, is: narrowing.id)
+      case (nil, let mode) where !listing.visibleOnly: try reader.records(listing.type, in: mode)
       case (nil, .drawn): try reader.drawn(listing.type)
       case (nil, .stored): try reader.stored(listing.type)
       }
@@ -64,6 +65,31 @@ struct ObservationTests {
     #expect(Self.loaded(stored)?.record("card0002")?.isHeld == true)
     #expect(drawn.state == .loaded(try Self.read(drawn, on: rig.engine)))
     #expect(stored.state == .loaded(try Self.read(stored, on: rig.engine)))
+  }
+
+  // A view of every record keeps one the device deleted, dead and not visible, for as long as the view folds it: the
+  // visible view of the same type drops it at once, and an Undo brings it back alive in both.
+  @Test func aViewOfEveryRecordKeepsADeleteTheDeviceStillQueues() async throws {
+    let rig = try Rig()
+    let visible = try rig.engine.records(Rig.scope, "card")
+    let every = try rig.engine.records(Rig.scope, "card", visibleOnly: false)
+    #expect(every !== visible)
+    #expect(try rig.engine.records(Rig.scope, "card", visibleOnly: false) === every)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "One"), Rig.card("card0002", "Two")]))
+    let held = try rig.commit(Gesture(changes: [.delete("card", "card0002")], hold: true))
+    await rig.engine.settle()
+    #expect(Self.ids(visible) == ["card0001"])
+    let folded: [[JSON]]? = Self.loaded(every)?.records.map { (record: Record) -> [JSON] in
+      [record.id.json, .bool(record.isVisible), .bool(record.life?.isAlive == true)]
+    }
+    let expected: [[JSON]] = [["card0001", true, true], ["card0002", false, false]]
+    #expect(folded == expected)
+    #expect(Self.loaded(every)?.record("card0002")?.life == Life(.dead, held.stamp))
+    #expect(every.state == .loaded(try Self.read(every, on: rig.engine)))
+    #expect(try rig.engine.cancelHeld(held.gestureId))
+    await rig.engine.settle()
+    #expect(Self.ids(visible) == ["card0001", "card0002"])
+    #expect(Self.loaded(every) == Self.loaded(visible))
   }
 
   // A view is made loading and returns at once: its first load reads the store off the main actor. A commit on another
@@ -579,12 +605,14 @@ final class Shelves {
       clock: clock.engineClock, random: SeededRandomSource(seed: seed + 100), connectivity: connectivity)
   }
 
-  static var listings: [(list: RecordID?, mode: ViewMode)] {
-    ([nil] + lists).flatMap { list in [ViewMode.drawn, .stored].map { (list, $0) } }
+  // Every item, visible or not; the visible items; and the visible items of each list: each drawn and stored.
+  static var listings: [(list: RecordID?, mode: ViewMode, visibleOnly: Bool)] {
+    let visible = ([nil] + lists).flatMap { list in [ViewMode.drawn, .stored].map { (list: list, mode: $0, visibleOnly: true) } }
+    return visible + [ViewMode.drawn, .stored].map { (list: nil, mode: $0, visibleOnly: false) }
   }
 
-  func view(_ listing: (list: RecordID?, mode: ViewMode)) throws -> RecordsView {
-    guard let list = listing.list else { return try phone.records(Self.scope, "item", listing.mode) }
+  func view(_ listing: (list: RecordID?, mode: ViewMode, visibleOnly: Bool)) throws -> RecordsView {
+    guard let list = listing.list else { return try phone.records(Self.scope, "item", listing.mode, visibleOnly: listing.visibleOnly) }
     return try phone.records(Self.scope, "item", where: "listId", is: list, listing.mode)
   }
 

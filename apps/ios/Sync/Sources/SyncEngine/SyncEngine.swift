@@ -269,9 +269,10 @@ public final class SyncEngine: Replica {
 
   // Each view is made `.loading` and loads off the main actor. Asking again for the same list answers the view already
   // live: one the UI holds, or one of the last views asked for, which the engine holds for a body that does not keep
-  // its view. A type of another scope throws malformed, as the one-shot read does.
-  @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn) throws -> RecordsView {
-    hub.records(RecordsView.Key(scope: scope, listing: try Listing(type, mode, in: scope, registry: core.registry)))
+  // its view. `visibleOnly` false lists every record of the type as the view folds it, visible or not, the list
+  // `records(type, in:)` reads. A type of another scope throws malformed, as the one-shot read does.
+  @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn, visibleOnly: Bool = true) throws -> RecordsView {
+    hub.records(RecordsView.Key(scope: scope, listing: try Listing(type, mode, visibleOnly: visibleOnly, in: scope, registry: core.registry)))
   }
 
   // ER-12: the records of `type` whose top-level ref `field` names `id`, the list `drawn(type, where:is:)` or

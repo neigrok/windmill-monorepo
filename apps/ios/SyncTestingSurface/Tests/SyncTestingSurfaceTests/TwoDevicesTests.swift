@@ -7,7 +7,7 @@ import Testing
 // Two devices of one account on one model server, driven from another package through `SyncTesting`'s public surface
 // alone, as the domain kit's `Harness` drives them (kit §14.2, ER-9): commits and reads through each device's replica,
 // `sync()`, holds on the harness clock, `leave()`, a failed commit, a refusal scripted on the server, and the views a UI
-// module observes, narrowed reads and views included (ER-12).
+// module observes, narrowed reads and views (ER-12) and a view of every record, visible or not, included.
 
 // A product with no server rules of its own, as the kit declares one.
 struct NoServerRules: ServerRules {}
@@ -73,6 +73,25 @@ struct TwoDevicesTests {
       try phone.records(Self.probe, "lap", where: "weight", is: "run00000001")
     }
     #expect(throws: CommitFailure.malformed("tag is no type of self/probe")) { try phone.records(Self.probe, "tag") }
+  }
+
+  // What a view folds and the person does not see: a held delete is listed dead by the view of every record, as the read
+  // of the same list answers it, each record under the stamps of its registers and the server's `seq` of its row.
+  @MainActor @Test func aViewOfEveryRecordListsAHeldDeleteUnderTheServersOrder() async throws {
+    let phone = try Self.phone()
+    let every = try phone.records(Self.probe, "card", visibleOnly: false)
+    let created = try Self.commit(Gesture(changes: [Self.card("card0001", "Kept"), Self.card("card0002", "Dropped")]), on: phone)
+    phone.sync()
+    let held = try Self.commit(Gesture(changes: [.delete("card", "card0002")], hold: true), on: phone)
+    await phone.settleViews()
+    let listed = try phone.replica.read(Self.probe) { try $0.records("card", in: .drawn) }
+    let rows = phone.server.rows(Self.probe, of: "acct-1")
+    #expect(every.state == .loaded(RecordsView.Snapshot(records: listed, firstPullComplete: true)))
+    #expect(listed.map(\.isVisible) == [true, false])
+    #expect(listed.map(\.life) == [Life(.alive, created.stamp), Life(.dead, held.stamp)])
+    #expect(listed.map(\.stamps) == rows.map { $0.lattice.fields.mapValues(\.stamp) })
+    #expect(listed.map(\.seq) == rows.map { (row: Row) -> Int64? in row.seq })
+    #expect(try Self.titles(phone) == ["Kept"])
   }
 
   @Test func aHoldIsOfferedForUndoUntilTheClockPassesIt() throws {
