@@ -117,6 +117,10 @@ rules refuse, records `journal_save_refused` with its reason alone.
 | Choices | `first_run_choice` | screen; action: open_journal, open_gym, open_roadmap (the Roadmap door, in a build that carries the room), dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry. Sign out and the answer to its alert (keep, discard, cancel) are screen you |
 | Rooms | `room_switched` | room: journal, gym, roadmap (in a build that carries the Roadmap room); emitted after switching |
 | Roadmap room | `roadmap_room_opened` | common metadata alone; emitted each time the room comes to the front, from its door, the room menu or a launch that reopens it. No title, step text, count or id of a roadmap or a step is sent |
+| Roadmap Board, completing | `roadmap_board_complete` | door: swipe (the row's leading action), menu (the long-press menu); emitted once the mark is written on the phone. The web's event |
+| Roadmap Board, deleting | `roadmap_board_delete` | step: held; door: swipe, menu; view: board; emitted once the delete question is answered *Delete Step* and the engine holds the step's delete. The question itself and a question closed unanswered emit nothing. The web's event |
+| Roadmap Board, Undo | `roadmap_board_undo` | act: complete, delete; outcome: ok (the kit took the act back: a held delete cancelled, a completion's Undo reserved), unavailable (nothing was left to take back: the hold had ended, or the engine kept no Undo of the act). What the engine made of an act's Undo is its own `sync_inverse`. The web's event, with the outcome added |
+| Roadmap room, a refused write | `roadmap_write_refused` | write: mark (Complete), DeleteNode (Delete); refusal: the domain's kind, invalid, gone, taken, tooLarge, full, roadmapGone, unreachable, notARoot, stepOpensARoadmap, depthLimit or other, and startingStep where the room keeps a roadmap's one starting step. The band says a refusal only where it is a limit the boards word (startingStep, full); any other shows nothing. The web's event |
 | Appearance | `appearance_chosen` | appearance: light, dark, system; emitted when You's Settings changes it |
 | Update required | `client_update_required` | Android's vocabulary: state: shown with status: 426 once the alert is on screen; action: update (Get the update, from the alert or You), keep (Keep working on this phone); outcome: failed when the destination could not open. trigger: sync (the engine's flag), sign_in (a 426 at sign-in) on every row. Dismissing the could-not-open transient emits nothing |
 | Adoption | `room_adoption_answered` | room: journal, gym, one event for each room the one answer covers; action: add, discard; no counts or identifiers |
@@ -194,10 +198,14 @@ time it is presented. Signed out or paused, its *Sign in to share* opens You (`f
 `you`); when You closes signed in, the sheet is presented again and records its view again, and a sign-in left
 unfinished shares nothing and records nothing more.
 
-The Roadmap room's boundary operation label is `roadmap_read`: a view of the person's roadmaps the room could not ask the
-engine for (failure_kind unexpected), or records the domain could not read (decode), while the room shows *Couldn’t load this
-roadmap* with *Try Again*. The model reports each kind once per launch, since a read runs again with every change; a view's own
-failed read of the store reports through the engine's `storage_read`. No report carries a roadmap's title, a step's text or an id.
+The Roadmap room's boundary operation labels are `roadmap_read` and `roadmap_write`. A read reports a view of the person's
+roadmaps the room could not ask the engine for (failure_kind unexpected), or records the domain could not read (decode), while
+the room shows *Couldn’t load this roadmap* with *Try Again*. The model reports each kind once per launch, since a read runs
+again with every change; a view's own failed read of the store reports through the engine's `storage_read`. A write reports
+every throw of an act's commit, of an Undo or of letting an act's journal go when its band leaves, with the write as its one
+label (mark, DeleteNode, undo, release): failure_kind storage for a commit the store failed, unexpected for any other, while the
+Board stays as the phone's copy holds it and says nothing; a failure the store itself classifies is the engine's report. A
+refusal is an event (`roadmap_write_refused`), never a report. No report carries a roadmap's title, a step's text or an id.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_flush`, `gym_rest`, `gym_reissue_workout_proposal` (a proposal a signed-out workout held that the account did not take),
 `gym_activity_request`, `gym_activity_update`, `gym_control_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`

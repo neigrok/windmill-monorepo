@@ -653,6 +653,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   person's roadmaps runs, the room is its bare canvas. To draw, with the build tree's step
   `m0-redraw-what-the-reads-cannot-serve`: the room's failed read with a true sentence, and the room before its
   first read.
+- **Roadmap · iOS · what the Board's writes leave for the boards.** Complete, Delete, their *Undo* and the long-press
+  menu are built in Debug builds from 02.1 to 02.4, 02.13, 02.15, 01.12 and the question of 03.8. To draw or rule:
+  a slid row is drawn as its own rounded card on `roadmap/raised` (02.1, 02.3), and SwiftUI shapes it so only where
+  the system paints the row itself (Dark `#1C1C1E` at rest and `#2C2C2E` slid, Light `#FFFFFF` and `#E5E5EA`), so on
+  `roadmap/card`, as built, the row slides as a square slab; 01.12 draws Done's rows without the excerpt that *Kept
+  exactly* gives every Board row and 02.13 draws, and they are built with it; the long-press menu's *Complete* wears
+  `checkmark`, and the accessibility tree reports that menu item as selected; no board words a refusal but *A roadmap
+  keeps one starting step* (02.12) and *This roadmap is at its limit.* (10.6a), so any other refusal of a Complete or
+  a Delete shows nothing ([Roadmap on iOS](../foundation/roadmap-ios.md) §3) and tells only its kind in an event; no
+  board says how long a band without *Undo* stands, and it takes a receipt's six seconds; and a receipt's band leaves
+  after its six seconds, or a delete's nine, under VoiceOver too, where reaching *Undo* takes longer.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
