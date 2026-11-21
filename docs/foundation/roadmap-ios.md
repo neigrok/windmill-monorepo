@@ -357,9 +357,9 @@ makes it false.
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
   is on the web.
-- `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and the actions of a
-  roadmap, its kinds and progress: no step, workspace or landing action, no Undo scene, plan grammar, quest or
-  Coach executor.
+- `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
+  room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
+  plan grammar, quest or Coach executor.
 - Activity and History have no read (§3): no case states one, and neither the web's domain nor Swift's gives it.
 - `RoadmapLayout` draws the picture and nothing draws it on a screen; its time at 5,000 steps is not measured
   against the budget of §5.

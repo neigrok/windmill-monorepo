@@ -1,4 +1,5 @@
 import DomainKit
+import SyncAPI
 import SyncCore
 import SyncSchema
 
@@ -15,6 +16,17 @@ extension Dictionary where Key == [UInt8] {
     get { self[Array(text.utf8), default: fallback()] }
     set { self[Array(text.utf8)] = newValue }
   }
+}
+
+extension Array where Element: Hashable {
+  // The elements, then each of `more` they do not hold yet, once.
+  func adding(new more: [Element]) -> [Element] {
+    var held = Set(self)
+    return self + more.filter { held.insert($0).inserted }
+  }
+
+  // Each element once, at the place it first came.
+  var unique: [Element] { [Element]().adding(new: self) }
 }
 
 extension Sequence {
@@ -63,9 +75,10 @@ extension FractionalKey {
     catch { preconditionFailure("no order key follows \(last?.text ?? "the start"): \(error)") }
   }
 
-  // The key that drops a record below `above` among `members`, which do not hold it, or at their top: after `above` and
-  // before the member that follows it.
-  init(dropping moved: JSON, below above: JSON?, among members: [ListMember]) {
+  // The key that moves a record holding `own` below `above` among `members`, which do not hold it, or to their top: after
+  // `above` and before the member that follows it. Nil for a drop in place, the record already sitting below `above`.
+  init?(moving moved: JSON, from own: FractionalKey?, below above: JSON?, among members: [ListMember]) {
+    if let own, members.sorted().last(where: { $0 < ListMember(id: moved, key: own) })?.id == above { return nil }
     do { try self.init(dropping: moved, below: above, stored: members, drawn: members) }
     catch { preconditionFailure("no order key drops \(moved.jcsText) below \(above?.jcsText ?? "the top"): \(error)") }
   }
@@ -348,16 +361,70 @@ public struct TreeIndex: Sendable {
     guard let slot = slot(of: id) else { return [] }
     return parents[slot].filter { $0 >= ids.count }.map { rawIds[$0] }
   }
+
+  // The last order key among the present steps a new step joins: those its trunk parent leads to over live links, or, with
+  // no parent, those no live link leads to. A step that holds no key that orders bounds nothing.
+  func lastKey(under parent: String?) -> FractionalKey? {
+    let siblings: [Int]
+    if let parent {
+      siblings = vertices[parent].map { children[$0].filter { $0 < nodes.count } } ?? []
+    } else {
+      siblings = nodes.indices.filter { parents[$0].isEmpty }
+    }
+    return siblings.compactMap { try? FractionalKey(nodes[$0].ord) }.max()
+  }
+}
+
+// §6 The order the device knows of a roadmap's writes, by the server's sequence numbers, read in its tree scope. A step or
+// a link the device wrote has landed once the server's copy of it holds every write of the device's own, as the device has
+// pulled it; one it holds no record of at all was deleted after, its own write long settled. A link met the delete of the
+// step it comes from when the server took the delete, at its spent id's `seq`, before it took the link, at the `seq` of
+// the link's copy. A delete taken after met nothing of the device's, and one the device knows no `seq` of, its own delete
+// the server has not yet sent back among them, meets nothing. Before the roadmap's first pull completes nothing has landed.
+struct LandingOrder {
+  let read: Reader
+  let steps: DrawnSteps
+  let pulled: Bool
+
+  init(_ read: Reader, over steps: DrawnSteps) throws {
+    self.read = read
+    self.steps = steps
+    pulled = try read.firstPullComplete()
+  }
+
+  // A record no queued entry changes is its confirmed row, and one with no confirmed `seq` has no such row: only a record
+  // an entry still changes over a row the server sent is read again, and compared with that row.
+  func landed<E: Entity>(_ id: ID<E>) throws -> Bool {
+    guard pulled else { return false }
+    guard let drawn = steps.records[RecordKey(E.type, id.record)] else { return true }
+    guard drawn.isPending else { return true }
+    guard drawn.seq != nil, let confirmed = try read.confirmed(E.self, id) else { return false }
+    return drawn.life == confirmed.life && drawn.born == confirmed.born && drawn.values == confirmed.values && drawn.stamps == confirmed.stamps
+  }
+
+  // The links among `links` that met the delete of the step they come from, each step's spent `seq` read once.
+  func met(among links: [RoadmapLink]) throws -> [RoadmapLink] {
+    var deleted: [ID<RoadmapStep>: Int64] = [:]
+    for step in Set(links.map(\.from)) { deleted[step] = try read.repository(RoadmapStep.self).spentSeq(step) }
+    return try links.filter { (link: RoadmapLink) throws -> Bool in
+      guard let taken = deleted[link.from], let linked = steps.records[RecordKey(RoadmapLink.type, link.id.record)]?.seq else { return false }
+      return try taken < linked && landed(link.id)
+    }
+  }
 }
 
 // The device's own note of what it made and revived in one roadmap (§6), held in its `landing:<tree>` row until the person
-// has been told: its new steps, its new links, the steps its changes brought back, and the name of each step a link it
-// still notes comes from, as it was when the device made the link. The row never leaves the device.
+// has been told, or until it can tell nothing: its new steps, its new links, the steps its changes brought back, and the
+// name of each step a link it still notes comes from, as it was when the device made the link. The device keeps nothing of
+// a step deleted elsewhere (engine §7.5), so a line that names one reads it here. The row never leaves the device.
 public struct LandingNote: Sendable {
   public struct Name: Sendable {
     public let id: ID<RoadmapStep>
     public let name: String
   }
+
+  // The names a note keeps at most, one for each step a roadmap holds at most (§4); the oldest goes first.
+  static let namesKept = 10_000
 
   public let nodes: [ID<RoadmapStep>]
   public let edges: [RoadmapLink]
@@ -369,7 +436,8 @@ public struct LandingNote: Sendable {
     self.nodes = nodes
     self.edges = edges
     self.revived = revived
-    self.names = names.filter { name in edges.contains { $0.from == name.id } }
+    let linkedFrom = Set(edges.map(\.from))
+    self.names = names.filter { linkedFrom.contains($0.id) }
   }
 
   // The note a device row holds, read leniently: a part that is not what the note keeps there is left out.
@@ -400,18 +468,65 @@ public struct LandingNote: Sendable {
     self.init(row: try read.device(LandingNote.key(of: tree)))
   }
 
-  static func key(of tree: ID<RoadmapEntry>) -> String { "landing:\(tree)" }
-
-  // The note with the steps a change brought back added, each once.
-  func adding(revived steps: [ID<RoadmapStep>]) -> LandingNote {
-    var revived = self.revived
-    for step in steps where !revived.contains(step) { revived.append(step) }
-    return LandingNote(nodes: nodes, edges: edges, revived: revived, names: names)
+  // §6 The note as a write of it takes it, read in the roadmap's tree scope: less each entry whose write has landed and
+  // that says nothing of the roadmap as it now stands, a step or a link of the device's through which no line is said, and
+  // a step its change brought back that is absent again. A line is said only of a delete the server took before the write,
+  // and once the write has landed the device holds every such delete, so an entry let go of could never say more.
+  init(settledOver steps: DrawnSteps, in read: Reader) throws {
+    let held = try LandingNote(of: steps.tree, in: read)
+    let order = try LandingOrder(read, over: steps)
+    let said = try held.saying(by: order)
+    self.init(
+      nodes: try held.nodes.filter { (step: ID<RoadmapStep>) throws -> Bool in
+        try !order.landed(step) || said.contains { $0.to == step }
+      },
+      edges: try held.edges.filter { (link: RoadmapLink) throws -> Bool in try !order.landed(link.id) || said.contains(link) },
+      revived: try held.revived.filter { (step: ID<RoadmapStep>) throws -> Bool in
+        try !order.landed(step) || steps.roadmap.step(step.description)?.present == true
+      },
+      names: held.names)
   }
 
-  var json: JSON {
+  static func key(of tree: ID<RoadmapEntry>) -> String { "landing:\(tree)" }
+
+  // The note with what the device made or revived added, each once; a step's newer name replaces the one noted before.
+  func adding(nodes made: [ID<RoadmapStep>] = [], edges linked: [RoadmapLink] = [], revived brought: [ID<RoadmapStep>] = [],
+              names given: [Name] = []) -> LandingNote {
+    let named = (names + given).lastByKey(\.id.description).suffix(LandingNote.namesKept)
+    return LandingNote(nodes: nodes.adding(new: made), edges: edges.adding(new: linked), revived: revived.adding(new: brought), names: Array(named))
+  }
+
+  // The note less what was told.
+  func clearing(nodes told: [ID<RoadmapStep>], edges linked: [RoadmapLink], revived brought: [ID<RoadmapStep>]) -> LandingNote {
+    LandingNote(nodes: nodes.filter { !told.contains($0) }, edges: edges.filter { !linked.contains($0) },
+                revived: revived.filter { !brought.contains($0) }, names: names)
+  }
+
+  // The links whose lines the note says of the roadmap as it now stands: each link it notes, and each into a step it notes,
+  // that is read through a step the server took the delete of before it took the link.
+  func saying(by order: LandingOrder) throws -> [RoadmapLink] {
+    let through = { (step: ID<RoadmapStep>) -> [RoadmapLink] in
+      order.steps.roadmap.index.absentParents(step.description).map { RoadmapLink(from: ID(RecordID($0)), to: step) }
+    }
+    let bridging = nodes.flatMap(through) + edges.filter { through($0.to).contains($0) }
+    return try order.met(among: bridging.unique)
+  }
+
+  // The name the note keeps of a step.
+  func name(of step: ID<RoadmapStep>) -> String? { names.first { $0.id == step }?.name }
+
+  var isEmpty: Bool { nodes.isEmpty && edges.isEmpty && revived.isEmpty }
+
+  public var json: JSON {
     let links: [JSON] = edges.map { [$0.from.json, $0.to.json] }
     let named: [JSON] = names.map { ["id": $0.id.json, "name": .string($0.name)] }
     return ["nodes": .array(nodes.map(\.json)), "edges": .array(links), "revived": .array(revived.map(\.json)), "names": .array(named)]
+  }
+}
+
+extension Plan {
+  // §6 The device's note of a roadmap as a write leaves it: its row, or no row once it notes nothing.
+  mutating func note(_ note: LandingNote, of tree: ID<RoadmapEntry>) {
+    device(LandingNote.key(of: tree), note.isEmpty ? nil : note.json)
   }
 }

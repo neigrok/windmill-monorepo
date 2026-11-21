@@ -224,7 +224,7 @@ public struct CreateRoadmap: ActAction {
     } else {
       for kind in RoadmapRules.genesisKinds { legend.append(try Valid(kind, at: moment)) }
     }
-    let imported = try StepsImport(steps, in: tree.tree, at: moment, ids: ids)
+    let imported = try StepsImport(steps, into: RoadmapTree(id: tree.description, meta: nil), under: nil, in: tree.tree, at: moment, ids: ids)
     var entry = Plan()
     entry.create(try Valid(RoadmapEntry(id: tree), at: moment))
     entry.undoBy(.command(Roadmap.Commands.undoCreateRoadmap, input: ["tree": tree.json], unchangedCreatedRecords: [.of(tree)],
@@ -236,7 +236,7 @@ public struct CreateRoadmap: ActAction {
         plan.create(words, fields: ["title"])
         for kind in legend { plan.create(kind) }
       }
-      for unit in chunk { unit.write(to: &plan) }
+      for unit in chunk { unit.write(to: &plan, undoable: false) }
       plan.evidenceForUndo()
       segments.append(ScopedPlan(tree.tree, plan))
     }
@@ -254,8 +254,9 @@ public struct DeleteRoadmap: ActAction {
     self.tree = tree
   }
 
-  public func load(_ read: ActReader) throws -> (roadmap: RoadmapEntry?, notes: [String]) {
-    try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> (roadmap: RoadmapEntry?, notes: [String]) in
+  // The roadmap's entry, and the roadmaps the device holds a note of: itself and each subtree under it.
+  public func load(_ read: ActReader) throws -> (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]) {
+    try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]) in
       let entries = account.repository(RoadmapEntry.self)
       let roadmaps = try entries.all(in: .drawn)
       var under = [tree]
@@ -264,18 +265,18 @@ public struct DeleteRoadmap: ActAction {
         for each in roadmaps where each.parent?.tree == under[next] && !under.contains(each.id) { under.append(each.id) }
         next += 1
       }
-      return (try entries.find(tree, in: .drawn), try under.map(LandingNote.key).filter { try account.device($0) != nil })
+      return (try entries.find(tree, in: .drawn), try under.filter { try account.device(LandingNote.key(of: $0)) != nil })
     }
   }
 
-  public func decide(_ loaded: (roadmap: RoadmapEntry?, notes: [String]), ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
+  public func decide(_ loaded: (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]), ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
     guard let roadmap = loaded.roadmap else { return .unchanged(()) }
     guard roadmap.parent == nil else {
       return .refuse(.notARoot(Refused(Roadmap.Codes.notARoot, subject: tree.ref, path: .predicted)))
     }
     var plan = Plan()
     plan.remove(tree)
-    for key in loaded.notes { plan.device(key, nil) }
+    for noted in loaded.noted { plan.note(LandingNote(), of: noted) }
     return .write(plan, in: RoadmapEntry.scope, ())
   }
 }
@@ -427,8 +428,7 @@ public struct CreateSubtree: ActAction {
     public let creation: (root: ID<RoadmapEntry>, revived: Bool)?
   }
 
-  public typealias Loaded = (roadmap: RoadmapEntry?, pointer: StepPointer?, meta: RoadmapMeta, held: HeldRecord<RoadmapStep>, note: LandingNote?,
-                             moment: Moment)
+  public typealias Loaded = (roadmap: RoadmapEntry?, pointer: StepPointer?, meta: RoadmapMeta, step: HeldStep)
 
   public let tree: ID<RoadmapEntry>
   public let step: ID<RoadmapStep>
@@ -442,21 +442,20 @@ public struct CreateSubtree: ActAction {
     let roadmap = try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> RoadmapEntry? in
       try account.repository(RoadmapEntry.self).find(tree, in: .drawn)
     }
-    let held = try read.inScope(tree.tree) { (scope: Reader) throws -> (meta: RoadmapMeta, step: HeldRecord<RoadmapStep>, note: LandingNote?) in
-      let step = try HeldRecord(RoadmapStep(id: step), in: scope.repository(RoadmapStep.self))
-      return (try scope.repository(RoadmapMeta.self).find(RoadmapMeta.singleton, in: .drawn) ?? RoadmapMeta(), step,
-              step.isAbsent ? try LandingNote(of: tree, in: scope) : nil)
+    let held = try read.inScope(tree.tree) { (scope: Reader) throws -> (meta: RoadmapMeta, step: HeldStep) in
+      (try scope.repository(RoadmapMeta.self).find(RoadmapMeta.singleton, in: .drawn) ?? RoadmapMeta(), try HeldStep(step, of: tree, in: scope))
     }
     let pointer = try read.inScope(tree.overlay) { (overlay: Reader) throws -> StepPointer? in
       try overlay.repository(StepPointer.self).find(ID(step.record), in: .drawn)
     }
-    return (roadmap, pointer, held.meta, held.step, held.note, read.moment)
+    return (roadmap, pointer, held.meta, held.step)
   }
 
   public func decide(_ loaded: Loaded, ids: ActIDSource) throws(Violation) -> ActDecision<Result, RoadmapRefusal> {
     guard loaded.roadmap != nil else { return .refuse(.gone(tree.ref, .predicted)) }
-    guard loaded.held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
-    if let owned = loaded.held.value.branch { return .unchanged(Result(subtree: owned, creation: nil)) }
+    let held = loaded.step.held
+    guard held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
+    if let owned = held.value.branch { return .unchanged(Result(subtree: owned, creation: nil)) }
     guard loaded.pointer == nil else {
       return .refuse(.stepOpensARoadmap(Refused(Roadmap.Codes.stepOpensATree, subject: step.ref, path: .predicted)))
     }
@@ -480,10 +479,9 @@ public struct CreateSubtree: ActAction {
                                ownedFields: [.field(step, "branch", in: tree.tree)], unchangedCreatedRecords: [.of(subtree)],
                                unchangedCreatedScopes: [subtree.tree]))
     let connected = ScopedPlan(RoadmapEntry.scope, connection)
-    let result = Result(subtree: subtree, creation: (root, loaded.held.isAbsent))
-    guard let note = loaded.note else { return .write(ActPlan([connected]), result) }
-    var revival = loaded.held.reviving(try Valid(loaded.held.value, fields: [], at: loaded.moment), fields: [])
-    revival.device(LandingNote.key(of: tree), note.adding(revived: [step]).json)
+    let result = Result(subtree: subtree, creation: (root, held.isAbsent))
+    guard held.isAbsent else { return .write(ActPlan([connected]), result) }
+    let revival = loaded.step.reviving(try Valid(held.value, fields: [], at: loaded.step.moment), fields: [])
     return .write(ActPlan([ScopedPlan(tree.tree, revival), connected]), result)
   }
 }

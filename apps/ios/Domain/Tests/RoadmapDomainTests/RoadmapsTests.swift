@@ -40,13 +40,28 @@ struct RoadmapsTests {
     }
   }
 
+  // The corpus's two revivals before a subtree hold no note. Every write of the note first lets go of each entry whose
+  // write has landed and that says nothing: the web's module decides each case with the device noting step `b`, which has
+  // landed, as it decides the case itself, and Swift is held to that decision.
+  @Test(arguments: ["a subtree on a step this device deleted itself", "a subtree on a step another device deleted"])
+  func aSubtreesRevivalLetsGoOfWhatTheNoteHeldThatLandedAndSaysNothing(_ revival: String) throws {
+    let vector = try #require(try Contract.vectors("roadmap/domain/roadmaps-actions.json").first { $0.name.hasPrefix(revival) })
+    var input = try vector.input.asObject()
+    input["device"] = ["landing:t_0000000000000001": ["nodes": ["b"], "edges": [], "revived": [], "names": []]]
+    let scene = Vector(file: vector.file, name: vector.name, input: .object(input), expect: vector.expect)
+    for decided in [scene, scene.withRecordsReversed] {
+      let actual = try Self.decision(decided)
+      #expect(actual == vector.expect, "got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
+    }
+  }
+
   static func phone() -> Harness {
     Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), rules: RoadmapServerRules())
   }
 
   // A root of one step, made on the phone and taken by the server.
   static func rooted(on phone: Harness) throws -> (tree: ID<RoadmapEntry>, step: ID<RoadmapStep>) {
-    let planted = ImportedSteps(steps: [ImportedStep(key: "first", label: "Basics")])
+    let planted = ImportedSteps(steps: [ImportedStep(key: "first", .init(label: "Basics"))])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       throw ContractError("the roadmap was not created")
     }
@@ -97,7 +112,7 @@ struct RoadmapsTests {
   @Test func aLinkFromAStepAnotherPhoneDeletedIsReadThroughItInTheServersOrder() throws {
     let phone = Self.phone()
     let planted = ImportedSteps(
-      steps: [ImportedStep(key: "basics", label: "Basics"), ImportedStep(key: "lifetimes", label: "Lifetimes"), ImportedStep(key: "traits", label: "Traits")],
+      steps: [ImportedStep(key: "basics", .init(label: "Basics")), ImportedStep(key: "lifetimes", .init(label: "Lifetimes")), ImportedStep(key: "traits", .init(label: "Traits"))],
       links: [(from: "basics", to: "lifetimes"), (from: "lifetimes", to: "traits")])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       Issue.record("the roadmap was not created")
@@ -160,7 +175,7 @@ struct RoadmapsTests {
   @Test func aRoadmapReadFromAPhonesEngineEqualsTheCorpusReadOfItsRecords() throws {
     let phone = Self.phone()
     let planted = ImportedSteps(
-      steps: ["Basics", "Ownership", "Traits", "Tools", "Macros"].map { ImportedStep(key: $0, label: $0) }, links: [(from: "Basics", to: "Ownership")])
+      steps: ["Basics", "Ownership", "Traits", "Tools", "Macros"].map { ImportedStep(key: $0, .init(label: $0)) }, links: [(from: "Basics", to: "Ownership")])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       Issue.record("the roadmap was not created")
       return
@@ -287,14 +302,7 @@ extension RoadmapEntry.Parent {
 extension ImportedSteps {
   // `{steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}`.
   init(form: JSON) throws {
-    let steps = try form.member("steps").asArray().map { step in
-      let links = try step.optional("links") { links in
-        try links.asArray().map { Step.Link(url: try $0.member("url").asString(), label: try $0.member("label").asString()) }
-      }
-      return ImportedStep(key: try step.member("key").asString(), label: try step.optionalString("label") ?? "",
-                          icon: try step.optionalString("icon") ?? "", color: try step.optionalString("color") ?? "terracotta",
-                          description: try step.optionalString("description") ?? "", links: links ?? [])
-    }
+    let steps = try form.member("steps").asArray().map { ImportedStep(key: try $0.member("key").asString(), try RoadmapStep.Changes(form: $0)) }
     let links = try form.member("links").asArray().map { link in
       let ends = try link.asArray().map { try $0.asString() }
       guard ends.count == 2 else { throw ContractError("a link is [fromKey, toKey], found \(link)") }
