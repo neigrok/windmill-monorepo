@@ -357,10 +357,10 @@ makes it false.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.
-- The plan grammar and the quest roster are the web's code and the web's own tests alone
-  (`web/src/products/roadmap/paste/`, `web/src/products/roadmap/quests/roster/`): no shared case
-  holds either. The web's grammar returns sentences of its catalog among what it derives, which a
-  shared case cannot compare.
+- The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
+  implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
+- The quest roster is the web's code and the web's own tests alone
+  (`web/src/products/roadmap/quests/roster/`): no shared case holds it.
 - The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - The app's Info.plist names no Markdown type (§7.3).
 
