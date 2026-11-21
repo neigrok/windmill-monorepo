@@ -68,7 +68,7 @@ nonisolated enum TelemetryPrivacy {
     // The Roadmap room's writes, in the web's vocabulary: the act a Board event tells of, a delete's step, the view it was
     // made on, the write a refusal or a failure names, and the refusal's kind.
     "act": ["complete", "delete"],
-    "step": ["held"],
+    "step": ["confirm", "cancel", "held"],
     "view": ["board"],
     "write": ["mark", "DeleteNode", "undo", "release"],
     "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep"],

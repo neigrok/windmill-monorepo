@@ -110,6 +110,14 @@ final class RoadmapModel {
     case swipe, menu
   }
 
+  // The question a delete asks before anything is written: the step, the gesture that asked, and how many steps follow
+  // the step, which is what the delete costs.
+  struct Question {
+    let row: Row
+    let door: Door
+    let followers: Int
+  }
+
   // The one band at the room's foot: a receipt with its Undo, or a limit that refused a gesture.
   struct Band: Equatable {
     enum Says: Equatable {
@@ -165,6 +173,7 @@ final class RoadmapModel {
   // The person's own roadmaps, the most recent first.
   private(set) var roadmaps: [ListedRoadmap] = []
   private(set) var band: Band?
+  private(set) var question: Question?
   // The Board's groups that stand folded: Done at rest, until every step is done.
   var folded: Set<BoardRead.Column.Name> = [.done]
   // Every view the room asked the engine for, kept so each stays live.
@@ -293,7 +302,21 @@ final class RoadmapModel {
               act: "complete", arrived: upNext))
   }
 
-  // Delete, once its question is answered: the step alone goes, held by the engine, and its receipt keeps Undo for the hold.
+  // Delete asks once, on the step.
+  func askDelete(_ row: Row, by door: Door) {
+    guard case .open(let open) = phase else { return }
+    question = Question(row: row, door: door, followers: open.followers(of: row.id))
+  }
+
+  // The question's answer: Delete Step deletes the step; closed any other way, nothing is written.
+  func answer(delete confirmed: Bool) {
+    guard let asked = question else { return }
+    question = nil
+    telemetry.event("roadmap_board_delete", properties: ["step": confirmed ? "confirm" : "cancel", "view": "board"])
+    if confirmed { delete(asked.row, by: asked.door) }
+  }
+
+  // Delete: the step alone goes, held by the engine, and its receipt keeps Undo for the hold.
   func delete(_ row: Row, by door: Door) {
     guard case .open(let open) = phase else { return }
     if let kept = open.keptStep, kept.utf8.elementsEqual(row.id.utf8) {

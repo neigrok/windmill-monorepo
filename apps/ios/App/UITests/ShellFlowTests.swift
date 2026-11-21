@@ -191,6 +191,14 @@ import XCTest
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Delete Tie a bowline?"].exists)
     XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)
+    // The question closed unanswered deletes nothing.
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+    XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(tie.exists && app.staticTexts["3 of 8 done"].exists)
+    tie.swipeLeft()
+    XCTAssertTrue(delete.waitForExistence(timeout: 5))
+    delete.tap()
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
     // The band keeps Undo for the hold's nine seconds: it is taken as soon as the step is seen gone.
     confirm.tap()
     XCTAssertTrue(undo.waitForExistence(timeout: 10))

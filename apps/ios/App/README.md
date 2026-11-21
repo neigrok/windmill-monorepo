@@ -96,8 +96,9 @@ it). It opens the roadmap last open, else the most recent, and makes no request.
 rest, open by itself once every step is done.
 
 The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, a refusal told as an
-event and a failed commit reported. `complete(_:by:)` runs `MarkStep` and `delete(_:by:)` runs `DeleteStep`, and each receipt
-is the room's one band (`RoadmapModel.Band`), which a newer one replaces. Its Undo cancels a removal while the engine holds it
+event and a failed commit reported. `complete(_:by:)` runs `MarkStep`; a delete is asked first (`askDelete(_:by:)`, the
+question the model holds with what the delete costs) and, answered *Delete Step*, `delete(_:by:)` runs `DeleteStep`. Each
+receipt is the room's one band (`RoadmapModel.Band`), which a newer one replaces. Its Undo cancels a removal while the engine holds it
 (`ActionRunner.cancelHeld`, for the engine's nine seconds) and takes any other act back by the kit's Undo of it
 (`ActionRunner.undo`, for six seconds); when the band leaves, the engine keeps no Undo of the act (`ActionRunner.release`).
 The band says a refusal only where it is a limit the boards word, and any other refusal shows nothing. Two facts the model reads

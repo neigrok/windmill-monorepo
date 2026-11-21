@@ -7,10 +7,6 @@ import RoadmapDomain
 struct RoadmapBoard: View {
   let roadmap: RoadmapModel
   let open: RoadmapModel.OpenRoadmap
-  // The step whose delete is being asked.
-  @State var asking: String?
-  // The gesture that asked last, and how many steps follow the step it asked of.
-  @State var asked: (door: RoadmapModel.Door, followers: Int) = (.swipe, 0)
   // The column the state symbols stand in, so every row's words start on one line down the list at any text size.
   @ScaledMetric(relativeTo: .body) var symbolColumn = 24.0
 
@@ -95,26 +91,21 @@ struct RoadmapBoard: View {
         if row.completes { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .swipe) }.tint(RoadmapPalette.act) }
       }
       .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-        if row.deletes { Button("Delete", systemImage: "trash", role: .destructive) { ask(row, by: .swipe) }.tint(nil) }
+        if row.deletes { Button("Delete", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .swipe) }.tint(nil) }
       }
       .contextMenu {
         if row.completes { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .menu) }.tint(RoadmapPalette.ink) }
         if row.completes && row.deletes { Divider() }
-        if row.deletes { Button("Delete Step", systemImage: "trash", role: .destructive) { ask(row, by: .menu) } }
+        if row.deletes { Button("Delete Step", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .menu) } }
       }
       // 03.8: the question stands on the row, the view that stays on screen once the swipe or the menu has closed.
       .confirmationDialog(String(localized: "Delete \(name(row.step))?", comment: "The question a step's delete asks, with the step's name"),
-                          isPresented: Binding(get: { asking == row.id }, set: { if !$0 { asking = nil } }), titleVisibility: .visible) {
-        Button("Delete Step", role: .destructive) { roadmap.delete(row, by: asked.door) }
+                          isPresented: Binding(get: { roadmap.question?.row.id == row.id }, set: { if !$0 { roadmap.answer(delete: false) } }),
+                          titleVisibility: .visible) {
+        Button("Delete Step", role: .destructive) { roadmap.answer(delete: true) }
       } message: {
-        Text(Self.cost(followers: asked.followers))
+        Text(Self.cost(followers: roadmap.question?.followers ?? 0))
       }
-  }
-
-  // The delete question counts the steps that follow the step once, when it is asked.
-  func ask(_ row: RoadmapModel.Row, by door: RoadmapModel.Door) {
-    asked = (door, open.followers(of: row.id))
-    asking = row.id
   }
 
   func name(_ step: RoadmapDomain.Step?) -> String { Self.name(of: step?.label ?? "") }

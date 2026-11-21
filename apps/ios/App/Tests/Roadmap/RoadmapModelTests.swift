@@ -261,8 +261,9 @@ import SyncTesting
     await shows(model, board: atRest, on: engine)
   }
 
-  // Roadmap · iOS 02.3 and 03.9: the step alone goes, held by the engine with Undo; Undo in the hold brings it back
-  // whole, and once the hold ends the delete stands, on the account's other phone too.
+  // Roadmap · iOS 02.3, 03.8 and 03.9: the question counts what the delete costs and, closed unanswered, writes nothing;
+  // answered, the step alone goes, held by the engine with Undo; Undo in the hold brings it back whole, and once the hold
+  // ends the delete stands, on the account's other phone too.
   @Test func deletingAStepHoldsItWithUndoAndStandsOnceTheHoldEnds() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
@@ -274,7 +275,12 @@ import SyncTesting
                   "done: Rig the boat, Name the boat parts, Choose a sailing course"]
     await shows(model, board: atRest, on: engine)
 
-    model.delete(try row("Read the wind", in: model), by: .swipe)
+    model.askDelete(try row("Read the wind", in: model), by: .swipe)
+    #expect(model.question?.followers == 1)
+    model.answer(delete: false)
+    #expect(model.question == nil && model.band == nil && engine.undoOffers().isEmpty)
+    model.askDelete(try row("Read the wind", in: model), by: .swipe)
+    model.answer(delete: true)
     let held = try #require(model.band)
     #expect(held.says == .deleted(step: "Read the wind") && held.lasts == .milliseconds(9_000) && held.arrived.isEmpty)
     #expect(held.undo.map { [$0.gesture] } == engine.undoOffers().map(\.id) && held.undo?.held == true)
@@ -286,7 +292,8 @@ import SyncTesting
     #expect(model.band == nil && engine.undoOffers().isEmpty)
     await shows(model, board: atRest, on: engine)
 
-    model.delete(try row("Read the wind", in: model), by: .menu)
+    model.askDelete(try row("Read the wind", in: model), by: .menu)
+    model.answer(delete: true)
     await shows(model, board: deleted, on: engine)
     engine.advance(ms: Constants.holdMs)
     #expect(engine.undoOffers().isEmpty)
@@ -299,8 +306,9 @@ import SyncTesting
     await shows(elsewhere, board: deleted, on: other)
     await shows(model, board: deleted, on: engine)
     #expect(told(telemetry) == [
-      "roadmap_room_opened ", "roadmap_board_delete door=swipe step=held view=board", "roadmap_board_undo act=delete outcome=ok",
-      "roadmap_board_delete door=menu step=held view=board",
+      "roadmap_room_opened ", "roadmap_board_delete step=cancel view=board", "roadmap_board_delete step=confirm view=board",
+      "roadmap_board_delete door=swipe step=held view=board", "roadmap_board_undo act=delete outcome=ok",
+      "roadmap_board_delete step=confirm view=board", "roadmap_board_delete door=menu step=held view=board",
     ])
   }
 
