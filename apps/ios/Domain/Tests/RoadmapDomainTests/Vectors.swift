@@ -95,17 +95,35 @@ extension RoadmapTree.Edge {
 }
 
 extension Record {
-  // An engine view record, `{t, id, life?, born?, f?, rc?, ru?}`, as the engine's readers hand it to a product.
-  init(view: JSON) throws {
-    let key = RecordKey(try view.member("t").asString(), try RecordID(json: view.member("id")))
-    let row = Row(key: key, lattice: try Lattice(json: view), seq: 0, rc: try view["rc"]?.asInteger(), ru: try view["ru"]?.asInteger())
-    self.init(confirmed: row, registry: SyncSchema.registry)
+  // An engine view record, `{t, id, life?, born?, f?, rc?, ru?}`, as the engine's readers hand it to a product, pending
+  // where an entry the device queues still changes it. A view record states no `seq`.
+  init(view: JSON, isPending: Bool = false) throws {
+    let row = Row(key: try RecordKey(view: view), lattice: try Lattice(json: view), seq: 0, rc: try view["rc"]?.asInteger(),
+                  ru: try view["ru"]?.asInteger())
+    let read = Record(confirmed: row, registry: SyncSchema.registry)
+    self.init(type: read.type, id: read.id, life: read.life, born: read.born, values: read.values, stamps: read.stamps, texts: read.texts,
+              serials: read.serials, seq: nil, rc: read.rc, ru: read.ru, isVisible: read.isVisible, isPending: isPending, isHeld: false)
+  }
+
+  // The record as the view record a case states.
+  var view: JSON {
+    var form: JSON.Object = ["t": .string(type), "id": id.json]
+    form["life"] = life?.json
+    form["born"] = born?.json
+    let registers = values.map { (field: (key: String, value: JSON)) -> (String, JSON) in
+      (field.key, .array([field.value, stamps[field.key]?.json ?? .null]))
+    }
+    form["f"] = registers.isEmpty ? nil : .object(JSON.Object(uniqueKeysWithValues: registers))
+    form["rc"] = rc.map { JSON($0) }
+    form["ru"] = ru.map { JSON($0) }
+    return .object(form)
   }
 }
 
-extension StampedRecord {
+extension RecordKey {
+  // The `{t, id}` a view record and a queued record both carry.
   init(view: JSON) throws {
-    self.init(try Record(view: view), stamps: try Lattice(json: view).fields.mapValues(\.stamp))
+    self.init(try view.member("t").asString(), try RecordID(json: view.member("id")))
   }
 }
 
@@ -113,11 +131,14 @@ extension RoadmapTree {
   // `{operation: "roadmap", id, listed, tree, overlay: {drawn, queued} | null, read}`: one roadmap's records as a replica holds them.
   init(replica input: JSON) throws {
     let overlay: JSON? = try input.member("overlay").nullable { $0 }
-    let queued = try (overlay?["queued"]?.asArray() ?? []).map { RecordKey(try $0.member("t").asString(), try RecordID(json: $0.member("id"))) }
-    try self.init(id: ID(RecordID(try input.member("id").asString())), listed: try input.member("listed").nullable(Record.init(view:)),
-                  tree: try input.member("tree").asArray().map(StampedRecord.init(view:)),
-                  overlay: try overlay.map { try $0.member("drawn").asArray().map(StampedRecord.init(view:)) }, queued: queued,
-                  read: try input.member("read").asBool())
+    let queued = try (overlay?["queued"]?.asArray() ?? []).map(RecordKey.init(view:))
+    let overlaid = try overlay.map { (overlay: JSON) throws -> [Record] in
+      try overlay.member("drawn").asArray().map { (view: JSON) throws -> Record in
+        try Record(view: view, isPending: queued.contains(try RecordKey(view: view)))
+      }
+    }
+    try self.init(id: ID(RecordID(try input.member("id").asString())), listed: try input.member("listed").nullable { try Record(view: $0) },
+                  tree: try input.member("tree").asArray().map { try Record(view: $0) }, overlay: overlaid, read: try input.member("read").asBool())
   }
 
   var form: JSON {

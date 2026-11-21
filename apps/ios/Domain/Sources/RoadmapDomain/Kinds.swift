@@ -192,11 +192,11 @@ public struct RecolourKindCommand: ServerCommand {
   }
 }
 
-// §4 `roadmap.recolourKind`: the kind's hue and the colour of every step that wears it, predicted so the legend and the
-// steps change at once. A kind this device holds as deleted, or knows only by its spent id, is revived first, as every
-// change to a kind carries its life; the command revives no step. Of a kind known only by its spent id the device knows no
-// hue, so it predicts the kind's new hue alone, the server recolours the steps that wore the old one, and an Undo deletes
-// the kind again.
+// §4 `roadmap.recolourKind`: the kind's hue and the colour of every step the device holds that wears it, present or not,
+// predicted so the legend and the steps change at once. A kind this device holds as deleted, or knows only by its spent
+// id, is revived first, as every change to a kind carries its life; the command revives no step. Of a kind known only by
+// its spent id the device knows no hue, so it predicts the kind's new hue alone, the server recolours the steps that wore
+// the old one, and an Undo deletes the kind again.
 public struct RecolourKind: ActAction {
   public let tree: ID<RoadmapEntry>
   public let kind: ID<RoadmapKind>
@@ -210,7 +210,8 @@ public struct RecolourKind: ActAction {
 
   public func load(_ read: ActReader) throws -> (kinds: HeldKinds, steps: [RoadmapStep]) {
     try read.inScope(tree.tree) { (scope: Reader) throws -> (kinds: HeldKinds, steps: [RoadmapStep]) in
-      (try HeldKinds(kind, in: scope), try scope.repository(RoadmapStep.self).all(in: .drawn))
+      let held = try scope.repository(RoadmapStep.self).records(in: .drawn)
+      return (try HeldKinds(kind, in: scope), try held.map { (record: Record) throws -> RoadmapStep in try RoadmapStep(Fields(record)) })
     }
   }
 
