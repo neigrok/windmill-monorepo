@@ -32,7 +32,7 @@ enum Layers {
     LayerRow(layer: .kit, modules: ["DomainKit", "DomainKitNFC"], mayDependOn: [.engineAPI, .kit], mayAlsoDependOn: []),
     LayerRow(
       layer: .kitTestSupport, modules: ["DomainKitTesting"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: ["SyncEngine", "SyncTesting"]),
-    LayerRow(layer: .productDomain, modules: ["GymDomain", "JournalDomain"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: []),
+    LayerRow(layer: .productDomain, modules: ["GymDomain", "JournalDomain", "RoadmapDomain"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: []),
     LayerRow(layer: .picture, modules: ["RoadmapLayout"], mayDependOn: [], mayAlsoDependOn: []),
     LayerRow(layer: .platform, modules: ["WindmillPlatform"], mayDependOn: [.kit, .engineAPI, .agent], mayAlsoDependOn: ["SyncEngine"]),
     LayerRow(
@@ -40,7 +40,7 @@ enum Layers {
       mayAlsoDependOn: ["SyncEngine"]),
   ]
 
-  static let products = ["GymDomain": "Gym", "WindmillGym": "Gym", "JournalDomain": "Journal", "WindmillJournal": "Journal"]
+  static let products = ["GymDomain": "Gym", "WindmillGym": "Gym", "JournalDomain": "Journal", "WindmillJournal": "Journal", "RoadmapDomain": "Roadmap"]
   static let testMayNotDependOn: Set<Layer> = [.platform, .productUI]
   static let closureChecked: Set<Layer> = [.kit, .productDomain]
   static let closureStaysIn: Set<Layer> = [.kit, .engineAPI]

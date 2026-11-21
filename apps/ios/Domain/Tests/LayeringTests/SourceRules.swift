@@ -9,6 +9,7 @@ enum SourceRules {
     "DomainKit": ["SyncCore", "SyncAPI", "DomainKitNFC"],
     "GymDomain": productDomainImports,
     "JournalDomain": productDomainImports,
+    "RoadmapDomain": productDomainImports,
     "RoadmapLayout": [],
     "SyncCore": ["CryptoKit"],
     "SyncAPI": ["SyncCore"],
@@ -19,7 +20,7 @@ enum SourceRules {
   static let digestModule = "SyncCore"
   static let digestFile = "Digest.swift"
 
-  static let lintedModules: Set<String> = ["DomainKit", "GymDomain", "JournalDomain", "RoadmapLayout"]
+  static let lintedModules: Set<String> = ["DomainKit", "GymDomain", "JournalDomain", "RoadmapDomain", "RoadmapLayout"]
   static let lintTokens: Set<String> = [
     "random", "randomElement", "shuffle", "shuffled", "SystemRandomNumberGenerator", "hashValue", "ContinuousClock", "SuspendingClock",
     "continuous", "suspending", "CommandLine", "readLine", "print", "debugPrint", "dump", "Task", "async", "await", "MainActor",

@@ -18,8 +18,9 @@ and Android: §3–§15 and the layering tests of §2. It provides base interfac
 each product declares its own entities, value objects, aggregates, repositories, rules and actions. The
 kit names no product concept. Appendices A–C illustrate it; they are not kit content.
 
-**Consumers.** Gym (iOS, Android) and journal (iOS), with the phone Coach. Roadmap is web-only and is
-not a kit consumer. An entity can bind to a product, tree or overlay scope (engine D-4). An ordinary
+**Consumers.** Gym (iOS, Android) and journal (iOS), with the phone Coach, and roadmap (iOS), whose
+`RoadmapDomain` holds its pure reads and declares no entity or action. An entity can bind to a
+product, tree or overlay scope (engine D-4). An ordinary
 reader, action and plan addresses one scope; an act composes ordered scoped plans in one local transaction (§9.5).
 
 **Outside the kit:**
@@ -146,7 +147,7 @@ reach them.
 | Package | Path | Package dependencies | May hold (test targets aside) |
 |---|---|---|---|
 | `WindmillSync` | `apps/ios/Sync/` | `GRDB.swift` | `SyncCore`, `SyncAPI`, `SyncSchema`, `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`, `SyncTesting` |
-| `WindmillDomain` | `apps/ios/Domain/` | `WindmillSync`; `swift-syntax` for `LayeringTests` | `DomainKitNFC`, `DomainKit`, `DomainKitTesting`, `GymDomain`, `JournalDomain`, `RoadmapLayout` |
+| `WindmillDomain` | `apps/ios/Domain/` | `WindmillSync`; `swift-syntax` for `LayeringTests` | `DomainKitNFC`, `DomainKit`, `DomainKitTesting`, `GymDomain`, `JournalDomain`, `RoadmapDomain`, `RoadmapLayout` |
 | `WindmillAgent` | `apps/ios/Agent/` | `WindmillSync`, its `SyncCore` product only | `Agent` |
 | `WindmillKit` | `apps/ios/WindmillKit/` | `WindmillDomain`, `WindmillSync`, `WindmillAgent` | `WindmillPlatform`, `WindmillGym`, `WindmillJournal` |
 | `SyncTestingSurface` | `apps/ios/SyncTestingSurface/` | `WindmillSync`, its `SyncTesting` product only | test targets only |
@@ -197,7 +198,7 @@ manifest. A test target is in the test layer. Every other module is in the one r
 | engine test support | `SyncTesting` | `:sync-testing` | engine API, engine runtime |
 | kit | `DomainKit`, `DomainKitNFC` | `:domain-kit` | engine API, kit |
 | kit test support | `DomainKitTesting` | `:domain-kit-testing` | kit, engine API, `SyncEngine`, `SyncTesting` |
-| product domain | `GymDomain`, `JournalDomain` | `:gym:domain` | kit, engine API |
+| product domain | `GymDomain`, `JournalDomain`, `RoadmapDomain` | `:gym:domain` | kit, engine API |
 | picture | `RoadmapLayout` | — | nothing |
 | agent | `Agent` | `:agent` | `SyncCore` / `:sync-core` |
 | platform | `WindmillPlatform` | `:platform` | kit, engine API, `SyncEngine`, agent |

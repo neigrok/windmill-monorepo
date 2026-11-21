@@ -199,7 +199,7 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
       reservedNodeIds: session.knownNodeIds(), // present AND tombstoned: never resurrect a deleted node
       liveKinds: legendRef.current,
     });
-    if (graft.nodes.length === 0) {
+    if (graft === null) {
       setComposerOpen(false);
       return;
     }
