@@ -618,7 +618,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   owner: the confirm's copy (or no confirm, since Undo stands for nine seconds), and the empty *Your roadmaps*. Phones
   have no door to delete a roadmap today, so 51.03 is reached only by address.
 - **Roadmap · iOS · what the web does differently.** [Roadmap · iOS](ios/roadmap.md) is drawn as one room and
-  waits for the owner's review. Where it and the web now disagree, for the web's owner to rule or redraw: the web
+  is ✅ Ready for dev. Where it and the web now disagree, for the web's owner to rule or redraw: the web
   says *tree* where iOS says *roadmap* (*Fork this tree*, *Attach a tree*, *Open tree*); the web's phone has no
   rename, no delete and no kinds management, and its desktop deletes a roadmap at once where iOS holds it nine
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
@@ -628,14 +628,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   include quests and a pasted plan (01.6 to 01.8b, 02.16 to 02.18), Share with its public switch and Export (09.1
   to 09.3), the public gallery (09.12) and the roadmap's Activity (01.13). [Roadmap on iOS](../foundation/roadmap-ios.md)
   INV-1 names three reads outside the sync engine (the owner's progress on a shared roadmap, History, Fork); the
-  gallery's list and the visibility switch are two more, and its build tree has no step for any of these. When the
-  owner approves the boards, the spec's invariant and the tree follow; a board the owner strikes leaves both as
-  they are.
-- **Roadmap · iOS · the Shell owes the room its door.** A proposal is drawn in the Shell file
-  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)): *Where to start?* with a
-  third door. The Design System has no `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a
-  detached copy; both belong in the library before it is built. The sign-in and sign-out questions that name
-  roadmaps and conversations (Roadmap · iOS 10.7, 10.8) are proposals for the Shell's owner too.
+  gallery's list and the visibility switch are two more. The boards are approved, so the spec's invariant follows
+  them: the build tree's step `m0-say-in-the-spec-what-the-boards-add` holds that work, and its steps for quests
+  and pasted plans, Share, Export and the gallery, and Activity wait on it.
+- **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
+  ✅ Ready for dev in the Shell file
+  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
+  `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a detached copy; both belong in the
+  library (the build tree's step `m0-add-the-roadmap-door-to-the-library`). The sign-in and sign-out questions
+  that name roadmaps and conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the
+  Shell's own boards of those two questions say the same.
 - **iOS · system parts in the Design System predate the simulator probe.** A SwiftUI probe on the iOS 26.5
   simulator (2026-11-18) found that the system draws several parts otherwise than the library and the Gym and
   Journal iOS boards do: a menu's symbols and checkmark are on the leading side (`iOS / Menu item` puts the symbol

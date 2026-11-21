@@ -8,7 +8,7 @@ them.
 
 **Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. The iPhone app carries journal and gym.
 Roadmap's design for it is [Roadmap · iOS](../design/ios/roadmap.md), with its boards in
-the Roadmap Figma file; every board is a proposal until the owner approves it. The build order lives in the
+the Roadmap Figma file, every one ✅ Ready for dev since the owner's approval of 2026-11-21. The build order lives in the
 Roadmap on iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node
 `roadmap-ios`.
 
@@ -153,14 +153,14 @@ guide and the guides above it, and an owner edits their own.
 
 - These are the domain's actions and reads, the web's own.
 - Forking first needs a connection, as every fork does.
-- Each state is drawn as a proposal and is approved before it is built.
+- Each state is built from its board in the design's sections 07 and 08.
 
 ## §7 A roadmap and its kinds
 
 A person renames and deletes a roadmap on the phone, and adds, renames, recolours and removes its
 kinds (R-6). These are the domain's actions, the web's own: a delete is held with Undo, and
-recolouring a kind is the server's command. Each state is drawn as a proposal and is approved
-before it is built.
+recolouring a kind is the server's command. Each state is built from its board in the design's
+sections 01 and 06.
 
 ## §8 Coach
 
@@ -238,7 +238,6 @@ makes it false.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.
-- Every board of the room is a proposal in Figma until the owner approves it.
 
 ## §14 Rulings
 
