@@ -19,7 +19,6 @@
   --look-pill-ink: var(--text-on-accent);
   --look-line-faint: color-mix(in srgb, var(--look-ink-1) 8%, transparent);
   --look-line: color-mix(in srgb, var(--look-ink-1) 12%, transparent);
-  --look-line-firm: color-mix(in srgb, var(--look-ink-1) 16%, transparent);
   --look-wash: color-mix(in srgb, var(--look-ink-1) 7%, transparent);
   --look-radius-frame: 16px;
   --look-radius-inner: 12px;

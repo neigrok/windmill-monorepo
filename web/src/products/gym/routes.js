@@ -76,7 +76,7 @@ export const gymRoutes = {
       // The picture arrives in this product's chunk, so the shell holds its height from the first paint.
       picture: {
         label: t('gym.root.composed'),
-        reserve: { wide: '506px', narrow: '560px' },
+        reserve: { wide: '506px', narrow: '480px' },
         Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.GymPicture }))),
       },
     },

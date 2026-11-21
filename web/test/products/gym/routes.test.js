@@ -96,7 +96,7 @@ test('the brand root is handed gym’s words and its picture, and its door is gy
       { title: 'On your phone', text: 'Sets are logged in the phone app: Android as a direct download, iPhone in\u00A0beta.' },
     ],
     label: 'Composed session',
-    reserve: { wide: '506px', narrow: '560px' },
+    reserve: { wide: '506px', narrow: '480px' },
   });
   assert.equal(root.link.href, gymRoutes.landing.href);
   assert.equal(typeof root.picture.Picture, 'object');

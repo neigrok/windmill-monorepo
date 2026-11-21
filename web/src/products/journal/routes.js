@@ -98,7 +98,7 @@ export const journalRoutes = {
       // The picture arrives in this product's chunk, so the shell holds its height from the first paint.
       picture: {
         label: t('journal.root.composed'),
-        reserve: { wide: '476px', narrow: '860px' },
+        reserve: { wide: '476px', narrow: '800px' },
         Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.JournalPicture }))),
       },
     },
