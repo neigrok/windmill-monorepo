@@ -193,3 +193,34 @@ extension BoardRead {
 extension LandingFact {
   var form: JSON { ["node": .string(node), "incoming": .array(incoming.map(\.ends)), "followed": .array(followed.map(\.form))] }
 }
+
+extension Listed {
+  func form(_ entry: (Entry) -> JSON) -> JSON { ["entries": .array(entries.map(entry)), "omitted": JSON(omitted)] }
+}
+
+extension Counted {
+  var form: JSON { ["count": JSON(count), "named": .strings(named)] }
+}
+
+extension Diagnostics {
+  var form: JSON {
+    let smells: [JSON] = self.smells.map { ["kind": .string($0.kind.rawValue), "nodes": $0.nodes.form] }
+    let unclaimed: [JSON] = unclaimedHues.map { ["hue": .string($0.hue), "nodes": $0.nodes.form] }
+    return ["cycles": cycles.form(\.form), "absentCycles": absentCycles.form(\.form), "missingEdges": missingEdges.form(\.ends),
+            "selfEdges": selfEdges.form(\.ends), "smells": .array(smells), "legendEmpty": .bool(legendEmpty), "unclaimedHues": .array(unclaimed)]
+  }
+}
+
+extension PointerDiagnostics {
+  var form: JSON {
+    let loops: [JSON] = treeLoops.entries.map { loop in
+      let path: [JSON] = loop.path.map { ["tree": .string($0.tree), "title": .of($0.title)] }
+      return ["node": .string(loop.node), "path": .array(path), "pathOmitted": JSON(loop.pathOmitted)]
+    }
+    let dangling: [JSON] = danglingPointers.entries.map { ["node": .string($0.node), "tree": .string($0.tree)] }
+    let stale: [JSON] = staleBranches.entries.map { ["node": .string($0.node), "tree": .string($0.tree)] }
+    return ["treeLoops": .array(loops), "treeLoopsOmitted": JSON(treeLoops.omitted), "danglingPointers": .array(dangling),
+            "danglingPointersOmitted": JSON(danglingPointers.omitted), "staleBranches": .array(stale),
+            "staleBranchesOmitted": JSON(staleBranches.omitted)]
+  }
+}

@@ -5,7 +5,14 @@ import Testing
 
 // The runner of roadmap's shared vectors, `packages/api-contract/roadmap/domain/`: each read over the records a case states.
 struct CorpusTests {
-  static let reads = ["account", "board", "graph", "guides", "landing", "legend", "progress", "search"]
+  static let reads = ["account", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "search"]
+
+  @Test func everyFileIsClaimedOrWaitsForTheActions() throws {
+    let waiting = ["kinds-actions", "landing-actions", "progress-actions", "replica", "roadmaps-actions", "rules", "steps-actions", "undo",
+                   "values", "workspace-actions"]
+    let named = (Self.reads + waiting).map { "roadmap/domain/\($0).json" }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+    #expect(try Contract.files(under: "roadmap/domain") == named)
+  }
 
   @Test(arguments: try reads.flatMap { try Contract.vectors("roadmap/domain/\($0).json") })
   func read(_ vector: Vector) throws {
@@ -34,6 +41,7 @@ struct CorpusTests {
       case "progress": return account.progress(tree)?.form ?? .null
       case "guides": return .array(account.guides(tree).map(\.form))
       case "openings": return .array(account.openings(of: tree).map(\.form))
+      case "pointers": return PointerDiagnostics(account, tree: tree).form
       default: throw ContractError("no roadmap read \(operation) over an account")
       }
     }
@@ -43,6 +51,7 @@ struct CorpusTests {
     case "search": return .strings(tree.selectNodes(try NodeFilter(form: input.member("query"))))
     case "graph": return FollowGraph(tree).form(subjects: try input.member("subjects").asArray().map { try $0.asString() })
     case "board": return BoardRead(FollowGraph(tree), try BoardQuery(form: input["query"] ?? [:])).form
+    case "diagnostics": return Diagnostics(FollowGraph(tree)).form
     case "landing":
       let own = try input.member("edges").asArray().map { link in
         let ends = try link.asArray().map { try $0.asString() }
