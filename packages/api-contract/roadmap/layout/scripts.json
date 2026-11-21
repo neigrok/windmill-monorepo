@@ -1,0 +1,585 @@
+{
+  "name": "scripts",
+  "roadmap": {
+    "steps": [
+      {"id":"voyage","label":"A voyage in every script","ord":"a0","born":"1750000000000:0:phone","color":"sky","follows":[]},
+      {"id":"s0","label":"Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la fran\u00e7aise","ord":"a1","born":"1750000001000:1:phone","color":"terracotta","follows":["voyage"]},
+      {"id":"s1","label":"Cafe\u0301 de\u0301compose\u0301","ord":"a2","born":"1750000002000:2:phone","color":"olive","follows":["voyage"]},
+      {"id":"s2","label":"Za\u017c\u00f3\u0142\u0107 g\u0119\u015bl\u0105 ja\u017a\u0144","ord":"a3","born":"1750000003000:0:phone","color":"gold","follows":["voyage"]},
+      {"id":"s3","label":"\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445 \u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a","ord":"a4","born":"1750000004000:1:phone","color":"brick","follows":["voyage"]},
+      {"id":"s4","label":"\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9\u6cd5","ord":"a5","born":"1750000005000:2:phone","color":"sky","follows":["voyage"]},
+      {"id":"s5","label":"\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb","ord":"a6","born":"1750000006000:0:phone","color":"plum","follows":["voyage"]},
+      {"id":"s6","label":"\u062a\u0639\u0644\u0645 \u0627\u0644\u0625\u0628\u062d\u0627\u0631 \u0641\u064a \u0627\u0644\u0628\u062d\u0631 \u0627\u0644\u0645\u0641\u062a\u0648\u062d","ord":"a7","born":"1750000007000:1:phone","color":"terracotta","follows":["s0"]},
+      {"id":"s7","label":"\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd","ord":"a8","born":"1750000008000:2:phone","color":"olive","follows":["s1"]},
+      {"id":"s8","label":"\u26f5\ufe0f Sail \ud83c\udf0a\ud83c\udf2c\ufe0f away","ord":"a9","born":"1750000009000:0:phone","color":"gold","follows":["s2"]},
+      {"id":"s9","label":"\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6","ord":"aA","born":"1750000010000:1:phone","color":"brick","follows":["s3"]},
+      {"id":"s10","label":"\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","ord":"aB","born":"1750000011000:2:phone","color":"sky","follows":["s4"]},
+      {"id":"s11","label":"","ord":"aC","born":"1750000012000:0:phone","color":"plum","follows":["s5"]},
+      {"id":"s12","label":"   ","ord":"aD","born":"1750000013000:1:phone","color":"terracotta","follows":["s6"]},
+      {"id":"s13","label":"Tabs\tand\nnew\u00a0lines\u3000wide\ufeffmarks\u0085next","ord":"aE","born":"1750000014000:2:phone","color":"olive","follows":["s7"]},
+      {"id":"s14","label":"zero\u200bwidth\u200djoiners","ord":"aF","born":"1750000015000:0:phone","color":"gold","follows":["s8"]},
+      {"id":"s15","label":"\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48\u3000\uff54\uff45\uff58\uff54","ord":"aG","born":"1750000016000:1:phone","color":"brick","follows":["s9"]},
+      {"id":"s16","label":"\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01","ord":"aH","born":"1750000017000:2:phone","color":"sky","follows":["s10"]},
+      {"id":"s17","label":"\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e","ord":"aI","born":"1750000018000:0:phone","color":"plum","follows":["s11"]},
+      {
+        "id": "s18",
+        "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "ord": "aJ",
+        "born": "1750000019000:1:phone",
+        "color": "terracotta",
+        "follows": ["s12"]
+      },
+      {"id":"s19","label":"One two three four five six seven eight nine ten eleven twelve","ord":"aK","born":"1750000020000:2:phone","color":"olive","follows":["s13"]}
+    ],
+    "done": ["voyage","s0","s1","s2"]
+  },
+  "engine": "bubble",
+  "seats": [
+    [0,0],
+    [-150.51870643788644,-110.63446153846155],
+    [27.66520674255213,-92.54215384615384],
+    [144.40582212716754,-28.446185713573215],
+    [92.19648127988239,92.54215384615387],
+    [-47.259425028499884,190.2406153846154],
+    [-107.71707692307689,44.89858909175385],
+    [-283.4379238973446,-208.33292307692307],
+    [51.463234047973316,-172.14830769230764],
+    [258.13859135793683,-50.85015411041785],
+    [189.53000990380514,190.24061538461538],
+    [-71.52960050675944,287.9390769230769],
+    [-183.70064294879887,76.57002881297191],
+    [-390.18253928196,-286.7924934830806],
+    [80.6699039228084,-269.84676923076916],
+    [374.87920674255207,-73.84663151437728],
+    [268.8388110047792,269.84676923076916],
+    [-95.79977598501901,385.63753846153844],
+    [-259.68420897452086,108.24146853418998],
+    [-496.92715466657535,-365.2520638892381],
+    [109.87657379764349,-367.54523076923067]
+  ],
+  "tiers": [2,2,2,2,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+  "links": [
+    {"from":"voyage","to":"s0","kind":"trunk","sway":0.44999999999999996,"cx":-66.29796183432784,"cy":-67.50924599069958},
+    {"from":"voyage","to":"s1","kind":"trunk","sway":0.45999999999999996,"cx":21.495093709737603,"cy":-43.980397804793604},
+    {"from":"voyage","to":"s2","kind":"trunk","sway":0.47,"cx":74.60945837495207,"cy":-2.0063603048282346},
+    {"from":"voyage","to":"s3","kind":"trunk","sway":0.48,"cx":38.102598547633505,"cy":54.23685290565877},
+    {"from":"voyage","to":"s4","kind":"trunk","sway":0.49,"cx":-40.408934791173024,"cy":90.95202640479401},
+    {"from":"voyage","to":"s5","kind":"trunk","sway":-0.5,"cx":-49.817665443280596,"cy":32.14383146895384},
+    {"from":"s0","to":"s6","kind":"trunk","sway":-0.030000000000000027,"cx":-217.5058868599232,"cy":-158.76592853341123},
+    {"from":"s1","to":"s7","kind":"trunk","sway":-0.10999999999999999,"cx":37.98801854910888,"cy":-132.8164317098781},
+    {"from":"s2","to":"s8","kind":"trunk","sway":-0.19,"cx":200.5059910233801,"cy":-43.53783061968784},
+    {"from":"s3","to":"s9","kind":"trunk","sway":-0.27,"cx":145.611390822613,"cy":136.66097512426197},
+    {"from":"s4","to":"s10","kind":"trunk","sway":0.12,"cx":-61.50479953686043,"cy":238.56561036351576},
+    {"from":"s5","to":"s11","kind":"trunk","sway":-0.09999999999999998,"cx":-145.13877402095596,"cy":62.102013140825875},
+    {"from":"s6","to":"s12","kind":"trunk","sway":-0.32,"cx":-341.329502845047,"cy":-241.414218433848},
+    {"from":"s7","to":"s13","kind":"trunk","sway":0.45999999999999996,"cx":74.15600160077547,"cy":-218.57922619590207},
+    {"from":"s8","to":"s14","kind":"trunk","sway":0.24,"cx":317.5023468740955,"cy":-57.305198227782185},
+    {"from":"s9","to":"s15","kind":"trunk","sway":0.020000000000000018,"cx":228.897828300446,"cy":230.32920399165576},
+    {"from":"s10","to":"s16","kind":"trunk","sway":-0.49,"cx":-75.04768393819691,"cy":338.92893716949015},
+    {"from":"s11","to":"s17","kind":"trunk","sway":-0.27,"cx":-220.15319399120867,"cy":96.09854998243104},
+    {"from":"s12","to":"s18","kind":"trunk","sway":-0.04999999999999999,"cx":-444.2609831079231,"cy":-325.0615771476978},
+    {"from":"s13","to":"s19","kind":"trunk","sway":0.17000000000000004,"cx":98.26281178330287,"cy":-317.80227590182994}
+  ],
+  "bounds": {"minX":-552.9271546665753,"minY":-423.54523076923067,"maxX":430.87920674255207,"maxY":441.63753846153844},
+  "canvases": [
+    {
+      "name": "phone",
+      "viewport": {"width":402,"height":874},
+      "insets": {"top":158,"right":0,"bottom":140,"left":0},
+      "blocks": [],
+      "workingZoom": 0.8503401360544218,
+      "fit": {"x":-61.02397396201164,"y":-15.426641213774658,"zoom":0.3677552963591188},
+      "floor": 0.1838776481795594,
+      "focus": [
+        {"step":"voyage","x":0,"y":-10.584,"zoom":0.8503401360544218},
+        {"step":"s0","x":-150.51870643788644,"y":-121.21846153846155,"zoom":0.8503401360544218},
+        {"step":"s1","x":25.731617023986658,"y":-96.65815384615382,"zoom":0.8503401360544218},
+        {"step":"s2","x":144.40582212716754,"y":-39.03018571357322,"zoom":0.8503401360544218},
+        {"step":"s3","x":94.76500495190257,"y":84.53630769230769,"zoom":0.8503401360544218},
+        {"step":"s4","x":-35.76480025337972,"y":133.38553846153846,"zoom":0.8503401360544218},
+        {"step":"s5","x":-91.85032147439944,"y":27.701014406485957,"zoom":0.8503401360544218},
+        {"step":"s6","x":-270.3506228599232,"y":-209.29747751077107,"zoom":0.8503401360544218},
+        {"step":"s7","x":54.167555332680266,"y":-191.7784615384615,"zoom":0.8503401360544218},
+        {"step":"s8","x":259.6425144348598,"y":-61.73040861397524,"zoom":0.8503401360544218},
+        {"step":"s9","x":180.5176461423308,"y":170.6104615384615,"zoom":0.8503401360544218},
+        {"step":"s10","x":-71.52960050675945,"y":277.3550769230769,"zoom":0.8503401360544218},
+        {"step":"s11","x":-183.70064294879887,"y":65.98602881297191,"zoom":0.8503401360544218},
+        {"step":"s12","x":-390.18253928196,"y":-297.3764934830806,"zoom":0.8503401360544218},
+        {"step":"s13","x":80.6699039228084,"y":-280.43076923076916,"zoom":0.8503401360544218},
+        {"step":"s14","x":316.50889905024445,"y":-72.93239281239757,"zoom":0.8503401360544218},
+        {"step":"s15","x":229.18441045429216,"y":219.45969230769225,"zoom":0.8503401360544218},
+        {"step":"s16","x":-83.66468824588922,"y":326.2043076923077,"zoom":0.8503401360544218},
+        {"step":"s17","x":-221.69242596165986,"y":81.82174867358094,"zoom":0.8503401360544218},
+        {"step":"s18","x":-443.55484697426766,"y":-336.6062786861593,"zoom":0.8503401360544218},
+        {"step":"s19","x":95.27323886022594,"y":-329.2799999999999,"zoom":0.8503401360544218}
+      ],
+      "passes": [
+        {
+          "now": 0,
+          "camera": {"x":-61.02397396201164,"y":-15.426641213774658,"zoom":0.3677552963591188},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"voyage","anchor":0,"left":139.64188962941074,"top":464.08011609546554,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s7","anchor":2,"left":259.0173710886883,"top":369.3647770982921,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":false}
+          ],
+          "nextDeadline": 200
+        },
+        {
+          "now": 200,
+          "camera": {"x":-61.02397396201164,"y":-15.426641213774658,"zoom":0.3677552963591188},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"voyage","anchor":0,"left":139.64188962941074,"top":464.08011609546554,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s7","anchor":2,"left":259.0173710886883,"top":369.3647770982921,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 300,
+          "camera": {"x":-35.76480025337972,"y":133.38553846153846,"zoom":0.8503401360544218},
+          "selected": "s4",
+          "hovered": "s10",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"s4","anchor":1,"left":107.42565920482977,"top":414.54615384615386,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 198.58775488658188,
+              "top": 548.4230769230769,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": true
+            },
+            {"id":"voyage","anchor":3,"left":24.8122451134181,"top":313.5769230769231,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s7","anchor":2,"left":303.17349855557234,"top":167.19230769230774,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s5","anchor":0,"left":112.5410912672643,"top":389.7559954338566,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":false},
+            {"id":"s9","anchor":3,"left":270.1272195214157,"top":475.34615384615387,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":false},
+            {"id":"s16","anchor":0,"left":106.04985056833394,"top":679.5,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":false},
+            {"id":"s0","anchor":0,"left":26.270147802290197,"top":257.5,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":false}
+          ],
+          "nextDeadline": 500
+        },
+        {
+          "now": 500,
+          "camera": {"x":-35.76480025337972,"y":133.38553846153846,"zoom":0.8503401360544218},
+          "selected": "s4",
+          "hovered": "s10",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"s4","anchor":1,"left":107.42565920482977,"top":414.54615384615386,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 198.58775488658188,
+              "top": 548.4230769230769,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": true
+            },
+            {"id":"voyage","anchor":3,"left":24.8122451134181,"top":313.5769230769231,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s7","anchor":2,"left":303.17349855557234,"top":167.19230769230774,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s5","anchor":0,"left":112.5410912672643,"top":389.7559954338566,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":true},
+            {"id":"s9","anchor":3,"left":270.1272195214157,"top":475.34615384615387,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":true},
+            {"id":"s16","anchor":0,"left":106.04985056833394,"top":679.5,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s0","anchor":0,"left":26.270147802290197,"top":257.5,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 600,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":28.857096009119942,"top":366.12300307692306,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s4","anchor":1,"left":117.19999999999999,"top":381.4736,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {"id":"s5","anchor":0,"left":154.37855139373536,"top":406.01695158628434,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":true},
+            {"id":"s7","anchor":2,"left":248.11765090447142,"top":311.03554461538465,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 208.75994384695693,
+              "top": 448.2635076923077,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": true
+            },
+            {"id":"s16","anchor":0,"left":141.56708769391386,"top":515.0534153846154,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s9","anchor":3,"left":166.7962191783376,"top":427,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":true},
+            {"id":"s0","anchor":0,"left":90.8070299489963,"top":356.2463753846154,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":true}
+          ],
+          "nextDeadline": 800
+        },
+        {
+          "now": 800,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":28.857096009119942,"top":366.12300307692306,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s7","anchor":2,"left":248.11765090447142,"top":311.03554461538465,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 900,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":29.61333576111494,"top":352.80616,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s7","anchor":2,"left":256.6746370398246,"top":285.66832,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s4","anchor":3,"left":16.227199999999982,"top":417,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":false},
+            {"id":"s16","anchor":0,"left":138.16926312695753,"top":530.3776,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":false},
+            {"id":"s15","anchor":0,"left":273.7283120529788,"top":485.21919999999994,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":false},
+            {
+              "id": "s19",
+              "anchor": 1,
+              "left": 178.4830395421959,
+              "top": 162.29072000000005,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["One two three four five","six seven eight nine te\u2026"],
+              "shown": false
+            }
+          ],
+          "nextDeadline": 1100
+        },
+        {
+          "now": 1100,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"s7","anchor":2,"left":256.6746370398246,"top":285.66832,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s4","anchor":3,"left":16.227199999999982,"top":417,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {"id":"s16","anchor":0,"left":138.16926312695753,"top":530.3776,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s15","anchor":0,"left":273.7283120529788,"top":485.21919999999994,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":true},
+            {"id":"s19","anchor":1,"left":178.4830395421959,"top":162.29072000000005,"width":167.60000000000002,"height":40,"lines":["One two three four five","six seven eight nine te\u2026"],"shown":true}
+          ],
+          "nextDeadline": null
+        }
+      ]
+    },
+    {
+      "name": "desktop",
+      "viewport": {"width":1440,"height":900},
+      "insets": {"top":76,"right":24,"bottom":24,"left":24},
+      "blocks": [{"left":24,"bottom":24,"width":186,"height":146}],
+      "workingZoom": 1.1054421768707483,
+      "fit": {"x":-61.02397396201164,"y":-22.19655726495722,"zoom":0.8321941046516096},
+      "floor": 0.4160970523258048,
+      "focus": [
+        {"step":"voyage","x":-3.0564421553594485,"y":16.28307692307693,"zoom":1.1054421768707483},
+        {"step":"s0","x":-141.7189619486723,"y":-127.68646153846153,"zoom":1.1054421768707483},
+        {"step":"s1","x":25.731617023986658,"y":-109.59415384615382,"zoom":1.1054421768707483},
+        {"step":"s2","x":129.06929567896842,"y":-48.94507705520893,"zoom":1.1054421768707483},
+        {"step":"s3","x":94.76500495190257,"y":71.6003076923077,"zoom":1.1054421768707483},
+        {"step":"s4","x":-35.76480025337972,"y":120.44953846153847,"zoom":1.1054421768707483},
+        {"step":"s5","x":-91.85032147439944,"y":14.765014406485957,"zoom":1.1054421768707483},
+        {"step":"s6","x":-270.3506228599232,"y":-222.23347751077108,"zoom":1.1054421768707483},
+        {"step":"s7","x":54.167555332680266,"y":-204.7144615384615,"zoom":1.1054421768707483},
+        {"step":"s8","x":259.6425144348598,"y":-74.66640861397525,"zoom":1.1054421768707483},
+        {"step":"s9","x":180.5176461423308,"y":157.6744615384615,"zoom":1.1054421768707483},
+        {"step":"s10","x":-71.52960050675945,"y":264.41907692307694,"zoom":1.1054421768707483},
+        {"step":"s11","x":-183.70064294879887,"y":53.05002881297192,"zoom":1.1054421768707483},
+        {"step":"s12","x":-390.18253928196,"y":-310.3124934830806,"zoom":1.1054421768707483},
+        {"step":"s13","x":80.6699039228084,"y":-293.36676923076914,"zoom":1.1054421768707483},
+        {"step":"s14","x":316.50889905024445,"y":-85.86839281239756,"zoom":1.1054421768707483},
+        {"step":"s15","x":229.18441045429216,"y":206.52369230769224,"zoom":1.1054421768707483},
+        {"step":"s16","x":-83.66468824588922,"y":313.2683076923077,"zoom":1.1054421768707483},
+        {"step":"s17","x":-221.69242596165986,"y":68.88574867358095,"zoom":1.1054421768707483},
+        {"step":"s18","x":-443.55484697426766,"y":-349.5422786861593,"zoom":1.1054421768707483},
+        {"step":"s19","x":95.27323886022594,"y":-342.2159999999999,"zoom":1.1054421768707483}
+      ],
+      "passes": [
+        {
+          "now": 0,
+          "camera": {"x":-61.02397396201164,"y":-22.19655726495722,"zoom":0.8321941046516096},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":564.8453230944203,"top":458.47184409945925,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":false},
+            {"id":"s5","anchor":0,"left":653.867274987911,"top":533.4093905901977,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":false},
+            {"id":"s7","anchor":2,"left":841.1843966960346,"top":315.21103731216954,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":false},
+            {"id":"s3","anchor":2,"left":875.0823649057459,"top":525.4848789619907,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":false},
+            {"id":"s4","anchor":3,"left":536.2815711342513,"top":606.7889626878305,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":false},
+            {"id":"s6","anchor":0,"left":461.08342207153765,"top":322.6716190514125,"width":147.65,"height":40,"lines":["\u062a\u0639\u0644\u0645 \u0627\u0644\u0625\u0628\u062d\u0627\u0631 \u0641\u064a \u0627\u0644\u0628\u062d\u0631","\u0627\u0644\u0645\u0641\u062a\u0648\u062d"],"shown":false},
+            {"id":"s8","anchor":0,"left":928.4052052847453,"top":453.7278509695496,"width":114.4,"height":20,"lines":["\u26f5\ufe0f Sail \ud83c\udf0a\ud83c\udf2c\ufe0f away"],"shown":false},
+            {"id":"s1","anchor":2,"left":821.379818670125,"top":381.4588092369278,"width":121.05000000000001,"height":20,"lines":["Cafe\u0301 de\u0301compose\u0301"],"shown":false},
+            {"id":"s0","anchor":0,"left":568.3730112362041,"top":403.97570277725214,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":false},
+            {"id":"s17","anchor":3,"left":432.6529182524808,"top":548.5497560924448,"width":94.45,"height":20,"lines":["\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e"],"shown":false},
+            {"id":"s13","anchor":2,"left":865.4900151823781,"top":223.90695358632982,"width":160.95000000000002,"height":40,"lines":["Tabs and new lines wide","marks\u0085next"],"shown":false},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 738.8304848651952,
+              "top": 688.0930464136702,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": false
+            },
+            {"id":"s9","anchor":2,"left":956.082753611513,"top":616.7889626878305,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":false},
+            {"id":"s19","anchor":1,"left":778.4224283273159,"top":95.02966451908424,"width":167.60000000000002,"height":40,"lines":["One two three four five","six seven eight nine te\u2026"],"shown":false},
+            {"id":"s16","anchor":0,"left":647.1597825719218,"top":816.9703354809158,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":false},
+            {"id":"s14","anchor":1,"left":1018.9060571812232,"top":359.44390736340887,"width":127.7,"height":20,"lines":["zero\u200bwidth\u200djoiners"],"shown":false},
+            {"id":"s15","anchor":0,"left":943.959864993325,"top":720.6099399539945,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":false},
+            {
+              "id": "s18",
+              "anchor": 1,
+              "left": 273.4439428187768,
+              "top": 96.93802447759634,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["xxxxxxxxxxxxxxxxxxxxxxxx","xxxxxxxxxxxxxxxxxxxxxxx\u2026"],
+              "shown": false
+            }
+          ],
+          "nextDeadline": 200
+        },
+        {
+          "now": 200,
+          "camera": {"x":-61.02397396201164,"y":-22.19655726495722,"zoom":0.8321941046516096},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":564.8453230944203,"top":458.47184409945925,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s5","anchor":0,"left":653.867274987911,"top":533.4093905901977,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":true},
+            {"id":"s7","anchor":2,"left":841.1843966960346,"top":315.21103731216954,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s3","anchor":2,"left":875.0823649057459,"top":525.4848789619907,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":true},
+            {"id":"s4","anchor":3,"left":536.2815711342513,"top":606.7889626878305,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {"id":"s6","anchor":0,"left":461.08342207153765,"top":322.6716190514125,"width":147.65,"height":40,"lines":["\u062a\u0639\u0644\u0645 \u0627\u0644\u0625\u0628\u062d\u0627\u0631 \u0641\u064a \u0627\u0644\u0628\u062d\u0631","\u0627\u0644\u0645\u0641\u062a\u0648\u062d"],"shown":true},
+            {"id":"s8","anchor":0,"left":928.4052052847453,"top":453.7278509695496,"width":114.4,"height":20,"lines":["\u26f5\ufe0f Sail \ud83c\udf0a\ud83c\udf2c\ufe0f away"],"shown":true},
+            {"id":"s1","anchor":2,"left":821.379818670125,"top":381.4588092369278,"width":121.05000000000001,"height":20,"lines":["Cafe\u0301 de\u0301compose\u0301"],"shown":true},
+            {"id":"s0","anchor":0,"left":568.3730112362041,"top":403.97570277725214,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":true},
+            {"id":"s17","anchor":3,"left":432.6529182524808,"top":548.5497560924448,"width":94.45,"height":20,"lines":["\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e"],"shown":true},
+            {"id":"s13","anchor":2,"left":865.4900151823781,"top":223.90695358632982,"width":160.95000000000002,"height":40,"lines":["Tabs and new lines wide","marks\u0085next"],"shown":true},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 738.8304848651952,
+              "top": 688.0930464136702,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": true
+            },
+            {"id":"s9","anchor":2,"left":956.082753611513,"top":616.7889626878305,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":true},
+            {"id":"s19","anchor":1,"left":778.4224283273159,"top":95.02966451908424,"width":167.60000000000002,"height":40,"lines":["One two three four five","six seven eight nine te\u2026"],"shown":true},
+            {"id":"s16","anchor":0,"left":647.1597825719218,"top":816.9703354809158,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s14","anchor":1,"left":1018.9060571812232,"top":359.44390736340887,"width":127.7,"height":20,"lines":["zero\u200bwidth\u200djoiners"],"shown":true},
+            {"id":"s15","anchor":0,"left":943.959864993325,"top":720.6099399539945,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":true},
+            {"id":"s18","anchor":1,"left":273.4439428187768,"top":96.93802447759634,"width":167.60000000000002,"height":40,"lines":["xxxxxxxxxxxxxxxxxxxxxxxx","xxxxxxxxxxxxxxxxxxxxxxx\u2026"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 300,
+          "camera": {"x":-35.76480025337972,"y":120.44953846153847,"zoom":1.1054421768707483},
+          "selected": "s4",
+          "hovered": "s10",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"s4","anchor":3,"left":502.05335696627867,"top":507.15,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 714.4640813525564,
+              "top": 615.15,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": true
+            },
+            {"id":"voyage","anchor":3,"left":543.6359186474436,"top":306.85,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s5","anchor":0,"left":613.1859186474436,"top":400.4827940640136,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":true},
+            {"id":"s3","anchor":2,"left":895.4537976132999,"top":399.15000000000003,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":true},
+            {"id":"s7","anchor":2,"left":850.425548122244,"top":116.55000000000007,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s8","anchor":0,"left":987.6932050125099,"top":294.63809494596666,"width":114.4,"height":20,"lines":["\u26f5\ufe0f Sail \ud83c\udf0a\ud83c\udf2c\ufe0f away"],"shown":true},
+            {"id":"s6","anchor":0,"left":372.3866830466375,"top":120.55000000000001,"width":147.65,"height":40,"lines":["\u062a\u0639\u0644\u0645 \u0627\u0644\u0625\u0628\u062d\u0627\u0631 \u0641\u064a \u0627\u0644\u0628\u062d\u0631","\u0627\u0644\u0645\u0641\u062a\u0648\u062d"],"shown":true},
+            {"id":"s1","anchor":2,"left":824.1182050125096,"top":204.55,"width":121.05000000000001,"height":20,"lines":["Cafe\u0301 de\u0301compose\u0301"],"shown":true},
+            {"id":"s17","anchor":3,"left":344.0200413796909,"top":426.50468460412156,"width":94.45,"height":20,"lines":["\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e"],"shown":true},
+            {"id":"s9","anchor":2,"left":1003.0503853778404,"top":517.15,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":true},
+            {"id":"s0","anchor":0,"left":515.9961921429773,"top":228.54999999999998,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":true},
+            {"id":"s16","anchor":0,"left":609.7348057388341,"top":777.15,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s15","anchor":0,"left":1006.1716791119104,"top":649.1499999999999,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":true},
+            {"id":"s13","anchor":2,"left":882.711832847827,"top":-1.4499999999999318,"width":160.95000000000002,"height":40,"lines":["Tabs and new lines wide","marks\u0085next"],"shown":true},
+            {"id":"s14","anchor":1,"left":1110.0932050125098,"top":181.21681890417477,"width":127.7,"height":20,"lines":["zero\u200bwidth\u200djoiners"],"shown":true},
+            {"id":"s19","anchor":1,"left":797.19811757341,"top":-163.44999999999993,"width":167.60000000000002,"height":40,"lines":["One two three four five","six seven eight nine te\u2026"],"shown":true},
+            {
+              "id": "s18",
+              "anchor": 1,
+              "left": 126.41168304663745,
+              "top": -160.91503661225306,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["xxxxxxxxxxxxxxxxxxxxxxxx","xxxxxxxxxxxxxxxxxxxxxxx\u2026"],
+              "shown": true
+            },
+            {"id":"s2","anchor":0,"left":858.6432050125097,"top":319.404386541118,"width":121.05000000000001,"height":20,"lines":["Za\u017c\u00f3\u0142\u0107 g\u0119\u015bl\u0105 ja\u017a\u0144"],"shown":false}
+          ],
+          "nextDeadline": 500
+        },
+        {
+          "now": 500,
+          "camera": {"x":-35.76480025337972,"y":120.44953846153847,"zoom":1.1054421768707483},
+          "selected": "s4",
+          "hovered": "s10",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"s4","anchor":3,"left":502.05335696627867,"top":507.15,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 714.4640813525564,
+              "top": 615.15,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": true
+            },
+            {"id":"voyage","anchor":3,"left":543.6359186474436,"top":306.85,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s5","anchor":0,"left":613.1859186474436,"top":400.4827940640136,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":true},
+            {"id":"s3","anchor":2,"left":895.4537976132999,"top":399.15000000000003,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":true},
+            {"id":"s7","anchor":2,"left":850.425548122244,"top":116.55000000000007,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s8","anchor":0,"left":987.6932050125099,"top":294.63809494596666,"width":114.4,"height":20,"lines":["\u26f5\ufe0f Sail \ud83c\udf0a\ud83c\udf2c\ufe0f away"],"shown":true},
+            {"id":"s6","anchor":0,"left":372.3866830466375,"top":120.55000000000001,"width":147.65,"height":40,"lines":["\u062a\u0639\u0644\u0645 \u0627\u0644\u0625\u0628\u062d\u0627\u0631 \u0641\u064a \u0627\u0644\u0628\u062d\u0631","\u0627\u0644\u0645\u0641\u062a\u0648\u062d"],"shown":true},
+            {"id":"s1","anchor":2,"left":824.1182050125096,"top":204.55,"width":121.05000000000001,"height":20,"lines":["Cafe\u0301 de\u0301compose\u0301"],"shown":true},
+            {"id":"s17","anchor":3,"left":344.0200413796909,"top":426.50468460412156,"width":94.45,"height":20,"lines":["\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e"],"shown":true},
+            {"id":"s9","anchor":2,"left":1003.0503853778404,"top":517.15,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":true},
+            {"id":"s0","anchor":0,"left":515.9961921429773,"top":228.54999999999998,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":true},
+            {"id":"s16","anchor":0,"left":609.7348057388341,"top":777.15,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s15","anchor":0,"left":1006.1716791119104,"top":649.1499999999999,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":true},
+            {"id":"s14","anchor":1,"left":1110.0932050125098,"top":181.21681890417477,"width":127.7,"height":20,"lines":["zero\u200bwidth\u200djoiners"],"shown":true},
+            {"id":"s2","anchor":0,"left":858.6432050125097,"top":319.404386541118,"width":121.05000000000001,"height":20,"lines":["Za\u017c\u00f3\u0142\u0107 g\u0119\u015bl\u0105 ja\u017a\u0144"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 600,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":547.8570960091199,"top":379.12300307692306,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s4","anchor":3,"left":536.8736,"top":430,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {"id":"s5","anchor":0,"left":673.3785513937354,"top":419.01695158628434,"width":54.550000000000004,"height":20,"lines":["\u65e5\u672c\u8a9e\u306e\u30e9\u30d9\u30eb"],"shown":true},
+            {"id":"s3","anchor":2,"left":780.1522900186823,"top":398.7364923076923,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":true},
+            {"id":"s7","anchor":2,"left":767.1176509044714,"top":324.03554461538465,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s8","anchor":0,"left":760.5273652436597,"top":388.3773537615894,"width":114.4,"height":20,"lines":["\u26f5\ufe0f Sail \ud83c\udf0a\ud83c\udf2c\ufe0f away"],"shown":true},
+            {"id":"s6","anchor":0,"left":570.5978803619696,"top":337.9828676923077,"width":147.65,"height":40,"lines":["\u062a\u0639\u0644\u0645 \u0627\u0644\u0625\u0628\u062d\u0627\u0631 \u0641\u064a \u0627\u0644\u0628\u062d\u0631","\u0627\u0644\u0645\u0641\u062a\u0648\u062d"],"shown":true},
+            {
+              "id": "s10",
+              "anchor": 2,
+              "left": 727.759943846957,
+              "top": 461.2635076923077,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80","\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80"],
+              "shown": true
+            },
+            {"id":"s16","anchor":0,"left":660.5670876939139,"top":528.0534153846154,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s17","anchor":3,"left":542.0476691372733,"top":413.7602730078639,"width":94.45,"height":20,"lines":["\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e"],"shown":true},
+            {"id":"s9","anchor":2,"left":811.2990191783376,"top":440,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":true},
+            {"id":"s2","anchor":0,"left":720.8078790898136,"top":395.54662364857967,"width":121.05000000000001,"height":20,"lines":["Za\u017c\u00f3\u0142\u0107 g\u0119\u015bl\u0105 ja\u017a\u0144"],"shown":true},
+            {"id":"s1","anchor":2,"left":759.5022821667366,"top":349.5095138461538,"width":121.05000000000001,"height":20,"lines":["Cafe\u0301 de\u0301compose\u0301"],"shown":true},
+            {"id":"s0","anchor":0,"left":609.8070299489963,"top":369.2463753846154,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":true},
+            {"id":"s15","anchor":0,"left":770.6014355306494,"top":491.0003692307692,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":true},
+            {"id":"s14","anchor":1,"left":791.2343621667366,"top":329.9656809923223,"width":127.7,"height":20,"lines":["zero\u200bwidth\u200djoiners"],"shown":true}
+          ],
+          "nextDeadline": 800
+        },
+        {
+          "now": 800,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":547.8570960091199,"top":379.12300307692306,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s3","anchor":2,"left":780.1522900186823,"top":398.7364923076923,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":true},
+            {"id":"s7","anchor":2,"left":767.1176509044714,"top":324.03554461538465,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 900,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"voyage","anchor":3,"left":548.6133357611149,"top":365.80616,"width":167.60000000000002,"height":20,"lines":["A voyage in every script"],"shown":true},
+            {"id":"s3","anchor":2,"left":791.5606034602691,"top":391.8976,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":true},
+            {"id":"s7","anchor":2,"left":775.6746370398246,"top":298.66832,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s4","anchor":3,"left":535.2271999999999,"top":430,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":false},
+            {"id":"s16","anchor":0,"left":657.1692631269576,"top":543.3776,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":false},
+            {"id":"s9","anchor":2,"left":829.520679623599,"top":440,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":false},
+            {"id":"s0","anchor":3,"left":508.25608025033915,"top":312.65872,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":false},
+            {"id":"s15","anchor":0,"left":792.7283120529789,"top":498.21919999999994,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":false},
+            {"id":"s13","anchor":2,"left":787.0652382910102,"top":250.56592,"width":160.95000000000002,"height":40,"lines":["Tabs and new lines wide","marks\u0085next"],"shown":false},
+            {"id":"s14","anchor":2,"left":901.8068663907103,"top":337.00597370939283,"width":127.7,"height":20,"lines":["zero\u200bwidth\u200djoiners"],"shown":false},
+            {
+              "id": "s19",
+              "anchor": 1,
+              "left": 697.4830395421959,
+              "top": 175.29072000000005,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["One two three four five","six seven eight nine te\u2026"],
+              "shown": false
+            },
+            {
+              "id": "s18",
+              "anchor": 1,
+              "left": 460.8295854411505,
+              "top": 176.1850550831971,
+              "width": 167.60000000000002,
+              "height": 40,
+              "lines": ["xxxxxxxxxxxxxxxxxxxxxxxx","xxxxxxxxxxxxxxxxxxxxxxx\u2026"],
+              "shown": false
+            }
+          ],
+          "nextDeadline": 1100
+        },
+        {
+          "now": 1100,
+          "camera": {"x":-47.259425028499884,"y":190.2406153846154,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"s3","anchor":2,"left":791.5606034602691,"top":391.8976,"width":147.65,"height":40,"lines":["\u0421\u044a\u0435\u0448\u044c \u0435\u0449\u0451 \u044d\u0442\u0438\u0445 \u043c\u044f\u0433\u043a\u0438\u0445","\u0444\u0440\u0430\u043d\u0446\u0443\u0437\u0441\u043a\u0438\u0445 \u0431\u0443\u043b\u043e\u043a"],"shown":true},
+            {"id":"s7","anchor":2,"left":775.6746370398246,"top":298.66832,"width":67.85,"height":20,"lines":["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"],"shown":true},
+            {"id":"s4","anchor":3,"left":535.2271999999999,"top":430,"width":167.60000000000002,"height":40,"lines":["\u5b66\u4e60\u822a\u6d77\u7684\u57fa\u672c\u77e5\u8bc6\u548c\u5b89\u5168\u89c4\u5219\u4ee5\u53ca\u5929\u6c14\u9884\u62a5\u7684\u9605\u8bfb\u65b9","\u6cd5"],"shown":true},
+            {"id":"s16","anchor":0,"left":657.1692631269576,"top":543.3776,"width":87.80000000000001,"height":20,"lines":["\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"],"shown":true},
+            {"id":"s9","anchor":2,"left":829.520679623599,"top":440,"width":94.45,"height":20,"lines":["\ud83d\udc69\ud83c\udffd\u200d\ud83d\ude80\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\ud83c\uddfa\ud83c\udde6"],"shown":true},
+            {"id":"s0","anchor":3,"left":508.25608025033915,"top":312.65872,"width":154.3,"height":40,"lines":["Caf\u00e9 cr\u00e8me br\u00fbl\u00e9e \u00e0 la","fran\u00e7aise"],"shown":true},
+            {"id":"s15","anchor":0,"left":792.7283120529789,"top":498.21919999999994,"width":101.10000000000001,"height":20,"lines":["\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48 \uff54\uff45\uff58\uff54"],"shown":true},
+            {"id":"s13","anchor":2,"left":787.0652382910102,"top":250.56592,"width":160.95000000000002,"height":40,"lines":["Tabs and new lines wide","marks\u0085next"],"shown":true},
+            {"id":"s14","anchor":2,"left":901.8068663907103,"top":337.00597370939283,"width":127.7,"height":20,"lines":["zero\u200bwidth\u200djoiners"],"shown":true},
+            {"id":"s19","anchor":1,"left":697.4830395421959,"top":175.29072000000005,"width":167.60000000000002,"height":40,"lines":["One two three four five","six seven eight nine te\u2026"],"shown":true},
+            {"id":"s18","anchor":1,"left":460.8295854411505,"top":176.1850550831971,"width":167.60000000000002,"height":40,"lines":["xxxxxxxxxxxxxxxxxxxxxxxx","xxxxxxxxxxxxxxxxxxxxxxx\u2026"],"shown":true}
+          ],
+          "nextDeadline": null
+        }
+      ]
+    }
+  ]
+}

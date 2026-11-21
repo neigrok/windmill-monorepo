@@ -1,0 +1,39 @@
+{
+  "name": "empty",
+  "roadmap": {"steps":[],"done":[]},
+  "engine": "bubble",
+  "seats": [],
+  "tiers": [],
+  "links": [],
+  "bounds": {"minX":-56,"minY":-56,"maxX":56,"maxY":56},
+  "canvases": [
+    {
+      "name": "phone",
+      "viewport": {"width":402,"height":874},
+      "insets": {"top":158,"right":0,"bottom":140,"left":0},
+      "blocks": [],
+      "workingZoom": 0.8503401360544218,
+      "fit": {"x":0,"y":-10.584,"zoom":0.8503401360544218},
+      "floor": 0.4251700680272109,
+      "focus": [],
+      "passes": [
+        {"now":0,"camera":{"x":0,"y":-10.584,"zoom":0.8503401360544218},"selected":null,"hovered":null,"rankLimit":5,"captions":[],"nextDeadline":null},
+        {"now":200,"camera":{"x":0,"y":-10.584,"zoom":0.8503401360544218},"selected":null,"hovered":null,"rankLimit":5,"captions":[],"nextDeadline":null}
+      ]
+    },
+    {
+      "name": "desktop",
+      "viewport": {"width":1440,"height":900},
+      "insets": {"top":76,"right":24,"bottom":24,"left":24},
+      "blocks": [{"left":24,"bottom":24,"width":186,"height":146}],
+      "workingZoom": 1.1054421768707483,
+      "fit": {"x":0,"y":-23.52,"zoom":1.1054421768707483},
+      "floor": 0.5527210884353742,
+      "focus": [],
+      "passes": [
+        {"now":0,"camera":{"x":0,"y":-23.52,"zoom":1.1054421768707483},"selected":null,"hovered":null,"rankLimit":5,"captions":[],"nextDeadline":null},
+        {"now":200,"camera":{"x":0,"y":-23.52,"zoom":1.1054421768707483},"selected":null,"hovered":null,"rankLimit":5,"captions":[],"nextDeadline":null}
+      ]
+    }
+  ]
+}

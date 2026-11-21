@@ -1,0 +1,346 @@
+{
+  "name": "learn-to-sail",
+  "roadmap": {
+    "steps": [
+      {"id":"choose","label":"Choose a sailing course","ord":"a0","born":"1750000000000:0:phone","color":"terracotta","follows":[]},
+      {"id":"parts","label":"Name the boat parts","ord":"a1","born":"1750000001000:1:phone","color":"sky","follows":["choose"]},
+      {"id":"rig","label":"Rig the boat","ord":"a2","born":"1750000002000:2:phone","color":"terracotta","follows":["parts"]},
+      {"id":"read","label":"Read the wind","ord":"a3","born":"1750000003000:0:phone","color":"sky","follows":["parts"]},
+      {"id":"tie","label":"Tie a bowline","ord":"a4","born":"1750000004000:1:phone","color":"olive","follows":["parts"]},
+      {"id":"leave","label":"Leave the dock","ord":"a5","born":"1750000005000:2:phone","color":"terracotta","follows":["rig","read"]},
+      {"id":"tri","label":"Sail a triangle","ord":"a6","born":"1750000006000:0:phone","color":"olive","follows":["leave"]},
+      {"id":"solo","label":"Sail solo","ord":"a7","born":"1750000007000:1:phone","color":"gold","follows":["tri","tie"]}
+    ],
+    "done": ["choose","parts","rig"]
+  },
+  "engine": "bubble",
+  "seats": [
+    [0,0],
+    [140.80338461538457,22.26945957369196],
+    [189.32569152945422,-57.336694272461884],
+    [251.52830769230775,57.373208621107906],
+    [147.67115503574837,104.30247810558056],
+    [237.8479984435238,-136.94284811861573],
+    [286.37030535759345,-216.54900196476962],
+    [154.53892545611222,186.33549663746913]
+  ],
+  "tiers": [2,2,2,1,1,0,0,0],
+  "links": [
+    {"from":"choose","to":"parts","kind":"trunk","sway":0.040000000000000036,"cx":70.2413521987617,"cy":12.14851415607675},
+    {"from":"parts","to":"rig","kind":"trunk","sway":-0.29000000000000004,"cx":160.90909684165015,"cy":-20.066481770299397},
+    {"from":"parts","to":"read","kind":"trunk","sway":0.17000000000000004,"cx":195.09167143299524,"cy":43.209516743553785},
+    {"from":"parts","to":"tie","kind":"trunk","sway":-0.49,"cx":151.47258206007905,"cy":62.680231488560175},
+    {"from":"rig","to":"leave","kind":"trunk","sway":-0.2,"cx":210.72102344802747,"cy":-98.8865742444453},
+    {"from":"read","to":"leave","kind":"cross-branch","sway":-0.09999999999999998,"cx":241.19046404660077,"cy":-39.5385741822758},
+    {"from":"leave","to":"tri","kind":"trunk","sway":0.44999999999999996,"cx":268.5572503620971,"cy":-172.815618181653},
+    {"from":"tri","to":"solo","kind":"cross-branch","sway":0.22999999999999998,"cx":203.77519716472017,"cy":-20.564571791571563},
+    {"from":"tie","to":"solo","kind":"trunk","sway":0.14,"cx":149.0378081789267,"cy":145.49205518611802}
+  ],
+  "bounds": {"minX":-56,"minY":-272.5490019647696,"maxX":342.37030535759345,"maxY":242.33549663746913},
+  "canvases": [
+    {
+      "name": "phone",
+      "viewport": {"width":402,"height":874},
+      "insets": {"top":158,"right":0,"bottom":140,"left":0},
+      "blocks": [],
+      "workingZoom": 0.8503401360544218,
+      "fit": {"x":143.18515267879673,"y":-25.69075266365024,"zoom":0.8503401360544218},
+      "floor": 0.4251700680272109,
+      "focus": [
+        {"step":"choose","x":70.40169230769229,"y":0.5507297868459808,"zoom":0.8503401360544218},
+        {"step":"parts","x":140.80338461538457,"y":11.685459573691961,"zoom":0.8503401360544218},
+        {"step":"rig","x":189.3256915294542,"y":-67.92069427246189,"zoom":0.8503401360544218},
+        {"step":"read","x":196.16584615384616,"y":29.237334097399934,"zoom":0.8503401360544218},
+        {"step":"tie","x":147.6711550357484,"y":93.71847810558054,"zoom":0.8503401360544218},
+        {"step":"leave","x":237.84799844352384,"y":-147.52684811861576,"zoom":0.8503401360544218},
+        {"step":"tri","x":262.10915190055863,"y":-187.32992504169266,"zoom":0.8503401360544218},
+        {"step":"solo","x":151.1050402459303,"y":134.73498737152485,"zoom":0.8503401360544218}
+      ],
+      "passes": [
+        {
+          "now": 0,
+          "camera": {"x":143.18515267879673,"y":-25.69075266365024,"zoom":0.8503401360544218},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"tie","anchor":3,"left":82.3646278545507,"top":537.5384615384615,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":false},
+            {"id":"read","anchor":0,"left":245.9035331747543,"top":535.6326201401005,"width":94.45,"height":20,"lines":["Read the wind"],"shown":false},
+            {"id":"rig","anchor":3,"left":124.43515208389243,"top":400.0901857067928,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":false},
+            {"id":"leave","anchor":3,"left":152.39561714687676,"top":332.3978780144851,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":false},
+            {"id":"solo","anchor":0,"left":176.72956868819347,"top":645.2944296778226,"width":67.85,"height":20,"lines":["Sail solo"],"shown":false},
+            {"id":"tri","anchor":1,"left":268.8810822098612,"top":226.70557032217744,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":false}
+          ],
+          "nextDeadline": 200
+        },
+        {
+          "now": 200,
+          "camera": {"x":143.18515267879673,"y":-25.69075266365024,"zoom":0.8503401360544218},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"tie","anchor":3,"left":82.3646278545507,"top":537.5384615384615,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"read","anchor":0,"left":245.9035331747543,"top":535.6326201401005,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"rig","anchor":3,"left":124.43515208389243,"top":400.0901857067928,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"leave","anchor":3,"left":152.39561714687676,"top":332.3978780144851,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"solo","anchor":0,"left":176.72956868819347,"top":645.2944296778226,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"tri","anchor":1,"left":268.8810822098612,"top":226.70557032217744,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 300,
+          "camera": {"x":196.16584615384616,"y":29.237334097399934,"zoom":0.8503401360544218},
+          "selected": "read",
+          "hovered": "leave",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"read","anchor":0,"left":200.85192307692313,"top":491.7250633705,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"leave","anchor":3,"left":107.3440070490456,"top":285.6903212448847,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"tie","anchor":3,"left":37.31301775671956,"top":490.8309047688611,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"rig","anchor":3,"left":79.38354198606126,"top":353.3826289371923,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":131.67795859036232,"top":598.5868729082222,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"tri","anchor":1,"left":223.82947211203003,"top":179.9980135525769,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 500,
+          "camera": {"x":196.16584615384616,"y":29.237334097399934,"zoom":0.8503401360544218},
+          "selected": "read",
+          "hovered": "leave",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"read","anchor":0,"left":200.85192307692313,"top":491.7250633705,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"leave","anchor":3,"left":107.3440070490456,"top":285.6903212448847,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"tie","anchor":3,"left":37.31301775671956,"top":490.8309047688611,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"rig","anchor":3,"left":79.38354198606126,"top":353.3826289371923,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":131.67795859036232,"top":598.5868729082222,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"tri","anchor":1,"left":223.82947211203003,"top":179.9980135525769,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 600,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"choose","anchor":0,"left":40.035941538461515,"top":438.30649324124545,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"read","anchor":2,"left":216.5264,"top":427,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"tie","anchor":3,"left":57.789311149900996,"top":442.01736623503126,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"rig","anchor":3,"left":77.76876282788686,"top":390.2928310740577,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":136.03839768441742,"top":493.79433216523563,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"leave","anchor":3,"left":79.99590104038914,"top":364.81886184328846,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"tri","anchor":1,"left":158.27443925289143,"top":313.81849261251915,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": 800
+        },
+        {
+          "now": 800,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"choose","anchor":0,"left":40.035941538461515,"top":438.30649324124545,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"read","anchor":2,"left":216.5264,"top":427,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 900,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"choose","anchor":0,"left":22.42895999999996,"top":436.8422886377679,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"read","anchor":2,"left":218.1728,"top":427,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"rig","anchor":2,"left":193.91377969648713,"top":382.26313787150775,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":false},
+            {"id":"solo","anchor":0,"left":129.24914092788373,"top":504.4680923263809,"width":67.85,"height":20,"lines":["Sail solo"],"shown":false},
+            {"id":"leave","anchor":3,"left":77.39187939297425,"top":351.2167378715078,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":false},
+            {"id":"tri","anchor":1,"left":160.71337908946143,"top":292.99753787150775,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":false}
+          ],
+          "nextDeadline": 1100
+        },
+        {
+          "now": 1100,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"read","anchor":2,"left":218.1728,"top":427,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"tie","anchor":3,"left":48.872910463941835,"top":445.3024150989443,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":false},
+            {"id":"rig","anchor":2,"left":193.91377969648713,"top":382.26313787150775,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":129.24914092788373,"top":504.4680923263809,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"leave","anchor":3,"left":77.39187939297425,"top":351.2167378715078,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"tri","anchor":1,"left":160.71337908946143,"top":292.99753787150775,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": 1300
+        }
+      ]
+    },
+    {
+      "name": "desktop",
+      "viewport": {"width":1440,"height":900},
+      "insets": {"top":76,"right":24,"bottom":24,"left":24},
+      "blocks": [{"left":24,"bottom":24,"width":186,"height":146}],
+      "workingZoom": 1.1054421768707483,
+      "fit": {"x":143.18515267879673,"y":-38.62675266365024,"zoom":1.1054421768707483},
+      "floor": 0.5527210884353742,
+      "focus": [
+        {"step":"choose","x":70.40169230769229,"y":-12.385270213154019,"zoom":1.1054421768707483},
+        {"step":"parts","x":125.76415384615387,"y":-0.03710808344066052,"zoom":1.1054421768707483},
+        {"step":"rig","x":189.3256915294542,"y":-80.85669427246188,"zoom":1.1054421768707483},
+        {"step":"read","x":196.16584615384616,"y":16.301334097399934,"zoom":1.1054421768707483},
+        {"step":"tie","x":147.6711550357484,"y":80.78247810558055,"zoom":1.1054421768707483},
+        {"step":"leave","x":237.84799844352384,"y":-160.46284811861577,"zoom":1.1054421768707483},
+        {"step":"tri","x":262.10915190055863,"y":-200.26592504169267,"zoom":1.1054421768707483},
+        {"step":"solo","x":151.1050402459303,"y":121.79898737152486,"zoom":1.1054421768707483}
+      ],
+      "passes": [
+        {
+          "now": 0,
+          "camera": {"x":143.18515267879673,"y":-38.62675266365024,"zoom":1.1054421768707483},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"choose","anchor":0,"left":481.2420931271805,"top":540.9996415499535,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":false},
+            {"id":"tie","anchor":3,"left":596.5090162109159,"top":598,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":false},
+            {"id":"read","anchor":0,"left":792.5420931271806,"top":590.1224061821306,"width":94.45,"height":20,"lines":["Read the wind"],"shown":false},
+            {"id":"rig","anchor":3,"left":649.2056977090601,"top":419.3172414188307,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":false},
+            {"id":"parts","anchor":0,"left":650.1920931271804,"top":551.3172414188307,"width":134.35000000000002,"height":20,"lines":["Name the boat parts"],"shown":false},
+            {"id":"leave","anchor":2,"left":858.6443022909398,"top":331.3172414188307,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":false},
+            {"id":"solo","anchor":0,"left":698.6259392946515,"top":732.6827585811693,"width":67.85,"height":20,"lines":["Sail solo"],"shown":false},
+            {"id":"tri","anchor":1,"left":824.4079068728195,"top":199.3172414188306,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":false}
+          ],
+          "nextDeadline": 200
+        },
+        {
+          "now": 200,
+          "camera": {"x":143.18515267879673,"y":-38.62675266365024,"zoom":1.1054421768707483},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"choose","anchor":0,"left":481.2420931271805,"top":540.9996415499535,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"tie","anchor":3,"left":596.5090162109159,"top":598,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"read","anchor":0,"left":792.5420931271806,"top":590.1224061821306,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"rig","anchor":3,"left":649.2056977090601,"top":419.3172414188307,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"parts","anchor":0,"left":650.1920931271804,"top":551.3172414188307,"width":134.35000000000002,"height":20,"lines":["Name the boat parts"],"shown":true},
+            {"id":"leave","anchor":2,"left":858.6443022909398,"top":331.3172414188307,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"solo","anchor":0,"left":698.6259392946515,"top":732.6827585811693,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"tri","anchor":1,"left":824.4079068728195,"top":199.3172414188306,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 300,
+          "camera": {"x":196.16584615384616,"y":16.301334097399934,"zoom":1.1054421768707483},
+          "selected": "read",
+          "hovered": "leave",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"read","anchor":0,"left":733.975,"top":533.0425823816499,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"leave","anchor":2,"left":800.0772091637593,"top":270.59741761835005,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"parts","anchor":0,"left":591.625,"top":490.59741761835005,"width":134.35000000000002,"height":20,"lines":["Name the boat parts"],"shown":true},
+            {"id":"choose","anchor":0,"left":422.67499999999995,"top":480.2798177494729,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"tie","anchor":3,"left":537.9419230837354,"top":537.2801761995194,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"rig","anchor":3,"left":590.6386045818797,"top":358.59741761835005,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":640.0588461674711,"top":671.9629347806888,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"tri","anchor":1,"left":765.840813745639,"top":138.59741761835,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 500,
+          "camera": {"x":196.16584615384616,"y":16.301334097399934,"zoom":1.1054421768707483},
+          "selected": "read",
+          "hovered": "leave",
+          "rankLimit": 5,
+          "captions": [
+            {"id":"read","anchor":0,"left":733.975,"top":533.0425823816499,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"leave","anchor":2,"left":800.0772091637593,"top":270.59741761835005,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"parts","anchor":0,"left":591.625,"top":490.59741761835005,"width":134.35000000000002,"height":20,"lines":["Name the boat parts"],"shown":true},
+            {"id":"choose","anchor":0,"left":422.67499999999995,"top":480.2798177494729,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"tie","anchor":3,"left":537.9419230837354,"top":537.2801761995194,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"rig","anchor":3,"left":590.6386045818797,"top":358.59741761835005,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":640.0588461674711,"top":671.9629347806888,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"tri","anchor":1,"left":765.840813745639,"top":138.59741761835,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 600,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"choose","anchor":3,"left":458.8950215384615,"top":421.6405732412455,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"read","anchor":2,"left":735.5264,"top":440,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"tie","anchor":3,"left":576.789311149901,"top":455.01736623503126,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"parts","anchor":0,"left":617.3930246153845,"top":454.29320030482694,"width":134.35000000000002,"height":20,"lines":["Name the boat parts"],"shown":true},
+            {"id":"rig","anchor":3,"left":596.7687628278868,"top":403.2928310740577,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":655.0383976844175,"top":506.79433216523563,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"leave","anchor":2,"left":731.1487010403891,"top":377.81886184328846,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"tri","anchor":1,"left":677.2744392528914,"top":326.81849261251915,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": 800
+        },
+        {
+          "now": 800,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.32},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 4,
+          "captions": [
+            {"id":"choose","anchor":3,"left":458.8950215384615,"top":421.6405732412455,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"read","anchor":2,"left":735.5264,"top":440,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"tie","anchor":3,"left":576.789311149901,"top":455.01736623503126,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true}
+          ],
+          "nextDeadline": null
+        },
+        {
+          "now": 900,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"choose","anchor":3,"left":438.7361199999999,"top":417.6244486377679,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"read","anchor":2,"left":737.1728,"top":440,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"tie","anchor":3,"left":567.8729104639417,"top":458.3024150989443,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"rig","anchor":2,"left":712.9137796964872,"top":395.26313787150775,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":false},
+            {"id":"solo","anchor":0,"left":648.2491409278838,"top":517.4680923263809,"width":67.85,"height":20,"lines":["Sail solo"],"shown":false},
+            {"id":"leave","anchor":3,"left":596.3918793929741,"top":364.2167378715078,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":false},
+            {"id":"tri","anchor":1,"left":679.7133790894615,"top":305.99753787150775,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":false}
+          ],
+          "nextDeadline": 1100
+        },
+        {
+          "now": 1100,
+          "camera": {"x":251.52830769230775,"y":57.373208621107906,"zoom":0.39},
+          "selected": null,
+          "hovered": null,
+          "rankLimit": 5,
+          "captions": [
+            {"id":"choose","anchor":3,"left":438.7361199999999,"top":417.6244486377679,"width":160.95000000000002,"height":20,"lines":["Choose a sailing course"],"shown":true},
+            {"id":"read","anchor":2,"left":737.1728,"top":440,"width":94.45,"height":20,"lines":["Read the wind"],"shown":true},
+            {"id":"tie","anchor":3,"left":567.8729104639417,"top":458.3024150989443,"width":94.45,"height":20,"lines":["Tie a bowline"],"shown":true},
+            {"id":"rig","anchor":2,"left":712.9137796964872,"top":395.26313787150775,"width":87.80000000000001,"height":20,"lines":["Rig the boat"],"shown":true},
+            {"id":"solo","anchor":0,"left":648.2491409278838,"top":517.4680923263809,"width":67.85,"height":20,"lines":["Sail solo"],"shown":true},
+            {"id":"leave","anchor":3,"left":596.3918793929741,"top":364.2167378715078,"width":101.10000000000001,"height":20,"lines":["Leave the dock"],"shown":true},
+            {"id":"tri","anchor":1,"left":679.7133790894615,"top":305.99753787150775,"width":107.75,"height":20,"lines":["Sail a triangle"],"shown":true}
+          ],
+          "nextDeadline": null
+        }
+      ]
+    }
+  ]
+}

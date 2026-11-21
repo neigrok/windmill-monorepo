@@ -164,15 +164,19 @@ browser's.
   by more than a hundred units, because the layout rounds and compares. So the layout calls its own
   sine, cosine, arcsine, arctangent and hypotenuse, one implementation written the same in
   JavaScript and in Swift, on the web as on the iPhone, and never the platform's.
-- **Input.** A step's id as its bytes, its label, its `ord`, the stamp of its creation, which is
-  the record's `born`, and the ids it follows ([Roadmap on the sync engine](roadmap-on-the-engine.md)
-  D-5). Ids and ties compare as the web compares them, by UTF-16 code unit, never by a rule that
+- **Input.** A step's id as its bytes, its label, its kind's hue, its `ord`, the stamp of its
+  creation, which is the record's `born`, and the ids it follows
+  ([Roadmap on the sync engine](roadmap-on-the-engine.md) D-5); for the tiers, the steps that stand
+  complete. Ids and ties compare as the web compares them, by UTF-16 code unit, never by a rule that
   treats two spellings of a character as one. A label's length is counted in code points.
 - **Fixtures.** `packages/api-contract/roadmap/layout/` holds roadmaps and what the web gives for
-  each: seats, caption placements at fixed zooms and selections, link bows and framing. Among them:
-  the eight-step fixture, a wide one, a deep one, labels in several scripts, ids outside the basic
-  plane and ids that differ only in spelling, and 5,000 steps. The web generates them and checks
-  them on every run; Swift reproduces every number exactly.
+  each: seats, tiers, caption placements at fixed zooms and selections, link bows and framing; and
+  the arithmetic's own values. Among them: the eight-step fixture, a wide one, a deep one, labels
+  in several scripts, ids outside the basic plane and ids that differ only in spelling, one that
+  spends the bubble layout's budget of work, two seated by the fallback, and 5,000 steps. Its
+  [README](../../packages/api-contract/roadmap/layout/README.md) says how each number is derived
+  and what a port must reproduce of JavaScript's arithmetic, ordering and text. The web generates
+  them and checks them on every run; Swift reproduces every number exactly.
 - The canvas draws with SwiftUI's `Canvas` and redraws only on change. It also draws a proposal as
   the changes it would make, for Coach's review. Structure is edited in the step form, never on the
   canvas.
