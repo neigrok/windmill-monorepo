@@ -24,6 +24,9 @@ extension Array where Element: Hashable {
     var held = Set(self)
     return self + more.filter { held.insert($0).inserted }
   }
+
+  // Each element once, at the place it first came.
+  var unique: [Element] { [Element]().adding(new: self) }
 }
 
 extension Sequence {
@@ -495,8 +498,8 @@ public struct LandingNote: Sendable {
     let through = { (step: ID<RoadmapStep>) -> [RoadmapLink] in
       roadmap.index.absentParents(step.description).map { RoadmapLink(from: ID(RecordID($0)), to: step) }
     }
-    let bridging = [RoadmapLink]().adding(new: nodes.flatMap(through) + edges.filter { through($0.to).contains($0) })
-    return try bridging.filter(order.met)
+    let bridging = nodes.flatMap(through) + edges.filter { through($0.to).contains($0) }
+    return try bridging.unique.filter(order.met)
   }
 
   // The name the note keeps of a step.

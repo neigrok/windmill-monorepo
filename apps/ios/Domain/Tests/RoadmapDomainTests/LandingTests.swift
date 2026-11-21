@@ -28,9 +28,8 @@ struct LandingTests {
       return try corpus.read(vector, in: tree.tree) { (read: Reader) throws -> JSON in try LandingRead(of: tree, in: read).form }
     case "ClearLanding":
       let told = try input.member("told")
-      let act = ClearLanding(tree: try input.id("tree"), nodes: try told["nodes"].map { _ in try told.ids("nodes") } ?? [],
-                             edges: try (told["edges"]?.asArray() ?? []).map(RoadmapLink.init(ends:)),
-                             revived: try told["revived"].map { _ in try told.ids("revived") } ?? [])
+      let act = ClearLanding(tree: try input.id("tree"), nodes: try told.ids("nodes"),
+                             edges: try (told["edges"]?.asArray() ?? []).map(RoadmapLink.init(ends:)), revived: try told.ids("revived"))
       return try corpus.act(act, vector, result: { .null }, refusal: \.form)
     case let name: throw ContractError("no landing read or action \(name)")
     }

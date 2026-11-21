@@ -22,10 +22,10 @@ extension JSON {
 
   static func strings(_ items: [String]) -> JSON { .array(items.map { .string($0) }) }
 
-  // The id an action's input names under `key`, the ids it lists there, and the id it may name.
+  // The id an action's input names under `key`, the id it may name there, and the ids it lists there, none where it lists none.
   func id<E: Entity>(_ key: String) throws -> ID<E> { ID(try RecordID(json: member(key))) }
-  func ids<E: Entity>(_ key: String) throws -> [ID<E>] { try member(key).asArray().map { ID(try RecordID(json: $0)) } }
   func optionalID<E: Entity>(_ key: String) throws -> ID<E>? { try optional(key) { ID(try RecordID(json: $0)) } }
+  func ids<E: Entity>(_ key: String) throws -> [ID<E>] { try (self[key]?.asArray() ?? []).map { ID(try RecordID(json: $0)) } }
 }
 
 extension NewKind {

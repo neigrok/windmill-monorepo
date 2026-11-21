@@ -314,23 +314,23 @@ public struct HeldSteps: Sendable {
   public let note: LandingNote
   public let moment: Moment
 
-  init(of tree: ID<RoadmapEntry>, naming named: [ID<RoadmapStep>], in read: ActReader) throws {
-    (roadmap, known, steps, links, note, moment) = try read.inScope(tree.tree) {
-      (scope: Reader) throws -> (RoadmapTree, Set<ID<RoadmapStep>>, Capacity, Capacity, LandingNote, Moment) in
-      let steps = scope.repository(RoadmapStep.self)
-      let roadmap = try RoadmapTree(stepsOf: tree, in: scope)
-      let known = try named.filter { (step: ID<RoadmapStep>) throws -> Bool in
-        try roadmap.step(step.description) != nil || steps.spentBorn(step) != nil
-      }
-      return (roadmap, Set(known), try steps.capacity(), try scope.repository(RoadmapLink.self).capacity(),
-              try LandingNote(settledOf: tree, in: scope, roadmap: roadmap), scope.moment)
-    }
+  init(of tree: ID<RoadmapEntry>, naming named: [ID<RoadmapStep>], in read: Reader) throws {
+    let held = read.repository(RoadmapStep.self)
+    let roadmap = try RoadmapTree(stepsOf: tree, in: read)
+    self.roadmap = roadmap
+    known = Set(try named.filter { (step: ID<RoadmapStep>) throws -> Bool in
+      try roadmap.step(step.description) != nil || held.spentBorn(step) != nil
+    })
+    steps = try held.capacity()
+    links = try read.repository(RoadmapLink.self).capacity()
+    note = try LandingNote(settledOf: tree, in: read, roadmap: roadmap)
+    moment = read.moment
   }
 
   // The name of each step the device links from, as it holds it now, for a landing line that may come to name it once
   // another device deletes it (§6): the roadmap's own, or one the act makes. A step it holds no name of has none.
   func names(of linked: [ID<RoadmapStep>], made: [ID<RoadmapStep>: String] = [:]) -> [LandingNote.Name] {
-    [ID<RoadmapStep>]().adding(new: linked).compactMap { (step: ID<RoadmapStep>) -> LandingNote.Name? in
+    linked.unique.compactMap { (step: ID<RoadmapStep>) -> LandingNote.Name? in
       (roadmap.step(step.description)?.label ?? made[step]).map { LandingNote.Name(id: step, name: $0) }
     }
   }
@@ -350,12 +350,14 @@ public struct CreateStep: ActAction {
   public init(tree: ID<RoadmapEntry>, step: RoadmapStep.Changes, prerequisites: [ID<RoadmapStep>] = [], id: ID<RoadmapStep>? = nil) {
     self.tree = tree
     self.step = step
-    self.prerequisites = [ID<RoadmapStep>]().adding(new: prerequisites)
+    self.prerequisites = prerequisites.unique
     self.id = id
   }
 
   public func load(_ read: ActReader) throws -> HeldSteps {
-    try HeldSteps(of: tree, naming: prerequisites + (id.map { [$0] } ?? []), in: read)
+    try read.inScope(tree.tree) { (scope: Reader) throws -> HeldSteps in
+      try HeldSteps(of: tree, naming: prerequisites + (id.map { [$0] } ?? []), in: scope)
+    }
   }
 
   public func decide(_ loaded: HeldSteps, ids: ActIDSource) throws(Violation) -> ActDecision<ID<RoadmapStep>, RoadmapRefusal> {
@@ -506,12 +508,12 @@ public struct ChangePrerequisites: ActAction {
   public init(tree: ID<RoadmapEntry>, step: ID<RoadmapStep>, add: [ID<RoadmapStep>] = [], remove: [ID<RoadmapStep>] = []) {
     self.tree = tree
     self.step = step
-    self.add = [ID<RoadmapStep>]().adding(new: add)
-    self.remove = [ID<RoadmapStep>]().adding(new: remove)
+    self.add = add.unique
+    self.remove = remove.unique
   }
 
   public func load(_ read: ActReader) throws -> HeldSteps {
-    try HeldSteps(of: tree, naming: [step] + add, in: read)
+    try read.inScope(tree.tree) { (scope: Reader) throws -> HeldSteps in try HeldSteps(of: tree, naming: [step] + add, in: scope) }
   }
 
   public func decide(_ loaded: HeldSteps, ids: ActIDSource) throws(Violation) -> ActDecision<Void, RoadmapRefusal> {
@@ -562,7 +564,7 @@ public struct ImportSteps: ActAction {
   }
 
   public func load(_ read: ActReader) throws -> HeldSteps {
-    try HeldSteps(of: tree, naming: under.map { [$0] } ?? [], in: read)
+    try read.inScope(tree.tree) { (scope: Reader) throws -> HeldSteps in try HeldSteps(of: tree, naming: under.map { [$0] } ?? [], in: scope) }
   }
 
   // Each planted step's id by its key, in the order the gesture brought them.
