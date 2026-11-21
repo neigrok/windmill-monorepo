@@ -26,8 +26,8 @@ then gives its paths, commands and the layering rules it enforces.
 
 **Not** for screens, view models or copy (the `Windmill<P>` UI modules, `:gym`, anything under `web/src/products/<p>/`
 outside `domain/`), the engine or a registry (`apps/ios/Sync`, `apps/android/sync-*`, `web/src/platform/sync`,
-`packages/api-contract/sync`), or roadmap, whose domain on the web and pure reads in Swift (`RoadmapDomain`) follow
-their own corpus, `packages/api-contract/roadmap/domain/README.md`.
+`packages/api-contract/sync`), or roadmap, whose domain on the web and in Swift (`RoadmapDomain`) follows its own
+corpus, `packages/api-contract/roadmap/domain/README.md`.
 
 ## The rule every implementation enforces
 
