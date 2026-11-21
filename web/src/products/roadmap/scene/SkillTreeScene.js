@@ -3,6 +3,7 @@ import { ARRIVAL_MIN_STEPS, NODE_SIZE, WORKING_ZOOM, nodeTier, TIER_COMPLETE, DE
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
+import { familyCentre, focusFrame } from './framing.js';
 import { NodeBatch } from './NodeBatch.js';
 import { ConnectorBatch } from './ConnectorBatch.js';
 import { IconAtlas } from './IconAtlas.js';
@@ -32,7 +33,6 @@ const AUTO_FRAME_IDLE_S = 2;
 const AUTO_FRAME_EXPIRY_S = 10;
 const AUTO_FRAME_MAX_ZOOM_OUT = 0.82;
 const AUTO_FRAME_PAD = NODE_SIZE * 2; // world units
-const FAMILY_FRAME_PAD = NODE_SIZE * 2; // the air a focused step's family keeps inside the frame
 
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -608,36 +608,15 @@ export class SkillTreeScene {
     this.pendingFrame = null;
     this.director.yieldToInput();
     this.finishSettle();
-    const zoom = this.camera.workingZoom;
-    const target = this.familyCentre(node, zoom);
     if (instant) {
-      const centre = this.camera.centreFor(target.x, target.y, zoom);
-      this.camera.restore(centre.x, centre.y, zoom);
+      const frame = focusFrame(this.camera, this.renderModel.edges, this.nodesById, node);
+      this.camera.restore(frame.x, frame.y, frame.zoom);
       return true;
     }
+    const zoom = this.camera.workingZoom;
+    const target = familyCentre(this.camera, this.renderModel.edges, this.nodesById, node, zoom);
     this.camera.glideTo(target.x, target.y, zoom, { force: true });
     return true;
-  }
-
-  // What a focus frames: the box holding the step, its trunk parent and its trunk children when that box fits the
-  // visible area at `zoom` — a step at the edge of its family never opens on half a screen of empty canvas — else the step.
-  familyCentre(node, zoom) {
-    let minX = node.x;
-    let maxX = node.x;
-    let minY = node.y;
-    let maxY = node.y;
-    for (const edge of this.renderModel.edges) {
-      if (edge.kind !== 'trunk') continue;
-      const relative = edge.to === node.id ? this.nodesById.get(edge.from) : edge.from === node.id ? this.nodesById.get(edge.to) : null;
-      if (!relative) continue;
-      minX = Math.min(minX, relative.x);
-      maxX = Math.max(maxX, relative.x);
-      minY = Math.min(minY, relative.y);
-      maxY = Math.max(maxY, relative.y);
-    }
-    const span = this.camera.visibleSpanAt(zoom);
-    if (maxX - minX + FAMILY_FRAME_PAD * 2 > span.width || maxY - minY + FAMILY_FRAME_PAD * 2 > span.height) return node;
-    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
   }
 
   setWorkingZoom(zoom) { this.camera.setWorkingZoom(zoom); }

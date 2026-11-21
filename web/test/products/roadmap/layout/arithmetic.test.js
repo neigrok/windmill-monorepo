@@ -157,3 +157,24 @@ test('sin, cos, asin, atan and atan2 return the correctly rounded double or its 
   const measured = Object.fromEntries(Object.entries(worst).map(([name, [lastPlaces, doubles]]) => [name, [Number(lastPlaces.toFixed(3)), doubles]]));
   assert.deepEqual(measured, { sin: [0.71, 1], cos: [0.786, 1], asin: [0.744, 1], atan: [0.725, 1], atan2: [1.238, 1], hypot: [1.91, 2] });
 });
+
+test('the picture’s files take from the platform’s Math only what is exact, and import only one another', () => {
+  const picture = [
+    'layout/arithmetic.js', 'layout/BubbleLayoutEngine.js', 'layout/LayoutEngine.js', 'layout/RadialLayoutEngine.js', 'layout/index.js',
+    'model/SkillTree.js', 'model/SpatialGrid.js', 'model/TrunkTree.js', 'model/UnlockRules.js', 'model/footprint.js',
+    'scene/captionLayout.js', 'scene/edgeCurve.js', 'scene/framing.js', 'theme.js',
+  ];
+  const root = new URL('../../../../src/products/roadmap/', import.meta.url);
+  const members = new Set();
+  const raised = [];
+  const imported = new Set();
+  for (const file of picture) {
+    const source = readFileSync(new URL(file, root), 'utf8').split('\n').filter((line) => !line.trimStart().startsWith('//')).join('\n');
+    for (const member of source.match(/Math\.\w+/g) ?? []) members.add(member);
+    if (source.includes('**')) raised.push(file);
+    for (const [, specifier] of source.matchAll(/from '(\.[^']+)'/g)) imported.add(new URL(specifier, new URL(file, root)).href.slice(root.href.length));
+  }
+  assert.deepEqual([...members].sort(), ['Math.abs', 'Math.ceil', 'Math.floor', 'Math.imul', 'Math.max', 'Math.min', 'Math.sqrt', 'Math.trunc']);
+  assert.deepEqual(raised, []);
+  assert.deepEqual([...imported].filter((file) => !picture.includes(file)), []);
+});
