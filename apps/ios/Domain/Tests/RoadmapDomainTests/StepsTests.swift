@@ -7,7 +7,7 @@ import Testing
 
 // A roadmap's steps and links: each case of steps-actions.json Swift's acts decide, by its complete decision.
 struct StepsTests {
-  static let decided = ["CreateStep", "ChangeStep", "MoveStep", "DeleteStep"]
+  static let decided = ["CreateStep", "ChangeStep", "MoveStep", "DeleteStep", "ChangePrerequisites"]
 
   @Test(arguments: try Contract.vectors("roadmap/domain/steps-actions.json").filter { decided.contains(try $0.input.member("action").asString()) })
   func action(_ vector: Vector) throws {
@@ -33,6 +33,9 @@ struct StepsTests {
       let act = MoveStep(tree: tree, step: try input.id("step"), below: try input.optionalID("below"), siblings: try input.ids("siblings"))
       return try corpus.act(act, vector, result: { .null }, refusal: \.form)
     case "DeleteStep": return try corpus.act(DeleteStep(tree: tree, step: input.id("step")), vector, result: { .null }, refusal: \.form)
+    case "ChangePrerequisites":
+      let act = ChangePrerequisites(tree: tree, step: try input.id("step"), add: try input.ids("add"), remove: try input.ids("remove"))
+      return try corpus.act(act, vector, result: { .null }, refusal: \.form)
     case let name: throw ContractError("no step action \(name)")
     }
   }

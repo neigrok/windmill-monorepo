@@ -139,6 +139,10 @@ public struct RoadmapLink: Writable, Removable, Hashable {
   public static let checks: [Check<RoadmapLink>] = []
 }
 
+extension RoadmapTree.Edge {
+  var link: RoadmapLink { RoadmapLink(from: ID(RecordID(from)), to: ID(RecordID(to))) }
+}
+
 extension RoadmapTree {
   // The steps and links of one tree scope, every record a reader holds, absent ones kept: what a step follows, and its
   // loops, are read through absent steps (D-5).
@@ -146,6 +150,27 @@ extension RoadmapTree {
     precondition(read.scope == tree.tree, "the steps of \(tree) are read in its tree scope")
     let records = try read.repository(RoadmapStep.self).records(in: .drawn) + read.repository(RoadmapLink.self).records(in: .drawn)
     try self.init(id: tree, listed: nil, tree: records, overlay: nil)
+  }
+
+  // The first of the new links on a loop among what steps follow: one from a step to itself, or one that closes a loop
+  // holding a present step. A loop of absent steps alone is read without harm.
+  func firstLoop(closedBy links: [RoadmapLink]) -> Int? {
+    var vertices = index.vertices
+    var parents = index.parents
+    let vertex = { (step: ID<RoadmapStep>) -> Int in
+      if let known = vertices[step.description] { return known }
+      vertices[step.description] = parents.count
+      parents.append([])
+      return parents.count - 1
+    }
+    let ends = links.map { (link: RoadmapLink) -> (from: Int, to: Int) in (vertex(link.from), vertex(link.to)) }
+    for link in ends { parents[link.to].append(link.from) }
+    let loops = Components(parents)
+    return ends.firstIndex { (link: (from: Int, to: Int)) -> Bool in
+      if link.from == link.to { return true }
+      let component = loops.componentOf[link.from]
+      return component == loops.componentOf[link.to] && loops.groups[component].contains { $0 < index.ids.count }
+    }
   }
 }
 
@@ -454,6 +479,59 @@ public struct DeleteStep: ActAction {
     var plan = Plan()
     plan.remove(step)
     plan.undoBy(.restoring(step, life: true, by: Roadmap.Commands.restoreTree))
+    return .write(plan, in: tree.tree, ())
+  }
+}
+
+// §5 A step's prerequisites, added and removed in one gesture. A removed prerequisite the step follows through an absent
+// step retires each link the step reaches it by; an added one that closes a loop among what steps follow is refused before
+// anything is written; and an added link is noted with the name of the step it comes from (§6).
+public struct ChangePrerequisites: ActAction {
+  public let tree: ID<RoadmapEntry>
+  public let step: ID<RoadmapStep>
+  public let add: [ID<RoadmapStep>]
+  public let remove: [ID<RoadmapStep>]
+
+  public init(tree: ID<RoadmapEntry>, step: ID<RoadmapStep>, add: [ID<RoadmapStep>] = [], remove: [ID<RoadmapStep>] = []) {
+    self.tree = tree
+    self.step = step
+    self.add = [ID<RoadmapStep>]().adding(new: add)
+    self.remove = [ID<RoadmapStep>]().adding(new: remove)
+  }
+
+  public func load(_ read: ActReader) throws -> HeldSteps {
+    try HeldSteps(of: tree, naming: [step] + add, in: read)
+  }
+
+  public func decide(_ loaded: HeldSteps, ids: ActIDSource) throws(Violation) -> ActDecision<Void, RoadmapRefusal> {
+    if let unknown = ([step] + add).first(where: { !loaded.known.contains($0) }) { return .refuse(.gone(unknown.ref, .predicted)) }
+    let roadmap = loaded.roadmap
+    let live = Set(roadmap.index.edges.map(\.link))
+    let adding = add.map { RoadmapLink(from: $0, to: step) }.filter { !live.contains($0) }
+    if let loop = roadmap.firstLoop(closedBy: adding), let named = add.firstIndex(of: adding[loop].from) {
+      throw Violation(rule: RoadmapChecks.cycle, path: Path("add") + named, reason: .custom(adding[loop].from == step ? "self" : "loop"))
+    }
+    let followed = FollowGraph(roadmap).followed(step.description)
+    var removing: [RoadmapLink] = []
+    for prerequisite in remove {
+      let direct = RoadmapLink(from: prerequisite, to: step)
+      let through = followed.first { $0.id.utf8.elementsEqual(prerequisite.description.utf8) }?.incoming.map(\.link) ?? []
+      removing = removing.adding(new: (live.contains(direct) ? [direct] : through).filter { !adding.contains($0) })
+    }
+    guard !adding.isEmpty || !removing.isEmpty else { return .unchanged(()) }
+    var made: [Valid<RoadmapLink>] = []
+    for link in adding { made.append(try Valid(link, at: loaded.moment)) }
+    if let full = loaded.links.refusal(growing: adding.count - removing.count, subject: adding.first?.id.ref) { return .refuse(RoadmapRefusal(full)) }
+    let held = Set(roadmap.edges.map(\.link))
+    var plan = Plan()
+    for link in made { plan.create(link) }
+    for link in removing { plan.remove(link.id) }
+    for link in adding {
+      let restored = UndoRecipe.restoring(link.id, life: true, by: Roadmap.Commands.restoreTree)
+      plan.undoBy(held.contains(link) ? restored : .createdRecord(restoreCommand: Roadmap.Commands.restoreTree, record: .of(link.id)))
+    }
+    for link in removing { plan.undoBy(.restoring(link.id, life: true, by: Roadmap.Commands.restoreTree)) }
+    if !adding.isEmpty { plan.note(loaded.note.adding(edges: adding, names: loaded.names(of: adding.map(\.from))), of: tree) }
     return .write(plan, in: tree.tree, ())
   }
 }
