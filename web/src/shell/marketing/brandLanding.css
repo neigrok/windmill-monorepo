@@ -138,10 +138,10 @@
   .front-title br { display: none; }
   .front-room .front-title br { display: inline; }
 
-  .front-header-row { height: 55px; }
+  .front-header-row { height: 55px; column-gap: 12px; }
   .front-nav { display: none; }
-  .front-cluster { gap: 12px; }
-  .front-signin { min-height: 44px; }
+  .front-cluster { gap: 12px; min-width: 0; }
+  .front-signin { min-width: 0; min-height: 44px; overflow: hidden; text-overflow: ellipsis; }
   .front-seat { --wm-account-seat-target-size: 44px; }
   /* A control the boards draw under 44px keeps its drawn size and takes the rest as hit area. */
   .front-header .front-brand, .front-switch .wm-segmented-segment { position: relative; }
@@ -194,4 +194,10 @@
   .front-feedback::after { content: ""; position: absolute; inset: -12px 0; }
   .front-foot { padding: 16px 0 40px; }
   .front-switch .wm-segmented-segment { gap: 5px; height: 32px; padding: 0 8px 0 10px; }
+}
+
+/* The narrowest phones: the header's three parts still stand whole. */
+@media (max-width: 359px) {
+  .front-cluster { gap: 8px; }
+  .front-pill { padding: 0 12px; }
 }
