@@ -355,8 +355,9 @@ makes it false.
 
 ## §13 Gaps this build closes
 
-- The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
-  is on the web.
+- The app's third room exists only behind a build switch that is off in Release (`WM_ROADMAP_ROOM_ENABLED`), where it
+  shows a roadmap's Board read-only from the phone's copy: no gesture, step page, form, title menu, Graph, link or
+  Coach is built. The app has no associated domain, and its onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
   plan grammar, quest or Coach executor.

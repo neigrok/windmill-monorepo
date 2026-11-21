@@ -53,8 +53,10 @@ The report pauses at `revoke-session` and `signed-out`; a local verifier perform
 writes that checkpoint name to `<report>.ready`. The signed-out checkpoint includes the credential
 for local replay verification; the final report contains no credential.
 
-`AppModel` coordinates one account, runtime, runner and active replica for both rooms. The engine
-subscribes both product scopes from its iOS registry. Gym and Journal writes made anonymously stay
+`AppModel` coordinates one account, runtime and active replica for the rooms. The engine subscribes
+gym's and journal's scopes from its iOS registry, and roadmap's where the build carries the Roadmap room
+(`AppSettings.engineConfig`). Gym and Journal run their actions on the runtime's `runner`, which removes at once; roadmap's
+take `roadmapRunner`, which holds a removal for the engine's nine seconds. Gym and Journal writes made anonymously stay
 local until adoption. Occupied accounts ask one question naming both rooms' work by kind
 (`AdoptionQuestion`); one Add/Discard answers every room, persists against the exact counted work and
 completes together. Changed work asks again about the room that changed.
@@ -82,12 +84,27 @@ two-line row, the set row and fact tiles, the load field and reps wheel and the 
 (`NameField.swift`: a movement's through `exercise.name`, a routine's through `routine.name`), a movement's equipment
 field read through GymDomain's `Equipment` (`MovementEquipment.swift`), the rename sheet with its model extension, the one count formatter, the one date formatter (`GymDate`) and the Instant–Date bridge.
 
+The Roadmap room ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md), boards on the Roadmap file's iOS page) exists
+where the build setting `WM_ROADMAP_ROOM_ENABLED` is `YES`: `project.yml` sets it in Debug and leaves it `NO` in Release, and
+`AppSettings.roadmapRoom` reads it from the Info.plist. Without it the app has no `RoadmapModel`, no Roadmap row in the room
+menu, no Roadmap door, and an engine that subscribes no roadmap scope. `Sources/Roadmap/RoadmapModel.swift` observes the
+engine's views of every record of the person's roadmaps (`RoadmapModel.Records`, one view a type in each roadmap's tree scope
+and in their overlay of it) and reads them through `RoadmapDomain`: the list from `RoadmapAccount.list()`, each roadmap as
+`RoadmapTree(id:listed:tree:overlay:read:)`, the open one's Board as `BoardRead`. It opens the roadmap last open, else the
+most recent, and makes no request. `RoadmapRoom.swift` is the room's one `NavigationStack`: the room capsule and the account
+in the bar, the roadmap's name and progress, the switch row pinned under the bar and New step at the foot;
+`Board/RoadmapBoard.swift` is the Board's list, its three groups under headers that fold them, Done folded at rest. The room
+reads only: Graph, Find, Sort and filter, New step and New Roadmap are drawn disabled, the title has no menu, and a step's
+row opens nothing. Debug simulator boards (`RoadmapFixture`): `-board roadmap-empty` opens the room on a phone that holds no
+roadmap, `-board roadmap-learn-to-sail` signs the phone in to an account whose eight-step roadmap another phone planted on the
+model server, so it arrives by sync, and `-board roadmap-unreadable` opens the room over views it cannot make.
+
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
 preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,
 refusal/error/readFailed, and the one unsent rule: signed out nothing is unsent; signed in,
 `unsentSets(_:)` and `sessionIsUnsent(_:)` mark what the log has not confirmed while no connection, a paused session
 or a refused push holds it back. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
-`dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine changes. The app constructs its
+`dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine changes. The app constructs Gym's
 ActionRunner with immediate removals. Whole-workout and conversation deletes ask for confirmation;
 there is no Undo band or deletion delay. `flush()` keeps pending work before account transitions.
 An inactive scene persists Journal drafts while Gym live sync and REST work continue.
@@ -329,9 +346,9 @@ under the page with its cloud symbol, and a borderless *Try again* while the wri
 holds for it at that moment, another surface's included, and a page emptied of words is removed whole.
 An echo sheet up when an account sheet is asked for steps aside first (`AppModel.roomSheetUp`), since one
 presenter holds one sheet.
-The room seat is a native Journal · Gym menu with the current room checked; the separate account
-button opens You. The last room persists across launches. A fresh phone gets both doors after the
-introduction on Where to start?. Its quiet Sign in opens the account sheet as *Pick up where you left off* (02b). After that
+The room seat is a native menu of the rooms the build carries (`AppModel.rooms`), Journal · Gym and Roadmap where its room
+exists, with the current room checked; the separate account button opens You. The last room persists across launches. A
+fresh phone gets a door for each of those rooms after the introduction on Where to start?. Its quiet Sign in opens the account sheet as *Pick up where you left off* (02b). After that
 sign-in, *Bringing it back* (02c) counts each room's visible records as they land against the totals the account's
 hello tallies by the same rule (`SignInRestore`), and opens the room the person last wrote to once its own records are
 in; the other keeps arriving behind it. A lost connection or session opens that room at once, and so do ten seconds
@@ -424,7 +441,8 @@ Inter and Nunito are static instances of the official variable fonts. The room c
 asset catalogue, one palette enum per room), the named type roles, the spacing scale and the room-neutral controls
 (the reach band and its primary, the transient, the bar's tint, the soft edge, the door chevron) live in
 `Sources/Theme/`, which the Live Activity extension compiles too; the colour values follow
-[the iOS colour roles](../../../docs/design/ios/ios-redesign.md), which `Tools/tests/test_theme_assets.py`
+[the iOS colour roles](../../../docs/design/ios/ios-redesign.md) and, for roadmap,
+[Roadmap · iOS](../../../docs/design/ios/roadmap.md), which `Tools/tests/test_theme_assets.py`
 checks against the asset catalogue. The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
 The [six-flow Gym handoff](../../../docs/engineering/ios-gym-ui-flows.md) records approved designs,
@@ -551,7 +569,7 @@ and Daylight. `DesignCapture.swift` holds the shared base: launch, capture, the 
 the opt-in skip. XCTest skips every capture unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
 `TEST_RUNNER_`-prefixed variables to the runner without the prefix. Each area keeps its captures in its own file and
 class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `ChromeCaptures`, `CoachCaptures`,
-`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures` and `RecoveryCaptures`. The CI shards leave
+`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures` and `RoadmapCaptures`. The CI shards leave
 the suite out and check that its guard remains.
 
 A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:
