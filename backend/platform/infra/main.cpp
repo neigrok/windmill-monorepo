@@ -537,7 +537,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* purchasableStoresEnv = std::getenv("SUBSCRIPTIONS_PURCHASABLE_STORES");
   const subscriptions::PaidLine paidLine{purchasableStoresEnv ? purchasableStoresEnv : "", aiLimits.paidPeriodNanos};
   if (paidLine.namesUnknownStore) {
-    LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed";
+    LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the paid line cannot open; it stays closed";
     sentry->report("config", "subscription.paid_line", "unknown_store");
   }
 
