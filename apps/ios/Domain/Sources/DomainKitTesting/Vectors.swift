@@ -120,21 +120,22 @@ extension Moment {
 
 // The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, the
 // server's copy of them as the device pulled it (`confirmed`, by default `stored`), the device keys it lists, each key's
-// value, and the scope's spent ids it lists, `{t, id, born, seq?}`, each id's born.
+// value, and the scope's spent ids it lists, `{t, id, born, seq?}`, each id's born and the `seq` it keeps.
 package struct VectorRecords: Sendable {
   package var drawn: [Record]
   package var stored: [Record]
   package var confirmed: [Record]
   package var device: JSON.Object
-  package var spent: [RecordKey: Stamp]
+  package var spent: [RecordKey: (born: Stamp, seq: Int64?)]
 
   package init(drawn: JSON?, stored: JSON?, confirmed: JSON? = nil, device: JSON? = nil, spent: JSON? = nil, registry: Registry) throws {
     self.drawn = try VectorRecords.records(drawn, registry: registry)
     self.stored = try VectorRecords.records(stored, registry: registry)
     self.confirmed = try confirmed.map { try VectorRecords.records($0, registry: registry) } ?? self.stored
     self.device = try device?.asObject() ?? [:]
-    self.spent = Dictionary(uniqueKeysWithValues: try (spent?.asArray() ?? []).map { (spentID: JSON) throws -> (RecordKey, Stamp) in
-      (RecordKey(try spentID.member("t").asString(), try RecordID(json: spentID.member("id"))), try Stamp(json: spentID.member("born")))
+    self.spent = Dictionary(uniqueKeysWithValues: try (spent?.asArray() ?? []).map { (spentID: JSON) throws -> (RecordKey, (born: Stamp, seq: Int64?)) in
+      let seq = try spentID["seq"].map { (seq: JSON) throws -> Int64 in try seq.asInteger() }
+      return (RecordKey(try spentID.member("t").asString(), try RecordID(json: spentID.member("id"))), (try Stamp(json: spentID.member("born")), seq))
     })
   }
 
@@ -157,10 +158,10 @@ package struct VectorRecords: Sendable {
   }
 }
 
-// A reader over a vector's records: the folded record by id visible or not, the visible records of a type in id order,
-// the confirmed record by id, and the born of a spent id, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another
-// scope as they do. It mints the ids the vector lists, in order, opaque ones included, and no other; the replica it
-// writes to is one no vector names.
+// A reader over a vector's records: the folded record by id visible or not, the records of a type in id order, the visible
+// ones or every one, the confirmed record by id with its row's `seq`, and the born and `seq` of a spent id, as the engine's
+// readers answer (ER-3, ER-12). Given a scope, it refuses a type of another scope as they do. It mints the ids the vector
+// lists, in order, opaque ones included, and no other; the replica it writes to is one no vector names.
 package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
@@ -185,6 +186,11 @@ package final class VectorReader: CommitContext {
   package func drawn(_ type: String) throws -> [Record] { visible(records.drawn, try lives(type)) }
   package func stored(_ type: String) throws -> [Record] { visible(records.stored, try lives(type)) }
 
+  package func records(_ type: String, in view: ViewMode) throws -> [Record] {
+    let type = try lives(type)
+    return (view == .drawn ? records.drawn : records.stored).filter { $0.type == type }.sorted { $0.id < $1.id }
+  }
+
   package func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
     visible(records.drawn, try lives(type)).filter { $0.values[field] == id.json }
   }
@@ -193,7 +199,8 @@ package final class VectorReader: CommitContext {
     visible(records.stored, try lives(type)).filter { $0.values[field] == id.json }
   }
 
-  package func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { records.spent[RecordKey(try lives(type), id)] }
+  package func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { records.spent[RecordKey(try lives(type), id)]?.born }
+  package func spentSeq(_ type: String, _ id: RecordID) throws -> Int64? { records.spent[RecordKey(try lives(type), id)]?.seq }
 
   // The engine's readers throw on a type of another scope.
   func lives(_ type: String) throws -> String {
