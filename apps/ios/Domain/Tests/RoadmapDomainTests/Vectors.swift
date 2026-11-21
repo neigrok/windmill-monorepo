@@ -22,8 +22,10 @@ extension JSON {
 
   static func strings(_ items: [String]) -> JSON { .array(items.map { .string($0) }) }
 
-  // The id an action's input names under `key`.
+  // The id an action's input names under `key`, the ids it lists there, and the id it may name.
   func id<E: Entity>(_ key: String) throws -> ID<E> { ID(try RecordID(json: member(key))) }
+  func ids<E: Entity>(_ key: String) throws -> [ID<E>] { try member(key).asArray().map { ID(try RecordID(json: $0)) } }
+  func optionalID<E: Entity>(_ key: String) throws -> ID<E>? { try optional(key) { ID(try RecordID(json: $0)) } }
 }
 
 extension NewKind {
@@ -33,11 +35,23 @@ extension NewKind {
   }
 }
 
+extension Step.Link {
+  init(form: JSON) throws {
+    self.init(url: try form.member("url").asString(), label: try form.member("label").asString())
+  }
+}
+
+extension RoadmapStep.Changes {
+  // `{label?, icon?, color?, description?, links?}`: the fields a case names of a step.
+  init(form: JSON) throws {
+    self.init(label: try form.optionalString("label"), icon: try form.optionalString("icon"), color: try form.optionalString("color"),
+              description: try form.optionalString("description"), links: try form.optional("links") { try $0.asArray().map(Step.Link.init(form:)) })
+  }
+}
+
 extension Step {
   init(form: JSON) throws {
-    let links = try form.optional("links") { links in
-      try links.asArray().map { Step.Link(url: try $0.member("url").asString(), label: try $0.member("label").asString()) }
-    }
+    let links = try form.optional("links") { try $0.asArray().map(Step.Link.init(form:)) }
     self.init(id: try form.member("id").asString(), present: try form.optionalBool("present"), born: try form.optionalStamp("born"),
               rc: try form.optionalInstant("rc"), ru: try form.optionalInstant("ru"), label: try form.optionalString("label"),
               icon: try form.optionalString("icon"), color: try form.optionalString("color"), ord: try form.optionalString("ord"),
