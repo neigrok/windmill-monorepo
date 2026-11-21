@@ -90,3 +90,130 @@ public struct RoadmapLink: Writable, Removable {
   public var fields: [String: JSON] { [:] }
   public static let checks: [Check<RoadmapLink>] = []
 }
+
+// A step a gesture brings before it has an id, under a key of the gesture's own that its links name.
+public struct ImportedStep: Sendable {
+  public let key: String
+  public let label: String
+  public let icon: String
+  public let color: String
+  public let description: String
+  public let links: [Step.Link]
+
+  public init(key: String, label: String = Roadmap.Defaults.Node.label, icon: String = Roadmap.Defaults.Node.icon,
+              color: String = Roadmap.Defaults.Node.color, description: String = Roadmap.Defaults.Node.description, links: [Step.Link] = []) {
+    self.key = key
+    self.label = label
+    self.icon = icon
+    self.color = color
+    self.description = description
+    self.links = links
+  }
+}
+
+// The steps a gesture brings and the links among them, each naming the keys of the step it comes from and the step it
+// leads to.
+public struct ImportedSteps: Sendable {
+  public let steps: [ImportedStep]
+  public let links: [(from: String, to: String)]
+
+  public init(steps: [ImportedStep] = [], links: [(from: String, to: String)] = []) {
+    self.steps = steps
+    self.links = links
+  }
+}
+
+// One imported step and the links that lead to it: the unit a chunk holds whole, measured as its records' JCS bytes.
+struct ImportUnit {
+  let step: Valid<RoadmapStep>
+  let links: [Valid<RoadmapLink>]
+  let bytes: Int
+
+  init(step: Valid<RoadmapStep>, links: [Valid<RoadmapLink>]) {
+    self.step = step
+    self.links = links
+    let written = JSON.object(JSON.Object(uniqueKeysWithValues: step.value.fields.map { ($0.key, $0.value) }))
+    let node: JSON = ["t": .string(RoadmapStep.type), "id": step.value.id.json, "f": written]
+    bytes = links.reduce(node.jcs.count) { (sum: Int, link: Valid<RoadmapLink>) -> Int in
+      let edge: JSON = ["t": .string(RoadmapLink.type), "id": link.value.id.json]
+      return sum + edge.jcs.count
+    }
+  }
+
+  var count: Int { 1 + links.count }
+
+  func write(to plan: inout Plan) {
+    plan.create(step)
+    for link in links { plan.create(link) }
+  }
+}
+
+// What an import brings to a new roadmap: its steps under fresh ids, in the order they follow one another, each keyed after
+// the steps before it under its trunk parent, with the links that lead to it.
+struct StepsImport {
+  let units: [ImportUnit]
+  // Each step's id by its key, in the import's order.
+  let ids: [(key: String, id: ID<RoadmapStep>)]
+
+  // A loop among the import's links is refused before an id is minted, a step past a bound at its place in the import.
+  init(_ imported: ImportedSteps, in scope: ScopeRef, at moment: Moment, ids: ActIDSource) throws(Violation) {
+    let keys = imported.steps.map { Array($0.key.utf8) }
+    precondition(Set(keys).count == keys.count, "an import names each step once")
+    var links: [(from: Int, to: Int)] = []
+    for link in imported.links {
+      guard let from = keys.firstIndex(of: Array(link.from.utf8)), let to = keys.firstIndex(of: Array(link.to.utf8)) else {
+        preconditionFailure("an import links its own steps")
+      }
+      if !links.contains(where: { $0.from == from && $0.to == to }) { links.append((from, to)) }
+    }
+    var parents = [[Int]](repeating: [], count: keys.count)
+    for link in links { parents[link.to].append(link.from) }
+    let loops = Components(parents).componentOf
+    if let loop = links.firstIndex(where: { $0.from == $0.to || loops[$0.from] == loops[$0.to] }) {
+      throw Violation(rule: RoadmapChecks.cycle, path: Path("links") + loop, reason: .custom(links[loop].from == links[loop].to ? "self" : "loop"))
+    }
+    let minted = imported.steps.map { (step: ImportedStep) -> ID<RoadmapStep> in ids.mint(RoadmapStep.self, inScope: scope) }
+    var waiting = keys.indices.map { (index: Int) -> Int in parents[index].count }
+    var lastOrd: [ID<RoadmapStep>?: FractionalKey] = [:]
+    var units: [ImportUnit] = []
+    while units.count < keys.count {
+      guard let index = waiting.firstIndex(of: 0) else { preconditionFailure("an import without a loop orders every step") }
+      waiting[index] = -1
+      for link in links where link.from == index { waiting[link.to] -= 1 }
+      let step = imported.steps[index]
+      let leading = links.filter { $0.to == index }.map { minted[$0.from] }
+      let ord = FractionalKey(after: lastOrd[leading.first])
+      lastOrd[leading.first] = ord
+      let valid: Valid<RoadmapStep>
+      do throws(Violation) {
+        valid = try Valid(RoadmapStep(id: minted[index], label: step.label, icon: step.icon, color: step.color, ord: ord.text,
+                                      description: step.description, links: step.links), at: moment)
+      } catch {
+        throw error.at(Path("steps") + index)
+      }
+      var made: [Valid<RoadmapLink>] = []
+      for from in leading { made.append(try Valid(RoadmapLink(from: from, to: minted[index]), at: moment)) }
+      units.append(ImportUnit(step: valid, links: made))
+    }
+    self.units = units
+    self.ids = zip(imported.steps, minted).map { (key: $0.key, id: $1) }
+  }
+
+  // §5 Import and paste: chunks of at most `importChunk` records and `importChunkBytes`, a step's prerequisites in its chunk
+  // or an earlier one. The first chunk keeps room for `reserved` records.
+  func chunks(reserving reserved: Int) -> [[ImportUnit]] {
+    var chunks: [[ImportUnit]] = [[]]
+    var (count, bytes) = (reserved, 0)
+    for unit in units {
+      if count > 0 && (count + unit.count > RoadmapLimits.importChunk || bytes + unit.bytes > RoadmapLimits.importChunkBytes) {
+        chunks.append([unit])
+        (count, bytes) = (unit.count, unit.bytes)
+        continue
+      }
+      chunks[chunks.count - 1].append(unit)
+      count += unit.count
+      bytes += unit.bytes
+    }
+    return chunks
+  }
+}

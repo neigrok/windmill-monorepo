@@ -115,6 +115,13 @@ public enum RoadmapRefusal: ProductRefusal, Equatable {
   }
 }
 
+extension Violation {
+  // The violation of one item among those a gesture brings, named by the item's place.
+  func at(_ place: Path) -> Violation {
+    Violation(rule: rule, path: place + path.text, reason: reason)
+  }
+}
+
 extension ActDecision {
   // An act that writes one scope.
   static func write(_ plan: Plan, in scope: ScopeRef, _ result: Result) -> ActDecision {

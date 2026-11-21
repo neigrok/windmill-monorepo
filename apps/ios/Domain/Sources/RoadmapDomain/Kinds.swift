@@ -38,3 +38,16 @@ public struct RoadmapKind: Writable, Removable {
     Check("description") { k, _ in k.description = try RoadmapSpecs.kindDescription.apply(k.description, at: "description") },
   ]
 }
+
+// A kind as a person words it before it has an id: the hue it wears and what it calls it.
+public struct NewKind: Sendable {
+  public let hue: String
+  public let label: String
+  public let description: String
+
+  public init(hue: String, label: String = Roadmap.Defaults.Kind.label, description: String = Roadmap.Defaults.Kind.description) {
+    self.hue = hue
+    self.label = label
+    self.description = description
+  }
+}

@@ -56,6 +56,14 @@ func authoredOrder<Record: Authored>(_ a: Record, _ b: Record) -> Bool {
   return a.id.utf8.lexicographicallyPrecedes(b.id.utf8)
 }
 
+extension FractionalKey {
+  // The key that places a record after `last`, or first where nothing comes before it.
+  init(after last: FractionalKey?) {
+    do { try self.init(between: last, and: nil) }
+    catch { preconditionFailure("no order key follows \(last?.text ?? "the start"): \(error)") }
+  }
+}
+
 func edgeOrder(_ a: RoadmapTree.Edge, _ b: RoadmapTree.Edge) -> Bool {
   if !a.from.utf8.elementsEqual(b.from.utf8) { return a.from.utf8.lexicographicallyPrecedes(b.from.utf8) }
   return a.to.utf8.lexicographicallyPrecedes(b.to.utf8)
@@ -332,5 +340,71 @@ public struct TreeIndex: Sendable {
   public func absentParents(_ id: String) -> [String] {
     guard let slot = slot(of: id) else { return [] }
     return parents[slot].filter { $0 >= ids.count }.map { rawIds[$0] }
+  }
+}
+
+// The device's own note of what it made and revived in one roadmap (§6), held in its `landing:<tree>` row until the person
+// has been told: its new steps, its new links, the steps its changes brought back, and the name of each step a link it
+// still notes comes from, as it was when the device made the link. The row never leaves the device.
+public struct LandingNote: Sendable {
+  public struct Name: Sendable {
+    public let id: ID<RoadmapStep>
+    public let name: String
+  }
+
+  public let nodes: [ID<RoadmapStep>]
+  public let edges: [RoadmapLink]
+  public let revived: [ID<RoadmapStep>]
+  public let names: [Name]
+
+  // A name is kept only while a link from its step is noted.
+  init(nodes: [ID<RoadmapStep>] = [], edges: [RoadmapLink] = [], revived: [ID<RoadmapStep>] = [], names: [Name] = []) {
+    self.nodes = nodes
+    self.edges = edges
+    self.revived = revived
+    self.names = names.filter { name in edges.contains { $0.from == name.id } }
+  }
+
+  // The note a device row holds, read leniently: a part that is not what the note keeps there is left out.
+  init(row: JSON?) {
+    let steps = { (list: JSON?) -> [ID<RoadmapStep>] in
+      guard case .array(let items)? = list else { return [] }
+      return items.compactMap { if case .string(let id) = $0 { ID(RecordID(id)) } else { nil } }
+    }
+    var edges: [RoadmapLink] = []
+    if case .array(let links)? = row?["edges"] {
+      for link in links {
+        guard case .array(let ends) = link, ends.count == 2, case .string(let from) = ends[0], case .string(let to) = ends[1] else { continue }
+        edges.append(RoadmapLink(from: ID(RecordID(from)), to: ID(RecordID(to))))
+      }
+    }
+    var names: [Name] = []
+    if case .array(let entries)? = row?["names"] {
+      for entry in entries {
+        guard case .string(let id)? = entry["id"], case .string(let name)? = entry["name"] else { continue }
+        names.append(Name(id: ID(RecordID(id)), name: name))
+      }
+    }
+    self.init(nodes: steps(row?["nodes"]), edges: edges, revived: steps(row?["revived"]), names: names)
+  }
+
+  // The device's note of one roadmap as its row holds it.
+  init(of tree: ID<RoadmapEntry>, in read: Reader) throws {
+    self.init(row: try read.device(LandingNote.key(of: tree)))
+  }
+
+  static func key(of tree: ID<RoadmapEntry>) -> String { "landing:\(tree)" }
+
+  // The note with the steps a change brought back added, each once.
+  func adding(revived steps: [ID<RoadmapStep>]) -> LandingNote {
+    var revived = self.revived
+    for step in steps where !revived.contains(step) { revived.append(step) }
+    return LandingNote(nodes: nodes, edges: edges, revived: revived, names: names)
+  }
+
+  var json: JSON {
+    let links: [JSON] = edges.map { [$0.from.json, $0.to.json] }
+    let named: [JSON] = names.map { ["id": $0.id.json, "name": .string($0.name)] }
+    return ["nodes": .array(nodes.map(\.json)), "edges": .array(links), "revived": .array(revived.map(\.json)), "names": .array(named)]
   }
 }

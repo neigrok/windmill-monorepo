@@ -21,6 +21,16 @@ extension JSON {
   func optionalStamp(_ key: String) throws -> Stamp? { try optional(key, Stamp.init(json:)) }
 
   static func strings(_ items: [String]) -> JSON { .array(items.map { .string($0) }) }
+
+  // The id an action's input names under `key`.
+  func id<E: Entity>(_ key: String) throws -> ID<E> { ID(try RecordID(json: member(key))) }
+}
+
+extension NewKind {
+  init(form: JSON) throws {
+    self.init(hue: try form.member("hue").asString(), label: try form.optionalString("label") ?? "",
+              description: try form.optionalString("description") ?? "")
+  }
 }
 
 extension Step {

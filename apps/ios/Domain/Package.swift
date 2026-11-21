@@ -40,7 +40,7 @@ let package = Package(
     .testTarget(
       name: "GymDomainTests", dependencies: ["GymDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncTesting, .product(name: "SyncModelServer", package: "Sync")]),
     .testTarget(name: "JournalDomainTests", dependencies: ["JournalDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncEngine, syncTesting, .product(name: "SyncReplica", package: "Sync"), .product(name: "SyncModelServer", package: "Sync"), .product(name: "SyncStore", package: "Sync")]),
-    .testTarget(name: "RoadmapDomainTests", dependencies: ["RoadmapDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncTesting]),
+    .testTarget(name: "RoadmapDomainTests", dependencies: ["RoadmapDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncTesting, .product(name: "SyncModelServer", package: "Sync")]),
     .testTarget(
       name: "LayeringTests",
       dependencies: [.product(name: "SwiftParser", package: "swift-syntax"), .product(name: "SwiftSyntax", package: "swift-syntax")],
