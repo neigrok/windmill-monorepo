@@ -173,7 +173,7 @@
 
   .front-ai-row { display: block; padding: 48px 0 28px; }
   .front-ai-row .front-title + .front-text { margin-top: 8px; }
-  .front-ai-way { margin-top: 28px; }
+  .front-ai-way { align-items: stretch; margin-top: 28px; }
   .front-ai-way .front-text { margin: 12px 0 4px; }
   .front-ai-way + .front-ai-way { margin-top: 20px; padding-top: 28px; border-top: 1px solid var(--look-line); }
   .front-ai-way + .front-ai-way::before { content: none; }
